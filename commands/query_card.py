@@ -2,21 +2,18 @@ import aliases
 import requests
 import difflib
 
-async def query_card(message):
-    # If it's just a ?, ignore everything
-    if len(message.content) == 1:
-        return
+file_alias = aliases.aliases
+files = {}
+ambiguous_names = {}
+filenames = []
 
+def populate_files():
     # Grab repo
     repo = requests.get("https://api.github.com/repos/MichaelJSr/TTSCardMaker/git/trees/main?recursive=1")
     if repo.status_code != 200:
-        await message.channel.send(f"Error {repo.status_code} when requesting github.")
-        return
+        return repo.status_code
 
     text = repo.json()
-    file_alias = aliases.aliases
-    files = {}
-    ambiguous_names = {}
     # Make a dictionary of all list of pngs in the github
     # Keys consist of the filename, for example Bomb.png
     # Values consist of the whole path, for example Items/Attack/2 Stars/Bomb.png
@@ -47,8 +44,22 @@ async def query_card(message):
     # keys of aliases are the aliases, values are the filenames they point to
     for i in file_alias.keys():
         files[f"{i}.png".lower()] = files[file_alias[i].lower()]
+    
+    return 200
 
-    filenames = list(files.keys())
+async def query_card(message):
+    global filenames
+    # If it's just a ?, ignore everything
+    if len(message.content) == 1:
+        return
+
+    if not files:
+        status = populate_files()
+        if status != 200:
+            await message.channel.send(f"Error {status} when requesting github.")
+            return
+        filenames = list(files.keys())
+
     card = message.content[1:].replace(" ", "_").lower()
     if not card.endswith(".png"):
         card += ".png"
