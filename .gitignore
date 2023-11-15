@@ -1,3 +1,4 @@
 # created by virtualenv automatically
 config.py
 *.DS_Store
+__pycache__
