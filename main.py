@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 
 import config
+from commands.help import print_help
 from commands.query_card import query_card
 from commands.update_bot import restart_bot, stop_bot, git_pull, update_bot
 
@@ -27,7 +28,9 @@ async def on_message(message):
     if message.content.startswith('?'):
         await query_card(message)
     elif message.content.startswith('.'):
-        if message.content.endswith('restart'):
+        if message.content.endswith('help'):
+            await print_help(message)
+        elif message.content.endswith('restart'):
             await restart_bot(message)
         elif message.content.endswith('stop'):
             await stop_bot(message, admins)
