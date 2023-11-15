@@ -1,7 +1,7 @@
 import aliases
 import requests
 import difflib
-    
+
 async def query_card(message):
     # If it's just a ?, ignore everything
     if len(message.content) == 1:

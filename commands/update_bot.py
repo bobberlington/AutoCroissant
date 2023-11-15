@@ -2,11 +2,18 @@ import sys
 import os
 import git
 
+import config
+
 async def restart_bot(message):
     await message.channel.send("Restarting bot!")
     os.execv(sys.executable, ['python'] + sys.argv)
 
-async def stop_bot(message, admins):
+async def stop_bot(message):
+    try:
+        admins = config.admins
+    except AttributeError:
+        admins = []
+
     if message.author.id not in admins:
         await message.channel.send("You do not have permission to stop the bot.")
         return
