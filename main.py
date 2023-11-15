@@ -12,6 +12,10 @@ intents.message_content = True
 
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+try:
+    admins = config.admins
+except AttributeError:
+    admins = []
 
 # Events
 @client.event
@@ -26,7 +30,7 @@ async def on_message(message):
         if message.content.endswith('restart'):
             await restart_bot(message)
         elif message.content.endswith('stop'):
-            await stop_bot(message)
+            await stop_bot(message, admins)
         elif message.content.endswith('pull'):
             await git_pull(message)
         elif message.content.endswith('update'):

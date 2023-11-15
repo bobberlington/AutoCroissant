@@ -6,7 +6,10 @@ async def restart_bot(message):
     await message.channel.send("Restarting bot!")
     os.execv(sys.executable, ['python'] + sys.argv)
 
-async def stop_bot(message):
+async def stop_bot(message, admins):
+    if message.author.id not in admins:
+        await message.channel.send("You do not have permission to stop the bot.")
+        return
     await message.channel.send("Stopping bot!")
     os.system('kill %d' % os.getpid())
 
