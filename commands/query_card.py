@@ -44,7 +44,10 @@ def populate_files():
     # Fill up the aliases
     # keys of aliases are the aliases, values are the filenames they point to
     for i in file_alias.keys():
-        files[f"{i}.png"] = files[file_alias[i]]
+        if file_alias[i] in files:
+            files[f"{i}.png"] = files[file_alias[i]]
+        else:
+            files[f"{i}.png"] = [val for _, val in files.items() if val.lower().endswith(file_alias[i])][0]
     
     return 200
 
@@ -113,7 +116,7 @@ async def alias_card(message):
         val += ".png"
 
     check_val_validity = False
-    for key_in_dict, val_in_dict in files.items():
+    for _, val_in_dict in files.items():
         if val_in_dict.lower().endswith(val):
             files[f"{key}.png"] = val_in_dict
             filenames = list(files.keys())
