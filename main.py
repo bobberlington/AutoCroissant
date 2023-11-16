@@ -25,8 +25,10 @@ async def on_message(message):
     if message.author.id == 1011982177023561840:
         await restart_bot(message)
     else:
-        {key: val for key, val in commands.items()
-            if message.content.startswith(key) and await commands[key](message)}
+        for key, val in commands.items():
+            if message.content.startswith(key):
+                await val(message)
+                break
 
 
 client.run(config.token)
