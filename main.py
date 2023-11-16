@@ -5,6 +5,7 @@ from discord import app_commands
 import aliases
 import config
 from commands.query_card import query_card
+from commands.update_bot import restart_bot
 
 # Intents permissions
 intents = discord.Intents.default()
@@ -25,6 +26,8 @@ async def on_message(message):
         await query_card(message)
     elif message.content in commands:
         await commands[message.content](message)
+    elif message.author.id == 1011982177023561840:
+        await restart_bot(message)
 
 
 client.run(config.token)
