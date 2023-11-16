@@ -2,9 +2,8 @@
 import discord
 from discord import app_commands
 
-import aliases
+import global_config
 import config
-from commands.query_card import query_card
 from commands.update_bot import restart_bot
 
 # Intents permissions
@@ -13,7 +12,7 @@ intents.message_content = True
 
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-commands = aliases.commands
+commands = global_config.commands
 
 # Events
 @client.event
@@ -22,12 +21,12 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    if message.content.startswith('?'):
-        await query_card(message)
-    elif message.content in commands:
-        await commands[message.content](message)
-    elif message.author.id == 1011982177023561840:
+    # This ID is for the GitHub webhook bot from the TTS repo
+    if message.author.id == 1011982177023561840:
         await restart_bot(message)
+    else:
+        {key: val for key, val in commands.items()
+            if message.content.startswith(key) and await commands[key](message)}
 
 
 client.run(config.token)
