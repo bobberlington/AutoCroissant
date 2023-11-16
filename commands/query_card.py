@@ -70,9 +70,9 @@ async def query_card(message):
     if len(message.content) == 1:
         return
 
+    if not file_alias:
+        await try_open_alias(message)
     if not files:
-        if not file_alias:
-            await try_open_alias(message)
         status = populate_files()
         if status != 200:
             await message.channel.send(f"Error {status} when requesting github.")
@@ -145,10 +145,8 @@ async def delete_alias(message):
         populate_files()
     
     alias = message.content.split(".del_alias")[1].strip().lower()
-    if alias in file_alias:
-        val = file_alias[alias]
-        file_alias.pop(alias)
-        await message.channel.send(f"Deleted alias: {alias} -> {val}")
+    if alias in file_alias:        
+        await message.channel.send(f"Deleted alias: {alias} -> {file_alias.pop(alias)}")
 
         if alias + ".png" in files:
             files.pop(f"{alias}.png")
