@@ -112,11 +112,15 @@ async def alias_card(message):
     if not val.endswith(".png"):
         val += ".png"
 
-    if {key_in_dict: val_in_dict for key_in_dict, val_in_dict in files.items() if val_in_dict.lower().endswith(val)}:
-        files[f"{key}.png"] = files[val]
-        filenames = list(files.keys())
-    else:
-        await message.channel.send("No such key exists: %s\nCouldnt add alias into dictionary." % key)
+    check_val_validity = False
+    for key_in_dict, val_in_dict in files.items():
+        if val_in_dict.lower().endswith(val):
+            files[f"{key}.png"] = val_in_dict
+            filenames = list(files.keys())
+            check_val_validity = True
+            break
+    if not check_val_validity:
+        await message.channel.send("No such value exists: %s\nCouldnt add alias into dictionary." % val)
         return
 
     file_alias[key] = val
