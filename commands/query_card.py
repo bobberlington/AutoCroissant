@@ -2,11 +2,22 @@ import requests
 import difflib
 import pickle
 
+# Only need this import when populating card descriptions
+import os
+import re
+#from global_config import list_of_all_attributes, list_of_all_stars
+
 alias_pickle_name = "aliases.pkl"
 file_alias = {}
 files = {}
 ambiguous_names = {}
 filenames = []
+
+descriptions = {}
+file_descriptions = []
+descriptions_pickle_name = "descriptions.pkl"
+descriptions_dir = "descriptions"
+match_ratio = 0.6
 
 def populate_files():
     # Grab repo
@@ -62,6 +73,26 @@ async def try_open_alias(message):
         await message.channel.send("%s is completely empty, populating with empty dict..." % alias_pickle_name)
         with open(alias_pickle_name, 'wb') as f:
             pickle.dump(file_alias, f)
+    except FileNotFoundError:
+        await message.channel.send("%s doesnt exist, populating with empty dict..." % alias_pickle_name)
+        with open(alias_pickle_name, 'wb') as f:
+            pickle.dump(file_alias, f)
+
+async def try_open_descriptions(message):
+    global descriptions
+
+    await message.channel.send("Trying to open %s" % descriptions_pickle_name)
+    try:
+        with open(descriptions_pickle_name, 'rb') as f:
+            descriptions = pickle.load(f)
+    except EOFError:
+        await message.channel.send("%s is completely empty, populating with empty dict..." % descriptions_pickle_name)
+        with open(descriptions_pickle_name, 'wb') as f:
+            pickle.dump(descriptions, f)
+    except FileNotFoundError:
+        await message.channel.send("%s doesnt exist, populating with empty dict..." % descriptions_pickle_name)
+        with open(descriptions_pickle_name, 'wb') as f:
+            pickle.dump(descriptions, f)
 
 async def query_card(message):
     global filenames
@@ -77,13 +108,14 @@ async def query_card(message):
         if status != 200:
             await message.channel.send(f"Error {status} when requesting github.")
             return
-        filenames = list(files.keys())
+    if not filenames:
+        filenames = files.keys()
 
     card = message.content[1:].replace(" ", "_").lower()
     if not card.endswith(".png"):
         card += ".png"
     try:
-        closest = difflib.get_close_matches(card, filenames, n=1, cutoff=0.6)[0]
+        closest = difflib.get_close_matches(card, filenames, n=1, cutoff=match_ratio)[0]
     except IndexError:
         await message.channel.send("No card found!")
         return
@@ -170,3 +202,135 @@ async def print_all_aliases(message):
         all_aliases += f"{key:20s} -> {val}\n"
     
     await message.channel.send(f"{all_aliases}```Done.")
+
+def populate_descriptions():
+    dir = os.fsencode(descriptions_dir)
+        
+    for file in os.listdir(dir):
+        filename = os.fsdecode(file)
+        if filename.endswith(".txt"): 
+            card_name = filename.split(".psd")[0].lower() + ".png"
+            with open(os.path.join(dir, file)) as card:
+                card_description = ""
+                for line in card:
+                    line = line.strip().lower()
+                    if line.startswith("["):
+                        line = line[1:-1].strip()
+                    if line != "health" and line != "defense" and line != "attack" and line != "speed":
+                        card_description += line + "."
+                if card_description != "":
+                    descriptions[card_description] = card_name
+        else:
+            continue
+    
+    with open(descriptions_pickle_name, 'wb') as f:
+        pickle.dump(descriptions, f)
+
+async def find_description(message):
+    global file_descriptions
+
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify atleast one argument, the search query.")
+        return
+
+    if not file_alias:
+        await try_open_alias(message)
+    if not files:
+        populate_files()
+    if not descriptions:
+        await try_open_descriptions(message)
+        if not descriptions:
+            try:
+                populate_descriptions()
+            except FileNotFoundError:
+                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
+                return
+    if not file_descriptions:
+        file_descriptions = descriptions.keys()
+    
+    desc = " ".join(message.content.split()[1:]).strip().lower()
+    closest = []
+    if desc.startswith("\"") and desc.endswith("\""):
+        desc = desc[1:-1].strip()
+        for card in file_descriptions:
+            for line in re.split("[.,:;]", card):
+                line = line.strip()
+                if desc in line:
+                    closest.append(card)
+                    break
+    else:
+        for card in file_descriptions:
+            for line in re.split("[.,:;]", card):
+                line = line.strip()
+                if desc in line:
+                    closest.append(card)
+                    break
+                elif difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
+                    closest.append(card)
+                    break
+
+    for close in closest:
+        try:
+            await message.channel.send(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{files[descriptions[close]]}")
+        except KeyError:
+            await message.channel.send("No such key: %s" % descriptions[close])
+            descriptions.pop(close)
+            with open(descriptions_pickle_name, 'wb') as f:
+                pickle.dump(descriptions, f)
+    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
+
+async def howmany_description(message):
+    global file_descriptions
+
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify atleast one argument, the search query.")
+        return
+
+    if not file_alias:
+        await try_open_alias(message)
+    if not files:
+        populate_files()
+    if not descriptions:
+        await try_open_descriptions(message)
+        if not descriptions:
+            try:
+                populate_descriptions()
+            except FileNotFoundError:
+                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
+                return
+    if not file_descriptions:
+        file_descriptions = descriptions.keys()
+    
+    desc = " ".join(message.content.split()[1:]).strip().lower()
+    closest = 0
+    if desc.startswith("\"") and desc.endswith("\""):
+        desc = desc[1:-1].strip()
+        for card in file_descriptions:
+            for line in re.split("[.,:;]", card):
+                line = line.strip()
+                if desc in line:
+                    closest += 1
+                    break
+    else:
+        for card in file_descriptions:
+            for line in re.split("[.,:;]", card):
+                line = line.strip()
+                if desc in line:
+                    closest += 1
+                    break
+                elif difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
+                    closest += 1
+                    break
+
+    await message.channel.send("%d Results found for %s!" % (closest, desc))
+
+async def set_match_ratio(message):
+    global match_ratio
+
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify exactly one argument, the new match ratio. The old match ratio was %f." % match_ratio)
+        return
+
+    match_ratio = float(message.content.split()[1])
+
+    await message.channel.send("New match ratio of %f set!" % match_ratio)
