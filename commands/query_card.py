@@ -216,7 +216,7 @@ def populate_descriptions():
                     line = line.strip().lower()
                     if line.startswith("["):
                         line = line[1:-1].strip()
-                    if line != "health" and line != "defense" and line != "attack" and line != "speed":
+                    if line != "health" and line != "defense" and line != "attack" and line != "speed" and line != "hp" and line != "def" and line != "atk" and line != "spd" and line != "attribute" and line != "ability" and line != "name" and line != "line" and not line.isdigit():
                         card_description += line + "."
                 if card_description != "":
                     descriptions[card_description] = card_name
@@ -253,14 +253,14 @@ async def find_description(message):
     if desc.startswith("\"") and desc.endswith("\""):
         desc = desc[1:-1].strip()
         for card in file_descriptions:
-            for line in re.split("[.,:;]", card):
+            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
                 line = line.strip()
                 if desc in line:
                     closest.append(card)
                     break
     else:
         for card in file_descriptions:
-            for line in re.split("[.,:;]", card):
+            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
                 line = line.strip()
                 if desc in line:
                     closest.append(card)
@@ -306,14 +306,14 @@ async def howmany_description(message):
     if desc.startswith("\"") and desc.endswith("\""):
         desc = desc[1:-1].strip()
         for card in file_descriptions:
-            for line in re.split("[.,:;]", card):
+            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
                 line = line.strip()
                 if desc in line:
                     closest += 1
                     break
     else:
         for card in file_descriptions:
-            for line in re.split("[.,:;]", card):
+            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
                 line = line.strip()
                 if desc in line:
                     closest += 1
