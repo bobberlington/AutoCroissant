@@ -18,7 +18,10 @@ async def stop_bot(message):
         await message.channel.send("You do not have permission to stop the bot.")
         return
     await message.channel.send("Stopping bot!")
+    # Mac kill
     os.system('kill %d' % os.getpid())
+    # Windows kill
+    os.system('taskkill /F /PID %d' % os.getpid())
 
 async def git_pull(message):
     await message.channel.send("Doing a git pull!")

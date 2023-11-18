@@ -62,6 +62,70 @@ def populate_files():
     
     return 200
 
+def populate_descriptions(desc):
+    desc = desc.strip()
+    if "|" in desc:
+        desc1, desc2 = desc.split("|", 1)
+        return list(set(populate_descriptions(desc1.strip()) + populate_descriptions(desc2.strip())))
+    if "&" in desc:
+        desc1, desc2 = desc.split("&", 1)
+        return list(set(populate_descriptions(desc1.strip())) & set(populate_descriptions(desc2.strip())))
+    
+    opposite = False
+    exact_match = False
+    if desc.startswith("!"):
+        desc = desc[1:].strip()
+        opposite = True
+    
+    if desc.startswith("\"") and desc.endswith("\""):
+        desc = desc[1:-1].strip()
+        exact_match = True
+
+    closest = []
+    farthest = []
+    for card in file_descriptions:
+        elem_added = False
+        for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
+            line = line.strip()
+            if desc in line:
+                closest.append(card)
+                elem_added = True
+                break
+            elif not exact_match and difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
+                closest.append(card)
+                elem_added = True
+                break
+
+        if opposite and not elem_added:
+            farthest.append(card)
+    
+    if opposite:
+        return farthest
+    return closest
+
+def pickle_descriptions():
+    dir = os.fsencode(descriptions_dir)
+        
+    for file in os.listdir(dir):
+        filename = os.fsdecode(file)
+        if filename.endswith(".txt"): 
+            card_name = filename.split(".psd")[0].lower() + ".png"
+            with open(os.path.join(dir, file)) as card:
+                card_description = ""
+                for line in card:
+                    line = line.strip().lower()
+                    if line.startswith("["):
+                        line = line[1:-1].strip()
+                    if line != "attribute" and line != "ability" and line != "name" and line != "line" and not line.isdigit():
+                        card_description += line + "."
+                if card_description != "":
+                    descriptions[card_description] = card_name
+        else:
+            continue
+    
+    with open(descriptions_pickle_name, 'wb') as f:
+        pickle.dump(descriptions, f)
+
 async def try_open_alias(message):
     global file_alias
 
@@ -94,7 +158,7 @@ async def try_open_descriptions(message):
         with open(descriptions_pickle_name, 'wb') as f:
             pickle.dump(descriptions, f)
 
-async def query_card(message):
+async def query_remote(message):
     global filenames
 
     # If it's just a ?, ignore everything
@@ -127,6 +191,68 @@ async def query_card(message):
         for i in ambiguous_names[closest]:
             ambiguous_message += f"{i}\n"
         await message.channel.send(ambiguous_message)
+
+async def query_pickle(message):
+    global file_descriptions
+
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify atleast one argument, the search query.")
+        return
+
+    if not file_alias:
+        await try_open_alias(message)
+    if not files:
+        populate_files()
+    if not descriptions:
+        await try_open_descriptions(message)
+        if not descriptions:
+            try:
+                pickle_descriptions()
+            except FileNotFoundError:
+                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
+                return
+    if not file_descriptions:
+        file_descriptions = descriptions.keys()
+    
+    desc = " ".join(message.content.split()[1:]).strip().lower()
+    closest = populate_descriptions(desc)
+
+    for close in closest:
+        try:
+            await message.channel.send(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{files[descriptions[close]]}")
+        except KeyError:
+            await message.channel.send("No such key: %s" % descriptions[close])
+            descriptions.pop(close)
+            with open(descriptions_pickle_name, 'wb') as f:
+                pickle.dump(descriptions, f)
+    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
+
+async def howmany_description(message):
+    global file_descriptions
+
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify atleast one argument, the search query.")
+        return
+
+    if not file_alias:
+        await try_open_alias(message)
+    if not files:
+        populate_files()
+    if not descriptions:
+        await try_open_descriptions(message)
+        if not descriptions:
+            try:
+                pickle_descriptions()
+            except FileNotFoundError:
+                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
+                return
+    if not file_descriptions:
+        file_descriptions = descriptions.keys()
+    
+    desc = " ".join(message.content.split()[1:]).strip().lower()
+    closest = populate_descriptions(desc)
+
+    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
 async def alias_card(message):
     global filenames
@@ -202,127 +328,6 @@ async def print_all_aliases(message):
         all_aliases += f"{key:20s} -> {val}\n"
     
     await message.channel.send(f"{all_aliases}```Done.")
-
-def populate_descriptions():
-    dir = os.fsencode(descriptions_dir)
-        
-    for file in os.listdir(dir):
-        filename = os.fsdecode(file)
-        if filename.endswith(".txt"): 
-            card_name = filename.split(".psd")[0].lower() + ".png"
-            with open(os.path.join(dir, file)) as card:
-                card_description = ""
-                for line in card:
-                    line = line.strip().lower()
-                    if line.startswith("["):
-                        line = line[1:-1].strip()
-                    if line != "health" and line != "defense" and line != "attack" and line != "speed" and line != "hp" and line != "def" and line != "atk" and line != "spd" and line != "attribute" and line != "ability" and line != "name" and line != "line" and not line.isdigit():
-                        card_description += line + "."
-                if card_description != "":
-                    descriptions[card_description] = card_name
-        else:
-            continue
-    
-    with open(descriptions_pickle_name, 'wb') as f:
-        pickle.dump(descriptions, f)
-
-async def find_description(message):
-    global file_descriptions
-
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify atleast one argument, the search query.")
-        return
-
-    if not file_alias:
-        await try_open_alias(message)
-    if not files:
-        populate_files()
-    if not descriptions:
-        await try_open_descriptions(message)
-        if not descriptions:
-            try:
-                populate_descriptions()
-            except FileNotFoundError:
-                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
-                return
-    if not file_descriptions:
-        file_descriptions = descriptions.keys()
-    
-    desc = " ".join(message.content.split()[1:]).strip().lower()
-    closest = []
-    if desc.startswith("\"") and desc.endswith("\""):
-        desc = desc[1:-1].strip()
-        for card in file_descriptions:
-            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
-                line = line.strip()
-                if desc in line:
-                    closest.append(card)
-                    break
-    else:
-        for card in file_descriptions:
-            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
-                line = line.strip()
-                if desc in line:
-                    closest.append(card)
-                    break
-                elif difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
-                    closest.append(card)
-                    break
-
-    for close in closest:
-        try:
-            await message.channel.send(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{files[descriptions[close]]}")
-        except KeyError:
-            await message.channel.send("No such key: %s" % descriptions[close])
-            descriptions.pop(close)
-            with open(descriptions_pickle_name, 'wb') as f:
-                pickle.dump(descriptions, f)
-    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
-
-async def howmany_description(message):
-    global file_descriptions
-
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify atleast one argument, the search query.")
-        return
-
-    if not file_alias:
-        await try_open_alias(message)
-    if not files:
-        populate_files()
-    if not descriptions:
-        await try_open_descriptions(message)
-        if not descriptions:
-            try:
-                populate_descriptions()
-            except FileNotFoundError:
-                await message.channel.send("No descriptions are pickled, and no files designated for pickling either.")
-                return
-    if not file_descriptions:
-        file_descriptions = descriptions.keys()
-    
-    desc = " ".join(message.content.split()[1:]).strip().lower()
-    closest = 0
-    if desc.startswith("\"") and desc.endswith("\""):
-        desc = desc[1:-1].strip()
-        for card in file_descriptions:
-            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
-                line = line.strip()
-                if desc in line:
-                    closest += 1
-                    break
-    else:
-        for card in file_descriptions:
-            for line in re.split("(?<!\d)\.(?!\d)|,|:|;", card):
-                line = line.strip()
-                if desc in line:
-                    closest += 1
-                    break
-                elif difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
-                    closest += 1
-                    break
-
-    await message.channel.send("%d Results found for %s!" % (closest, desc))
 
 async def set_match_ratio(message):
     global match_ratio

@@ -5,7 +5,7 @@ from discord import app_commands
 import global_config
 import config
 from commands.update_bot import restart_bot
-from commands.query_card import query_card, find_description, howmany_description, set_match_ratio
+from commands.query_card import query_remote, query_pickle, howmany_description, set_match_ratio
 
 # Intents permissions
 intents = discord.Intents.default()
@@ -26,13 +26,13 @@ async def on_message(message):
     if message.author.id == 1011982177023561840:
         await restart_bot(message)
     elif message.content.startswith("?find"):
-        await find_description(message)
+        await query_pickle(message)
     elif message.content.startswith("?howmany"):
         await howmany_description(message)
     elif message.content.startswith("?set_ratio"):
         await set_match_ratio(message)
     elif message.content.startswith("?"):
-        await query_card(message)
+        await query_remote(message)
     else:
         for key, val in commands.items():
             if message.content.startswith(key):

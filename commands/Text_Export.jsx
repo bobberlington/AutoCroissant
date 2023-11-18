@@ -168,45 +168,45 @@ spd = "";
 					// Layer is visible and Text --> we can haz copy paste!
 					//  && (currentLayer.kind == LayerKind.TEXT)
 					if ( (currentLayer.visible) ) {
-						if (path.toLowerCase().indexOf("darks") !== -1) {
-							if (path.toLowerCase().indexOf("hp") !== -1) {
+						if (path.toLowerCase().indexOf("bars/dark") !== -1) {
+							if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("hp") !== -1) {
 								fileOut.writeln('[ hp=' + currentLayer.name + ' ]');
 								hp = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("def") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("def") !== -1) {
 								fileOut.writeln('[ def=' + currentLayer.name + ' ]');
 								def = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("atk") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("atk") !== -1) {
 								fileOut.writeln('[ atk=' + currentLayer.name + ' ]');
 								atk = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("spd") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("spd") !== -1) {
 								fileOut.writeln('[ spd=' + currentLayer.name + ' ]');
 								spd = currentLayer.name;
 							}
-						} else if (path.toLowerCase().indexOf("/bars/hp") !== -1 || path.toLowerCase().indexOf("/bars/def") !== -1 || path.toLowerCase().indexOf("/bars/atk") !== -1 || path.toLowerCase().indexOf("/bars/spd") !== -1) {
+						} else if (path.toLowerCase().indexOf("bars/hp") !== -1 || path.toLowerCase().indexOf("bars/def") !== -1 || path.toLowerCase().indexOf("bars/atk") !== -1 || path.toLowerCase().indexOf("bars/spd") !== -1) {
 							write_stats_at_end = true;
-							if (path.toLowerCase().indexOf("hp") !== -1) {
+							if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("hp") !== -1) {
 								hp = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("def") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("def") !== -1) {
 								def = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("atk") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("atk") !== -1) {
 								atk = currentLayer.name;
-							} else if (path.toLowerCase().indexOf("spd") !== -1) {
+							} else if (!isNaN(currentLayer.name) && path.toLowerCase().indexOf("spd") !== -1) {
 								spd = currentLayer.name;
 							}
-						} else if (path.toLowerCase().indexOf("stat") !== -1) {
+						} else if (currentLayer.name.toLowerCase().indexOf("name") !== -1 || path.toLowerCase().indexOf("stat") !== -1 || path.toLowerCase().indexOf("bar") !== -1 || path.toLowerCase().indexOf("line") !== -1 || path.toLowerCase().indexOf("image") !== -1) {
 							continue;
 						} else
 							fileOut.writeln('[ ' + currentLayer.name + ' ]');
 						if (currentLayer.kind == LayerKind.TEXT)
 							fileOut.writeln(currentLayer.textItem.contents);
 					} else {
-						if (hp == "10" && path.toLowerCase().indexOf("hp") !== -1)
+						if (!isNaN(currentLayer.name) && hp == "10" && path.toLowerCase().indexOf("hp") !== -1)
 							hp = "0";
-						else if (def == "10" && path.toLowerCase().indexOf("def") !== -1)
+						else if (!isNaN(currentLayer.name) && def == "10" && path.toLowerCase().indexOf("def") !== -1)
 							def = "0";
-						else if (atk == "10" && path.toLowerCase().indexOf("atk") !== -1)
+						else if (!isNaN(currentLayer.name) && atk == "10" && path.toLowerCase().indexOf("atk") !== -1)
 							atk = "0";
-						else if (spd == "10" && path.toLowerCase().indexOf("spd") !== -1)
+						else if (!isNaN(currentLayer.name) && spd == "10" && path.toLowerCase().indexOf("spd") !== -1)
 							spd = "0";
 						else if (!hp && path.toLowerCase().indexOf("hp") !== -1)
 							hp = "-1";
