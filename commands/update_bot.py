@@ -43,7 +43,7 @@ async def purge(message, limit : int, id, bulk = False):
         return
 
     if limit == -1:
-        limit = 1000000000
+        limit = 1000000
 
-    deleted = await message.channel.purge(limit = limit, check = lambda message : message.author.id == id, bulk = bulk)
-    await message.channel.send(f"Deleted {len(deleted)} message(s) from user %d" % id)
+    await message.channel.send("Purging messages from user %s." % id)
+    await message.channel.send("Deleted %d message(s) from user %s." % (len(await message.channel.purge(limit = limit, check = lambda message : message.author.id == id, bulk = bulk)), id))
