@@ -4,7 +4,7 @@ from discord import app_commands
 
 import global_config
 import config
-from commands.update_bot import restart_bot
+from commands.update_bot import restart_bot, purge
 from commands.query_card import query_remote, query_pickle, howmany_description, set_match_ratio
 
 # Intents permissions
@@ -12,7 +12,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 client = discord.Client(intents=intents)
-tree = app_commands.CommandTree(client)
+#tree = app_commands.CommandTree(client)
 commands = global_config.commands
 
 # Events
@@ -33,6 +33,10 @@ async def on_message(message):
         await set_match_ratio(message)
     elif message.content.startswith("?"):
         await query_remote(message)
+    elif message.content.startswith(".purge"):
+        await purge(message, -1, client.user.id)
+    elif message.content.startswith(".quickpurge"):
+        await purge(message, -1, client.user.id, bulk = True)
     else:
         for key, val in commands.items():
             if message.content.startswith(key):

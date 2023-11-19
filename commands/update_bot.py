@@ -4,19 +4,25 @@ import git
 
 import config
 
-async def restart_bot(message):
-    await message.channel.send("Restarting bot!")
-    os.execv(sys.executable, ['python'] + sys.argv)
-
-async def stop_bot(message):
+def perms_check(message):
     try:
         admins = config.admins
     except AttributeError:
         admins = []
 
     if message.author.id not in admins:
+        return 1
+    return 0
+
+async def restart_bot(message):
+    await message.channel.send("Restarting bot!")
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+async def stop_bot(message):
+    if perms_check(message) != 0:
         await message.channel.send("You do not have permission to stop the bot.")
         return
+
     await message.channel.send("Stopping bot!")
     # Mac kill
     os.system('kill %d' % os.getpid())
@@ -30,3 +36,14 @@ async def git_pull(message):
 async def update_bot(message):
     await git_pull(message)
     await restart_bot(message)
+
+async def purge(message, limit : int, id, bulk = False):
+    if perms_check(message) != 0:
+        await message.channel.send("You do not have permission to stop purge messages.")
+        return
+
+    if limit == -1:
+        limit = 1000000000
+
+    deleted = await message.channel.purge(limit = limit, check = lambda message : message.author.id == id, bulk = bulk)
+    await message.channel.send(f"Deleted {len(deleted)} message(s) from user %d" % id)

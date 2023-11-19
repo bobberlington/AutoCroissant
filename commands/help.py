@@ -4,6 +4,8 @@ commands = {
     ".stop:"                            : "Stops the bot.",
     ".pull:"                            : "Does a git pull, and reports status.",
     ".update:"                          : "Does a pull, then restarts.",
+    ".purge:"                           : "Deletes all messages by the bot, doesnt require perms.",
+    ".quickpurge:"                      : "Deletes all messages by the bot quickly, requires perms.",
     ".alias <Card_Name> <Card_Path>:"   : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.",
     ".del_alias <Card_Name>:"           : "Permanantly deletes the alias previously mapped to the name.",
     ".print_aliases:"                   : "Prints all existing aliases.",
