@@ -16,7 +16,10 @@ def perms_check(message):
 
 async def restart_bot(message):
     await message.channel.send("Restarting bot!")
-    os.execv(sys.executable, ['python'] + sys.argv)
+    try:
+        os.execv('./startup.sh', sys.argv)
+    except FileNotFoundError:
+        os.execv(sys.executable, ['python'] + sys.argv)
 
 async def stop_bot(message):
     if perms_check(message) != 0:
