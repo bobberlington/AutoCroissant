@@ -1,6 +1,6 @@
 # Imports
 import discord
-from discord import app_commands
+#from discord import app_commands
 
 import global_config
 import config

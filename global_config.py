@@ -1,6 +1,7 @@
 from commands.help import print_help
 from commands.update_bot import restart_bot, stop_bot, git_pull, update_bot
 from commands.query_card import alias_card, delete_alias, print_all_aliases
+from commands.frankenstein import frankenstein
 
 # Insert new commands and their function hooks in here
 commands = {
@@ -12,6 +13,7 @@ commands = {
     ".alias"            : alias_card,
     ".del_alias"        : delete_alias,
     ".print_aliases"    : print_all_aliases,
+    ".frankenstein"     : frankenstein,
 }
 
 list_of_all_attributes = [
