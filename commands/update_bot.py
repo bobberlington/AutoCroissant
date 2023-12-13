@@ -34,8 +34,11 @@ async def stop_bot(message):
 
 async def git_push(message):
     await message.channel.send("Pushing aliases.pkl!")
-    git.cmd.Git(sys.argv).add('aliases.pkl')
-    git.cmd.Git(sys.argv).commit('-m', 'aliases.pkl')
+    try:
+        git.cmd.Git(sys.argv).add('aliases.pkl')
+        git.cmd.Git(sys.argv).commit('-m', 'aliases.pkl')
+    except git.GitCommandError:
+        await message.channel.send("aliases.pkl is already up to date.")
     await message.channel.send("%s" % git.cmd.Git(sys.argv).push())
 
 async def git_pull(message):
