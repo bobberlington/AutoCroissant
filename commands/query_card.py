@@ -54,11 +54,11 @@ def populate_files():
 
     # Fill up the aliases
     # keys of aliases are the aliases, values are the filenames they point to
-    print(file_alias)
     for i in file_alias.keys():
         if file_alias[i] in files:
             files[f"{i}.png"] = files[file_alias[i]]
         else:
+            print([val for _, val in files.items() if val.lower().endswith(file_alias[i])])
             files[f"{i}.png"] = [val for _, val in files.items() if val.lower().endswith(file_alias[i])][0]
     
     return 200
