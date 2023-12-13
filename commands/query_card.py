@@ -260,7 +260,7 @@ async def howmany_description(message):
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
 async def alias_card(message):
-    global filenames
+    global filenames, file_alias
 
     if len(message.content.split()) != 3:
          await message.channel.send("Must specify exactly two arguments, the key and value.")
