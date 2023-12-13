@@ -32,8 +32,15 @@ async def stop_bot(message):
     # Windows kill
     os.system('taskkill /F /PID %d' % os.getpid())
 
+async def git_push(message):
+    await message.channel.send("Pushing aliases.pkl!")
+    await message.channel.send("%s" % git.cmd.Git(sys.argv).add('aliases.pkl'))
+    await message.channel.send("%s" % git.cmd.Git(sys.argv).commit('aliases.pkl'))
+    await message.channel.send("%s" % git.cmd.Git(sys.argv).push())
+
 async def git_pull(message):
     await message.channel.send("Doing a git pull!")
+    await message.channel.send("%s" % git.cmd.Git(sys.argv).reset('--hard'))
     await message.channel.send("%s" % git.cmd.Git(sys.argv).pull())
 
 async def update_bot(message):
