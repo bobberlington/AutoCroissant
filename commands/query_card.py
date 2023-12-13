@@ -58,8 +58,9 @@ def populate_files():
         if file_alias[i] in files:
             files[f"{i}.png"] = files[file_alias[i]]
         else:
-            print([val for _, val in files.items() if val.lower().endswith(file_alias[i])])
-            files[f"{i}.png"] = [val for _, val in files.items() if val.lower().endswith(file_alias[i])][0]
+            val = [val for _, val in files.items() if val.lower().endswith(file_alias[i])]
+            if val:
+                files[f"{i}.png"] = val[0]
     
     return 200
 
