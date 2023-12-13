@@ -48,6 +48,7 @@ async def git_pull(message):
     await message.channel.send("%s" % git.cmd.Git(sys.argv).pull())
 
 async def update_bot(message):
+    await git_push(message)
     await git_pull(message)
     await restart_bot(message)
 
