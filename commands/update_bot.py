@@ -33,11 +33,12 @@ async def stop_bot(message):
     os.system('taskkill /F /PID %d' % os.getpid())
 
 async def git_push(message):
-    await message.channel.send("Pushing aliases.pkl!")
+    await message.channel.send("Pushing aliases.pkl...")
     try:
         git.cmd.Git(sys.argv).add('aliases.pkl')
         git.cmd.Git(sys.argv).commit('-m', 'aliases.pkl')
-        await message.channel.send("%s" % git.cmd.Git(sys.argv).push())
+        git.cmd.Git(sys.argv).push()
+        await message.channel.send("Succesfully pushed!")
     except git.GitCommandError:
         await message.channel.send("aliases.pkl is already up to date.")
 
