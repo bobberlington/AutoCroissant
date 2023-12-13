@@ -103,6 +103,11 @@ def populate_descriptions(desc):
         return farthest
     return closest
 
+def should_it_be_pickled(line):
+    return (line != "attribute" and line != "ability" and line != "name" and line != "line"
+            and line != "health" and line != "hp" and line != "defense" and line != "def"
+            and line != "attack" and line != "atk" and line != "speed" and line != "spd" and not line.isdigit())
+
 def pickle_descriptions():
     dir = os.fsencode(descriptions_dir)
         
@@ -116,7 +121,7 @@ def pickle_descriptions():
                     line = line.strip().lower()
                     if line.startswith("["):
                         line = line[1:-1].strip()
-                    if line != "attribute" and line != "ability" and line != "name" and line != "line" and not line.isdigit():
+                    if should_it_be_pickled(line):
                         card_description += line + "."
                 if card_description != "":
                     descriptions[card_description] = card_name
