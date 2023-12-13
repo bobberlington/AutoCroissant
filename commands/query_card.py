@@ -54,6 +54,7 @@ def populate_files():
 
     # Fill up the aliases
     # keys of aliases are the aliases, values are the filenames they point to
+    print(file_alias)
     for i in file_alias.keys():
         if file_alias[i] in files:
             files[f"{i}.png"] = files[file_alias[i]]
@@ -260,7 +261,7 @@ async def howmany_description(message):
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
 async def alias_card(message):
-    global filenames, file_alias
+    global filenames
 
     if len(message.content.split()) != 3:
          await message.channel.send("Must specify exactly two arguments, the key and value.")
