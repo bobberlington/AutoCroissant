@@ -5,7 +5,7 @@ import pickle
 # Only need this import when populating card descriptions
 import os
 import re
-#from global_config import list_of_all_attributes, list_of_all_stars
+#from global_config import list_of_all_types, list_of_all_attributes, list_of_all_stars
 
 alias_pickle_name = "aliases.pkl"
 file_alias = {}
@@ -46,9 +46,7 @@ def populate_files():
                         ambiguous_names[png_filename].append(old_filename)
                     ambiguous_names[png_filename].append(new_filename)
                 else:
-                    ambiguous_names[png_filename] = []
-                    ambiguous_names[png_filename].append(old_filename)
-                    ambiguous_names[png_filename].append(new_filename)
+                    ambiguous_names[png_filename] = [old_filename, new_filename]
             else:
                 files[png_filename] = filepath.replace(" ", "%20")
 

@@ -17,7 +17,7 @@ commands = {
     ".frankenstein"     : frankenstein,
 }
 
-list_of_all_attributes = [
+list_of_all_types = [
     "active",
     "attack",
     "buff",
@@ -44,6 +44,34 @@ list_of_all_attributes = [
     "error",
     "water",
     "wind"
+]
+
+list_of_all_attributes = [
+    "nature",
+    "monster",
+    "demon",
+    "brute",
+    "military",
+    "leadership",
+    "martial Artist",
+    "mage",
+    "business",
+    "performer",
+    "engineer",
+    "industrial",
+    "rogue",
+    "trickster",
+    "explorer",
+    "royalty",
+    "prodigy",
+    "spiritual",
+    "haunted",
+    "spectral",
+    "infected",
+    "mythical",
+    "higher Being",
+    "god",
+    "creator"
 ]
 
 list_of_all_stars = [
