@@ -1,3 +1,6 @@
+import discord
+
+
 commands = {
     ".help:"                            : "Prints this help message.",
     ".restart:"                         : "Restarts the bot.",
@@ -11,6 +14,7 @@ commands = {
     ".del_alias <Card_Name>:"           : "Permanantly deletes the alias previously mapped to the name.",
     ".print_aliases:"                   : "Prints all existing aliases.",
     ".frankenstein <card1>,<card2>,...:": "Takes a list of creatures to mash together, and returns an image of the frankensteined creatures.",
+    ".ai <optional url/img> <prompt>"   : "Takes either an image, url, or nothing except for a prompt, and generates an ai image.",
     "?find <Card_Description>:"         : "Searches for all cards with the requested description and posts their image.",
     "?howmany <Card_Description>:"      : "Posts number of cards with requested description.",
     "<Card_Description>:"               : "Additionally, for ?find and ?howmany,\nIf the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
@@ -22,11 +26,11 @@ commands = {
     "?<Card_Name>:"                     : "Posts the requested <Card_Name> image from the repo.",
 } 
 
-async def print_help(message):
+async def print_help(message: discord.Message):
     help_msg = f"```Available commands:\n\n"
     for cmd in commands:
         help_msg += f"{cmd:15s} {commands[cmd]}\n\n"
-        if len(help_msg) > 1500:
+        if len(help_msg) > 1000:
             await message.channel.send(help_msg + "```")
             help_msg = "```"
     await message.channel.send(help_msg + "```")

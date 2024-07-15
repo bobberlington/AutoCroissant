@@ -1,11 +1,10 @@
-# Imports
-import discord
-#from discord import app_commands
-
-import global_config
 import config
+import discord
+from discord.ext import tasks
+import global_config
 from commands.update_bot import restart_bot, purge
 from commands.query_card import query_remote, query_pickle, howmany_description, set_match_ratio
+from commands.tools import messages, files
 
 # Intents permissions
 intents = discord.Intents.default()
@@ -19,9 +18,10 @@ commands = global_config.commands
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
+    check_pipeline.start()
 
 @client.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     # This ID is for the GitHub webhook bot from the TTS repo
     if message.author.id == 1011982177023561840:
         await restart_bot(message)
@@ -43,5 +43,13 @@ async def on_message(message):
                 await val(message)
                 break
 
+@tasks.loop(seconds=3)
+async def check_pipeline():
+    while len(messages) > 0:
+        id, msg = messages.pop(0)
+        await client.get_channel(id).send(msg)
+    while len(files) > 0:
+        id, file = files.pop(0)
+        await client.get_channel(id).send(file=file)
 
 client.run(config.token)

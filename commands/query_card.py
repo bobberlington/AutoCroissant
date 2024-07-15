@@ -1,3 +1,4 @@
+import discord
 import requests
 import difflib
 import pickle
@@ -62,7 +63,7 @@ def populate_files():
     
     return 200
 
-def populate_descriptions(desc):
+def populate_descriptions(desc: str):
     desc = desc.strip()
     if "|" in desc:
         desc1, desc2 = desc.split("|", 1)
@@ -103,7 +104,7 @@ def populate_descriptions(desc):
         return farthest
     return closest
 
-def should_it_be_pickled(line):
+def should_it_be_pickled(line: str):
     return (line != "attribute" and line != "ability" and line != "name" and line != "line"
             and line != "health" and line != "hp" and line != "defense" and line != "def"
             and line != "attack" and line != "atk" and line != "speed" and line != "spd" and not line.isdigit())
@@ -131,7 +132,7 @@ def pickle_descriptions():
     with open(descriptions_pickle_name, 'wb') as f:
         pickle.dump(descriptions, f)
 
-async def try_open_alias(message):
+async def try_open_alias(message: discord.Message):
     global file_alias
 
     await message.channel.send("Trying to open %s" % alias_pickle_name)
@@ -147,7 +148,7 @@ async def try_open_alias(message):
         with open(alias_pickle_name, 'wb') as f:
             pickle.dump(file_alias, f)
 
-async def try_open_descriptions(message):
+async def try_open_descriptions(message: discord.Message):
     global descriptions
 
     await message.channel.send("Trying to open %s" % descriptions_pickle_name)
@@ -163,7 +164,7 @@ async def try_open_descriptions(message):
         with open(descriptions_pickle_name, 'wb') as f:
             pickle.dump(descriptions, f)
 
-async def query_remote(message):
+async def query_remote(message: discord.Message):
     global filenames
 
     # If it's just a ?, ignore everything
@@ -197,7 +198,7 @@ async def query_remote(message):
             ambiguous_message += f"{i}\n"
         await message.channel.send(ambiguous_message)
 
-async def query_pickle(message):
+async def query_pickle(message: discord.Message):
     global file_descriptions
 
     if len(message.content.split()) < 2:
@@ -232,7 +233,7 @@ async def query_pickle(message):
                 pickle.dump(descriptions, f)
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
-async def howmany_description(message):
+async def howmany_description(message: discord.Message):
     global file_descriptions
 
     if len(message.content.split()) < 2:
@@ -259,7 +260,7 @@ async def howmany_description(message):
 
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
-async def alias_card(message):
+async def alias_card(message: discord.Message):
     global filenames
 
     if len(message.content.split()) != 3:
@@ -295,7 +296,7 @@ async def alias_card(message):
     with open(alias_pickle_name, 'wb') as f:
         pickle.dump(file_alias, f)
 
-async def delete_alias(message):
+async def delete_alias(message: discord.Message):
     global filenames
 
     if len(message.content.split()) != 2:
@@ -324,7 +325,7 @@ async def delete_alias(message):
     with open(alias_pickle_name, 'wb') as f:
         pickle.dump(file_alias, f)
 
-async def print_all_aliases(message):
+async def print_all_aliases(message: discord.Message):
     if not file_alias:
         await try_open_alias(message)
     
@@ -334,7 +335,7 @@ async def print_all_aliases(message):
     
     await message.channel.send(f"{all_aliases}```Done.")
 
-async def set_match_ratio(message):
+async def set_match_ratio(message: discord.Message):
     global match_ratio
 
     if len(message.content.split()) < 2:

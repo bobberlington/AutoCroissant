@@ -1,10 +1,7 @@
 import difflib
-import cv2
 import discord
-from urllib.request import urlopen
-import numpy as np
-from io import BytesIO
 
+from commands.tools import url_to_cv2image, cv2discordfile
 from commands.query_card import populate_files, try_open_alias
 
 file_alias = {}
@@ -12,22 +9,7 @@ files = {}
 ambiguous_names = {}
 filenames = []
 
-def url_to_image(url, readFlag=cv2.IMREAD_COLOR):
-    resp = urlopen(url)
-    image = np.asarray(bytearray(resp.read()), dtype="uint8")
-    image = cv2.imdecode(image, readFlag)
-
-    return image
-
-def cv2discordfile(img):
-    img_encode = cv2.imencode('.png', img)[1]
-    data_encode = np.array(img_encode)
-    byte_encode = data_encode.tobytes()
-    byteImage = BytesIO(byte_encode)
-    image = discord.File(byteImage, filename='image.png')
-    return image
-
-async def frankenstein(message):
+async def frankenstein(message: discord.Message):
     global file_alias, files, filenames, ambiguous_names
     from commands.query_card import file_alias, files, filenames, ambiguous_names, match_ratio
 
@@ -54,7 +36,7 @@ async def frankenstein(message):
         except IndexError:
             await message.channel.send("No card found for query %s!" % creature)
             return
-        images.append(url_to_image(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{files[closest]}"))
+        images.append(url_to_cv2image(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{files[closest]}"))
 
         # If the filename was ambiguous, make a note of that.
         if closest in ambiguous_names:
