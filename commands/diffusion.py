@@ -36,16 +36,32 @@ def diffusion(message: discord.Message):
         messages.append((message.channel.id, "Initializing pipeline, this will take a while..."))
         txt2img_pipe, img2img_pipe = init_pipeline()
 
-    prompt = "dwarf with a long beard walking on a stone road towards a castle with a hammer in his hand"
-    steps = 25
+    prompt = ""
+    steps = 50
     height = 512
     width = 512
     guidance = 7
     image = parse_msg_image(message)
 
-    query = message.content.split(".ai")[1].strip().lower().split()
+    query = message.content.split(".ai")[1].replace(",", "").strip().lower().split()
     if len(query) > 0 and query[0].startswith("http"):
         query.pop(0)
+
+    for word in query.copy():
+        if word.startswith("steps="):
+            steps = int(word[len("steps="):])
+            query.remove(word)
+        elif word.startswith("height="):
+            height = int(word[len("height="):])
+            query.remove(word)
+        elif word.startswith("width="):
+            width = int(word[len("width="):])
+            query.remove(word)
+        elif word.startswith("guidance="):
+            guidance = int(word[len("guidance="):])
+            query.remove(word)
+    prompt = " ".join(query)
+    messages.append((message.channel.id, f"steps={steps}, height={height}, width={width}, guidance={guidance}, prompt={prompt}."))
 
     if image is None:
         files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=guidance).images[0])))
