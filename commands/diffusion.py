@@ -6,6 +6,7 @@ from commands.tools import to_thread, url_to_pilimage, pildiscordfile, messages,
 
 mfolder = "./models/"
 model = "rpg_v5.safetensors"
+device_no = "1"
 negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, blurry"
 txt2img_pipe = img2img_pipe = None
 
@@ -23,10 +24,11 @@ def parse_msg_image(message: discord.Message):
 def init_pipeline():
     txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=torch.float16, safety_checker=None, use_safetensors=True)
     if torch.cuda.is_available():
-        txt2img_pipe.to("cuda")
+        txt2img_pipe.to(f"cuda:{device_no}")
     txt2img_pipe.enable_attention_slicing()
 
     img2img_pipe = StableDiffusionImg2ImgPipeline.from_pipe(txt2img_pipe)
+    torch.cuda.empty_cache()
     return txt2img_pipe, img2img_pipe
 
 @to_thread
