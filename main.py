@@ -2,9 +2,9 @@ import config
 import discord
 from discord.ext import tasks
 import global_config
-from commands.update_bot import restart_bot, purge
 from commands.query_card import query_remote, query_pickle, howmany_description, set_match_ratio
 from commands.tools import messages, files
+from commands.update_bot import restart_bot, purge
 
 # Intents permissions
 intents = discord.Intents.default()
