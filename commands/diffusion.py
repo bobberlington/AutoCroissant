@@ -12,17 +12,12 @@ negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal qua
 txt2img_pipe = img2img_pipe = None
 
 def parse_msg_image(message: discord.Message):
-    image = None
     if len(message.attachments) > 0 and message.attachments[0].content_type.startswith("image"):
-        image = url_to_pilimage(message.attachments[0].url)
+        return url_to_pilimage(message.attachments[0].url)
     else:
-        query = message.content.split(".ai")[1].strip().lower()
+        query = message.content.split(".ai")[1].strip()
         if query.startswith("http"):
-            image = url_to_pilimage(query.split()[0])
-
-    if not image is None:
-        image = image.convert("RGB")
-    return image
+            return url_to_pilimage(query.split()[0])
 
 def init_pipeline():
     dtype = torch.float16
@@ -64,7 +59,7 @@ def diffusion(message: discord.Message):
     strength = 0.8
     image = parse_msg_image(message)
 
-    query = message.content.split(".ai")[1].replace(",", "").strip().lower().split()
+    query = message.content.split(".ai")[1].replace(",", " ").replace("  ", " ").strip().lower().split()
     if len(query) > 0 and query[0].startswith("http"):
         query.pop(0)
 
@@ -94,5 +89,5 @@ def diffusion(message: discord.Message):
         files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=guidance).images[0])))
     else:
         width, height = image.size
-        image = image.resize((int(width * resize), int(height * resize)))
+        image = image.convert("RGB").resize((int(width * resize), int(height * resize)))
         files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image, strength=strength, prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, guidance_scale=guidance).images[0])))

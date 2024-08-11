@@ -22,8 +22,7 @@ def to_thread(func: typing.Callable) -> typing.Coroutine:
 def url_to_cv2image(url: str, readFlag=cv2.IMREAD_COLOR) -> np.ndarray:
     resp = get(url, stream=True).raw
     image = np.asarray(bytearray(resp.read()), dtype="uint8")
-    image = cv2.imdecode(image, readFlag)
-    return image
+    return cv2.imdecode(image, readFlag)
 
 def cv2discordfile(img: np.ndarray) -> discord.File:
     img_encode = cv2.imencode('.png', img)[1]
