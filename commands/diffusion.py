@@ -1,13 +1,16 @@
 from diffusers import StableDiffusionPipeline, StableDiffusionImg2ImgPipeline
 import discord
+from os import listdir
 import torch
 
 from commands.tools import to_thread, url_to_pilimage, pildiscordfile, messages, files
 
 mfolder = "./models/"
+lfolder = f"{mfolder}loras/"
 model = "rpg_v5.safetensors"
+lora = ""
 device = "gpu"
-device_no = "1"
+device_no = "0"
 negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, blurry"
 txt2img_pipe = img2img_pipe = None
 
@@ -20,6 +23,7 @@ def parse_msg_image(message: discord.Message):
             return url_to_pilimage(query.split()[0])
 
 def init_pipeline():
+    global txt2img_pipe, img2img_pipe
     dtype = torch.float16
     if device == "cpu":
         dtype = torch.float32
@@ -30,23 +34,59 @@ def init_pipeline():
 
     img2img_pipe = StableDiffusionImg2ImgPipeline.from_pipe(txt2img_pipe)
     torch.cuda.empty_cache()
-    return txt2img_pipe, img2img_pipe
 
 async def set_device(message: discord.Message):
-    global device, device_no
+    global device, device_no, txt2img_pipe, img2img_pipe
     if len(message.content.split()) < 3:
         await message.channel.send("Must specify exactly two arguments, the new device and device #. The old device was %s and the old device# was %s." % (device, device_no))
         return
 
     device, device_no = message.content.split()[1:]
+    del txt2img_pipe
+    del img2img_pipe
+    txt2img_pipe = img2img_pipe = None
+    torch.cuda.empty_cache()
     await message.channel.send("New device of %s and device# of %s set!" % (device, device_no))
+
+async def set_model(message: discord.Message):
+    global model, txt2img_pipe, img2img_pipe
+    if len(message.content.split()) < 2:
+        safetensors = []
+        for m in listdir(mfolder):
+            if m.endswith('.safetensors'):
+                safetensors.append(m)
+        await message.channel.send("Must specify exactly one argument, the new model. The old model was **%s**. Possible choices are **%s**." % (model, ', '.join(safetensors)))
+        return
+
+    model = message.content.split()[1]
+    del txt2img_pipe
+    del img2img_pipe
+    txt2img_pipe = img2img_pipe = None
+    torch.cuda.empty_cache()
+    await message.channel.send("New model of %s set!" % model)
+
+async def set_lora(message: discord.Message):
+    global lora, txt2img_pipe, img2img_pipe
+    if len(message.content.split()) < 2:
+        safetensors = []
+        for m in listdir(lfolder):
+            if m.endswith('.safetensors'):
+                safetensors.append(m)
+        await message.channel.send("Must specify exactly one argument, the new lora. The old lora was **%s**. Possible choices are **%s**." % (lora, ', '.join(safetensors)))
+        return
+
+    lora = message.content.split()[1]
+    del txt2img_pipe
+    del img2img_pipe
+    txt2img_pipe = img2img_pipe = None
+    torch.cuda.empty_cache()
+    await message.channel.send("New model of %s set!" % lora)
 
 @to_thread
 def diffusion(message: discord.Message):
-    global txt2img_pipe, img2img_pipe
     if txt2img_pipe is None:
         messages.append((message.channel.id, "Initializing pipeline, this will take a while..."))
-        txt2img_pipe, img2img_pipe = init_pipeline()
+        init_pipeline()
 
     prompt = ""
     steps = 50
@@ -81,11 +121,13 @@ def diffusion(message: discord.Message):
             strength = float(word[len("strength="):])
             query.remove(word)
     prompt = " ".join(query)
+    if not image is None:
+        width, height = image.size
+        width = int(width * resize)
+        height = int(height * resize)
     messages.append((message.channel.id, f"steps={steps}, height={height}, width={width}, resize={resize}, guidance={guidance}, strength={strength}, prompt={prompt}."))
 
     if image is None:
         files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=guidance).images[0])))
     else:
-        width, height = image.size
-        image = image.convert("RGB").resize((int(width * resize), int(height * resize)))
-        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image, strength=strength, prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, guidance_scale=guidance).images[0])))
+        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image.convert("RGB").resize((width, height)), strength=strength, prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, guidance_scale=guidance).images[0])))

@@ -2,7 +2,7 @@ from commands.help import print_help
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
 from commands.query_card import alias_card, delete_alias, print_all_aliases
 from commands.frankenstein import frankenstein
-from commands.diffusion import diffusion, set_device
+from commands.diffusion import diffusion, set_device, set_model, set_lora
 
 # Insert new commands and their function hooks in here
 commands = {
@@ -18,6 +18,8 @@ commands = {
     ".frankenstein"     : frankenstein,
     ".ai"               : diffusion,
     ".set_device"       : set_device,
+    ".set_model"        : set_model,
+    ".set_lora"         : set_lora,
 }
 
 list_of_all_types = [

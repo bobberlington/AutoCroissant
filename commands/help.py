@@ -16,6 +16,8 @@ commands = {
     ".frankenstein <card1>,<card2>,...:"        : "Takes a list of creatures to mash together, and returns an image of the frankensteined creatures.",
     ".ai <optional url/img> <prompt>"           : "Takes either an image, url, or nothing except for a prompt, and generates an ai image.",
     ".set_device <New_Device> <New_Device#>:"   : "If this is called with no arguments, returns the device and device#. Otherwise, sets the device and device#.",
+    ".set_model <New_Model>:"                   : "If this is called with no arguments, returns the current model and options. Otherwise, sets the model to the passed in string.",
+    ".set_lora <New_Lora>:"                     : "If this is called with no arguments, returns the current lora and options. Otherwise, sets the lora to the passed in string.",
     "?find <Card_Description>:"                 : "Searches for all cards with the requested description and posts their image.",
     "?howmany <Card_Description>:"              : "Posts number of cards with requested description.",
     "<Card_Description>:"                       : "Additionally, for ?find and ?howmany,\nIf the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\

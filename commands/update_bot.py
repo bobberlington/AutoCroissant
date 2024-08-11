@@ -9,7 +9,7 @@ def perms_check(message: discord.Message):
     try:
         admins = config.admins
     except AttributeError:
-        admins = []
+        return 1
 
     if message.author.id not in admins:
         return 1
