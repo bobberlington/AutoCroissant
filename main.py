@@ -27,7 +27,7 @@ async def on_ready():
        print(f"Error {status} when requesting github.")
     try_open_descriptions()
 
-    commands.append((("not async",), init_pipeline))
+    commands.append(((), init_pipeline))
     check_pipeline.start()
     print("Finished initializing.")
 
@@ -66,16 +66,9 @@ async def check_pipeline():
         await client.get_channel(id).send(file=file)
     while len(commands) > 0:
         params, cmd = commands.pop(0)
-        if params[0] == "not async":
-            params = params[1:]
-            if len(params) > 0:
-                Thread(target=cmd, daemon=True, args=params).start()
-            else:
-                Thread(target=cmd, daemon=True).start()
+        if len(params) > 0:
+            Thread(target=cmd, daemon=True, args=params).start()
         else:
-            if len(params) > 0:
-                await Thread(target=cmd, daemon=True, args=params).start()
-            else:
-                await Thread(target=cmd, daemon=True).start()
+            Thread(target=cmd, daemon=True).start()
 
 client.run(config.token)
