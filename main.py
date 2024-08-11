@@ -2,22 +2,26 @@ import config
 import discord
 from discord.ext import tasks
 import global_config
-from commands.query_card import query_remote, query_pickle, howmany_description, set_match_ratio
-from commands.tools import messages, files
+from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio
+from commands.tools import messages, files, commands
 from commands.update_bot import restart_bot, purge
 
 # Intents permissions
 intents = discord.Intents.default()
 intents.message_content = True
-
 client = discord.Client(intents=intents)
-#tree = app_commands.CommandTree(client)
-commands = global_config.commands
 
 # Events
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
+
+    try_open_alias()
+    status = populate_files()
+    if status != 200:
+       print(f"Error {status} when requesting github.")
+    try_open_descriptions()
+
     check_pipeline.start()
 
 @client.event
@@ -38,7 +42,7 @@ async def on_message(message: discord.Message):
     elif message.content.startswith(".quickpurge"):
         await purge(message, -1, client.user.id, bulk = True)
     else:
-        for key, val in commands.items():
+        for key, val in global_config.commands.items():
             if message.content.startswith(key):
                 await val(message)
                 break
@@ -51,5 +55,8 @@ async def check_pipeline():
     while len(files) > 0:
         id, file = files.pop(0)
         await client.get_channel(id).send(file=file)
+    while len(commands) > 0:
+        params, cmd = commands.pop(0)
+        await cmd(*params)
 
 client.run(config.token)

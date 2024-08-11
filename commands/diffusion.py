@@ -34,13 +34,11 @@ def init_pipeline():
 
 async def set_device(message: discord.Message):
     global device, device_no
-
     if len(message.content.split()) < 3:
         await message.channel.send("Must specify exactly two arguments, the new device and device #. The old device is %s and the old device# is %s." % (device, device_no))
         return
 
     device, device_no = message.content.split()[1:]
-
     await message.channel.send("New device of %s and device# of %s set!" % (device, device_no))
 
 @to_thread
@@ -59,7 +57,7 @@ def diffusion(message: discord.Message):
     strength = 0.8
     image = parse_msg_image(message)
 
-    query = message.content.split(".ai")[1].replace(",", " ").replace("  ", " ").strip().lower().split()
+    query = message.content.split(".ai")[1].replace(",", " ").lower().split()
     if len(query) > 0 and query[0].startswith("http"):
         query.pop(0)
 

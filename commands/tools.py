@@ -12,6 +12,7 @@ from requests import get
 # async messages and files to send
 messages = []
 files = []
+commands = []
 
 def to_thread(func: typing.Callable) -> typing.Coroutine:
     @functools.wraps(func)
