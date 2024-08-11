@@ -6,7 +6,7 @@ from commands.tools import to_thread, url_to_cv2image, cv2discordfile, messages,
 
 @to_thread
 def frankenstein(message: discord.Message):
-    from commands.query_card import git_files, git_filenames, ambiguous_names, match_ratio
+    from commands.query_card import repository, git_files, git_filenames, ambiguous_names, match_ratio
     if len(message.content.split()) < 2:
         messages.append((message.channel.id, "Must specify atleast one argument to frankenstein."))
         return
@@ -21,7 +21,7 @@ def frankenstein(message: discord.Message):
         except IndexError:
             messages.append((message.channel.id, "No card found for query %s!" % creature))
             return
-        images.append(url_to_cv2image(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{git_files[closest]}"))
+        images.append(url_to_cv2image(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}"))
 
         # If the filename was ambiguous, make a note of that.
         if closest in ambiguous_names:

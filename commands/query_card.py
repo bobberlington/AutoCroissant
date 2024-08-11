@@ -1,12 +1,11 @@
-import discord
-import requests
 import difflib
+import discord
 import pickle
+import requests
 
-# Only need this import when populating card descriptions
-import os
-import re
 #from global_config import list_of_all_types, list_of_all_attributes, list_of_all_stars
+
+repository = "MichaelJSr/TTSCardMaker"
 
 alias_pickle_name = "aliases.pkl"
 git_file_alias = {}
@@ -23,7 +22,7 @@ match_ratio = 0.6
 def populate_files():
     global git_filenames
     # Grab repo
-    repo = requests.get("https://api.github.com/repos/MichaelJSr/TTSCardMaker/git/trees/main?recursive=1")
+    repo = requests.get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
     if repo.status_code != 200:
         return repo.status_code
 
@@ -65,6 +64,7 @@ def populate_files():
     return 200
 
 def populate_descriptions(desc: str):
+    import re
     desc = desc.strip()
     if "|" in desc:
         desc1, desc2 = desc.split("|", 1)
@@ -111,6 +111,7 @@ def should_it_be_pickled(line: str):
             and line != "attack" and line != "atk" and line != "speed" and line != "spd" and not line.isdigit())
 
 def pickle_descriptions():
+    import os
     dir = os.fsencode(descriptions_dir)
     for file in os.listdir(dir):
         filename = os.fsdecode(file).lower()
@@ -182,7 +183,7 @@ async def query_remote(message: discord.Message):
     except IndexError:
         await message.channel.send("No card found!")
         return
-    await message.channel.send(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{git_files[closest]}")
+    await message.channel.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}")
 
     # If the filename was ambiguous, make a note of that.
     if closest in ambiguous_names:
@@ -201,7 +202,7 @@ async def query_pickle(message: discord.Message):
 
     for close in closest:
         try:
-            await message.channel.send(f"https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/{git_files[descriptions[close]]}")
+            await message.channel.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
         except KeyError:
             await message.channel.send("No such key: %s" % descriptions[close])
             descriptions.pop(close)
@@ -284,3 +285,15 @@ async def set_match_ratio(message: discord.Message):
 
     match_ratio = float(message.content.split()[1])
     await message.channel.send("New match ratio of %f set!" % match_ratio)
+
+async def set_repository(message: discord.Message):
+    global repository
+    if len(message.content.split()) < 2:
+        await message.channel.send("Must specify exactly one argument, the new repository (USER/REPO). The old repository was %s." % repository)
+        return
+
+    repository = message.content.split()[1]
+    status = populate_files()
+    if status != 200:
+       print(f"Error {status} when requesting github.")
+    await message.channel.send("New repository of %s set!" % repository)

@@ -5,8 +5,8 @@ import functools
 from io import BytesIO
 import numpy as np
 from PIL import Image
-import typing
 from requests import get
+import typing
 
 
 # async messages and files to send

@@ -24,6 +24,7 @@ commands = {
                                                     If there is a & symbol in the query, it treats both the partition before and the partition after the & symbol as seperate queries, and only returns results that are in both.\n\
                                                     Multiple symbols can be combined. for example, \'?find \"atk=8\" & !\"spd=4\"\' will return all cards with 8 ATK and any SPD value except for 4.",
     "?set_ratio <New_Ratio>:"                   : "If this is called with no arguments, returns the current match ratio. Otherwise, sets the match ratio to the passed in float.",
+    "?set_repo <New_Repository>:"               : "If this is called with no arguments, returns the current repository. Otherwise, sets the repository to the passed in string (USER/REPO).",
     "?<Card_Name>:"                             : "Posts the requested <Card_Name> image from the repo.",
 } 
 

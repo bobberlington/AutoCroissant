@@ -1,8 +1,9 @@
 import config
 import discord
 from discord.ext import tasks
+
 import global_config
-from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio
+from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository
 from commands.tools import messages, files, commands
 from commands.update_bot import restart_bot, purge
 
@@ -10,6 +11,8 @@ from commands.update_bot import restart_bot, purge
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+configured_commands = global_config.commands.items()
 
 # Events
 @client.event
@@ -35,6 +38,8 @@ async def on_message(message: discord.Message):
         await howmany_description(message)
     elif message.content.startswith("?set_ratio"):
         await set_match_ratio(message)
+    elif message.content.startswith("?set_repo"):
+        await set_repository(message)
     elif message.content.startswith("?"):
         await query_remote(message)
     elif message.content.startswith(".purge"):
@@ -42,7 +47,7 @@ async def on_message(message: discord.Message):
     elif message.content.startswith(".quickpurge"):
         await purge(message, -1, client.user.id, bulk = True)
     else:
-        for key, val in global_config.commands.items():
+        for key, val in configured_commands:
             if message.content.startswith(key):
                 await val(message)
                 break

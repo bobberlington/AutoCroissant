@@ -35,7 +35,7 @@ def init_pipeline():
 async def set_device(message: discord.Message):
     global device, device_no
     if len(message.content.split()) < 3:
-        await message.channel.send("Must specify exactly two arguments, the new device and device #. The old device is %s and the old device# is %s." % (device, device_no))
+        await message.channel.send("Must specify exactly two arguments, the new device and device #. The old device was %s and the old device# was %s." % (device, device_no))
         return
 
     device, device_no = message.content.split()[1:]

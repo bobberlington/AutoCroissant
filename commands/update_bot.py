@@ -1,7 +1,7 @@
-import sys
-import os
 import discord
 import git
+import os
+import sys
 
 import config
 
