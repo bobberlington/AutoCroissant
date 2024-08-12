@@ -20,6 +20,7 @@ configured_commands = global_config.commands.items()
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
+    check_pipeline.start()
 
     try_open_alias()
     status = populate_files()
@@ -28,7 +29,6 @@ async def on_ready():
     try_open_descriptions()
 
     commands.append(((), init_pipeline))
-    check_pipeline.start()
     print("Finished initializing.")
 
 @client.event

@@ -4,6 +4,7 @@ from os import listdir
 import torch
 
 from commands.tools import to_thread, url_to_pilimage, pildiscordfile, messages, files
+import config
 
 mfolder = "./models/"
 lfolder = f"{mfolder}loras/"
@@ -11,6 +12,12 @@ model = "rpg_v5.safetensors"
 lora = ""
 device = "gpu"
 device_no = "0"
+try:
+    device = config.device
+    device_no = config.device_no
+except AttributeError:
+    print("No device and device# in config, skipping.")
+
 negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, blurry"
 txt2img_pipe = img2img_pipe = None
 
