@@ -5,6 +5,8 @@ numpy
 opencv-python
 diffusers
 transformers
+psd-tools
+PyGithub
 -f https://cs.stanford.edu/~nfliu/files/pytorch/whl/torch_stable.html
 torch==1.12.1+cu113
 torchvision

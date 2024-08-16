@@ -5,3 +5,5 @@ numpy
 opencv-python
 diffusers
 transformers
+psd-tools
+PyGithub
