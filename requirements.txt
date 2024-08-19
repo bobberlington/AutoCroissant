@@ -1,9 +1,10 @@
+accelerate
+diffusers
 discord.py
-requests
 GitPython
 numpy
 opencv-python
-diffusers
-transformers
 psd-tools
 PyGithub
+requests
+transformers

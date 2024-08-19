@@ -13,10 +13,12 @@ lora = ""
 device = "gpu"
 device_no = "0"
 try:
+    model = config.model
+    lora = config.lora
     device = config.device
     device_no = config.device_no
 except AttributeError:
-    print("No device and device# in config, skipping.")
+    print("No diffusion params in config, skipping.")
 
 negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, blurry"
 txt2img_pipe = img2img_pipe = None
@@ -37,7 +39,9 @@ def init_pipeline():
     txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True)
     if device == "gpu" and torch.cuda.is_available():
         txt2img_pipe.to(f"cuda:{device_no}")
-    txt2img_pipe.enable_attention_slicing()
+    txt2img_pipe.enable_sequential_cpu_offload()
+    txt2img_pipe.enable_vae_slicing()
+    txt2img_pipe.enable_vae_tiling()
 
     img2img_pipe = StableDiffusionImg2ImgPipeline.from_pipe(txt2img_pipe)
     torch.cuda.empty_cache()
