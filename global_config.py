@@ -1,8 +1,9 @@
-from commands.help import print_help
-from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
-from commands.query_card import alias_card, delete_alias, print_all_aliases
+from commands.diffusion import diffusion, set_scheduler, set_device, set_model, set_lora, get_qsize
 from commands.frankenstein import frankenstein
-from commands.diffusion import diffusion, set_device, set_model, set_lora
+from commands.help import print_help
+from commands.query_card import alias_card, delete_alias, print_all_aliases
+from commands.tools import to_thread
+from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
 
 # Insert new commands and their function hooks in here
 commands = {
@@ -15,8 +16,10 @@ commands = {
     ".alias"            : alias_card,
     ".del_alias"        : delete_alias,
     ".print_aliases"    : print_all_aliases,
-    ".frankenstein"     : frankenstein,
-    ".ai"               : diffusion,
+    ".frankenstein"     : to_thread(frankenstein),
+    ".ai_queue"         : get_qsize,
+    ".ai"               : to_thread(diffusion),
+    ".set_scheduler"    : set_scheduler,
     ".set_device"       : set_device,
     ".set_model"        : set_model,
     ".set_lora"         : set_lora,

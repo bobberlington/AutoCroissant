@@ -58,17 +58,20 @@ async def on_message(message: discord.Message):
 
 @tasks.loop(seconds=3)
 async def check_pipeline():
-    while len(messages) > 0:
+    if len(messages) > 0:
         id, msg = messages.pop(0)
         await client.get_channel(id).send(msg)
-    while len(files) > 0:
+    if len(files) > 0:
         id, file = files.pop(0)
         await client.get_channel(id).send(file=file)
-    while len(commands) > 0:
+    if len(commands) > 0:
         params, cmd = commands.pop(0)
-        if len(params) > 0:
+        if not params:
+            Thread(target=cmd, daemon=True).start()
+        elif params[0] != "await":
             Thread(target=cmd, daemon=True, args=params).start()
         else:
-            Thread(target=cmd, daemon=True).start()
+            params = params[1:]
+            await cmd(*params)
 
 client.run(config.token)

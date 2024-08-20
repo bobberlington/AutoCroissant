@@ -1,10 +1,14 @@
 accelerate
+bitsandbytes
 diffusers
 discord.py
 GitPython
 numpy
 opencv-python
+peft
+protobuf
 psd-tools
 PyGithub
 requests
+sentencepiece
 transformers

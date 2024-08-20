@@ -2,9 +2,8 @@ from cv2 import resize, INTER_AREA
 import difflib
 import discord
 
-from commands.tools import to_thread, url_to_cv2image, cv2discordfile, messages, files
+from commands.tools import url_to_cv2image, cv2discordfile, messages, files
 
-@to_thread
 def frankenstein(message: discord.Message):
     from commands.query_card import repository, git_files, git_filenames, ambiguous_names, match_ratio
     if len(message.content.split()) < 2:
