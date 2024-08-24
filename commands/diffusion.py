@@ -19,11 +19,13 @@ model = ""
 lora = ""
 device_no = 0
 scheduler_name = ""
+vram_usage = "low"
 try:
     model = config.model
     lora = config.lora
     device_no = config.device_no
     scheduler_name = config.scheduler_name
+    vram_usage = config.vram_usage
 except AttributeError:
     print("No diffusion params in config, skipping.")
 
@@ -51,7 +53,7 @@ async def get_qsize(message: discord.Message):
 def init_pipeline():
     global txt2img_pipe, img2img_pipe, in_progress
     in_progress = True
-    dtype = torch.bfloat16
+    dtype = torch.float16
 
     if model == "flux":
         is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
@@ -97,10 +99,11 @@ def init_pipeline():
 
     if torch.cuda.is_available():
         txt2img_pipe = txt2img_pipe.to(f"cuda:{device_no}")
-        if model == "flux":
+        if vram_usage == "medium":
             txt2img_pipe.enable_model_cpu_offload(gpu_id=device_no)
-        else:
+        elif vram_usage == "low":
             txt2img_pipe.enable_sequential_cpu_offload(gpu_id=device_no)
+        if model != "flux":
             txt2img_pipe.enable_vae_slicing()
             txt2img_pipe.enable_vae_tiling()
             img2img_pipe = AutoPipelineForImage2Image.from_pipe(txt2img_pipe)
@@ -219,7 +222,7 @@ def diffusion(message: discord.Message):
             resize = float(word[len("resize="):])
             query.remove(word)
         elif word.startswith("guidance="):
-            guidance = int(word[len("guidance="):])
+            guidance = float(word[len("guidance="):])
             query.remove(word)
         elif word.startswith("strength="):
             strength = float(word[len("strength="):])
