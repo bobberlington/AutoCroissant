@@ -76,12 +76,11 @@ def init_pipeline():
         del original_state_dict
         collect()
         torch.cuda.empty_cache()
-        #print(compute_module_sizes(flux_model)[""] / 1024 / 1204)
-        txt2img_pipe = FluxPipeline.from_pretrained("black-forest-labs/flux.1-dev", transformer=flux_model, torch_dtype=dtype, token=config.hf_token)
+        txt2img_pipe = FluxPipeline.from_pretrained("black-forest-labs/flux.1-dev", transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
     elif model.lower().find("xl") != -1:
-        txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
+        txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False, device_map='balanced' if vram_usage == 'distributed' else None)
     else:
-        txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True)
+        txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, device_map='balanced' if vram_usage == 'distributed' else None)
 
     scheduler = None
     if scheduler_name.startswith("dpm++ sde"):
@@ -97,16 +96,14 @@ def init_pipeline():
     if lora:
         txt2img_pipe.load_lora_weights(lfolder+lora)
 
-    if torch.cuda.is_available():
-        txt2img_pipe = txt2img_pipe.to(f"cuda:{device_no}")
-        if vram_usage == "medium":
-            txt2img_pipe.enable_model_cpu_offload(gpu_id=device_no)
-        elif vram_usage == "low":
-            txt2img_pipe.enable_sequential_cpu_offload(gpu_id=device_no)
-        if model != "flux":
-            txt2img_pipe.enable_vae_slicing()
-            txt2img_pipe.enable_vae_tiling()
-            img2img_pipe = AutoPipelineForImage2Image.from_pipe(txt2img_pipe)
+    if vram_usage == "medium":
+        txt2img_pipe.enable_model_cpu_offload(gpu_id=device_no)
+    elif vram_usage == "low":
+        txt2img_pipe.enable_sequential_cpu_offload(gpu_id=device_no)
+    if model != "flux":
+        txt2img_pipe.enable_vae_slicing()
+        txt2img_pipe.enable_vae_tiling()
+        img2img_pipe = AutoPipelineForImage2Image.from_pipe(txt2img_pipe)
 
     collect()
     torch.cuda.empty_cache()
