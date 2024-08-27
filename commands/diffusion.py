@@ -1,13 +1,14 @@
 from accelerate import init_empty_weights
-from accelerate.utils import set_module_tensor_to_device, compute_module_sizes
+from accelerate.utils import set_module_tensor_to_device
 from commands.convert_nf4_flux import _replace_with_bnb_linear, create_quantized_param, check_quantized_param
-from diffusers import DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline
+from diffusers import DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler, AutoencoderKL
 import discord
 from gc import collect
 from huggingface_hub import hf_hub_download
 from os import listdir
 import safetensors.torch
 import torch
+from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 from queue import Queue
 
 from commands.tools import url_to_pilimage, pildiscordfile, messages, files
@@ -54,13 +55,16 @@ def init_pipeline():
     global txt2img_pipe, img2img_pipe, in_progress
     in_progress = True
     dtype = torch.float16
+    scheduler = None
 
     if model == "flux":
+        bfl_repo = "black-forest-labs/FLUX.1-dev"
+        revision = "refs/pr/3"
         is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
         ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
         original_state_dict = safetensors.torch.load_file(ckpt_path)
         with init_empty_weights():
-            flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4")).to(dtype)
+            flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map='balanced' if vram_usage == 'distributed' else None).to(dtype)
             expected_state_dict_keys = list(flux_model.state_dict().keys())
         _replace_with_bnb_linear(flux_model, "nf4")
         for param_name, param in original_state_dict.items():
@@ -76,13 +80,18 @@ def init_pipeline():
         del original_state_dict
         collect()
         torch.cuda.empty_cache()
-        txt2img_pipe = FluxPipeline.from_pretrained("black-forest-labs/flux.1-dev", transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", revision=revision, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, revision=revision, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, revision=revision, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, revision=revision, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
+        txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, scheduler=scheduler, text_encoder=text_encoder, tokenizer=tokenizer, tokenizer_2=tokenizer_2, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map='balanced' if vram_usage == 'distributed' else None)
     elif model.lower().find("xl") != -1:
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False, device_map='balanced' if vram_usage == 'distributed' else None)
     else:
         txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, device_map='balanced' if vram_usage == 'distributed' else None)
 
-    scheduler = None
     if scheduler_name.startswith("dpm++ sde"):
         scheduler = DPMSolverSinglestepScheduler.from_config(txt2img_pipe.scheduler.config)
         scheduler.config.lower_order_final = True
@@ -90,7 +99,7 @@ def init_pipeline():
         scheduler = EulerAncestralDiscreteScheduler.from_config(txt2img_pipe.scheduler.config)
     if scheduler_name.endswith("karras"):
         scheduler.config.use_karras_sigmas = True
-    if scheduler:
+    if scheduler and model != "flux":
         txt2img_pipe.scheduler = scheduler
 
     if lora:
