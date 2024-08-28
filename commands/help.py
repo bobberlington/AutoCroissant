@@ -14,7 +14,7 @@ commands = {
     ".del_alias <Card_Name>:"                   : "Permanantly deletes the alias previously mapped to the name.",
     ".print_aliases:"                           : "Prints all existing aliases.",
     ".frankenstein <card1>,<card2>,...:"        : "Takes a list of creatures to mash together, and returns an image of the frankensteined creatures.",
-    ".ai <optional url/img> <prompt>"           : "Takes either an image, url, or nothing except for a prompt, and generates an ai image.",
+    ".ai <optional url/img> <prompt>"           : "Takes either an image, url, or nothing except for a prompt, and generates an ai image. Can also take a second image to use as a mask.",
     ".ai_queue"                                 : "Returns the current ai queue size and the content of each queued request.",
     ".set_scheduler"                            : "If this is called with no arguments, returns the current scheduler and a list of possible choices. Otherwise, sets the new scheduler.",
     ".set_device <New_Device#>:"                : "If this is called with no arguments, returns the device#. Otherwise, sets the device#.",
