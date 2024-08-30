@@ -1,9 +1,6 @@
-# created by virtualenv automatically
 config.py
 *.DS_Store
 __pycache__
-.idea/*
-.ssh/*
 *.safetensors
 *.png
 *.pt

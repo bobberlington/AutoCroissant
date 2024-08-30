@@ -1,8 +1,8 @@
-import config
-import discord
+from discord import Client, Intents, Message
 from discord.ext import tasks
 from threading import Thread
 
+from config import token
 import global_config
 from commands.diffusion import init_pipeline
 from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository
@@ -10,9 +10,9 @@ from commands.tools import messages, files, commands
 from commands.update_bot import restart_bot, purge
 
 # Intents permissions
-intents = discord.Intents.default()
+intents = Intents.default()
 intents.message_content = True
-client = discord.Client(intents=intents)
+client = Client(intents=intents)
 
 configured_commands = global_config.commands.items()
 
@@ -32,7 +32,7 @@ async def on_ready():
     print("Finished initializing.")
 
 @client.event
-async def on_message(message: discord.Message):
+async def on_message(message: Message):
     # This ID is for the GitHub webhook bot from the TTS repo
     if message.author.id == 1011982177023561840:
         await restart_bot(message)
@@ -74,4 +74,4 @@ async def check_pipeline():
             params = params[1:]
             await cmd(*params)
 
-client.run(config.token)
+client.run(token)

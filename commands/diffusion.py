@@ -30,7 +30,6 @@ try:
 except AttributeError:
     print("No diffusion params in config, skipping.")
 
-negative_prompt = "nsfw, lowres, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, blurry"
 txt2img_pipe = img2img_pipe = inpaint_pipe = None
 in_progress = False
 possible_schedulers = ["dpm++ sde", "dpm++ sde karras", "euler a"]
@@ -68,7 +67,6 @@ def init_pipeline():
 
     if model == "flux":
         bfl_repo = "black-forest-labs/FLUX.1-dev"
-        revision = "refs/pr/3"
         is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
         ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
         original_state_dict = safetensors.torch.load_file(ckpt_path)
@@ -89,12 +87,12 @@ def init_pipeline():
         del original_state_dict
         collect()
         torch.cuda.empty_cache()
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", revision=revision, token=config.hf_token, device_map='balanced')
+        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", token=config.hf_token, device_map='balanced')
         text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
         tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map='balanced')
-        #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, revision=revision, clean_up_tokenization_spaces=True, token=config.hf_token, device_map='balanced')
-        #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, revision=revision, token=config.hf_token, device_map='balanced')
-        #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, revision=revision, token=config.hf_token, device_map='balanced')
+        #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map='balanced')
+        #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
+        #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
         txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, scheduler=scheduler, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map='balanced')
     elif model.lower().find("xl") != -1:
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
@@ -134,15 +132,12 @@ def init_pipeline():
 
 async def set_scheduler(message: discord.Message):
     global scheduler_name, txt2img_pipe, img2img_pipe, inpaint_pipe
-    if len(message.content.split()) < 2 or not message.content.split()[1] in possible_schedulers:
-        await message.channel.send("Must specify exactly one argument, the new scheduler. The old model was **%s**. Possible choices are **%s**." % (scheduler_name, '\n'.join(possible_schedulers)))
+    if len(message.content.split()) < 2 or not ' '.join(message.content.split()[1:]) in possible_schedulers:
+        await message.channel.send("Must specify exactly one argument, the new scheduler. The old scheduler was:\n%s\nPossible choices are:\n%s" % (scheduler_name, '\n'.join(possible_schedulers)))
         return
 
-    scheduler_name = message.content.split()[1]
-    del txt2img_pipe
-    del img2img_pipe
-    del inpaint_pipe
-    txt2img_pipe = img2img_pipe = None
+    scheduler_name = ' '.join(message.content.split()[1:])
+    txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
     await message.channel.send("New scheduler of %s set!" % scheduler_name)
@@ -150,7 +145,7 @@ async def set_scheduler(message: discord.Message):
 async def set_device(message: discord.Message):
     global device_no, txt2img_pipe, img2img_pipe, inpaint_pipe
     if len(message.content.split()) < 2:
-        await message.channel.send("Must specify exactly one argument, the new device#. The old device# was %s." % device_no)
+        await message.channel.send("Must specify exactly one argument, the new device#. The old device# was: %s" % device_no)
         return
 
     try:
@@ -158,10 +153,7 @@ async def set_device(message: discord.Message):
     except:
         await message.channel.send("Invalid device#.")
         return
-    del txt2img_pipe
-    del img2img_pipe
-    del inpaint_pipe
-    txt2img_pipe = img2img_pipe = None
+    txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
     await message.channel.send("New device# of %s set!" % device_no)
@@ -173,14 +165,11 @@ async def set_model(message: discord.Message):
         for m in listdir(mfolder):
             if m.endswith('.safetensors'):
                 safetensors.append(m)
-        await message.channel.send("Must specify exactly one argument, the new model. The old model was **%s**. Possible choices are **%s**." % (model, '\n'.join(safetensors)))
+        await message.channel.send("Must specify exactly one argument, the new model. The old model was:\n%s\nPossible choices are:\n%s" % (model, '\n'.join(safetensors)))
         return
 
     model = message.content.split()[1]
-    del txt2img_pipe
-    del img2img_pipe
-    del inpaint_pipe
-    txt2img_pipe = img2img_pipe = None
+    txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
     await message.channel.send("New model of %s set!" % model)
@@ -192,14 +181,11 @@ async def set_lora(message: discord.Message):
         for m in listdir(lfolder):
             if m.endswith('.safetensors'):
                 safetensors.append(m)
-        await message.channel.send("Must specify exactly one argument, the new lora. The old lora was **%s**. Possible choices are **%s**." % (lora, '\n'.join(safetensors)))
+        await message.channel.send("Must specify exactly one argument, the new lora. The old lora was:\n%s\nPossible choices are:\n%s" % (lora, '\n'.join(safetensors)))
         return
 
     lora = message.content.split()[1]
-    del txt2img_pipe
-    del img2img_pipe
-    del inpaint_pipe
-    txt2img_pipe = img2img_pipe = None
+    txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
     await message.channel.send("New model of %s set!" % lora)
@@ -214,9 +200,6 @@ def diffusion(message: discord.Message):
     if not txt2img_pipe:
         messages.append((message.channel.id, "Initializing pipeline, this will take a while..."))
         init_pipeline()
-
-    collect()
-    torch.cuda.empty_cache()
 
     in_progress = True
     prompt = ""
@@ -262,14 +245,14 @@ def diffusion(message: discord.Message):
         height = int(height * resize)
     messages.append((message.channel.id, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}."))
 
+    collect()
+    torch.cuda.empty_cache()
     if mask_image:
-        files.append((message.channel.id, pildiscordfile(inpaint_pipe(image=image.convert("RGB").resize((width, height)), mask_image=mask_image.resize((width, height)), strength=strength, prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((message.channel.id, pildiscordfile(inpaint_pipe(image=image.convert("RGB").resize((width, height)), mask_image=mask_image.resize((width, height)), strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
     elif image:
-        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image.convert("RGB").resize((width, height)), strength=strength, prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
-    elif model == "flux":
-        files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image.convert("RGB").resize((width, height)), strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
     else:
-        files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
     in_progress = False
     if queue.qsize() > 0:
         diffusion(queue.get_nowait())

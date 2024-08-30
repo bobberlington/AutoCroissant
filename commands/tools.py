@@ -1,12 +1,12 @@
 import asyncio
-import cv2
-import discord
-import functools
+from cv2 import imdecode, imencode, cvtColor, IMREAD_COLOR, COLOR_BGR2RGB, COLOR_RGB2BGR
+from discord import File
+from functools import wraps
 from io import BytesIO
-import numpy as np
+from numpy import ndarray, array, asarray
 from PIL import Image
 from requests import get
-import typing
+from typing import Callable, Coroutine
 
 
 # async messages and files to send
@@ -14,29 +14,29 @@ messages = []
 files = []
 commands = []
 
-def to_thread(func: typing.Callable) -> typing.Coroutine:
-    @functools.wraps(func)
+def to_thread(func: Callable) -> Coroutine:
+    @wraps(func)
     async def wrapper(*args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)
     return wrapper
 
-def url_to_cv2image(url: str, readFlag=cv2.IMREAD_COLOR) -> np.ndarray:
-    resp = get(url, stream=True).raw
-    image = np.asarray(bytearray(resp.read()), dtype="uint8")
-    return cv2.imdecode(image, readFlag)
+def url_to_cv2image(url: str, readFlag=IMREAD_COLOR) -> ndarray:
+    return imdecode(asarray(bytearray(get(url).content), dtype="uint8"), readFlag)
 
-def cv2discordfile(img: np.ndarray) -> discord.File:
-    img_encode = cv2.imencode('.png', img)[1]
-    data_encode = np.array(img_encode)
-    byte_encode = data_encode.tobytes()
-    byteImage = BytesIO(byte_encode)
-    return discord.File(byteImage, filename='image.png')
+def cv2discordfile(img: ndarray) -> File:
+    return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename='image.png')
 
 def url_to_pilimage(url: str) -> Image:
     return Image.open(get(url, stream=True).raw)
 
-def pildiscordfile(img: Image) -> discord.File:
+def pildiscordfile(img: Image) -> File:
     with BytesIO() as bin:
         img.save(bin, 'png')
         bin.seek(0)
-        return discord.File(bin, filename='image.png')
+        return File(bin, filename='image.png')
+
+def cv2_to_pil(cv2_img: ndarray) -> Image:
+    return Image.fromarray(cvtColor(cv2_img, COLOR_BGR2RGB))
+
+def pil_to_cv2(pil_img: Image) -> ndarray:
+    return cvtColor(array(pil_img), COLOR_RGB2BGR)
