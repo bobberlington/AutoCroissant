@@ -67,11 +67,12 @@ def init_pipeline():
 
     if model == "flux":
         bfl_repo = "black-forest-labs/FLUX.1-dev"
+        device_map = 'balanced' if torch.cuda.device_count() > 1 else None
         is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
         ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
         original_state_dict = safetensors.torch.load_file(ckpt_path)
         with init_empty_weights():
-            flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map='balanced').to(dtype)
+            flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map=device_map).to(dtype)
             expected_state_dict_keys = list(flux_model.state_dict().keys())
         _replace_with_bnb_linear(flux_model, "nf4")
         for param_name, param in original_state_dict.items():
@@ -87,13 +88,13 @@ def init_pipeline():
         del original_state_dict
         collect()
         torch.cuda.empty_cache()
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", token=config.hf_token, device_map='balanced')
-        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
-        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map='balanced')
-        #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map='balanced')
-        #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
-        #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, token=config.hf_token, device_map='balanced')
-        txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, scheduler=scheduler, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map='balanced')
+        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", token=config.hf_token, device_map=device_map)
+        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
+        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map=device_map)
+        #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map=device_map)
+        #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
+        #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
+        txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, scheduler=scheduler, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map=device_map)
     elif model.lower().find("xl") != -1:
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
     else:
@@ -115,7 +116,7 @@ def init_pipeline():
     if vram_usage != "high":
         txt2img_pipe.vae.enable_slicing()
         txt2img_pipe.vae.enable_tiling()
-    if vram_usage == "medium" and model != "flux":
+    if vram_usage == "medium" and (model != "flux" or torch.cuda.device_count() == 1):
         txt2img_pipe.enable_model_cpu_offload(gpu_id=device_no)
     elif vram_usage == "low" and model != "flux":
         txt2img_pipe.enable_sequential_cpu_offload(gpu_id=device_no)
