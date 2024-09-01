@@ -1,11 +1,12 @@
-import discord
-import git
-import os
-import sys
+from discord import Message
+from git import GitCommandError
+from git.cmd import Git
+from os import execv, system, getpid
+from sys import argv, executable
 
 import config
 
-def perms_check(message: discord.Message):
+def perms_check(message: Message):
     try:
         admins = config.admins
     except AttributeError:
@@ -15,45 +16,45 @@ def perms_check(message: discord.Message):
         return 1
     return 0
 
-async def restart_bot(message: discord.Message):
+async def restart_bot(message: Message):
     await message.channel.send("Restarting bot!")
     try:
-        os.execv('./startup.sh', sys.argv)
+        execv('./startup.sh', argv)
     except FileNotFoundError:
-        os.execv(sys.executable, ['python'] + sys.argv)
+        execv(executable, ['python'] + argv)
 
-async def stop_bot(message: discord.Message):
+async def stop_bot(message: Message):
     if perms_check(message) != 0:
         await message.channel.send("You do not have permission to stop the bot.")
         return
 
     await message.channel.send("Stopping bot!")
     # Mac kill
-    os.system('kill %d' % os.getpid())
+    system('kill %d' % getpid())
     # Windows kill
-    os.system('taskkill /F /PID %d' % os.getpid())
+    system('taskkill /F /PID %d' % getpid())
 
-async def git_push(message: discord.Message):
+async def git_push(message: Message):
     await message.channel.send("Pushing aliases.pkl...")
     try:
-        git.cmd.Git(sys.argv).add('aliases.pkl')
-        git.cmd.Git(sys.argv).commit('-m', 'aliases.pkl')
-        git.cmd.Git(sys.argv).push()
+        Git(argv).add('aliases.pkl')
+        Git(argv).commit('-m', 'aliases.pkl')
+        Git(argv).push()
         await message.channel.send("Succesfully pushed!")
-    except git.GitCommandError:
+    except GitCommandError:
         await message.channel.send("aliases.pkl is already up to date.")
 
-async def git_pull(message: discord.Message):
+async def git_pull(message: Message):
     await message.channel.send("Doing a git pull!")
-    await message.channel.send("%s" % git.cmd.Git(sys.argv).reset('--hard'))
-    await message.channel.send("%s" % git.cmd.Git(sys.argv).pull())
+    await message.channel.send("%s" % Git(argv).reset('--hard'))
+    await message.channel.send("%s" % Git(argv).pull())
 
-async def update_bot(message: discord.Message):
+async def update_bot(message: Message):
     await git_push(message)
     await git_pull(message)
     await restart_bot(message)
 
-async def purge(message: discord.Message, limit : int, id: str, bulk = False):
+async def purge(message: Message, limit : int, id: str, bulk = False):
     if perms_check(message) != 0:
         await message.channel.send("You do not have permission to stop purge messages.")
         return

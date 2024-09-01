@@ -1,10 +1,10 @@
 from cv2 import resize, INTER_AREA
-import difflib
-import discord
+from difflib import get_close_matches
+from discord import Message
 
 from commands.tools import url_to_cv2image, cv2discordfile, messages, files
 
-def frankenstein(message: discord.Message):
+def frankenstein(message: Message):
     from commands.query_card import repository, git_files, git_filenames, ambiguous_names, match_ratio
     if len(message.content.split()) < 2:
         messages.append((message.channel.id, "Must specify atleast one argument to frankenstein."))
@@ -16,7 +16,7 @@ def frankenstein(message: discord.Message):
         if not creature.endswith(".png"):
             creature += ".png"
         try:
-            closest = difflib.get_close_matches(creature, git_filenames, n=1, cutoff=match_ratio)[0]
+            closest = get_close_matches(creature, git_filenames, n=1, cutoff=match_ratio)[0]
         except IndexError:
             messages.append((message.channel.id, "No card found for query %s!" % creature))
             return

@@ -1,4 +1,4 @@
-import discord
+from discord import Message
 
 
 commands = {
@@ -32,7 +32,7 @@ commands = {
     "?<Card_Name>:"                             : "Posts the requested <Card_Name> image from the repo.",
 } 
 
-async def print_help(message: discord.Message):
+async def print_help(message: Message):
     help_msg = f"```Available commands:\n\n"
     for cmd in commands:
         help_msg += f"{cmd:15s} {commands[cmd]}\n\n"

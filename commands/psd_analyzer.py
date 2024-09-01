@@ -1,12 +1,12 @@
 from github import Github
-import requests
+from requests import get
 
 from commands.query_card import repository
 
 repo = Github().get_repo(repository)
 
 def traverse_repo_files():
-    resp = requests.get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
+    resp = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
     if resp.status_code != 200:
         return resp.status_code
 

@@ -1,7 +1,7 @@
-import difflib
-import discord
-import pickle
-import requests
+from difflib import SequenceMatcher, get_close_matches
+from discord import Message
+from pickle import load, dump
+from requests import get
 
 #from global_config import list_of_all_types, list_of_all_attributes, list_of_all_stars
 
@@ -22,7 +22,7 @@ match_ratio = 0.6
 def populate_files():
     global git_filenames
     # Grab repo
-    repo = requests.get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
+    repo = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
     if repo.status_code != 200:
         return repo.status_code
 
@@ -93,7 +93,7 @@ def populate_descriptions(desc: str):
                 closest.append(card)
                 elem_added = True
                 break
-            elif not exact_match and difflib.SequenceMatcher(None, desc, line).ratio() > match_ratio:
+            elif not exact_match and SequenceMatcher(None, desc, line).ratio() > match_ratio:
                 closest.append(card)
                 elem_added = True
                 break
@@ -128,7 +128,7 @@ def pickle_descriptions():
                     descriptions[card_description] = filename.split(".psd")[0] + ".png"
 
     with open(descriptions_pickle_name, 'wb') as f:
-        pickle.dump(descriptions, f)
+        dump(descriptions, f)
 
 def try_open_alias():
     global git_file_alias
@@ -136,15 +136,15 @@ def try_open_alias():
     print("Trying to open %s" % alias_pickle_name)
     try:
         with open(alias_pickle_name, 'rb') as f:
-            git_file_alias = pickle.load(f)
+            git_file_alias = load(f)
     except EOFError:
         print("%s is completely empty, populating with empty dict..." % alias_pickle_name)
         with open(alias_pickle_name, 'wb') as f:
-            pickle.dump(git_file_alias, f)
+            dump(git_file_alias, f)
     except FileNotFoundError:
         print("%s doesnt exist, populating with empty dict..." % alias_pickle_name)
         with open(alias_pickle_name, 'wb') as f:
-            pickle.dump(git_file_alias, f)
+            dump(git_file_alias, f)
 
 def try_open_descriptions():
     global descriptions, file_descriptions
@@ -152,15 +152,15 @@ def try_open_descriptions():
     print("Trying to open %s" % descriptions_pickle_name)
     try:
         with open(descriptions_pickle_name, 'rb') as f:
-            descriptions = pickle.load(f)
+            descriptions = load(f)
     except EOFError:
         print("%s is completely empty, populating with empty dict..." % descriptions_pickle_name)
         with open(descriptions_pickle_name, 'wb') as f:
-            pickle.dump(descriptions, f)
+            dump(descriptions, f)
     except FileNotFoundError:
         print("%s doesnt exist, populating with empty dict..." % descriptions_pickle_name)
         with open(descriptions_pickle_name, 'wb') as f:
-            pickle.dump(descriptions, f)
+            dump(descriptions, f)
 
     if not descriptions:
         try:
@@ -170,7 +170,7 @@ def try_open_descriptions():
             return
     file_descriptions = descriptions.keys()
 
-async def query_remote(message: discord.Message):
+async def query_remote(message: Message):
     # If it's just a ?, ignore everything
     if len(message.content) == 1:
         return
@@ -179,7 +179,7 @@ async def query_remote(message: discord.Message):
     if not card.endswith(".png"):
         card += ".png"
     try:
-        closest = difflib.get_close_matches(card, git_filenames, n=1, cutoff=match_ratio)[0]
+        closest = get_close_matches(card, git_filenames, n=1, cutoff=match_ratio)[0]
     except IndexError:
         await message.channel.send("No card found!")
         return
@@ -192,7 +192,7 @@ async def query_remote(message: discord.Message):
             ambiguous_message += f"{i}\n"
         await message.channel.send(ambiguous_message)
 
-async def query_pickle(message: discord.Message):
+async def query_pickle(message: Message):
     if len(message.content.split()) < 2:
         await message.channel.send("Must specify atleast one argument, the search query.")
         return
@@ -207,10 +207,10 @@ async def query_pickle(message: discord.Message):
             await message.channel.send("No such key: %s" % descriptions[close])
             descriptions.pop(close)
             with open(descriptions_pickle_name, 'wb') as f:
-                pickle.dump(descriptions, f)
+                dump(descriptions, f)
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
-async def howmany_description(message: discord.Message):
+async def howmany_description(message: Message):
     if len(message.content.split()) < 2:
         await message.channel.send("Must specify atleast one argument, the search query.")
         return
@@ -220,7 +220,7 @@ async def howmany_description(message: discord.Message):
 
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
-async def alias_card(message: discord.Message):
+async def alias_card(message: Message):
     global git_filenames
     if len(message.content.split()) != 3:
          await message.channel.send("Must specify exactly two arguments, the key and value.")
@@ -245,9 +245,9 @@ async def alias_card(message: discord.Message):
     await message.channel.send(f"Created alias: {key} -> {val}")
 
     with open(alias_pickle_name, 'wb') as f:
-        pickle.dump(git_file_alias, f)
+        dump(git_file_alias, f)
 
-async def delete_alias(message: discord.Message):
+async def delete_alias(message: Message):
     global git_filenames
     if len(message.content.split()) != 2:
         await message.channel.send("Must specify exactly one argument, the key.")
@@ -268,16 +268,16 @@ async def delete_alias(message: discord.Message):
         return
 
     with open(alias_pickle_name, 'wb') as f:
-        pickle.dump(git_file_alias, f)
+        dump(git_file_alias, f)
 
-async def print_all_aliases(message: discord.Message):
+async def print_all_aliases(message: Message):
     all_aliases = "```"
     for key, val in git_file_alias.items():
         all_aliases += f"{key:20s} -> {val}\n"
 
     await message.channel.send(f"{all_aliases}```Done.")
 
-async def set_match_ratio(message: discord.Message):
+async def set_match_ratio(message: Message):
     global match_ratio
     if len(message.content.split()) < 2:
         await message.channel.send("Must specify exactly one argument, the new match ratio. The old match ratio was %f." % match_ratio)
@@ -286,7 +286,7 @@ async def set_match_ratio(message: discord.Message):
     match_ratio = float(message.content.split()[1])
     await message.channel.send("New match ratio of %f set!" % match_ratio)
 
-async def set_repository(message: discord.Message):
+async def set_repository(message: Message):
     global repository
     if len(message.content.split()) < 2:
         await message.channel.send("Must specify exactly one argument, the new repository (USER/REPO). The old repository was %s." % repository)

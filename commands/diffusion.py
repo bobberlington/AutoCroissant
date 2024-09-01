@@ -2,11 +2,11 @@ from accelerate import init_empty_weights
 from accelerate.utils import set_module_tensor_to_device
 from commands.convert_nf4_flux import _replace_with_bnb_linear, create_quantized_param, check_quantized_param
 from diffusers import DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForInpainting, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler, AutoencoderKL
-import discord
+from discord import Message
 from gc import collect
 from huggingface_hub import hf_hub_download
 from os import listdir
-import safetensors.torch
+from safetensors.torch import load_file
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 from queue import Queue
@@ -33,9 +33,9 @@ except AttributeError:
 txt2img_pipe = img2img_pipe = inpaint_pipe = None
 in_progress = False
 possible_schedulers = ["dpm++ sde", "dpm++ sde karras", "euler a"]
-queue: Queue[discord.Message] = Queue()
+queue: Queue[Message] = Queue()
 
-def parse_msg_image(message: discord.Message):
+def parse_msg_image(message: Message):
     image = mask_image = None
     split_query = message.content.split()
     if len(split_query) > 1 and split_query[1].startswith("http"):
@@ -52,7 +52,7 @@ def parse_msg_image(message: discord.Message):
                 mask_image = url_to_pilimage(message.attachments[1].url)
     return image, mask_image
 
-async def get_qsize(message: discord.Message):
+async def get_qsize(message: Message):
     await message.channel.send(f"Current ai queue size: {queue.qsize()}")
     index = 1
     for q in queue.queue:
@@ -70,7 +70,7 @@ def init_pipeline():
         device_map = 'balanced' if torch.cuda.device_count() > 1 else None
         is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
         ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
-        original_state_dict = safetensors.torch.load_file(ckpt_path)
+        original_state_dict = load_file(ckpt_path)
         with init_empty_weights():
             flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map=device_map).to(dtype)
             expected_state_dict_keys = list(flux_model.state_dict().keys())
@@ -131,7 +131,7 @@ def init_pipeline():
     if queue.qsize() > 0:
         diffusion(queue.get_nowait())
 
-async def set_scheduler(message: discord.Message):
+async def set_scheduler(message: Message):
     global scheduler_name, txt2img_pipe, img2img_pipe, inpaint_pipe
     if len(message.content.split()) < 2 or not ' '.join(message.content.split()[1:]) in possible_schedulers:
         await message.channel.send("Must specify exactly one argument, the new scheduler. The old scheduler was:\n%s\nPossible choices are:\n%s" % (scheduler_name, '\n'.join(possible_schedulers)))
@@ -143,7 +143,7 @@ async def set_scheduler(message: discord.Message):
     torch.cuda.empty_cache()
     await message.channel.send("New scheduler of %s set!" % scheduler_name)
 
-async def set_device(message: discord.Message):
+async def set_device(message: Message):
     global device_no, txt2img_pipe, img2img_pipe, inpaint_pipe
     if len(message.content.split()) < 2:
         await message.channel.send("Must specify exactly one argument, the new device#. The old device# was: %s" % device_no)
@@ -159,7 +159,7 @@ async def set_device(message: discord.Message):
     torch.cuda.empty_cache()
     await message.channel.send("New device# of %s set!" % device_no)
 
-async def set_model(message: discord.Message):
+async def set_model(message: Message):
     global model, txt2img_pipe, img2img_pipe, inpaint_pipe
     if len(message.content.split()) < 2:
         safetensors = []
@@ -175,7 +175,7 @@ async def set_model(message: discord.Message):
     torch.cuda.empty_cache()
     await message.channel.send("New model of %s set!" % model)
 
-async def set_lora(message: discord.Message):
+async def set_lora(message: Message):
     global lora, txt2img_pipe, img2img_pipe, inpaint_pipe
     if len(message.content.split()) < 2:
         safetensors = []
@@ -191,7 +191,7 @@ async def set_lora(message: discord.Message):
     torch.cuda.empty_cache()
     await message.channel.send("New model of %s set!" % lora)
 
-def diffusion(message: discord.Message):
+def diffusion(message: Message):
     global in_progress
     if in_progress:
         messages.append((message.channel.id, "Request queued after the current generation."))

@@ -1,3 +1,4 @@
+from typing import Callable
 from commands.diffusion import diffusion, set_scheduler, set_device, set_model, set_lora, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
@@ -6,7 +7,7 @@ from commands.tools import to_thread
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
 
 # Insert new commands and their function hooks in here
-commands = {
+commands: dict[str, Callable] = {
     ".help"             : print_help,
     ".restart"          : restart_bot,
     ".stop"             : stop_bot,
