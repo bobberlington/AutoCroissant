@@ -10,9 +10,8 @@ commands = {
     ".update:"                                  : "Does a pull, then restarts.",
     ".purge:"                                   : "Deletes all messages by the bot, doesnt require perms.",
     ".quickpurge:"                              : "Deletes all messages by the bot quickly, requires perms.",
-    ".alias <Card_Name> <Card_Path>:"           : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.",
-    ".del_alias <Card_Name>:"                   : "Permanantly deletes the alias previously mapped to the name.",
-    ".print_aliases:"                           : "Prints all existing aliases.",
+    ".alias <Card_Name> <Card_Path>:"           : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.\n\
+                                                    Alternatively, if the first argument is 'del', deletes the second argument from aliases. If no arguments are passed, prints all existing aliases.",
     ".frankenstein <card1>,<card2>,...:"        : "Takes a list of creatures to mash together, and returns an image of the frankensteined creatures.",
     ".ai <optional url/img> <prompt>"           : "Takes either an image, url, or nothing except for a prompt, and generates an ai image. Can also take a second image to use as a mask.",
     ".ai_queue"                                 : "Returns the current ai queue size and the content of each queued request.",

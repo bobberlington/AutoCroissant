@@ -3,15 +3,15 @@ from discord import Message
 from pickle import load, dump
 from requests import get
 
-#from global_config import list_of_all_types, list_of_all_attributes, list_of_all_stars
+from commands.tools import messages
 
 repository = "MichaelJSr/TTSCardMaker"
 
 alias_pickle_name = "aliases.pkl"
-git_file_alias = {}
-git_files = {}
-ambiguous_names = {}
-git_filenames = []
+git_file_alias: dict[str, str] = {}
+git_files: dict[str, str] = {}
+ambiguous_names: dict[str, tuple[str, ...]] = {}
+git_filenames: list[str] = []
 
 descriptions = {}
 file_descriptions = []
@@ -31,7 +31,7 @@ def populate_files():
     # Values consist of the whole path, for example Items/Attack/2 Stars/Bomb.png
     for i in repo.json()["tree"]:
         if i["path"].endswith(".png"):
-            filepath = i["path"]
+            filepath: str = i["path"]
             png_filename = filepath[filepath.rindex("/") + 1:].lower()
             # If we're putting the same name twice, it will change both names to include the top level folder
             if png_filename in git_files:
@@ -41,24 +41,26 @@ def populate_files():
                 git_files[old_filename] = git_files[png_filename]
 
                 # Mark which files are ambiguous
-                if png_filename in ambiguous_names.keys():
+                if png_filename in ambiguous_names:
                     if old_filename not in ambiguous_names[png_filename]:
-                        ambiguous_names[png_filename].append(old_filename)
-                    ambiguous_names[png_filename].append(new_filename)
+                        ambiguous_names[png_filename] = (*ambiguous_names[png_filename], old_filename)
+                    ambiguous_names[png_filename] = (*ambiguous_names[png_filename], new_filename)
                 else:
-                    ambiguous_names[png_filename] = [old_filename, new_filename]
+                    ambiguous_names[png_filename] = (old_filename, new_filename)
             else:
                 git_files[png_filename] = filepath.replace(" ", "%20")
 
     # Fill up the aliases
     # keys of aliases are the aliases, values are the filenames they point to
-    for i in git_file_alias.keys():
+    for i in git_file_alias:
         if git_file_alias[i] in git_files:
             git_files[f"{i}.png"] = git_files[git_file_alias[i]]
         else:
-            val = [val for _, val in git_files.items() if val.lower().endswith(git_file_alias[i])]
+            val = [val for val in git_files.values() if val.lower().endswith(git_file_alias[i])]
             if val:
                 git_files[f"{i}.png"] = val[0]
+                # Adds any files that end with val to ambiguous_names
+                #ambiguous_names[f"{i}.png"] = [v[0:v.index('/')] + v[v.rindex('/'):] for v in val]
 
     git_filenames = git_files.keys()
     return 200
@@ -220,62 +222,58 @@ async def howmany_description(message: Message):
 
     await message.channel.send("%d Results found for %s!" % (len(closest), desc))
 
-async def alias_card(message: Message):
-    global git_filenames
-    if len(message.content.split()) != 3:
-         await message.channel.send("Must specify exactly two arguments, the key and value.")
-         return
-
-    key, val = message.content.split(".alias")[1].lower().split()
-    if not val.endswith(".png"):
-        val += ".png"
-
-    check_val_validity = False
-    for _, val_in_dict in git_files.items():
-        if val_in_dict.lower().endswith(val):
-            git_files[f"{key}.png"] = val_in_dict
-            git_filenames = list(git_files.keys())
-            check_val_validity = True
-            break
-    if not check_val_validity:
-        await message.channel.send("No such value exists: %s\nCouldnt add alias into dictionary." % val)
-        return
-
-    git_file_alias[key] = val
-    await message.channel.send(f"Created alias: {key} -> {val}")
-
-    with open(alias_pickle_name, 'wb') as f:
-        dump(git_file_alias, f)
-
-async def delete_alias(message: Message):
-    global git_filenames
-    if len(message.content.split()) != 2:
-        await message.channel.send("Must specify exactly one argument, the key.")
-        return
-
-    alias = message.content.split(".del_alias")[1].strip().lower()
-    if alias in git_file_alias:        
-        await message.channel.send(f"Deleted alias: {alias} -> {git_file_alias.pop(alias)}")
-
-        if alias + ".png" in git_files:
-            git_files.pop(f"{alias}.png")
-            git_filenames = list(git_files.keys())
-        else:
-            await message.channel.send("No such key exists: %s\nCouldnt pop alias from dictionary." % alias)
-            return
-    else:
-        await message.channel.send("No value exists for the alias: %s" % alias)
-        return
-
-    with open(alias_pickle_name, 'wb') as f:
-        dump(git_file_alias, f)
-
-async def print_all_aliases(message: Message):
+def print_all_aliases(message: Message):
     all_aliases = "```"
     for key, val in git_file_alias.items():
         all_aliases += f"{key:20s} -> {val}\n"
 
-    await message.channel.send(f"{all_aliases}```Done.")
+    messages.append((message.channel.id, all_aliases + "```Done."))
+
+async def alias_card(message: Message):
+    global git_filenames
+    if len(message.content.split()) != 3:
+         await message.channel.send("Must specify exactly two arguments, the key and value, or 'del' and the key to delete.")
+         return print_all_aliases(message)
+
+    key, val = message.content.split(".alias")[1].lower().split()
+
+    if key == "del":
+        if val in git_file_alias:        
+            await message.channel.send(f"Deleted alias: {val} -> {git_file_alias.pop(val)}")
+
+            if not val + ".png" in git_files:
+                await message.channel.send("No such key exists: %s\nCouldnt pop alias from dictionary." % val)
+                return
+
+            git_files.pop(f"{val}.png")
+            git_filenames = git_files.keys()
+        else:
+            await message.channel.send("No value exists for the alias: %s" % val)
+            return
+    else:
+        if not val.endswith(".png"):
+            val += ".png"
+
+        invalid_val = True
+        if val in git_files:
+            git_files[f"{key}.png"] = git_files[val]
+            invalid_val = False
+        else:
+            for val_in_dict in git_files.values():
+                if val_in_dict.lower().endswith(val):
+                    git_files[f"{key}.png"] = val_in_dict
+                    invalid_val = False
+                    break
+        if invalid_val:
+            await message.channel.send("No such value exists: %s\nCouldnt add alias into dictionary." % val)
+            return
+
+        git_filenames = git_files.keys()
+        git_file_alias[key] = val
+        await message.channel.send(f"Created alias: {key} -> {val}")
+
+    with open(alias_pickle_name, 'wb') as f:
+        dump(git_file_alias, f)
 
 async def set_match_ratio(message: Message):
     global match_ratio

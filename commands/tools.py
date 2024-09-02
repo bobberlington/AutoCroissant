@@ -10,9 +10,9 @@ from typing import Callable, Coroutine
 
 
 # async messages and files to send
-messages = []
-files = []
-commands = []
+messages: list[tuple[int, str]] = []
+files: list[tuple[int, File]] = []
+commands: list[tuple[tuple, Callable]] = []
 
 def to_thread(func: Callable) -> Coroutine:
     @wraps(func)
@@ -26,17 +26,17 @@ def url_to_cv2image(url: str, readFlag=IMREAD_COLOR) -> ndarray:
 def cv2discordfile(img: ndarray) -> File:
     return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename='image.png')
 
-def url_to_pilimage(url: str) -> Image:
+def url_to_pilimage(url: str) -> Image.Image:
     return Image.open(get(url, stream=True).raw)
 
-def pildiscordfile(img: Image) -> File:
+def pildiscordfile(img: Image.Image) -> File:
     with BytesIO() as bin:
         img.save(bin, 'png')
         bin.seek(0)
         return File(bin, filename='image.png')
 
-def cv2_to_pil(cv2_img: ndarray) -> Image:
+def cv2_to_pil(cv2_img: ndarray) -> Image.Image:
     return Image.fromarray(cvtColor(cv2_img, COLOR_BGR2RGB))
 
-def pil_to_cv2(pil_img: Image) -> ndarray:
+def pil_to_cv2(pil_img: Image.Image) -> ndarray:
     return cvtColor(array(pil_img), COLOR_RGB2BGR)

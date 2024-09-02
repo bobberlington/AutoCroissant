@@ -60,6 +60,10 @@ async def get_qsize(message: Message):
         index += 1
 
 def init_pipeline():
+    if model == "":
+        print("No model to initialize, finished.")
+        return
+
     global txt2img_pipe, img2img_pipe, inpaint_pipe, in_progress
     in_progress = True
     dtype = torch.float16

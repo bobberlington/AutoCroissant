@@ -2,7 +2,7 @@ from typing import Callable
 from commands.diffusion import diffusion, set_scheduler, set_device, set_model, set_lora, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
-from commands.query_card import alias_card, delete_alias, print_all_aliases
+from commands.query_card import alias_card
 from commands.tools import to_thread
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
 
@@ -15,8 +15,6 @@ commands: dict[str, Callable] = {
     ".push"             : git_push,
     ".update"           : update_bot,
     ".alias"            : alias_card,
-    ".del_alias"        : delete_alias,
-    ".print_aliases"    : print_all_aliases,
     ".frankenstein"     : to_thread(frankenstein),
     ".ai_queue"         : get_qsize,
     ".ai"               : to_thread(diffusion),

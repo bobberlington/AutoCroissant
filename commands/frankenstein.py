@@ -1,6 +1,7 @@
 from cv2 import resize, INTER_AREA
 from difflib import get_close_matches
 from discord import Message
+from numpy import ndarray
 
 from commands.tools import url_to_cv2image, cv2discordfile, messages, files
 
@@ -10,7 +11,7 @@ def frankenstein(message: Message):
         messages.append((message.channel.id, "Must specify atleast one argument to frankenstein."))
         return
 
-    images = []
+    images: list[ndarray] = []
     for part in message.content.split(".frankenstein")[1].strip().lower().split(","):
         creature = part.strip().replace(" ", "_")
         if not creature.endswith(".png"):

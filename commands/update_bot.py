@@ -6,7 +6,7 @@ from sys import argv, executable
 
 import config
 
-def perms_check(message: Message):
+def perms_check(message: Message) -> int:
     try:
         admins = config.admins
     except AttributeError:
