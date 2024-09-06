@@ -68,28 +68,32 @@ def init_pipeline():
     in_progress = True
     dtype = torch.float16
     scheduler = None
+    device_map = 'balanced' if vram_usage == "distributed" and torch.cuda.device_count() > 1 else None
 
-    if model == "flux":
+    if model.lower().find("flux") != -1:
         bfl_repo = "black-forest-labs/FLUX.1-dev"
-        device_map = 'balanced' if torch.cuda.device_count() > 1 else None
-        is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
-        ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
-        original_state_dict = load_file(ckpt_path)
-        with init_empty_weights():
-            flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map=device_map).to(dtype)
-            expected_state_dict_keys = list(flux_model.state_dict().keys())
-        _replace_with_bnb_linear(flux_model, "nf4")
-        for param_name, param in original_state_dict.items():
-            if param_name not in expected_state_dict_keys:
-                continue
-            is_param_float8_e4m3fn = is_torch_e4m3fn_available and param.dtype == torch.float8_e4m3fn
-            if torch.is_floating_point(param) and not is_param_float8_e4m3fn:
-                param = param.to(dtype)
-            if not check_quantized_param(flux_model, param_name):
-                set_module_tensor_to_device(flux_model, param_name, device=device_no, value=param)
-            else:
-                create_quantized_param(flux_model, param, param_name, target_device=device_no, state_dict=original_state_dict, pre_quantized=True)
-        del original_state_dict
+        flux_model = None
+        if model.lower().find("bnb") != -1:
+            flux_model = FluxTransformer2DModel.from_pretrained("sayakpaul/flux.1-dev-nf4-with-bnb-integration", torch_dtype=dtype, token=config.hf_token)
+        else:
+            is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
+            ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
+            original_state_dict = load_file(ckpt_path)
+            with init_empty_weights():
+                flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map=device_map, token=config.hf_token).to(dtype)
+                expected_state_dict_keys = list(flux_model.state_dict().keys())
+            _replace_with_bnb_linear(flux_model, "nf4")
+            for param_name, param in original_state_dict.items():
+                if param_name not in expected_state_dict_keys:
+                    continue
+                is_param_float8_e4m3fn = is_torch_e4m3fn_available and param.dtype == torch.float8_e4m3fn
+                if torch.is_floating_point(param) and not is_param_float8_e4m3fn:
+                    param = param.to(dtype)
+                if not check_quantized_param(flux_model, param_name):
+                    set_module_tensor_to_device(flux_model, param_name, device=device_no, value=param)
+                else:
+                    create_quantized_param(flux_model, param, param_name, target_device=device_no, state_dict=original_state_dict, pre_quantized=True)
+            del original_state_dict
         collect()
         torch.cuda.empty_cache()
         scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", token=config.hf_token, device_map=device_map)
@@ -98,20 +102,20 @@ def init_pipeline():
         #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map=device_map)
         #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
         #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
-        txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, scheduler=scheduler, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map=device_map)
+        txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map=device_map)
     elif model.lower().find("xl") != -1:
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
     else:
         txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True)
 
-    if scheduler_name.startswith("dpm++ sde"):
+    if not scheduler and scheduler_name.startswith("dpm++ sde"):
         scheduler = DPMSolverSinglestepScheduler.from_config(txt2img_pipe.scheduler.config)
         scheduler.config.lower_order_final = True
-    elif scheduler_name.startswith("euler a"):
+    elif not scheduler and scheduler_name.startswith("euler a"):
         scheduler = EulerAncestralDiscreteScheduler.from_config(txt2img_pipe.scheduler.config)
-    if scheduler_name.endswith("karras"):
+    if scheduler_name.endswith("karras") and model.lower().find("flux") == -1:
         scheduler.config.use_karras_sigmas = True
-    if scheduler and model != "flux":
+    if scheduler:
         txt2img_pipe.scheduler = scheduler
 
     if lora:
@@ -120,13 +124,13 @@ def init_pipeline():
     if vram_usage != "high":
         txt2img_pipe.vae.enable_slicing()
         txt2img_pipe.vae.enable_tiling()
-    if vram_usage == "medium" and (model != "flux" or torch.cuda.device_count() == 1):
+    if vram_usage == "medium":
         txt2img_pipe.enable_model_cpu_offload(gpu_id=device_no)
-    elif vram_usage == "low" and model != "flux":
+    elif vram_usage == "low":
         txt2img_pipe.enable_sequential_cpu_offload(gpu_id=device_no)
-    if model != "flux":
-        img2img_pipe = AutoPipelineForImage2Image.from_pipe(txt2img_pipe)
-        inpaint_pipe = AutoPipelineForInpainting.from_pipe(txt2img_pipe)
+
+    img2img_pipe = AutoPipelineForImage2Image.from_pipe(txt2img_pipe)
+    inpaint_pipe = AutoPipelineForInpainting.from_pipe(txt2img_pipe)
 
     collect()
     torch.cuda.empty_cache()
@@ -221,6 +225,7 @@ def diffusion(message: Message):
         query.pop(0)
 
     generator = torch.Generator("cuda")
+    generator.seed()
     for word in query.copy():
         if word.startswith("steps="):
             steps = int(word[len("steps="):])
