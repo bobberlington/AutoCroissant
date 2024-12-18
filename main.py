@@ -36,7 +36,7 @@ async def on_message(message: Message):
     # This ID is for the GitHub webhook bot from the TTS repo
     if message.author.id == 1011982177023561840:
         await restart_bot(message)
-    elif message.content.startswith("?find"):
+    elif message.content.startswith("??"):
         await query_pickle(message)
     elif message.content.startswith("?howmany"):
         await howmany_description(message)

@@ -2,6 +2,7 @@ from typing import Callable
 from commands.diffusion import diffusion, set_scheduler, set_device, set_model, set_lora, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
+from commands.music_player import play_music, disconnect, pause, stop
 from commands.query_card import alias_card
 from commands.tools import to_thread
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
@@ -22,6 +23,10 @@ commands: dict[str, Callable] = {
     ".set_device"       : set_device,
     ".set_model"        : set_model,
     ".set_lora"         : set_lora,
+    "-play"             : play_music,
+    "-disconnect"       : to_thread(disconnect),
+    "-pause"            : to_thread(pause),
+    "-stop"             : to_thread(stop),
 }
 
 list_of_all_types = [
