@@ -12,3 +12,4 @@ PyGithub
 requests
 sentencepiece
 transformers
+yt-dlp
