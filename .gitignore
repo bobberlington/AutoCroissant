@@ -12,3 +12,4 @@ __pycache__
 *.flac
 *.ogg
 music/downloaded.txt
+*.ini

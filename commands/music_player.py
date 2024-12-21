@@ -90,16 +90,21 @@ async def init_vc(message: Message):
     else:
         messages.append((message.channel.id, "User not connected to voice channel."))
 
-def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None = None):
+def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None = None, play_next: bool = False):
     if type(sleep_timer) == int:
         sleep(sleep_timer)
     else:
-        if sleep_timer == "latest":
-            sleep(5)
-            if latest_filename.find(music_base_dir) != -1:
+        timer = 0
+        if sleep_timer == "until_filename_available":
+            while not latest_filename:
+                sleep(0.5)
+                timer += 1
+                if timer > 10:
+                    break
+            if latest_filename.find(music_base_dir.strip('/')) != -1:
                 song = latest_filename
-        elif sleep_timer == "exists":
-            timer = 0
+            sleep(15 - timer)
+        elif sleep_timer == "until_file_exists":
             while True:
                 if Path(song).is_file():
                     break
@@ -111,13 +116,15 @@ def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None =
             if timer > 30:
                 song = '/'.join(song.split('/')[:-1])
                 song = sorted([song + '/' + name for name in listdir(song)], key=getctime)[1]
-        elif sleep_timer == "finish":
+        elif sleep_timer == "until_song_finishes":
             sleep(30)
             while vc.is_playing():
                 sleep(1)
 
     if not song:
-        song = music_base_dir
+        messages.append((channel_id, "Invalid song or error?"))
+        return
+
     if Path(song).is_dir():
         if not song.endswith('/'):
             song += '/'
@@ -126,13 +133,29 @@ def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None =
             if (song + s in prev_music) or (postprocess and not s.endswith(ext)):
                 continue
             queue_msg += s + '\n'
-            music.append(song + s)
+            if play_next:
+                music.appendleft(song + s)
+            else:
+                music.append(song + s)
         messages.append((channel_id, "Queued songs:" + queue_msg + "```"))
     else:
-        music.append(song)
+        if play_next:
+            music.appendleft(song)
+        else:
+            music.append(song)
         messages.append((channel_id, "Queued song: " + song))
 
 def play_song_async(message: Message):
+    play_next = False
+    if message.content.startswith('-playn'):
+        play_next = True
+    elif message.content.startswith('-playa'):
+        all_songs = recursively_traverse(music_base_dir, '').replace('\t', '')
+        messages.append((message.channel.id, "Queueing all songs"))
+        for song in all_songs.split('\n'):
+            music.append(song)
+        return
+
     song = ' '.join(message.content.split()[1:])
     if not song:
         messages.append((message.channel.id, "Please specify a song."))
@@ -142,6 +165,7 @@ def play_song_async(message: Message):
             if song.find("playlist") != -1 or song.find("album") != -1:
                 playlist_title = pre_extract['title']
                 if len(pre_extract['entries']) > 0:
+                    first_song_title = sub('\W+','_', pre_extract['entries'][0]['title'].replace(':', '_')).replace('__', '_-_').strip('_')
                     if not Path(music_base_dir + playlist_title).is_dir():
                         makedirs(music_base_dir + playlist_title)
 
@@ -150,23 +174,30 @@ def play_song_async(message: Message):
                     temp_dl = yt_dlp.YoutubeDL(temp_ydl_opts)
 
                     commands.append(((song, True), temp_dl.extract_info))
-                    commands.append((('', message.channel.id, "latest"), queue_song_async))
-                commands.append(((music_base_dir + playlist_title + '/', message.channel.id, "finish" if len(pre_extract['entries']) > 0 else None), queue_song_async))
+                    commands.append(((music_base_dir + playlist_title + '/' + first_song_title + ext, message.channel.id, "until_filename_available", play_next), queue_song_async))
+                commands.append(((music_base_dir + playlist_title + '/', message.channel.id, "until_song_finishes" if len(pre_extract['entries']) > 0 else None, play_next), queue_song_async))
             else:
                 commands.append(((song, True), dl.extract_info))
-                commands.append(((music_base_dir + sub('\W+','_', pre_extract['title'].replace(':', '_')).replace('__', '_-_').strip('_') + ext, message.channel.id, "latest"), queue_song_async))
+                commands.append(((music_base_dir + sub('\W+','_', pre_extract['title'].replace(':', '_')).replace('__', '_-_').strip('_') + ext, message.channel.id, "until_filename_available", play_next), queue_song_async))
         else:
-            song = music_base_dir + song
+            if not song.startswith(music_base_dir.strip('/')):
+                song = music_base_dir + song
             if Path(song).is_dir():
                 if not song.endswith('/'):
                     song += '/'
                 queue_msg = "```"
                 for s in listdir(song):
                     queue_msg += s + '\n'
-                    music.append(song + s)
+                    if play_next:
+                        music.appendleft(song + s)
+                    else:
+                        music.append(song + s)
                 messages.append((message.channel.id, "Queued songs:" + queue_msg + "```"))
             else:
-                music.append(song)
+                if play_next:
+                    music.appendleft(song)
+                else:
+                    music.append(song)
                 messages.append((message.channel.id, "Queued song: " + song))
 
 async def play_music(message: Message):
@@ -174,10 +205,14 @@ async def play_music(message: Message):
         await init_vc(message)
     commands.append(((message,), play_song_async))
 
-def replay_last(message: Message):
+def replay(message: Message):
+    spli = message.content.split()
+    rep_index = 0
+    if len(spli) > 1:
+        rep_index = int(spli[1])
     if len(prev_music) > 0:
-        messages.append((message.channel.id, "Replaying song: " + prev_music[-1]))
-        music.appendleft(prev_music[-1])
+        messages.append((message.channel.id, "Replaying song: " + prev_music[rep_index - 1]))
+        music.appendleft(prev_music[rep_index - 1])
     else:
         messages.append((message.channel.id, "No previously played songs."))
 

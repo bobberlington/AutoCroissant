@@ -2,7 +2,7 @@ from typing import Callable
 from commands.diffusion import diffusion, set_scheduler, set_device, set_model, set_lora, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
-from commands.music_player import list_all_music, play_music, replay_last, replay_all, set_volume, shuffle_music, skip, loop, pause, print_queue, print_prev_queue, clear_queue, stop, disconnect
+from commands.music_player import list_all_music, play_music, replay, replay_all, set_volume, shuffle_music, skip, loop, pause, print_queue, print_prev_queue, clear_queue, stop, disconnect
 from commands.query_card import alias_card
 from commands.tools import to_thread
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
@@ -28,7 +28,7 @@ commands: dict[str, Callable] = {
     "-play"             : play_music,
     "-list"             : to_thread(list_all_music),
     "-replay_all"       : to_thread(replay_all),
-    "-replay"           : to_thread(replay_last),
+    "-replay"           : to_thread(replay),
     "-volume"           : to_thread(set_volume),
     "-shuffle"          : to_thread(shuffle_music),
     "-skip"             : to_thread(skip),
