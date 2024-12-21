@@ -11,13 +11,15 @@ import yt_dlp
 from commands.tools import music, prev_music, messages, commands
 import config
 
-music_base_dir = "music/"
 vc: VoiceClient | None = None
-last_channel_id: id = None
+last_channel_id: int = None
+latest_filename: str = ""
+ext: str = '.webm'
 loop_song: bool = False
-postprocess = False
-latest_filename = ""
-ext = '.webm'
+
+music_base_dir: str = "music/"
+break_len: int = 1500
+postprocess: bool = False
 try:
     postprocess = config.postprocess
 except AttributeError:
@@ -75,20 +77,12 @@ def recursively_traverse(dir: str, tabs: str):
 
 def list_all_music(message: Message):
     full_msg = recursively_traverse(music_base_dir, '')
-    while len(full_msg) > 1500:
-        i = full_msg.index('\n', 1500)
+    while len(full_msg) > break_len:
+        i = full_msg.index('\n', break_len)
         part_msg = full_msg[:i]
         full_msg = full_msg[i:]
         messages.append((message.channel.id, "```" + part_msg + "```"))
     messages.append((message.channel.id, "```" + full_msg + "```"))
-
-async def init_vc(message: Message):
-    global vc, last_channel_id
-    last_channel_id = message.channel.id
-    if message.author.voice:
-        vc = await message.author.voice.channel.connect()
-    else:
-        messages.append((message.channel.id, "User not connected to voice channel."))
 
 def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None = None, play_next: bool = False):
     if type(sleep_timer) == int:
@@ -97,21 +91,19 @@ def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None =
         timer = 0
         if sleep_timer == "until_filename_available":
             while not latest_filename:
-                sleep(0.5)
+                sleep(0.25)
                 timer += 1
-                if timer > 10:
+                if timer > 40:
                     break
             if latest_filename.find(music_base_dir.strip('/')) != -1:
                 song = latest_filename
-            sleep(15 - timer)
+            sleep(15 - int(timer / 4))
         elif sleep_timer == "until_file_exists":
             while True:
-                if Path(song).is_file():
+                if Path(song).is_file() or timer > 30:
                     break
                 sleep(1)
                 timer += 1
-                if timer > 30:
-                    break
             sleep(5)
             if timer > 30:
                 song = '/'.join(song.split('/')[:-1])
@@ -200,19 +192,27 @@ def play_song_async(message: Message):
                     music.append(song)
                 messages.append((message.channel.id, "Queued song: " + song))
 
+async def init_vc(message: Message):
+    global vc, last_channel_id
+    last_channel_id = message.channel.id
+    if message.author.voice:
+        vc = await message.author.voice.channel.connect()
+    else:
+        messages.append((message.channel.id, "User not connected to voice channel."))
+
 async def play_music(message: Message):
     if not vc or not vc.is_connected():
         await init_vc(message)
     commands.append(((message,), play_song_async))
 
 def replay(message: Message):
-    spli = message.content.split()
+    msg_split = message.content.split()
     rep_index = 0
-    if len(spli) > 1:
-        rep_index = int(spli[1])
+    if len(msg_split) > 1:
+        rep_index = int(msg_split[1])
     if len(prev_music) > 0:
-        messages.append((message.channel.id, "Replaying song: " + prev_music[rep_index - 1]))
-        music.appendleft(prev_music[rep_index - 1])
+        messages.append((message.channel.id, "Replaying song: " + prev_music[-1 - rep_index]))
+        music.appendleft(prev_music[-1 - rep_index])
     else:
         messages.append((message.channel.id, "No previously played songs."))
 
@@ -275,7 +275,7 @@ def print_queue(message: Message):
     queue_msg = "```"
     for q in music:
         queue_msg += q + '\n'
-        if len(queue_msg) > 1500:
+        if len(queue_msg) > break_len:
             messages.append((message.channel.id, queue_msg + "```"))
             queue_msg = "```"
     messages.append((message.channel.id, queue_msg + "```"))
@@ -284,7 +284,7 @@ def print_prev_queue(message: Message):
     queue_msg = "```"
     for q in prev_music:
         queue_msg += q + '\n'
-        if len(queue_msg) > 1500:
+        if len(queue_msg) > break_len:
             messages.append((message.channel.id, queue_msg + "```"))
             queue_msg = "```"
     messages.append((message.channel.id, queue_msg + "```"))
@@ -296,7 +296,7 @@ def clear_queue(message: Message):
     music.clear()
 
 def stop(message: Message):
-    global prev_music, music
+    global prev_music
     if vc:
         messages.append((message.channel.id, "Clearing queue and stopping song: " + prev_music[-1]))
         prev_music += music

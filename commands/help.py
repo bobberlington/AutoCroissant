@@ -35,7 +35,22 @@ card_commands = {
 }
 
 music_commands = {
-    "-play <song>:"                             : "Plays/adds this song(s) to a queue, either a local file/folder or link to a song/playlist."
+    "-play <song>:"                             : "Plays/adds this song(s) to the back of the queue, either a local file/folder or link to a song/playlist.",
+    "-playn <song>:"                            : "Same as play, but puts the song at the top of the queue.",
+    "-playa:"                                   : "Queues all songs in the music directory.",
+    "-replay <index>:"                          : "Replays a song that was previously played, where an index of 0 or nothing is the current song, 1 is the previous song, etc.",
+    "-replay_all:"                              : "Replays all previously played songs.",
+    "-skip:"                                    : "Skips the currently playing song.",
+    "-loop:"                                    : "Loops the currently playing song.",
+    "-list:"                                    : "Lists all songs under the bot's music directory.",
+    "-volume <value>:"                          : "Increases/decreases volume by a multiplier of the given value (0.5 is half as loud, 2 is 2x as loud).",
+    "-shuffle:"                                 : "Shuffles the currently queued songs.",
+    "-queue:"                                   : "Lists all currently queued songs.",
+    "-prev_queue:"                              : "Lists all previously played songs.",
+    "-clear:"                                   : "Clears the queue.",
+    "-pause:"                                   : "Pauses/unpauses the current song.",
+    "-stop:"                                    : "Stops the currently playing song, and clears the queue.",
+    "-disconnect:"                              : "Disconnects the bot, stopping the current song and clearing all queues.",
 }
 
 async def print_help(message: Message):
