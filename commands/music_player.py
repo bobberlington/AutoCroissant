@@ -125,6 +125,9 @@ def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None =
             if (song + s in prev_music) or (postprocess and not s.endswith(ext)):
                 continue
             queue_msg += s + '\n'
+            if len(queue_msg) > break_len:
+                messages.append((channel_id, "Queued songs:" + queue_msg + "```"))
+                queue_msg = "```"
             if play_next:
                 music.appendleft(song + s)
             else:
@@ -180,6 +183,9 @@ def play_song_async(message: Message):
                 queue_msg = "```"
                 for s in listdir(song):
                     queue_msg += s + '\n'
+                    if len(queue_msg) > break_len:
+                        messages.append((message.channel.id, "Queued songs:" + queue_msg + "```"))
+                        queue_msg = "```"
                     if play_next:
                         music.appendleft(song + s)
                     else:
