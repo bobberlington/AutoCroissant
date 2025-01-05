@@ -90,6 +90,7 @@ def queue_song_async(song: str, channel_id: int, sleep_timer: int | str | None =
     else:
         timer = 0
         if sleep_timer == "until_filename_available":
+            sleep(3)
             while not latest_filename:
                 sleep(0.25)
                 timer += 1
