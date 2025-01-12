@@ -20,8 +20,11 @@ loop_song: bool = False
 music_base_dir: str = "music/"
 break_len: int = 1500
 postprocess: bool = False
+cookies_from_browser: bool = False
 try:
     postprocess = config.postprocess
+    if config.vram_usage == "mps":
+        cookies_from_browser = True
 except AttributeError:
     print("No music params in config, skipping.")
 
@@ -47,6 +50,9 @@ ydl_opts = {
     "progress_hooks": [get_filename],
 }
 
+if cookies_from_browser:
+    ydl_preprocess_opts['cookiesfrombrowser'] = ('safari', None, None, None)
+    ydl_opts['cookiesfrombrowser'] = ('safari', None, None, None)
 if postprocess:
     ext = '.mp3'
     ydl_preprocess_opts['postprocessors'] = [{
