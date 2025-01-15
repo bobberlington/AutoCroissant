@@ -1,17 +1,13 @@
-from accelerate import init_empty_weights
-from accelerate.utils import set_module_tensor_to_device
-from commands.convert_nf4_flux import _replace_with_bnb_linear, create_quantized_param, check_quantized_param
-from diffusers import DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForInpainting, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler, AutoencoderKL
+from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig, DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForInpainting, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler
+from diffusers.utils import load_image
 from discord import Message
 from gc import collect
-from huggingface_hub import hf_hub_download
 from os import listdir
-from safetensors.torch import load_file
 import torch
-from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
+from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
 from queue import Queue
 
-from commands.tools import url_to_pilimage, pildiscordfile, messages, files
+from commands.utils import pildiscordfile, messages, files
 import config
 
 mfolder = "./models/"
@@ -39,17 +35,17 @@ def parse_msg_image(message: Message):
     image = mask_image = None
     split_query = message.content.split()
     if len(split_query) > 1 and split_query[1].startswith("http"):
-        image = url_to_pilimage(split_query[1])
+        image = load_image(split_query[1])
         if len(split_query) > 2 and split_query[2].startswith("http"):
-            mask_image = url_to_pilimage(split_query[2])
+            mask_image = load_image(split_query[2])
     if len(message.attachments) > 0 and message.attachments[0].content_type.startswith("image"):
         if not image:
-            image = url_to_pilimage(message.attachments[0].url)
+            image = load_image(message.attachments[0].url)
         elif not mask_image:
-            mask_image = url_to_pilimage(message.attachments[0].url)
+            mask_image = load_image(message.attachments[0].url)
         if len(message.attachments) > 1 and message.attachments[1].content_type.startswith("image"):
             if not mask_image:
-                mask_image = url_to_pilimage(message.attachments[1].url)
+                mask_image = load_image(message.attachments[1].url)
     return image, mask_image
 
 async def get_qsize(message: Message):
@@ -75,37 +71,48 @@ def init_pipeline():
         if vram_usage == "mps":
             txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, torch_dtype=dtype, token=config.hf_token)
         else:
-            flux_model = None
-            if model.lower().find("bnb") != -1:
-                flux_model = FluxTransformer2DModel.from_pretrained("sayakpaul/flux.1-dev-nf4-with-bnb-integration", torch_dtype=dtype, token=config.hf_token)
-            else:
-                is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
-                ckpt_path = hf_hub_download("sayakpaul/flux.1-dev-nf4", filename="diffusion_pytorch_model.safetensors")
-                original_state_dict = load_file(ckpt_path)
-                with init_empty_weights():
-                    flux_model = FluxTransformer2DModel.from_config(FluxTransformer2DModel.load_config("sayakpaul/flux.1-dev-nf4"), device_map=device_map, token=config.hf_token).to(dtype)
-                    expected_state_dict_keys = list(flux_model.state_dict().keys())
-                _replace_with_bnb_linear(flux_model, "nf4")
-                for param_name, param in original_state_dict.items():
-                    if param_name not in expected_state_dict_keys:
-                        continue
-                    is_param_float8_e4m3fn = is_torch_e4m3fn_available and param.dtype == torch.float8_e4m3fn
-                    if torch.is_floating_point(param) and not is_param_float8_e4m3fn:
-                        param = param.to(dtype)
-                    if not check_quantized_param(flux_model, param_name):
-                        set_module_tensor_to_device(flux_model, param_name, device=device_no, value=param)
-                    else:
-                        create_quantized_param(flux_model, param, param_name, target_device=device_no, state_dict=original_state_dict, pre_quantized=True)
-                del original_state_dict
+            quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True)
+            transformer = FluxTransformer2DModel.from_pretrained(
+                bfl_repo,
+                subfolder="transformer",
+                quantization_config=quant_config,
+                torch_dtype=dtype,
+                token=config.hf_token,
+            )
+            quant_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True)
+            text_encoder = T5EncoderModel.from_pretrained(
+                bfl_repo,
+                subfolder="text_encoder_2",
+                quantization_config=quant_config,
+                torch_dtype=dtype,
+                device_map=device_map,
+                token=config.hf_token,
+            )
+            tokenizer = CLIPTokenizer.from_pretrained(
+                "openai/clip-vit-large-patch14",
+                quantization_config=quant_config,
+                torch_dtype=dtype,
+                clean_up_tokenization_spaces=True,
+                device_map=device_map,
+                token=config.hf_token,
+            )
+            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                bfl_repo,
+                subfolder="scheduler",
+                device_map=device_map,
+                token=config.hf_token,
+            )
             collect()
             torch.cuda.empty_cache()
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", token=config.hf_token, device_map=device_map)
-            text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
-            tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map=device_map)
-            #tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, clean_up_tokenization_spaces=True, token=config.hf_token, device_map=device_map)
-            #text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
-            #vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, token=config.hf_token, device_map=device_map)
-            txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, text_encoder=text_encoder, tokenizer=tokenizer, transformer=flux_model, torch_dtype=dtype, token=config.hf_token, device_map=device_map)
+            txt2img_pipe = FluxPipeline.from_pretrained(
+                bfl_repo,
+                text_encoder_2=text_encoder,
+                transformer=transformer,
+                tokenizer=tokenizer,
+                torch_dtype=dtype,
+                device_map=device_map,
+                token=config.hf_token,
+            )
     elif model.lower().find("xl") != -1:
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
     else:
@@ -255,7 +262,7 @@ def diffusion(message: Message):
             generator = generator.manual_seed(int(word[len("seed="):]))
             query.remove(word)
     prompt = " ".join(query)
-    if image:
+    if image and not (width and height):
         width, height = image.size
         width = int(width * resize)
         height = int(height * resize)
@@ -264,9 +271,9 @@ def diffusion(message: Message):
     collect()
     torch.cuda.empty_cache()
     if mask_image:
-        files.append((message.channel.id, pildiscordfile(inpaint_pipe(image=image.convert("RGB").resize((width, height)), mask_image=mask_image.resize((width, height)), strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((message.channel.id, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
     elif image:
-        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image.convert("RGB").resize((width, height)), strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((message.channel.id, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
     else:
         files.append((message.channel.id, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
     in_progress = False

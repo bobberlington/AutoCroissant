@@ -7,7 +7,7 @@ from config import token
 import global_config
 from commands.diffusion import init_pipeline
 from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository
-from commands.tools import music, prev_music, messages, files, commands
+from commands.utils import music, prev_music, messages, files, commands
 from commands.update_bot import restart_bot, purge
 
 # Intents permissions

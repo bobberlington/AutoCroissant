@@ -3,7 +3,7 @@ from discord import Message
 from pickle import load, dump
 from requests import get
 
-from commands.tools import messages
+from commands.utils import messages
 
 repository = "MichaelJSr/TTSCardMaker"
 

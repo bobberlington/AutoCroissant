@@ -8,7 +8,7 @@ from re import sub
 from time import sleep
 import yt_dlp
 
-from commands.tools import music, prev_music, messages, commands
+from commands.utils import music, prev_music, messages, commands
 import config
 
 vc: VoiceClient | None = None

@@ -4,7 +4,7 @@ from commands.frankenstein import frankenstein
 from commands.help import print_help
 from commands.music_player import list_all_music, play_music, replay, replay_all, set_volume, shuffle_music, skip, loop, pause, print_queue, print_prev_queue, clear_queue, stop, disconnect
 from commands.query_card import alias_card
-from commands.tools import to_thread
+from commands.utils import to_thread
 from commands.update_bot import restart_bot, stop_bot, git_pull, git_push, update_bot
 
 # Insert new commands and their function hooks in here
