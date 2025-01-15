@@ -165,7 +165,7 @@ def play_song_async(message: Message):
         if song.startswith("http"):
             pre_extract = dl_pre.extract_info(url=song, download=False)
             if song.find("playlist") != -1 or song.find("album") != -1:
-                playlist_title = pre_extract['title']
+                playlist_title = pre_extract['title'].replace(':', '')
                 if len(pre_extract['entries']) > 0:
                     first_song_title = sub('\W+','_', pre_extract['entries'][0]['title'].replace(':', '_')).replace('__', '_-_').strip('_')
                     if not Path(music_base_dir + playlist_title).is_dir():
