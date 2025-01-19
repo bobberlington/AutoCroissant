@@ -8,7 +8,6 @@ from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderMode
 from queue import Queue
 
 from commands.utils import pildiscordfile, messages, files
-import config
 
 mfolder = "./models/"
 lfolder = f"{mfolder}loras/"
@@ -18,6 +17,7 @@ device_no = 0
 scheduler_name = ""
 vram_usage = "low"
 try:
+    import config
     model = config.model
     lora = config.lora
     device_no = config.device_no

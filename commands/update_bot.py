@@ -4,10 +4,9 @@ from git.cmd import Git
 from os import execv, system, getpid
 from sys import argv, executable
 
-import config
-
 def perms_check(message: Message) -> int:
     try:
+        import config
         admins = config.admins
     except AttributeError:
         return 1

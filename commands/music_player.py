@@ -9,7 +9,6 @@ from time import sleep
 import yt_dlp
 
 from commands.utils import music, prev_music, messages, commands
-import config
 
 vc: VoiceClient | None = None
 last_channel_id: int = None
@@ -22,6 +21,7 @@ break_len: int = 1500
 postprocess: bool = False
 cookies_from_browser: bool = False
 try:
+    import config
     postprocess = config.postprocess
     if config.vram_usage == "mps":
         cookies_from_browser = True

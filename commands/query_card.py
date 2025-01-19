@@ -19,25 +19,36 @@ descriptions_pickle_name = "descriptions.pkl"
 descriptions_dir = "descriptions"
 match_ratio = 0.6
 
+headers = None
+git_token = None
+try:
+    import config
+    git_token = config.git_token
+    headers = {'Authorization': 'token ' + git_token}
+    print("Git token found, api will be limited to 5000 requests/hour.")
+except AttributeError:
+    print("No git token in config, api will be limited to 60 requests/hour.")
+
 def populate_files():
     global git_filenames
     # Grab repo
-    repo = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1")
+    repo = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1", headers=headers)
     if repo.status_code != 200:
+        print("Error when trying to connect to %s" % repository)
         return repo.status_code
 
     # Make a dictionary of all list of pngs in the github
     # Keys consist of the filename, for example Bomb.png
     # Values consist of the whole path, for example Items/Attack/2 Stars/Bomb.png
     for i in repo.json()["tree"]:
-        if i["path"].endswith(".png"):
-            filepath: str = i["path"]
-            png_filename = filepath[filepath.rindex("/") + 1:].lower()
+        path: str = i["path"]
+        if path.endswith(".png"):
+            png_filename = path[path.rindex("/") + 1:].lower()
             # If we're putting the same name twice, it will change both names to include the top level folder
             if png_filename in git_files:
-                new_filename = f"{filepath[0:filepath.index('/')]}/{png_filename}".lower()
+                new_filename = f"{path[0:path.index('/')]}/{png_filename}".lower()
                 old_filename = f"{git_files[png_filename][0:git_files[png_filename].index('/')]}/{png_filename}".lower()
-                git_files[new_filename] = filepath.replace(" ", "%20")
+                git_files[new_filename] = path.replace(" ", "%20")
                 git_files[old_filename] = git_files[png_filename]
 
                 # Mark which files are ambiguous
@@ -48,7 +59,7 @@ def populate_files():
                 else:
                     ambiguous_names[png_filename] = (old_filename, new_filename)
             else:
-                git_files[png_filename] = filepath.replace(" ", "%20")
+                git_files[png_filename] = path.replace(" ", "%20")
 
     # Fill up the aliases
     # keys of aliases are the aliases, values are the filenames they point to
@@ -127,7 +138,7 @@ def pickle_descriptions():
                     if should_it_be_pickled(line):
                         card_description += line + "."
                 if card_description != "":
-                    descriptions[card_description] = filename.split(".psd")[0] + ".png"
+                    descriptions[card_description] = filename[:-len(".psd")] + ".png"
 
     with open(descriptions_pickle_name, 'wb') as f:
         dump(descriptions, f)
