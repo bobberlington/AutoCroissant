@@ -164,7 +164,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
         print(layer.bbox[:2])
         # layer_image = layer.as_PIL()
         if layer.name.lower() == "ability":
-            ability = layer.text
+            ability = str(layer.engine_dict["Editor"]["Text"]).replace("\\r", " ")
         elif ("hp dark" in layer.parent.name.lower()) and layer.name.isdigit():
             if layer.is_visible():
                 hp += int(layer.name)
