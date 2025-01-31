@@ -1,11 +1,11 @@
 from cv2 import resize, INTER_AREA
 from difflib import get_close_matches
-from discord import Message, Interaction
+from discord import Interaction
 from numpy import ndarray
 
 from commands.utils import url_to_cv2image, cv2discordfile, messages, files
 
-def frankenstein(interaction: Interaction, cards):
+def frankenstein(interaction: Interaction, cards: str):
     from commands.query_card import repository, git_files, git_filenames, ambiguous_names, match_ratio
     if len(cards.split()) < 1:
         interaction.followup.send("Must specify at least one argument to frankenstein.")

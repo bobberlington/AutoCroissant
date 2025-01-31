@@ -21,6 +21,7 @@ async def restart_bot(interaction: Interaction):
         execv('./startup.sh', argv)
     except FileNotFoundError:
         execv(executable, ['python'] + argv)
+
 async def restart_bot_github(message: Message):
     await message.channel.send("Restarting bot!")
     try:
@@ -43,11 +44,12 @@ async def git_push(interaction: Interaction):
     await interaction.response.send_message("Pushing aliases.pkl...")
     try:
         Git(argv).add('aliases.pkl')
-        Git(argv).commit('-m', 'aliases.pkl')
+        Git(argv).add('descriptions.pkl')
+        Git(argv).commit('-m', 'PICKLE')
         Git(argv).push()
         await interaction.followup.send("Succesfully pushed!")
     except GitCommandError:
-        await interaction.followup.send("aliases.pkl is already up to date.")
+        await interaction.followup.send("aliases.pkl and descriptions.pkl are already up to date.")
 
 async def git_pull(interaction: Interaction):
     await interaction.response.send_message("Doing a git pull!")
@@ -62,7 +64,7 @@ async def update_bot(interaction: Interaction):
 async def purge(interaction: Interaction, limit : int, id: int, bulk = False):
     await interaction.response.defer()
     if perms_check(interaction) != 0:
-        await interaction.followup.send("You do not have permission to stop purge messages.")
+        await interaction.followup.send("You do not have permission to purge messages.")
         return
 
     if limit == -1:

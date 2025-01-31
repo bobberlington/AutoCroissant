@@ -4,7 +4,7 @@ from discord.errors import InteractionResponded
 
 
 general_commands = {
-    "/help <card/music>:"                       : "Prints the help message pertaining to general/card/music commands.",
+    "/help <card/ai/music>:"                    : "Prints the help message pertaining to general/card/ai/music commands.",
     "/restart:"                                 : "Restarts the bot.",
     "/stop:"                                    : "Stops the bot.",
     "/pull:"                                    : "Does a hard reset, than a git pull, and reports status.",
@@ -14,19 +14,22 @@ general_commands = {
 }
 
 card_commands = {
-    "/query_card <Card_Name>:"                             : "Posts the requested <Card_Name> image from the repo.",
-    "/query_desc <Card_Description>:"                    : "Searches for all cards with the requested description and posts their image.",
+    "/query_card <Card_Name>:"                  : "Posts the requested <Card_Name> image from the repo.",
+    "/query_desc <Card_Description>:"           : "Searches for all cards with the requested description and posts their image.",
     "/howmany <Card_Description>:"              : "Posts number of cards with requested description.",
-    "<Card_Description>:"                       : "Additionally, for ?? and ?howmany,\nIf the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
+    "<Card_Description>:"                       : "If the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
                                                     If the query is preceded by an exclamation mark !, then only things that don't match that query are returned.\n\
                                                     If there is a | symbol in the query, it treats both the partition before and the partition after the | symbol as separate queries, and combines their results.\n\
                                                     If there is a & symbol in the query, it treats both the partition before and the partition after the & symbol as seperate queries, and only returns results that are in both.\n\
-                                                    Multiple symbols can be combined. for example, \'?? \"atk=8\" & !\"spd=4\"\' will return all cards with 8 ATK and any SPD value except for 4.",
+                                                    Multiple symbols can be combined. for example, \'\"atk=8\" & !\"spd=4\"\' will return all cards with 8 ATK and any SPD value except for 4.",
     "/set_ratio <New_Ratio>:"                   : "If this is called with no arguments, returns the current match ratio. Otherwise, sets the match ratio to the passed in float.",
     "/set_repo <New_Repository>:"               : "If this is called with no arguments, returns the current repository. Otherwise, sets the repository to the passed in string (USER/REPO).",
-    "/alias <Card_Name> <Card_Path>:"           : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.\n\
-                                                    Alternatively, if the first argument is 'del', deletes the second argument from aliases. If no arguments are passed, prints all existing aliases.",
+    "/alias <Card_Name> <Card_Path>:"           : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.\nIf no arguments are passed, prints all existing aliases.",
+    "/del_alias <Card_Name>:"                   : "Deletes a previously created alias.",
     "/frankenstein <card1>,<card2>,...:"        : "Takes a list of creatures to mash together, and returns an image of the frankensteined creatures.",
+}
+
+ai_commands = {
     "/ai <optional url/img> <prompt>"           : "Takes either an image, url, or nothing except for a prompt, and generates an ai image. Can also take a second image to use as a mask.",
     "/ai_queue"                                 : "Returns the current ai queue size and the content of each queued request.",
     "/set_scheduler"                            : "If this is called with no arguments, returns the current scheduler and a list of possible choices. Otherwise, sets the new scheduler.",
@@ -37,9 +40,8 @@ card_commands = {
 
 music_commands = {
     "/play <song>:"                             : "Plays/adds this song(s) to the back of the queue, either a local file/folder or link to a song/playlist.",
-    "/playn <song>:"                            : "Same as play, but puts the song at the top of the queue.",
-    "/play_all:"                                   : "Queues all songs in the music directory.",
-    "/replay <index>:"                          : "Replays a song that was previously played, where an index of 0 or nothing is the current song, 1 is the previous song, etc.",
+    "/play_all:"                                : "Queues all songs in the music directory.",
+    "/replay <index>:"                          : "Replays a song that was previously played, where an index of 0 or nothing is the current song, 1 is the previous song, 2 is 2 songs ago, etc.",
     "/replay_all:"                              : "Replays all previously played songs.",
     "/skip:"                                    : "Skips the currently playing song.",
     "/loop:"                                    : "Loops the currently playing song.",
@@ -61,6 +63,8 @@ async def print_help(interaction: Interaction, help_wanted):
     wanted_commands = general_commands
     if help_wanted.find("card") != -1:
         wanted_commands = card_commands
+    elif help_wanted.find("ai") != -1:
+        wanted_commands = ai_commands
     elif help_wanted.find("music") != -1:
         wanted_commands = music_commands
 

@@ -1,10 +1,8 @@
 from difflib import SequenceMatcher, get_close_matches
-from discord import Interaction, Message
+from discord import Interaction
 from discord.errors import InteractionResponded
 from pickle import load, dump
 from requests import get
-
-from commands.utils import messages
 
 repository = "MichaelJSr/TTSCardMaker"
 

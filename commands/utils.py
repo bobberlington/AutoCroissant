@@ -7,17 +7,17 @@ from io import BytesIO
 from numpy import ndarray, array, asarray
 from PIL import Image
 from requests import get
-from typing import Callable, Coroutine
+from typing import Callable
 
 
 # async messages and files to send
-music: deque[tuple[int, str]] = deque()
-prev_music: deque[tuple[int, str]] = deque()
+music: deque[str] = deque()
+prev_music: deque[str] = deque()
 messages: deque[tuple[Interaction, str]] = deque()
 files: deque[tuple[Interaction, File]] = deque()
 commands: deque[tuple[tuple, Callable]] = deque()
 
-def to_thread(func: Callable) -> Coroutine:
+def to_thread(func: Callable):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)

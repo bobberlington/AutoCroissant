@@ -1,11 +1,11 @@
-import discord
 from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig, DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler, AutoPipelineForInpainting, AutoPipelineForImage2Image, StableDiffusionPipeline, StableDiffusionXLPipeline, FluxTransformer2DModel, FluxPipeline, FlowMatchEulerDiscreteScheduler
 from diffusers.utils import load_image
-from discord import Message, Interaction
+from discord import Attachment, Interaction
 from gc import collect
 from os import listdir
 import torch
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
+from typing import Optional
 from queue import Queue
 
 from commands.utils import pildiscordfile, messages, files
@@ -30,24 +30,7 @@ except AttributeError:
 txt2img_pipe = img2img_pipe = inpaint_pipe = None
 in_progress = False
 possible_schedulers = ["dpm++ sde", "dpm++ sde karras", "euler a"]
-queue: Queue[Interaction] = Queue()
-
-def parse_msg_image(message: Message):
-    image = mask_image = None
-    split_query = message.content.split()
-    if len(split_query) > 1 and split_query[1].startswith("http"):
-        image = load_image(split_query[1])
-        if len(split_query) > 2 and split_query[2].startswith("http"):
-            mask_image = load_image(split_query[2])
-    if len(message.attachments) > 0 and message.attachments[0].content_type.startswith("image"):
-        if not image:
-            image = load_image(message.attachments[0].url)
-        elif not mask_image:
-            mask_image = load_image(message.attachments[0].url)
-        if len(message.attachments) > 1 and message.attachments[1].content_type.startswith("image"):
-            if not mask_image:
-                mask_image = load_image(message.attachments[1].url)
-    return image, mask_image
+queue: Queue[tuple[Interaction, str, Optional[Attachment], Optional[Attachment], Optional[str], Optional[str], Optional[int], Optional[int], Optional[int], Optional[float], Optional[float], Optional[float], Optional[int]]] = Queue()
 
 async def get_qsize(interaction: Interaction):
     await interaction.response.send_message(f"Current ai queue size: {queue.qsize()}")
@@ -163,7 +146,7 @@ async def set_scheduler(interaction: Interaction, new_scheduler: str):
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
-    await interaction.followup.send("New scheduler of %s set!" % scheduler_name)
+    await interaction.response.send_message("New scheduler of %s set!" % scheduler_name)
 
 async def set_device(interaction: Interaction, new_device: int):
     global device_no, txt2img_pipe, img2img_pipe, inpaint_pipe
@@ -176,6 +159,7 @@ async def set_device(interaction: Interaction, new_device: int):
     except:
         await interaction.response.send_message("Invalid device#.")
         return
+
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
@@ -183,7 +167,7 @@ async def set_device(interaction: Interaction, new_device: int):
 
 async def set_model(interaction: Interaction, new_model: str):
     global model, txt2img_pipe, img2img_pipe, inpaint_pipe
-    safetensors = []
+    safetensors = ["flux"]
     for m in listdir(mfolder):
         if m.endswith('.safetensors'):
             safetensors.append(m)
@@ -204,6 +188,7 @@ async def set_lora(interaction: Interaction, new_lora: str):
     for m in listdir(lfolder):
         if m.endswith('.safetensors'):
             safetensors.append(m)
+
     if not new_lora or new_lora not in safetensors:
         await interaction.response.send_message("The old lora was:\n%s\nPossible choices are:\n%s" % (lora, '\n'.join(safetensors)))
         return
@@ -214,71 +199,38 @@ async def set_lora(interaction: Interaction, new_lora: str):
     torch.cuda.empty_cache()
     await interaction.response.send_message("New model of %s set!" % lora)
 
-def diffusion(interaction: Interaction, image_param: discord.Attachment, mask_image_param: discord.Attachment, url: str, mask_url: str,prompt: str):
+def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None, mask_image_param: Attachment = None, url: str = None, mask_url: str = None, steps: int = 50, height: int = 512, width: int = 512, resize: float = 1.0, cfg: float = 7.0, strength: float = 0.8, seed: int = None):
     global in_progress
     if in_progress:
         messages.append((interaction, "Request queued after the current generation."))
-        queue.put_nowait(interaction)
+        queue.put_nowait((interaction, prompt, image_param, mask_image_param, url, mask_url, steps, height, width, resize, cfg, strength, seed))
         return
 
     if not txt2img_pipe:
         messages.append((interaction, "Initializing pipeline, this will take a while..."))
         init_pipeline()
-
     in_progress = True
-    steps = 50
-    height = 512
-    width = 512
-    resize = 1
-    cfg = 7
-    strength = 0.8
+
+    image = None
     if image_param:
         image = load_image(image_param.url)
     elif url:
         image = load_image(url)
-    else:
-        image = None
+    mask_image = None
     if mask_image_param:
         mask_image = load_image(mask_image_param.url)
     elif mask_url:
         mask_image = load_image(url)
-    else:
-        image = None
-
-    query = prompt.replace(",", " ").lower().split()
-    while len(query) > 0 and query[0].startswith("http"):
-        query.pop(0)
 
     generator = torch.Generator("cuda" if vram_usage != "mps" else "mps")
     generator.seed()
-    for word in query.copy():
-        if word.startswith("steps="):
-            steps = int(word[len("steps="):])
-            query.remove(word)
-        elif word.startswith("height="):
-            height = int(word[len("height="):])
-            query.remove(word)
-        elif word.startswith("width="):
-            width = int(word[len("width="):])
-            query.remove(word)
-        elif word.startswith("resize="):
-            resize = float(word[len("resize="):])
-            query.remove(word)
-        elif word.startswith("cfg="):
-            cfg = float(word[len("cfg="):])
-            query.remove(word)
-        elif word.startswith("strength="):
-            strength = float(word[len("strength="):])
-            query.remove(word)
-        elif word.startswith("seed="):
-            generator = generator.manual_seed(int(word[len("seed="):]))
-            query.remove(word)
-    prompt = " ".join(query)
+    if seed:
+        generator = generator.manual_seed(seed)
     if image and not (width and height):
         width, height = image.size
         width = int(width * resize)
         height = int(height * resize)
-    messages.append((interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}."))
+    messages.append((interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}"))
 
     collect()
     torch.cuda.empty_cache()
@@ -290,4 +242,4 @@ def diffusion(interaction: Interaction, image_param: discord.Attachment, mask_im
         files.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
     in_progress = False
     if queue.qsize() > 0:
-        diffusion(queue.get_nowait())
+        diffusion(*queue.get_nowait())

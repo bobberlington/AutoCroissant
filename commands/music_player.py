@@ -1,5 +1,5 @@
 from collections import deque
-from discord import Message, VoiceClient, PCMVolumeTransformer, Interaction, channel
+from discord import VoiceClient, PCMVolumeTransformer, Interaction, channel
 from os import listdir, makedirs
 from os.path import getctime
 from pathlib import Path
@@ -205,17 +205,17 @@ async def init_vc(interaction: Interaction):
     else:
         messages.append((interaction, "User not connected to voice channel."))
 
-async def play_music(interaction: Interaction, song: str, next: bool):
+async def play_music(interaction: Interaction, song: str, play_next: bool = False):
     if not vc or not vc.is_connected():
         await init_vc(interaction)
-    commands.append(((interaction, song, next), play_song_async))
+    commands.append(((interaction, song, play_next), play_song_async))
 
 async def play_all(interaction: Interaction):
     if not vc or not vc.is_connected():
         await init_vc(interaction)
     commands.append(((interaction,), play_all_async))
 
-def replay(interaction: Interaction, rep_index: int):
+def replay(interaction: Interaction, rep_index: int = 0):
     if len(prev_music) > 0:
         messages.append((interaction, "Replaying song: " + prev_music[-1 - rep_index]))
         music.appendleft(prev_music[-1 - rep_index])
@@ -317,4 +317,4 @@ def disconnect(interaction: Interaction):
         music = deque()
         prev_music = deque()
     else:
-        messages.append((interaction, "Not currently in a voice channel. If I am in a voice channel, do ```-play``` and then ```-disconnect```"))
+        messages.append((interaction, "Not currently in a voice channel. If I am in a voice channel, do ```/play``` and then ```/disconnect```"))
