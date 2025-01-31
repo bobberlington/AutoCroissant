@@ -1,5 +1,6 @@
 from difflib import SequenceMatcher, get_close_matches
-from discord import Message
+from discord import Interaction, Message
+from discord.errors import InteractionResponded
 from pickle import load, dump
 from requests import get
 
@@ -183,126 +184,120 @@ def try_open_descriptions():
             return
     file_descriptions = descriptions.keys()
 
-async def query_remote(message: Message):
-    # If it's just a ?, ignore everything
-    if len(message.content) == 1:
-        return
+async def query_remote(interaction: Interaction, query: str):
 
-    card = message.content[1:].replace(" ", "_").lower()
+    card = query.replace(" ", "_").lower()
     if not card.endswith(".png"):
         card += ".png"
     try:
         closest = get_close_matches(card, git_filenames, n=1, cutoff=match_ratio)[0]
     except IndexError:
-        await message.channel.send("No card found!")
+        await interaction.response.send_message("No card found!")
         return
-    await message.channel.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}")
+    await interaction.response.send_message(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}")
 
     # If the filename was ambiguous, make a note of that.
     if closest in ambiguous_names:
         ambiguous_message = "Ambiguous name found. If this wasn't the card you wanted, try typing: \n"
         for i in ambiguous_names[closest]:
             ambiguous_message += f"{i}\n"
-        await message.channel.send(ambiguous_message)
+        await interaction.followup.send(ambiguous_message)
 
-async def query_pickle(message: Message):
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify atleast one argument, the search query.")
-        return
+async def query_pickle(interaction: Interaction, desc: str):
 
-    desc = " ".join(message.content.split()[1:]).strip().lower()
-    closest = populate_descriptions(desc)
+    closest = populate_descriptions(desc.strip().lower())
 
     for close in closest:
         try:
-            await message.channel.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
+            await interaction.response.send_message(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
         except KeyError:
-            await message.channel.send("No such key: %s" % descriptions[close])
+            await interaction.response.send_message("No such key: %s" % descriptions[close])
             descriptions.pop(close)
             with open(descriptions_pickle_name, 'wb') as f:
                 dump(descriptions, f)
-    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
+        except InteractionResponded:
+            await interaction.followup.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
 
-async def howmany_description(message: Message):
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify atleast one argument, the search query.")
-        return
+    await interaction.followup.send("%d Results found for %s!" % (len(closest), desc))
 
-    desc = " ".join(message.content.split()[1:]).strip().lower()
+async def howmany_description(interaction: Interaction, desc: str):
+    desc = desc.strip().lower()
     closest = populate_descriptions(desc)
 
-    await message.channel.send("%d Results found for %s!" % (len(closest), desc))
+    await interaction.response.send_message("%d Results found for %s!" % (len(closest), desc))
 
-def print_all_aliases(message: Message):
+def print_all_aliases():
     all_aliases = "```"
     for key, val in git_file_alias.items():
         all_aliases += f"{key:20s} -> {val}\n"
+    all_aliases += "```"
+    return all_aliases
 
-    messages.append((message.channel.id, all_aliases + "```Done."))
-
-async def alias_card(message: Message):
+async def alias_card(interaction: Interaction, key: str, val: str):
     global git_filenames
-    if len(message.content.split()) != 3:
-         await message.channel.send("Must specify exactly two arguments, the key and value, or 'del' and the key to delete.")
-         return print_all_aliases(message)
+    if not key or not val:
+        await interaction.response.send_message(print_all_aliases())
+        return
 
-    key, val = message.content.split(".alias")[1].lower().split()
+    key = key.lower()
+    val = val.lower()
 
-    if key == "del":
-        if val in git_file_alias:        
-            await message.channel.send(f"Deleted alias: {val} -> {git_file_alias.pop(val)}")
+    if not val.endswith(".png"):
+        val += ".png"
 
-            if not val + ".png" in git_files:
-                await message.channel.send("No such key exists: %s\nCouldnt pop alias from dictionary." % val)
-                return
-
-            git_files.pop(f"{val}.png")
-            git_filenames = git_files.keys()
-        else:
-            await message.channel.send("No value exists for the alias: %s" % val)
-            return
+    invalid_val = True
+    if val in git_files:
+        git_files[f"{key}.png"] = git_files[val]
+        invalid_val = False
     else:
-        if not val.endswith(".png"):
-            val += ".png"
+        for val_in_dict in git_files.values():
+            if val_in_dict.lower().endswith(val):
+                git_files[f"{key}.png"] = val_in_dict
+                invalid_val = False
+                break
+    if invalid_val:
+        await interaction.response.send_message("No such value exists: %s\nCouldnt add alias into dictionary." % val)
+        return
 
-        invalid_val = True
-        if val in git_files:
-            git_files[f"{key}.png"] = git_files[val]
-            invalid_val = False
-        else:
-            for val_in_dict in git_files.values():
-                if val_in_dict.lower().endswith(val):
-                    git_files[f"{key}.png"] = val_in_dict
-                    invalid_val = False
-                    break
-        if invalid_val:
-            await message.channel.send("No such value exists: %s\nCouldnt add alias into dictionary." % val)
-            return
-
-        git_filenames = git_files.keys()
-        git_file_alias[key] = val
-        await message.channel.send(f"Created alias: {key} -> {val}")
+    git_filenames = git_files.keys()
+    git_file_alias[key] = val
+    await interaction.response.send_message(f"Created alias: {key} -> {val}")
 
     with open(alias_pickle_name, 'wb') as f:
         dump(git_file_alias, f)
 
-async def set_match_ratio(message: Message):
+async def delete_alias(interaction: Interaction, key: str):
+    global git_filenames
+    if key in git_file_alias:
+        await interaction.response.send_message(f"Deleted alias: {key} -> {git_file_alias.pop(key)}")
+
+        if not key + ".png" in git_files:
+            await interaction.followup.send("No such key exists: %s\nCouldnt pop alias from dictionary." % key)
+            return
+
+        git_files.pop(f"{key}.png")
+        git_filenames = git_files.keys()
+    else:
+        await interaction.response.send_message("No value exists for the alias: %s" % key)
+        return
+
+async def set_match_ratio(interaction: Interaction, value: float):
     global match_ratio
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify exactly one argument, the new match ratio. The old match ratio was %f." % match_ratio)
+    if not value:
+        await interaction.response.send_message("The match ratio is %f." % match_ratio)
         return
 
-    match_ratio = float(message.content.split()[1])
-    await message.channel.send("New match ratio of %f set!" % match_ratio)
+    match_ratio = value
+    await interaction.response.send_message("New match ratio of %f set!" % match_ratio)
 
-async def set_repository(message: Message):
+async def set_repository(interaction: Interaction, new_repo: str):
     global repository
-    if len(message.content.split()) < 2:
-        await message.channel.send("Must specify exactly one argument, the new repository (USER/REPO). The old repository was %s." % repository)
+    if not new_repo:
+        await interaction.response.send_message("The repository is %s." % repository)
         return
 
-    repository = message.content.split()[1]
+    repository = new_repo
     status = populate_files()
     if status != 200:
        print(f"Error {status} when requesting github.")
-    await message.channel.send("New repository of %s set!" % repository)
+    await interaction.response.send_message("New repository of %s set!" % repository)

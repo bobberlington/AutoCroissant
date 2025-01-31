@@ -1,7 +1,7 @@
 import asyncio
 from collections import deque
 from cv2 import imdecode, imencode, cvtColor, IMREAD_COLOR, COLOR_BGR2RGB, COLOR_RGB2BGR
-from discord import File
+from discord import File, Interaction
 from functools import wraps
 from io import BytesIO
 from numpy import ndarray, array, asarray
@@ -13,8 +13,8 @@ from typing import Callable, Coroutine
 # async messages and files to send
 music: deque[tuple[int, str]] = deque()
 prev_music: deque[tuple[int, str]] = deque()
-messages: deque[tuple[int, str]] = deque()
-files: deque[tuple[int, File]] = deque()
+messages: deque[tuple[Interaction, str]] = deque()
+files: deque[tuple[Interaction, File]] = deque()
 commands: deque[tuple[tuple, Callable]] = deque()
 
 def to_thread(func: Callable) -> Coroutine:

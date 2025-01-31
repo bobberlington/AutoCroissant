@@ -40,3 +40,5 @@ commands: dict[str, Callable] = {
     "-stop"             : to_thread(stop),
     "-disconnect"       : to_thread(disconnect),
 }
+
+bot_admin_ids = [80731173726191616]
