@@ -1,5 +1,4 @@
 from datetime import datetime
-from discord import Message
 from github import Github
 from os import path, walk
 from os.path import getmtime, basename
