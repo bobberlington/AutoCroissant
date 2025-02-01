@@ -36,9 +36,9 @@ async def stop_bot(interaction: Interaction):
 
     await interaction.response.send_message("Stopping bot!")
     # Mac kill
-    system('kill %d' % getpid())
+    system(f"kill {getpid()}")
     # Windows kill
-    system('taskkill /F /PID %d' % getpid())
+    system(f"taskkill /F /PID {getpid()}")
 
 async def git_push(interaction: Interaction):
     await interaction.response.send_message("Pushing aliases.pkl...")
@@ -53,8 +53,8 @@ async def git_push(interaction: Interaction):
 
 async def git_pull(interaction: Interaction):
     await interaction.response.send_message("Doing a git pull!")
-    await interaction.followup.send("%s" % Git(argv).reset('--hard'))
-    await interaction.followup.send("%s" % Git(argv).pull())
+    await interaction.followup.send(f"{Git(argv).reset('--hard')}")
+    await interaction.followup.send(f"{Git(argv).pull()}")
 
 async def update_bot(interaction: Interaction):
     await git_push(interaction)
@@ -71,6 +71,6 @@ async def purge(interaction: Interaction, limit : int, id: int, bulk = False):
         limit = 1000000
 
     channel = interaction.channel
-    await interaction.followup.send("Purging messages from user %s." % id)
+    await interaction.followup.send(f"Purging messages from user {id}.")
     num_messages = len(await channel.purge(limit=limit, check=lambda message: message.author.id == id, bulk=bulk))
-    await channel.send("Deleted %d message(s) from user %s." % (num_messages, id))
+    await channel.send(f"Deleted {num_messages} message(s) from user {id}.")

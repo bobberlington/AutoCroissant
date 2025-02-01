@@ -61,11 +61,11 @@ async def print_help(interaction: Interaction, help_wanted):
         help_wanted = ""
     help_wanted = str(help_wanted)
     wanted_commands = general_commands
-    if help_wanted.find("card") != -1:
+    if "card" in help_wanted:
         wanted_commands = card_commands
-    elif help_wanted.find("ai") != -1:
+    elif "ai" in help_wanted:
         wanted_commands = ai_commands
-    elif help_wanted.find("music") != -1:
+    elif "music" in help_wanted:
         wanted_commands = music_commands
 
     help_msg = f"```Available commands:\n\n"

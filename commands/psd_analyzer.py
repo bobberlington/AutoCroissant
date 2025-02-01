@@ -38,13 +38,13 @@ def pickle_descriptions():
 def update_descriptions():
     global descs
 
-    print("Trying to open %s" % descriptions_pickle_name)
+    print(f"Trying to open {descriptions_pickle_name}")
     try:
         with open(descriptions_pickle_name, 'rb') as f:
             descs = load(f)
-        print("Existing dict found in %s, updating entries..." % descriptions_pickle_name)
+        print(f"Existing dict found in {descriptions_pickle_name}, updating entries...")
     except (EOFError, FileNotFoundError):
-        print("%s is completely empty or doesn't exist, rebuilding entire dict..." % descriptions_pickle_name)
+        print(f"{descriptions_pickle_name} is completely empty or doesn't exist, rebuilding entire dict...")
 
     if use_local:
         traverse_local_repo()
@@ -66,7 +66,7 @@ def populate_types_stars_attrs(resp: Response | None = None):
         for i in resp.json()["tree"]:
             path: str = i["path"]
             if path.startswith("Types"):
-                if path.find('.') == -1:
+                if not '.' in path:
                     continue
 
                 file = path.split('/')[-1][:-len('.png')]
@@ -204,18 +204,18 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
         card["spd"] = spd
 
     if card["type"] == "unknown":
-        print("UNKOWN TYPE %s" % relative_loc)
+        print(f"UNKOWN TYPE {relative_loc}")
     if card["type"] != "unknown" and not ability:
-        print("ABILITY TEXT NOT FOUND FOR %s" % relative_loc)
+        print(f"ABILITY TEXT NOT FOUND FOR {relative_loc}")
 
     if card == "creature" and not hp:
-        print("HP NOT FOUND FOR %s" % relative_loc)
+        print(f"HP NOT FOUND FOR {relative_loc}")
     if card == "creature" and not df:
-        print("DEF NOT FOUND FOR %s" % relative_loc)
+        print(f"DEF NOT FOUND FOR {relative_loc}")
     if card == "creature" and not atk:
-        print("ATK NOT FOUND FOR %s" % relative_loc)
+        print(f"ATK NOT FOUND FOR {relative_loc}")
     if card == "creature" and not spd:
-        print("SPD NOT FOUND FOR %s" % relative_loc)
+        print(f"SPD NOT FOUND FOR {relative_loc}")
 
     return card
 
@@ -223,7 +223,7 @@ def traverse_repo():
     #from commands.query_card import repository
     resp = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1", headers=headers)
     if resp.status_code != 200:
-        print("Error when trying to connect to %s" % repository)
+        print(f"Error when trying to connect to {repository}")
         return resp.status_code
     # This uses an api request
     repo = Github(login_or_token=git_token).get_repo(repository)
@@ -250,7 +250,7 @@ def traverse_repo():
 def traverse_local_repo():
     repo = None
     if not use_local_mtime:
-        print("Warning: Getting the timestamp of a remote file uses up an api request, you can make up to %d requests" % (5000 if git_token else 60))
+        print(f"Warning: Getting the timestamp of a remote file uses up an api request, you can make up to {5000 if git_token else 60} requests")
         repo = Github(login_or_token=git_token).get_repo(repository)
 
     populate_types_stars_attrs()

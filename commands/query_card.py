@@ -33,7 +33,7 @@ def populate_files():
     # Grab repo
     repo = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1", headers=headers)
     if repo.status_code != 200:
-        print("Error when trying to connect to %s" % repository)
+        print(f"Error when trying to connect to {repository}")
         return repo.status_code
 
     # Make a dictionary of all list of pngs in the github
@@ -145,32 +145,32 @@ def pickle_descriptions():
 def try_open_alias():
     global git_file_alias
 
-    print("Trying to open %s" % alias_pickle_name)
+    print(f"Trying to open {alias_pickle_name}")
     try:
         with open(alias_pickle_name, 'rb') as f:
             git_file_alias = load(f)
     except EOFError:
-        print("%s is completely empty, populating with empty dict..." % alias_pickle_name)
+        print(f"{alias_pickle_name} is completely empty, populating with empty dict...")
         with open(alias_pickle_name, 'wb') as f:
             dump(git_file_alias, f)
     except FileNotFoundError:
-        print("%s doesnt exist, populating with empty dict..." % alias_pickle_name)
+        print(f"{alias_pickle_name} doesnt exist, populating with empty dict...")
         with open(alias_pickle_name, 'wb') as f:
             dump(git_file_alias, f)
 
 def try_open_descriptions():
     global descriptions, file_descriptions
 
-    print("Trying to open %s" % descriptions_pickle_name)
+    print(f"Trying to open {descriptions_pickle_name}")
     try:
         with open(descriptions_pickle_name, 'rb') as f:
             descriptions = load(f)
     except EOFError:
-        print("%s is completely empty, populating with empty dict..." % descriptions_pickle_name)
+        print(f"{descriptions_pickle_name} is completely empty, populating with empty dict...")
         with open(descriptions_pickle_name, 'wb') as f:
             dump(descriptions, f)
     except FileNotFoundError:
-        print("%s doesnt exist, populating with empty dict..." % descriptions_pickle_name)
+        print(f"{descriptions_pickle_name} doesnt exist, populating with empty dict...")
         with open(descriptions_pickle_name, 'wb') as f:
             dump(descriptions, f)
 
@@ -209,20 +209,20 @@ async def query_pickle(interaction: Interaction, desc: str):
         try:
             await interaction.response.send_message(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
         except KeyError:
-            await interaction.response.send_message("No such key: %s" % descriptions[close])
+            await interaction.response.send_message(f"No such key: {descriptions[close]}")
             descriptions.pop(close)
             with open(descriptions_pickle_name, 'wb') as f:
                 dump(descriptions, f)
         except InteractionResponded:
             await interaction.followup.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
 
-    await interaction.followup.send("%d Results found for %s!" % (len(closest), desc))
+    await interaction.followup.send(f"{len(closest)} Results found for {desc}!")
 
 async def howmany_description(interaction: Interaction, desc: str):
     desc = desc.strip().lower()
     closest = populate_descriptions(desc)
 
-    await interaction.response.send_message("%d Results found for %s!" % (len(closest), desc))
+    await interaction.response.send_message(f"{len(closest)} Results found for {desc}!")
 
 def print_all_aliases():
     all_aliases = "```"
@@ -254,7 +254,7 @@ async def alias_card(interaction: Interaction, key: str, val: str):
                 invalid_val = False
                 break
     if invalid_val:
-        await interaction.response.send_message("No such value exists: %s\nCouldnt add alias into dictionary." % val)
+        await interaction.response.send_message(f"No such value exists: {val}\nCouldnt add alias into dictionary.")
         return
 
     git_filenames = git_files.keys()
@@ -270,32 +270,32 @@ async def delete_alias(interaction: Interaction, key: str):
         await interaction.response.send_message(f"Deleted alias: {key} -> {git_file_alias.pop(key)}")
 
         if not key + ".png" in git_files:
-            await interaction.followup.send("No such key exists: %s\nCouldnt pop alias from dictionary." % key)
+            await interaction.followup.send(f"No such key exists: {key}\nCouldnt pop alias from dictionary.")
             return
 
         git_files.pop(f"{key}.png")
         git_filenames = git_files.keys()
     else:
-        await interaction.response.send_message("No value exists for the alias: %s" % key)
+        await interaction.response.send_message(f"No value exists for the alias: {key}")
         return
 
 async def set_match_ratio(interaction: Interaction, value: float):
     global match_ratio
     if not value:
-        await interaction.response.send_message("The match ratio is %f." % match_ratio)
+        await interaction.response.send_message(f"The match ratio is {match_ratio}.")
         return
 
     match_ratio = value
-    await interaction.response.send_message("New match ratio of %f set!" % match_ratio)
+    await interaction.response.send_message(f"New match ratio of {match_ratio} set!")
 
 async def set_repository(interaction: Interaction, new_repo: str):
     global repository
     if not new_repo:
-        await interaction.response.send_message("The repository is %s." % repository)
+        await interaction.response.send_message(f"The repository is {repository}.")
         return
 
     repository = new_repo
     status = populate_files()
     if status != 200:
        print(f"Error {status} when requesting github.")
-    await interaction.response.send_message("New repository of %s set!" % repository)
+    await interaction.response.send_message(f"New repository of {repository} set!")

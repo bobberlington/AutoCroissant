@@ -19,7 +19,7 @@ def frankenstein(interaction: Interaction, cards: str):
         try:
             closest = get_close_matches(creature, git_filenames, n=1, cutoff=match_ratio)[0]
         except IndexError:
-            messages.append((interaction, "No card found for query %s!" % creature))
+            messages.append((interaction, f"No card found for query {creature}!"))
             return
         images.append(url_to_cv2image(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}"))
 

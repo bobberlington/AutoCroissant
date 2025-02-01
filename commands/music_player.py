@@ -102,7 +102,7 @@ def queue_song_async(song: str, interaction: Interaction, sleep_timer: int | str
                 timer += 1
                 if timer > 40:
                     break
-            if latest_filename.find(music_base_dir.strip('/')) != -1:
+            if music_base_dir.strip('/') in latest_filename:
                 song = latest_filename
             sleep(15 - int(timer / 4))
         elif sleep_timer == "until_file_exists":
@@ -156,7 +156,7 @@ def play_all_async(interaction: Interaction):
 def play_song_async(interaction: Interaction, song: str, play_next: bool):
     if song.startswith("http"):
         pre_extract = dl_pre.extract_info(url=song, download=False)
-        if song.find("playlist") != -1 or song.find("album") != -1:
+        if "playlist" in song or "album" in song:
             playlist_title = pre_extract['title'].replace(':', '')
             if len(pre_extract['entries']) > 0:
                 first_song_title = sub('\W+','_', pre_extract['entries'][0]['title'].replace(':', '_')).replace('__', '_-_').strip('_')

@@ -3,12 +3,14 @@ from diffusers.utils import load_image
 from discord import Attachment, Interaction
 from gc import collect
 from os import listdir
+from PIL.Image import fromarray, Resampling
 import torch
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
 from typing import Optional
 from queue import Queue
 
 from commands.utils import pildiscordfile, messages, edit_messages, files
+import global_config
 
 mfolder = "./models/"
 lfolder = f"{mfolder}loras/"
@@ -51,7 +53,7 @@ def init_pipeline():
     scheduler = None
     device_map = 'balanced' if vram_usage == "distributed" and torch.cuda.device_count() > 1 else None
 
-    if model.lower().find("flux") != -1:
+    if "flux" in model.lower():
         bfl_repo = "black-forest-labs/FLUX.1-dev"
         if vram_usage == "mps":
             txt2img_pipe = FluxPipeline.from_pretrained(bfl_repo, torch_dtype=dtype, token=config.hf_token)
@@ -98,7 +100,7 @@ def init_pipeline():
                 device_map=device_map,
                 token=config.hf_token,
             )
-    elif model.lower().find("xl") != -1:
+    elif "xl" in model.lower():
         txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
     else:
         txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True)
@@ -111,7 +113,7 @@ def init_pipeline():
         scheduler.config.lower_order_final = True
     elif not scheduler and scheduler_name.startswith("euler a"):
         scheduler = EulerAncestralDiscreteScheduler.from_config(txt2img_pipe.scheduler.config)
-    if scheduler_name.endswith("karras") and model.lower().find("flux") == -1:
+    if scheduler_name.endswith("karras") and not "flux" in model.lower():
         scheduler.config.use_karras_sigmas = True
     if scheduler:
         txt2img_pipe.scheduler = scheduler
@@ -147,12 +149,12 @@ async def set_scheduler(interaction: Interaction, new_scheduler: str):
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
-    await interaction.response.send_message("New scheduler of %s set!" % scheduler_name)
+    await interaction.response.send_message(f"New scheduler of {scheduler_name} set!")
 
 async def set_device(interaction: Interaction, new_device: int):
     global device_no, txt2img_pipe, img2img_pipe, inpaint_pipe
     if not new_device:
-        await interaction.response.send_message("The current device is %d" % device_no)
+        await interaction.response.send_message(f"The current device is {device_no}")
         return
 
     try:
@@ -164,7 +166,7 @@ async def set_device(interaction: Interaction, new_device: int):
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
-    await interaction.response.send_message("New device# of %d set!" % device_no)
+    await interaction.response.send_message(f"New device# of {device_no} set!")
 
 async def set_model(interaction: Interaction, new_model: str):
     global model, txt2img_pipe, img2img_pipe, inpaint_pipe
@@ -181,7 +183,7 @@ async def set_model(interaction: Interaction, new_model: str):
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
-    await interaction.response.send_message("New model of %s set!" % model)
+    await interaction.response.send_message(f"New model of {model} set!")
 
 async def set_lora(interaction: Interaction, new_lora: str):
     global lora, txt2img_pipe, img2img_pipe, inpaint_pipe
@@ -198,13 +200,51 @@ async def set_lora(interaction: Interaction, new_lora: str):
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
     torch.cuda.empty_cache()
-    await interaction.response.send_message("New model of %s set!" % lora)
+    await interaction.response.send_message(f"New model of {lora} set!")
+
+def latent_to_rgb(latent: torch.Tensor):
+    rgb_factors = rgb_factors_bias = None
+    if "flux" in model.lower():
+        rgb_factors = global_config.flux_rgb_factors
+        rgb_factors_bias = global_config.flux_rgb_factors_bias
+
+        latent = latent.view(-1, 16, 4).mean(dim=2).transpose(0, 1)
+        d = latent.size()[1] ** 0.5
+        if d % 1 != 0:
+            return
+        d = int(d)
+        latent = latent.view(16, d, d)
+    elif "xl" in model.lower():
+        rgb_factors = global_config.sdxl_rgb_factors
+        rgb_factors_bias = global_config.sdxl_rgb_factors_bias
+    else:
+        rgb_factors = global_config.sd15_rgb_factors
+
+    if not rgb_factors:
+        return
+
+    rgb_tensor = torch.tensor(rgb_factors, device="cpu").transpose(0, 1).to(dtype=latent.dtype, device=latent.device)
+    bias_tensor = None
+    if rgb_factors_bias:
+        bias_tensor = torch.tensor(rgb_factors_bias, device="cpu").to(dtype=latent.dtype, device=latent.device)
+    latent_image = torch.nn.functional.linear(latent.movedim(0, -1), rgb_tensor, bias=bias_tensor)
+    latent_ubyte = (((latent_image + 1.0) / 2.0).clamp(0, 1)  # change scale from -1..1 to 0..1
+                    .mul(0xFF)  # to 0..255
+                    ).to(device="cpu", dtype=torch.uint8)
+
+    return fromarray(latent_ubyte.numpy())
 
 def progress_check(interaction: Interaction, total_steps: int, seed: int, pipe: StableDiffusionPipeline | StableDiffusionXLPipeline | FluxPipeline, step: int, timestep: torch.Tensor, callback_kwargs: dict):
     # If this does not equal 0, return (thus we only print progress every 10% of the way done)
     if step % (total_steps // 10):
         return callback_kwargs
-    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", []))
+
+    img = latent_to_rgb(callback_kwargs["latents"][0])
+    if not img:
+        edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", []))
+        return callback_kwargs
+
+    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", [pildiscordfile(img.resize((img.size[1] * 4, img.size[0] * 4), Resampling.LANCZOS))]))
     return callback_kwargs
 
 def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None, mask_image_param: Attachment = None, url: str = None, mask_url: str = None, steps: int = 50, height: int = 512, width: int = 512, resize: float = 1.0, cfg: float = 7.0, strength: float = 0.8, seed: int = None):
