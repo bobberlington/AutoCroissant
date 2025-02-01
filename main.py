@@ -10,7 +10,7 @@ import global_config
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import restart_bot_github, stop_bot, git_pull, git_push, update_bot, restart_bot, purge
-from commands.utils import music, prev_music, messages, files, commands, to_thread
+from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
 from commands.help import print_help
 from commands.frankenstein import frankenstein
 from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
@@ -53,8 +53,8 @@ async def on_ready():
 ])
 async def slash_print_help(interaction: Interaction, help_type:Choice[str]):
     await print_help(interaction, help_type)
-@tree.command(name="restart_bot", description="Restart the bot.")
 
+@tree.command(name="restart_bot", description="Restart the bot.")
 async def slash_restart_bot(interaction: Interaction):
     await restart_bot(interaction)
 
@@ -158,7 +158,14 @@ async def slash_frankenstein(interaction: Interaction, cards: str):
     strength='How much of the attached image to modify. Default = 0.8 (80%).',
     seed='Used to control output, same seed = same output. Default is randomized.')
 async def slash_ai(interaction: Interaction, prompt: str, image: Optional[Attachment], mask_image: Optional[Attachment], url: Optional[str], mask_url: Optional[str],
-                   steps: Optional[int] = 50, height: Optional[int] = 512, width: Optional[int] = 512, resize: Optional[float] = 1.0, cfg: Optional[float] = 7.0, strength: Optional[float] = 0.8, seed: Optional[int] = None):
+                   steps: Optional[int] = 50, height: Optional[int] = 512, width: Optional[int] = 512, resize: Optional[float] = 1.0, cfg: Optional[float] = 7.0, strength: Optional[float] = 0.8, seed: Optional[str] = None):
+    if seed:
+        # ints are limited to 15 digits or less by discord, so I need to take it as a str and then convert it to an int
+        try:
+            seed = int(seed)
+        except ValueError:
+            await interaction.response.send_message("Seed must be an integer.")
+            return
     await interaction.response.defer()
     await to_thread(diffusion)(interaction, prompt, image, mask_image, url, mask_url, steps, height, width, resize, cfg, strength, seed)
 
@@ -298,7 +305,7 @@ async def on_message(message: Message):
         await tree.sync()
         await message.channel.send("Slash commands synced globally! Might take some time, though...")
 
-@tasks.loop(seconds=2)
+@tasks.loop(seconds=1)
 async def check_pipeline():
     if len(music) > 0:
         from commands.music_player import last_channel, loop_song, vc
@@ -314,7 +321,10 @@ async def check_pipeline():
                     Thread(target=vc.play, daemon=True, kwargs={'source': FFmpegPCMAudio(source=cur_song)}).start()
     if len(messages) > 0:
         interaction, msg = messages.popleft()
-        await interaction.followup.send(msg)
+        await interaction.followup.send(content=msg)
+    if len(edit_messages) > 0:
+        interaction, msg, attachments = edit_messages.popleft()
+        await interaction.edit_original_response(content=msg, attachments=attachments)
     if len(files) > 0:
         interaction, file = files.popleft()
         await interaction.followup.send(file=file)

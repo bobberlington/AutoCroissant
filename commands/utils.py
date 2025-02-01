@@ -14,6 +14,7 @@ from typing import Callable
 music: deque[str] = deque()
 prev_music: deque[str] = deque()
 messages: deque[tuple[Interaction, str]] = deque()
+edit_messages: deque[tuple[Interaction, str, tuple[File, ...]]] = deque()
 files: deque[tuple[Interaction, File]] = deque()
 commands: deque[tuple[tuple, Callable]] = deque()
 

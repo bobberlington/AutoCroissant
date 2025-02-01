@@ -8,7 +8,7 @@ from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderMode
 from typing import Optional
 from queue import Queue
 
-from commands.utils import pildiscordfile, messages, files
+from commands.utils import pildiscordfile, messages, edit_messages, files
 
 mfolder = "./models/"
 lfolder = f"{mfolder}loras/"
@@ -33,11 +33,12 @@ possible_schedulers = ["dpm++ sde", "dpm++ sde karras", "euler a"]
 queue: Queue[tuple[Interaction, str, Optional[Attachment], Optional[Attachment], Optional[str], Optional[str], Optional[int], Optional[int], Optional[int], Optional[float], Optional[float], Optional[float], Optional[int]]] = Queue()
 
 async def get_qsize(interaction: Interaction):
-    await interaction.response.send_message(f"Current ai queue size: {queue.qsize()}")
-    index = 1
+    index = 0
+    queued_prompts = ""
     for q in queue.queue:
-        await interaction.followup.send(f"#{index}: {q.content}")
         index += 1
+        queued_prompts += f"#{index}: steps={q[6]}, height={q[7]}, width={q[8]}, resize={q[9]}, cfg={q[10]}, strength={q[11]}, seed={q[12]}, scheduler={scheduler_name}, prompt={q[1]}\n\n"
+    await interaction.response.send_message("```Queue Size: " + str(index) + "\n" + queued_prompts + "```")
 
 def init_pipeline():
     if model == "":
@@ -134,7 +135,7 @@ def init_pipeline():
     in_progress = False
     print("Finished initializing the pipeline.")
     if queue.qsize() > 0:
-        diffusion(queue.get_nowait())
+        diffusion(*queue.get_nowait())
 
 async def set_scheduler(interaction: Interaction, new_scheduler: str):
     global scheduler_name, txt2img_pipe, img2img_pipe, inpaint_pipe
@@ -199,6 +200,13 @@ async def set_lora(interaction: Interaction, new_lora: str):
     torch.cuda.empty_cache()
     await interaction.response.send_message("New model of %s set!" % lora)
 
+def progress_check(interaction: Interaction, total_steps: int, seed: int, pipe: StableDiffusionPipeline | StableDiffusionXLPipeline | FluxPipeline, step: int, timestep: torch.Tensor, callback_kwargs: dict):
+    # If this does not equal 0, return (thus we only print progress every 10% of the way done)
+    if step % (total_steps // 10):
+        return callback_kwargs
+    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", []))
+    return callback_kwargs
+
 def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None, mask_image_param: Attachment = None, url: str = None, mask_url: str = None, steps: int = 50, height: int = 512, width: int = 512, resize: float = 1.0, cfg: float = 7.0, strength: float = 0.8, seed: int = None):
     global in_progress
     if in_progress:
@@ -223,9 +231,10 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
         mask_image = load_image(url)
 
     generator = torch.Generator("cuda" if vram_usage != "mps" else "mps")
-    generator.seed()
     if seed:
         generator = generator.manual_seed(seed)
+    else:
+        seed = generator.seed()
     if image and not (width and height):
         width, height = image.size
         width = int(width * resize)
@@ -235,11 +244,14 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
     collect()
     torch.cuda.empty_cache()
     if mask_image:
-        files.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
+                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     elif image:
-        files.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
+                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     else:
-        files.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator).images[0])))
+        files.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator,
+                                                               callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     in_progress = False
     if queue.qsize() > 0:
         diffusion(*queue.get_nowait())
