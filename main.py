@@ -76,10 +76,10 @@ async def slash_update(interaction: Interaction):
 
 @tree.command(name="purge", description="Deletes messages.")
 @app_commands.describe(
-    num='The number of messages to delete.',
     user='The user whose messages to delete. Default is the bot\'s own messages.',
-    bulk='Enable bulk delete. Deletes faster but needs Manage Messages permission.')
-async def slash_purge(interaction: Interaction, num: int, bulk: bool, user: Optional[Member]):
+    num='The number of messages to delete. Default = 100.',
+    bulk='Enable bulk delete. Deletes faster but needs Manage Messages permission. Default = false.')
+async def slash_purge(interaction: Interaction, user: Optional[Member], num: Optional[int] = 100, bulk: Optional[bool] = False):
     if not user:
         user = client.user.id
     # Have to add +1 to num because the first message it deletes is the command message itself lol

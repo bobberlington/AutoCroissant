@@ -274,7 +274,7 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
         generator = generator.manual_seed(seed)
     else:
         seed = generator.seed()
-    if image and not (width and height):
+    if image and not (width == 512 and height == 512):
         width, height = image.size
         width = int(width * resize)
         height = int(height * resize)
@@ -284,10 +284,10 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
     torch.cuda.empty_cache()
     if mask_image:
         files.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
-                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
+                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     elif image:
         files.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
-                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
+                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     else:
         files.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator,
                                                                callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
