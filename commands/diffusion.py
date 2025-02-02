@@ -208,12 +208,11 @@ def latent_to_rgb(latent: torch.Tensor):
         rgb_factors = global_config.flux_rgb_factors
         rgb_factors_bias = global_config.flux_rgb_factors_bias
 
-        latent = latent.view(-1, 16, 4).mean(dim=2).transpose(0, 1)
-        d = latent.size()[1] ** 0.5
+        d = latent.size()[0] ** 0.5
         if d % 1 != 0:
             return
         d = int(d)
-        latent = latent.view(16, d, d)
+        latent = latent.transpose(0, 1).view(64, d, d)
     elif "xl" in model.lower():
         rgb_factors = global_config.sdxl_rgb_factors
         rgb_factors_bias = global_config.sdxl_rgb_factors_bias
