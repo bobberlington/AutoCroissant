@@ -163,11 +163,10 @@ def play_song_async(interaction: Interaction, song: str, play_next: bool):
                 if not Path(music_base_dir + playlist_title).is_dir():
                     makedirs(music_base_dir + playlist_title)
 
-                temp_ydl_opts = ydl_opts
+                temp_ydl_opts = ydl_opts.copy()
                 temp_ydl_opts['outtmpl'] = music_base_dir + playlist_title + '/' +  '%(title)s.%(ext)s'
-                temp_dl = yt_dlp.YoutubeDL(temp_ydl_opts)
 
-                commands.append(((song, True), temp_dl.extract_info))
+                commands.append(((song, True), yt_dlp.YoutubeDL(temp_ydl_opts).extract_info))
                 commands.append(((music_base_dir + playlist_title + '/' + first_song_title + ext, interaction, "until_filename_available", play_next), queue_song_async))
             commands.append(((music_base_dir + playlist_title + '/', interaction, "until_song_finishes" if len(pre_extract['entries']) > 0 else None, play_next), queue_song_async))
         else:
