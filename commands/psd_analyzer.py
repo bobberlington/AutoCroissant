@@ -106,7 +106,7 @@ def classify_card(relative_loc: str):
             "atk" : -1,
             "spd" : -1
         }
-    elif len(folders) > 0 and folders[0] == "Auxillary":
+    elif len(folders) > 0 and folders[0] == "Auxiliary":
         if len(folders) > 1 and folders[1] == "Minions":
             return {
                 "type": "minion",

@@ -309,7 +309,7 @@ async def on_message(message: Message):
 async def check_pipeline():
     if len(music) > 0:
         from commands.music_player import last_channel, loop_song, vc
-        if vc and not vc.is_playing():
+        if vc and (not vc.is_playing() and not vc.is_paused()):
             if loop_song:
                 Thread(target=vc.play, daemon=True, kwargs={'source': FFmpegPCMAudio(source=prev_music[-1])}).start()
             else:
