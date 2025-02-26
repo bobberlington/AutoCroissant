@@ -145,9 +145,13 @@ async def slash_frankenstein(interaction: Interaction, cards: str):
 #   STAT COMMANDS  #
 ####################
 @tree.command(name="update_stats", description="Manual call to update card stats.")
-async def slash_update_stats(interaction: Interaction, output_problematic_cards: Optional[bool] = True):
+@app_commands.describe(
+    output_problematic_cards='Should we output cards with consistency errors?',
+    use_local_repo='Should we use the local cloned folder for updates?',
+    use_local_timestamp='Should we use the local files modified time for timestamping?')
+async def slash_update_stats(interaction: Interaction, output_problematic_cards: Optional[bool] = True, use_local_repo: Optional[bool] = True, use_local_timestamp: Optional[bool] = True):
     await interaction.response.defer()
-    await to_thread(manual_update_stats)(interaction, output_problematic_cards)
+    await to_thread(manual_update_stats)(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
 
 
 ####################

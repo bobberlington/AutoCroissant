@@ -2,6 +2,7 @@ from datetime import datetime
 from discord import Interaction
 from collections import defaultdict
 from github import Github
+from logging import getLogger, CRITICAL
 from os import path, walk
 from os.path import getmtime, basename
 from pickle import load, dump
@@ -10,16 +11,18 @@ from re import finditer, sub
 from requests import get, Response
 from urllib.request import urlretrieve
 
-from commands.utils import messages
+from commands.utils import edit_messages, messages
 
+getLogger("psd_tools").setLevel(CRITICAL)
 LOCAL_DIR_LOC   = "~/Desktop/TTSCardMaker"
 STATS_PKL       = "stats.pkl"
 OLD_STATS_PKL   = "old_stats.pkl"
+UPDATE_RATE     = 25
 
 local_repo: str = path.expanduser(LOCAL_DIR_LOC)
 use_local: bool = True
 # Should we use Michael time?
-use_local_mtime: bool = False
+use_local_mtime: bool = True
 
 headers: dict = None
 git_token: str = None
@@ -43,7 +46,7 @@ def pickle_stats():
     with open(OLD_STATS_PKL, 'wb') as f:
         dump(old_stats, f)
 
-def update_stats():
+def update_stats(interaction: Interaction) -> tuple[str, ...]:
     global stats, old_stats
 
     print(f"Trying to open {STATS_PKL}")
@@ -62,13 +65,13 @@ def update_stats():
     except (EOFError, FileNotFoundError):
         print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
-    problem_strs = []
+    problem_cards = []
     if use_local:
-        problem_strs = traverse_local_repo()
+        problem_cards = traverse_local_repo(interaction)
     else:
-        problem_strs = traverse_repo()
+        problem_cards = traverse_repo(interaction)
     pickle_stats() # Now that we updated the descriptions, store them back
-    return problem_strs
+    return problem_cards
 
 def populate_types_stars_attrs(resp: Response | None = None):
     if use_local and not resp:
@@ -180,38 +183,42 @@ def prune_bbox(bboxes: tuple[tuple[str, tuple[int, int]]]) -> tuple[tuple[str, t
     max_bbox_height = max(bboxes[-1][1][1] // 3, 400)
     return [bbox for bbox in bboxes if bbox[1][1] >= max_bbox_height]
 
+# Well, we can extract all images from a psd file, if we want to for some reason
+def extract_all_images_from_psd(file_loc: str):
+    count = 0
+    for layer in PSDImage.open(file_loc).descendants():
+        if layer.has_pixels():
+            layer_image = layer.topil()
+            layer_image.save(f"{layer.name}{str(count)}.png")
+            count += 1
+
 def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     card = classify_card(relative_loc)
     ability = ""
-    hp = 0
-    hp_found = False
-    df = 0
-    df_found = False
-    atk = 0
-    atk_found = False
-    spd = 0
-    spd_found = False
+    hp = df = atk = spd = 0
+    hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
     for layer in PSDImage.open(file_loc).descendants():
-        # layer_image = layer.as_PIL()
         if layer.name.lower() == "ability" and not layer.is_group():
-            ability = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\t', '').replace('\\x00', '').replace('\\x01', '').replace('\\x03', '').replace('\\x10', '').replace('\\x0bge', '').rstrip()
-        elif ("hp dark" in layer.parent.name.lower()) and layer.name.isdigit():
-            if layer.is_visible():
-                hp += int(layer.name)
-            hp_found = True
-        elif ("def dark" in layer.parent.name.lower()) and layer.name.isdigit():
-            if layer.is_visible():
-                df += int(layer.name)
-            df_found = True
-        elif ("atk dark" in layer.parent.name.lower()) and layer.name.isdigit():
-            if layer.is_visible():
-                atk += int(layer.name)
-            atk_found = True
-        elif ("spd dark" in layer.parent.name.lower()) and layer.name.isdigit():
-            if layer.is_visible():
-                spd += int(layer.name)
-            spd_found = True
+            ability = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\t', '').replace('\\x03', '').rstrip()
+        elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
+            or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
+            if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
+                if layer.is_visible():
+                    hp += int(layer.name)
+                hp_found = True
+            elif ("def" in layer.parent.name.lower() or "def" in layer.parent.parent.name.lower()) and layer.name.isdigit():
+                if layer.is_visible():
+                    df += int(layer.name)
+                df_found = True
+            elif ("atk" in layer.parent.name.lower() or "atk" in layer.parent.parent.name.lower()) and layer.name.isdigit():
+                if layer.is_visible():
+                    atk += int(layer.name)
+                atk_found = True
+            elif ("spd" in layer.parent.name.lower() or "spd" in layer.parent.parent.name.lower()) and layer.name.isdigit():
+                if layer.is_visible():
+                    spd += int(layer.name)
+                spd_found = True
         elif layer.name.lower() in all_types and not "stat" in layer.parent.name.lower():
             if not layer.is_group() and layer.is_visible():
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
@@ -230,7 +237,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     if ability:
         type_bboxes = prune_bbox(sort_bbox(type_bboxes))
         # Find all instances of multiple whitespace, or whitespace followed by colon
-        matches = [match for match in finditer(r'\s{3,}|\s:', ability)]
+        matches = [match for match in finditer(r'\s{3,}|\s{3,}:', ability)]
 
         if len(matches) > 0 and len(type_bboxes) > 0:
             if len(type_bboxes) < len(matches):
@@ -244,31 +251,31 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                     count -= 1
         card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'').strip('\"').strip()
 
-    if hp_found:
+    if hp:
         card["hp"] = hp
-    if df_found:
+    if df:
         card["def"] = df
-    if atk_found:
+    if atk:
         card["atk"] = atk
-    if spd_found:
+    if spd:
         card["spd"] = spd
 
     return card
 
-def problem_card_checker(card: dict[str, str]):
+def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
     problems = []
     if card["type"] == "unknown":
         problems.append("UNKOWN TYPE")
     if card["type"] != "unknown" and (not "ability" in card or not card["ability"]):
         problems.append("ABILITY TEXT NOT FOUND")
 
-    if card == "creature" and (not "hp" in card or not card["hp"]):
+    if (card["type"] == "creature" or card["type"] == "minion") and card["hp"] == -1:
         problems.append("HP NOT FOUND")
-    if card == "creature" and (not "def" in card or not card["def"]):
+    if (card["type"] == "creature" or card["type"] == "minion") and card["def"] == -1:
         problems.append("DEF NOT FOUND")
-    if card == "creature" and (not "atk" in card or not card["atk"]):
+    if (card["type"] == "creature" or card["type"] == "minion") and card["atk"] == -1:
         problems.append("ATK NOT FOUND")
-    if card == "creature" and (not "spd" in card or not card["spd"]):
+    if (card["type"] == "creature" or card["type"] == "minion") and card["spd"] == -1:
         problems.append("SPD NOT FOUND")
 
     if "problem" in card and card["problem"]:
@@ -277,12 +284,12 @@ def problem_card_checker(card: dict[str, str]):
     return problems
 
 def log_problematic_cards(problematic_cards):
-    problem_strs = []
+    problem_cards = []
     for loc, card, problems in problematic_cards:
-        problem_strs.append(f"{loc}\n" + '```' + '\n'.join(problems) + '```')
-    return problem_strs
+        problem_cards.append(f"{loc}\n" + '```' + '\n'.join(problems) + '```')
+    return problem_cards
 
-def traverse_repo():
+def traverse_repo(interaction: Interaction) -> tuple[str, ...]:
     from commands.query_card import REPOSITORY
     resp = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
     if resp.status_code != 200:
@@ -293,6 +300,9 @@ def traverse_repo():
 
     populate_types_stars_attrs(resp)
     problematic_cards = []
+    num_updated = 0
+    num_new = 0
+    num_old = 0
     for i in resp.json()["tree"]:
         path: str = i["path"]
         if path.endswith('.psd'):
@@ -301,8 +311,10 @@ def traverse_repo():
             date: datetime = commits[0].commit.committer.date.timestamp()
 
             if path in stats and stats[path]["timestamp"] >= date:
+                num_old += 1
                 continue
             else:
+                num_new += 1
                 if path in stats and stats[path]["timestamp"] < date:
                     old_stats[path].append(stats[path])
 
@@ -317,9 +329,15 @@ def traverse_repo():
 
                 stats[path] = card
 
+            num_updated += 1
+            if not num_updated % UPDATE_RATE:
+                edit_messages.append((interaction, f"{num_updated} Cards updated.", []))
+
+    messages.append((interaction, f"{num_new} Had newer timestamps."))
+    messages.append((interaction, f"{num_old} Did not have newer timestamps."))
     return log_problematic_cards(problematic_cards)
 
-def traverse_local_repo():
+def traverse_local_repo(interaction: Interaction):
     from commands.query_card import REPOSITORY
     repo = None
     if not use_local_mtime:
@@ -328,6 +346,9 @@ def traverse_local_repo():
 
     populate_types_stars_attrs()
     problematic_cards = []
+    num_updated = 0
+    num_new = 0
+    num_old = 0
     for folder, _, files in walk(local_repo):
         folder += '/'
         for file in files:
@@ -343,8 +364,10 @@ def traverse_local_repo():
                     date = getmtime(full_file)
 
                 if truncated_file in stats and stats[truncated_file]["timestamp"] >= date:
+                    num_old += 1
                     continue
                 else:
+                    num_new += 1
                     if truncated_file in stats and stats[truncated_file]["timestamp"] < date:
                         old_stats[truncated_file].append(stats[truncated_file])
 
@@ -358,12 +381,37 @@ def traverse_local_repo():
 
                     stats[truncated_file] = card
 
+                num_updated += 1
+                if not num_updated % UPDATE_RATE:
+                    edit_messages.append((interaction, f"{num_updated} Cards updated.", []))
+
+    messages.append((interaction, f"{num_new} Had newer timestamps."))
+    messages.append((interaction, f"{num_old} Did not have newer timestamps."))
     return log_problematic_cards(problematic_cards)
 
-def manual_update_stats(interaction: Interaction, output_problematic_cards: bool = True):
+def manual_update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True):
+    global use_local, use_local_mtime
+    use_local = use_local_repo
+    use_local_mtime = use_local_timestamp
+
     messages.append((interaction, "Going to update the database for card statistics in the background, this will take a while."))
-    problem_strs = update_stats()
+    problem_cards = update_stats(interaction)
     messages.append((interaction, "Done updating card statistics."))
     if output_problematic_cards:
-        for card in problem_strs:
-            messages.append((interaction, card))
+        # Loop 1: Output in-depth problems
+        bundle = ""
+        for card in problem_cards:
+            bundle += card
+            if len(bundle) > 1000:
+                messages.append((interaction, bundle))
+                bundle = ""
+
+        # Loop 2: Output cardnames only
+        list_of_all_cards = []
+        for card in problem_cards:
+            list_of_all_cards.append(card.split('```')[0])
+            if len(list_of_all_cards) > 30:
+                messages.append((interaction, ''.join(list_of_all_cards)))
+                list_of_all_cards = []
+        if list_of_all_cards:
+            messages.append((interaction, ''.join(list_of_all_cards)))
