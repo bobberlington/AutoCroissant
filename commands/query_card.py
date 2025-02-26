@@ -4,7 +4,9 @@ from discord.errors import InteractionResponded
 from pickle import load, dump
 from requests import get
 
-repository = "MichaelJSr/TTSCardMaker"
+from commands.psd_analyzer import STATS_PKL
+
+REPOSITORY = "MichaelJSr/TTSCardMaker"
 
 alias_pickle_name = "aliases.pkl"
 git_file_alias: dict[str, str] = {}
@@ -31,9 +33,9 @@ except AttributeError:
 def populate_files():
     global git_filenames
     # Grab repo
-    repo = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1", headers=headers)
+    repo = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
     if repo.status_code != 200:
-        print(f"Error when trying to connect to {repository}")
+        print(f"Error when trying to connect to {REPOSITORY}")
         return repo.status_code
 
     # Make a dictionary of all list of pngs in the github
@@ -192,7 +194,7 @@ async def query_remote(interaction: Interaction, query: str):
     except IndexError:
         await interaction.response.send_message("No card found!")
         return
-    await interaction.response.send_message(f"https://raw.githubusercontent.com/{repository}/main/{git_files[closest]}")
+    await interaction.response.send_message(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{git_files[closest]}")
 
     # If the filename was ambiguous, make a note of that.
     if closest in ambiguous_names:
@@ -207,14 +209,14 @@ async def query_pickle(interaction: Interaction, desc: str):
 
     for close in closest:
         try:
-            await interaction.response.send_message(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
+            await interaction.response.send_message(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{git_files[descriptions[close]]}")
         except KeyError:
             await interaction.response.send_message(f"No such key: {descriptions[close]}")
             descriptions.pop(close)
             with open(descriptions_pickle_name, 'wb') as f:
                 dump(descriptions, f)
         except InteractionResponded:
-            await interaction.followup.send(f"https://raw.githubusercontent.com/{repository}/main/{git_files[descriptions[close]]}")
+            await interaction.followup.send(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{git_files[descriptions[close]]}")
 
     await interaction.followup.send(f"{len(closest)} Results found for {desc}!")
 
@@ -289,13 +291,13 @@ async def set_match_ratio(interaction: Interaction, value: float):
     await interaction.response.send_message(f"New match ratio of {match_ratio} set!")
 
 async def set_repository(interaction: Interaction, new_repo: str):
-    global repository
+    global REPOSITORY
     if not new_repo:
-        await interaction.response.send_message(f"The repository is {repository}.")
+        await interaction.response.send_message(f"The repository is {REPOSITORY}.")
         return
 
-    repository = new_repo
+    REPOSITORY = new_repo
     status = populate_files()
     if status != 200:
        print(f"Error {status} when requesting github.")
-    await interaction.response.send_message(f"New repository of {repository} set!")
+    await interaction.response.send_message(f"New repository of {REPOSITORY} set!")

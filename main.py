@@ -8,12 +8,13 @@ from typing import Optional
 from config import token
 import global_config
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
+from commands.frankenstein import frankenstein
+from commands.help import print_help
+from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
+from commands.psd_analyzer import manual_update_stats
 from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import restart_bot_github, stop_bot, git_pull, git_push, update_bot, restart_bot, purge
 from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
-from commands.help import print_help
-from commands.frankenstein import frankenstein
-from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
 
 # Intents permissions
 intents = Intents.default()
@@ -138,6 +139,15 @@ async def slash_del_alias(interaction: Interaction, alias: str):
 async def slash_frankenstein(interaction: Interaction, cards: str):
     await interaction.response.defer()
     await to_thread(frankenstein)(interaction, cards)
+
+
+####################
+#   STAT COMMANDS  #
+####################
+@tree.command(name="update_stats", description="Manual call to update card stats.")
+async def slash_update_stats(interaction: Interaction, output_problematic_cards: Optional[bool] = True):
+    await interaction.response.defer()
+    await to_thread(manual_update_stats)(interaction, output_problematic_cards)
 
 
 ####################
