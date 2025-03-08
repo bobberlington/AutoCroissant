@@ -38,7 +38,6 @@ stats = {}
 old_stats = defaultdict(list)
 all_types = []
 all_stars = []
-all_attrs = []
 
 def pickle_stats():
     with open(STATS_PKL, 'wb') as f:
@@ -73,7 +72,7 @@ def update_stats(interaction: Interaction) -> tuple[str, ...]:
     pickle_stats() # Now that we updated the descriptions, store them back
     return problem_cards
 
-def populate_types_stars_attrs(resp: Response | None = None):
+def populate_types_stars(resp: Response | None = None):
     if use_local and not resp:
         for folder, _, files in walk(local_repo + "/Types"):
             for file in files:
@@ -82,8 +81,6 @@ def populate_types_stars_attrs(resp: Response | None = None):
                     all_types.append(file)
                 elif folder.endswith("Stars"):
                     all_stars.append(file)
-                elif folder.endswith("Attributes"):
-                    all_attrs.append(file)
     elif resp:
         for i in resp.json()["tree"]:
             path: str = i["path"]
@@ -94,8 +91,6 @@ def populate_types_stars_attrs(resp: Response | None = None):
                 file = path.split('/')[-1][:-len('.png')].lower()
                 if path.startswith("Types/Stars"):
                     all_stars.append(file)
-                elif path.startswith("Types/Attributes"):
-                    all_attrs.append(file)
                 else:
                     all_types.append(file)
 
@@ -298,7 +293,7 @@ def traverse_repo(interaction: Interaction) -> tuple[str, ...]:
     # This uses an api request
     repo = Github(login_or_token=git_token).get_repo(REPOSITORY)
 
-    populate_types_stars_attrs(resp)
+    populate_types_stars(resp)
     problematic_cards = []
     num_updated = 0
     num_new = 0
@@ -344,7 +339,7 @@ def traverse_local_repo(interaction: Interaction):
         print(f"Warning: Getting the timestamp of a remote file uses up an api request, you can make up to {5000 if git_token else 60} requests")
         repo = Github(login_or_token=git_token).get_repo(REPOSITORY)
 
-    populate_types_stars_attrs()
+    populate_types_stars()
     problematic_cards = []
     num_updated = 0
     num_new = 0
