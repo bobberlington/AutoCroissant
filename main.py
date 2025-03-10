@@ -12,7 +12,7 @@ from commands.frankenstein import frankenstein
 from commands.help import print_help
 from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
 from commands.psd_analyzer import manual_update_stats
-from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository, alias_card, delete_alias
+from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
 from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
 
@@ -31,7 +31,7 @@ async def on_ready():
 
     commands.append(((), try_open_alias))
     commands.append(((), populate_files))
-    commands.append(((), try_open_descriptions))
+    commands.append(((), try_open_stats))
     commands.append(((), init_pipeline))
     print("Finished initializing.")
 
@@ -87,23 +87,23 @@ async def slash_purge(interaction: Interaction, user: Optional[Member], num: Opt
 ####################
 #   CARD COMMANDS  #
 ####################
-@tree.command(name="query_card", description="Query a card by name.")
+@tree.command(name="query", description="Query a card by name.")
 @app_commands.describe(
     query='The name of the card you want to search for')
-async def slash_query_remote(interaction: Interaction, query: str):
-    await query_remote(interaction, query)
+async def slash_query_name(interaction: Interaction, query: str):
+    await query_name(interaction, query)
 
-@tree.command(name="query_desc", description="Query a card by description.")
+@tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
-    query='The description you want to search for.')
-async def slash_query_pickle(interaction: Interaction, query: str):
-    await query_pickle(interaction, query)
+    query='The ability text you want to search for.')
+async def slash_query_ability(interaction: Interaction, query: str):
+    await query_ability(interaction, query)
 
-@tree.command(name="howmany", description="Get the number of cards that match the given description.")
+@tree.command(name="query_howmany", description="Get the number of cards that match the given text.")
 @app_commands.describe(
-    query='The description you want to search for.')
-async def slash_howmany_description(interaction: Interaction, query: str):
-    await howmany_description(interaction, query)
+    query='The text you want to search for.')
+async def slash_query_ability_num_occur(interaction: Interaction, query: str):
+    await query_ability_num_occur(interaction, query)
 
 @tree.command(name="set_ratio", description="View/set tolerance for unexact matches when searching.")
 @app_commands.describe(

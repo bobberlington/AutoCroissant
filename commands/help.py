@@ -14,10 +14,10 @@ general_commands = {
 }
 
 card_commands = {
-    "/query_card <Card_Name>:"                  : "Posts the requested <Card_Name> image from the repo.",
-    "/query_desc <Card_Description>:"           : "Searches for all cards with the requested description and posts their image.",
-    "/howmany <Card_Description>:"              : "Posts number of cards with requested description.",
-    "<Card_Description>:"                       : "If the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
+    "/query <Card_Name>:"                       : "Posts the requested <Card_Name> image from the repo.",
+    "/query_ability <Ability_Text>:"            : "Searches for all cards with the requested description and posts their image.",
+    "/query_howmany <Ability_Text>:"            : "Posts number of cards with requested description.",
+    "<Ability_Text>:"                           : "If the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
                                                     If the query is preceded by an exclamation mark !, then only things that don't match that query are returned.\n\
                                                     If there is a | symbol in the query, it treats both the partition before and the partition after the | symbol as separate queries, and combines their results.\n\
                                                     If there is a & symbol in the query, it treats both the partition before and the partition after the & symbol as seperate queries, and only returns results that are in both.\n\

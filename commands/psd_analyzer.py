@@ -12,7 +12,7 @@ from requests import get, Response
 from urllib.request import urlretrieve
 
 from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL
-from commands.query_card import try_open_descriptions
+from commands.query_card import try_open_stats
 from commands.utils import edit_messages, messages, commands
 
 getLogger("psd_tools").setLevel(CRITICAL)
@@ -446,4 +446,4 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
         if list_of_all_cards:
             messages.append((interaction, ''.join(list_of_all_cards)))
 
-    commands.append(((), try_open_descriptions))
+    commands.append(((), try_open_stats))

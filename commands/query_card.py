@@ -17,7 +17,7 @@ git_files: dict[str, str]                   = {}
 ambiguous_names: dict[str, tuple[str, ...]] = {}
 git_filenames: list[str]                    = []
 # Cards df, but filtered to not have the cards that have no ability, also it is all lowercase.
-cards_df_filtered   = pandas.DataFrame()
+cards_dff = pandas.DataFrame()
 
 headers = None
 git_token = None
@@ -78,36 +78,36 @@ def populate_files():
     git_filenames = git_files.keys()
     return 200
 
-def populate_descriptions(desc: str):
+def ability_search_engine(ability: str):
     import re
-    desc = desc.strip()
-    if "|" in desc:
-        desc1, desc2 = desc.split("|", 1)
-        return pandas.concat((populate_descriptions(desc1.strip()), populate_descriptions(desc2.strip()))).drop_duplicates(subset=['name', 'ability'], keep='first')
-    if "&" in desc:
-        desc1, desc2 = desc.split("&", 1)
-        return pandas.merge(populate_descriptions(desc1.strip()), populate_descriptions(desc2.strip()), left_index=True, right_index=True, how="inner", copy=False)
+    ability = ability.strip()
+    if "|" in ability:
+        desc1, desc2 = ability.split("|", 1)
+        return pandas.concat((ability_search_engine(desc1.strip()), ability_search_engine(desc2.strip()))).drop_duplicates(subset=['name', 'ability'], keep='first')
+    if "&" in ability:
+        desc1, desc2 = ability.split("&", 1)
+        return pandas.merge(ability_search_engine(desc1.strip()), ability_search_engine(desc2.strip()), left_index=True, right_index=True, how="inner", copy=False)
 
     opposite = False
-    if desc.startswith("!"):
-        desc = desc[1:].strip()
+    if ability.startswith("!"):
+        ability = ability[1:].strip()
         opposite = True
 
     # Exact Matches
-    if desc.startswith("\"") and desc.endswith("\""):
-        desc = desc[1:-1]
+    if ability.startswith("\"") and ability.endswith("\""):
+        ability = ability[1:-1]
         if opposite:
-            return cards_df_filtered[~cards_df_filtered["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(desc) + r"(?:^|\s|$|\b)"))]
-        return cards_df_filtered[cards_df_filtered["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(desc) + r"(?:^|\s|$|\b)"))]
+            return cards_dff[~cards_dff["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(ability) + r"(?:^|\s|$|\b)"))]
+        return cards_dff[cards_dff["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(ability) + r"(?:^|\s|$|\b)"))]
     else:
         # Find abilities that don't contain the string if opposite.
         if opposite:
-            return cards_df_filtered[~cards_df_filtered["ability"].str.contains(re.escape(desc))]
+            return cards_dff[~cards_dff["ability"].str.contains(re.escape(ability))]
         # Otherwise find abilities that have the substring or match well enough.
-        cards_df_contains = cards_df_filtered[cards_df_filtered["ability"].str.contains(re.escape(desc))]
-        cards_df_scores = cards_df_filtered["ability"].apply(lambda x: SequenceMatcher(None, desc, x.lower()).ratio())
+        cards_df_contains = cards_dff[cards_dff["ability"].str.contains(re.escape(ability))]
+        cards_df_scores = cards_dff["ability"].apply(lambda x: SequenceMatcher(None, ability, x.lower()).ratio())
         cards_df_scores = cards_df_scores[cards_df_scores > MATCH_RATIO]
-        return pandas.concat([cards_df_filtered.loc[cards_df_scores.index], cards_df_contains]).drop_duplicates(subset=['name', 'ability'], keep='first')
+        return pandas.concat([cards_dff.loc[cards_df_scores.index], cards_df_contains]).drop_duplicates(subset=['name', 'ability'], keep='first')
 
 def try_open_alias():
     global git_file_alias
@@ -121,22 +121,22 @@ def try_open_alias():
         with open(ALIAS_PKL, 'wb') as f:
             dump(git_file_alias, f)
 
-def try_open_descriptions():
-    global cards_df_filtered
+def try_open_stats():
+    global cards_dff
 
     print(f"Trying to open {STATS_PKL}")
     try:
         with open(STATS_PKL, 'rb') as f:
             cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
             try:
-                cards_df_filtered = cards_df[cards_df["ability"].notna()].copy()
-                cards_df_filtered["ability"] = cards_df_filtered["ability"].str.lower()
+                cards_dff = cards_df[cards_df["ability"].notna()].copy()
+                cards_dff["ability"] = cards_dff["ability"].str.lower()
             except KeyError:
                 print(f"{STATS_PKL} exists but has no relevant data in it.")
     except (EOFError, FileNotFoundError):
         print(f"{STATS_PKL} is completely empty.")
 
-async def query_remote(interaction: Interaction, query: str):
+async def query_name(interaction: Interaction, query: str):
     card = query.replace(" ", "_").lower()
     if not card.endswith(".png"):
         card += ".png"
@@ -154,12 +154,12 @@ async def query_remote(interaction: Interaction, query: str):
             ambiguous_message += f"{i}\n"
         await interaction.followup.send(ambiguous_message)
 
-async def query_pickle(interaction: Interaction, desc: str):
-    if cards_df_filtered.empty:
+async def query_ability(interaction: Interaction, ability: str):
+    if cards_dff.empty:
         return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
 
-    desc = desc.strip().lower()
-    closest = populate_descriptions(desc)
+    ability = ability.strip().lower()
+    closest = ability_search_engine(ability)
 
     for index, close in closest.iterrows():
         try:
@@ -167,18 +167,18 @@ async def query_pickle(interaction: Interaction, desc: str):
         except InteractionResponded:
             await interaction.followup.send(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{index[0:-4].replace(' ', '%20')}.png")
     try:
-        await interaction.response.send_message(f"{len(closest)} Results found for {desc}!")
+        await interaction.response.send_message(f"{len(closest)} Results found for {ability}!")
     except InteractionResponded:
-        await interaction.followup.send(f"{len(closest)} Results found for {desc}!")
+        await interaction.followup.send(f"{len(closest)} Results found for {ability}!")
 
-async def howmany_description(interaction: Interaction, desc: str):
-    if cards_df_filtered.empty:
+async def query_ability_num_occur(interaction: Interaction, ability: str):
+    if cards_dff.empty:
         return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
 
-    desc = desc.strip().lower()
-    closest = populate_descriptions(desc)
+    ability = ability.strip().lower()
+    closest = ability_search_engine(ability)
 
-    await interaction.response.send_message(f"{len(closest)} Results found for {desc}!")
+    await interaction.response.send_message(f"{len(closest)} Results found for {ability}!")
 
 def print_all_aliases():
     all_aliases = "```"
