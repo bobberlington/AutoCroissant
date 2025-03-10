@@ -13,3 +13,4 @@ requests
 sentencepiece
 transformers
 yt-dlp
+pandas

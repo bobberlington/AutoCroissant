@@ -1,4 +1,6 @@
 from datetime import datetime
+
+import pandas
 from discord import Interaction
 from collections import defaultdict
 from github import Github
@@ -17,6 +19,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 LOCAL_DIR_LOC   = "~/Desktop/TTSCardMaker"
 STATS_PKL       = "stats.pkl"
 OLD_STATS_PKL   = "old_stats.pkl"
+DF_PKL          = "stats_df.pkl"
 UPDATE_RATE     = 25
 
 local_repo: str = path.expanduser(LOCAL_DIR_LOC)
@@ -36,6 +39,7 @@ except AttributeError:
 
 stats = {}
 old_stats = defaultdict(list)
+stats_df = pandas.DataFrame()
 all_types = []
 all_stars = []
 all_attrs = []
@@ -45,9 +49,11 @@ def pickle_stats():
         dump(stats, f)
     with open(OLD_STATS_PKL, 'wb') as f:
         dump(old_stats, f)
+    with open(DF_PKL, 'wb') as f:
+        dump(stats_df, f)
 
 def update_stats(interaction: Interaction) -> tuple[str, ...]:
-    global stats, old_stats
+    global stats, old_stats, stats_df
 
     print(f"Trying to open {STATS_PKL}")
     try:
@@ -70,6 +76,7 @@ def update_stats(interaction: Interaction) -> tuple[str, ...]:
         problem_cards = traverse_local_repo(interaction)
     else:
         problem_cards = traverse_repo(interaction)
+    stats_df = pandas.DataFrame.from_dict(stats).transpose()
     pickle_stats() # Now that we updated the descriptions, store them back
     return problem_cards
 
@@ -107,7 +114,7 @@ def classify_card(relative_loc: str):
     if len(folders) > 0 and folders[0] == "MDW":
         return {
             "type" : "MDW",
-            "ability" : "Placeholder"
+            "ability" : None
         }
     elif len(folders) > 0 and folders[0] == "Field":
         return {
@@ -195,44 +202,41 @@ def extract_all_images_from_psd(file_loc: str):
 def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     card = classify_card(relative_loc)
     ability = ""
-    hp = df = atk = spd = 0
+    hp = df = atk = spd = None
     hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
     for layer in PSDImage.open(file_loc).descendants():
         if layer.name.lower() == "ability" and not layer.is_group():
-            ability = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\t', '').replace('\\x03', '').rstrip()
+            ability = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', ' ').replace('\\t', '').replace('\\x03', '').replace('\\ufeff', '').replace('\\n', ' ').rstrip()
         elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
             or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
             if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
                 if layer.is_visible():
+                    if hp is None:
+                        hp = 0
                     hp += int(layer.name)
                 hp_found = True
             elif ("def" in layer.parent.name.lower() or "def" in layer.parent.parent.name.lower()) and layer.name.isdigit():
                 if layer.is_visible():
+                    if df is None:
+                        df = 0
                     df += int(layer.name)
                 df_found = True
             elif ("atk" in layer.parent.name.lower() or "atk" in layer.parent.parent.name.lower()) and layer.name.isdigit():
                 if layer.is_visible():
+                    if atk is None:
+                        atk = 0
                     atk += int(layer.name)
                 atk_found = True
             elif ("spd" in layer.parent.name.lower() or "spd" in layer.parent.parent.name.lower()) and layer.name.isdigit():
                 if layer.is_visible():
+                    if spd is None:
+                        spd = 0
                     spd += int(layer.name)
                 spd_found = True
         elif layer.name.lower() in all_types and not "stat" in layer.parent.name.lower():
             if not layer.is_group() and layer.is_visible():
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
-
-        # If we actually did find a stat value inside the card, but there was no visible "dark" layer,
-        # assume the stat is equal to 10.
-        if hp_found and not hp:
-            hp = 10
-        if df_found and not df:
-            df = 10
-        if atk_found and not atk:
-            atk = 10
-        if spd_found and not spd:
-            spd = 10
 
     if ability:
         type_bboxes = prune_bbox(sort_bbox(type_bboxes))
@@ -251,13 +255,24 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                     count -= 1
         card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'').strip('\"').strip()
 
-    if hp:
+    # If we actually did find a stat value inside the card, but there was no visible "dark" layer,
+    # assume the stat is equal to 10.
+    if hp_found and hp is None:
+        hp = 10
+    if df_found and df is None:
+        df = 10
+    if atk_found and atk is None:
+        atk = 10
+    if spd_found and spd is None:
+        spd = 10
+
+    if hp is not None:
         card["hp"] = hp
-    if df:
+    if df is not None:
         card["def"] = df
-    if atk:
+    if atk is not None:
         card["atk"] = atk
-    if spd:
+    if spd is not None:
         card["spd"] = spd
 
     return card
@@ -266,7 +281,7 @@ def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
     problems = []
     if card["type"] == "unknown":
         problems.append("UNKOWN TYPE")
-    if card["type"] != "unknown" and (not "ability" in card or not card["ability"]):
+    if card["type"] != "unknown" and (not "ability" in card or card["ability"] is None):
         problems.append("ABILITY TEXT NOT FOUND")
 
     if (card["type"] == "creature" or card["type"] == "minion") and card["hp"] == -1:
