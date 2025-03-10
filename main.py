@@ -13,7 +13,7 @@ from commands.help import print_help
 from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
 from commands.psd_analyzer import manual_update_stats
 from commands.query_card import try_open_alias, try_open_descriptions, populate_files, query_remote, query_pickle, howmany_description, set_match_ratio, set_repository, alias_card, delete_alias
-from commands.update_bot import restart_bot_github, stop_bot, git_pull, git_push, update_bot, restart_bot, purge
+from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
 from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
 
 # Intents permissions
@@ -29,12 +29,9 @@ async def on_ready():
     print(f'We have logged in as {client.user}')
     check_pipeline.start()
 
-    try_open_alias()
-    status = populate_files()
-    if status != 200:
-       print(f"Error {status} when requesting github.")
-    try_open_descriptions()
-
+    commands.append(((), try_open_alias))
+    commands.append(((), populate_files))
+    commands.append(((), try_open_descriptions))
     commands.append(((), init_pipeline))
     print("Finished initializing.")
 
@@ -304,7 +301,9 @@ async def on_message(message: Message):
     # This ID is for the GitHub webhook bot from the TTS repo
     # This isn't a slash command because it really doesn't make sense to be one.
     if message.author.id == 1011982177023561840:
-        await restart_bot_github(message)
+        commands.append(((), try_open_alias))
+        commands.append(((), populate_files))
+        commands.append(((None, False, False, False), manual_update_stats))
     # This will sync all slash commands with the guild you post the message in if you're a bot admin.
     # This isn't a slash command because it might lead to an awkward catch-22 momento.
     elif message.content.startswith(".sync_guild") and message.author.id in global_config.bot_admin_ids:

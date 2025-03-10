@@ -1,30 +1,23 @@
 from difflib import SequenceMatcher, get_close_matches
 from discord import Interaction
 from discord.errors import InteractionResponded
+import pandas
 from pickle import load, dump
 from requests import get
-import pandas
 from warnings import filterwarnings
 filterwarnings('ignore')
 
-from commands.psd_analyzer import STATS_PKL
+from global_config import ALIAS_PKL, STATS_PKL
 
-REPOSITORY = "MichaelJSr/TTSCardMaker"
+REPOSITORY  = "MichaelJSr/TTSCardMaker"
+MATCH_RATIO = 0.6
 
-alias_pickle_name = "aliases.pkl"
-git_file_alias: dict[str, str] = {}
-git_files: dict[str, str] = {}
+git_file_alias: dict[str, str]              = {}
+git_files: dict[str, str]                   = {}
 ambiguous_names: dict[str, tuple[str, ...]] = {}
-git_filenames: list[str] = []
-
-cards_df = pandas.DataFrame()
+git_filenames: list[str]                    = []
 # Cards df, but filtered to not have the cards that have no ability, also it is all lowercase.
-cards_df_filtered = pandas.DataFrame()
-file_descriptions = []
-descriptions_pickle_name = "descriptions.pkl"
-descriptions_dir = "descriptions"
-df_pickle_name = "stats_df.pkl"
-match_ratio = 0.6
+cards_df_filtered   = pandas.DataFrame()
 
 headers = None
 git_token = None
@@ -38,6 +31,8 @@ except AttributeError:
 
 def populate_files():
     global git_filenames
+    git_files.clear()
+    ambiguous_names.clear()
     # Grab repo
     repo = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
     if repo.status_code != 200:
@@ -98,99 +93,55 @@ def populate_descriptions(desc: str):
         desc = desc[1:].strip()
         opposite = True
 
-
     # Exact Matches
     if desc.startswith("\"") and desc.endswith("\""):
-        desc = desc[1:-1].strip()
-        return cards_df_filtered[cards_df_filtered["description"] == desc]
-    else:
-        # Find abilities that don't contain the string if opposite.
-        print(desc)
-        print(re.escape(desc))
+        desc = desc[1:-1]
         if opposite:
             return cards_df_filtered[~cards_df_filtered["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(desc) + r"(?:^|\s|$|\b)"))]
+        return cards_df_filtered[cards_df_filtered["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(desc) + r"(?:^|\s|$|\b)"))]
+    else:
+        # Find abilities that don't contain the string if opposite.
+        if opposite:
+            return cards_df_filtered[~cards_df_filtered["ability"].str.contains(re.escape(desc))]
         # Otherwise find abilities that have the substring or match well enough.
-        cards_df_contains = cards_df_filtered[cards_df_filtered["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(desc) + r"(?:^|\s|$|\b)"))]
+        cards_df_contains = cards_df_filtered[cards_df_filtered["ability"].str.contains(re.escape(desc))]
         cards_df_scores = cards_df_filtered["ability"].apply(lambda x: SequenceMatcher(None, desc, x.lower()).ratio())
-        cards_df_scores = cards_df_scores[cards_df_scores > match_ratio]
+        cards_df_scores = cards_df_scores[cards_df_scores > MATCH_RATIO]
         return pandas.concat([cards_df_filtered.loc[cards_df_scores.index], cards_df_contains]).drop_duplicates(subset=['name', 'ability'], keep='first')
-
-def should_it_be_pickled(line: str):
-    return (line != "attribute" and line != "ability" and line != "name" and line != "line"
-            and line != "health" and line != "hp" and line != "defense" and line != "def"
-            and line != "attack" and line != "atk" and line != "speed" and line != "spd" and not line.isdigit())
-
-def pickle_descriptions():
-    import os
-    dir = os.fsencode(descriptions_dir)
-    for file in os.listdir(dir):
-        filename = os.fsdecode(file).lower()
-        if filename.endswith(".txt"): 
-            with open(os.path.join(dir, file)) as card:
-                card_description = ""
-                for line in card.lower():
-                    line = line.strip()
-                    if line.startswith("["):
-                        line = line[1:-1].strip()
-                    if should_it_be_pickled(line):
-                        card_description += line + "."
-                if card_description != "":
-                    cards_df[card_description] = filename[:-len(".psd")] + ".png"
-
-    with open(descriptions_pickle_name, 'wb') as f:
-        dump(cards_df, f)
 
 def try_open_alias():
     global git_file_alias
 
-    print(f"Trying to open {alias_pickle_name}")
+    print(f"Trying to open {ALIAS_PKL}")
     try:
-        with open(alias_pickle_name, 'rb') as f:
+        with open(ALIAS_PKL, 'rb') as f:
             git_file_alias = load(f)
-    except EOFError:
-        print(f"{alias_pickle_name} is completely empty, populating with empty dict...")
-        with open(alias_pickle_name, 'wb') as f:
-            dump(git_file_alias, f)
-    except FileNotFoundError:
-        print(f"{alias_pickle_name} doesnt exist, populating with empty dict...")
-        with open(alias_pickle_name, 'wb') as f:
+    except (EOFError, FileNotFoundError):
+        print(f"{ALIAS_PKL} doesn't exist, populating with empty dict...")
+        with open(ALIAS_PKL, 'wb') as f:
             dump(git_file_alias, f)
 
 def try_open_descriptions():
-    global cards_df, cards_df_filtered, df_pickle_name
+    global cards_df_filtered
 
-    print(f"Trying to open {df_pickle_name}")
+    print(f"Trying to open {STATS_PKL}")
     try:
-        with open(df_pickle_name, 'rb') as f:
-            cards_df = load(f)
+        with open(STATS_PKL, 'rb') as f:
+            cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
             try:
                 cards_df_filtered = cards_df[cards_df["ability"].notna()].copy()
                 cards_df_filtered["ability"] = cards_df_filtered["ability"].str.lower()
             except KeyError:
-                cards_df_filtered = pandas.DataFrame()
-    except EOFError:
-        print(f"{df_pickle_name} is completely empty, populating with empty dataframe...")
-        with open(df_pickle_name, 'wb') as f:
-            dump(cards_df, f)
-    except FileNotFoundError:
-        print(f"{df_pickle_name} doesnt exist, populating with empty dataframe...")
-        with open(df_pickle_name, 'wb') as f:
-            dump(cards_df, f)
-
-    if cards_df is None:
-        try:
-            pickle_descriptions()
-        except FileNotFoundError:
-            print("No descriptions are pickled, and no files designated for pickling either.")
-            return
+                print(f"{STATS_PKL} exists but has no relevant data in it.")
+    except (EOFError, FileNotFoundError):
+        print(f"{STATS_PKL} is completely empty.")
 
 async def query_remote(interaction: Interaction, query: str):
-
     card = query.replace(" ", "_").lower()
     if not card.endswith(".png"):
         card += ".png"
     try:
-        closest = get_close_matches(card, git_filenames, n=1, cutoff=match_ratio)[0]
+        closest = get_close_matches(card, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
     except IndexError:
         await interaction.response.send_message("No card found!")
         return
@@ -204,8 +155,11 @@ async def query_remote(interaction: Interaction, query: str):
         await interaction.followup.send(ambiguous_message)
 
 async def query_pickle(interaction: Interaction, desc: str):
+    if cards_df_filtered.empty:
+        return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
 
-    closest = populate_descriptions(desc.strip().lower())
+    desc = desc.strip().lower()
+    closest = populate_descriptions(desc)
 
     for index, close in closest.iterrows():
         try:
@@ -218,6 +172,9 @@ async def query_pickle(interaction: Interaction, desc: str):
         await interaction.followup.send(f"{len(closest)} Results found for {desc}!")
 
 async def howmany_description(interaction: Interaction, desc: str):
+    if cards_df_filtered.empty:
+        return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
+
     desc = desc.strip().lower()
     closest = populate_descriptions(desc)
 
@@ -260,7 +217,7 @@ async def alias_card(interaction: Interaction, key: str, val: str):
     git_file_alias[key] = val
     await interaction.response.send_message(f"Created alias: {key} -> {val}")
 
-    with open(alias_pickle_name, 'wb') as f:
+    with open(ALIAS_PKL, 'wb') as f:
         dump(git_file_alias, f)
 
 async def delete_alias(interaction: Interaction, key: str):
@@ -279,13 +236,13 @@ async def delete_alias(interaction: Interaction, key: str):
         return
 
 async def set_match_ratio(interaction: Interaction, value: float):
-    global match_ratio
+    global MATCH_RATIO
     if not value:
-        await interaction.response.send_message(f"The match ratio is {match_ratio}.")
+        await interaction.response.send_message(f"The match ratio is {MATCH_RATIO}.")
         return
 
-    match_ratio = value
-    await interaction.response.send_message(f"New match ratio of {match_ratio} set!")
+    MATCH_RATIO = value
+    await interaction.response.send_message(f"New match ratio of {MATCH_RATIO} set!")
 
 async def set_repository(interaction: Interaction, new_repo: str):
     global REPOSITORY

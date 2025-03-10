@@ -1,8 +1,10 @@
-from discord import Message, Interaction
+from discord import Interaction
 from git import GitCommandError
 from git.cmd import Git
 from os import execv, system, getpid
 from sys import argv, executable
+
+from global_config import ALIAS_PKL, STATS_PKL, OLD_STATS_PKL
 
 def perms_check(interaction: Interaction) -> int:
     try:
@@ -22,13 +24,6 @@ async def restart_bot(interaction: Interaction):
     except FileNotFoundError:
         execv(executable, ['python'] + argv)
 
-async def restart_bot_github(message: Message):
-    await message.channel.send("Restarting bot!")
-    try:
-        execv('./startup.sh', argv)
-    except FileNotFoundError:
-        execv(executable, ['python'] + argv)
-
 async def stop_bot(interaction: Interaction):
     if perms_check(interaction) != 0:
         await interaction.response.send_message("You do not have permission to stop the bot.")
@@ -43,13 +38,14 @@ async def stop_bot(interaction: Interaction):
 async def git_push(interaction: Interaction):
     await interaction.response.send_message("Pushing aliases.pkl...")
     try:
-        Git(argv).add('aliases.pkl')
-        Git(argv).add('descriptions.pkl')
+        Git(argv).add(ALIAS_PKL)
+        Git(argv).add(STATS_PKL)
+        Git(argv).add(OLD_STATS_PKL)
         Git(argv).commit('-m', 'PICKLE')
         Git(argv).push()
         await interaction.followup.send("Succesfully pushed!")
     except GitCommandError:
-        await interaction.followup.send("aliases.pkl and descriptions.pkl are already up to date.")
+        await interaction.followup.send("Pickles are already up to date.")
 
 async def git_pull(interaction: Interaction):
     await interaction.response.send_message("Doing a git pull!")

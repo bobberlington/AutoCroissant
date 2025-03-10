@@ -6,7 +6,7 @@ from numpy import ndarray
 from commands.utils import url_to_cv2image, cv2discordfile, messages, files
 
 def frankenstein(interaction: Interaction, cards: str):
-    from commands.query_card import REPOSITORY, git_files, git_filenames, ambiguous_names, match_ratio
+    from commands.query_card import REPOSITORY, git_files, git_filenames, ambiguous_names, MATCH_RATIO
     if len(cards.split()) < 1:
         interaction.followup.send("Must specify at least one argument to frankenstein.")
         return
@@ -17,7 +17,7 @@ def frankenstein(interaction: Interaction, cards: str):
         if not creature.endswith(".png"):
             creature += ".png"
         try:
-            closest = get_close_matches(creature, git_filenames, n=1, cutoff=match_ratio)[0]
+            closest = get_close_matches(creature, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
         except IndexError:
             messages.append((interaction, f"No card found for query {creature}!"))
             return

@@ -5,6 +5,7 @@ discord.py
 GitPython
 numpy
 opencv-python
+pandas
 peft
 protobuf
 psd-tools
@@ -13,4 +14,3 @@ requests
 sentencepiece
 transformers
 yt-dlp
-pandas
