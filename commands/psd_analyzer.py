@@ -22,7 +22,7 @@ LOCAL_REPO: str = path.expanduser(LOCAL_DIR_LOC)
 stats = {}
 old_stats = defaultdict(list)
 all_types = []
-all_stars = []
+#all_stars = []
 
 headers: dict   = None
 git_token: str  = None
@@ -74,8 +74,8 @@ def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool
                 file = file[:-len('.png')].lower()
                 if folder.endswith("Types"):
                     all_types.append(file)
-                elif folder.endswith("Stars"):
-                    all_stars.append(file)
+                #elif folder.endswith("Stars"):
+                #    all_stars.append(file)
     elif resp:
         for i in resp.json()["tree"]:
             path: str = i["path"]
@@ -84,10 +84,10 @@ def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool
                     continue
 
                 file = path.split('/')[-1][:-len('.png')].lower()
-                if path.startswith("Types/Stars"):
-                    all_stars.append(file)
-                else:
+                if path.endswith("Types"):
                     all_types.append(file)
+                #elif path.endswith("Stars"):
+                #    all_stars.append(file)
 
 def classify_card(relative_loc: str):
     if not relative_loc:
@@ -188,6 +188,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     hp = df = atk = spd = None
     hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
+    types: list[str] = []
     for layer in PSDImage.open(file_loc).descendants():
         if layer.kind == "type":
             layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', ' ').replace('\\t', '').replace('\\x03', '').replace('\\ufeff', '').replace('\\n', ' ').rstrip()
@@ -223,6 +224,8 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                 spd_found = True
         elif layer.name.lower() in all_types and not "stat" in layer.parent.name.lower():
             if not layer.is_group() and layer.is_visible():
+                if layer.bbox[1] < 400:
+                    types.append(layer.name.lower())
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
 
     # Temporary failsafe for when 
@@ -267,6 +270,9 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
         card["atk"] = atk
     if spd is not None:
         card["spd"] = spd
+
+    if types:
+        card["types"] = types
 
     return card
 
@@ -317,6 +323,7 @@ def traverse_repo(interaction: Interaction = None) -> tuple[str, ...]:
             commits = repo.get_commits(path=path.replace(" ", "%20"))
             # If this is somehow an empty list, skip it
             if commits.totalCount == 0:
+                print(f"{path} has no valid timestamp.")
                 continue
 
             date: datetime = commits[0].commit.committer.date.timestamp()
