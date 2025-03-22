@@ -18,7 +18,7 @@ from commands.utils import edit_messages, messages, commands
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE     = 25
 LOCAL_REPO: str = path.expanduser(LOCAL_DIR_LOC)
-EXCLUDE_FOLDERS = ["handbook", "rules", "markers"]
+EXCLUDE_FOLDERS = ["handbook", "rules", "markers", "MDW"]
 
 stats = {}
 old_stats = defaultdict(list)
@@ -288,9 +288,9 @@ def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
         problems.append("HP NOT FOUND")
     if (card["type"] == "creature" or card["type"] == "minion") and card["def"] == -1:
         problems.append("DEF NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and card["atk"] == -1:
+    if (card["type"] == "creature" or card["type"] == "minion") and not ("types" in card and "active" in card["types"]) and card["atk"] == -1:
         problems.append("ATK NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and card["spd"] == -1:
+    if (card["type"] == "creature" or card["type"] == "minion") and not ("types" in card and "active" in card["types"]) and card["spd"] == -1:
         problems.append("SPD NOT FOUND")
 
     if "problem" in card and card["problem"]:
