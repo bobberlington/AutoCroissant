@@ -1,7 +1,7 @@
 from datetime import datetime
 from discord import Interaction
 from collections import defaultdict
-from github import Github
+from github import Github, Repository
 from logging import getLogger, CRITICAL
 from os import path, walk
 from os.path import getmtime, basename
@@ -18,6 +18,7 @@ from commands.utils import edit_messages, messages, commands
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE     = 25
 LOCAL_REPO: str = path.expanduser(LOCAL_DIR_LOC)
+EXCLUDE_FOLDERS = ["handbook", "rules", "markers"]
 
 stats = {}
 old_stats = defaultdict(list)
@@ -40,7 +41,7 @@ def pickle_stats():
     with open(OLD_STATS_PKL, 'wb') as f:
         dump(old_stats, f)
 
-def update_stats(interaction: Interaction, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
+def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
     global stats, old_stats
 
     print(f"Trying to open {STATS_PKL}")
@@ -59,11 +60,11 @@ def update_stats(interaction: Interaction, use_local_repo: bool = True, use_loca
     except (EOFError, FileNotFoundError):
         print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
-    problem_cards = []
+    problem_cards = None
     if use_local_repo:
-        problem_cards = traverse_local_repo(interaction, use_local_timestamp)
+        problem_cards = traverse_local_repo(interaction, output_problematic_cards, use_local_timestamp)
     else:
-        problem_cards = traverse_repo(interaction)
+        problem_cards = traverse_repo(interaction, output_problematic_cards)
     pickle_stats() # Now that we updated the descriptions, store them back
     return problem_cards
 
@@ -303,7 +304,16 @@ def log_problematic_cards(problematic_cards):
         problem_cards.append(f"{loc}\n" + '```' + '\n'.join(problems) + '```')
     return problem_cards
 
-def traverse_repo(interaction: Interaction = None) -> tuple[str, ...]:
+def get_remote_timestamp(repo: Repository.Repository, path: str):
+    commits = repo.get_commits(path=path)
+    # If this is somehow an empty list, return an invalid old timestamp
+    if commits.totalCount == 0:
+        print(f"{path} has no valid timestamp.")
+        return datetime(1000, 1, 1).timestamp()
+
+    return commits[0].commit.committer.date.timestamp()
+
+def traverse_repo(interaction: Interaction = None, output_problematic_cards: bool = True) -> tuple[str, ...]:
     from commands.query_card import REPOSITORY
     resp = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
     if resp.status_code != 200:
@@ -320,32 +330,26 @@ def traverse_repo(interaction: Interaction = None) -> tuple[str, ...]:
     for i in resp.json()["tree"]:
         path: str = i["path"]
         if path.endswith('.psd'):
-            commits = repo.get_commits(path=path.replace(" ", "%20"))
-            # If this is somehow an empty list, skip it
-            if commits.totalCount == 0:
-                print(f"{path} has no valid timestamp.")
-                continue
-
-            date: datetime = commits[0].commit.committer.date.timestamp()
+            date: datetime = get_remote_timestamp(repo, path)
 
             if path in stats and stats[path]["timestamp"] >= date:
                 num_old += 1
-                continue
             else:
                 num_new += 1
                 if path in stats and stats[path]["timestamp"] < date:
                     old_stats[path].append(stats[path])
 
+                path_no_spaces = path.replace(" ", "%20")
                 # This uses an api request
-                card = extract_info_from_psd(urlretrieve(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{path}")[0], path)
+                card = extract_info_from_psd(urlretrieve(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{path_no_spaces}")[0], path)
                 card["name"] = basename(path)[:-len('.psd')]
                 card["timestamp"] = date
-
-                problems = problem_card_checker(card)
-                if problems:
-                    problematic_cards.append((path, card, problems))
-
                 stats[path] = card
+
+                if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
+                    problems = problem_card_checker(card)
+                    if problems:
+                        problematic_cards.append((path, card, problems))
 
             num_updated += 1
             if not num_updated % UPDATE_RATE:
@@ -362,7 +366,7 @@ def traverse_repo(interaction: Interaction = None) -> tuple[str, ...]:
         print(f"{num_old} Did not have newer timestamps.")
     return log_problematic_cards(problematic_cards)
 
-def traverse_local_repo(interaction: Interaction = None, use_local_timestamp: bool = True):
+def traverse_local_repo(interaction: Interaction = None, output_problematic_cards: bool = True, use_local_timestamp: bool = True):
     from commands.query_card import REPOSITORY
     repo = None
     if not use_local_timestamp:
@@ -385,12 +389,10 @@ def traverse_local_repo(interaction: Interaction = None, use_local_timestamp: bo
                 if use_local_timestamp:
                     date = getmtime(full_file)
                 else:
-                    commits = repo.get_commits(path=truncated_file)
-                    date = commits[0].commit.committer.date.timestamp()
+                    date: datetime = get_remote_timestamp(repo, truncated_file)
 
                 if truncated_file in stats and stats[truncated_file]["timestamp"] >= date:
                     num_old += 1
-                    continue
                 else:
                     num_new += 1
                     if truncated_file in stats and stats[truncated_file]["timestamp"] < date:
@@ -399,12 +401,12 @@ def traverse_local_repo(interaction: Interaction = None, use_local_timestamp: bo
                     card = extract_info_from_psd(full_file, truncated_file)
                     card["name"] = basename(full_file)[:-len('.psd')]
                     card["timestamp"] = date
-
-                    problems = problem_card_checker(card)
-                    if problems:
-                        problematic_cards.append((truncated_file, card, problems))
-
                     stats[truncated_file] = card
+
+                    if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
+                        problems = problem_card_checker(card)
+                        if problems:
+                            problematic_cards.append((truncated_file, card, problems))
 
                 num_updated += 1
                 if not num_updated % UPDATE_RATE:
@@ -427,30 +429,31 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
     else:
         print("Going to update the database for card statistics in the background, this will take a while.")
 
-    problem_cards = update_stats(interaction, use_local_repo, use_local_timestamp)
+    problem_cards = update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
 
     if interaction:
         messages.append((interaction, "Done updating card statistics."))
     else:
         print("Done updating card statistics.")
 
-    if output_problematic_cards and interaction:
-        # Loop 1: Output in-depth problems
-        bundle = ""
-        for card in problem_cards:
-            bundle += card
-            if len(bundle) > 1000:
-                messages.append((interaction, bundle))
-                bundle = ""
+    if problem_cards:
+        if interaction:
+            # Loop 1: Output in-depth problems
+            bundle = ""
+            for card in problem_cards:
+                bundle += card
+                if len(bundle) > 1000:
+                    messages.append((interaction, bundle))
+                    bundle = ""
 
-        # Loop 2: Output cardnames only
-        list_of_all_cards = []
-        for card in problem_cards:
-            list_of_all_cards.append(card.split('```')[0])
-            if len(list_of_all_cards) > 30:
-                messages.append((interaction, ''.join(list_of_all_cards)))
-                list_of_all_cards = []
-        if list_of_all_cards:
-            messages.append((interaction, ''.join(list_of_all_cards)))
+            # Loop 2: Output cardnames only
+            for card in problem_cards:
+                messages.append((interaction, card.split('```')[0]))
+        else:
+            for card in problem_cards:
+                print(card)
+            print()
+            for card in problem_cards:
+                print(card.split('```')[0])
 
     commands.append(((), try_open_stats))

@@ -1,6 +1,7 @@
 from discord import Attachment, Client, FFmpegPCMAudio, Intents, Interaction, Member, Message, Object, app_commands
-from discord.ext import tasks
 from discord.app_commands import Choice, CommandTree
+from discord.errors import HTTPException
+from discord.ext import tasks
 from pathlib import Path
 from threading import Thread
 from typing import Optional
@@ -334,13 +335,22 @@ async def check_pipeline():
                     Thread(target=vc.play, daemon=True, kwargs={'source': FFmpegPCMAudio(source=cur_song)}).start()
     if len(messages) > 0:
         interaction, msg = messages.popleft()
-        await interaction.followup.send(content=msg)
+        try:
+            await interaction.followup.send(content=msg)
+        except HTTPException:
+            await client.get_channel(interaction.channel_id).send(content=msg)
     if len(edit_messages) > 0:
         interaction, msg, attachments = edit_messages.popleft()
-        await interaction.edit_original_response(content=msg, attachments=attachments)
+        try:
+            await interaction.edit_original_response(content=msg, attachments=attachments)
+        except HTTPException: # Fallback if we can't edit the message
+            await client.get_channel(interaction.channel_id).send(content=msg, files=attachments)
     if len(files) > 0:
         interaction, file = files.popleft()
-        await interaction.followup.send(file=file)
+        try:
+            await interaction.followup.send(file=file)
+        except HTTPException:
+            await client.get_channel(interaction.channel_id).send(file=file)
     if len(commands) > 0:
         params, cmd = commands.popleft()
         if not params:
