@@ -96,15 +96,14 @@ async def slash_query_name(interaction: Interaction, query: str):
 
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
-    query='The ability text you want to search for.')
-async def slash_query_ability(interaction: Interaction, query: str):
-    await query_ability(interaction, query)
-
-@tree.command(name="query_howmany", description="Get the number of cards that match the given text.")
-@app_commands.describe(
-    query='The text you want to search for.')
-async def slash_query_ability_num_occur(interaction: Interaction, query: str):
-    await query_ability_num_occur(interaction, query)
+    query='The ability text you want to search for.',
+    limit='The number of cards to output before stopping.',
+    howmany='Instead of returning card images, return the number of matches.')
+async def slash_query_ability(interaction: Interaction, query: str, limit: Optional[int] = -1, howmany: Optional[bool] = False):
+    if howmany:
+        await query_ability_num_occur(interaction, query)
+    else:
+        await query_ability(interaction, query, limit)
 
 @tree.command(name="set_ratio", description="View/set tolerance for unexact matches when searching.")
 @app_commands.describe(

@@ -154,22 +154,25 @@ async def query_name(interaction: Interaction, query: str):
             ambiguous_message += f"{i}\n"
         await interaction.followup.send(ambiguous_message)
 
-async def query_ability(interaction: Interaction, ability: str):
+async def query_ability(interaction: Interaction, ability: str, limit: int = -1):
     if cards_dff.empty:
         return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
 
     ability = ability.strip().lower()
     closest = ability_search_engine(ability)
 
+    num_to_output = len(closest)
+    await interaction.response.send_message(f"{num_to_output} Results found for {ability}!")
+
+    if limit > 0:
+        num_to_output = limit
+
     for index, close in closest.iterrows():
-        try:
-            await interaction.response.send_message(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{index[0:-4].replace(' ', '%20')}.png")
-        except InteractionResponded:
-            await interaction.followup.send(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{index[0:-4].replace(' ', '%20')}.png")
-    try:
-        await interaction.response.send_message(f"{len(closest)} Results found for {ability}!")
-    except InteractionResponded:
-        await interaction.followup.send(f"{len(closest)} Results found for {ability}!")
+        await interaction.followup.send(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{index[0:-4].replace(' ', '%20')}.png")
+        limit -= 1
+        if limit == 0:
+            break
+    await interaction.followup.send(f"{num_to_output} Results output for {ability}!")
 
 async def query_ability_num_occur(interaction: Interaction, ability: str):
     if cards_dff.empty:
