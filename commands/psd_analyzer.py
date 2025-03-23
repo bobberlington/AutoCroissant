@@ -190,13 +190,14 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
     types: list[str] = []
+    abilities: list[str] = []
     for layer in PSDImage.open(file_loc).descendants():
         if layer.kind == "type":
             layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', ' ').replace('\\t', '').replace('\\x03', '').replace('\\ufeff', '').replace('\\n', ' ').rstrip()
             if layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
                 longest_text = layer_text
             if layer.name.lower() == "ability":
-                ability = layer_text
+                abilities.append(layer_text.strip('\'" '))
         elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
             or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
             if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
@@ -229,6 +230,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                     types.append(layer.name.lower())
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
 
+    ability = '\n'.join(abilities)
     # Temporary failsafe for when 
     if not ability:
         ability = longest_text
@@ -250,7 +252,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                 for match in matches[::-1]:
                     ability = ability[:match.start()] + ' ' + type_bboxes[count][0] + ' ' + ability[match.end():]
                     count -= 1
-        card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'').strip('\"').strip()
+        card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'" ')
 
     # If we actually did find a stat value inside the card, but there was no visible "dark" layer,
     # assume the stat is equal to 10.
