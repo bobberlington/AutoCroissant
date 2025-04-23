@@ -200,7 +200,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
             if layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
                 longest_text = layer_text
             if layer.name.lower() == "ability":
-                abilities.append(layer_text.strip('\'" '))
+                abilities.append((layer_text.strip('\'" '), layer.bbox[:2]))
         elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
             or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
             if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
@@ -233,7 +233,8 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                     types.append(layer.name.lower())
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
 
-    ability = '\n'.join(abilities)
+    abilities = sort_bbox(abilities)
+    ability = '\n'.join([i[0] for i in abilities])
     # Temporary failsafe for when 
     if not ability:
         ability = longest_text
