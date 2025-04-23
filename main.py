@@ -12,7 +12,7 @@ from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, se
 from commands.frankenstein import frankenstein
 from commands.help import print_help
 from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
-from commands.psd_analyzer import manual_update_stats
+from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file
 from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
 from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
@@ -149,6 +149,16 @@ async def slash_frankenstein(interaction: Interaction, cards: str):
 async def slash_update_stats(interaction: Interaction, output_problematic_cards: Optional[bool] = True, use_local_repo: Optional[bool] = True, use_local_timestamp: Optional[bool] = True):
     await interaction.response.defer()
     await to_thread(manual_update_stats)(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
+
+@tree.command(name="export_abilities", description="Exports all abilities as a text file.")
+async def slash_export_abilities(interaction: Interaction):
+    await interaction.response.defer()
+    await export_stats_to_file(interaction)
+
+@tree.command(name="export_rulebook", description="Exports the rulebook as a text file.")
+async def slash_export_rulebook(interaction: Interaction):
+    await interaction.response.defer()
+    await export_rulebook_to_file(interaction)
 
 
 ####################

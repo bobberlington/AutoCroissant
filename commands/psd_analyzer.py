@@ -1,5 +1,5 @@
 from datetime import datetime
-from discord import Interaction
+from discord import Interaction, File
 from collections import defaultdict
 from github import Github, Repository
 from logging import getLogger, CRITICAL
@@ -16,9 +16,10 @@ from commands.query_card import try_open_stats
 from commands.utils import edit_messages, messages, commands
 
 getLogger("psd_tools").setLevel(CRITICAL)
-UPDATE_RATE     = 25
-LOCAL_REPO: str = path.expanduser(LOCAL_DIR_LOC)
-EXCLUDE_FOLDERS = ["handbook", "rules", "markers", "MDW"]
+UPDATE_RATE         = 25
+LOCAL_REPO: str     = path.expanduser(LOCAL_DIR_LOC)
+EXCLUDE_FOLDERS     = ["handbook", "rules", "markers", "MDW"]
+EXPORTED_FILE_NAME  = "stats.txt"
 
 stats = {}
 old_stats = defaultdict(list)
@@ -41,7 +42,7 @@ def pickle_stats():
     with open(OLD_STATS_PKL, 'wb') as f:
         dump(old_stats, f)
 
-def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
+def load_stats():
     global stats, old_stats
 
     print(f"Trying to open {STATS_PKL}")
@@ -60,6 +61,8 @@ def update_stats(interaction: Interaction, output_problematic_cards: bool = True
     except (EOFError, FileNotFoundError):
         print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
+def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
+    load_stats()
     problem_cards = None
     if use_local_repo:
         problem_cards = traverse_local_repo(interaction, output_problematic_cards, use_local_timestamp)
@@ -459,3 +462,36 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
                 print(card.split('```')[0])
 
     commands.append(((), try_open_stats))
+
+async def export_stats_to_file(interaction: Interaction):
+    if not stats:
+        load_stats()
+
+    with open(EXPORTED_FILE_NAME, 'w') as f:
+        for name, stat in stats.items():
+            f.write(name + '\n')
+            for field, metric in stat.items():
+                f.write(field + '\n')
+                if type(metric) == list:
+                    f.write(' '.join(metric) + '\n')
+                else:
+                    f.write(sub(r'[^\x00-\x7f]',r'', str(metric)) + '\n')
+            f.write('\n')
+
+    with open(EXPORTED_FILE_NAME, 'rb') as f:
+        await interaction.followup.send(file=File(f, EXPORTED_FILE_NAME))
+
+async def export_rulebook_to_file(interaction: Interaction):
+    if not stats:
+        load_stats()
+
+    with open(EXPORTED_FILE_NAME, 'w') as f:
+        for name, stat in stats.items():
+            if "Rulebook" in name:
+                f.write(stat["name"] + '\n')
+                if "ability" in stat:
+                    f.write(sub(r'[^\x00-\x7f]',r'', str(stat["ability"])) + '\n')
+                f.write('\n')
+
+    with open(EXPORTED_FILE_NAME, 'rb') as f:
+        await interaction.followup.send(file=File(f, EXPORTED_FILE_NAME))
