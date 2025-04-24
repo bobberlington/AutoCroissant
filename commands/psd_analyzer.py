@@ -18,7 +18,7 @@ from commands.utils import edit_messages, messages, commands
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE         = 25
 LOCAL_REPO: str     = path.expanduser(LOCAL_DIR_LOC)
-EXCLUDE_FOLDERS     = ["handbook", "rules", "markers", "MDW"]
+EXCLUDE_FOLDERS     = ["markers", "MDW"]
 EXPORTED_FILE_NAME  = "stats.txt"
 
 stats = {}
