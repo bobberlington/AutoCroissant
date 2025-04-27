@@ -199,7 +199,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
             layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', ' ').replace('\\t', '').replace('\\x03', '').replace('\\ufeff', '').replace('\\n', ' ').rstrip()
             if layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
                 longest_text = layer_text
-            if layer.name.lower() == "ability":
+            if layer.name.lower() == "ability" or "Rulebook" in relative_loc:
                 abilities.append((layer_text.strip('\'" '), layer.bbox[:2]))
         elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
             or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):

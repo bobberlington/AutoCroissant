@@ -327,6 +327,11 @@ async def on_message(message: Message):
     elif message.content.startswith(".sync_global") and message.author.id in global_config.bot_admin_ids:
         await tree.sync()
         await message.channel.send("Slash commands synced globally! Might take some time, though...")
+    elif message.content.startswith(".clear_commands") and message.author.id in global_config.bot_admin_ids:
+        sent_guild = Object(id=message.guild.id)
+        tree.clear_commands(guild=None)
+        tree.clear_commands(guild=sent_guild)
+        await message.channel.send("Cleared commands! Make sure to resync the commands.")
 
 @tasks.loop(seconds=1)
 async def check_pipeline():

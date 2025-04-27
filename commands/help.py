@@ -18,10 +18,10 @@ card_commands = {
     "/query_ability <Ability_Text>:"            : "Searches for all cards with the requested description and posts their image.",
     "/query_howmany <Ability_Text>:"            : "Posts number of cards with requested description.",
     "<Ability_Text>:"                           : "If the query is surrounded by quotation \"\" marks, then only exact matches are returned.\n\
-                                                    If the query is preceded by an exclamation mark !, then only things that don't match that query are returned.\n\
-                                                    If there is a | symbol in the query, it treats both the partition before and the partition after the | symbol as separate queries, and combines their results.\n\
-                                                    If there is a & symbol in the query, it treats both the partition before and the partition after the & symbol as seperate queries, and only returns results that are in both.\n\
-                                                    Multiple symbols can be combined. for example, \'\"atk=8\" & !\"spd=4\"\' will return all cards with 8 ATK and any SPD value except for 4.",
+If the query is preceded by an exclamation mark !, then only things that don't match that query are returned.\n\
+If there is a | symbol in the query, it treats both the partition before and the partition after the | symbol as separate queries, and combines their results.\n\
+If there is a & symbol in the query, it treats both the partition before and the partition after the & symbol as seperate queries, and only returns results that are in both.\n\
+Multiple symbols can be combined. for example, \'\"atk=8\" & !\"spd=4\"\' will return all cards with 8 ATK and any SPD value except for 4.",
     "/set_ratio <New_Ratio>:"                   : "If this is called with no arguments, returns the current match ratio. Otherwise, sets the match ratio to the passed in float.",
     "/set_repo <New_Repository>:"               : "If this is called with no arguments, returns the current repository. Otherwise, sets the repository to the passed in string (USER/REPO).",
     "/alias <Card_Name> <Card_Path>:"           : "Permanantly aliases a short name such as \"Red_Bloon\" to a path such as \"PoD01Red_Bloon.png\", increasing accuracy and execution time.\nIf no arguments are passed, prints all existing aliases.",
