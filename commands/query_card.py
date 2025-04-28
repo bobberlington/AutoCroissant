@@ -1,6 +1,5 @@
 from difflib import SequenceMatcher, get_close_matches
 from discord import Interaction
-from discord.errors import InteractionResponded
 import pandas
 from pickle import load, dump
 from requests import get

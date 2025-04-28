@@ -151,9 +151,12 @@ async def slash_update_stats(interaction: Interaction, output_problematic_cards:
     await to_thread(manual_update_stats)(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
 
 @tree.command(name="export_abilities", description="Exports all abilities as a text file.")
-async def slash_export_abilities(interaction: Interaction):
+@app_commands.describe(
+    only_ability='Should we only output the ability of cards?',
+    as_csv='Should we output the file as a csv?')
+async def slash_export_abilities(interaction: Interaction, only_ability: Optional[bool] = True, as_csv: Optional[bool] = False):
     await interaction.response.defer()
-    await export_stats_to_file(interaction)
+    await export_stats_to_file(interaction, only_ability, as_csv)
 
 @tree.command(name="export_rulebook", description="Exports the rulebook as a text file.")
 async def slash_export_rulebook(interaction: Interaction):

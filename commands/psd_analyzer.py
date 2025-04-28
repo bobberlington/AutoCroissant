@@ -5,6 +5,7 @@ from github import Github, Repository
 from logging import getLogger, CRITICAL
 from os import path, walk
 from os.path import getmtime, basename
+import pandas
 from pickle import load, dump
 from psd_tools import PSDImage
 from re import finditer, sub
@@ -19,7 +20,8 @@ getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE         = 25
 LOCAL_REPO: str     = path.expanduser(LOCAL_DIR_LOC)
 EXCLUDE_FOLDERS     = ["markers", "MDW"]
-EXPORTED_FILE_NAME  = "stats.txt"
+EXPORTED_STATS_NAME = "stats"
+EXPORTED_RULES_NAME = "rules"
 
 stats = {}
 old_stats = defaultdict(list)
@@ -464,29 +466,42 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
 
     commands.append(((), try_open_stats))
 
-async def export_stats_to_file(interaction: Interaction):
+async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = False):
+    if as_csv:
+        with open(STATS_PKL, 'rb') as f:
+            cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
+            try:
+                cards_dff = cards_df[cards_df["ability"].notna()].copy()
+                cards_dff["ability"] = cards_dff["ability"].str.lower()
+            except KeyError:
+                print(f"{STATS_PKL} exists but has no relevant data in it.")
+            cards_dff.to_csv(path_or_buf=EXPORTED_STATS_NAME + '.csv')
+        with open(EXPORTED_STATS_NAME + '.csv', 'rb') as f:
+            await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.csv'))
+        return
+
     if not stats:
         load_stats()
 
-    with open(EXPORTED_FILE_NAME, 'w') as f:
+    with open(EXPORTED_STATS_NAME + '.txt', 'w') as f:
         for name, stat in stats.items():
             f.write(name + '\n')
             for field, metric in stat.items():
-                f.write(field + '\n')
-                if type(metric) == list:
-                    f.write(' '.join(metric) + '\n')
-                else:
-                    f.write(sub(r'[^\x00-\x7f]',r'', str(metric)) + '\n')
+                if not only_ability or field == "ability":
+                    if type(metric) == list:
+                        f.write(' '.join(metric) + '\n')
+                    else:
+                        f.write(sub(r'[^\x00-\x7f]',r'', str(metric)) + '\n')
             f.write('\n')
 
-    with open(EXPORTED_FILE_NAME, 'rb') as f:
-        await interaction.followup.send(file=File(f, EXPORTED_FILE_NAME))
+    with open(EXPORTED_STATS_NAME + '.txt', 'rb') as f:
+        await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.txt'))
 
 async def export_rulebook_to_file(interaction: Interaction):
     if not stats:
         load_stats()
 
-    with open(EXPORTED_FILE_NAME, 'w') as f:
+    with open(EXPORTED_RULES_NAME + '.txt', 'w') as f:
         for name, stat in stats.items():
             if "Rulebook" in name:
                 f.write(stat["name"] + '\n')
@@ -494,5 +509,5 @@ async def export_rulebook_to_file(interaction: Interaction):
                     f.write(sub(r'[^\x00-\x7f]',r'', str(stat["ability"])) + '\n')
                 f.write('\n')
 
-    with open(EXPORTED_FILE_NAME, 'rb') as f:
-        await interaction.followup.send(file=File(f, EXPORTED_FILE_NAME))
+    with open(EXPORTED_RULES_NAME + '.txt', 'rb') as f:
+        await interaction.followup.send(file=File(f, EXPORTED_RULES_NAME + '.txt'))
