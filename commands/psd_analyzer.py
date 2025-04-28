@@ -190,7 +190,7 @@ def extract_all_images_from_psd(file_loc: str):
 
 def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     card = classify_card(relative_loc)
-    ability = longest_text = ""
+    longest_text = ""
     hp = df = atk = spd = None
     hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
@@ -198,7 +198,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     abilities: list[str] = []
     for layer in PSDImage.open(file_loc).descendants():
         if layer.kind == "type":
-            layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', ' ').replace('\\t', '').replace('\\x03', '').replace('\\ufeff', '').replace('\\n', ' ').rstrip()
+            layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\n', '\n').replace('\\t', ' ').replace('\\x03', '\n').replace('\\ufeff', '').rstrip()
             if layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
                 longest_text = layer_text
             if layer.name.lower() == "ability" or "Rulebook" in relative_loc:
@@ -237,7 +237,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
 
     abilities = sort_bbox(abilities)
     ability = '\n'.join([i[0] for i in abilities])
-    # Temporary failsafe for when 
+    # Failsafe for when creature does not have a text layer called "ability"
     if not ability:
         ability = longest_text
         if not "problem" in card:
@@ -337,6 +337,8 @@ def traverse_repo(interaction: Interaction = None, output_problematic_cards: boo
     num_old = 0
     for i in resp.json()["tree"]:
         path: str = i["path"]
+        if "MDW" in path:
+            continue
         if path.endswith('.psd'):
             date: datetime = get_remote_timestamp(repo, path)
 
@@ -387,6 +389,8 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
     num_new = 0
     num_old = 0
     for folder, _, files in walk(LOCAL_REPO):
+        if "MDW" in folder:
+            continue
         folder += '/'
         for file in files:
             if file.endswith('.psd'):
@@ -466,15 +470,11 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
 
     commands.append(((), try_open_stats))
 
-async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = False):
+async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = True):
     if as_csv:
         with open(STATS_PKL, 'rb') as f:
             cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
-            try:
-                cards_dff = cards_df[cards_df["ability"].notna()].copy()
-                cards_dff["ability"] = cards_dff["ability"].str.lower()
-            except KeyError:
-                print(f"{STATS_PKL} exists but has no relevant data in it.")
+            cards_dff = cards_df[cards_df["ability"].notna()].copy()
             cards_dff.to_csv(path_or_buf=EXPORTED_STATS_NAME + '.csv')
         with open(EXPORTED_STATS_NAME + '.csv', 'rb') as f:
             await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.csv'))

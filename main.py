@@ -154,7 +154,7 @@ async def slash_update_stats(interaction: Interaction, output_problematic_cards:
 @app_commands.describe(
     only_ability='Should we only output the ability of cards?',
     as_csv='Should we output the file as a csv?')
-async def slash_export_abilities(interaction: Interaction, only_ability: Optional[bool] = True, as_csv: Optional[bool] = False):
+async def slash_export_abilities(interaction: Interaction, only_ability: Optional[bool] = True, as_csv: Optional[bool] = True):
     await interaction.response.defer()
     await export_stats_to_file(interaction, only_ability, as_csv)
 
