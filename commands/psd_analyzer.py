@@ -300,6 +300,8 @@ def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
         problems.append("ATK NOT FOUND")
     if (card["type"] == "creature" or card["type"] == "minion") and not ("types" in card and "active" in card["types"]) and card["spd"] == -1:
         problems.append("SPD NOT FOUND")
+    if (card["type"] == "creature" or card["type"] == "minion") and (card["hp"] > 10 or card["def"] > 10 or card["atk"] > 10 or card["spd"] > 10):
+        problems.append("STATS TOO HIGH")
 
     if "problem" in card and card["problem"]:
         problems.extend(card["problem"])

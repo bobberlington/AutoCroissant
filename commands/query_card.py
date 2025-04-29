@@ -87,6 +87,27 @@ def ability_search_engine(ability: str):
         desc1, desc2 = ability.split("&", 1)
         return pandas.merge(ability_search_engine(desc1.strip()), ability_search_engine(desc2.strip()), left_index=True, right_index=True, how="inner", copy=False)
 
+    if re.search(r"^(hp|def|atk|spd)(<|<=|==|>=|>)\d+$", ability.lower()):
+        print(re.findall(r"(hp|def|atk|spd)", ability.lower()))
+        print(re.findall(r"(<|<=|==|>=|>)", ability.lower()))
+        print(re.findall(r"d+", ability.lower()))
+        the_stat_in_question = re.findall(r"(hp|def|atk|spd)", ability.lower())[0]
+        comparator = re.findall(r"(<|<=|==|>=|>)", ability.lower())[0]
+        number = int(re.findall(r"\d+", ability.lower())[0])
+        guys_with_stats = pandas.concat([cards_dff[cards_dff["type"] == "minion"], cards_dff[cards_dff["type"] == "creature"]])
+        if comparator == "<":
+            return guys_with_stats[guys_with_stats[the_stat_in_question] < number]
+        elif comparator == "<=":
+            return guys_with_stats[guys_with_stats[the_stat_in_question] <= number]
+        elif comparator == "==":
+            return guys_with_stats[guys_with_stats[the_stat_in_question] == number]
+        elif comparator == ">=":
+            return guys_with_stats[guys_with_stats[the_stat_in_question] >= number]
+        elif comparator == ">":
+            return guys_with_stats[guys_with_stats[the_stat_in_question] > number]
+        else:
+            # HOW DID YOU EVEN GET HERE
+            return guys_with_stats[guys_with_stats[the_stat_in_question] == 99999999999999999999999999999999999999999]
     opposite = False
     if ability.startswith("!"):
         ability = ability[1:].strip()
@@ -153,12 +174,14 @@ async def query_name(interaction: Interaction, query: str):
             ambiguous_message += f"{i}\n"
         await interaction.followup.send(ambiguous_message)
 
-async def query_ability(interaction: Interaction, ability: str, limit: int = -1):
+async def query_ability(interaction: Interaction, ability: str, limit: int = -1, filter_raids=False):
     if cards_dff.empty:
         return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
 
     ability = ability.strip().lower()
     closest = ability_search_engine(ability)
+    if filter_raids:
+        closest = pandas.concat([closest[closest["stars"].isna()], closest[closest["stars"] <= 5]])
 
     num_to_output = len(closest)
     await interaction.response.send_message(f"{num_to_output} Results found for {ability}!")
