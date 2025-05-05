@@ -45,12 +45,12 @@ async def on_ready():
 @app_commands.describe(
     help_type='The type of command you want help for.')
 @app_commands.choices(help_type=[
-    Choice(name="cards", value="card"),
+    Choice(name="card", value="card"),
     Choice(name="ai", value="ai"),
     Choice(name="music", value="music"),
     Choice(name="general", value="general")
 ])
-async def slash_print_help(interaction: Interaction, help_type:Choice[str]):
+async def slash_print_help(interaction: Interaction, help_type: Choice[str]):
     await print_help(interaction, help_type)
 
 @tree.command(name="restart_bot", description="Restart the bot.")

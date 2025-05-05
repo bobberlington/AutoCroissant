@@ -1,4 +1,5 @@
 from discord import Interaction
+from discord.app_commands import Choice
 from discord.errors import InteractionResponded
 
 
@@ -56,16 +57,13 @@ music_commands = {
     "/disconnect:"                              : "Disconnects the bot, stopping the current song and clearing all queues.",
 }
 
-async def print_help(interaction: Interaction, help_wanted):
-    if not help_wanted:
-        help_wanted = ""
-    help_wanted = str(help_wanted)
+async def print_help(interaction: Interaction, help_wanted: Choice[str]):
     wanted_commands = general_commands
-    if "card" in help_wanted:
+    if help_wanted.value == "card":
         wanted_commands = card_commands
-    elif "ai" in help_wanted:
+    elif help_wanted.value == "ai":
         wanted_commands = ai_commands
-    elif "music" in help_wanted:
+    elif help_wanted.value == "music":
         wanted_commands = music_commands
 
     help_msg = f"```Available commands:\n\n"

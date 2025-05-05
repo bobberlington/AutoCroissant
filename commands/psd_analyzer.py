@@ -80,7 +80,7 @@ def load_stats():
 
 def parse_clean_cards():
     for name in stats:
-        if not name in dirty_files:
+        if name not in dirty_files:
             old_stats[name].append(stats.pop(name))
 
 def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
@@ -95,7 +95,7 @@ def update_stats(interaction: Interaction, output_problematic_cards: bool = True
     return problem_cards
 
 def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool = True):
-    if use_local_timestamp and not resp:
+    if use_local_timestamp and resp is None:
         for folder, _, files in walk(LOCAL_REPO + "/Types"):
             for file in files:
                 if folder.endswith("Types"):
@@ -103,7 +103,7 @@ def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool
     elif resp:
         for i in resp.json()["tree"]:
             path: str = i["path"]
-            if path.startswith("Types") and not "Stars" in path and '.' in path:
+            if path.startswith("Types") and "Stars" not in path and '.' in path:
                 all_types.append(basename(path)[:-4].lower())
 
 def classify_card(relative_loc: str):
@@ -240,7 +240,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                         spd = 0
                     spd += int(layer.name)
                 spd_found = True
-        elif layer.name.lower() in all_types and not "stat" in layer.parent.name.lower():
+        elif layer.name.lower() in all_types and "stat" not in layer.parent.name.lower():
             if not layer.is_group() and layer.is_visible():
                 if layer.bbox[1] < 400:
                     types.append(layer.name.lower())
@@ -251,7 +251,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     # Failsafe for when creature does not have a text layer called "ability"
     if not ability:
         ability = longest_text
-        if not "problem" in card:
+        if "problem" not in card:
             card["problem"] = []
         card["problem"].append("NO ABILITY LAYER")
     if ability:
@@ -261,7 +261,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
 
         if len(matches) > 0 and len(type_bboxes) > 0:
             if len(type_bboxes) < len(matches):
-                if not "problem" in card:
+                if "problem" not in card:
                     card["problem"] = []
                 card["problem"].append("INCORRECT TYPE NAMES")
             else:
@@ -343,7 +343,7 @@ def list_orphans(interaction: Interaction):
     
     orphans = []
     for name in stats:
-        if not "author" in stats[name] or not stats[name]["author"]:
+        if "author" not in stats[name] or not stats[name]["author"]:
             orphans.append(name)
 
     bundle = ""
@@ -382,7 +382,7 @@ def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool 
         messages.append((interaction, f"{name} key was deleted from metadata."))
         return
 
-    if not name in metadata:
+    if name not in metadata:
         metadata[name] = {}
     if author:
         metadata[name]["author"] = author
@@ -395,9 +395,9 @@ def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool 
 def set_metadata(commits: list, name: str):
     # if commits[commits.totalCount - 1].commit.sha != ACCURSED_COMMIT:
     author = commits[commits.totalCount - 1].commit.committer.name
-    if not name in metadata:
+    if name not in metadata:
         metadata[name] = {}
-    if not "author" in metadata[name] or not metadata[name]["author"]:
+    if "author" not in metadata[name] or not metadata[name]["author"]:
         metadata[name]["author"] = author
 
 def set_remote_timestamp(repo: Repository.Repository, path: str):
@@ -447,7 +447,7 @@ def traverse_repo(interaction: Interaction = None, output_problematic_cards: boo
                 card["timestamp"] = date
                 stats[name] = card
 
-                if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
+                if output_problematic_cards and card["type"] not in EXCLUDE_FOLDERS:
                     problems = problem_card_checker(card)
                     if problems:
                         problematic_cards.append((path, card, problems))
@@ -508,7 +508,7 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
                     card["timestamp"] = date
                     stats[name] = card
 
-                    if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
+                    if output_problematic_cards and card["type"] not in EXCLUDE_FOLDERS:
                         problems = problem_card_checker(card)
                         if problems:
                             problematic_cards.append((truncated_file, card, problems))

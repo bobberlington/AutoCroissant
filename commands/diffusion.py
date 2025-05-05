@@ -4,7 +4,10 @@ from discord import Attachment, Interaction
 from gc import collect
 from os import listdir
 from PIL.Image import fromarray, Resampling
-import torch
+try:
+    import torch
+except ImportError:
+    print("Torch not installed, diffusion won't work.")
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
 from typing import Optional
 from queue import Queue
@@ -43,7 +46,7 @@ async def get_qsize(interaction: Interaction):
     await interaction.response.send_message("```Queue Size: " + str(index) + "\n" + queued_prompts + "```")
 
 def init_pipeline():
-    if model == "":
+    if not model:
         print("No model to initialize, finished.")
         return
 
@@ -108,10 +111,10 @@ def init_pipeline():
     if vram_usage == "mps":
         txt2img_pipe.to(device='mps')
 
-    if not scheduler and scheduler_name.startswith("dpm++ sde"):
+    if scheduler is None and scheduler_name.startswith("dpm++ sde"):
         scheduler = DPMSolverSinglestepScheduler.from_config(txt2img_pipe.scheduler.config)
         scheduler.config.lower_order_final = True
-    elif not scheduler and scheduler_name.startswith("euler a"):
+    elif scheduler is None and scheduler_name.startswith("euler a"):
         scheduler = EulerAncestralDiscreteScheduler.from_config(txt2img_pipe.scheduler.config)
     if scheduler_name.endswith("karras") and not "flux" in model.lower():
         scheduler.config.use_karras_sigmas = True

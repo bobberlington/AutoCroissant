@@ -205,12 +205,12 @@ async def init_vc(interaction: Interaction):
         messages.append((interaction, "User not connected to voice channel."))
 
 async def play_music(interaction: Interaction, song: str, play_next: bool = False):
-    if not vc or not vc.is_connected():
+    if vc is None or not vc.is_connected():
         await init_vc(interaction)
     commands.append(((interaction, song, play_next), play_song_async))
 
 async def play_all(interaction: Interaction):
-    if not vc or not vc.is_connected():
+    if vc is None or not vc.is_connected():
         await init_vc(interaction)
     commands.append(((interaction,), play_all_async))
 

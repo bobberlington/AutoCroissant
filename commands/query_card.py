@@ -261,7 +261,7 @@ async def delete_alias(interaction: Interaction, key: str):
     if key in git_file_alias:
         await interaction.response.send_message(f"Deleted alias: {key} -> {git_file_alias.pop(key)}")
 
-        if not key + ".png" in git_files:
+        if key + ".png" not in git_files:
             await interaction.followup.send(f"No such key exists: {key}\nCouldnt pop alias from dictionary.")
             return
 
