@@ -2,6 +2,8 @@ LOCAL_DIR_LOC   = "~/Desktop/TTSCardMaker"
 ALIAS_PKL       = "aliases.pkl"
 STATS_PKL       = "stats.pkl"
 OLD_STATS_PKL   = "old_stats.pkl"
+METAD_PKL       = "metadata.pkl"
+
 
 # Grodus, Bobberlington, Tyler, Croissant, Kyle, Jason, Ech, Zoey
 bot_admin_ids = [247149441734279169, 80731173726191616, 346841750570270721, 451703959720296448, 264286438504267776, 213046347903795200, 381907548162359309, 190065758267637760]

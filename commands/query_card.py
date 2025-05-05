@@ -156,6 +156,17 @@ def try_open_stats():
     except (EOFError, FileNotFoundError):
         print(f"{STATS_PKL} is completely empty.")
 
+def query_psd_path(query: str):
+    card = query.replace(" ", "_").lower()
+    if not card.endswith(".png"):
+        card += ".png"
+    try:
+        closest = get_close_matches(card, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
+    except IndexError:
+        print("No card found!")
+        return
+    return git_files[closest].replace('%20', ' ')
+
 async def query_name(interaction: Interaction, query: str):
     card = query.replace(" ", "_").lower()
     if not card.endswith(".png"):

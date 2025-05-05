@@ -3,7 +3,7 @@ from discord import Interaction, File
 from collections import defaultdict
 from github import Github, Repository
 from logging import getLogger, CRITICAL
-from os import path, walk
+from os import path as path_os, walk
 from os.path import getmtime, basename
 import pandas
 from pickle import load, dump
@@ -12,21 +12,23 @@ from re import finditer, sub
 from requests import get, Response
 from urllib.request import urlretrieve
 
-from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL
-from commands.query_card import try_open_stats
+from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL, METAD_PKL
+from commands.query_card import try_open_stats, query_psd_path
 from commands.utils import edit_messages, messages, commands
 
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE         = 25
-LOCAL_REPO: str     = path.expanduser(LOCAL_DIR_LOC)
+LOCAL_REPO: str     = path_os.expanduser(LOCAL_DIR_LOC)
 EXCLUDE_FOLDERS     = ["markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
+# ACCURSED_COMMIT     = "77b97e4760d385a82cc404b62212644f81167ac4"
 EXPORTED_RULES_NAME = "rules"
 
-stats = {}
-old_stats = defaultdict(list)
-all_types = []
-#all_stars = []
+stats       = {}
+old_stats   = defaultdict(list)
+metadata    = {}
+all_types   = []
+dirty_files = []
 
 headers: dict   = None
 git_token: str  = None
@@ -43,14 +45,27 @@ def pickle_stats():
         dump(stats, f)
     with open(OLD_STATS_PKL, 'wb') as f:
         dump(old_stats, f)
+    with open(METAD_PKL, 'wb') as f:
+        dump(metadata, f)
 
 def load_stats():
-    global stats, old_stats
+    global stats, old_stats, metadata
+
+    print(f"Trying to open {METAD_PKL}")
+    try:
+        with open(METAD_PKL, 'rb') as f:
+            metadata = load(f)
+        print(f"Existing dict found in {METAD_PKL}, updating entries...")
+    except (EOFError, FileNotFoundError):
+        print(f"{METAD_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
     print(f"Trying to open {STATS_PKL}")
     try:
         with open(STATS_PKL, 'rb') as f:
             stats = load(f)
+            for key in metadata:
+                if key in stats:
+                    stats[key].update(metadata[key])
         print(f"Existing dict found in {STATS_PKL}, updating entries...")
     except (EOFError, FileNotFoundError):
         print(f"{STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
@@ -63,6 +78,11 @@ def load_stats():
     except (EOFError, FileNotFoundError):
         print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
+def parse_clean_cards():
+    for name in stats:
+        if not name in dirty_files:
+            old_stats[name].append(stats.pop(name))
+
 def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
     load_stats()
     problem_cards = None
@@ -70,6 +90,7 @@ def update_stats(interaction: Interaction, output_problematic_cards: bool = True
         problem_cards = traverse_local_repo(interaction, output_problematic_cards, use_local_timestamp)
     else:
         problem_cards = traverse_repo(interaction, output_problematic_cards)
+    parse_clean_cards() # Now check which cards we actually edited in dirty_files, and move clean ones to old_stats since they don't exist anymore
     pickle_stats() # Now that we updated the descriptions, store them back
     return problem_cards
 
@@ -77,23 +98,13 @@ def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool
     if use_local_timestamp and not resp:
         for folder, _, files in walk(LOCAL_REPO + "/Types"):
             for file in files:
-                file = file[:-len('.png')].lower()
                 if folder.endswith("Types"):
-                    all_types.append(file)
-                #elif folder.endswith("Stars"):
-                #    all_stars.append(file)
+                    all_types.append(file[:-4].lower())
     elif resp:
         for i in resp.json()["tree"]:
             path: str = i["path"]
-            if path.startswith("Types"):
-                if not '.' in path:
-                    continue
-
-                file = path.split('/')[-1][:-len('.png')].lower()
-                if path.endswith("Types"):
-                    all_types.append(file)
-                #elif path.endswith("Stars"):
-                #    all_stars.append(file)
+            if path.startswith("Types") and not "Stars" in path and '.' in path:
+                all_types.append(basename(path)[:-4].lower())
 
 def classify_card(relative_loc: str):
     if not relative_loc:
@@ -314,13 +325,89 @@ def log_problematic_cards(problematic_cards):
         problem_cards.append(f"{loc}\n" + '```' + '\n'.join(problems) + '```')
     return problem_cards
 
-def get_remote_timestamp(repo: Repository.Repository, path: str):
+def get_card_stats(interaction: Interaction, query: str):
+    if not stats:
+        load_stats()
+    
+    path = query_psd_path(query)
+    name = basename(path)[:-4]
+    if name in stats:
+        pretty_print_dict = '\n'.join("{!r}: {!r},".format(k, v) for k, v in stats[name].items())
+        messages.append((interaction, f"Stats for {name}:```{pretty_print_dict}```"))
+    else:
+        messages.append((interaction, f"No stats found for {name}."))
+
+def list_orphans(interaction: Interaction):
+    if not stats:
+        load_stats()
+    
+    orphans = []
+    for name in stats:
+        if not "author" in stats[name] or not stats[name]["author"]:
+            orphans.append(name)
+
+    bundle = ""
+    for card in orphans:
+        bundle += card + '\n'
+        if len(bundle) > 1000:
+            messages.append((interaction, bundle))
+            bundle = ""
+    messages.append((interaction, bundle))
+
+def mass_replace_author(interaction: Interaction, author1: str = "", author2: str = ""):
+    if not stats:
+        load_stats()
+
+    num_replaced = 0
+    for name in metadata:
+        if metadata[name]["author"] == author1:
+            metadata[name]["author"] = author2
+            if name in stats:
+                stats[name]["author"] = author2
+            num_replaced += 1
+
+    pickle_stats()
+    messages.append((interaction, f"{num_replaced} instances of {author1} replaced with {author2}."))
+
+def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool = False, author: str = ""):
+    if not stats:
+        load_stats()
+
+    path = query_psd_path(query)
+    name = basename(path)[:-4]
+    if del_entry:
+        if name in metadata:
+            del metadata[name]
+            pickle_stats()
+        messages.append((interaction, f"{name} key was deleted from metadata."))
+        return
+
+    if not name in metadata:
+        metadata[name] = {}
+    if author:
+        metadata[name]["author"] = author
+
+    if name in stats:
+        stats[name].update(metadata[name])
+    pickle_stats()
+    messages.append((interaction, f"{name} metadata updated to {metadata[name]}."))
+
+def set_metadata(commits: list, name: str):
+    # if commits[commits.totalCount - 1].commit.sha != ACCURSED_COMMIT:
+    author = commits[commits.totalCount - 1].commit.committer.name
+    if not name in metadata:
+        metadata[name] = {}
+    if not "author" in metadata[name] or not metadata[name]["author"]:
+        metadata[name]["author"] = author
+
+def set_remote_timestamp(repo: Repository.Repository, path: str):
     commits = repo.get_commits(path=path)
     # If this is somehow an empty list, return an invalid old timestamp
     if commits.totalCount == 0:
         print(f"{path} has no valid timestamp.")
         return datetime(1000, 1, 1).timestamp()
 
+    set_metadata(commits, basename(path)[:-4])
     return commits[0].commit.committer.date.timestamp()
 
 def traverse_repo(interaction: Interaction = None, output_problematic_cards: bool = True) -> tuple[str, ...]:
@@ -342,21 +429,23 @@ def traverse_repo(interaction: Interaction = None, output_problematic_cards: boo
         if "MDW" in path:
             continue
         if path.endswith('.psd'):
-            date: datetime = get_remote_timestamp(repo, path)
+            date: datetime = set_remote_timestamp(repo, path)
+            name = basename(path)[:-4]
+            dirty_files.append(name)
 
-            if path in stats and stats[path]["timestamp"] >= date:
+            if name in stats and stats[name]["timestamp"] >= date:
                 num_old += 1
             else:
                 num_new += 1
-                if path in stats and stats[path]["timestamp"] < date:
-                    old_stats[path].append(stats[path])
+                if name in stats and stats[name]["timestamp"] < date:
+                    old_stats[name].append(stats[name])
 
                 path_no_spaces = path.replace(" ", "%20")
                 # This uses an api request
                 card = extract_info_from_psd(urlretrieve(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{path_no_spaces}")[0], path)
-                card["name"] = basename(path)[:-len('.psd')]
+                card["path"] = path
                 card["timestamp"] = date
-                stats[path] = card
+                stats[name] = card
 
                 if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
                     problems = problem_card_checker(card)
@@ -398,24 +487,26 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
             if file.endswith('.psd'):
                 full_file = folder.replace('\\', '/') + file
                 truncated_file = full_file.split("TTSCardMaker")[-1].strip('/')
+                name = basename(truncated_file)[:-4]
+                dirty_files.append(name)
 
                 date = -1.0
                 if use_local_timestamp:
                     date = getmtime(full_file)
                 else:
-                    date: datetime = get_remote_timestamp(repo, truncated_file)
+                    date: datetime = set_remote_timestamp(repo, truncated_file)
 
-                if truncated_file in stats and stats[truncated_file]["timestamp"] >= date:
+                if name in stats and stats[name]["timestamp"] >= date:
                     num_old += 1
                 else:
                     num_new += 1
-                    if truncated_file in stats and stats[truncated_file]["timestamp"] < date:
-                        old_stats[truncated_file].append(stats[truncated_file])
+                    if name in stats and stats[name]["timestamp"] < date:
+                        old_stats[name].append(stats[name])
 
                     card = extract_info_from_psd(full_file, truncated_file)
-                    card["name"] = basename(full_file)[:-len('.psd')]
+                    card["path"] = truncated_file
                     card["timestamp"] = date
-                    stats[truncated_file] = card
+                    stats[name] = card
 
                     if output_problematic_cards and not card["type"] in EXCLUDE_FOLDERS:
                         problems = problem_card_checker(card)
@@ -473,17 +564,16 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
     commands.append(((), try_open_stats))
 
 async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = True):
+    if not stats:
+        load_stats()
+
     if as_csv:
-        with open(STATS_PKL, 'rb') as f:
-            cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
-            cards_dff = cards_df[cards_df["ability"].notna()].copy()
-            cards_dff.to_csv(path_or_buf=EXPORTED_STATS_NAME + '.csv')
+        cards_df = pandas.DataFrame.from_dict(stats).transpose()
+        cards_dff = cards_df[cards_df["ability"].notna()].copy()
+        cards_dff.to_csv(path_or_buf=EXPORTED_STATS_NAME + '.csv')
         with open(EXPORTED_STATS_NAME + '.csv', 'rb') as f:
             await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.csv'))
         return
-
-    if not stats:
-        load_stats()
 
     with open(EXPORTED_STATS_NAME + '.txt', 'w') as f:
         for name, stat in stats.items():
@@ -505,8 +595,8 @@ async def export_rulebook_to_file(interaction: Interaction):
 
     with open(EXPORTED_RULES_NAME + '.txt', 'w') as f:
         for name, stat in stats.items():
-            if "Rulebook" in name:
-                f.write(stat["name"] + '\n')
+            if "Rulebook" in stat["path"]:
+                f.write(name + '\n')
                 if "ability" in stat:
                     f.write(sub(r'[^\x00-\x7f]',r'', str(stat["ability"])) + '\n')
                 f.write('\n')

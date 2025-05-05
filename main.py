@@ -12,7 +12,7 @@ from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, se
 from commands.frankenstein import frankenstein
 from commands.help import print_help
 from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
-from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file
+from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file, manual_metadata_entry, get_card_stats, mass_replace_author, list_orphans
 from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
 from commands.utils import music, prev_music, messages, edit_messages, files, commands, to_thread
@@ -163,6 +163,35 @@ async def slash_export_abilities(interaction: Interaction, only_ability: Optiona
 async def slash_export_rulebook(interaction: Interaction):
     await interaction.response.defer()
     await export_rulebook_to_file(interaction)
+
+@tree.command(name="update_metadata", description="Input metadata for a card.")
+@app_commands.describe(
+    query='The card to edit the metadata for.',
+    del_entry='Should this key entry be deleted.',
+    author='The creator of the card.')
+async def slash_update_metadata(interaction: Interaction, query: str = "", del_entry: Optional[bool] = False, author: Optional[str] = None):
+    await interaction.response.defer()
+    await to_thread(manual_metadata_entry)(interaction, query, del_entry, author)
+
+@tree.command(name="query_stats", description="Query stats and metadata specifics for a card.")
+@app_commands.describe(
+    query='The card to edit the metadata for.')
+async def slash_query_stats(interaction: Interaction, query: str = ""):
+    await interaction.response.defer()
+    await to_thread(get_card_stats)(interaction, query)
+
+@tree.command(name="replace_author", description="Replace all instances of one author with another.")
+@app_commands.describe(
+    author1='The author being replaced.',
+    author2='The author to change author1 to.')
+async def slash_update_metadata(interaction: Interaction, author1: str = "", author2: str = ""):
+    await interaction.response.defer()
+    await to_thread(mass_replace_author)(interaction, author1, author2)
+
+@tree.command(name="list_orphans", description="Output all cards without a listed author.")
+async def slash_list_orphans(interaction: Interaction):
+    await interaction.response.defer()
+    await to_thread(list_orphans)(interaction)
 
 
 ####################
