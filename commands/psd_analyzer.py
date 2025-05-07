@@ -82,6 +82,7 @@ def parse_clean_cards():
     for name in stats:
         if name not in dirty_files:
             old_stats[name].append(stats.pop(name))
+    # Should we do this for metadata too?
 
 def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
     load_stats()
@@ -202,18 +203,24 @@ def extract_all_images_from_psd(file_loc: str):
 def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     card = classify_card(relative_loc)
     longest_text = ""
+    num_stars = 0
     hp = df = atk = spd = None
-    hp_found = df_found = atk_found = spd_found = False
+    get_stars_from_psd = is_rulepage = hp_found = df_found = atk_found = spd_found = False
     type_bboxes: list[tuple[str, tuple[int, int]]] = []
     types: list[str] = []
     abilities: list[str] = []
+
+    if "Rulebook" in relative_loc:
+        is_rulepage = True
+    elif "Auxiliary/Items" in relative_loc or "Auxiliary/Minions" in relative_loc or "N.M.E" in relative_loc:
+        get_stars_from_psd = True
     for layer in PSDImage.open(file_loc).descendants():
         if layer.kind == "type":
             layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\n', '\n').replace('\\t', ' ').replace('\\x03', '\n').replace('\\ufeff', '').rstrip()
-            if layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
-                longest_text = layer_text
-            if layer.name.lower() == "ability" or "Rulebook" in relative_loc:
+            if layer.name.lower() == "ability" or is_rulepage:
                 abilities.append((layer_text.strip('\'" '), layer.bbox[:2]))
+            elif layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
+                longest_text = layer_text
         elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
             or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
             if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
@@ -240,11 +247,14 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                         spd = 0
                     spd += int(layer.name)
                 spd_found = True
-        elif layer.name.lower() in all_types and "stat" not in layer.parent.name.lower():
-            if not layer.is_group() and layer.is_visible():
-                if layer.bbox[1] < 400:
-                    types.append(layer.name.lower())
+        elif layer.name.lower() in all_types and layer.is_visible() and layer.has_pixels():
+            if layer.bbox[1] < 400:
+                types.append(layer.name.lower())
+            else:
                 type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
+        elif get_stars_from_psd and ("stars" in layer.parent.name.lower() or (layer.parent.parent and "stars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "stars" in layer.parent.parent.parent.name.lower())):
+            if layer.is_visible() and layer.has_pixels():
+                num_stars += 1
 
     abilities = sort_bbox(abilities)
     ability = '\n'.join([i[0] for i in abilities])
@@ -294,6 +304,9 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
     if types:
         card["types"] = types
 
+    if get_stars_from_psd:
+        card["stars"] = num_stars
+
     return card
 
 def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
@@ -330,7 +343,7 @@ def get_card_stats(interaction: Interaction, query: str):
         load_stats()
     
     path = query_psd_path(query)
-    name = basename(path)[:-4]
+    name = basename(path)[:-4].replace('_', ' ')
     if name in stats:
         pretty_print_dict = '\n'.join("{!r}: {!r},".format(k, v) for k, v in stats[name].items())
         messages.append((interaction, f"Stats for {name}:```{pretty_print_dict}```"))
@@ -374,7 +387,7 @@ def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool 
         load_stats()
 
     path = query_psd_path(query)
-    name = basename(path)[:-4]
+    name = basename(path)[:-4].replace('_', ' ')
     if del_entry:
         if name in metadata:
             del metadata[name]
@@ -407,7 +420,7 @@ def set_remote_timestamp(repo: Repository.Repository, path: str):
         print(f"{path} has no valid timestamp.")
         return datetime(1000, 1, 1).timestamp()
 
-    set_metadata(commits, basename(path)[:-4])
+    set_metadata(commits, basename(path)[:-4].replace('_', ' '))
     return commits[0].commit.committer.date.timestamp()
 
 def traverse_repo(interaction: Interaction = None, output_problematic_cards: bool = True) -> tuple[str, ...]:
@@ -430,7 +443,7 @@ def traverse_repo(interaction: Interaction = None, output_problematic_cards: boo
             continue
         if path.endswith('.psd'):
             date: datetime = set_remote_timestamp(repo, path)
-            name = basename(path)[:-4]
+            name = basename(path)[:-4].replace('_', ' ')
             dirty_files.append(name)
 
             if name in stats and stats[name]["timestamp"] >= date:
@@ -487,7 +500,7 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
             if file.endswith('.psd'):
                 full_file = folder.replace('\\', '/') + file
                 truncated_file = full_file.split("TTSCardMaker")[-1].strip('/')
-                name = basename(truncated_file)[:-4]
+                name = basename(truncated_file)[:-4].replace('_', ' ')
                 dirty_files.append(name)
 
                 date = -1.0
@@ -535,6 +548,9 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
         print("Going to update the database for card statistics in the background, this will take a while.")
 
     problem_cards = update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
+    for key in metadata:
+        if key in stats:
+            stats[key].update(metadata[key])
 
     if interaction:
         messages.append((interaction, "Done updating card statistics."))
