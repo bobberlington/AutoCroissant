@@ -279,7 +279,7 @@ def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
                 for match in matches[::-1]:
                     ability = ability[:match.start()] + ' ' + type_bboxes[count][0] + ' ' + ability[match.end():]
                     count -= 1
-        card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'" ')
+        card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'" ').strip()
 
     # If we actually did find a stat value inside the card, but there was no visible "dark" layer,
     # assume the stat is equal to 10.
