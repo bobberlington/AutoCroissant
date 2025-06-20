@@ -179,7 +179,7 @@ def play_song_async(interaction: Interaction, song: str, play_next: bool):
             if not song.endswith('/'):
                 song += '/'
             queue_msg = "```"
-            for s in listdir(song):
+            for s in sorted(listdir(song)):
                 queue_msg += s + '\n'
                 if len(queue_msg) > break_len:
                     messages.append((interaction, "Queued songs:" + queue_msg + "```"))
