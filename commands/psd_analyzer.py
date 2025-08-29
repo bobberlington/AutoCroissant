@@ -79,9 +79,13 @@ def load_stats():
         print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
 def parse_clean_cards():
+    prune_stats = []
     for name in stats:
         if name not in dirty_files:
-            old_stats[name].append(stats.pop(name))
+            old_stats[name].append(stats[name])
+            prune_stats.append(name)
+    for name in prune_stats:
+        stats.pop(name)
     # Should we do this for metadata too?
 
 def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
