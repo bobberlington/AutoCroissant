@@ -4,7 +4,7 @@ from git.cmd import Git
 from os import execv, system, getpid
 from sys import argv, executable
 
-from global_config import ALIAS_PKL, STATS_PKL, OLD_STATS_PKL
+from global_config import ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, METAD_PKL
 
 def perms_check(interaction: Interaction) -> int:
     try:
@@ -41,6 +41,7 @@ async def git_push(interaction: Interaction):
         Git(argv).add(ALIAS_PKL)
         Git(argv).add(STATS_PKL)
         Git(argv).add(OLD_STATS_PKL)
+        Git(argv).add(METAD_PKL)
         Git(argv).commit('-m', 'PICKLE')
         Git(argv).push()
         await interaction.followup.send("Succesfully pushed!")
