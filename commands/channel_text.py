@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from commands.utils import messages
 from global_config import REMIND_PKL
 
-reminders = {}  # {guild_id: [ {id, channel_id, msg, when, how_often} ]}
+reminders = {}  # {guild_id: [ {id, channel_id, msg, when, offset, frequency} ]}
 
 
 def save_reminders():
@@ -48,14 +48,14 @@ def parse_time_str(when_str: str) -> datetime | None:
     return datetime.combine(datetime.now(pst).date(), target_time, tzinfo=pst)
 
 
-def parse_interval(how_often: str) -> timedelta | None:
+def parse_interval(time_str: str) -> timedelta | None:
     """Parse an interval like '1h', '30m', '2d', '1w'."""
-    if not how_often:
+    if not time_str:
         return None
-    how_often = how_often.strip().lower()
+    time_str = time_str.strip().lower()
     try:
-        unit = how_often[-1]
-        val = int(how_often[:-1])
+        unit = time_str[-1]
+        val = int(time_str[:-1])
         if unit == "s":
             return timedelta(seconds=val)
         if unit == "m":
@@ -71,20 +71,24 @@ def parse_interval(how_often: str) -> timedelta | None:
         return None
 
 
-def set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_often: str = ""):
-    """Register a new reminder."""
+def set_reminder(interaction: Interaction, msg: str = "", when: str = "", offset: str = "", frequency: str = ""):
+    """Register a new reminder with optional offset and repeat interval."""
     global reminders
 
     remind_at = parse_time_str(when)
+    offset_delta = parse_interval(offset)
+    interval = parse_interval(frequency)
 
     if not remind_at:
         messages.append((interaction, "Invalid time format. Use something like `13:00` or `1PM` (PST)."))
         return
 
+    if offset_delta:
+        remind_at += offset_delta
+
     reminder_id = str(uuid4())[:8]
     guild_id = interaction.guild_id
     channel_id = interaction.channel_id
-    interval = parse_interval(how_often)
 
     if guild_id not in reminders:
         reminders[guild_id] = []
@@ -94,14 +98,19 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_of
         "channel_id": channel_id,
         "msg": msg,
         "when": remind_at,
-        "how_often": interval,
+        "offset": offset_delta,
+        "frequency": interval,
     })
 
     save_reminders()
 
-    messages.append((interaction,
-                     f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
-                     + (f" repeating every {how_often}" if how_often else "")))
+    response = f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
+    if offset_delta:
+        response += f" (offset {offset})"
+    if frequency:
+        response += f", repeating every {frequency}"
+
+    messages.append((interaction, response))
 
 
 def check_reminder():
@@ -116,13 +125,13 @@ def check_reminder():
             remind_time = reminder["when"]
             channel_id = reminder["channel_id"]
             msg = reminder["msg"]
-            how_often = reminder.get("how_often")
+            frequency = reminder.get("frequency")
 
             if remind_time <= now:
                 messages.append((type("TempInteraction", (), {"channel_id": channel_id})(), msg))
-                
-                if how_often:
-                    reminder["when"] = remind_time + how_often
+
+                if frequency:
+                    reminder["when"] = remind_time + frequency
                     changed = True
                 else:
                     reminder_list.remove(reminder)
@@ -133,6 +142,7 @@ def check_reminder():
 
     if changed:
         save_reminders()
+
 
 def list_reminders(interaction: Interaction, all: bool = False):
     """List reminders for the current channel or entire server."""
@@ -157,8 +167,9 @@ def list_reminders(interaction: Interaction, all: bool = False):
     lines = []
     for r in filtered:
         when_str = r["when"].strftime("%Y-%m-%d %H:%M %Z")
-        repeat_str = f", repeats every {r['how_often']}" if r["how_often"] else ""
-        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{repeat_str}")
+        offset_str = f", offset {r['offset']}" if r.get("offset") else ""
+        repeat_str = f", repeats every {r['frequency']}" if r.get("frequency") else ""
+        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{offset_str}{repeat_str}")
 
     output = "\n".join(lines)
     messages.append((interaction, f"Reminders for {scope_text}:\n{output}"))
@@ -181,7 +192,6 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
             removed = True
             break
 
-    # Clean up empty lists
     if guild_id in reminders and len(reminders[guild_id]) == 0:
         reminders.pop(guild_id)
 

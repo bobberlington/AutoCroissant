@@ -104,12 +104,20 @@ async def slash_purge(interaction: Interaction, user: Optional[Member], num: Opt
 ####################
 @tree.command(name="set_reminder", description="Set a reminder.")
 @app_commands.describe(
-    msg='What message to send.',
-    when='When to send a message in PST (ex. 13:00 or 1PM).',
-    how_often='How often to send the message (s/m/h/d/w) (ex. 1w). Default = never.')
-async def slash_set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_often: Optional[str] = ""):
+    msg="What message to send.",
+    when="When to send a message in PST (ex. 13:00 or 1PM).",
+    offset="How long after the 'when' time to send the FIRST reminder (s/m/h/d/w) (ex. 1d). Default = none.",
+    frequency="How often to repeat the reminder (s/m/h/d/w) (ex. 1w). Default = never."
+)
+async def slash_set_reminder(
+    interaction: Interaction,
+    msg: str = "",
+    when: str = "",
+    offset: Optional[str] = "",
+    frequency: Optional[str] = ""
+):
     await interaction.response.defer()
-    await to_thread(set_reminder)(interaction, msg, when, how_often)
+    await to_thread(set_reminder)(interaction, msg, when, offset, frequency)
 
 
 @tree.command(name="list_reminders", description="List all reminders in this channel/server.")
