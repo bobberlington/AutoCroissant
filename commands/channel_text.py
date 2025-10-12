@@ -83,6 +83,7 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "", offset
         messages.append((interaction, "Invalid time format. Use something like `13:00` or `1PM` (PST)."))
         return
 
+    # Apply offset only once — do not store it.
     if offset_delta:
         remind_at += offset_delta
 
@@ -98,14 +99,13 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "", offset
         "channel_id": channel_id,
         "msg": msg,
         "when": remind_at,
-        "offset": offset_delta,
         "frequency": interval,
     })
 
     save_reminders()
 
     response = f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
-    if offset_delta:
+    if offset:
         response += f" (offset {offset})"
     if frequency:
         response += f", repeating every {frequency}"
@@ -167,9 +167,8 @@ def list_reminders(interaction: Interaction, all: bool = False):
     lines = []
     for r in filtered:
         when_str = r["when"].strftime("%Y-%m-%d %H:%M %Z")
-        offset_str = f", offset {r['offset']}" if r.get("offset") else ""
-        repeat_str = f", repeats every {r['frequency']}" if r.get("frequency") else ""
-        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{offset_str}{repeat_str}")
+        repeat_str = f", repeats every {r['frequency']}" if r["frequency"] else ""
+        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{repeat_str}")
 
     output = "\n".join(lines)
     messages.append((interaction, f"Reminders for {scope_text}:\n{output}"))
