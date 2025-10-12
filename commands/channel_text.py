@@ -17,7 +17,7 @@ def save_reminders():
 
 
 def init_reminder():
-    """Load reminders from pickle or initialize empty store."""
+    """Load reminders from REMIND_PKL or initialize an empty dict."""
     global reminders
 
     print(f"Trying to open {REMIND_PKL}")
@@ -31,26 +31,21 @@ def init_reminder():
 
 def parse_time_str(when_str: str) -> datetime | None:
     """Parse a time string like '13:00' or '1PM' (PST) into a datetime."""
-    now = datetime.now(ZoneInfo("America/Los_Angeles"))
     when_str = when_str.strip().upper().replace(" ", "")
     target_time = None
 
-    try:
-        # Try formats like 13:00, 1PM, 1:30PM
-        for fmt in ("%H:%M", "%I%p", "%I:%M%p"):
-            try:
-                t = datetime.strptime(when_str, fmt).time()
-                target_time = t
-                break
-            except ValueError:
-                continue
-        if not target_time:
-            return None
-
-        remind_at = datetime.combine(now.date(), target_time, tzinfo=ZoneInfo("America/Los_Angeles"))
-        return remind_at
-    except Exception:
+    # Try formats like 13:00, 1PM, 1:30PM
+    for fmt in ("%H:%M", "%I%p", "%I:%M%p"):
+        try:
+            target_time = datetime.strptime(when_str, fmt).time()
+            break
+        except ValueError:
+            continue
+    if not target_time:
         return None
+
+    pst = ZoneInfo("America/Los_Angeles")
+    return datetime.combine(datetime.now(pst).date(), target_time, tzinfo=pst)
 
 
 def parse_interval(how_often: str) -> timedelta | None:

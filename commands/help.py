@@ -5,13 +5,19 @@ from discord.errors import InteractionResponded
 
 
 general_commands = {
-    "/help <card/ai/music>:"                    : "Prints the help message pertaining to general/card/ai/music commands.",
+    "/help <text/card/ai/music>:"               : "Prints the help message pertaining to general/card/ai/music commands.",
     "/restart:"                                 : "Restarts the bot.",
     "/stop:"                                    : "Stops the bot.",
     "/pull:"                                    : "Does a hard reset, than a git pull, and reports status.",
     "/push:"                                    : "Does a git push, and reports status.",
     "/update:"                                  : "Does a pull, then restarts.",
     "/purge:"                                   : "Deletes all messages by the bot.",
+}
+
+text_commands = {
+    "/set_reminder <msg> <when> <freq>:"        : "Set a reminder message to be sent at a specified time (e.g., '13:00' or '1PM' PST). You can also specify how often to repeat it (e.g., '1d' for daily).",
+    "/list_reminders:"                          : "List all reminders currently set in this channel (or in the whole server if you include the 'all' option).",
+    "/remove_reminder:"                         : "Remove a reminder by its unique reminder ID, which you can find using /list_reminders.",
 }
 
 card_commands = {
@@ -59,7 +65,9 @@ music_commands = {
 
 async def print_help(interaction: Interaction, help_wanted: Choice[str]):
     wanted_commands = general_commands
-    if help_wanted.value == "card":
+    if help_wanted.value == "text":
+        wanted_commands = text_commands
+    elif help_wanted.value == "card":
         wanted_commands = card_commands
     elif help_wanted.value == "ai":
         wanted_commands = ai_commands

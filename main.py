@@ -55,25 +55,31 @@ async def on_ready():
 async def slash_print_help(interaction: Interaction, help_type: Choice[str]):
     await print_help(interaction, help_type)
 
+
 @tree.command(name="restart_bot", description="Restart the bot.")
 async def slash_restart_bot(interaction: Interaction):
     await restart_bot(interaction)
+
 
 @tree.command(name="stop_bot", description="Stop the bot.")
 async def slash_stop_bot(interaction: Interaction):
     await stop_bot(interaction)
 
+
 @tree.command(name="pull", description="Does a hard reset, than a git pull, and reports status.")
 async def slash_pull(interaction: Interaction):
     await git_pull(interaction)
+
 
 @tree.command(name="push", description="Does a git push, and reports status.")
 async def slash_push(interaction: Interaction):
     await git_push(interaction)
 
+
 @tree.command(name="update", description="Does a pull, then restarts.")
 async def slash_update(interaction: Interaction):
     await update_bot(interaction)
+
 
 @tree.command(name="purge", description="Deletes messages.")
 @app_commands.describe(
@@ -99,12 +105,14 @@ async def slash_set_reminder(interaction: Interaction, msg: str = "", when: str 
     await interaction.response.defer()
     await to_thread(set_reminder)(interaction, msg, when, how_often)
 
+
 @tree.command(name="list_reminders", description="List all reminders in this channel/server.")
 @app_commands.describe(
     all="List all reminders in the server instead of just this channel.")
 async def slash_list_reminders(interaction: Interaction, all: Optional[bool] = False):
     await interaction.response.defer()
     await to_thread(list_reminders)(interaction, all)
+
 
 @tree.command(name="remove_reminder", description="Remove a reminder by its ID.")
 @app_commands.describe(reminder_id="The ID of the reminder to remove.")
@@ -122,6 +130,7 @@ async def slash_remove_reminder(interaction: Interaction, reminder_id: str):
 async def slash_query_name(interaction: Interaction, query: str):
     await query_name(interaction, query)
 
+
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
     query='The ability text you want to search for.',
@@ -134,17 +143,20 @@ async def slash_query_ability(interaction: Interaction, query: str, limit: Optio
     else:
         await query_ability(interaction, query, limit, filter_raids)
 
+
 @tree.command(name="set_ratio", description="View/set tolerance for unexact matches when searching.")
 @app_commands.describe(
     value='If empty, posts the current tolerance. Otherwise sets it to this.')
 async def slash_set_ratio(interaction: Interaction, value: Optional[float]):
     await set_match_ratio(interaction, value)
 
+
 @tree.command(name="set_repo", description="View/set the repo that the bot looks at for cards.")
 @app_commands.describe(
     new_repo='If empty, posts the current repository. Otherwise sets it to this.')
 async def slash_set_ratio(interaction: Interaction, new_repo: Optional[str]):
     await set_repository(interaction, new_repo)
+
 
 @tree.command(name="alias", description="View/set the card aliases.")
 @app_commands.describe(
@@ -153,11 +165,13 @@ async def slash_set_ratio(interaction: Interaction, new_repo: Optional[str]):
 async def slash_alias(interaction: Interaction, alias: Optional[str], original_card: Optional[str]):
     await alias_card(interaction, alias, original_card)
 
+
 @tree.command(name="del_alias", description="Delete an alias.")
 @app_commands.describe(
     alias='The alias you want to delete.')
 async def slash_del_alias(interaction: Interaction, alias: str):
     await delete_alias(interaction, alias)
+
 
 @tree.command(name="frankenstein", description="Tie a bunch of cards together.")
 @app_commands.describe(
@@ -179,6 +193,7 @@ async def slash_update_stats(interaction: Interaction, output_problematic_cards:
     await interaction.response.defer()
     await to_thread(manual_update_stats)(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
 
+
 @tree.command(name="export_abilities", description="Exports all abilities as a text file.")
 @app_commands.describe(
     only_ability='Should we only output the ability of cards?',
@@ -187,10 +202,12 @@ async def slash_export_abilities(interaction: Interaction, only_ability: Optiona
     await interaction.response.defer()
     await export_stats_to_file(interaction, only_ability, as_csv)
 
+
 @tree.command(name="export_rulebook", description="Exports the rulebook as a text file.")
 async def slash_export_rulebook(interaction: Interaction):
     await interaction.response.defer()
     await export_rulebook_to_file(interaction)
+
 
 @tree.command(name="update_metadata", description="Input metadata for a card.")
 @app_commands.describe(
@@ -201,12 +218,14 @@ async def slash_update_metadata(interaction: Interaction, query: str = "", del_e
     await interaction.response.defer()
     await to_thread(manual_metadata_entry)(interaction, query, del_entry, author)
 
+
 @tree.command(name="query_stats", description="Query stats and metadata specifics for a card.")
 @app_commands.describe(
     query='The card to edit the metadata for.')
 async def slash_query_stats(interaction: Interaction, query: str = ""):
     await interaction.response.defer()
     await to_thread(get_card_stats)(interaction, query)
+
 
 @tree.command(name="replace_author", description="Replace all instances of one author with another.")
 @app_commands.describe(
@@ -215,6 +234,7 @@ async def slash_query_stats(interaction: Interaction, query: str = ""):
 async def slash_update_metadata(interaction: Interaction, author1: str = "", author2: str = ""):
     await interaction.response.defer()
     await to_thread(mass_replace_author)(interaction, author1, author2)
+
 
 @tree.command(name="list_orphans", description="Output all cards without a listed author.")
 async def slash_list_orphans(interaction: Interaction):
@@ -251,9 +271,11 @@ async def slash_ai(interaction: Interaction, prompt: str, image: Optional[Attach
     await interaction.response.defer()
     await to_thread(diffusion)(interaction, prompt, image, mask_image, url, mask_url, steps, height, width, resize, cfg, strength, seed)
 
+
 @tree.command(name="ai_queue", description="Returns the current ai queue size and the content of each queued request.")
 async def slash_ai_queue(interaction: Interaction):
     await get_qsize(interaction)
+
 
 @tree.command(name="set_scheduler", description="Set the scheduler.")
 @app_commands.describe(
@@ -261,17 +283,20 @@ async def slash_ai_queue(interaction: Interaction):
 async def slash_set_schedule(interaction: Interaction, scheduler: Optional[str]):
     await set_scheduler(interaction, scheduler)
 
+
 @tree.command(name="set_device", description="Set the device.")
 @app_commands.describe(
     device='The device number you want to set. Leaving blank tells you the current device.')
 async def slash_set_device(interaction: Interaction, device: Optional[int]):
     await set_device(interaction, device)
 
+
 @tree.command(name="set_model", description="Set the model.")
 @app_commands.describe(
     model='The model you want to set. Leaving blank tells you the current model.')
 async def slash_set_model(interaction: Interaction, model: Optional[str]):
     await set_model(interaction, model)
+
 
 @tree.command(name="set_lora", description="Set the lora.")
 @app_commands.describe(
@@ -291,10 +316,12 @@ async def slash_play(interaction: Interaction, song: str, play_next: Optional[bo
     await interaction.response.defer()
     await play_music(interaction, song, play_next)
 
+
 @tree.command(name="play_all", description="Play all the songs in the local music directory.")
 async def slash_play_all(interaction: Interaction):
     await interaction.response.defer()
     await play_all(interaction)
+
 
 @tree.command(name="replay", description="Replay a song.")
 @app_commands.describe(
@@ -303,25 +330,30 @@ async def slash_replay(interaction: Interaction, song: Optional[int] = 0):
     await interaction.response.defer()
     await to_thread(replay)(interaction, song)
 
+
 @tree.command(name="replay_all", description="Replay all songs.")
 async def slash_replay_all(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(replay_all)(interaction)
+
 
 @tree.command(name="skip", description="Skip current song.")
 async def slash_skip(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(skip)(interaction)
 
+
 @tree.command(name="loop", description="Loop current song.")
 async def slash_loop(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(loop)(interaction)
 
+
 @tree.command(name="list", description="List all songs in the current directory.")
 async def slash_list(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(list_all_music)(interaction)
+
 
 @tree.command(name="volume", description="Changes the volume.")
 @app_commands.describe(
@@ -330,35 +362,42 @@ async def slash_volume(interaction: Interaction, multiplier: float = 1.0):
     await interaction.response.defer()
     await to_thread(set_volume)(interaction, multiplier)
 
+
 @tree.command(name="shuffle", description="Shuffles the queue.")
 async def slash_shuffle(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(shuffle_music)(interaction)
+
 
 @tree.command(name="queue", description="Shows the queue.")
 async def slash_queue(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(print_queue)(interaction)
 
+
 @tree.command(name="prev_queue", description="Shows the previously queued songs.")
 async def slash_prev_queue(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(print_prev_queue)(interaction)
+
 
 @tree.command(name="clear", description="Clears the queue.")
 async def slash_clear(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(clear_queue)(interaction)
 
+
 @tree.command(name="pause", description="Pauses/unpauses the current song.")
 async def slash_pause(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(pause)(interaction)
 
+
 @tree.command(name="stop", description="Stops playing the current song and clears the queue.")
 async def slash_stop(interaction: Interaction):
     await interaction.response.defer()
     await to_thread(stop)(interaction)
+
 
 @tree.command(name="disconnect", description="Disconnects the bot and clears the queue.")
 async def slash_disconnect(interaction: Interaction):
@@ -392,6 +431,7 @@ async def on_message(message: Message):
         tree.clear_commands(guild=None)
         tree.clear_commands(guild=sent_guild)
         await message.channel.send("Cleared commands! Make sure to resync the commands.")
+
 
 @tasks.loop(seconds=1)
 async def check_pipeline():
@@ -435,5 +475,6 @@ async def check_pipeline():
             params = params[1:]
             await cmd(*params)
     check_reminder()
+
 
 client.run(token)
