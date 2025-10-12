@@ -17,13 +17,6 @@ def perms_check(interaction: Interaction) -> int:
         return 1
     return 0
 
-async def restart_bot(interaction: Interaction):
-    await interaction.response.send_message("Restarting bot!")
-    try:
-        execv('./startup.sh', argv)
-    except FileNotFoundError:
-        execv(executable, ['python'] + argv)
-
 async def stop_bot(interaction: Interaction):
     if perms_check(interaction) != 0:
         await interaction.response.send_message("You do not have permission to stop the bot.")
@@ -35,8 +28,13 @@ async def stop_bot(interaction: Interaction):
     # Windows kill
     system(f"taskkill /F /PID {getpid()}")
 
+def restart_bot():
+    try:
+        execv('./startup.sh', argv)
+    except FileNotFoundError:
+        execv(executable, ['python'] + argv)
+
 async def git_push(interaction: Interaction):
-    await interaction.response.send_message("Pushing aliases.pkl...")
     try:
         Git(argv).add(ALIAS_PKL)
         Git(argv).add(STATS_PKL)
@@ -49,17 +47,18 @@ async def git_push(interaction: Interaction):
         await interaction.followup.send("Pickles are already up to date.")
 
 async def git_pull(interaction: Interaction):
-    await interaction.response.send_message("Doing a git pull!")
     await interaction.followup.send(f"{Git(argv).reset('--hard')}")
     await interaction.followup.send(f"{Git(argv).pull()}")
 
 async def update_bot(interaction: Interaction):
+    await interaction.followup.send(f"Pushing {ALIAS_PKL}, {STATS_PKL}, {OLD_STATS_PKL}, and {METAD_PKL}.")
     await git_push(interaction)
+    await interaction.followup.send("Doing a git pull!")
     await git_pull(interaction)
-    await restart_bot(interaction)
+    await interaction.followup.send("Restarting bot!")
+    restart_bot()
 
 async def purge(interaction: Interaction, limit : int, id: int, bulk = False):
-    await interaction.response.defer()
     if perms_check(interaction) != 0:
         await interaction.followup.send("You do not have permission to purge messages.")
         return

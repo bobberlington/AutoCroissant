@@ -58,7 +58,8 @@ async def slash_print_help(interaction: Interaction, help_type: Choice[str]):
 
 @tree.command(name="restart_bot", description="Restart the bot.")
 async def slash_restart_bot(interaction: Interaction):
-    await restart_bot(interaction)
+    await interaction.response.send_message("Restarting bot!")
+    restart_bot()
 
 
 @tree.command(name="stop_bot", description="Stop the bot.")
@@ -68,16 +69,19 @@ async def slash_stop_bot(interaction: Interaction):
 
 @tree.command(name="pull", description="Does a hard reset, than a git pull, and reports status.")
 async def slash_pull(interaction: Interaction):
+    await interaction.response.send_message("Doing a git pull!")
     await git_pull(interaction)
 
 
 @tree.command(name="push", description="Does a git push, and reports status.")
 async def slash_push(interaction: Interaction):
+    await interaction.response.send_message(f"Doing a git push!")
     await git_push(interaction)
 
 
-@tree.command(name="update", description="Does a pull, then restarts.")
+@tree.command(name="update", description="Does a push, then pull, then restarts.")
 async def slash_update(interaction: Interaction):
+    await interaction.response.send_message(f"Doing a complete update of the bot!")
     await update_bot(interaction)
 
 
@@ -87,6 +91,7 @@ async def slash_update(interaction: Interaction):
     num='The number of messages to delete. Default = 100.',
     bulk='Enable bulk delete. Deletes faster but needs Manage Messages permission. Default = false.')
 async def slash_purge(interaction: Interaction, user: Optional[Member], num: Optional[int] = 100, bulk: Optional[bool] = False):
+    await interaction.response.defer()
     if not user:
         user = client.user.id
     # Have to add +1 to num because the first message it deletes is the command message itself lol

@@ -10,8 +10,8 @@ general_commands = {
     "/stop:"                                    : "Stops the bot.",
     "/pull:"                                    : "Does a hard reset, than a git pull, and reports status.",
     "/push:"                                    : "Does a git push, and reports status.",
-    "/update:"                                  : "Does a pull, then restarts.",
-    "/purge:"                                   : "Deletes all messages by the bot.",
+    "/update:"                                  : "Does a push, then a pull, then restarts.",
+    "/purge:"                                   : "Deletes messages by a bot/user.",
 }
 
 text_commands = {
