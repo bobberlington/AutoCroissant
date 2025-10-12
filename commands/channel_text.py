@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
 from discord import Interaction
 from pickle import load, dump
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from commands.utils import messages
 from global_config import REMIND_PKL
 
-reminders = {}
+reminders = {}  # {guild_id: [ {id, channel_id, msg, when, how_often} ]}
 
 
 def save_reminders():
@@ -79,20 +80,22 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_of
     """Register a new reminder."""
     global reminders
 
-    guild_id = interaction.guild_id
-    channel_id = interaction.channel_id
-
     remind_at = parse_time_str(when)
-    interval = parse_interval(how_often)
 
     if not remind_at:
         messages.append((interaction, "Invalid time format. Use something like `13:00` or `1PM` (PST)."))
         return
 
+    reminder_id = str(uuid4())[:8]
+    guild_id = interaction.guild_id
+    channel_id = interaction.channel_id
+    interval = parse_interval(how_often)
+
     if guild_id not in reminders:
         reminders[guild_id] = []
 
     reminders[guild_id].append({
+        "id": reminder_id,
         "channel_id": channel_id,
         "msg": msg,
         "when": remind_at,
@@ -101,7 +104,9 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_of
 
     save_reminders()
 
-    messages.append((interaction, f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**" + (f" repeating every {how_often}" if how_often else "")))
+    messages.append((interaction,
+                     f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
+                     + (f" repeating every {how_often}" if how_often else "")))
 
 
 def check_reminder():
@@ -128,9 +133,65 @@ def check_reminder():
                     reminder_list.remove(reminder)
                     changed = True
 
-        # Clean up empty lists
         if not reminder_list:
             reminders.pop(guild_id, None)
 
     if changed:
         save_reminders()
+
+def list_reminders(interaction: Interaction, all: bool = False):
+    """List reminders for the current channel or entire server."""
+    guild_id = interaction.guild_id
+    channel_id = interaction.channel_id
+
+    if guild_id not in reminders or len(reminders[guild_id]) == 0:
+        messages.append((interaction, "No reminders set for this server."))
+        return
+
+    if all:
+        filtered = reminders[guild_id]
+        scope_text = "this server"
+    else:
+        filtered = [r for r in reminders[guild_id] if r["channel_id"] == channel_id]
+        scope_text = f"this channel (<#{channel_id}>)"
+
+    if not filtered:
+        messages.append((interaction, f"No reminders found for {scope_text}."))
+        return
+
+    lines = []
+    for r in filtered:
+        when_str = r["when"].strftime("%Y-%m-%d %H:%M %Z")
+        repeat_str = f", repeats every {r['how_often']}" if r["how_often"] else ""
+        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{repeat_str}")
+
+    output = "\n".join(lines)
+    messages.append((interaction, f"Reminders for {scope_text}:\n{output}"))
+
+
+def remove_reminder(interaction: Interaction, reminder_id: str = ""):
+    """Remove a reminder by its ID."""
+    global reminders
+
+    guild_id = interaction.guild_id
+
+    if guild_id not in reminders:
+        messages.append((interaction, f"No reminders found for this server."))
+        return
+
+    removed = False
+    for reminder in list(reminders[guild_id]):
+        if reminder["id"] == reminder_id:
+            reminders[guild_id].remove(reminder)
+            removed = True
+            break
+
+    # Clean up empty lists
+    if guild_id in reminders and len(reminders[guild_id]) == 0:
+        reminders.pop(guild_id)
+
+    if removed:
+        save_reminders()
+        messages.append((interaction, f"Reminder `{reminder_id}` has been removed."))
+    else:
+        messages.append((interaction, f"No reminder found with ID `{reminder_id}`."))

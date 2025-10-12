@@ -8,7 +8,7 @@ from typing import Optional
 
 from config import token
 import global_config
-from commands.channel_text import init_reminder, set_reminder, check_reminder
+from commands.channel_text import init_reminder, set_reminder, check_reminder, list_reminders, remove_reminder
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
@@ -98,6 +98,19 @@ async def slash_purge(interaction: Interaction, user: Optional[Member], num: Opt
 async def slash_set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_often: Optional[str] = ""):
     await interaction.response.defer()
     await to_thread(set_reminder)(interaction, msg, when, how_often)
+
+@tree.command(name="list_reminders", description="List all reminders in this channel/server.")
+@app_commands.describe(
+    all="List all reminders in the server instead of just this channel.")
+async def slash_list_reminders(interaction: Interaction, all: Optional[bool] = False):
+    await interaction.response.defer()
+    await to_thread(list_reminders)(interaction, all)
+
+@tree.command(name="remove_reminder", description="Remove a reminder by its ID.")
+@app_commands.describe(reminder_id="The ID of the reminder to remove.")
+async def slash_remove_reminder(interaction: Interaction, reminder_id: str):
+    await interaction.response.defer()
+    await to_thread(remove_reminder)(interaction, reminder_id)
 
 
 ####################

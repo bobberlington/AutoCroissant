@@ -369,6 +369,8 @@ def list_orphans(interaction: Interaction):
         if len(bundle) > 1000:
             messages.append((interaction, bundle))
             bundle = ""
+    if not bundle:
+        bundle = "No orphans."
     messages.append((interaction, bundle))
 
 def mass_replace_author(interaction: Interaction, author1: str = "", author2: str = ""):
