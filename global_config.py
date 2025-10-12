@@ -3,6 +3,7 @@ ALIAS_PKL       = "aliases.pkl"
 STATS_PKL       = "stats.pkl"
 OLD_STATS_PKL   = "old_stats.pkl"
 METAD_PKL       = "metadata.pkl"
+REMIND_PKL      = "reminder.pkl"
 
 
 # Grodus, Bobberlington, Tyler, Croissant, Kyle, Jason, Ech, Zoey
