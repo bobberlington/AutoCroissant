@@ -8,6 +8,7 @@ from typing import Optional
 
 from config import token
 import global_config
+from commands.channel_text import init_reminder, set_reminder, check_reminder
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
@@ -30,6 +31,7 @@ async def on_ready():
     print(f'We have logged in as {client.user}')
     check_pipeline.start()
 
+    commands.append(((), init_reminder))
     commands.append(((), try_open_alias))
     commands.append(((), populate_files))
     commands.append(((), try_open_stats))
@@ -83,6 +85,19 @@ async def slash_purge(interaction: Interaction, user: Optional[Member], num: Opt
         user = client.user.id
     # Have to add +1 to num because the first message it deletes is the command message itself lol
     await purge(interaction, num if user != client.user.id else num + 1, user, bulk)
+
+
+####################
+#   TEXT COMMANDS  #
+####################
+@tree.command(name="set_reminder", description="Set a reminder.")
+@app_commands.describe(
+    msg='What message to send.',
+    when='When to send a message in PST (ex. 13:00 or 1PM).',
+    how_often='How often to send the message (s/m/h/d/w) (ex. 1w). Default = never.')
+async def slash_set_reminder(interaction: Interaction, msg: str = "", when: str = "", how_often: Optional[str] = ""):
+    await interaction.response.defer()
+    await to_thread(set_reminder)(interaction, msg, when, how_often)
 
 
 ####################
@@ -255,7 +270,6 @@ async def slash_set_lora(interaction: Interaction, lora: Optional[str]):
 ####################
 #  MUSIC COMMANDS  #
 ####################
-
 @tree.command(name="play", description="Adds a song to the back of the queue, either a local file or a url.")
 @app_commands.describe(
     song='The song you want to play.',
@@ -384,7 +398,7 @@ async def check_pipeline():
         interaction, msg = messages.popleft()
         try:
             await interaction.followup.send(content=msg)
-        except HTTPException:
+        except (HTTPException, AttributeError):
             await client.get_channel(interaction.channel_id).send(content=msg)
     if len(edit_messages) > 0:
         interaction, msg, attachments = edit_messages.popleft()
@@ -407,5 +421,6 @@ async def check_pipeline():
         else:
             params = params[1:]
             await cmd(*params)
+    check_reminder()
 
 client.run(token)
