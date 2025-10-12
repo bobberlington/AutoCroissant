@@ -47,6 +47,7 @@ async def on_ready():
 @app_commands.describe(
     help_type='The type of command you want help for.')
 @app_commands.choices(help_type=[
+    Choice(name="text", value="text"),
     Choice(name="card", value="card"),
     Choice(name="ai", value="ai"),
     Choice(name="music", value="music"),
