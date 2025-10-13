@@ -12,7 +12,7 @@ from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderMode
 from typing import Optional
 from queue import Queue
 
-from commands.utils import pildiscordfile, messages, edit_messages, files
+from commands.utils import pildiscordfile, message_queue, edit_messages, file_queue
 import global_config
 
 mfolder = "./models/"
@@ -104,9 +104,11 @@ def init_pipeline():
                 token=config.hf_token,
             )
     elif "xl" in model.lower():
-        txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True, add_watermarker=False)
+        txt2img_pipe = StableDiffusionXLPipeline.from_single_file(mfolder+model, torch_dtype=dtype,
+                                                                  safety_checker=None, use_safetensors=True, add_watermarker=False)
     else:
-        txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype, safety_checker=None, use_safetensors=True)
+        txt2img_pipe = StableDiffusionPipeline.from_single_file(mfolder+model, torch_dtype=dtype,
+                                                                safety_checker=None, use_safetensors=True)
 
     if vram_usage == "mps":
         txt2img_pipe.to(device='mps')
@@ -145,7 +147,8 @@ def init_pipeline():
 async def set_scheduler(interaction: Interaction, new_scheduler: str):
     global scheduler_name, txt2img_pipe, img2img_pipe, inpaint_pipe
     if not new_scheduler or new_scheduler not in possible_schedulers:
-        await interaction.response.send_message("The old scheduler was:\n%s\nPossible choices are:\n%s" % (scheduler_name, '\n'.join(possible_schedulers)))
+        await interaction.response.send_message("The old scheduler was:\n%s\nPossible choices are:\n%s" %
+                                                (scheduler_name, '\n'.join(possible_schedulers)))
         return
 
     scheduler_name = new_scheduler
@@ -179,7 +182,8 @@ async def set_model(interaction: Interaction, new_model: str):
             safetensors.append(m)
 
     if not new_model or new_model not in safetensors:
-        await interaction.response.send_message("The old model was:\n%s\nPossible choices are:\n%s" % (model, '\n'.join(safetensors)))
+        await interaction.response.send_message("The old model was:\n%s\nPossible choices are:\n%s" %
+                                                (model, '\n'.join(safetensors)))
         return
 
     model = new_model
@@ -196,7 +200,8 @@ async def set_lora(interaction: Interaction, new_lora: str):
             safetensors.append(m)
 
     if not new_lora or new_lora not in safetensors:
-        await interaction.response.send_message("The old lora was:\n%s\nPossible choices are:\n%s" % (lora, '\n'.join(safetensors)))
+        await interaction.response.send_message("The old lora was:\n%s\nPossible choices are:\n%s" %
+                                                (lora, '\n'.join(safetensors)))
         return
 
     lora = new_lora
@@ -236,7 +241,9 @@ def latent_to_rgb(latent: torch.Tensor):
 
     return fromarray(latent_ubyte.numpy())
 
-def progress_check(interaction: Interaction, total_steps: int, seed: int, pipe: StableDiffusionPipeline | StableDiffusionXLPipeline | FluxPipeline, step: int, timestep: torch.Tensor, callback_kwargs: dict):
+def progress_check(interaction: Interaction, total_steps: int, seed: int,
+                   pipe: StableDiffusionPipeline | StableDiffusionXLPipeline | FluxPipeline,
+                   step: int, timestep: torch.Tensor, callback_kwargs: dict):
     # If this does not equal 0, return (thus we only print progress every 10% of the way done)
     if step % (total_steps // 10):
         return callback_kwargs
@@ -246,18 +253,23 @@ def progress_check(interaction: Interaction, total_steps: int, seed: int, pipe: 
         edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", []))
         return callback_kwargs
 
-    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", [pildiscordfile(img.resize((img.size[1] * 4, img.size[0] * 4), Resampling.LANCZOS))]))
+    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%",
+                          [pildiscordfile(img.resize((img.size[1] * 4, img.size[0] * 4), Resampling.LANCZOS))]))
     return callback_kwargs
 
-def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None, mask_image_param: Attachment = None, url: str = None, mask_url: str = None, steps: int = 50, height: int = 512, width: int = 512, resize: float = 1.0, cfg: float = 7.0, strength: float = 0.8, seed: int = None):
+def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None,
+              mask_image_param: Attachment = None, url: str = None, mask_url: str = None,
+              steps: int = 50, height: int = 512, width: int = 512, resize: float = 1.0,
+              cfg: float = 7.0, strength: float = 0.8, seed: int = None):
     global in_progress
     if in_progress:
-        messages.append((interaction, "Request queued after the current generation."))
-        queue.put_nowait((interaction, prompt, image_param, mask_image_param, url, mask_url, steps, height, width, resize, cfg, strength, seed))
+        message_queue.append((interaction, "Request queued after the current generation."))
+        queue.put_nowait((interaction, prompt, image_param, mask_image_param, url, mask_url,
+                          steps, height, width, resize, cfg, strength, seed))
         return
 
     if not txt2img_pipe:
-        messages.append((interaction, "Initializing pipeline, this will take a while..."))
+        message_queue.append((interaction, "Initializing pipeline, this will take a while..."))
         init_pipeline()
     in_progress = True
 
@@ -281,18 +293,18 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
         width, height = image.size
         width = int(width * resize)
         height = int(height * resize)
-    messages.append((interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}"))
+    message_queue.append((interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}"))
 
     collect()
     torch.cuda.empty_cache()
     if mask_image:
-        files.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
+        file_queue.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
                                                                guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     elif image:
-        files.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
+        file_queue.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
                                                                guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     else:
-        files.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator,
+        file_queue.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator,
                                                                callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
     in_progress = False
     if queue.qsize() > 0:

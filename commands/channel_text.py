@@ -1,141 +1,168 @@
+from asyncio import iscoroutinefunction
+from collections import defaultdict
 from datetime import datetime, timedelta
 from discord import Interaction
 from pickle import load, dump
+from shlex import split as shlex_split
+from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from commands.utils import messages
+from commands.utils import message_queue, command_queue, slash_registry, make_fake_interaction, convert_value
 from global_config import REMIND_PKL
 
-reminders = {}  # {guild_id: [ {id, channel_id, msg, when, offset, frequency} ]}
+reminders = defaultdict(list)
 
 
 def save_reminders():
-    """Save the reminder dict to a PICKLE."""
     with open(REMIND_PKL, "wb") as f:
         dump(reminders, f)
 
 
 def init_reminder():
-    """Load reminders from REMIND_PKL or initialize an empty dict."""
     global reminders
-
-    print(f"Trying to open {REMIND_PKL}")
+    print(f"Trying to open {REMIND_PKL}.")
     try:
         with open(REMIND_PKL, 'rb') as f:
             reminders = load(f)
         print(f"Existing dict found in {REMIND_PKL}, updating entries...")
     except (EOFError, FileNotFoundError):
-        print(f"{REMIND_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
+        print(f"{REMIND_PKL} is empty or missing.")
 
 
 def parse_time_str(when_str: str) -> datetime | None:
-    """Parse a time string like '13:00' or '1PM' (PST) into a datetime."""
     when_str = when_str.strip().upper().replace(" ", "")
-    target_time = None
-
-    # Try formats like 13:00, 1PM, 1:30PM
     for fmt in ("%H:%M", "%I%p", "%I:%M%p"):
         try:
-            target_time = datetime.strptime(when_str, fmt).time()
-            break
+            pst = ZoneInfo("America/Los_Angeles")
+            return datetime.combine(datetime.now(pst).date(), datetime.strptime(when_str, fmt).time(), tzinfo=pst)
         except ValueError:
             continue
-    if not target_time:
-        return None
-
-    pst = ZoneInfo("America/Los_Angeles")
-    return datetime.combine(datetime.now(pst).date(), target_time, tzinfo=pst)
+    return None
 
 
 def parse_interval(time_str: str) -> timedelta | None:
-    """Parse an interval like '1h', '30m', '2d', '1w'."""
     if not time_str:
         return None
     time_str = time_str.strip().lower()
     try:
-        unit = time_str[-1]
         val = int(time_str[:-1])
-        if unit == "s":
-            return timedelta(seconds=val)
-        if unit == "m":
-            return timedelta(minutes=val)
-        if unit == "h":
-            return timedelta(hours=val)
-        if unit == "d":
-            return timedelta(days=val)
-        if unit == "w":
-            return timedelta(weeks=val)
-        return None
+        unit = time_str[-1]
+        return {
+            "s": timedelta(seconds=val),
+            "m": timedelta(minutes=val),
+            "h": timedelta(hours=val),
+            "d": timedelta(days=val),
+            "w": timedelta(weeks=val)
+        }.get(unit)
     except Exception:
         return None
 
 
-def set_reminder(interaction: Interaction, msg: str = "", when: str = "", offset: str = "", frequency: str = ""):
-    """Register a new reminder with optional offset and repeat interval."""
-    global reminders
-
+def set_reminder(interaction: Interaction, msg: str = "", when: str = "",
+                 offset: str = "", frequency: str = "", command: str = ""):
     remind_at = parse_time_str(when)
     offset_delta = parse_interval(offset)
     interval = parse_interval(frequency)
 
     if not remind_at:
-        messages.append((interaction, "Invalid time format. Use something like `13:00` or `1PM` (PST)."))
+        message_queue.append((interaction, "Invalid time format. Try `13:00` or `1PM` (PST)."))
         return
 
-    # Apply offset only once — do not store it.
     if offset_delta:
         remind_at += offset_delta
 
-    reminder_id = str(uuid4())[:8]
-    guild_id = interaction.guild_id
-    channel_id = interaction.channel_id
-
-    if guild_id not in reminders:
-        reminders[guild_id] = []
-
-    reminders[guild_id].append({
-        "id": reminder_id,
-        "channel_id": channel_id,
+    reminder = {
+        "id": str(uuid4())[:8],
+        "channel_id": interaction.channel_id,
         "msg": msg,
         "when": remind_at,
         "frequency": interval,
-    })
+        "command": command.strip() or None,
+    }
 
+    reminders[interaction.guild_id].append(reminder)
     save_reminders()
 
-    response = f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
+    desc = f"Reminder set for **{remind_at.strftime('%Y-%m-%d %H:%M %Z')}**"
     if offset:
-        response += f" (offset {offset})"
+        desc += f" (offset {offset})"
     if frequency:
-        response += f", repeating every {frequency}"
+        desc += f", repeats every {frequency}"
+    if command:
+        desc += f", runs `{command}`"
+    message_queue.append((interaction, desc))
 
-    messages.append((interaction, response))
+
+def parse_named_args(parts):
+    """
+    Split a list like ['prompt:sunset', 'height:512'] into args=[], kwargs={...},
+    converting numeric and boolean values automatically.
+    """
+    args = []
+    kwargs = {}
+    for p in parts:
+        if ":" in p:
+            key, value = p.split(":", 1)
+            kwargs[key] = convert_value(value)
+        else:
+            args.append(convert_value(p))
+    return args, kwargs
 
 
 def check_reminder():
-    """Check reminders and send messages when due."""
+    """Trigger reminders and execute async/sync slash commands with named parameters."""
     global reminders
-
     now = datetime.now(ZoneInfo("America/Los_Angeles"))
     changed = False
 
     for guild_id, reminder_list in list(reminders.items()):
-        for reminder in list(reminder_list):
-            remind_time = reminder["when"]
-            channel_id = reminder["channel_id"]
-            msg = reminder["msg"]
-            frequency = reminder.get("frequency")
+        for reminder in reminder_list:
+            if reminder["when"] <= now:
+                channel_id = reminder["channel_id"]
+                msg = reminder["msg"]
+                cmd_text = reminder.get("command")
 
-            if remind_time <= now:
-                messages.append((type("TempInteraction", (), {"channel_id": channel_id})(), msg))
+                # Send message first
+                if msg:
+                    message_queue.append((SimpleNamespace(channel_id=channel_id), msg))
 
-                if frequency:
-                    reminder["when"] = remind_time + frequency
-                    changed = True
+                # Execute stored slash command
+                if cmd_text:
+                    try:
+                        parts = shlex_split(cmd_text)
+                    except ValueError:
+                        message_queue.append((SimpleNamespace(channel_id=channel_id), f"Could not parse command: `{cmd_text}`"))
+                        continue
+
+                    if not parts:
+                        continue
+
+                    cmd_name = parts[0].lstrip("/")
+                    raw_args = parts[1:]
+                    args, kwargs = parse_named_args(raw_args)
+                    func = slash_registry.get(cmd_name)
+
+                    if func:
+                        fake_interaction = make_fake_interaction(channel_id, guild_id)
+
+                        async def runner():
+                            if iscoroutinefunction(func):
+                                await func(fake_interaction, *args, **kwargs)
+                            else:
+                                func(fake_interaction, *args, **kwargs)
+
+                        command_queue.append(((), runner))
+                        # message_queue.append((SimpleNamespace(channel_id=channel_id), f"Executing `{cmd_text}`"))
+                    else:
+                        message_queue.append((SimpleNamespace(channel_id=channel_id), f"Unknown command: `{cmd_name}`"))
+
+                # Repeat or remove reminder
+                if reminder["frequency"]:
+                    reminder["when"] = reminder["when"] + reminder["frequency"]
                 else:
                     reminder_list.remove(reminder)
-                    changed = True
+                changed = True
 
         if not reminder_list:
             reminders.pop(guild_id, None)
@@ -145,12 +172,12 @@ def check_reminder():
 
 
 def list_reminders(interaction: Interaction, all: bool = False):
-    """List reminders for the current channel or entire server."""
+    """List reminders for the current channel or entire server (includes commands and channel info)."""
     guild_id = interaction.guild_id
     channel_id = interaction.channel_id
 
     if guild_id not in reminders or len(reminders[guild_id]) == 0:
-        messages.append((interaction, "No reminders set for this server."))
+        message_queue.append((interaction, "No reminders set for this server."))
         return
 
     if all:
@@ -161,17 +188,21 @@ def list_reminders(interaction: Interaction, all: bool = False):
         scope_text = f"this channel (<#{channel_id}>)"
 
     if not filtered:
-        messages.append((interaction, f"No reminders found for {scope_text}."))
+        message_queue.append((interaction, f"No reminders found for {scope_text}."))
         return
 
     lines = []
     for r in filtered:
         when_str = r["when"].strftime("%Y-%m-%d %H:%M %Z")
         repeat_str = f", repeats every {r['frequency']}" if r["frequency"] else ""
-        lines.append(f"`{r['id']}` — **{r['msg']}** at {when_str}{repeat_str}")
+        cmd_str = f", runs `{r['command']}`" if r.get("command") else ""
+        msg_str = f"**{r['msg']}**" if r["msg"] else "*<no message>*"
+        chan_str = f" in <#{r['channel_id']}>" if all else ""
+
+        lines.append(f"`{r['id']}` — {msg_str} at {when_str}{repeat_str}{cmd_str}{chan_str}")
 
     output = "\n".join(lines)
-    messages.append((interaction, f"Reminders for {scope_text}:\n{output}"))
+    message_queue.append((interaction, f"Reminders for {scope_text}:\n{output}"))
 
 
 def remove_reminder(interaction: Interaction, reminder_id: str = ""):
@@ -181,7 +212,7 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
     guild_id = interaction.guild_id
 
     if guild_id not in reminders:
-        messages.append((interaction, f"No reminders found for this server."))
+        message_queue.append((interaction, f"No reminders found for this server."))
         return
 
     removed = False
@@ -196,6 +227,6 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
 
     if removed:
         save_reminders()
-        messages.append((interaction, f"Reminder `{reminder_id}` has been removed."))
+        message_queue.append((interaction, f"Reminder `{reminder_id}` has been removed."))
     else:
-        messages.append((interaction, f"No reminder found with ID `{reminder_id}`."))
+        message_queue.append((interaction, f"No reminder found with ID `{reminder_id}`."))

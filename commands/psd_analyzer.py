@@ -14,7 +14,7 @@ from urllib.request import urlretrieve
 
 from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL, METAD_PKL
 from commands.query_card import try_open_stats, query_psd_path
-from commands.utils import edit_messages, messages, commands
+from commands.utils import edit_messages, message_queue, command_queue
 
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE         = 25
@@ -350,9 +350,9 @@ def get_card_stats(interaction: Interaction, query: str):
     name = basename(path)[:-4].replace('_', ' ')
     if name in stats:
         pretty_print_dict = '\n'.join("{!r}: {!r},".format(k, v) for k, v in stats[name].items())
-        messages.append((interaction, f"Stats for {name}:```{pretty_print_dict}```"))
+        message_queue.append((interaction, f"Stats for {name}:```{pretty_print_dict}```"))
     else:
-        messages.append((interaction, f"No stats found for {name}."))
+        message_queue.append((interaction, f"No stats found for {name}."))
 
 def list_orphans(interaction: Interaction):
     if not stats:
@@ -367,11 +367,11 @@ def list_orphans(interaction: Interaction):
     for card in orphans:
         bundle += card + '\n'
         if len(bundle) > 1000:
-            messages.append((interaction, bundle))
+            message_queue.append((interaction, bundle))
             bundle = ""
     if not bundle:
         bundle = "No orphans."
-    messages.append((interaction, bundle))
+    message_queue.append((interaction, bundle))
 
 def mass_replace_author(interaction: Interaction, author1: str = "", author2: str = ""):
     if not stats:
@@ -386,7 +386,7 @@ def mass_replace_author(interaction: Interaction, author1: str = "", author2: st
             num_replaced += 1
 
     pickle_stats()
-    messages.append((interaction, f"{num_replaced} instances of {author1} replaced with {author2}."))
+    message_queue.append((interaction, f"{num_replaced} instances of {author1} replaced with {author2}."))
 
 def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool = False, author: str = ""):
     if not stats:
@@ -398,7 +398,7 @@ def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool 
         if name in metadata:
             del metadata[name]
             pickle_stats()
-        messages.append((interaction, f"{name} key was deleted from metadata."))
+        message_queue.append((interaction, f"{name} key was deleted from metadata."))
         return
 
     if name not in metadata:
@@ -409,7 +409,7 @@ def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool 
     if name in stats:
         stats[name].update(metadata[name])
     pickle_stats()
-    messages.append((interaction, f"{name} metadata updated to {metadata[name]}."))
+    message_queue.append((interaction, f"{name} metadata updated to {metadata[name]}."))
 
 def set_metadata(commits: list, name: str):
     # if commits[commits.totalCount - 1].commit.sha != ACCURSED_COMMIT:
@@ -479,8 +479,8 @@ def traverse_repo(interaction: Interaction = None, output_problematic_cards: boo
                     print(f"{num_updated} Cards updated.")
 
     if interaction:
-        messages.append((interaction, f"{num_new} Had newer timestamps."))
-        messages.append((interaction, f"{num_old} Did not have newer timestamps."))
+        message_queue.append((interaction, f"{num_new} Had newer timestamps."))
+        message_queue.append((interaction, f"{num_old} Did not have newer timestamps."))
     else:
         print(f"{num_new} Had newer timestamps.")
         print(f"{num_old} Did not have newer timestamps.")
@@ -540,8 +540,8 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
                         print(f"{num_updated} Cards updated.")
 
     if interaction:
-        messages.append((interaction, f"{num_new} Had newer timestamps."))
-        messages.append((interaction, f"{num_old} Did not have newer timestamps."))
+        message_queue.append((interaction, f"{num_new} Had newer timestamps."))
+        message_queue.append((interaction, f"{num_old} Did not have newer timestamps."))
     else:
         print(f"{num_new} Had newer timestamps.")
         print(f"{num_old} Did not have newer timestamps.")
@@ -549,7 +549,7 @@ def traverse_local_repo(interaction: Interaction = None, output_problematic_card
 
 def manual_update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True):
     if interaction:
-        messages.append((interaction, "Going to update the database for card statistics in the background, this will take a while."))
+        message_queue.append((interaction, "Going to update the database for card statistics in the background, this will take a while."))
     else:
         print("Going to update the database for card statistics in the background, this will take a while.")
 
@@ -559,7 +559,7 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
             stats[key].update(metadata[key])
 
     if interaction:
-        messages.append((interaction, "Done updating card statistics."))
+        message_queue.append((interaction, "Done updating card statistics."))
     else:
         print("Done updating card statistics.")
 
@@ -570,12 +570,12 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
             for card in problem_cards:
                 bundle += card
                 if len(bundle) > 1000:
-                    messages.append((interaction, bundle))
+                    message_queue.append((interaction, bundle))
                     bundle = ""
 
             # Loop 2: Output cardnames only
             for card in problem_cards:
-                messages.append((interaction, card.split('```')[0]))
+                message_queue.append((interaction, card.split('```')[0]))
         else:
             for card in problem_cards:
                 print(card)
@@ -583,7 +583,7 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
             for card in problem_cards:
                 print(card.split('```')[0])
 
-    commands.append(((), try_open_stats))
+    command_queue.append(((), try_open_stats))
 
 async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = True):
     if not stats:

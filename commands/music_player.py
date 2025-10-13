@@ -8,10 +8,10 @@ from re import sub
 from time import sleep
 import yt_dlp
 
-from commands.utils import music, prev_music, messages, commands
+from commands.utils import music_queue, prev_music, message_queue, command_queue
 
 vc: VoiceClient | None = None
-last_channel: channel = None
+last_channel: int = None
 latest_filename: str = ""
 ext: str = '.webm'
 loop_song: bool = False
@@ -87,8 +87,8 @@ def list_all_music(interaction: Interaction):
         i = full_msg.index('\n', break_len)
         part_msg = full_msg[:i]
         full_msg = full_msg[i:]
-        messages.append((interaction, "```" + part_msg + "```"))
-    messages.append((interaction, "```" + full_msg + "```"))
+        message_queue.append((interaction, "```" + part_msg + "```"))
+    message_queue.append((interaction, "```" + full_msg + "```"))
 
 def queue_song_async(song: str, interaction: Interaction, sleep_timer: int | str | None = None, play_next: bool = False):
     if type(sleep_timer) == int:
@@ -121,7 +121,7 @@ def queue_song_async(song: str, interaction: Interaction, sleep_timer: int | str
                 sleep(1)
 
     if not song:
-        messages.append((interaction, "Invalid song or error?"))
+        message_queue.append((interaction, "Invalid song or error?"))
         return
 
     if Path(song).is_dir():
@@ -133,25 +133,25 @@ def queue_song_async(song: str, interaction: Interaction, sleep_timer: int | str
                 continue
             queue_msg += s + '\n'
             if len(queue_msg) > break_len:
-                messages.append((interaction, "Queued songs:" + queue_msg + "```"))
+                message_queue.append((interaction, "Queued songs:" + queue_msg + "```"))
                 queue_msg = "```"
             if play_next:
-                music.appendleft(song + s)
+                music_queue.appendleft(song + s)
             else:
-                music.append(song + s)
-        messages.append((interaction, "Queued songs:" + queue_msg + "```"))
+                music_queue.append(song + s)
+        message_queue.append((interaction, "Queued songs:" + queue_msg + "```"))
     else:
         if play_next:
-            music.appendleft(song)
+            music_queue.appendleft(song)
         else:
-            music.append(song)
-        messages.append((interaction, "Queued song: " + song))
+            music_queue.append(song)
+        message_queue.append((interaction, "Queued song: " + song))
 
 def play_all_async(interaction: Interaction):
     all_songs = recursively_traverse(music_base_dir, '').replace('\t', '')
-    messages.append((interaction, "Queueing all songs"))
+    message_queue.append((interaction, "Queueing all songs"))
     for song in all_songs.split('\n'):
-        music.append(song)
+        music_queue.append(song)
 
 def play_song_async(interaction: Interaction, song: str, play_next: bool):
     if song.startswith("http"):
@@ -166,12 +166,12 @@ def play_song_async(interaction: Interaction, song: str, play_next: bool):
                 temp_ydl_opts = ydl_opts.copy()
                 temp_ydl_opts['outtmpl'] = music_base_dir + playlist_title + '/' +  '%(title)s.%(ext)s'
 
-                commands.append(((song, True), yt_dlp.YoutubeDL(temp_ydl_opts).extract_info))
-                commands.append(((music_base_dir + playlist_title + '/' + first_song_title + ext, interaction, "until_filename_available", play_next), queue_song_async))
-            commands.append(((music_base_dir + playlist_title + '/', interaction, "until_song_finishes" if len(pre_extract['entries']) > 0 else None, play_next), queue_song_async))
+                command_queue.append(((song, True), yt_dlp.YoutubeDL(temp_ydl_opts).extract_info))
+                command_queue.append(((music_base_dir + playlist_title + '/' + first_song_title + ext, interaction, "until_filename_available", play_next), queue_song_async))
+            command_queue.append(((music_base_dir + playlist_title + '/', interaction, "until_song_finishes" if len(pre_extract['entries']) > 0 else None, play_next), queue_song_async))
         else:
-            commands.append(((song, True), dl.extract_info))
-            commands.append(((music_base_dir + sub('\W+','_', pre_extract['title'].replace(':', '_')).replace('__', '_-_').strip('_') + ext, interaction, "until_filename_available", play_next), queue_song_async))
+            command_queue.append(((song, True), dl.extract_info))
+            command_queue.append(((music_base_dir + sub('\W+','_', pre_extract['title'].replace(':', '_')).replace('__', '_-_').strip('_') + ext, interaction, "until_filename_available", play_next), queue_song_async))
     else:
         if not song.startswith(music_base_dir.strip('/')):
             song = music_base_dir + song
@@ -182,138 +182,141 @@ def play_song_async(interaction: Interaction, song: str, play_next: bool):
             for s in sorted(listdir(song)):
                 queue_msg += s + '\n'
                 if len(queue_msg) > break_len:
-                    messages.append((interaction, "Queued songs:" + queue_msg + "```"))
+                    message_queue.append((interaction, "Queued songs:" + queue_msg + "```"))
                     queue_msg = "```"
                 if play_next:
-                    music.appendleft(song + s)
+                    music_queue.appendleft(song + s)
                 else:
-                    music.append(song + s)
-            messages.append((interaction, "Queued songs:" + queue_msg + "```"))
+                    music_queue.append(song + s)
+            message_queue.append((interaction, "Queued songs:" + queue_msg + "```"))
         else:
             if play_next:
-                music.appendleft(song)
+                music_queue.appendleft(song)
             else:
-                music.append(song)
-            messages.append((interaction, "Queued song: " + song))
+                music_queue.append(song)
+            message_queue.append((interaction, "Queued song: " + song))
 
 async def init_vc(interaction: Interaction):
     global vc, last_channel
-    last_channel = interaction.channel
+    last_channel = interaction.channel_id
     if interaction.user.voice:
         vc = await interaction.user.voice.channel.connect()
     else:
-        messages.append((interaction, "User not connected to voice channel."))
+        message_queue.append((interaction, "User not connected to voice channel."))
 
 async def play_music(interaction: Interaction, song: str, play_next: bool = False):
     if vc is None or not vc.is_connected():
         await init_vc(interaction)
-    commands.append(((interaction, song, play_next), play_song_async))
+    command_queue.append(((interaction, song, play_next), play_song_async))
 
 async def play_all(interaction: Interaction):
     if vc is None or not vc.is_connected():
         await init_vc(interaction)
-    commands.append(((interaction,), play_all_async))
+    command_queue.append(((interaction,), play_all_async))
 
 def replay(interaction: Interaction, rep_index: int = 0):
-    if len(prev_music) > 0:
-        messages.append((interaction, "Replaying song: " + prev_music[-1 - rep_index]))
-        music.appendleft(prev_music[-1 - rep_index])
+    prev_music_len = len(prev_music)
+    if prev_music_len > 0:
+        if abs(rep_index) >= prev_music_len:
+            rep_index = prev_music_len - 1
+        message_queue.append((interaction, "Replaying song: " + prev_music[-1 - rep_index]))
+        music_queue.appendleft(prev_music[-1 - rep_index])
     else:
-        messages.append((interaction, "No previously played songs."))
+        message_queue.append((interaction, "No previously played songs."))
 
 def replay_all(interaction: Interaction):
-    global music, prev_music
+    global music_queue, prev_music
     if len(prev_music) > 0:
-        messages.append((interaction, "Replaying all songs."))
+        message_queue.append((interaction, "Replaying all songs."))
         prev_music = deque(set(prev_music))
-        music += prev_music
+        music_queue += prev_music
         prev_music.clear()
-        prev_music.append(music[-1])
+        prev_music.append(music_queue[-1])
     else:
-        messages.append((interaction, "No previously played songs."))
+        message_queue.append((interaction, "No previously played songs."))
 
 def set_volume(interaction: Interaction, volume: float):
     if vc and (vc.is_playing() or vc.is_paused()):
-        messages.append((interaction, "Setting volume: " + str(volume)))
+        message_queue.append((interaction, "Setting volume: " + str(volume)))
         vc.source = PCMVolumeTransformer(vc.source, volume=volume)
     else:
-        messages.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
+        message_queue.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
 
 def shuffle_music(interaction: Interaction):
-    messages.append((interaction, "Shuffling songs."))
-    shuffle(music)
+    message_queue.append((interaction, "Shuffling songs."))
+    shuffle(music_queue)
 
 def skip(interaction: Interaction):
     if vc and (vc.is_playing() or vc.is_paused()):
-        messages.append((interaction, "Skipping song: " + prev_music[-1]))
+        message_queue.append((interaction, "Skipping song: " + prev_music[-1]))
         vc.stop()
     else:
-        messages.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
+        message_queue.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
 
 def loop(interaction: Interaction):
     global loop_song
     if vc and (vc.is_playing() or vc.is_paused()):
         loop_song = not loop_song
         if loop_song:
-            if len(music) == 0:
-                music.append("dummy")
-            messages.append((interaction, "Looping song: " + prev_music[-1]))
+            if len(music_queue) == 0:
+                music_queue.append("dummy")
+            message_queue.append((interaction, "Looping song: " + prev_music[-1]))
         else:
-            messages.append((interaction, "Stopping looping."))
+            message_queue.append((interaction, "Stopping looping."))
     else:
-        messages.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
+        message_queue.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
 
 def pause(interaction: Interaction):
     if vc and vc.is_playing():
         if not vc.is_paused():
-            messages.append((interaction, "Paused song: " + prev_music[-1]))
+            message_queue.append((interaction, "Paused song: " + prev_music[-1]))
             vc.pause()
         else:
-            messages.append((interaction, "Unpaused song: " + prev_music[-1]))
+            message_queue.append((interaction, "Unpaused song: " + prev_music[-1]))
             vc.resume()
     else:
-        messages.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
+        message_queue.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
 
 def print_queue(interaction: Interaction):
     queue_msg = "```"
-    for q in music:
+    for q in music_queue:
         queue_msg += q + '\n'
         if len(queue_msg) > break_len:
-            messages.append((interaction, queue_msg + "```"))
+            message_queue.append((interaction, queue_msg + "```"))
             queue_msg = "```"
-    messages.append((interaction, queue_msg + "```"))
+    message_queue.append((interaction, queue_msg + "```"))
 
 def print_prev_queue(interaction: Interaction):
     queue_msg = "```"
     for q in prev_music:
         queue_msg += q + '\n'
         if len(queue_msg) > break_len:
-            messages.append((interaction, queue_msg + "```"))
+            message_queue.append((interaction, queue_msg + "```"))
             queue_msg = "```"
-    messages.append((interaction, queue_msg + "```"))
+    message_queue.append((interaction, queue_msg + "```"))
 
 def clear_queue(interaction: Interaction):
     global prev_music
-    messages.append((interaction, "Cleared queue"))
-    prev_music += music
-    music.clear()
+    message_queue.append((interaction, "Cleared queue"))
+    prev_music += music_queue
+    music_queue.clear()
 
 def stop(interaction: Interaction):
     global prev_music
     if vc:
-        messages.append((interaction, "Clearing queue and stopping song: " + prev_music[-1]))
-        prev_music += music
-        music.clear()
+        message_queue.append((interaction, "Clearing queue and stopping song: " + prev_music[-1]))
+        prev_music += music_queue
+        music_queue.clear()
         vc.stop()
     else:
-        messages.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
+        message_queue.append((interaction, "Not currently in a voice channel OR not currently playing a song, I think?"))
 
 def disconnect(interaction: Interaction):
-    global vc, last_channel, music, prev_music
+    global vc, last_channel, music_queue, prev_music
     if vc:
-        commands.append((("await",), vc.disconnect))
+        command_queue.append((("await",), vc.disconnect))
         vc = last_channel = None
-        music = deque()
+        music_queue = deque()
         prev_music = deque()
     else:
-        messages.append((interaction, "Not currently in a voice channel. If I am in a voice channel, do ```/play``` and then ```/disconnect```"))
+        message_queue.append((interaction, "Not currently in a voice channel. If I am in a voice channel, do ```/play``` and then ```/disconnect```"))
