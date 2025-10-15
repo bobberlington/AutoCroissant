@@ -163,8 +163,7 @@ def query_psd_path(query: str):
     try:
         closest = get_close_matches(card, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
     except IndexError:
-        print("No card found!")
-        return
+        return print("No card found!")
     return git_files[closest].replace('%20', ' ')
 
 async def query_name(interaction: Interaction, query: str):

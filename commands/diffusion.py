@@ -12,7 +12,7 @@ from transformers import BitsAndBytesConfig as BitsAndBytesConfig, T5EncoderMode
 from typing import Optional
 from queue import Queue
 
-from commands.utils import pildiscordfile, message_queue, edit_messages, file_queue
+from commands.utils import pildiscordfile, queue_message, queue_edit, queue_file
 import global_config
 
 mfolder = "./models/"
@@ -47,8 +47,7 @@ async def get_qsize(interaction: Interaction):
 
 def init_pipeline():
     if not model:
-        print("No model to initialize, finished.")
-        return
+        return print("No model to initialize, finished.")
 
     global txt2img_pipe, img2img_pipe, inpaint_pipe, in_progress
     in_progress = True
@@ -250,11 +249,11 @@ def progress_check(interaction: Interaction, total_steps: int, seed: int,
 
     img = latent_to_rgb(callback_kwargs["latents"][0])
     if not img:
-        edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%", []))
+        queue_edit(interaction, content=f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%")
         return callback_kwargs
 
-    edit_messages.append((interaction, f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%",
-                          [pildiscordfile(img.resize((img.size[1] * 4, img.size[0] * 4), Resampling.LANCZOS))]))
+    queue_edit(interaction, content=f"Seed= {seed}\nProgress= {round(step / total_steps * 100.0)}%",
+               attachments=[pildiscordfile(img.resize((img.size[1] * 4, img.size[0] * 4), Resampling.LANCZOS))])
     return callback_kwargs
 
 def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachment = None,
@@ -263,13 +262,13 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
               cfg: float = 7.0, strength: float = 0.8, seed: int = None):
     global in_progress
     if in_progress:
-        message_queue.append((interaction, "Request queued after the current generation."))
+        queue_message(interaction, "Request queued after the current generation.")
         queue.put_nowait((interaction, prompt, image_param, mask_image_param, url, mask_url,
                           steps, height, width, resize, cfg, strength, seed))
         return
 
     if not txt2img_pipe:
-        message_queue.append((interaction, "Initializing pipeline, this will take a while..."))
+        queue_message(interaction, "Initializing pipeline, this will take a while...")
         init_pipeline()
     in_progress = True
 
@@ -293,19 +292,30 @@ def diffusion(interaction: Interaction, prompt: str = None, image_param: Attachm
         width, height = image.size
         width = int(width * resize)
         height = int(height * resize)
-    message_queue.append((interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}"))
+    queue_message(interaction, f"steps={steps}, height={height}, width={width}, resize={resize}, cfg={cfg}, strength={strength}, seed={generator.initial_seed()}, scheduler={scheduler_name}, prompt={prompt}")
 
     collect()
     torch.cuda.empty_cache()
     if mask_image:
-        file_queue.append((interaction, pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
-                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
+        queue_file(interaction,
+                   pildiscordfile(inpaint_pipe(image=image, mask_image=mask_image, height=height, width=width,
+                                               strength=strength, prompt=prompt, num_inference_steps=steps,
+                                               guidance_scale=cfg, generator=generator,
+                                               callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)),
+                                               callback_on_step_end_tensor_inputs=["latents"]).images[0]))
     elif image:
-        file_queue.append((interaction, pildiscordfile(img2img_pipe(image=image, height=height, width=width, strength=strength, prompt=prompt, num_inference_steps=steps,
-                                                               guidance_scale=cfg, generator=generator, callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
+        queue_file(interaction,
+                   pildiscordfile(img2img_pipe(image=image, height=height, width=width,
+                                               strength=strength, prompt=prompt, num_inference_steps=steps,
+                                               guidance_scale=cfg, generator=generator,
+                                               callback_on_step_end=(lambda *args: progress_check(interaction, steps * strength, seed, *args)),
+                                               callback_on_step_end_tensor_inputs=["latents"]).images[0]))
     else:
-        file_queue.append((interaction, pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width, guidance_scale=cfg, generator=generator,
-                                                               callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)), callback_on_step_end_tensor_inputs=["latents"]).images[0])))
+        queue_file(interaction,
+                   pildiscordfile(txt2img_pipe(prompt=prompt, num_inference_steps=steps, height=height, width=width,
+                                               guidance_scale=cfg, generator=generator,
+                                               callback_on_step_end=(lambda *args: progress_check(interaction, steps, seed, *args)),
+                                               callback_on_step_end_tensor_inputs=["latents"]).images[0]))
     in_progress = False
     if queue.qsize() > 0:
         diffusion(*queue.get_nowait())

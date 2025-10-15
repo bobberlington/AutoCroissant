@@ -1,7 +1,7 @@
 from discord import Interaction
 from discord.app_commands import Choice
-from discord.errors import InteractionResponded
 
+from commands.utils import queue_message
 
 
 general_commands = {
@@ -63,7 +63,7 @@ music_commands = {
     "/disconnect:"                              : "Disconnects the bot, stopping the current song and clearing all queues.",
 }
 
-async def print_help(interaction: Interaction, help_wanted: Choice[str]):
+def print_help(interaction: Interaction, help_wanted: Choice[str]):
     wanted_commands = general_commands
     if help_wanted.value == "text":
         wanted_commands = text_commands
@@ -78,12 +78,6 @@ async def print_help(interaction: Interaction, help_wanted: Choice[str]):
     for cmd in wanted_commands:
         help_msg += f"{cmd:15s} {wanted_commands[cmd]}\n\n"
         if len(help_msg) > 1000:
-            try:
-                await interaction.response.send_message(help_msg + "```")
-            except InteractionResponded:
-                await interaction.followup.send(help_msg + "```")
+            queue_message(interaction, f"{help_msg}```")
             help_msg = "```"
-    try:
-        await interaction.response.send_message(help_msg + "```")
-    except InteractionResponded:
-        await interaction.followup.send(help_msg + "```")
+    queue_message(interaction, f"{help_msg}```")

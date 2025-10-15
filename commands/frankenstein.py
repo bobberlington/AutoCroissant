@@ -3,13 +3,12 @@ from difflib import get_close_matches
 from discord import Interaction
 from numpy import ndarray
 
-from commands.utils import url_to_cv2image, cv2discordfile, message_queue, file_queue
+from commands.utils import url_to_cv2image, cv2discordfile, queue_message, queue_file
 
 def frankenstein(interaction: Interaction, cards: str):
     from commands.query_card import REPOSITORY, git_files, git_filenames, ambiguous_names, MATCH_RATIO
     if len(cards.split()) < 1:
-        interaction.followup.send("Must specify at least one argument to frankenstein.")
-        return
+        return queue_message(interaction, "Must specify at least one argument to frankenstein.")
 
     images: list[ndarray] = []
     for part in cards.strip().lower().split(","):
@@ -19,8 +18,7 @@ def frankenstein(interaction: Interaction, cards: str):
         try:
             closest = get_close_matches(creature, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
         except IndexError:
-            message_queue.append((interaction, f"No card found for query {creature}!"))
-            return
+            return queue_message(interaction, f"No card found for query {creature}!")
         images.append(url_to_cv2image(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{git_files[closest]}"))
 
         # If the filename was ambiguous, make a note of that.
@@ -28,7 +26,7 @@ def frankenstein(interaction: Interaction, cards: str):
             ambiguous_message = f"Ambiguous name found for {closest}. If this wasn't the card you wanted, try typing: \n"
             for i in ambiguous_names[closest]:
                 ambiguous_message += f"{i}\n"
-            message_queue.append((interaction, ambiguous_message))
+            queue_message(interaction, ambiguous_message)
 
     frankensteins_monster = images[-1]
     total_images = len(images)
@@ -41,4 +39,4 @@ def frankenstein(interaction: Interaction, cards: str):
         frankensteins_monster[0:height_part * cur_image] = image[0:height_part * cur_image]
         cur_image -= 1
 
-    file_queue.append((interaction, cv2discordfile(frankensteins_monster)))
+    queue_file(interaction,  cv2discordfile(frankensteins_monster))

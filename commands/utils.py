@@ -1,27 +1,55 @@
 import asyncio
 from collections import deque
 from cv2 import imdecode, imencode, cvtColor, IMREAD_COLOR, COLOR_BGR2RGB, COLOR_RGB2BGR
-from discord import File, Interaction, Embed
+from discord import File, Interaction
 from functools import wraps
 from io import BytesIO
 from numpy import ndarray, array, asarray
 from PIL import Image
 from requests import get
 from types import SimpleNamespace
-from typing import Callable, TypeVar, Awaitable, Optional, Sequence, Any
+from typing import Callable, TypeVar, Awaitable, Any
 
 # -------------------------------------------------------------------
-# Queues for async message and file dispatch
+# Queues for async message and command dispatch
 # -------------------------------------------------------------------
 music_queue: deque[str] = deque()
 prev_music: deque[str] = deque()
-message_queue: deque[tuple[Interaction, str]] = deque()
-edit_messages: deque[tuple[Interaction, str, tuple[File, ...]]] = deque()
-file_queue: deque[tuple[Interaction, File]] = deque()
-command_queue: deque[tuple[tuple, Callable]] = deque()
+
+dispatch_queue: deque[tuple[Interaction, dict[str, Any]]] = deque()
+edit_queue: deque[tuple[Interaction, dict[str, Any]]] = deque()
+command_queue: deque[tuple[tuple, dict[str, Any], Callable[..., Any]]] = deque()
 
 slash_registry = {}
 T = TypeVar("T")
+
+# -------------------------------------------------------------------
+# Queue wrappers
+# -------------------------------------------------------------------
+def queue_any(interaction: Interaction, **kwargs):
+    """Queue any send you want."""
+    dispatch_queue.append((interaction, kwargs))
+
+def queue_message(interaction: Interaction, content: str, **kwargs):
+    """Queue a simple message send."""
+    kwargs["content"] = content
+    dispatch_queue.append((interaction, kwargs))
+
+
+def queue_file(interaction: Interaction, file: File, **kwargs):
+    """Queue a file send (can include content or embeds too)."""
+    kwargs["file"] = file
+    dispatch_queue.append((interaction, kwargs))
+
+
+def queue_edit(interaction: Interaction, **kwargs):
+    """Queue an edit to an interaction’s original response."""
+    edit_queue.append((interaction, kwargs))
+
+
+def queue_command(func: Callable[..., Any], *args, **kwargs):
+    """Queue a function (async or sync) for deferred execution."""
+    command_queue.append(((args, kwargs), func))
 
 
 # -------------------------------------------------------------------
@@ -79,81 +107,38 @@ def pil_to_cv2(pil_img: Image.Image) -> ndarray:
 # Fake Discord interaction generator
 # -------------------------------------------------------------------
 def make_fake_interaction(channel_id: int, guild_id: int):
-    """
-    Create a lightweight fake Interaction object that mimics Discord.py's behavior.
-    It queues messages, embeds, and files so that your pipeline loop can process them.
-    """
+    """Create a fake interaction object for when the original is lost/old."""
 
-    async def fake_send(
-        content: Optional[str] = None,
-        *,
-        embeds: Optional[Sequence[Embed]] = None,
-        file: Optional[File] = None,
-        files: Optional[Sequence[File]] = None,
-        attachments: Optional[Sequence[File]] = None,
-        ephemeral: bool = False,
-        **kwargs: Any
-    ):
-        """Queue a fake message for the pipeline to process."""
-        fake_channel = SimpleNamespace(channel_id=channel_id)
-
-        # If embeds are provided, combine them into a readable representation
-        if embeds:
-            embed_descriptions = []
-            for e in embeds:
-                desc = e.title or e.description or "(embed)"
-                embed_descriptions.append(f"[EMBED: {desc}]")
-            embed_text = "\n".join(embed_descriptions)
-            if content:
-                content = f"{content}\n{embed_text}"
-            else:
-                content = embed_text
-
-        # Queue text messages
+    async def send(content: str | None = None, **kwargs: Any):
+        """Generic sender that queues any outgoing message."""
         if content:
-            message_queue.append((fake_channel, content))
+            kwargs["content"] = content
+        queue_any(SimpleNamespace(channel_id=channel_id), **kwargs)
 
-        # Queue single file
-        if file:
-            file_queue.append((fake_channel, file))
+    async def edit_original_response(content: str | None = None, **kwargs: Any):
+        """Simulate editing the original response."""
+        if content:
+            kwargs["content"] = content
+        queue_edit(SimpleNamespace(channel_id=channel_id), **kwargs)
 
-        # Queue multiple files
-        if files:
-            for f in files:
-                file_queue.append((fake_channel, f))
+    async def defer():
+        pass
 
-        # Queue attachments
-        if attachments:
-            for a in attachments:
-                file_queue.append((fake_channel, a))
+    fake_response = SimpleNamespace(
+        send_message=send,
+        defer=defer,
+    )
+    fake_followup = SimpleNamespace(send=send)
 
-    class FakeResponse:
-        async def send_message(self, content=None, **kwargs):
-            await fake_send(content, **kwargs)
-
-        async def defer(self):
-            """Simulate a deferred response (does nothing)."""
-            pass
-
-    class FakeFollowup:
-        async def send(self, content=None, **kwargs):
-            await fake_send(content, **kwargs)
-
-    async def edit_original_response(content=None, attachments: Optional[Sequence[File]] = None, **kwargs):
-        """Simulate editing an original response by queuing it for edit_messages."""
-        fake_channel = SimpleNamespace(channel_id=channel_id)
-        edit_messages.append((fake_channel, content or "", tuple(attachments or ())))
-
-    fake_interaction = SimpleNamespace(
+    # The fake Interaction-like object
+    return SimpleNamespace(
         guild_id=guild_id,
         channel_id=channel_id,
-        response=FakeResponse(),
-        followup=FakeFollowup(),
+        response=fake_response,
+        followup=fake_followup,
         edit_original_response=edit_original_response,
         user=None,
     )
-
-    return fake_interaction
 
 
 # -------------------------------------------------------------------
@@ -166,7 +151,7 @@ def convert_value(value: str) -> Any:
     if value in {"true", "false"}:
         return value == "true"
 
-    for convert in (int, float):
+    for convert in (float, int):
         try:
             return convert(value)
         except ValueError:

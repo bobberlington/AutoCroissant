@@ -1,14 +1,12 @@
-from asyncio import iscoroutinefunction
 from collections import defaultdict
 from datetime import datetime, timedelta
 from discord import Interaction
 from pickle import load, dump
 from shlex import split as shlex_split
-from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from commands.utils import message_queue, command_queue, slash_registry, make_fake_interaction, convert_value
+from commands.utils import slash_registry, queue_message, queue_command, make_fake_interaction, convert_value
 from global_config import REMIND_PKL
 
 reminders = defaultdict(list)
@@ -66,8 +64,7 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "",
     interval = parse_interval(frequency)
 
     if not remind_at:
-        message_queue.append((interaction, "Invalid time format. Try `13:00` or `1PM` (PST)."))
-        return
+        return queue_message(interaction, "Invalid time format. Try `13:00` or `1PM` (PST).")
 
     if offset_delta:
         remind_at += offset_delta
@@ -91,7 +88,7 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "",
         desc += f", repeats every {frequency}"
     if command:
         desc += f", runs `{command}`"
-    message_queue.append((interaction, desc))
+    queue_message(interaction, desc)
 
 
 def parse_named_args(parts):
@@ -111,28 +108,31 @@ def parse_named_args(parts):
 
 
 def check_reminder():
-    """Trigger reminders and execute async/sync slash commands with named parameters."""
+    """Trigger reminders and execute queued async/sync slash commands."""
     global reminders
     now = datetime.now(ZoneInfo("America/Los_Angeles"))
     changed = False
 
     for guild_id, reminder_list in list(reminders.items()):
-        for reminder in reminder_list:
+        for reminder in reminder_list[:]: # copy since we may modify it
             if reminder["when"] <= now:
                 channel_id = reminder["channel_id"]
                 msg = reminder["msg"]
                 cmd_text = reminder.get("command")
 
-                # Send message first
-                if msg:
-                    message_queue.append((SimpleNamespace(channel_id=channel_id), msg))
+                # Create a fake interaction for queued sends
+                fake_interaction = make_fake_interaction(channel_id, guild_id)
 
-                # Execute stored slash command
+                # 1. Queue message send
+                if msg:
+                    queue_message(fake_interaction, msg)
+
+                # 2. Execute stored slash command (if any)
                 if cmd_text:
                     try:
                         parts = shlex_split(cmd_text)
                     except ValueError:
-                        message_queue.append((SimpleNamespace(channel_id=channel_id), f"Could not parse command: `{cmd_text}`"))
+                        queue_message(fake_interaction, f"Could not parse command: `{cmd_text}`")
                         continue
 
                     if not parts:
@@ -144,26 +144,21 @@ def check_reminder():
                     func = slash_registry.get(cmd_name)
 
                     if func:
-                        fake_interaction = make_fake_interaction(channel_id, guild_id)
-
-                        async def runner():
-                            if iscoroutinefunction(func):
-                                await func(fake_interaction, *args, **kwargs)
-                            else:
-                                func(fake_interaction, *args, **kwargs)
-
-                        command_queue.append(((), runner))
-                        # message_queue.append((SimpleNamespace(channel_id=channel_id), f"Executing `{cmd_text}`"))
+                        # Queue the function for deferred execution
+                        queue_command(func, fake_interaction, *args, **kwargs)
+                        # Optionally notify about command dispatch:
+                        # queue_message(fake_interaction, f"Executing `{cmd_text}`")
                     else:
-                        message_queue.append((SimpleNamespace(channel_id=channel_id), f"Unknown command: `{cmd_name}`"))
+                        queue_message(fake_interaction, f"Unknown command: `{cmd_name}`")
 
-                # Repeat or remove reminder
+                # 3. Repeat or remove reminder
                 if reminder["frequency"]:
                     reminder["when"] = reminder["when"] + reminder["frequency"]
                 else:
                     reminder_list.remove(reminder)
                 changed = True
 
+        # Clean up empty guild reminder lists
         if not reminder_list:
             reminders.pop(guild_id, None)
 
@@ -171,14 +166,13 @@ def check_reminder():
         save_reminders()
 
 
-def list_reminders(interaction: Interaction, all: bool = False):
+def list_reminders(interaction: Interaction, all: bool = False, hidden: bool = False):
     """List reminders for the current channel or entire server (includes commands and channel info)."""
     guild_id = interaction.guild_id
     channel_id = interaction.channel_id
 
     if guild_id not in reminders or len(reminders[guild_id]) == 0:
-        message_queue.append((interaction, "No reminders set for this server."))
-        return
+        return queue_message(interaction, "No reminders set for this server.", ephemeral=hidden)
 
     if all:
         filtered = reminders[guild_id]
@@ -188,8 +182,7 @@ def list_reminders(interaction: Interaction, all: bool = False):
         scope_text = f"this channel (<#{channel_id}>)"
 
     if not filtered:
-        message_queue.append((interaction, f"No reminders found for {scope_text}."))
-        return
+        return queue_message(interaction, f"No reminders found for {scope_text}.", ephemeral=hidden)
 
     lines = []
     for r in filtered:
@@ -202,7 +195,7 @@ def list_reminders(interaction: Interaction, all: bool = False):
         lines.append(f"`{r['id']}` — {msg_str} at {when_str}{repeat_str}{cmd_str}{chan_str}")
 
     output = "\n".join(lines)
-    message_queue.append((interaction, f"Reminders for {scope_text}:\n{output}"))
+    queue_message(interaction, f"Reminders for {scope_text}:\n{output}", ephemeral=hidden)
 
 
 def remove_reminder(interaction: Interaction, reminder_id: str = ""):
@@ -212,8 +205,7 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
     guild_id = interaction.guild_id
 
     if guild_id not in reminders:
-        message_queue.append((interaction, f"No reminders found for this server."))
-        return
+        return queue_message(interaction, f"No reminders found for this server.")
 
     removed = False
     for reminder in list(reminders[guild_id]):
@@ -227,6 +219,6 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
 
     if removed:
         save_reminders()
-        message_queue.append((interaction, f"Reminder `{reminder_id}` has been removed."))
+        queue_message(interaction, f"Reminder `{reminder_id}` has been removed.")
     else:
-        message_queue.append((interaction, f"No reminder found with ID `{reminder_id}`."))
+        queue_message(interaction, f"No reminder found with ID `{reminder_id}`.")

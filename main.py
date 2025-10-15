@@ -1,10 +1,9 @@
 from asyncio import iscoroutinefunction
 from discord import Attachment, Client, FFmpegPCMAudio, Intents, Interaction, Member, Message, Object, app_commands
 from discord.app_commands import Choice, CommandTree
-from discord.errors import HTTPException
+from discord.errors import HTTPException, InteractionResponded
 from discord.ext import tasks
 from pathlib import Path
-from threading import Thread
 from types import SimpleNamespace
 from typing import Optional
 
@@ -14,11 +13,11 @@ from commands.channel_text import init_reminder, set_reminder, check_reminder, l
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
-from commands.music_player import play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
+from commands.music_player import init_vc, play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
 from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file, manual_metadata_entry, get_card_stats, mass_replace_author, list_orphans
 from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
-from commands.utils import music_queue, prev_music, message_queue, edit_messages, file_queue, command_queue, slash_registry, to_thread
+from commands.utils import music_queue, prev_music, dispatch_queue, edit_queue, command_queue, slash_registry, queue_message, queue_command, to_thread
 
 # Intents permissions
 intents = Intents.default()
@@ -37,11 +36,11 @@ async def on_ready():
         slash_registry[cmd.name] = cmd.callback
     print(f"Registered {len(slash_registry)} slash commands for reminder system.")
 
-    command_queue.append(((), init_reminder))
-    command_queue.append(((), try_open_alias))
-    command_queue.append(((), populate_files))
-    command_queue.append(((), try_open_stats))
-    command_queue.append(((), init_pipeline))
+    queue_command(init_reminder)
+    queue_command(try_open_alias)
+    queue_command(populate_files)
+    queue_command(try_open_stats)
+    queue_command(init_pipeline)
     print("Finished initializing.")
 
 
@@ -61,7 +60,7 @@ async def on_ready():
 ])
 async def slash_print_help(interaction: Interaction,
                            help_type: Choice[str]):
-    await print_help(interaction, help_type)
+    await to_thread(print_help)(interaction, help_type)
 
 
 @tree.command(name="restart_bot", description="Restart the bot.")
@@ -126,24 +125,23 @@ async def slash_set_reminder(interaction: Interaction,
                              offset: Optional[str] = "",
                              frequency: Optional[str] = "",
                              command: Optional[str] = ""):
-    await interaction.response.defer()
     await to_thread(set_reminder)(interaction, msg, when, offset, frequency, command)
 
 
 @tree.command(name="list_reminders", description="List all reminders in this channel/server.")
 @app_commands.describe(
-    all="List all reminders in the server instead of just this channel.")
+    all="List all reminders in the server instead of just this channel.",
+    hidden="Should the list only be sent to you? Default is false.")
 async def slash_list_reminders(interaction: Interaction,
-                               all: Optional[bool] = False):
-    await interaction.response.defer()
-    await to_thread(list_reminders)(interaction, all)
+                               all: Optional[bool] = False,
+                               hidden: Optional[bool] = False):
+    await to_thread(list_reminders)(interaction, all, hidden)
 
 
 @tree.command(name="remove_reminder", description="Remove a reminder by its ID.")
 @app_commands.describe(reminder_id="The ID of the reminder to remove.")
 async def slash_remove_reminder(interaction: Interaction,
                                 reminder_id: str):
-    await interaction.response.defer()
     await to_thread(remove_reminder)(interaction, reminder_id)
 
 
@@ -379,13 +377,15 @@ async def slash_play(interaction: Interaction,
                      song: str,
                      play_next: Optional[bool] = False):
     await interaction.response.defer()
-    await play_music(interaction, song, play_next)
+    await init_vc(interaction)
+    await to_thread(play_music)(interaction, song, play_next)
 
 
 @tree.command(name="play_all", description="Play all the songs in the local music directory.")
 async def slash_play_all(interaction: Interaction):
     await interaction.response.defer()
-    await play_all(interaction)
+    await init_vc(interaction)
+    await to_thread(play_all)(interaction)
 
 
 @tree.command(name="replay", description="Replay a song.")
@@ -393,31 +393,26 @@ async def slash_play_all(interaction: Interaction):
     song='0 is the current song, 1 is the previous song, 2 is 2 songs ago, etc. 0 by default.')
 async def slash_replay(interaction: Interaction,
                        song: Optional[int] = 0):
-    await interaction.response.defer()
     await to_thread(replay)(interaction, song)
 
 
 @tree.command(name="replay_all", description="Replay all songs.")
 async def slash_replay_all(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(replay_all)(interaction)
 
 
 @tree.command(name="skip", description="Skip current song.")
 async def slash_skip(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(skip)(interaction)
 
 
 @tree.command(name="loop", description="Loop current song.")
 async def slash_loop(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(loop)(interaction)
 
 
 @tree.command(name="list", description="List all songs in the current directory.")
 async def slash_list(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(list_all_music)(interaction)
 
 
@@ -426,49 +421,41 @@ async def slash_list(interaction: Interaction):
     multiplier='The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.')
 async def slash_volume(interaction: Interaction,
                        multiplier: float = 1.0):
-    await interaction.response.defer()
     await to_thread(set_volume)(interaction, multiplier)
 
 
 @tree.command(name="shuffle", description="Shuffles the queue.")
 async def slash_shuffle(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(shuffle_music)(interaction)
 
 
 @tree.command(name="queue", description="Shows the queue.")
 async def slash_queue(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(print_queue)(interaction)
 
 
 @tree.command(name="prev_queue", description="Shows the previously queued songs.")
 async def slash_prev_queue(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(print_prev_queue)(interaction)
 
 
 @tree.command(name="clear", description="Clears the queue.")
 async def slash_clear(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(clear_queue)(interaction)
 
 
 @tree.command(name="pause", description="Pauses/unpauses the current song.")
 async def slash_pause(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(pause)(interaction)
 
 
 @tree.command(name="stop", description="Stops playing the current song and clears the queue.")
 async def slash_stop(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(stop)(interaction)
 
 
 @tree.command(name="disconnect", description="Disconnects the bot and clears the queue.")
 async def slash_disconnect(interaction: Interaction):
-    await interaction.response.defer()
     await to_thread(disconnect)(interaction)
 
 
@@ -477,9 +464,9 @@ async def on_message(message: Message):
     # This ID is for the GitHub webhook bot from the TTS repo
     # This isn't a slash command because it really doesn't make sense to be one.
     if message.author.id == 1011982177023561840:
-        command_queue.append(((), try_open_alias))
-        command_queue.append(((), populate_files))
-        command_queue.append(((None, False, False, False), manual_update_stats))
+        queue_command(try_open_alias)
+        queue_command(populate_files)
+        queue_command(manual_update_stats, None, False, False, False)
     # This will sync all slash commands with the guild you post the message in if you're a bot admin.
     # This isn't a slash command because it might lead to an awkward catch-22 momento.
     elif message.content.startswith(".sync_guild") and message.author.id in global_config.bot_admin_ids:
@@ -510,54 +497,54 @@ def play_next_song():
 
     # Loop the last song if enabled
     if loop_song and prev_music:
-        return Thread(target=vc.play, daemon=True, kwargs={'source': FFmpegPCMAudio(source=prev_music[-1])}).start()
+        queue_command(vc.play, source=FFmpegPCMAudio(source=prev_music[-1]))
 
     # Otherwise, play the next queued song
     cur_song = music_queue.popleft()
     if Path(cur_song).is_file():
         prev_music.append(cur_song)
         if last_channel:
-            message_queue.append((SimpleNamespace(channel_id=last_channel), f"Now playing: **{cur_song}**"))
-        Thread(target=vc.play, daemon=True, kwargs={'source': FFmpegPCMAudio(source=cur_song)}).start()
+            queue_message(SimpleNamespace(channel_id=last_channel), f"Now playing: **{cur_song}**")
+        queue_command(vc.play, source=FFmpegPCMAudio(source=cur_song))
 
 
 @tasks.loop(seconds=1)
 async def check_pipeline():
-    Thread(target=check_reminder, daemon=True).start()
+    queue_command(check_reminder)
 
     if music_queue:
-        Thread(target=play_next_song, daemon=True).start()
+        queue_command(play_next_song)
 
-    if message_queue:
-        interaction, msg = message_queue.popleft()
-        try:
-            await interaction.followup.send(content=msg)
-        except (HTTPException, AttributeError):
-            await client.get_channel(interaction.channel_id).send(content=msg)
-
-    if edit_messages:
-        interaction, msg, attachments = edit_messages.popleft()
-        try:
-            await interaction.edit_original_response(content=msg, attachments=attachments)
-        except (HTTPException, AttributeError): # Fallback if we can't edit the message
-            await client.get_channel(interaction.channel_id).send(content=msg, files=attachments)
-
-    if file_queue:
-        interaction, file = file_queue.popleft()
-        try:
-            await interaction.followup.send(file=file)
-        except (HTTPException, AttributeError):
-            await client.get_channel(interaction.channel_id).send(file=file)
-
-    if command_queue:
-        args, func = command_queue.popleft()
+    # --- COMMAND QUEUE ---
+    while command_queue:
+        (args, kwargs), func = command_queue.popleft()
         try:
             if iscoroutinefunction(func):
-                await func(*args)
+                await func(*args, **kwargs)
             else:
-                await to_thread(func)(*args)
+                await to_thread(func)(*args, **kwargs)
         except Exception as e:
             print(f"Command execution failed: {e}")
+
+    # --- DISPATCH QUEUE (messages + files + embeds) ---
+    if dispatch_queue:
+        interaction, send_kwargs = dispatch_queue.popleft()
+        try:
+            await interaction.response.send_message(**send_kwargs)
+        except InteractionResponded:
+            await interaction.followup.send(**send_kwargs)
+        except (HTTPException, AttributeError):
+            send_kwargs.pop("ephemeral", None)
+            await client.get_channel(interaction.channel_id).send(**send_kwargs)
+
+    # --- EDIT MESSAGES ---
+    if edit_queue:
+        interaction, edit_kwargs = edit_queue.popleft()
+        try:
+            await interaction.edit_original_response(**edit_kwargs)
+        except (HTTPException, AttributeError):
+            # fallback to sending as a new message
+            await client.get_channel(interaction.channel_id).send(**edit_kwargs)
 
 
 client.run(token)
