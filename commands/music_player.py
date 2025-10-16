@@ -161,6 +161,8 @@ def play_all(interaction: Interaction):
     all_songs = recursively_traverse(MUSIC_BASE_DIR, '').replace('\t', '')
     queue_message(interaction, "Queueing all songs.")
     for song in all_songs.split('\n'):
+        if song == ".gitignore" or song == "downloaded.txt":
+            continue
         music_queue.append(song)
 
 
