@@ -13,7 +13,7 @@ from commands.channel_text import init_reminder, set_reminder, check_reminder, l
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
-from commands.music_player import init_vc, play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all, state
+from commands.music_player import init_vc, play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all, delete_song, delete_all_music, state
 from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file, manual_metadata_entry, get_card_stats, mass_replace_author, list_orphans
 from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
@@ -459,6 +459,22 @@ async def slash_disconnect(interaction: Interaction):
     await to_thread(disconnect)(interaction)
 
 
+@tree.command(name="delete_song", description="Delete a song/folder.")
+@app_commands.describe(
+    song_name='The name of the song or folder to delete.')
+async def slash_delete_song(interaction: Interaction,
+                            song_name: str):
+    await to_thread(delete_song)(interaction, song_name)
+
+
+@tree.command(name="delete_all_music", description="Delete all music under the music directory.")
+async def slash_delete_song(interaction: Interaction):
+    await to_thread(delete_all_music)(interaction)
+
+
+####################
+#     MAIN LOOP    #
+####################
 @client.event
 async def on_message(message: Message):
     # This ID is for the GitHub webhook bot from the TTS repo

@@ -7,6 +7,7 @@ from os.path import join, isdir
 from pathlib import Path
 from random import shuffle
 from re import sub
+from shutil import rmtree
 from unicodedata import normalize
 from yt_dlp import YoutubeDL
 
@@ -338,3 +339,46 @@ def disconnect(interaction: Interaction):
         queue_message(interaction, "Succesfully disconnected.", ephemeral=True)
     else:
         queue_message(interaction, "Not currently in a voice channel. If I am in a voice channel, do ```/play``` and then ```/disconnect```")
+
+
+def delete_song(interaction: Interaction, song_name: str):
+    """Delete a song/folder under MUSIC_BASE_DIR."""
+    path = song_name if song_name.startswith(MUSIC_BASE_DIR) else join(MUSIC_BASE_DIR, song_name)
+
+    if not Path(path).exists():
+        return queue_message(interaction, f"Song/folder not found: {song_name}")
+
+    # Safety: prevent deleting root music directory
+    if Path(path).resolve() == Path(MUSIC_BASE_DIR).resolve():
+        return queue_message(interaction, "Cannot delete the root music directory. Use `/delete_all_music` instead.")
+
+    try:
+        if Path(path).is_file():
+            Path(path).unlink()
+        elif Path(path).is_dir():
+            rmtree(path)
+        queue_message(interaction, f"Deleted: {Path(path).name}")
+    except Exception as e:
+        queue_message(interaction, f"Error deleting {song_name}: {e}")
+
+
+def delete_all_music(interaction: Interaction):
+    """Delete all music files and folders under MUSIC_BASE_DIR."""
+    if not Path(MUSIC_BASE_DIR).exists():
+        return queue_message(interaction, "Music directory not found.")
+
+    SKIP_FILES = {".gitignore"}
+    try:
+        for item in listdir(MUSIC_BASE_DIR):
+            if item in SKIP_FILES:
+                continue
+
+            path = join(MUSIC_BASE_DIR, item)
+            if Path(path).is_file():
+                Path(path).unlink()
+            elif Path(path).is_dir():
+                rmtree(path)
+
+        queue_message(interaction, "All music files and folders have been deleted.")
+    except Exception as e:
+        queue_message(interaction, f"Error deleting all music: {e}")
