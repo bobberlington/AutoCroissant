@@ -158,12 +158,26 @@ async def queue_song_async(song: str, interaction: Interaction, sleep_mode=None,
 
 
 def play_all(interaction: Interaction):
-    all_songs = recursively_traverse(MUSIC_BASE_DIR, '').replace('\t', '')
-    queue_message(interaction, "Queueing all songs.")
-    for song in all_songs.split('\n'):
-        if song == ".gitignore" or song == "downloaded.txt":
-            continue
-        music_queue.append(song)
+    """Queue all songs recursively from MUSIC_BASE_DIR using queue_folder_songs, skipping .gitignore and downloaded.txt."""
+    queue_message(interaction, "Queueing all songs...")
+
+    SKIP_FILES = {".gitignore", "downloaded.txt"}
+
+    def _recurse(folder: str):
+        # Queue songs in the current folder
+        queue_folder_songs(interaction, folder)
+
+        # Recurse into subfolders
+        for item in sorted(listdir(folder)):
+            if item in SKIP_FILES:
+                continue
+
+            path = join(folder, item)
+            if isdir(path):
+                _recurse(path)
+
+    _recurse(MUSIC_BASE_DIR)
+    queue_message(interaction, "All songs have been queued.")
 
 
 def play_music(interaction: Interaction, song: str, play_next=False):
