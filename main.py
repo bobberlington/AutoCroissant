@@ -13,7 +13,7 @@ from commands.channel_text import init_reminder, set_reminder, check_reminder, l
 from commands.diffusion import init_pipeline, diffusion, set_lora, set_model, set_device, set_scheduler, get_qsize
 from commands.frankenstein import frankenstein
 from commands.help import print_help
-from commands.music_player import init_vc, play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all
+from commands.music_player import init_vc, play_music, replay_all, replay, skip, loop, list_all_music, set_volume, shuffle_music, print_prev_queue, print_queue, clear_queue, pause, stop, disconnect, play_all, state
 from commands.psd_analyzer import manual_update_stats, export_stats_to_file, export_rulebook_to_file, manual_metadata_entry, get_card_stats, mass_replace_author, list_orphans
 from commands.query_card import try_open_alias, try_open_stats, populate_files, query_name, query_ability, query_ability_num_occur, set_match_ratio, set_repository, alias_card, delete_alias
 from commands.update_bot import stop_bot, git_pull, git_push, update_bot, restart_bot, purge
@@ -491,21 +491,20 @@ async def on_message(message: Message):
 
 def play_next_song():
     """Plays the next song if the player is idle."""
-    from commands.music_player import last_channel, loop_song, vc
-    if not vc or vc.is_playing() or vc.is_paused():
+    if not state.vc or state.vc.is_playing() or state.vc.is_paused():
         return
 
     # Loop the last song if enabled
-    if loop_song and prev_music:
-        queue_command(vc.play, source=FFmpegPCMAudio(source=prev_music[-1]))
+    if state.loop_song and prev_music:
+        queue_command(state.vc.play, source=FFmpegPCMAudio(source=prev_music[-1]))
 
     # Otherwise, play the next queued song
     cur_song = music_queue.popleft()
     if Path(cur_song).is_file():
         prev_music.append(cur_song)
-        if last_channel:
-            queue_message(SimpleNamespace(channel_id=last_channel), f"Now playing: **{cur_song}**")
-        queue_command(vc.play, source=FFmpegPCMAudio(source=cur_song))
+        if state.last_channel:
+            queue_message(SimpleNamespace(channel_id=state.last_channel), f"Now playing: **{cur_song}**")
+        queue_command(state.vc.play, source=FFmpegPCMAudio(source=cur_song))
 
 
 @tasks.loop(seconds=1)

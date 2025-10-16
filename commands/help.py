@@ -1,7 +1,7 @@
 from discord import Interaction
 from discord.app_commands import Choice
 
-from commands.utils import queue_message
+from commands.utils import queue_message, split_long_message
 
 
 general_commands = {
@@ -64,7 +64,6 @@ music_commands = {
 }
 
 def print_help(interaction: Interaction, help_wanted: Choice[str]):
-    wanted_commands = general_commands
     if help_wanted.value == "text":
         wanted_commands = text_commands
     elif help_wanted.value == "card":
@@ -73,11 +72,14 @@ def print_help(interaction: Interaction, help_wanted: Choice[str]):
         wanted_commands = ai_commands
     elif help_wanted.value == "music":
         wanted_commands = music_commands
+    else:
+        wanted_commands = general_commands
 
-    help_msg = f"```Available commands:\n\n"
-    for cmd in wanted_commands:
-        help_msg += f"{cmd:15s} {wanted_commands[cmd]}\n\n"
-        if len(help_msg) > 1000:
-            queue_message(interaction, f"{help_msg}```")
-            help_msg = "```"
-    queue_message(interaction, f"{help_msg}```")
+    help_msg = "```Available commands:\n\n"
+    for cmd, desc in wanted_commands.items():
+        help_msg += f"{cmd:15s} {desc}\n\n"
+    help_msg += "```"
+
+    # Send each part after splitting
+    for part in split_long_message(help_msg):
+        queue_message(interaction, part)

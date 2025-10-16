@@ -14,14 +14,14 @@ from urllib.request import urlretrieve
 
 from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL, METAD_PKL
 from commands.query_card import try_open_stats, query_psd_path
-from commands.utils import queue_edit, queue_message, queue_command
+from commands.utils import queue_edit, queue_message, queue_command, split_long_message
 
 getLogger("psd_tools").setLevel(CRITICAL)
 UPDATE_RATE         = 25
 LOCAL_REPO: str     = path_os.expanduser(LOCAL_DIR_LOC)
 EXCLUDE_FOLDERS     = ["markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
-# ACCURSED_COMMIT     = "77b97e4760d385a82cc404b62212644f81167ac4"
+# ACCURSED_COMMIT   = "77b97e4760d385a82cc404b62212644f81167ac4"
 EXPORTED_RULES_NAME = "rules"
 
 stats       = {}
@@ -366,12 +366,10 @@ def list_orphans(interaction: Interaction):
     bundle = ""
     for card in orphans:
         bundle += card + '\n'
-        if len(bundle) > 1000:
-            queue_message(interaction, bundle)
-            bundle = ""
     if not bundle:
         bundle = "No orphans."
-    queue_message(interaction, bundle)
+    for bun in split_long_message(bundle):
+        queue_message(interaction, bun)
 
 def mass_replace_author(interaction: Interaction, author1: str = "", author2: str = ""):
     if not stats:
@@ -568,9 +566,8 @@ def manual_update_stats(interaction: Interaction, output_problematic_cards: bool
             bundle = ""
             for card in problem_cards:
                 bundle += card
-                if len(bundle) > 1000:
-                    queue_message(interaction, bundle)
-                    bundle = ""
+            for bun in split_long_message(bundle):
+                queue_message(interaction, bun)
 
             # Loop 2: Output cardnames only
             for card in problem_cards:
