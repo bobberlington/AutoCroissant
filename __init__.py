@@ -1,1 +1,1 @@
-# The existence of this file makes python to treat the directory as a package
+# The existence of this file makes python treat the directory as a package

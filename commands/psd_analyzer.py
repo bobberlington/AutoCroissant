@@ -1,623 +1,1414 @@
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from discord import Interaction, File
-from collections import defaultdict
+from enum import Enum
 from github import Github, Repository
 from logging import getLogger, CRITICAL
-from os import path as path_os, walk
-from os.path import getmtime, basename
-import pandas
+from os import walk
+from os.path import getmtime, basename, expanduser, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
-from re import finditer, sub
-from requests import get, Response
+from re import Pattern, compile as re_compile
+from requests import get
+from typing import Optional, Any
 from urllib.request import urlretrieve
+import pandas as pd
 
-from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL, METAD_PKL
-from commands.query_card import try_open_stats, query_psd_path
-from commands.utils import queue_edit, queue_message, queue_command, split_long_message
+import config
+from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL
+from commands.query_card import card_repo
+from commands.utils import queue_message, queue_file, queue_edit, queue_command, split_long_message
 
 getLogger("psd_tools").setLevel(CRITICAL)
-UPDATE_RATE         = 25
-LOCAL_REPO: str     = path_os.expanduser(LOCAL_DIR_LOC)
-EXCLUDE_FOLDERS     = ["markers", "MDW"]
+
+# ========================
+# Configuration
+# ========================
+UPDATE_RATE = 25
+EXCLUDE_FOLDERS = ["markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
-# ACCURSED_COMMIT   = "77b97e4760d385a82cc404b62212644f81167ac4"
 EXPORTED_RULES_NAME = "rules"
+GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 
-stats       = {}
-old_stats   = defaultdict(list)
-metadata    = {}
-all_types   = []
-dirty_files = []
 
-headers: dict   = None
-git_token: str  = None
-try:
-    import config
-    git_token = config.git_token
-    headers = {'Authorization': 'token ' + git_token}
-    print("Git token found, api will be limited to 5000 requests/hour.")
-except AttributeError:
-    print("No git token in config, api will be limited to 60 requests/hour.")
+class CardType(Enum):
+    """Enum for card types."""
+    UNKNOWN = "unknown"
+    MDW = "MDW"
+    FIELD = "field"
+    ITEM = "item"
+    CREATURE = "creature"
+    MINION = "minion"
+    AUX_ITEM = "aux item"
+    DEBUFF = "debuff"
+    BUFF = "buff"
+    NME = "nme"
 
-def pickle_stats():
-    with open(STATS_PKL, 'wb') as f:
-        dump(stats, f)
-    with open(OLD_STATS_PKL, 'wb') as f:
-        dump(old_stats, f)
-    with open(METAD_PKL, 'wb') as f:
-        dump(metadata, f)
 
-def load_stats():
-    global stats, old_stats, metadata
+@dataclass
+class MutableValue:
+    """A simple mutable wrapper for primitives."""
+    value: Any
 
-    print(f"Trying to open {METAD_PKL}")
-    try:
-        with open(METAD_PKL, 'rb') as f:
-            metadata = load(f)
-        print(f"Existing dict found in {METAD_PKL}, updating entries...")
-    except (EOFError, FileNotFoundError):
-        print(f"{METAD_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
-    print(f"Trying to open {STATS_PKL}")
-    try:
-        with open(STATS_PKL, 'rb') as f:
-            stats = load(f)
-            for key in metadata:
-                if key in stats:
-                    stats[key].update(metadata[key])
-        print(f"Existing dict found in {STATS_PKL}, updating entries...")
-    except (EOFError, FileNotFoundError):
-        print(f"{STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
+@dataclass
+class StatTracker:
+    """Tracks whether a stat was found and its accumulated value."""
+    found: bool = False
+    value: Optional[int] = None
 
-    print(f"Trying to open {OLD_STATS_PKL}")
-    try:
-        with open(OLD_STATS_PKL, 'rb') as f:
-            old_stats = load(f)
-        print(f"Existing dict found in {OLD_STATS_PKL}, updating entries...")
-    except (EOFError, FileNotFoundError):
-        print(f"{OLD_STATS_PKL} is completely empty or doesn't exist, rebuilding entire dict...")
 
-def parse_clean_cards():
-    prune_stats = []
-    for name in stats:
-        if name not in dirty_files:
-            old_stats[name].append(stats[name])
-            prune_stats.append(name)
-    for name in prune_stats:
-        stats.pop(name)
-    # Should we do this for metadata too?
+@dataclass
+class StatTrackers:
+    """Container for all card stat trackers."""
+    hp: StatTracker = field(default_factory=StatTracker)
+    defense: StatTracker = field(default_factory=StatTracker)
+    attack: StatTracker = field(default_factory=StatTracker)
+    speed: StatTracker = field(default_factory=StatTracker)
 
-def update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True) -> tuple[str, ...]:
-    load_stats()
-    problem_cards = None
-    if use_local_repo:
-        problem_cards = traverse_local_repo(interaction, output_problematic_cards, use_local_timestamp)
-    else:
-        problem_cards = traverse_repo(interaction, output_problematic_cards)
-    parse_clean_cards() # Now check which cards we actually edited in dirty_files, and move clean ones to old_stats since they don't exist anymore
-    pickle_stats() # Now that we updated the descriptions, store them back
-    return problem_cards
 
-def populate_types_stars(resp: Response | None = None, use_local_timestamp: bool = True):
-    if use_local_timestamp and resp is None:
-        for folder, _, files in walk(LOCAL_REPO + "/Types"):
-            for file in files:
-                if folder.endswith("Types"):
-                    all_types.append(file[:-4].lower())
-    elif resp:
-        for i in resp.json()["tree"]:
-            path: str = i["path"]
-            if path.startswith("Types") and "Stars" not in path and '.' in path:
-                all_types.append(basename(path)[:-4].lower())
+@dataclass
+class BoundingBox:
+    """Represents a bounding box with coordinates."""
+    x: int
+    y: int
 
-def classify_card(relative_loc: str):
-    if not relative_loc:
-        return
+    @classmethod
+    def from_tuple(cls, coords: tuple[int, int]) -> 'BoundingBox':
+        """Create BoundingBox from coordinate tuple."""
+        return cls(coords[0], coords[1])
 
-    folders = relative_loc.split('/')[:-1]
-    if len(folders) > 0 and folders[0] == "MDW":
+
+@dataclass
+class CardStats:
+    """Represents card statistics."""
+    hp: int = -1
+    defense: int = -1
+    attack: int = -1
+    speed: int = -1
+
+    def to_dict(self) -> dict[str, int]:
+        """Convert to dictionary format."""
         return {
-            "type" : "MDW",
-            "ability" : None
+            "hp": self.hp,
+            "def": self.defense,
+            "atk": self.attack,
+            "spd": self.speed,
         }
-    elif len(folders) > 0 and folders[0] == "Field":
-        return {
-            "type" : "field",
-            "stars" : int(folders[-1].split()[0])
+
+    def is_valid_stat(self, value: int) -> bool:
+        """Check if a stat value is valid."""
+        return value >= 0
+
+    def has_excessive_stats(self) -> bool:
+        """Check if any stat exceeds maximum value of 10."""
+        return any(
+            stat > 10 for stat in [self.hp, self.defense, self.attack, self.speed]
+            if self.is_valid_stat(stat)
+        )
+
+
+@dataclass
+class CardInfo:
+    """Complete card information."""
+    name: str
+    card_type: str
+    path: str = ""
+    timestamp: float = 0.0
+    ability: Optional[str] = None
+    stars: Optional[int] = None
+    subtype: Optional[str] = None
+    series: Optional[str] = None
+    types: list[str] = field(default_factory=list)
+    stats: CardStats = field(default_factory=CardStats)
+    problems: list[str] = field(default_factory=list)
+    author: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        """Convert card info to dictionary."""
+        result = {
+            "type": self.card_type,
+            "path": self.path,
+            "timestamp": self.timestamp,
         }
-    elif len(folders) > 0 and folders[0] == "Items":
-        return {
-            "type" : "item",
-            "subtype" : folders[-2].lower(),
-            "stars" : int(folders[-1].split()[0])
-        }
-    elif len(folders) > 0 and folders[0] == "Creatures":
-        return {
-            "type": "creature",
-            "stars": int(folders[-1].split()[0]),
-            "series": folders[-2].lower(),
-            "hp" : -1,
-            "def" : -1,
-            "atk" : -1,
-            "spd" : -1
-        }
-    elif len(folders) > 0 and folders[0] == "Auxiliary":
-        if len(folders) > 1 and folders[1] == "Minions":
-            return {
-                "type": "minion",
-                "hp" : -1,
-                "def" : -1,
-                "atk" : -1,
-                "spd" : -1
-            }
-        elif len(folders) > 1 and folders[1] == "Items":
-            return {
-                "type": "aux item"
-            }
-        elif len(folders) > 2 and folders[2] == "Debuffs":
-            return {
-                "type": "debuff",
-                "stars": int(folders[-1].split()[0])
-            }
-        elif len(folders) > 2 and folders[2] == "Buffs":
-            return {
-                "type": "buff"
-            }
+
+        if self.ability is not None:
+            result["ability"] = self.ability
+        if self.stars is not None:
+            result["stars"] = self.stars
+        if self.subtype:
+            result["subtype"] = self.subtype
+        if self.series:
+            result["series"] = self.series
+        if self.types:
+            result["types"] = self.types
+        if self.author:
+            result["author"] = self.author
+
+        # Add stats if they're valid
+        stats_dict = self.stats.to_dict()
+        for key, value in stats_dict.items():
+            if self.stats.is_valid_stat(value):
+                result[key] = value
+
+        if self.problems:
+            result["problem"] = self.problems
+
+        return result
+
+    @classmethod
+    def from_dict(cls, name: str, data: dict) -> 'CardInfo':
+        """Create CardInfo from dictionary (for loading from pickle)."""
+        # Extract stats
+        stats = CardStats(
+            hp=data.get("hp", -1),
+            defense=data.get("def", -1),
+            attack=data.get("atk", -1),
+            speed=data.get("spd", -1),
+        )
+
+        return cls(
+            name=name,
+            card_type=data.get("type", CardType.UNKNOWN.value),
+            path=data.get("path", ""),
+            timestamp=data.get("timestamp", 0.0),
+            ability=data.get("ability"),
+            stars=data.get("stars"),
+            subtype=data.get("subtype"),
+            series=data.get("series"),
+            types=data.get("types", []),
+            stats=stats,
+            problems=data.get("problem", []) if isinstance(data.get("problem"), list) else [],
+            author=data.get("author"))
+
+
+class StatsDatabase:
+    """Manages card statistics database."""
+    def __init__(self):
+        self.stats: dict[str, CardInfo] = {}
+        self.old_stats: defaultdict[str, list[CardInfo]] = defaultdict(list)
+        self.all_types: list[str] = []
+        self.dirty_files: list[str] = []
+
+        # Pre-compile regex patterns
+        self._whitespace_pattern: Pattern = re_compile(r'\s{3,}|\s{3,}:')
+        self._spacing_pattern: Pattern = re_compile(r'\s+([:;,\.\?!])')
+        self._ascii_pattern: Pattern = re_compile(r'[^\x00-\x7f]')
+
+        self._headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
+        if GIT_TOKEN:
+            print("Git token found, API limited to 5000 requests/hour.")
         else:
+            print("No git token in config, API limited to 60 requests/hour.")
+
+    def save(self) -> None:
+        """Save all databases to pickle files."""
+        with open(STATS_PKL, 'wb') as f:
+            dump(self.stats, f)
+        with open(OLD_STATS_PKL, 'wb') as f:
+            dump(self.old_stats, f)
+
+    def load(self) -> None:
+        """Load all databases from pickle files."""
+        self._load_stats()
+        self._load_old_stats()
+
+    def _load_stats(self) -> None:
+        """Load stats from pickle file."""
+        print(f"Trying to open {STATS_PKL}")
+        try:
+            with open(STATS_PKL, 'rb') as f:
+                self.stats = load(f)
+            print(f"Loaded existing stats from {STATS_PKL}")
+        except (EOFError, FileNotFoundError):
+            print(f"{STATS_PKL} is empty or doesn't exist, rebuilding...")
+            self.stats = {}
+
+    def _load_old_stats(self) -> None:
+        """Load old stats from pickle file."""
+        print(f"Trying to open {OLD_STATS_PKL}")
+        try:
+            with open(OLD_STATS_PKL, 'rb') as f:
+                self.old_stats = load(f)
+            print(f"Loaded existing old stats from {OLD_STATS_PKL}")
+        except (EOFError, FileNotFoundError):
+            print(f"{OLD_STATS_PKL} is empty or doesn't exist, starting fresh...")
+            self.old_stats = defaultdict(list)
+
+    def prune_clean_cards(self) -> None:
+        """Move cards not in dirty_files to old_stats."""
+        cards_to_remove = []
+        for name, card in self.stats.items():
+            if name not in self.dirty_files:
+                self.old_stats[name].append(card)
+                cards_to_remove.append(name)
+
+        for name in cards_to_remove:
+            self.stats.pop(name)
+
+
+class CardClassifier:
+    """Classifies cards based on their path."""
+    @staticmethod
+    def classify(relative_path: str) -> dict:
+        """
+        Classify card based on its relative path in repository.
+
+        Args:
+            relative_path: Relative path to card file
+
+        Returns:
+            Dictionary with card classification info
+        """
+        if not relative_path:
+            return {"type": CardType.UNKNOWN.value}
+
+        folders = relative_path.split('/')[:-1]
+        if not folders:
+            return {"type": CardType.UNKNOWN.value}
+
+        top_folder = folders[0]
+
+        # Classification logic
+        classifiers = {
+            "MDW": lambda: {"type": CardType.MDW.value, "ability": None},
+            "Field": lambda: {
+                "type": CardType.FIELD.value,
+                "stars": int(folders[-1].split()[0]),
+            },
+            "Items": lambda: {
+                "type": CardType.ITEM.value,
+                "subtype": folders[-2].lower(),
+                "stars": int(folders[-1].split()[0]),
+            },
+            "Creatures": lambda: {
+                "type": CardType.CREATURE.value,
+                "stars": int(folders[-1].split()[0]),
+                "series": folders[-2].lower(),
+                "hp": -1, "def": -1, "atk": -1, "spd": -1,
+            },
+            "N.M.E": lambda: {"type": CardType.NME.value},
+        }
+
+        if top_folder in classifiers:
+            return classifiers[top_folder]()
+
+        if top_folder == "Auxiliary":
+            return CardClassifier._classify_auxiliary(folders)
+
+        return {"type": CardType.UNKNOWN.value}
+
+    @staticmethod
+    def _classify_auxiliary(folders: list[str]) -> dict:
+        """Classify auxiliary cards."""
+        if len(folders) < 2:
+            return {"type": folders[-1].lower() if folders else CardType.UNKNOWN.value}
+
+        aux_type = folders[1]
+
+        if aux_type == "Minions":
             return {
-                "type": folders[-1].lower()
+                "type": CardType.MINION.value,
+                "hp": -1, "def": -1, "atk": -1, "spd": -1,
             }
-    elif len(folders) > 0 and folders[0] == "N.M.E":
-        return {
-            "type": "nme"
-        }
-    else:
-        return {
-            "type" : "unknown"
-        }
+        elif aux_type == "Items":
+            return {"type": CardType.AUX_ITEM.value}
+        elif len(folders) > 2:
+            if folders[2] == "Debuffs":
+                return {
+                    "type": CardType.DEBUFF.value,
+                    "stars": int(folders[-1].split()[0]),
+                }
+            elif folders[2] == "Buffs":
+                return {"type": CardType.BUFF.value}
 
-def sort_bbox(bboxes: tuple[tuple[str, tuple[int, int]]], epsilon: int = 10) -> tuple[tuple[str, tuple[int, int]]]:
-    """
-    Sorts a list of (label, (x, y)) pairs first by y-coordinate, then by x-coordinate.
-    Rows are grouped if their y-coordinates are within epsilon.
+        return {"type": folders[-1].lower()}
 
-    :param bboxes: List of (label, (x, y)) tuples.
-    :param epsilon: Tolerance for grouping items in the same row.
-    :return: Sorted list of bboxes.
-    """
-    # Sort primarily by y with epsilon tolerance, then by x
-    return sorted(bboxes, key=lambda item: (item[1][1] // epsilon, item[1][0]))
 
-def prune_bbox(bboxes: tuple[tuple[str, tuple[int, int]]]) -> tuple[tuple[str, tuple[int, int]]]:
-    if len(bboxes) == 0:
-        return bboxes
-    max_bbox_height = max(bboxes[-1][1][1] // 3, 400)
-    return [bbox for bbox in bboxes if bbox[1][1] >= max_bbox_height]
+class PSDParser:
+    """Parses PSD files to extract card information."""
+    def __init__(self, all_types: list[str]):
+        self.all_types = all_types
+        self._whitespace_pattern = re_compile(r'\s{3,}|\s{3,}:')
+        self._spacing_pattern = re_compile(r'\s+([:;,\.\?!])')
 
-# Well, we can extract all images from a psd file, if we want to for some reason
-def extract_all_images_from_psd(file_loc: str):
-    count = 0
-    for layer in PSDImage.open(file_loc).descendants():
-        if layer.has_pixels():
-            layer_image = layer.topil()
-            layer_image.save(f"{layer.name}{str(count)}.png")
-            count += 1
+    def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
+        """
+        Parse a PSD file to extract card information.
 
-def extract_info_from_psd(file_loc: str, relative_loc: str = ""):
-    card = classify_card(relative_loc)
-    longest_text = ""
-    num_stars = 0
-    hp = df = atk = spd = None
-    get_stars_from_psd = is_rulepage = hp_found = df_found = atk_found = spd_found = False
-    type_bboxes: list[tuple[str, tuple[int, int]]] = []
-    types: list[str] = []
-    abilities: list[str] = []
+        Args:
+            file_path: Full path to PSD file
+            relative_path: Relative path in repository
 
-    if "Rulebook" in relative_loc:
-        is_rulepage = True
-    elif "Auxiliary/Items" in relative_loc or "Auxiliary/Minions" in relative_loc or "N.M.E" in relative_loc:
-        get_stars_from_psd = True
-    for layer in PSDImage.open(file_loc).descendants():
+        Returns:
+            CardInfo object with extracted data
+        """
+        # Initialize card with classification
+        card_dict = CardClassifier.classify(relative_path)
+
+        card = CardInfo(
+            name=basename(relative_path)[:-4].replace('_', ' '),
+            card_type=card_dict.get("type", CardType.UNKNOWN.value),
+            path=relative_path,
+            stars=card_dict.get("stars"),
+            subtype=card_dict.get("subtype"),
+            series=card_dict.get("series"),
+        )
+
+        # Set initial stats if present
+        if "hp" in card_dict:
+            card.stats = CardStats(
+                hp=card_dict.get("hp", -1),
+                defense=card_dict.get("def", -1),
+                attack=card_dict.get("atk", -1),
+                speed=card_dict.get("spd", -1),
+            )
+
+        # Parse PSD layers
+        self._extract_from_layers(PSDImage.open(file_path), card, relative_path)
+
+        return card
+
+    def _extract_from_layers(self,
+                             psd: PSDImage,
+                             card: CardInfo,
+                             relative_path: str) -> None:
+        """Extract information from PSD layers."""
+        longest_text = MutableValue("")
+        num_stars = MutableValue(0)
+        stat_trackers = StatTrackers()
+        type_bboxes: list[tuple[str, BoundingBox]] = []
+        abilities: list[tuple[str, BoundingBox]] = []
+
+        is_rulepage = "Rulebook" in relative_path
+        get_stars_from_psd = any(
+            folder in relative_path
+            for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
+        )
+
+        for layer in psd.descendants():
+            self._process_layer(
+                layer, card, longest_text, num_stars,
+                stat_trackers, type_bboxes, abilities,
+                is_rulepage, get_stars_from_psd)
+
+        # Process abilities
+        self._process_abilities(card, abilities, type_bboxes, longest_text.value)
+
+        # Process stats
+        self._process_stats(card, stat_trackers)
+
+        # Process types
+        if type_bboxes:
+            card.types = [name for name, _ in type_bboxes if name]
+
+        # Set stars if extracted from PSD
+        if get_stars_from_psd:
+            card.stars = num_stars.value
+
+    def _process_layer(self,
+                       layer,
+                       card: CardInfo,
+                       longest_text: MutableValue,
+                       num_stars: MutableValue,
+                       stat_trackers: StatTrackers,
+                       type_bboxes: list,
+                       abilities: list,
+                       is_rulepage: bool,
+                       get_stars_from_psd: bool) -> None:
+        """Process a single PSD layer."""
+        # Text layers
         if layer.kind == "type":
-            layer_text = str(layer.engine_dict["Editor"]["Text"]).replace('\\r', '\n').replace('\\n', '\n').replace('\\t', ' ').replace('\\x03', '\n').replace('\\ufeff', '').rstrip()
-            if layer.name.lower() == "ability" or is_rulepage:
-                abilities.append((layer_text.strip('\'" '), layer.bbox[:2]))
-            elif layer.bbox[1] > 400 and len(layer_text) > len(longest_text):
-                longest_text = layer_text
-        elif "dark" in layer.parent.name.lower() or (layer.parent.parent and "dark" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "dark" in layer.parent.parent.parent.name.lower()) \
-            or "bars" in layer.parent.name.lower() or (layer.parent.parent and "bars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "bars" in layer.parent.parent.parent.name.lower()):
-            if ("hp" in layer.parent.name.lower() or "hp" in layer.parent.parent.name.lower()) and layer.name.isdigit():
-                if layer.is_visible():
-                    if hp is None:
-                        hp = 0
-                    hp += int(layer.name)
-                hp_found = True
-            elif ("def" in layer.parent.name.lower() or "def" in layer.parent.parent.name.lower()) and layer.name.isdigit():
-                if layer.is_visible():
-                    if df is None:
-                        df = 0
-                    df += int(layer.name)
-                df_found = True
-            elif ("atk" in layer.parent.name.lower() or "atk" in layer.parent.parent.name.lower()) and layer.name.isdigit():
-                if layer.is_visible():
-                    if atk is None:
-                        atk = 0
-                    atk += int(layer.name)
-                atk_found = True
-            elif ("spd" in layer.parent.name.lower() or "spd" in layer.parent.parent.name.lower()) and layer.name.isdigit():
-                if layer.is_visible():
-                    if spd is None:
-                        spd = 0
-                    spd += int(layer.name)
-                spd_found = True
-        elif layer.name.lower() in all_types and layer.is_visible() and layer.has_pixels():
-            if layer.bbox[1] < 400:
-                types.append(layer.name.lower())
+            self._process_text_layer(layer, longest_text, abilities, is_rulepage)
+
+        # Stat layers
+        elif self._is_stat_layer(layer):
+            self._process_stat_layer(layer, stat_trackers)
+
+        # Type layers
+        elif (layer.name.lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
+            bbox = BoundingBox.from_tuple(layer.bbox[:2])
+            if bbox.y < 400:
+                card.types.append(layer.name.lower())
             else:
-                type_bboxes.append((layer.name.lower(), layer.bbox[:2]))
-        elif get_stars_from_psd and ("stars" in layer.parent.name.lower() or (layer.parent.parent and "stars" in layer.parent.parent.name.lower()) or (layer.parent.parent and layer.parent.parent.parent and "stars" in layer.parent.parent.parent.name.lower())):
+                type_bboxes.append((layer.name.lower(), bbox))
+
+        # Star layers
+        elif get_stars_from_psd and self._is_star_layer(layer):
             if layer.is_visible() and layer.has_pixels():
-                num_stars += 1
+                num_stars.value += 1
 
-    abilities = sort_bbox(abilities)
-    ability = '\n'.join([i[0] for i in abilities])
-    # Failsafe for when creature does not have a text layer called "ability"
-    if not ability:
-        ability = longest_text
-        if "problem" not in card:
-            card["problem"] = []
-        card["problem"].append("NO ABILITY LAYER")
-    if ability:
-        type_bboxes = prune_bbox(sort_bbox(type_bboxes))
-        # Find all instances of multiple whitespace, or whitespace followed by colon
-        matches = [match for match in finditer(r'\s{3,}|\s{3,}:', ability)]
+    def _process_text_layer(self,
+                            layer,
+                            longest_text: MutableValue,
+                            abilities: list,
+                            is_rulepage: bool) -> None:
+        """Process text layer."""
+        layer_text = str(layer.engine_dict["Editor"]["Text"])
+        layer_text = (layer_text
+            .replace('\\r', '\n')
+            .replace('\\n', '\n')
+            .replace('\\t', ' ')
+            .replace('\\x03', '\n')
+            .replace('\\ufeff', '')
+            .rstrip())
 
-        if len(matches) > 0 and len(type_bboxes) > 0:
-            if len(type_bboxes) < len(matches):
-                if "problem" not in card:
-                    card["problem"] = []
-                card["problem"].append("INCORRECT TYPE NAMES")
-            else:
-                count = len(type_bboxes) - 1
-                for match in matches[::-1]:
-                    ability = ability[:match.start()] + ' ' + type_bboxes[count][0] + ' ' + ability[match.end():]
-                    count -= 1
-        card["ability"] = sub(r'\s+([:;,\.\?!])', r'\1', ability).strip('\'" ').strip()
+        if layer.name.lower() == "ability" or is_rulepage:
+            bbox = BoundingBox.from_tuple(layer.bbox[:2])
+            abilities.append((layer_text.strip('\'" '), bbox))
+        elif layer.bbox[1] > 400 and len(layer_text) > len(longest_text.value):
+            longest_text.value = layer_text
 
-    # If we actually did find a stat value inside the card, but there was no visible "dark" layer,
-    # assume the stat is equal to 10.
-    if hp_found and hp is None:
-        hp = 10
-    if df_found and df is None:
-        df = 10
-    if atk_found and atk is None:
-        atk = 10
-    if spd_found and spd is None:
-        spd = 10
+    def _is_stat_layer(self, layer) -> bool:
+        """Check if layer is a stat layer."""
+        keywords = ["dark", "bars"]
+        parent_names = []
 
-    if hp is not None:
-        card["hp"] = hp
-    if df is not None:
-        card["def"] = df
-    if atk is not None:
-        card["atk"] = atk
-    if spd is not None:
-        card["spd"] = spd
+        current = layer.parent
+        depth = 0
+        while current and depth < 3:
+            parent_names.append(current.name.lower())
+            current = getattr(current, 'parent', None)
+            depth += 1
 
-    if types:
-        card["types"] = types
+        return any(keyword in name for name in parent_names for keyword in keywords)
 
-    if get_stars_from_psd:
-        card["stars"] = num_stars
+    def _process_stat_layer(self, layer, stat_trackers: StatTrackers) -> None:
+        """Process stat layer."""
+        if not layer.name.isdigit():
+            return
 
-    return card
+        parent_names = []
+        current = layer.parent
+        depth = 0
+        while current and depth < 2:
+            parent_names.append(current.name.lower())
+            current = getattr(current, 'parent', None)
+            depth += 1
 
-def problem_card_checker(card: dict[str, str]) -> tuple[str, ...]:
-    problems = []
-    if card["type"] == "unknown":
-        problems.append("UNKOWN TYPE")
-    if card["type"] != "unknown" and (not "ability" in card or card["ability"] is None):
-        problems.append("ABILITY TEXT NOT FOUND")
+        # Map short names to StatTracker attributes
+        stat_map = {
+            "hp": stat_trackers.hp,
+            "def": stat_trackers.defense,
+            "atk": stat_trackers.attack,
+            "spd": stat_trackers.speed,
+        }
 
-    if (card["type"] == "creature" or card["type"] == "minion") and card["hp"] == -1:
-        problems.append("HP NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and card["def"] == -1:
-        problems.append("DEF NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and not ("types" in card and "active" in card["types"]) and card["atk"] == -1:
-        problems.append("ATK NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and not ("types" in card and "active" in card["types"]) and card["spd"] == -1:
-        problems.append("SPD NOT FOUND")
-    if (card["type"] == "creature" or card["type"] == "minion") and (card["hp"] > 10 or card["def"] > 10 or card["atk"] > 10 or card["spd"] > 10):
-        problems.append("STATS TOO HIGH")
+        for stat_key, tracker in stat_map.items():
+            if any(stat_key in name for name in parent_names):
+                tracker.found = True
+                if layer.is_visible():
+                    if tracker.value is None:
+                        tracker.value = 0
+                    tracker.value += int(layer.name)
+                break
 
-    if "problem" in card and card["problem"]:
-        problems.extend(card["problem"])
+    def _is_star_layer(self, layer) -> bool:
+        """Check if layer is a star layer."""
+        parent_names = []
+        current = layer.parent
+        depth = 0
+        while current and depth < 3:
+            parent_names.append(current.name.lower())
+            current = getattr(current, 'parent', None)
+            depth += 1
 
-    return problems
+        return any("stars" in name for name in parent_names)
 
-def log_problematic_cards(problematic_cards):
-    problem_cards = []
-    for loc, card, problems in problematic_cards:
-        problem_cards.append(f"{loc}\n" + '```' + '\n'.join(problems) + '```')
-    return problem_cards
+    def _process_abilities(self,
+                           card: CardInfo,
+                           abilities: list[tuple[str, BoundingBox]],
+                           type_bboxes: list[tuple[str, BoundingBox]],
+                           longest_text: str) -> None:
+        """Process and combine ability texts."""
+        abilities = self._sort_by_position(abilities)
+        ability_text = '\n'.join(text for text, _ in abilities)
 
-def get_card_stats(interaction: Interaction, query: str):
-    if not stats:
-        load_stats()
-    
-    path = query_psd_path(query)
-    name = basename(path)[:-4].replace('_', ' ')
-    if name in stats:
-        pretty_print_dict = '\n'.join("{!r}: {!r},".format(k, v) for k, v in stats[name].items())
-        queue_message(interaction, f"Stats for {name}:```{pretty_print_dict}```")
-    else:
-        queue_message(interaction, f"No stats found for {name}.")
+        if not ability_text:
+            ability_text = longest_text
+            if ability_text:
+                card.problems.append("NO ABILITY LAYER")
 
-def list_orphans(interaction: Interaction):
-    if not stats:
-        load_stats()
-    
-    orphans = []
-    for name in stats:
-        if "author" not in stats[name] or not stats[name]["author"]:
-            orphans.append(name)
+        if ability_text:
+            type_bboxes = self._prune_type_bboxes(
+                self._sort_by_position(type_bboxes)
+            )
+            ability_text = self._inject_type_names(
+                ability_text, type_bboxes
+            )
+            card.ability = self._spacing_pattern.sub(
+                r'\1', ability_text
+            ).strip('\'" ').strip()
 
-    bundle = ""
-    for card in orphans:
-        bundle += card + '\n'
-    if not bundle:
-        bundle = "No orphans."
-    for bun in split_long_message(bundle):
-        queue_message(interaction, bun)
+    def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
+        """Process stat values."""
+        if not card.stats:
+            card.stats = CardStats()
 
-def mass_replace_author(interaction: Interaction, author1: str = "", author2: str = ""):
-    if not stats:
-        load_stats()
+        # Assign each stat value if found
+        for stat_attr, tracker in [
+            ("hp", stat_trackers.hp),
+            ("defense", stat_trackers.defense),
+            ("attack", stat_trackers.attack),
+            ("speed", stat_trackers.speed)]:
+            if tracker.found:
+                value = tracker.value if tracker.value is not None else 10
+                setattr(card.stats, stat_attr, value)
 
-    num_replaced = 0
-    for name in metadata:
-        if metadata[name]["author"] == author1:
-            metadata[name]["author"] = author2
-            if name in stats:
-                stats[name]["author"] = author2
-            num_replaced += 1
+    @staticmethod
+    def _sort_by_position(items: list[tuple[str, BoundingBox]],
+                          epsilon: int = 10) -> list[tuple[str, BoundingBox]]:
+        """Sort items by position (y then x)."""
+        return sorted(items, key=lambda item: (item[1].y // epsilon, item[1].x))
 
-    pickle_stats()
-    queue_message(interaction, f"{num_replaced} instances of {author1} replaced with {author2}.")
+    @staticmethod
+    def _prune_type_bboxes(bboxes: list[tuple[str, BoundingBox]]) -> list[tuple[str, BoundingBox]]:
+        """Remove type bboxes that are too high up."""
+        if not bboxes:
+            return bboxes
+        max_height = max(bboxes[-1][1].y // 3, 400)
+        return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
-def manual_metadata_entry(interaction: Interaction, query: str, del_entry: bool = False, author: str = ""):
-    if not stats:
-        load_stats()
+    def _inject_type_names(self,
+                           ability: str,
+                           type_bboxes: list[tuple[str, BoundingBox]]) -> str:
+        """Inject type names into ability text."""
+        matches = list(self._whitespace_pattern.finditer(ability))
 
-    path = query_psd_path(query)
-    name = basename(path)[:-4].replace('_', ' ')
-    if del_entry:
-        if name in metadata:
-            del metadata[name]
-            pickle_stats()
-        return queue_message(interaction, f"{name} key was deleted from metadata.")
+        if not matches or not type_bboxes:
+            return ability
 
-    if name not in metadata:
-        metadata[name] = {}
-    if author:
-        metadata[name]["author"] = author
+        if len(type_bboxes) < len(matches):
+            # This will be flagged as a problem later
+            return ability
 
-    if name in stats:
-        stats[name].update(metadata[name])
-    pickle_stats()
-    queue_message(interaction, f"{name} metadata updated to {metadata[name]}.")
+        # Replace matches in reverse order to maintain indices
+        count = len(type_bboxes) - 1
+        for match in reversed(matches):
+            type_name = type_bboxes[count][0]
+            ability = (
+                ability[:match.start()] +
+                ' ' + type_name + ' ' +
+                ability[match.end():]
+            )
+            count -= 1
 
-def set_metadata(commits: list, name: str):
-    # if commits[commits.totalCount - 1].commit.sha != ACCURSED_COMMIT:
-    author = commits[commits.totalCount - 1].commit.committer.name
-    if name not in metadata:
-        metadata[name] = {}
-    if "author" not in metadata[name] or not metadata[name]["author"]:
-        metadata[name]["author"] = author
+        return ability
 
-def set_remote_timestamp(repo: Repository.Repository, path: str):
-    commits = repo.get_commits(path=path)
-    # If this is somehow an empty list, return an invalid old timestamp
-    if commits.totalCount == 0:
-        print(f"{path} has no valid timestamp.")
-        return datetime(1000, 1, 1).timestamp()
 
-    set_metadata(commits, basename(path)[:-4].replace('_', ' '))
-    return commits[0].commit.committer.date.timestamp()
+class CardValidator:
+    """Validates card information for problems."""
+    EXCESSIVE_STAT_EXCLUSIONS: set[str] = {
+        "Royal Eradicator Main Cannon",
+        "Pix",
+        "Tainted Lazarus",
+        "Sonic",
+        "Twin Emperors",
+    }
 
-def traverse_repo(interaction: Interaction = None, output_problematic_cards: bool = True) -> tuple[str, ...]:
-    from commands.query_card import REPOSITORY
-    resp = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
-    if resp.status_code != 200:
-        print(f"Error when trying to connect to {REPOSITORY}")
-        return resp.status_code
-    # This uses an api request
-    repo = Github(login_or_token=git_token).get_repo(REPOSITORY)
+    @staticmethod
+    def validate(card: CardInfo) -> list[str]:
+        """
+        Validate card and return list of problems.
 
-    populate_types_stars(resp, False)
-    problematic_cards = []
-    num_updated = 0
-    num_new = 0
-    num_old = 0
-    for i in resp.json()["tree"]:
-        path: str = i["path"]
-        if "MDW" in path:
-            continue
-        if path.endswith('.psd'):
-            date: datetime = set_remote_timestamp(repo, path)
+        Args:
+            card: CardInfo to validate
+
+        Returns:
+            List of problem descriptions
+        """
+        problems = []
+
+        # Type problems
+        if card.card_type == CardType.UNKNOWN.value:
+            problems.append("UNKNOWN TYPE")
+
+        # Ability problems
+        if (card.card_type != CardType.UNKNOWN.value and
+            card.card_type != CardType.MDW.value and
+            not card.ability):
+            problems.append("ABILITY TEXT NOT FOUND")
+
+        # Stat problems
+        if card.card_type in [CardType.CREATURE.value, CardType.MINION.value]:
+            problems.extend(CardValidator._validate_stats(card))
+
+        # Add any problems found during parsing
+        if card.problems:
+            problems.extend(card.problems)
+
+        return problems
+
+    @staticmethod
+    def _validate_stats(card: CardInfo) -> list[str]:
+        """Validate stats for creatures and minions."""
+        problems = []
+        stats = card.stats
+
+        # Check for missing stats
+        if stats.hp == -1:
+            problems.append("HP NOT FOUND")
+        if stats.defense == -1:
+            problems.append("DEF NOT FOUND")
+
+        # Active types don't need ATK/SPD
+        is_active = "active" in card.types if card.types else False
+
+        if not is_active:
+            if stats.attack == -1:
+                problems.append("ATK NOT FOUND")
+            if stats.speed == -1:
+                problems.append("SPD NOT FOUND")
+
+        # Check for excessive stats — but skip excluded cards
+        if (stats.has_excessive_stats() and
+            card.name not in CardValidator.EXCESSIVE_STAT_EXCLUSIONS):
+            problems.append("STATS TOO HIGH")
+
+        return problems
+
+
+class RepositoryTraverser:
+    """Traverses repository to update card stats."""
+    def __init__(self, db: StatsDatabase):
+        self.db = db
+        self.parser: Optional[PSDParser] = None
+        self._github_client: Optional[Github] = None
+
+    def _check_for_path_change(self, name: str, new_path: str) -> bool:
+        """
+        Check if a card's path has changed and update if needed.
+
+        Args:
+            name: Card name
+            new_path: New path for the card
+
+        Returns:
+            True if path changed, False otherwise
+        """
+        if name in self.db.stats:
+            old_path = self.db.stats[name].path
+            if old_path and old_path != new_path:
+                # Archive old version with the old path
+                old_card = self.db.stats[name]
+                self.db.old_stats[name].append(old_card)
+                return True
+        return False
+
+    def _update_old_stats_paths(self) -> None:
+        """
+        Update paths in old_stats to match current paths.
+        This ensures historical entries reflect where the card is now located.
+        """
+        for name in self.db.old_stats:
+            if name in self.db.stats:
+                current_path = self.db.stats[name].path
+                # Update all historical entries to use the current path
+                for old_card in self.db.old_stats[name]:
+                    old_card.path = current_path
+
+    def _should_update_card(self,
+                            name: str,
+                            timestamp: float,
+                            new_path: str) -> tuple[bool, bool]:
+        """
+        Determine if a card should be updated.
+
+        Args:
+            name: Card name
+            timestamp: New timestamp
+            new_path: New path
+
+        Returns:
+            Tuple of (should_update, is_new_card)
+        """
+        if name not in self.db.stats:
+            return (True, True)
+
+        # Check for path change
+        path_changed = self._check_for_path_change(name, new_path)
+
+        # Check timestamp
+        timestamp_newer = self.db.stats[name].timestamp < timestamp
+
+        # Update if path changed OR timestamp is newer
+        should_update = path_changed or timestamp_newer
+
+        return (should_update, False)
+
+    def traverse_remote(self,
+                        repository: str,
+                        interaction: Optional[Interaction] = None,
+                        output_problematic: bool = True) -> list[str]:
+        """
+        Traverse remote GitHub repository.
+
+        Args:
+            repository: Repository name (owner/repo)
+            interaction: Optional Discord interaction for progress updates
+            output_problematic: Whether to output problematic cards
+
+        Returns:
+            List of formatted problem card messages
+        """
+        resp = get(
+            f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1",
+            headers=self.db._headers,
+            timeout=30)
+
+        self._github_client = Github(login_or_token=GIT_TOKEN)
+        repo = self._github_client.get_repo(repository)
+
+        self._populate_types_from_response(resp)
+        self.parser = PSDParser(self.db.all_types)
+
+        problems = self._process_files_from_response(resp, repo, interaction, output_problematic)
+
+        # Update old_stats paths after processing all files
+        self._update_old_stats_paths()
+
+        return problems
+
+    def traverse_local(self,
+                       repository: str,
+                       local_path: str,
+                       interaction: Optional[Interaction] = None,
+                       output_problematic: bool = True,
+                       use_local_timestamp: bool = True) -> list[str]:
+        """
+        Traverse local repository directory.
+
+        Args:
+            repository: Repository name
+            local_path: Path to local repository
+            interaction: Optional Discord interaction
+            output_problematic: Whether to output problematic cards
+            use_local_timestamp: Use local file timestamps vs remote
+
+        Returns:
+            List of formatted problem card messages
+        """
+        if not use_local_timestamp:
+            print(f"Warning: Remote timestamps use API requests (limit: {5000 if GIT_TOKEN else 60}/hour)")
+            self._github_client = Github(login_or_token=GIT_TOKEN)
+            repo = self._github_client.get_repo(repository)
+        else:
+            repo = None
+
+        self._populate_types_from_local(local_path)
+        self.parser = PSDParser(self.db.all_types)
+
+        problems = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp)
+
+        # Update old_stats paths after processing all files
+        self._update_old_stats_paths()
+
+        return problems
+
+    def _populate_types_from_response(self, response) -> None:
+        """Populate card types from API response."""
+        self.db.all_types.clear()
+        for item in response.json().get("tree", []):
+            path = item.get("path", "")
+            if path.startswith("Types") and "Stars" not in path and '.' in path:
+                self.db.all_types.append(basename(path)[:-4].lower())
+
+    def _populate_types_from_local(self, local_path: str) -> None:
+        """Populate card types from local directory."""
+        self.db.all_types.clear()
+        types_dir = path_join(local_path, "Types")
+        for folder, _, files in walk(types_dir):
+            if folder.endswith("Types"):
+                for file in files:
+                    self.db.all_types.append(file[:-4].lower())
+
+    def _process_files_from_response(self,
+                                     response,
+                                     repo: Repository.Repository,
+                                     interaction: Optional[Interaction],
+                                     output_problematic: bool) -> list[str]:
+        """Process files from API response."""
+        problematic_cards = []
+        num_updated = 0
+        num_new = 0
+        num_old = 0
+        num_moved = 0
+
+        for item in response.json().get("tree", []):
+            path = item.get("path", "")
+
+            if not path.endswith('.psd') or "MDW" in path:
+                continue
+
             name = basename(path)[:-4].replace('_', ' ')
-            dirty_files.append(name)
+            self.db.dirty_files.append(name)
 
-            if name in stats and stats[name]["timestamp"] >= date:
+            # Get timestamp and author metadata
+            timestamp, author = self._get_remote_timestamp(repo, path, name)
+
+            # Check if update needed
+            should_update, is_new = self._should_update_card(name, timestamp, path)
+
+            if not should_update:
                 num_old += 1
             else:
-                num_new += 1
-                if name in stats and stats[name]["timestamp"] < date:
-                    old_stats[name].append(stats[name])
+                if is_new:
+                    num_new += 1
+                # Check if it's a move vs a content update
+                elif name in self.db.stats and self.db.stats[name].path != path:
+                    num_moved += 1
+                else:
+                    num_new += 1
 
-                path_no_spaces = path.replace(" ", "%20")
-                # This uses an api request
-                card = extract_info_from_psd(urlretrieve(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{path_no_spaces}")[0], path)
-                card["path"] = path
-                card["timestamp"] = date
-                stats[name] = card
+                # Download and parse
+                url = card_repo.get_card_url(name)[:-4] + '.psd'
+                card = self.parser.parse(urlretrieve(url)[0], path)
 
-                if output_problematic_cards and card["type"] not in EXCLUDE_FOLDERS:
-                    problems = problem_card_checker(card)
+                card.timestamp = timestamp
+                # Set author if it was fetched earlier
+                if author:
+                    card.author = author
+                self.db.stats[name] = card
+
+                # Validate
+                if output_problematic and card.card_type not in EXCLUDE_FOLDERS:
+                    problems = CardValidator.validate(card)
                     if problems:
                         problematic_cards.append((path, card, problems))
 
             num_updated += 1
-            if not num_updated % UPDATE_RATE:
-                if interaction:
-                    queue_edit(interaction, content=f"{num_updated} Cards updated.")
-                else:
-                    print(f"{num_updated} Cards updated.")
+            if num_updated % UPDATE_RATE == 0:
+                self._send_progress(interaction, num_updated)
 
-    if interaction:
-        queue_message(interaction, f"{num_new} Had newer timestamps.")
-        queue_message(interaction, f"{num_old} Did not have newer timestamps.")
-    else:
-        print(f"{num_new} Had newer timestamps.")
-        print(f"{num_old} Did not have newer timestamps.")
-    return log_problematic_cards(problematic_cards)
+        self._send_summary(interaction, num_new, num_old, num_moved)
+        return self._format_problems(problematic_cards)
 
-def traverse_local_repo(interaction: Interaction = None, output_problematic_cards: bool = True, use_local_timestamp: bool = True):
-    from commands.query_card import REPOSITORY
-    repo = None
-    if not use_local_timestamp:
-        print(f"Warning: Getting the timestamp of a remote file uses up an api request, you can make up to {5000 if git_token else 60} requests")
-        repo = Github(login_or_token=git_token).get_repo(REPOSITORY)
+    def _process_local_files(self,
+                             local_path: str,
+                             repo: Optional[Repository.Repository],
+                             interaction: Optional[Interaction],
+                             output_problematic: bool,
+                             use_local_timestamp: bool) -> list[str]:
+        """Process files from local directory."""
+        problematic_cards = []
+        num_updated = 0
+        num_new = 0
+        num_old = 0
+        num_moved = 0
 
-    populate_types_stars(None, True)
-    problematic_cards = []
-    num_updated = 0
-    num_new = 0
-    num_old = 0
-    for folder, _, files in walk(LOCAL_REPO):
-        if "MDW" in folder:
-            continue
-        folder += '/'
-        for file in files:
-            if file.endswith('.psd'):
-                full_file = folder.replace('\\', '/') + file
-                truncated_file = full_file.split("TTSCardMaker")[-1].strip('/')
-                name = basename(truncated_file)[:-4].replace('_', ' ')
-                dirty_files.append(name)
+        for folder, _, files in walk(local_path):
+            if folder in EXCLUDE_FOLDERS:
+                continue
 
-                date = -1.0
+            for file in files:
+                if not file.endswith('.psd'):
+                    continue
+
+                full_path = path_join(folder, file).replace('\\', '/')
+                relative_path = full_path.split("TTSCardMaker")[-1].strip('/')
+                name = basename(relative_path)[:-4].replace('_', ' ')
+                self.db.dirty_files.append(name)
+
+                # Get timestamp
+                author = None
                 if use_local_timestamp:
-                    date = getmtime(full_file)
+                    timestamp = getmtime(full_path)
                 else:
-                    date: datetime = set_remote_timestamp(repo, truncated_file)
+                    timestamp, author = self._get_remote_timestamp(repo, relative_path, name)
 
-                if name in stats and stats[name]["timestamp"] >= date:
+                # Check if update needed
+                should_update, is_new = self._should_update_card(name, timestamp, relative_path)
+
+                if not should_update:
                     num_old += 1
                 else:
-                    num_new += 1
-                    if name in stats and stats[name]["timestamp"] < date:
-                        old_stats[name].append(stats[name])
+                    if is_new:
+                        num_new += 1
+                    # Check if it's a move vs a content update
+                    elif name in self.db.stats and self.db.stats[name].path != relative_path:
+                        num_moved += 1
+                    else:
+                        num_new += 1
 
-                    card = extract_info_from_psd(full_file, truncated_file)
-                    card["path"] = truncated_file
-                    card["timestamp"] = date
-                    stats[name] = card
+                    # Parse local file
+                    card = self.parser.parse(full_path, relative_path)
+                    card.timestamp = timestamp
+                    # Set author if it was fetched earlier
+                    if author:
+                        card.author = author
+                    self.db.stats[name] = card
 
-                    if output_problematic_cards and card["type"] not in EXCLUDE_FOLDERS:
-                        problems = problem_card_checker(card)
+                    # Validate
+                    if output_problematic and card.card_type not in EXCLUDE_FOLDERS:
+                        problems = CardValidator.validate(card)
                         if problems:
-                            problematic_cards.append((truncated_file, card, problems))
+                            problematic_cards.append((relative_path, card, problems))
 
                 num_updated += 1
-                if not num_updated % UPDATE_RATE:
-                    if interaction:
-                        queue_edit(interaction, content=f"{num_updated} Cards updated.")
-                    else:
-                        print(f"{num_updated} Cards updated.")
+                if num_updated % UPDATE_RATE == 0:
+                    self._send_progress(interaction, num_updated)
 
-    if interaction:
-        queue_message(interaction, f"{num_new} Had newer timestamps.")
-        queue_message(interaction, f"{num_old} Did not have newer timestamps.")
-    else:
-        print(f"{num_new} Had newer timestamps.")
-        print(f"{num_old} Did not have newer timestamps.")
-    return log_problematic_cards(problematic_cards)
+        self._send_summary(interaction, num_new, num_old, num_moved)
+        return self._format_problems(problematic_cards)
 
-def manual_update_stats(interaction: Interaction, output_problematic_cards: bool = True, use_local_repo: bool = True, use_local_timestamp: bool = True):
-    if interaction:
-        queue_message(interaction, "Going to update the database for card statistics in the background, this will take a while.")
-    else:
-        print("Going to update the database for card statistics in the background, this will take a while.")
+    def _get_remote_timestamp(self,
+                              repo: Optional[Repository.Repository],
+                              path: str,
+                              name: str) -> tuple[float, str]:
+        """
+        Get timestamp for a file from GitHub.
 
-    problem_cards = update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
-    for key in metadata:
-        if key in stats:
-            stats[key].update(metadata[key])
+        Uses the most recent commit for timestamp, but preserves original author
+        from the first commit if not already set.
+        """
+        if not repo:
+            return (datetime(1000, 1, 1).timestamp(), None)
 
-    if interaction:
-        queue_message(interaction, "Done updating card statistics.")
-    else:
-        print("Done updating card statistics.")
+        commits = repo.get_commits(path=path)
+        if commits.totalCount == 0:
+            # No valid timestamp
+            return (datetime(1000, 1, 1).timestamp(), None)
 
-    if problem_cards:
+        # Set metadata author from FIRST commit (original author)
+        # Only if not already set
+        if name not in self.db.stats or not self.db.stats[name].author:
+            # Author uses the first (oldest) commit - this is the original author
+            return (commits[0].commit.committer.date.timestamp(), commits[commits.totalCount - 1].commit.committer.name)
+
+        # Return timestamp from most recent commit
+        return (commits[0].commit.committer.date.timestamp(), None)
+
+    @staticmethod
+    def _send_progress(interaction: Optional[Interaction], count: int) -> None:
+        """Send progress update."""
+        message = f"{count} cards updated."
         if interaction:
-            # Loop 1: Output in-depth problems
-            bundle = ""
-            for card in problem_cards:
-                bundle += card
-            for bun in split_long_message(bundle):
-                queue_message(interaction, bun)
-
-            # Loop 2: Output cardnames only
-            for card in problem_cards:
-                queue_message(interaction, card.split('```')[0])
+            queue_edit(interaction, content=message)
         else:
-            for card in problem_cards:
-                print(card)
-            print()
-            for card in problem_cards:
-                print(card.split('```')[0])
+            print(message)
 
-    queue_command(try_open_stats)
+    @staticmethod
+    def _send_summary(interaction: Optional[Interaction],
+                      num_new: int,
+                      num_old: int,
+                      num_moved: int = 0) -> None:
+        """Send summary of update."""
+        msg = f"{num_new} had newer timestamps or were new.\n{num_old} did not have newer timestamps.\n{num_moved} cards changed location."
 
-async def export_stats_to_file(interaction: Interaction, only_ability: bool = True, as_csv: bool = True):
-    if not stats:
-        load_stats()
+        if interaction:
+            queue_message(interaction, msg)
+        else:
+            print(msg)
 
-    if as_csv:
-        cards_df = pandas.DataFrame.from_dict(stats).transpose()
-        cards_dff = cards_df[cards_df["ability"].notna()].copy()
-        cards_dff.to_csv(path_or_buf=EXPORTED_STATS_NAME + '.csv')
-        with open(EXPORTED_STATS_NAME + '.csv', 'rb') as f:
-            await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.csv'))
+    @staticmethod
+    def _format_problems(
+        problematic_cards: list[tuple[str, CardInfo, list[str]]]
+    ) -> list[str]:
+        """Format problematic cards for display."""
+        return [
+            f"{path}\n```\n" + '\n'.join(problems) + "\n```"
+            for path, _, problems in problematic_cards
+        ]
+
+
+# ========================
+# Helper Functions
+# ========================
+def get_stats_as_dict() -> dict[str, dict]:
+    """
+    Get the stats database as a dictionary format.
+    Useful for pandas DataFrame operations and external integrations.
+
+    Returns:
+        Dictionary mapping card names to their dict representations
+    """
+    return {name: card.to_dict() for name, card in stats_db.stats.items()}
+
+
+def get_old_stats_as_dict() -> dict[str, list[dict]]:
+    """
+    Get the old_stats database as a dictionary format.
+
+    Returns:
+        Dictionary mapping card names to lists of their historical dict representations
+    """
+    return {
+        name: [card.to_dict() for card in cards]
+        for name, cards in stats_db.old_stats.items()
+    }
+
+
+# ========================
+# Public API Functions
+# ========================
+def update_stats(interaction: Optional[Interaction] = None,
+                 output_problematic: bool = True,
+                 use_local_repo: bool = True,
+                 use_local_timestamp: bool = True,
+                 verbose: bool = True) -> list[str]:
+    """
+    Update card statistics database.
+
+    Args:
+        interaction: Optional Discord interaction
+        output_problematic: Whether to output problematic cards
+        use_local_repo: Use local repository vs remote
+        use_local_timestamp: Use local timestamps vs remote
+        verbose: Whether to display progress messages and problem summaries
+
+    Returns:
+        List of formatted problem messages
+    """
+    def _notify(msg: str):
+        """Send a message to Discord or print locally."""
+        if interaction:
+            queue_message(interaction, msg)
+        else:
+            print(msg)
+
+    if verbose:
+        _notify("Updating card statistics database... This may take a while.")
+
+    stats_db.load()
+    stats_db.dirty_files.clear()
+    traverser = RepositoryTraverser(stats_db)
+
+    if use_local_repo:
+        local_path = expanduser(LOCAL_DIR_LOC)
+        problem_cards = traverser.traverse_local(
+            card_repo.repository,
+            local_path,
+            interaction,
+            output_problematic,
+            use_local_timestamp)
+    else:
+        problem_cards = traverser.traverse_remote(
+            card_repo.repository,
+            interaction,
+            output_problematic)
+
+    stats_db.prune_clean_cards()
+    stats_db.save()
+
+    if verbose:
+        _notify("Card statistics update complete!")
+
+    # Output problems
+    if verbose and problem_cards:
+        # Detailed problems
+        bundle = "".join(problem_cards)
+        for chunk in split_long_message(bundle):
+            _notify(chunk)
+
+        # Card names only
+        for card in problem_cards:
+            _notify(card.split('```')[0])
+
+    # Always refresh card_repo stats
+    queue_command(card_repo.prep_dataframes)
+
+    return problem_cards
+
+
+def list_orphans(interaction: Interaction) -> None:
+    """
+    List all cards without an author.
+
+    Args:
+        interaction: Discord interaction
+    """
+    orphans = [
+        name for name, card in stats_db.stats.items()
+        if not card.author
+    ]
+
+    if not orphans:
+        queue_message(interaction, "No orphaned cards found!")
         return
 
-    with open(EXPORTED_STATS_NAME + '.txt', 'w') as f:
-        for name, stat in stats.items():
-            f.write(name + '\n')
-            for field, metric in stat.items():
-                if not only_ability or field == "ability":
-                    if type(metric) == list:
+    bundle = '\n'.join(orphans)
+    for chunk in split_long_message(bundle):
+        queue_message(interaction, chunk)
+
+
+def mass_replace_author(interaction: Interaction,
+                        author1: str = "",
+                        author2: str = "") -> None:
+    """
+    Replace all instances of one author with another.
+
+    Args:
+        interaction: Discord interaction
+        author1: Author name to replace
+        author2: New author name
+    """
+    num_replaced = 0
+    for _, card in stats_db.stats.items():
+        if card.author == author1:
+            card.author = author2
+            num_replaced += 1
+
+    stats_db.save()
+    queue_message(
+        interaction,
+        f"Replaced {num_replaced} instances of '{author1}' with '{author2}'."
+    )
+
+
+def manual_metadata_entry(interaction: Interaction,
+                          query: str,
+                          del_entry: bool = False,
+                          author: Optional[str] = None,
+                          ability: Optional[str] = None,
+                          stars: Optional[int] = None,
+                          subtype: Optional[str] = None,
+                          series: Optional[str] = None,
+                          hp: Optional[int] = None,
+                          defense: Optional[int] = None,
+                          attack: Optional[int] = None,
+                          speed: Optional[int] = None,
+                          card_type: Optional[str] = None,
+                          types: Optional[str] = None) -> None:
+    """
+    Manually edit metadata for a card.
+
+    Args:
+        interaction: Discord interaction
+        query: Card name query
+        del_entry: Whether to delete the entire entry
+        author: Card author/creator
+        ability: Card ability text
+        stars: Star count
+        subtype: Card subtype
+        series: Card series
+        hp: HP stat
+        defense: Defense stat
+        attack: Attack stat
+        speed: Speed stat
+        card_type: Card type
+        types: Comma-separated list of types (e.g., "fire,water")
+    """
+    path = card_repo.get_card_path(query)
+    if not path:
+        queue_message(interaction, f"No card found matching '{query}'.")
+        return
+
+    name = basename(path).replace('_', ' ')
+
+    # Handle deletion
+    if del_entry:
+        if name in stats_db.stats:
+            del stats_db.stats[name]
+            stats_db.save()
+        queue_message(interaction, f"Deleted metadata for **{name}**.")
+        return
+
+    # Initialize metadata entry if it doesn't exist
+    if name not in stats_db.stats:
+        stats_db.stats[name] = CardInfo(
+            name=name,
+            card_type=CardType.UNKNOWN.value,
+            path=f"{path}.psd")
+
+    card = stats_db.stats[name]
+
+    # Track what was updated
+    updates = []
+
+    # Update all provided fields
+    if author is not None:
+        card.author = author
+        updates.append(f"author: {author}")
+
+    if ability is not None:
+        card.ability = ability
+        updates.append(f"ability: {ability[:50]}..." if len(ability) > 50 else f"ability: {ability}")
+
+    if stars is not None:
+        card.stars = stars
+        updates.append(f"stars: {stars}")
+
+    if subtype is not None:
+        card.subtype = subtype
+        updates.append(f"subtype: {subtype}")
+
+    if series is not None:
+        card.series = series
+        updates.append(f"series: {series}")
+
+    if hp is not None:
+        card.stats.hp = hp
+        updates.append(f"hp: {hp}")
+
+    if defense is not None:
+        card.stats.defense = defense
+        updates.append(f"def: {defense}")
+
+    if attack is not None:
+        card.stats.attack = attack
+        updates.append(f"atk: {attack}")
+
+    if speed is not None:
+        card.stats.speed = speed
+        updates.append(f"spd: {speed}")
+
+    if card_type is not None:
+        card.card_type = card_type
+        updates.append(f"type: {card_type}")
+
+    if types is not None:
+        # Parse comma-separated types into a list
+        types_list = [t.strip() for t in types.split(',') if t.strip()]
+        card.types = types_list
+        updates.append(f"types: {types_list}")
+
+    # If no updates were provided, show current metadata
+    if not updates:
+        metadata_dict = card.to_dict()
+        pretty_metadata = '\n'.join(f"{k}: {v}" for k, v in metadata_dict.items())
+        queue_message(
+            interaction,
+            f"Current metadata for **{name}**:\n```{pretty_metadata}```"
+        )
+        return
+
+    stats_db.save()
+
+    # Format success message
+    updates_text = '\n'.join(f"  • {update}" for update in updates)
+    queue_message(
+        interaction,
+        f"Updated metadata for **{name}**:\n{updates_text}"
+    )
+
+
+def export_stats_to_file(interaction: Interaction,
+                               only_ability: bool = False,
+                               as_csv: bool = True) -> None:
+    """
+    Export card statistics to a file (excluding rulebook entries).
+
+    Args:
+        interaction: Discord interaction
+        only_ability: Export only ability text
+        as_csv: Export as CSV (otherwise text file)
+    """
+    # Filter out rulebook entries and convert to dict format
+    filtered_stats = {
+        name: card.to_dict() for name, card in stats_db.stats.items()
+        if "Rulebook" not in card.path
+    }
+
+    if as_csv:
+        df = pd.DataFrame.from_dict(filtered_stats).transpose()
+        df_filtered = df[df["ability"].notna()].copy()
+
+        # Sort by type first, then by index (name) alphabetically
+        # Reset index to make it a column, sort, then set it back
+        df_filtered = df_filtered.reset_index()
+        df_filtered = df_filtered.sort_values(
+            by=['type', 'index'],
+            key=lambda x: x.str.lower() if x.dtype == 'object' else x
+        )
+        df_filtered = df_filtered.set_index('index')
+        df_filtered.index.name = None  # Remove index name for cleaner output
+
+        filename = f"{EXPORTED_STATS_NAME}.csv"
+        df_filtered.to_csv(filename)
+
+        with open(filename, 'rb') as f:
+            queue_file(interaction, File(f, filename))
+        return
+
+    filename = f"{EXPORTED_STATS_NAME}.txt"
+    ascii_pattern = re_compile(r'[^\x00-\x7f]')
+
+    # Sort by type, then alphabetically within type
+    sorted_cards = sorted(
+        stats_db.stats.items(),
+        key=lambda x: (x[1].card_type, x[0].lower())
+    )
+
+    with open(filename, 'w') as f:
+        current_type = None
+        for name, card in sorted_cards:
+            if "Rulebook" in card.path:
+                continue
+
+            card_type = card.card_type
+
+            # Add section header when type changes
+            if card_type != current_type:
+                f.write(f"=== {card_type.upper()} ===\n\n")
+                current_type = card_type
+
+            f.write(f"{name}\n")
+
+            if only_ability:
+                if card.ability:
+                    cleaned = ascii_pattern.sub('', card.ability)
+                    f.write(f"{cleaned}\n")
+            else:
+                card_dict = card.to_dict()
+                for _, metric in card_dict.items():
+                    if isinstance(metric, list):
                         f.write(' '.join(metric) + '\n')
                     else:
-                        f.write(sub(r'[^\x00-\x7f]',r'', str(metric)) + '\n')
+                        cleaned = ascii_pattern.sub('', str(metric))
+                        f.write(f"{cleaned}\n")
             f.write('\n')
 
-    with open(EXPORTED_STATS_NAME + '.txt', 'rb') as f:
-        await interaction.followup.send(file=File(f, EXPORTED_STATS_NAME + '.txt'))
+    with open(filename, 'rb') as f:
+        queue_file(interaction, File(f, filename))
 
-async def export_rulebook_to_file(interaction: Interaction):
-    if not stats:
-        load_stats()
 
-    with open(EXPORTED_RULES_NAME + '.txt', 'w') as f:
-        for name, stat in stats.items():
-            if "Rulebook" in stat["path"]:
-                f.write(name + '\n')
-                if "ability" in stat:
-                    f.write(sub(r'[^\x00-\x7f]',r'', str(stat["ability"])) + '\n')
+def export_rulebook_to_file(interaction: Interaction) -> None:
+    """
+    Export rulebook pages to a text file.
+
+    Args:
+        interaction: Discord interaction
+    """
+    filename = f"{EXPORTED_RULES_NAME}.txt"
+    ascii_pattern = re_compile(r'[^\x00-\x7f]')
+
+    with open(filename, 'w') as f:
+        for name, card in stats_db.stats.items():
+            if "Rulebook" in card.path:
+                f.write(f"{name}\n")
+                if card.ability:
+                    cleaned = ascii_pattern.sub('', card.ability)
+                    f.write(f"{cleaned}\n")
                 f.write('\n')
 
-    with open(EXPORTED_RULES_NAME + '.txt', 'rb') as f:
-        await interaction.followup.send(file=File(f, EXPORTED_RULES_NAME + '.txt'))
+    with open(filename, 'rb') as f:
+        queue_file(interaction, File(f, filename))
+
+
+# ========================
+# Initialization
+# ========================
+stats_db = StatsDatabase()
+def init_psd() -> None:
+    """Initialize the stats database."""
+    stats_db.load()
+    card_repo.prep_dataframes()
+    print("Stats database initialized.")
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'stats_db',
+    'get_stats_as_dict',
+    'get_old_stats_as_dict',
+    'update_stats',
+    'list_orphans',
+    'mass_replace_author',
+    'manual_metadata_entry',
+    'export_stats_to_file',
+    'export_rulebook_to_file',
+    'init_psd',
+]

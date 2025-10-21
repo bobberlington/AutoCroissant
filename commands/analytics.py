@@ -6,18 +6,30 @@ from shlex import split as shlex_split
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from commands.utils import slash_registry, queue_message, queue_command, make_fake_interaction, convert_value
+from commands.utils import (
+    slash_registry,
+    queue_message,
+    queue_command,
+    make_fake_interaction,
+    parse_named_args,
+)
 from global_config import REMIND_PKL
 
 reminders = defaultdict(list)
 
 
 def save_reminders():
+    """Save the reminders dictionary to disk."""
     with open(REMIND_PKL, "wb") as f:
         dump(reminders, f)
 
 
 def init_reminder():
+    """
+    Initialize the reminder system by loading existing reminders from disk.
+
+    If the pickle file doesn't exist or is empty, initializes with an empty dictionary.
+    """
     global reminders
     print(f"Trying to open {REMIND_PKL}.")
     try:
@@ -29,6 +41,15 @@ def init_reminder():
 
 
 def parse_time_str(when_str: str) -> datetime | None:
+    """
+    Parse a time string into a datetime object in PST timezone.
+
+    Args:
+        when_str: Time string in formats like "13:00", "1PM", or "1:30PM"
+
+    Returns:
+        datetime object in PST timezone, or None if parsing fails
+    """
     when_str = when_str.strip().upper().replace(" ", "")
     for fmt in ("%H:%M", "%I%p", "%I:%M%p"):
         try:
@@ -40,6 +61,16 @@ def parse_time_str(when_str: str) -> datetime | None:
 
 
 def parse_interval(time_str: str) -> timedelta | None:
+    """
+    Parse a time interval string into a timedelta object.
+
+    Args:
+        time_str: Interval string like "5s", "10m", "2h", "1d", or "3w"
+                 (s=seconds, m=minutes, h=hours, d=days, w=weeks)
+
+    Returns:
+        timedelta object, or None if parsing fails
+    """
     if not time_str:
         return None
     time_str = time_str.strip().lower()
@@ -57,11 +88,27 @@ def parse_interval(time_str: str) -> timedelta | None:
         return None
 
 
-def set_reminder(interaction: Interaction, msg: str = "", when: str = "",
-                 offset: str = "", frequency: str = "", command: str = ""):
+def set_reminder(interaction: Interaction,
+                 msg: str = "",
+                 when: str = "",
+                 offset: str = "",
+                 frequency: str = "",
+                 command: str = ""):
+    """
+    Create a reminder with optional message and/or command execution.
+
+    Args:
+        interaction: Discord interaction
+        msg: Message to send when reminder triggers
+        when: Time to trigger in PST (e.g., "13:00" or "1PM")
+        offset: Delay before first trigger (e.g., "5m", "2h", "1d")
+        frequency: How often to repeat (e.g., "1h", "1d", "1w")
+        command: Optional bot command to execute (e.g., "/play_all")
+    """
     remind_at = parse_time_str(when)
     offset_delta = parse_interval(offset)
     interval = parse_interval(frequency)
+    command = command.replace(': ', ':') # Command kwargs musn't have spaces between the colon and argument
 
     if not remind_at:
         return queue_message(interaction, "Invalid time format. Try `13:00` or `1PM` (PST).")
@@ -91,24 +138,17 @@ def set_reminder(interaction: Interaction, msg: str = "", when: str = "",
     queue_message(interaction, desc)
 
 
-def parse_named_args(parts):
-    """
-    Split a list like ['prompt:sunset', 'height:512'] into args=[], kwargs={...},
-    converting numeric and boolean values automatically.
-    """
-    args = []
-    kwargs = {}
-    for p in parts:
-        if ":" in p:
-            key, value = p.split(":", 1)
-            kwargs[key] = convert_value(value)
-        else:
-            args.append(convert_value(p))
-    return args, kwargs
-
-
 def check_reminder():
-    """Trigger reminders and execute queued async/sync slash commands."""
+    """
+    Check all reminders and trigger those whose time has come.
+
+    For each triggered reminder:
+    - Sends the message (if any)
+    - Executes the command (if any)
+    - Either repeats at the next interval or removes the reminder
+
+    Called automatically every second by the bot's task loop.
+    """
     global reminders
     now = datetime.now(ZoneInfo("America/Los_Angeles"))
     changed = False
@@ -167,7 +207,14 @@ def check_reminder():
 
 
 def list_reminders(interaction: Interaction, all: bool = False, hidden: bool = False):
-    """List reminders for the current channel or entire server (includes commands and channel info)."""
+    """
+    List reminders for the current channel or entire server.
+
+    Args:
+        interaction: Discord interaction
+        all: If True, show all reminders in the server; if False, only show current channel
+        hidden: If True, send as ephemeral message (only visible to user)
+    """
     guild_id = interaction.guild_id
     channel_id = interaction.channel_id
 
@@ -199,7 +246,13 @@ def list_reminders(interaction: Interaction, all: bool = False, hidden: bool = F
 
 
 def remove_reminder(interaction: Interaction, reminder_id: str = ""):
-    """Remove a reminder by its ID."""
+    """
+    Delete a reminder by its ID.
+
+    Args:
+        interaction: Discord interaction
+        reminder_id: The 8-character ID of the reminder to delete
+    """
     global reminders
 
     guild_id = interaction.guild_id
@@ -222,3 +275,15 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
         queue_message(interaction, f"Reminder `{reminder_id}` has been removed.")
     else:
         queue_message(interaction, f"No reminder found with ID `{reminder_id}`.")
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'init_reminder',
+    'set_reminder',
+    'check_reminder',
+    'list_reminders',
+    'remove_reminder',
+]

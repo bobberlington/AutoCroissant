@@ -1,28 +1,29 @@
-import asyncio
+from asyncio import iscoroutinefunction, get_running_loop, to_thread as asyncio_to_thread
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from cv2 import imdecode, imencode, cvtColor, IMREAD_COLOR, COLOR_BGR2RGB, COLOR_RGB2BGR
-from discord import File, Interaction
-from functools import wraps
+from discord import File, Interaction, Object
+from functools import lru_cache, wraps
 from io import BytesIO
 from numpy import ndarray, array, asarray
 from os import listdir
 from os.path import join, isdir
 from PIL import Image
 from requests import get
-from types import SimpleNamespace
-from typing import Callable, TypeVar, Awaitable, Any
+from typing import Callable, TypeVar, Awaitable, Any, Optional
+
+import config
 
 # ========================
 # Configurable Parameters
 # ========================
-BREAK_LEN: int = 1950
+BREAK_LEN = 1950
+ADMINS = getattr(config, "ADMINS", [])
+
 
 # ===================================================================
 # Queues for async message and command dispatch
 # ===================================================================
-music_queue: deque[str] = deque()
-prev_music: deque[str] = deque()
-
 dispatch_queue: deque[tuple[Interaction, dict[str, Any]]] = deque()
 edit_queue: deque[tuple[Interaction, dict[str, Any]]] = deque()
 command_queue: deque[tuple[tuple, dict[str, Any], Callable[..., Any]]] = deque()
@@ -30,12 +31,14 @@ command_queue: deque[tuple[tuple, dict[str, Any], Callable[..., Any]]] = deque()
 slash_registry = {}
 T = TypeVar("T")
 
+
 # ===================================================================
 # Queue wrappers
 # ===================================================================
 def queue_any(interaction: Interaction, **kwargs):
     """Queue any send you want."""
     dispatch_queue.append((interaction, kwargs))
+
 
 def queue_message(interaction: Interaction, content: str, **kwargs):
     """Queue a simple message send."""
@@ -64,13 +67,25 @@ def queue_command(func: Callable[..., Any], *args, **kwargs):
 # ===================================================================
 def to_thread(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
     """Decorator to run a blocking function in a separate thread asynchronously."""
-    if asyncio.iscoroutinefunction(func):
+    if iscoroutinefunction(func):
         # No need to wrap coroutine functions — they already run asynchronously.
         return func
 
     @wraps(func)
     async def wrapper(*args, **kwargs) -> T:
-        return await asyncio.to_thread(func, *args, **kwargs)
+        return await asyncio_to_thread(func, *args, **kwargs)
+    return wrapper
+
+
+def to_threadpool(func: Callable[..., T], executor: ThreadPoolExecutor | None = None):
+    """Decorator to run a blocking function in a separate threadpool asynchronously."""
+    if iscoroutinefunction(func):
+        # No need to wrap coroutine functions — they already run asynchronously.
+        return func
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs) -> T:
+        return await get_running_loop().run_in_executor(executor, func, *args, **kwargs)
     return wrapper
 
 
@@ -79,7 +94,7 @@ def to_thread(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
 # ===================================================================
 def url_to_cv2image(url: str, readFlag=IMREAD_COLOR) -> ndarray:
     """Fetch an image from a URL and convert it to a cv2 image array."""
-    return imdecode(asarray(bytearray(get(url, timeout=10).content), dtype="uint8"), readFlag)
+    return imdecode(asarray(bytearray(get(url, timeout=30).content), dtype="uint8"), readFlag)
 
 
 def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
@@ -89,15 +104,15 @@ def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
 
 def url_to_pilimage(url: str) -> Image.Image:
     """Fetch an image from a URL and return it as a PIL Image."""
-    return Image.open(get(url, stream=True, timeout=10).raw).convert("RGBA")
+    return Image.open(get(url, stream=True, timeout=30).raw).convert("RGBA")
 
 
 def pildiscordfile(img: Image.Image, filename: str = "image.png") -> File:
     """Convert a PIL image to a Discord File."""
-    with BytesIO() as bin:
-        img.save(bin, 'png')
-        bin.seek(0)
-        return File(bin, filename=filename)
+    buffer = BytesIO()
+    img.save(buffer, 'PNG')
+    buffer.seek(0)
+    return File(buffer, filename=filename)
 
 
 def cv2_to_pil(cv2_img: ndarray) -> Image.Image:
@@ -113,44 +128,86 @@ def pil_to_cv2(pil_img: Image.Image) -> ndarray:
 # ===================================================================
 # Fake Discord interaction generator
 # ===================================================================
-def make_fake_interaction(channel_id: int, guild_id: int):
-    """Create a fake interaction object for when the original is lost/old."""
+def make_fake_interaction(channel_id: int, guild_id: Optional[int] = None):
+    """
+    Create a minimal interaction-like object for queuing messages.
 
-    async def send(content: str | None = None, **kwargs: Any):
-        """Generic sender that queues any outgoing message."""
-        if content:
-            kwargs["content"] = content
-        queue_any(SimpleNamespace(channel_id=channel_id), **kwargs)
+    Use this when you need to send messages without an original interaction,
+    such as in scheduled tasks or background processes.
 
-    async def edit_original_response(content: str | None = None, **kwargs: Any):
-        """Simulate editing the original response."""
-        if content:
-            kwargs["content"] = content
-        queue_edit(SimpleNamespace(channel_id=channel_id), **kwargs)
+    Args:
+        channel_id: Discord channel ID
+        guild_id: Optional Discord guild ID
+    """
+    class FakeResponse:
+        def __init__(self, channel_id: int):
+            self.channel_id = channel_id
+            self._done = False
 
-    async def defer():
-        pass
+        async def send_message(self, content: Optional[str] = None, **kwargs: Any) -> None:
+            if content:
+                kwargs["content"] = content
+            fake_interaction = Object(id=self.channel_id)
+            fake_interaction.channel_id = self.channel_id
+            queue_any(fake_interaction, **kwargs)
+            self._done = True
 
-    fake_response = SimpleNamespace(
-        send_message=send,
-        defer=defer,
-    )
-    fake_followup = SimpleNamespace(send=send)
+        def is_done(self) -> bool:
+            return self._done
 
-    # The fake Interaction-like object
-    return SimpleNamespace(
-        guild_id=guild_id,
-        channel_id=channel_id,
-        response=fake_response,
-        followup=fake_followup,
-        edit_original_response=edit_original_response,
-        user=None,
-    )
+        async def defer(self, **kwargs: Any) -> None:
+            pass
+
+    class FakeFollowup:
+        def __init__(self, channel_id: int):
+            self.channel_id = channel_id
+
+        async def send(self, content: Optional[str] = None, **kwargs: Any) -> None:
+            if content:
+                kwargs["content"] = content
+            fake_interaction = Object(id=self.channel_id)
+            fake_interaction.channel_id = self.channel_id
+            queue_any(fake_interaction, **kwargs)
+
+    class FakeInteraction:
+        def __init__(self, channel_id: int, guild_id: Optional[int] = None):
+            self.channel_id = channel_id
+            self.guild_id = guild_id
+            self.response = FakeResponse(channel_id)
+            self.followup = FakeFollowup(channel_id)
+            self.user = None
+            self.guild = Object(id=guild_id) if guild_id else None
+            self.channel = Object(id=channel_id)
+
+        async def edit_original_response(self, content: Optional[str] = None, **kwargs: Any) -> None:
+            if content:
+                kwargs["content"] = content
+            fake_obj = Object(id=self.channel_id)
+            fake_obj.channel_id = self.channel_id
+            queue_edit(fake_obj, **kwargs)
+
+    return FakeInteraction(channel_id, guild_id)
+
+
+def make_simple_fake_interaction(channel_id: int, guild_id: Optional[int] = None):
+    """
+    Simplified version that just wraps a Discord Object with required attributes.
+    Use this if you only need queue_message() compatibility.
+
+    Args:
+        channel_id: Discord channel ID
+        guild_id: Optional Discord guild ID
+    """
+    fake = Object(id=channel_id)
+    fake.channel_id = channel_id
+    fake.guild_id = guild_id
+    return fake
 
 
 # ===================================================================
 # Misc
 # ===================================================================
+@lru_cache(maxsize=128)
 def convert_value(value: str) -> Any:
     """Convert a string to int, float, or bool if possible, otherwise keep as string."""
     value = value.strip().lower()
@@ -158,7 +215,7 @@ def convert_value(value: str) -> Any:
     if value in {"true", "false"}:
         return value == "true"
 
-    for convert in (float, int):
+    for convert in (int, float):
         try:
             return convert(value)
         except ValueError:
@@ -167,8 +224,17 @@ def convert_value(value: str) -> Any:
     return value
 
 
-def split_long_message(msg: str):
-    """Split long text into Discord-safe chunks while preserving code blocks."""
+def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
+    """
+    Split long text into Discord-safe chunks while preserving code blocks.
+
+    Args:
+        msg: Message to split
+        max_length: Maximum length per chunk
+    """
+    if len(msg) <= max_length:
+        return [msg]
+
     parts = []
     code_prefix = "```"
     code_suffix = "```"
@@ -177,12 +243,18 @@ def split_long_message(msg: str):
     if inside_code:
         msg = msg[len(code_prefix):-len(code_suffix)]
 
-    while len(msg) > BREAK_LEN:
-        idx = msg.rfind("\n", 0, BREAK_LEN)
+    while len(msg) > max_length:
+        # Try to split at newline
+        idx = msg.rfind("\n", 0, max_length)
         if idx == -1:
-            idx = BREAK_LEN
+            # No newline found, split at space
+            idx = msg.rfind(" ", 0, max_length)
+        if idx == -1:
+            # No space found, hard split
+            idx = max_length
+
         parts.append(msg[:idx])
-        msg = msg[idx:]
+        msg = msg[idx:].lstrip()
 
     if msg:
         parts.append(msg)
@@ -193,14 +265,43 @@ def split_long_message(msg: str):
     return parts
 
 
+def parse_named_args(parts):
+    """
+    Split a list like ['prompt:sunset', 'height:512'] into args=[], kwargs={...},
+    converting numeric and boolean values automatically.
+    """
+    args = []
+    kwargs = {}
+    for p in parts:
+        if ":" in p:
+            key, value = p.split(":", 1)
+            kwargs[key] = convert_value(value)
+        else:
+            args.append(convert_value(p))
+    return args, kwargs
+
+
 def recursively_traverse(directory: str, prefix: str = "") -> str:
     """Recursively list all files in a directory."""
     lines = []
     for item in listdir(directory):
         path = join(directory, item)
         if isdir(path):
-            lines.append(prefix + item + "/")
+            lines.append(f"{prefix}{item}/")
             lines.append(recursively_traverse(path, prefix + "\t"))
         else:
-            lines.append(prefix + item)
+            lines.append(f"{prefix}{item}")
     return "\n".join(lines)
+
+
+def perms_check(interaction: Interaction) -> bool:
+    """
+    Check if user has admin permissions.
+
+    Args:
+        interaction: Discord interaction
+
+    Returns:
+        True if user lacks permissions, False if user is admin
+    """
+    return interaction.user.id not in ADMINS

@@ -1,292 +1,639 @@
-from difflib import SequenceMatcher, get_close_matches
+from dataclasses import dataclass
+from difflib import get_close_matches, SequenceMatcher
 from discord import Interaction
-import pandas
+from os.path import basename
 from pickle import load, dump
 from requests import get
+from typing import Optional
 from warnings import filterwarnings
+from pandas import DataFrame, concat, merge
+from re import compile, escape, IGNORECASE
+from urllib.parse import quote
+
+import config
+from global_config import ALIAS_PKL, STATS_PKL
+from commands.utils import queue_message, split_long_message
+
 filterwarnings('ignore')
 
-from global_config import ALIAS_PKL, STATS_PKL
+# ========================
+# Configuration
+# ========================
+DEFAULT_REPOSITORY = "MichaelJSr/TTSCardMaker"
+DEFAULT_MATCH_RATIO = 0.6
+GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 
-REPOSITORY  = "MichaelJSr/TTSCardMaker"
-MATCH_RATIO = 0.6
 
-git_file_alias: dict[str, str]              = {}
-git_files: dict[str, str]                   = {}
-ambiguous_names: dict[str, tuple[str, ...]] = {}
-git_filenames: list[str]                    = []
-# Cards df, but filtered to not have the cards that have no ability, also it is all lowercase.
-cards_dff = pandas.DataFrame()
+@dataclass
+class CardRepository:
+    """Manages card repository state and operations."""
 
-headers = None
-git_token = None
-try:
-    import config
-    git_token = config.git_token
-    headers = {'Authorization': 'token ' + git_token}
-    print("Git token found, api will be limited to 5000 requests/hour.")
-except AttributeError:
-    print("No git token in config, api will be limited to 60 requests/hour.")
+    repository: str = DEFAULT_REPOSITORY
+    match_ratio: float = DEFAULT_MATCH_RATIO
 
-def populate_files():
-    global git_filenames
-    git_files.clear()
-    ambiguous_names.clear()
-    # Grab repo
-    repo = get(f"https://api.github.com/repos/{REPOSITORY}/git/trees/main?recursive=1", headers=headers)
-    if repo.status_code != 200:
-        print(f"Error when trying to connect to {REPOSITORY}")
-        return repo.status_code
+    def __post_init__(self):
+        self.git_file_alias: dict[str, str] = {}
+        self.git_files: dict[str, str] = {}
+        self.ambiguous_names: dict[str, tuple[str, ...]] = {}
+        self.cards_dff: DataFrame = DataFrame()
+        self.rulebook_dff: DataFrame = DataFrame()
+        self._headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
 
-    # Make a dictionary of all list of pngs in the github
-    # Keys consist of the filename, for example Bomb.png
-    # Values consist of the whole path, for example Items/Attack/2 Stars/Bomb.png
-    for i in repo.json()["tree"]:
-        path: str = i["path"]
-        if path.endswith(".png"):
-            png_filename = path[path.rindex("/") + 1:].lower()
-            # If we're putting the same name twice, it will change both names to include the top level folder
-            if png_filename in git_files:
-                new_filename = f"{path[0:path.index('/')]}/{png_filename}".lower()
-                old_filename = f"{git_files[png_filename][0:git_files[png_filename].index('/')]}/{png_filename}".lower()
-                git_files[new_filename] = path.replace(" ", "%20")
-                git_files[old_filename] = git_files[png_filename]
+        if GIT_TOKEN:
+            print("Git token found, API limited to 5000 requests/hour.")
+        else:
+            print("No git token in config, API limited to 60 requests/hour.")
 
-                # Mark which files are ambiguous
-                if png_filename in ambiguous_names:
-                    if old_filename not in ambiguous_names[png_filename]:
-                        ambiguous_names[png_filename] = (*ambiguous_names[png_filename], old_filename)
-                    ambiguous_names[png_filename] = (*ambiguous_names[png_filename], new_filename)
-                else:
-                    ambiguous_names[png_filename] = (old_filename, new_filename)
+        self._stat_pattern = compile(r"^(\w+)(<|<=|==|>=|>)(\d+)$", IGNORECASE)
+        self._exact_match_pattern = compile(r'(?:^|\s|$|\b){pattern}(?:^|\s|$|\b)')
+
+    @property
+    def git_filenames(self) -> list[str]:
+        """Get list of all git filenames."""
+        return list(self.git_files.keys())
+
+    def populate_files(self) -> int:
+        """
+        Fetch and populate file listings from GitHub repository.
+
+        Returns:
+            HTTP status code (200 for success)
+        """
+        self.git_files.clear()
+        self.ambiguous_names.clear()
+
+        url = f"https://api.github.com/repos/{self.repository}/git/trees/main?recursive=1"
+        response = get(url, headers=self._headers, timeout=30)
+
+        # Process PNG files from repository
+        for item in response.json().get("tree", []):
+            path: str = item.get("path", "")
+            if not path.endswith(".png"):
+                continue
+
+            self._add_file_to_registry(path)
+
+        # Add aliases to registry
+        self._populate_aliases()
+
+        return response.status_code
+
+    def _add_file_to_registry(self, path: str) -> None:
+        """Add a file path to the registry, handling duplicates."""
+        png_filename = path[path.rindex("/") + 1:].lower()
+
+        if png_filename in self.git_files:
+            # Handle duplicate filenames by prefixing with top-level folder
+            new_filename = self._get_prefixed_name(path, png_filename)
+            old_path = self.git_files[png_filename]
+            old_filename = self._get_prefixed_name(old_path, png_filename)
+
+            self.git_files[old_filename] = old_path
+            # In case both filenames are the same, set the new second to make sure something maps to it...
+            self.git_files[new_filename] = path
+
+            # Track ambiguous names
+            if png_filename not in self.ambiguous_names:
+                self.ambiguous_names[png_filename] = (old_filename,)
+            if old_filename not in self.ambiguous_names[png_filename]:
+                self.ambiguous_names[png_filename] = (*self.ambiguous_names[png_filename], old_filename)
+            self.ambiguous_names[png_filename] = (*self.ambiguous_names[png_filename], new_filename)
+        else:
+            self.git_files[png_filename] = path
+
+    @staticmethod
+    def _get_prefixed_name(path: str, filename: str) -> str:
+        """Get filename prefixed with top-level folder."""
+        folder = path[:path.index('/')]
+        return f"{folder}/{filename}".lower()
+
+    def _populate_aliases(self) -> None:
+        """Populate aliases into the file registry."""
+        for alias, target in self.git_file_alias.items():
+            alias_key = f"{alias}.png"
+
+            if target in self.git_files:
+                self.git_files[alias_key] = self.git_files[target]
             else:
-                git_files[png_filename] = path.replace(" ", "%20")
+                # Find files ending with target
+                matches = [v for k, v in self.git_files.items() if k.endswith(target)]
+                if matches:
+                    self.git_files[alias_key] = matches[0]
 
-    # Fill up the aliases
-    # keys of aliases are the aliases, values are the filenames they point to
-    for i in git_file_alias:
-        if git_file_alias[i] in git_files:
-            git_files[f"{i}.png"] = git_files[git_file_alias[i]]
-        else:
-            val = [val for val in git_files.values() if val.lower().endswith(git_file_alias[i])]
-            if val:
-                git_files[f"{i}.png"] = val[0]
-                # Adds any files that end with val to ambiguous_names
-                #ambiguous_names[f"{i}.png"] = [v[0:v.index('/')] + v[v.rindex('/'):] for v in val]
+    def _parse_stat_query(self, ability: str) -> Optional[DataFrame]:
+        """
+        Parse and execute column-based queries (e.g., 'hp>10', 'type==creature', 'stars<=5').
 
-    git_filenames = git_files.keys()
-    return 200
+        Supports:
+        - Numeric comparisons: hp>5, def<=10, atk>=3, spd==7, stars<6
+        - String exact matches: type==creature, subtype==attack, series==kirby
+        - String contains: type~creature (contains 'creature')
 
-def ability_search_engine(ability: str):
-    import re
-    ability = ability.strip()
-    if "|" in ability:
-        desc1, desc2 = ability.split("|", 1)
-        return pandas.concat((ability_search_engine(desc1.strip()), ability_search_engine(desc2.strip()))).drop_duplicates(subset=['name', 'ability'], keep='first')
-    if "&" in ability:
-        desc1, desc2 = ability.split("&", 1)
-        return pandas.merge(ability_search_engine(desc1.strip()), ability_search_engine(desc2.strip()), left_index=True, right_index=True, how="inner", copy=False)
+        Args:
+            ability: Query string
 
-    if re.search(r"^(hp|def|atk|spd)(<|<=|==|>=|>)\d+$", ability.lower()):
-        print(re.findall(r"(hp|def|atk|spd)", ability.lower()))
-        print(re.findall(r"(<|<=|==|>=|>)", ability.lower()))
-        print(re.findall(r"d+", ability.lower()))
-        the_stat_in_question = re.findall(r"(hp|def|atk|spd)", ability.lower())[0]
-        comparator = re.findall(r"(<|<=|==|>=|>)", ability.lower())[0]
-        number = int(re.findall(r"\d+", ability.lower())[0])
-        guys_with_stats = pandas.concat([cards_dff[cards_dff["type"] == "minion"], cards_dff[cards_dff["type"] == "creature"]])
-        if comparator == "<":
-            return guys_with_stats[guys_with_stats[the_stat_in_question] < number]
-        elif comparator == "<=":
-            return guys_with_stats[guys_with_stats[the_stat_in_question] <= number]
-        elif comparator == "==":
-            return guys_with_stats[guys_with_stats[the_stat_in_question] == number]
-        elif comparator == ">=":
-            return guys_with_stats[guys_with_stats[the_stat_in_question] >= number]
-        elif comparator == ">":
-            return guys_with_stats[guys_with_stats[the_stat_in_question] > number]
-        else:
-            # HOW DID YOU EVEN GET HERE
-            return guys_with_stats[guys_with_stats[the_stat_in_question] == 99999999999999999999999999999999999999999]
-    opposite = False
-    if ability.startswith("!"):
-        ability = ability[1:].strip()
-        opposite = True
+        Returns:
+            DataFrame of matching cards or None
+        """
+        # Try numeric comparison pattern (e.g., hp>5, stars<=3)
+        numeric_match = self._stat_pattern.match(ability.lower())
+        if numeric_match:
+            column, operator, value = numeric_match.groups()
+            value = int(value)
 
-    # Exact Matches
-    if ability.startswith("\"") and ability.endswith("\""):
-        ability = ability[1:-1]
+            # Check if column exists in dataframe
+            if column not in self.cards_dff.columns:
+                return None
+
+            # Apply operator
+            operators = {
+                '<': lambda df, col, val: df[df[col] < val],
+                '<=': lambda df, col, val: df[df[col] <= val],
+                '==': lambda df, col, val: df[df[col] == val],
+                '>=': lambda df, col, val: df[df[col] >= val],
+                '>': lambda df, col, val: df[df[col] > val],
+            }
+
+            return operators.get(operator, lambda df, col, val: DataFrame())(self.cards_dff, column, value)
+
+        # Try string exact match pattern (e.g., type==creature, subtype==attack)
+        string_exact_pattern = compile(r"^(\w+)==(.+)$", IGNORECASE)
+        string_match = string_exact_pattern.match(ability)
+        if string_match:
+            column, value = string_match.groups()
+            column = column.lower()
+            value = value.strip().lower()
+
+            # Check if column exists
+            if column not in self.cards_dff.columns:
+                return None
+
+            # Filter by exact match (case-insensitive)
+            return self.cards_dff[self.cards_dff[column].astype(str).str.lower() == value]
+
+        # Try string contains pattern (e.g., type~creature)
+        string_contains_pattern = compile(r"^(\w+)~(.+)$", IGNORECASE)
+        contains_match = string_contains_pattern.match(ability)
+        if contains_match:
+            column, value = contains_match.groups()
+            column = column.lower()
+            value = value.strip().lower()
+
+            # Check if column exists
+            if column not in self.cards_dff.columns:
+                return None
+
+            # Filter by contains (case-insensitive)
+            return self.cards_dff[self.cards_dff[column].astype(str).str.lower().str.contains(value, na=False, regex=False)]
+
+        return None
+
+    def ability_search_engine(self, ability: str) -> DataFrame:
+        """
+        Search for cards by ability text or column values.
+
+        Supports:
+        - OR queries: "ability1 | ability2"
+        - AND queries: "ability1 & ability2"
+        - NOT queries: "!ability"
+        - Exact matches: '"exact text"'
+        - Numeric comparisons: "hp>5", "stars<=3", "def==10"
+        - String exact match: "type==creature", "subtype==attack"
+        - String contains: "type~aux", "series~kirby"
+
+        Args:
+            ability: Search query string
+
+        Returns:
+            DataFrame of matching cards
+        """
+        ability = ability.strip()
+
+        # Handle OR queries
+        if "|" in ability:
+            queries = [q.strip() for q in ability.split("|")]
+            results = [self.ability_search_engine(q) for q in queries]
+            combined = concat(results)
+            # Drop duplicates by index (card name) and ability column
+            return combined[~combined.index.duplicated(keep='first')]
+
+        # Handle AND queries
+        if "&" in ability:
+            queries = [q.strip() for q in ability.split("&")]
+            results = [self.ability_search_engine(q) for q in queries]
+            result = results[0]
+            for r in results[1:]:
+                result = merge(result, r, left_index=True, right_index=True, how="inner", copy=False)
+            return result
+
+        # Handle stat queries
+        stat_result = self._parse_stat_query(ability)
+        if stat_result is not None:
+            return stat_result
+
+        # Handle NOT queries
+        opposite = ability.startswith("!")
         if opposite:
-            return cards_dff[~cards_dff["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(ability) + r"(?:^|\s|$|\b)"))]
-        return cards_dff[cards_dff["ability"].str.contains((r"(?:^|\s|$|\b)" + re.escape(ability) + r"(?:^|\s|$|\b)"))]
-    else:
-        # Find abilities that don't contain the string if opposite.
+            ability = ability[1:].strip()
+
+        # Handle exact matches
+        if ability.startswith('"') and ability.endswith('"'):
+            ability = ability[1:-1]
+            pattern = r"(?:^|\s|$|\b)" + escape(ability) + r"(?:^|\s|$|\b)"
+            if opposite:
+                return self.cards_dff[~self.cards_dff["ability"].str.contains(pattern, na=False)]
+            return self.cards_dff[self.cards_dff["ability"].str.contains(pattern, na=False)]
+
+        # Handle substring matches with fuzzy matching
         if opposite:
-            return cards_dff[~cards_dff["ability"].str.contains(re.escape(ability))]
-        # Otherwise find abilities that have the substring or match well enough.
-        cards_df_contains = cards_dff[cards_dff["ability"].str.contains(re.escape(ability))]
-        cards_df_scores = cards_dff["ability"].apply(lambda x: SequenceMatcher(None, ability, x.lower()).ratio())
-        cards_df_scores = cards_df_scores[cards_df_scores > MATCH_RATIO]
-        return pandas.concat([cards_dff.loc[cards_df_scores.index], cards_df_contains]).drop_duplicates(subset=['name', 'ability'], keep='first')
+            return self.cards_dff[~self.cards_dff["ability"].str.contains(escape(ability), na=False)]
 
-def try_open_alias():
-    global git_file_alias
+        # Exact substring matches
+        exact_matches = self.cards_dff[self.cards_dff["ability"].str.contains(escape(ability), na=False)]
 
-    print(f"Trying to open {ALIAS_PKL}")
-    try:
-        with open(ALIAS_PKL, 'rb') as f:
-            git_file_alias = load(f)
-    except (EOFError, FileNotFoundError):
-        print(f"{ALIAS_PKL} doesn't exist, populating with empty dict...")
+        # Fuzzy matches
+        scores = self.cards_dff["ability"].apply(
+            lambda x: SequenceMatcher(None, ability, x.lower()).ratio()
+        )
+        fuzzy_matches = self.cards_dff.loc[scores[scores > self.match_ratio].index]
+
+        # Combine and remove duplicates by index
+        combined = concat([exact_matches, fuzzy_matches])
+        return combined[~combined.index.duplicated(keep='first')]
+
+    def rulebook_search_engine(self, search_text: str) -> DataFrame:
+        """
+        Search rulebook entries for matching text.
+
+        Args:
+            search_text: Text to search for (case-insensitive)
+
+        Returns:
+            DataFrame of matching rulebook entries
+        """
+        search_text = search_text.strip().lower()
+
+        if not search_text:
+            return self.rulebook_dff
+
+        # Search in ability text
+        matches = self.rulebook_dff[
+            self.rulebook_dff["ability"].str.contains(
+                escape(search_text),
+                na=False,
+                case=False
+            )
+        ]
+
+        return matches
+
+    def load_aliases(self) -> None:
+        """Load card aliases from pickle file."""
+        print(f"Loading aliases from {ALIAS_PKL}")
+        try:
+            with open(ALIAS_PKL, 'rb') as f:
+                self.git_file_alias = load(f)
+        except (EOFError, FileNotFoundError):
+            print(f"{ALIAS_PKL} doesn't exist, creating empty file...")
+            self.save_aliases()
+
+    def save_aliases(self) -> None:
+        """Save card aliases to pickle file."""
         with open(ALIAS_PKL, 'wb') as f:
-            dump(git_file_alias, f)
+            dump(self.git_file_alias, f)
 
-def try_open_stats():
-    global cards_dff
+    def prep_dataframes(self) -> None:
+        """Load card statistics from pickle file."""
+        from commands.psd_analyzer import get_stats_as_dict
 
-    print(f"Trying to open {STATS_PKL}")
-    try:
-        with open(STATS_PKL, 'rb') as f:
-            cards_df = pandas.DataFrame.from_dict(load(f)).transpose()
-            try:
-                cards_dff = cards_df[cards_df["ability"].notna()].copy()
-                cards_dff["ability"] = cards_dff["ability"].str.lower()
-            except KeyError:
-                print(f"{STATS_PKL} exists but has no relevant data in it.")
-    except (EOFError, FileNotFoundError):
-        print(f"{STATS_PKL} is completely empty.")
+        cards_df = DataFrame.from_dict(get_stats_as_dict()).transpose()
 
-def query_psd_path(query: str):
-    card = query.replace(" ", "_").lower()
-    if not card.endswith(".png"):
-        card += ".png"
-    try:
-        closest = get_close_matches(card, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
-    except IndexError:
-        return print("No card found!")
-    return git_files[closest].replace('%20', ' ')
+        if not cards_df.empty:
+            # Separate cards and rulebook entries
+            has_ability = cards_df["ability"].notna()
+            is_rulebook = cards_df["path"].str.contains("Rulebook", na=False)
 
-async def query_name(interaction: Interaction, query: str):
-    card = query.replace(" ", "_").lower()
-    if not card.endswith(".png"):
-        card += ".png"
-    try:
-        closest = get_close_matches(card, git_filenames, n=1, cutoff=MATCH_RATIO)[0]
-    except IndexError:
-        await interaction.response.send_message("No card found!")
+            # Cards DataFrame (excludes rulebook)
+            self.cards_dff = cards_df[has_ability & ~is_rulebook].copy()
+            self.cards_dff["ability"] = self.cards_dff["ability"].str.lower()
+
+            # Rulebook DataFrame (only rulebook entries)
+            self.rulebook_dff = cards_df[has_ability & is_rulebook].copy()
+            self.rulebook_dff["ability"] = self.rulebook_dff["ability"].str.lower()
+
+            print(f"Loaded {len(self.cards_dff)} cards and {len(self.rulebook_dff)} rulebook entries")
+
+    def _normalize_card_name(self, query: str) -> str:
+        """Normalize card name for searching."""
+        card = query.replace(" ", "_").lower()
+        return card if card.endswith(".png") else f"{card}.png"
+
+    def _find_closest_match(self, query: str) -> Optional[str]:
+        """Find closest matching card filename."""
+        matches = get_close_matches(self._normalize_card_name(query), self.git_filenames, n=1, cutoff=self.match_ratio)
+        return matches[0] if matches else None
+
+    def get_card_url(self, filename: str) -> str:
+        """
+        Get full GitHub URL for a card.
+
+        Args:
+            filename: Card filename (with or without .png extension)
+
+        Returns:
+            Full URL to the card image
+
+        Raises:
+            KeyError: If card is not found
+        """
+        # Normalize filename - replace spaces with underscores
+        filename = filename.replace(' ', '_')
+        if not filename.endswith('.png'):
+            filename = f"{filename}.png"
+        filename = filename.lower()
+
+        if filename not in self.git_files:
+            raise KeyError(f"Card not found: {filename}")
+
+        # Keep slashes unencoded
+        return f"https://raw.githubusercontent.com/{self.repository}/main/{quote(self.git_files[filename], safe='/')}"
+
+    def get_card_path(self, query: str) -> Optional[str]:
+        """
+        Get the path for a card (without extension) given its name.
+
+        Args:
+            query: Card name
+
+        Returns:
+            Path to card (with spaces, no extension, not URL-encoded) or None if not found
+        """
+        closest = self._find_closest_match(query)
+        if not closest:
+            return None
+        return self.git_files[closest][:-4]
+
+
+# ========================
+# Discord Command Functions
+# ========================
+def query_name(interaction: Interaction, query: str) -> None:
+    """
+    Query and display a card by name.
+
+    Args:
+        interaction: Discord interaction
+        query: Card name to search for
+    """
+    closest = card_repo._find_closest_match(query)
+
+    if not closest:
+        queue_message(interaction, "No card found!")
         return
-    await interaction.response.send_message(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{git_files[closest]}")
 
-    # If the filename was ambiguous, make a note of that.
-    if closest in ambiguous_names:
-        ambiguous_message = "Ambiguous name found. If this wasn't the card you wanted, try typing: \n"
-        for i in ambiguous_names[closest]:
-            ambiguous_message += f"{i}\n"
-        await interaction.followup.send(ambiguous_message)
+    queue_message(interaction, card_repo.get_card_url(closest))
 
-async def query_ability(interaction: Interaction, ability: str, limit: int = -1, filter_raids=False):
-    if cards_dff.empty:
-        return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
+    # Notify if name is ambiguous
+    if closest in card_repo.ambiguous_names:
+        ambiguous_options = "\n".join(card_repo.ambiguous_names[closest])
+        queue_message(interaction, f"Ambiguous name found. If this wasn't the card you wanted, try:\n{ambiguous_options}")
 
-    ability = ability.strip().lower()
-    closest = ability_search_engine(ability)
-    if filter_raids:
-        closest = pandas.concat([closest[closest["stars"].isna()], closest[closest["stars"] <= 5]])
 
-    num_to_output = len(closest)
-    await interaction.response.send_message(f"{num_to_output} Results found for {ability}!")
+def query_ability(interaction: Interaction,
+                  ability: str,
+                  limit: int = -1) -> None:
+    """
+    Query cards by ability text or column values (excludes rulebook entries).
 
-    if limit > 0:
-        num_to_output = limit
+    Supports multiple query types:
+    - Text search: "damage", "draw"
+    - Numeric comparisons: "hp>5", "stars<=3", "def==10"
+    - String exact match: "type==creature", "subtype==attack"
+    - String contains: "type~aux", "series~kirby"
+    - Combinations: "type==creature & hp>7"
 
-    for index, close in closest.iterrows():
-        await interaction.followup.send(f"https://raw.githubusercontent.com/{REPOSITORY}/main/{index[0:-4].replace(' ', '%20')}.png")
-        limit -= 1
-        if limit == 0:
+    Args:
+        interaction: Discord interaction
+        ability: Search query string
+        limit: Maximum number of results to display (-1 for all)
+        filter_raids: Whether to filter out raid cards
+
+    Note:
+        This function does not search rulebook entries.
+    """
+    if card_repo.cards_dff.empty:
+        queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
+        return
+
+    results = card_repo.ability_search_engine(ability.strip().lower())
+
+    total_results = len(results)
+    results_to_show = total_results if limit < 0 else min(limit, total_results)
+
+    queue_message(interaction, f"Found {total_results} results for '{ability}'!")
+
+    for idx, (index, _) in enumerate(results.iterrows()):
+        if idx >= results_to_show:
             break
-    await interaction.followup.send(f"{num_to_output} Results output for {ability}!")
+        # Index is the full path without .png extension
+        queue_message(interaction, card_repo.get_card_url(basename(index)))
 
-async def query_ability_num_occur(interaction: Interaction, ability: str):
-    if cards_dff.empty:
-        return await interaction.response.send_message(f"{STATS_PKL} is empty. run ```/update_stats``` first.")
+    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.")
 
-    ability = ability.strip().lower()
-    closest = ability_search_engine(ability)
 
-    await interaction.response.send_message(f"{len(closest)} Results found for {ability}!")
+def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
+    """
+    Query the number of cards matching an ability.
 
-def print_all_aliases():
-    all_aliases = "```"
-    for key, val in git_file_alias.items():
-        all_aliases += f"{key:20s} -> {val}\n"
-    all_aliases += "```"
-    return all_aliases
+    Args:
+        interaction: Discord interaction
+        ability: Ability search query
+    """
+    if card_repo.cards_dff.empty:
+        queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
+        return
 
-async def alias_card(interaction: Interaction, key: str, val: str):
-    global git_filenames
-    if not key or not val:
-        await interaction.response.send_message(print_all_aliases())
+    results = card_repo.ability_search_engine(ability.strip().lower())
+    queue_message(interaction, f"Found {len(results)} cards matching '{ability}'.")
+
+
+def query_rulebook(interaction: Interaction,
+                   search_text: str,
+                   limit: int = -1) -> None:
+    """
+    Search rulebook entries for matching text.
+
+    Args:
+        interaction: Discord interaction
+        search_text: Text to search for in rulebook
+        limit: Maximum number of results to display (-1 for all)
+    """
+    if card_repo.rulebook_dff.empty:
+        queue_message(interaction, f"{STATS_PKL} is empty or has no rulebook entries. Run `/update_stats` first.")
+        return
+
+    results = card_repo.rulebook_search_engine(search_text.strip())
+
+    # Sort alphabetically by index (card name)
+    results = results.sort_index(key=lambda x: x.str.lower())
+
+    total_results = len(results)
+    results_to_show = total_results if limit < 0 else min(limit, total_results)
+
+    queue_message(interaction, f"Found {total_results} rulebook entries matching '{search_text}'!")
+
+    if total_results == 0:
+        return
+
+    # Send results
+    for idx, (name, row) in enumerate(results.iterrows()):
+        if idx >= results_to_show:
+            break
+
+        ability = row.get("ability", "No text available")
+        for chunk in split_long_message(ability):
+            queue_message(interaction, f"**{name}**\n```\n{chunk}\n```")
+
+    if results_to_show < total_results:
+        queue_message(interaction, f"Displayed {results_to_show} of {total_results} results. Use limit parameter to see more.")
+
+
+def print_all_aliases() -> str:
+    """Get formatted string of all aliases."""
+    if not card_repo.git_file_alias:
+        return "```No aliases defined.```"
+
+    lines = ["```"]
+    for key, val in sorted(card_repo.git_file_alias.items()):
+        lines.append(f"{key:20s} -> {val}")
+    lines.append("```")
+    return "\n".join(lines)
+
+
+async def manage_alias(interaction: Interaction, key: Optional[str], val: Optional[str]) -> None:
+    """
+    Manage aliases for card names.
+
+    Args:
+        interaction: Discord interaction
+        key: Alias name (for create/delete operations)
+        val: Target card name (for create), or None to delete
+    """
+    # View all aliases if no parameters provided
+    if not key:
+        if not card_repo.git_file_alias:
+            await interaction.response.send_message("```No aliases defined.```")
+            return
+
+        lines = ["```"]
+        for alias_key, alias_val in sorted(card_repo.git_file_alias.items()):
+            lines.append(f"{alias_key:20s} -> {alias_val}")
+        lines.append("```")
+        await interaction.response.send_message("\n".join(lines))
         return
 
     key = key.lower()
-    val = val.lower()
 
-    if not val.endswith(".png"):
-        val += ".png"
-
-    invalid_val = True
-    if val in git_files:
-        git_files[f"{key}.png"] = git_files[val]
-        invalid_val = False
-    else:
-        for val_in_dict in git_files.values():
-            if val_in_dict.lower().endswith(val):
-                git_files[f"{key}.png"] = val_in_dict
-                invalid_val = False
-                break
-    if invalid_val:
-        await interaction.response.send_message(f"No such value exists: {val}\nCouldnt add alias into dictionary.")
-        return
-
-    git_filenames = git_files.keys()
-    git_file_alias[key] = val
-    await interaction.response.send_message(f"Created alias: {key} -> {val}")
-
-    with open(ALIAS_PKL, 'wb') as f:
-        dump(git_file_alias, f)
-
-async def delete_alias(interaction: Interaction, key: str):
-    global git_filenames
-    if key in git_file_alias:
-        await interaction.response.send_message(f"Deleted alias: {key} -> {git_file_alias.pop(key)}")
-
-        if key + ".png" not in git_files:
-            await interaction.followup.send(f"No such key exists: {key}\nCouldnt pop alias from dictionary.")
+    # Delete alias if val is None or empty
+    if not val:
+        if key not in card_repo.git_file_alias:
+            await interaction.response.send_message(f"No alias exists for '{key}'.")
             return
 
-        git_files.pop(f"{key}.png")
-        git_filenames = git_files.keys()
+        target = card_repo.git_file_alias.pop(key)
+        card_repo.git_files.pop(f"{key}.png", None)
+        card_repo.save_aliases()
+        await interaction.response.send_message(f"Deleted alias: {key} -> {target}")
+        return
+
+    # Create alias
+    val = val.lower() if val.endswith(".png") else f"{val}.png"
+
+    # Find target in git_files
+    target_path = None
+    if val in card_repo.git_files:
+        target_path = card_repo.git_files[val]
     else:
-        await interaction.response.send_message(f"No value exists for the alias: {key}")
+        for filename, path in card_repo.git_files.items():
+            if filename.endswith(val):
+                target_path = path
+                break
+
+    if not target_path:
+        await interaction.response.send_message(f"No card found matching '{val}'. Alias not created.")
         return
 
-async def set_match_ratio(interaction: Interaction, value: float):
-    global MATCH_RATIO
-    if not value:
-        await interaction.response.send_message(f"The match ratio is {MATCH_RATIO}.")
+    # Create alias
+    card_repo.git_files[f"{key}.png"] = target_path
+    card_repo.git_file_alias[key] = val
+    card_repo.save_aliases()
+    await interaction.response.send_message(f"Created alias: {key} -> {val}")
+
+
+async def set_match_ratio(interaction: Interaction, value: Optional[float] = None) -> None:
+    """
+    Set or display the fuzzy match ratio.
+
+    Args:
+        interaction: Discord interaction
+        value: New match ratio (0.0-1.0)
+    """
+    if value is None:
+        await interaction.response.send_message(f"Current match ratio: {card_repo.match_ratio}")
         return
 
-    MATCH_RATIO = value
-    await interaction.response.send_message(f"New match ratio of {MATCH_RATIO} set!")
+    if not 0.0 <= value <= 1.0:
+        await interaction.response.send_message("Match ratio must be between 0.0 and 1.0.")
+        return
 
-async def set_repository(interaction: Interaction, new_repo: str):
-    global REPOSITORY
+    card_repo.match_ratio = value
+    await interaction.response.send_message(f"Match ratio set to {card_repo.match_ratio}")
+
+
+async def set_repository(interaction: Interaction, new_repo: Optional[str] = None) -> None:
+    """
+    Set or display the GitHub repository.
+
+    Args:
+        interaction: Discord interaction
+        new_repo: New repository name
+    """
     if not new_repo:
-        await interaction.response.send_message(f"The repository is {REPOSITORY}.")
+        await interaction.response.send_message(f"Current repository: {card_repo.repository}")
         return
 
-    REPOSITORY = new_repo
-    status = populate_files()
+    card_repo.repository = new_repo
+    status = card_repo.populate_files()
+
     if status != 200:
-       print(f"Error {status} when requesting github.")
-    await interaction.response.send_message(f"New repository of {REPOSITORY} set!")
+        await interaction.response.send_message(f"Error {status} when connecting to {new_repo}")
+    else:
+        await interaction.response.send_message(f"Repository set to {card_repo.repository}")
+
+
+# ========================
+# Initialization
+# ========================
+card_repo = CardRepository()
+def init_query() -> None:
+    """Initialize the card repository with saved data."""
+    card_repo.load_aliases()
+    status = card_repo.populate_files()
+    if status != 200:
+        print(f"Warning: Failed to populate files from repository (status {status})")
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'card_repo',
+    'manage_alias',
+    'init_query',
+    'query_ability',
+    'query_ability_num_occur',
+    'query_name',
+    'query_rulebook',
+    'set_match_ratio',
+    'set_repository',
+]
