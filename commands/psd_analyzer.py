@@ -764,7 +764,7 @@ class RepositoryTraverser:
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types)
 
-        problems = self._process_files_from_response(resp, repo, interaction, output_problematic)
+        problems = self._process_files_from_response(resp, repo, repository, interaction, output_problematic)
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -824,7 +824,7 @@ class RepositoryTraverser:
                 for file in files:
                     self.db.all_types.append(file[:-4].lower())
 
-    def _construct_raw_url(self, path: str) -> str:
+    def _construct_raw_url(self, repository: str, path: str) -> str:
         """
         Construct a raw GitHub URL from a repository path.
 
@@ -834,11 +834,12 @@ class RepositoryTraverser:
         Returns:
             Full raw GitHub URL
         """
-        return f"https://raw.githubusercontent.com/{self.db.repository}/main/{quote(path, safe='/')}"
+        return f"https://raw.githubusercontent.com/{repository}/main/{quote(path, safe='/')}"
 
     def _process_files_from_response(self,
                                      response,
                                      repo: Repository.Repository,
+                                     repository: str,
                                      interaction: Optional[Interaction],
                                      output_problematic: bool) -> list[str]:
         """Process files from API response."""
@@ -875,7 +876,7 @@ class RepositoryTraverser:
                 else:
                     num_new += 1
 
-                psd_url = self._construct_raw_url(path)
+                psd_url = self._construct_raw_url(repository, path)
                 try:
                     local_file = urlretrieve(psd_url)[0]
                 except HTTPError:
