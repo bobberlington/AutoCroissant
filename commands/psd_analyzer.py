@@ -12,7 +12,8 @@ from psd_tools import PSDImage
 from re import Pattern, compile as re_compile
 from requests import get
 from typing import Optional, Any
-from urllib.request import urlretrieve
+from urllib.parse import quote
+from urllib.request import urlretrieve, HTTPError
 import pandas as pd
 
 import config
@@ -26,7 +27,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # Configuration
 # ========================
 UPDATE_RATE = 25
-EXCLUDE_FOLDERS = ["markers", "MDW"]
+EXCLUDE_FOLDERS = ["Markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
 EXPORTED_RULES_NAME = "rules"
 GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
@@ -823,6 +824,18 @@ class RepositoryTraverser:
                 for file in files:
                     self.db.all_types.append(file[:-4].lower())
 
+    def _construct_raw_url(self, path: str) -> str:
+        """
+        Construct a raw GitHub URL from a repository path.
+
+        Args:
+            path: Relative path within the repository (e.g., "Creatures/Kirby/5 Star/Magolor.psd")
+
+        Returns:
+            Full raw GitHub URL
+        """
+        return f"https://raw.githubusercontent.com/{self.db.repository}/main/{quote(path, safe='/')}"
+
     def _process_files_from_response(self,
                                      response,
                                      repo: Repository.Repository,
@@ -838,7 +851,8 @@ class RepositoryTraverser:
         for item in response.json().get("tree", []):
             path = item.get("path", "")
 
-            if not path.endswith('.psd') or "MDW" in path:
+            # Check if any folder in the path is in EXCLUDE_FOLDERS
+            if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
                 continue
 
             name = basename(path)[:-4].replace('_', ' ')
@@ -861,10 +875,14 @@ class RepositoryTraverser:
                 else:
                     num_new += 1
 
-                # Download and parse
-                url = card_repo.get_card_url(name)[:-4] + '.psd'
-                card = self.parser.parse(urlretrieve(url)[0], path)
+                psd_url = self._construct_raw_url(path)
+                try:
+                    local_file = urlretrieve(psd_url)[0]
+                except HTTPError:
+                    print(f"{psd_url} not found.")
+                    continue
 
+                card = self.parser.parse(local_file, path)
                 card.timestamp = timestamp
                 # Set author if it was fetched earlier
                 if author:
@@ -872,7 +890,7 @@ class RepositoryTraverser:
                 self.db.stats[name] = card
 
                 # Validate
-                if output_problematic and card.card_type not in EXCLUDE_FOLDERS:
+                if output_problematic:
                     problems = CardValidator.validate(card)
                     if problems:
                         problematic_cards.append((path, card, problems))
@@ -898,14 +916,16 @@ class RepositoryTraverser:
         num_moved = 0
 
         for folder, _, files in walk(local_path):
-            if folder in EXCLUDE_FOLDERS:
+            folder = folder.replace('\\', '/')
+            # Check if current folder or any parent folder is in EXCLUDE_FOLDERS
+            if any(part in EXCLUDE_FOLDERS for part in folder.split('/')):
                 continue
 
             for file in files:
                 if not file.endswith('.psd'):
                     continue
 
-                full_path = path_join(folder, file).replace('\\', '/')
+                full_path = path_join(folder, file)
                 relative_path = full_path.split("TTSCardMaker")[-1].strip('/')
                 name = basename(relative_path)[:-4].replace('_', ' ')
                 self.db.dirty_files.append(name)
@@ -940,7 +960,7 @@ class RepositoryTraverser:
                     self.db.stats[name] = card
 
                     # Validate
-                    if output_problematic and card.card_type not in EXCLUDE_FOLDERS:
+                    if output_problematic:
                         problems = CardValidator.validate(card)
                         if problems:
                             problematic_cards.append((relative_path, card, problems))

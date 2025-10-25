@@ -333,7 +333,7 @@ class CardRepository:
         matches = get_close_matches(self._normalize_card_name(query), self.git_filenames, n=1, cutoff=self.match_ratio)
         return matches[0] if matches else None
 
-    def get_card_url(self, filename: str) -> str:
+    def get_card_url(self, filename: str) -> str | None:
         """
         Get full GitHub URL for a card.
 
@@ -347,13 +347,15 @@ class CardRepository:
             KeyError: If card is not found
         """
         # Normalize filename - replace spaces with underscores
-        filename = filename.replace(' ', '_')
         if not filename.endswith('.png'):
             filename = f"{filename}.png"
-        filename = filename.lower()
+        filename = filename.replace(' ', '_').lower()
 
         if filename not in self.git_files:
-            raise KeyError(f"Card not found: {filename}")
+            filename = filename.replace('_', ' ')
+            if filename not in self.git_files:
+                print(f"Card not found: {filename}")
+                return
 
         # Keep slashes unencoded
         return f"https://raw.githubusercontent.com/{self.repository}/main/{quote(self.git_files[filename], safe='/')}"

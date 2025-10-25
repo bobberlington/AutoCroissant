@@ -673,11 +673,10 @@ purge = to_thread(purge)
     num='The number of messages to delete. Default = 100.',
     bulk='Enable bulk delete. Deletes faster but needs Manage Messages permission. Default = false.',
 )
-async def slash_purge(
-    interaction: Interaction,
-    user: Optional[Member],
-    num: Optional[int] = 100,
-    bulk: Optional[bool] = False):
+async def slash_purge(interaction: Interaction,
+                      user: Optional[Member],
+                      num: Optional[int] = 100,
+                      bulk: Optional[bool] = False):
     await interaction.response.defer(ephemeral=True, thinking=False)
     await purge(interaction, num, user if user else client.user.id, bulk)
 
@@ -696,9 +695,7 @@ leave_guild = to_thread(leave_guild)
 @app_commands.describe(
     guild_id="The ID of the guild (server) you want the bot to leave.",
 )
-async def slash_leave_guild(
-    interaction: Interaction,
-    guild_id: str):
+async def slash_leave_guild(interaction: Interaction, guild_id: str):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
@@ -722,9 +719,7 @@ list_guild_members = to_thread(list_guild_members)
 @app_commands.describe(
     guild_id="The ID of the guild (server) whose members you want to list.",
 )
-async def slash_list_guild_members(
-    interaction: Interaction,
-    guild_id: str):
+async def slash_list_guild_members(interaction: Interaction, guild_id: str):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
@@ -739,9 +734,7 @@ list_guild_channels = to_thread(list_guild_channels)
 @app_commands.describe(
     guild_id="The ID of the guild (server) whose channels you want to list.",
 )
-async def slash_list_guild_channels(
-    interaction: Interaction,
-    guild_id: str):
+async def slash_list_guild_channels(interaction: Interaction, guild_id: str):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
@@ -758,11 +751,10 @@ get_channel_messages = to_thread(get_channel_messages)
     channel_id="The ID of the channel to read from.",
     limit="How many recent messages to fetch (default 50, -1 means infinite).",
 )
-async def slash_get_channel_messages(
-    interaction: Interaction,
-    guild_id: str,
-    channel_id: str,
-    limit: Optional[int] = 50):
+async def slash_get_channel_messages(interaction: Interaction,
+                                     guild_id: str,
+                                     channel_id: str,
+                                     limit: Optional[int] = 50):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
