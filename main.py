@@ -61,7 +61,7 @@ from commands.psd_analyzer import (
     list_orphans,
     manual_metadata_entry,
     update_stats,
-    mass_replace_author,
+    mass_replace_field,
 )
 from commands.query_card import (
     manage_alias,
@@ -356,14 +356,14 @@ async def slash_update_stats(interaction: Interaction,
 
 
 export_stats_to_file = to_thread(export_stats_to_file)
-@tree.command(name="export_abilities", description="Exports all abilities as a text file.")
+@tree.command(name="export_cards", description="Exports all cards as a csv/txt.")
 @app_commands.describe(
     only_ability='Should we only output the ability of cards?',
     as_csv='Should we output the file as a csv?',
 )
-async def slash_export_abilities(interaction: Interaction,
-                                 only_ability: Optional[bool] = False,
-                                 as_csv: Optional[bool] = True):
+async def slash_export_cards(interaction: Interaction,
+                             only_ability: Optional[bool] = False,
+                             as_csv: Optional[bool] = True):
     await interaction.response.defer()
     await export_stats_to_file(interaction, only_ability, as_csv)
 
@@ -426,17 +426,25 @@ async def slash_update_metadata(
     )
 
 
-mass_replace_author = to_thread(mass_replace_author)
-@tree.command(name="replace_author", description="Replace all instances of one author with another.")
+mass_replace_field = to_thread(mass_replace_field)
+@tree.command(name="mass_replace", description="Replace all instances of one field value with another.")
 @app_commands.describe(
-    author1='The author being replaced.',
-    author2='The author to change author1 to.',
+    field='The field to modify (author, series, subtype, or card_type).',
+    old_value='The value being replaced.',
+    new_value='The new value to set.',
 )
-async def slash_replace_author(interaction: Interaction,
-                               author1: str,
-                               author2: str):
+@app_commands.choices(field=[
+    Choice(name="author", value="author"),
+    Choice(name="series", value="series"),
+    Choice(name="subtype", value="subtype"),
+    Choice(name="card_type", value="card_type"),
+])
+async def slash_replace_field(interaction: Interaction,
+                              field: Choice[str],
+                              old_value: str,
+                              new_value: str):
     await interaction.response.defer()
-    await mass_replace_author(interaction, author1, author2)
+    await mass_replace_field(interaction, field.value, old_value, new_value)
 
 
 list_orphans = to_thread(list_orphans)

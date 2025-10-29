@@ -60,7 +60,7 @@ stats_commands = {
                                                                                           "- output_problematic_cards: Show cards with errors (default: True)\n"
                                                                                           "- use_local_repo: Use local cloned folder vs remote (default: True)\n"
                                                                                           "- use_local_timestamp: Use local file times vs GitHub (default: True)",
-    "/export_abilities [only_ability] [as_csv]:" : "Exports all card abilities to a file (excludes rulebook).\n"
+    "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Export only ability text (default: True)\n"
                                                    "- as_csv: Export as CSV instead of text (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
@@ -69,7 +69,7 @@ stats_commands = {
                                                   "- del_entry: Delete entire metadata entry\n"
                                                   "- types: Comma-separated list, e.g., 'fire,water'\n"
                                                   "- No parameters (except query) shows current metadata",
-    "/replace_author [author1] [author2]:"      : "Replace all instances of one author with another across the entire database.",
+    "/mass_replace <field> <old> <new>:"        : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 

@@ -32,6 +32,12 @@ EXPORTED_STATS_NAME = "stats"
 EXPORTED_RULES_NAME = "rules"
 GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 
+COLUMN_ORDER = [
+    'aliases', 'type', 'ability', 'hp', 'def', 'atk', 'spd',
+    'types', 'path', 'timestamp', 'author', 'stars',
+    'problem', 'series', 'subtype'
+]
+
 
 class CardType(Enum):
     """Enum for card types."""
@@ -258,6 +264,7 @@ class CardClassifier:
 
         Args:
             relative_path: Relative path to card file
+            existing_card: Existing CardInfo if card is being updated
 
         Returns:
             Dictionary with card classification info
@@ -283,12 +290,7 @@ class CardClassifier:
                 "subtype": folders[-2].lower(),
                 "stars": int(folders[-1].split()[0]),
             },
-            "Creatures": lambda: {
-                "type": CardType.CREATURE.value,
-                "stars": int(folders[-1].split()[0]),
-                "series": folders[-2].lower(),
-                "hp": -1, "def": -1, "atk": -1, "spd": -1,
-            },
+            "Creatures": lambda: CardClassifier._classify_creatures(folders),
             "N.M.E": lambda: {"type": CardType.NME.value},
         }
 
@@ -299,6 +301,17 @@ class CardClassifier:
             return CardClassifier._classify_auxiliary(folders)
 
         return {"type": CardType.UNKNOWN.value}
+
+    @staticmethod
+    def _classify_creatures(folders: list[str]) -> dict:
+        """Classify creature cards, preserving existing series if available."""
+        result = {
+            "type": CardType.CREATURE.value,
+            "stars": int(folders[-1].split()[0]),
+            "series": folders[-2].lower(),
+            "hp": -1, "def": -1, "atk": -1, "spd": -1,
+        }
+        return result
 
     @staticmethod
     def _classify_auxiliary(folders: list[str]) -> dict:
@@ -329,8 +342,9 @@ class CardClassifier:
 
 class PSDParser:
     """Parses PSD files to extract card information."""
-    def __init__(self, all_types: list[str]):
+    def __init__(self, all_types: list[str], stats_db: StatsDatabase):
         self.all_types = all_types
+        self.stats_db = stats_db
         self._whitespace_pattern = re_compile(r'\s{3,}|\s{3,}:')
         self._spacing_pattern = re_compile(r'\s+([:;,\.\?!])')
 
@@ -345,17 +359,28 @@ class PSDParser:
         Returns:
             CardInfo object with extracted data
         """
-        # Initialize card with classification
+        name = basename(relative_path)[:-4].replace('_', ' ')
+
+        # Get existing card if it exists
+        existing_card = self.stats_db.stats.get(name)
+
+        # Initialize card with classification (passing existing card)
         card_dict = CardClassifier.classify(relative_path)
 
         card = CardInfo(
-            name=basename(relative_path)[:-4].replace('_', ' '),
+            name=name,
             card_type=card_dict.get("type", CardType.UNKNOWN.value),
             path=relative_path,
             stars=card_dict.get("stars"),
             subtype=card_dict.get("subtype"),
             series=card_dict.get("series"),
         )
+
+        # Preserve author and series from existing card
+        if existing_card and existing_card.author:
+            card.author = existing_card.author
+        if existing_card and existing_card.series:
+            card.series = existing_card.series
 
         # Set initial stats if present
         if "hp" in card_dict:
@@ -762,7 +787,7 @@ class RepositoryTraverser:
         repo = self._github_client.get_repo(repository)
 
         self._populate_types_from_response(resp)
-        self.parser = PSDParser(self.db.all_types)
+        self.parser = PSDParser(self.db.all_types, self.db)
 
         problems = self._process_files_from_response(resp, repo, repository, interaction, output_problematic)
 
@@ -798,7 +823,7 @@ class RepositoryTraverser:
             repo = None
 
         self._populate_types_from_local(local_path)
-        self.parser = PSDParser(self.db.all_types)
+        self.parser = PSDParser(self.db.all_types, self.db)
 
         problems = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp)
 
@@ -868,6 +893,11 @@ class RepositoryTraverser:
             if not should_update:
                 num_old += 1
             else:
+                # Archive old version before updating (if not new)
+                if not is_new and name in self.db.stats:
+                    old_card = self.db.stats[name]
+                    self.db.old_stats[name].append(old_card)
+
                 if is_new:
                     num_new += 1
                 # Check if it's a move vs a content update
@@ -886,7 +916,7 @@ class RepositoryTraverser:
                 card = self.parser.parse(local_file, path)
                 card.timestamp = timestamp
                 # Set author if it was fetched earlier
-                if author:
+                if author and not card.author:
                     card.author = author
                 self.db.stats[name] = card
 
@@ -944,6 +974,11 @@ class RepositoryTraverser:
                 if not should_update:
                     num_old += 1
                 else:
+                    # Archive old version before updating (if not new)
+                    if not is_new and name in self.db.stats:
+                        old_card = self.db.stats[name]
+                        self.db.old_stats[name].append(old_card)
+
                     if is_new:
                         num_new += 1
                     # Check if it's a move vs a content update
@@ -956,7 +991,7 @@ class RepositoryTraverser:
                     card = self.parser.parse(full_path, relative_path)
                     card.timestamp = timestamp
                     # Set author if it was fetched earlier
-                    if author:
+                    if author and not card.author:
                         card.author = author
                     self.db.stats[name] = card
 
@@ -1036,6 +1071,40 @@ class RepositoryTraverser:
 # ========================
 # Helper Functions
 # ========================
+def get_card_aliases(card_name: str = None) -> dict[str, list[str]] | list[str]:
+    """
+    Build a reverse lookup of cards to aliases.
+
+    Args:
+        card_name: Optional specific card name to get aliases for.
+                   If None, returns dict mapping all card names to their aliases.
+
+    Returns:
+        If card_name provided: list of aliases for that card
+        If card_name is None: dict mapping card names to lists of aliases
+    """
+    card_to_aliases = {}
+
+    # Build reverse lookup using get_card_path
+    for alias in card_repo.git_file_alias.keys():
+        # Use get_card_path to find the actual card this alias points to
+        path = card_repo.get_card_path(alias)
+        if path:
+            # Extract card name from path
+            target_name = basename(path).replace('_', ' ')
+
+            if target_name not in card_to_aliases:
+                card_to_aliases[target_name] = []
+            card_to_aliases[target_name].append(alias)
+
+    # If specific card requested, return just its aliases
+    if card_name is not None:
+        return sorted(card_to_aliases.get(card_name, []))
+
+    # Otherwise return the full mapping
+    return card_to_aliases
+
+
 def get_stats_as_dict() -> dict[str, dict]:
     """
     Get the stats database as a dictionary format.
@@ -1153,28 +1222,36 @@ def list_orphans(interaction: Interaction) -> None:
         queue_message(interaction, chunk)
 
 
-def mass_replace_author(interaction: Interaction,
-                        author1: str = "",
-                        author2: str = "") -> None:
+def mass_replace_field(interaction: Interaction,
+                       field: str = "",
+                       old_value: str = "",
+                       new_value: str = "") -> None:
     """
-    Replace all instances of one author with another.
+    Replace all instances of one field value with another.
 
     Args:
         interaction: Discord interaction
-        author1: Author name to replace
-        author2: New author name
+        field: Field name to modify (e.g., 'author', 'series', 'subtype', 'card_type')
+        old_value: Value to replace
+        new_value: New value
     """
+    # Validate field name
+    valid_fields = ['author', 'series', 'subtype', 'card_type']
+    if field not in valid_fields:
+        queue_message(interaction, f"Invalid field '{field}'. Valid fields are: {', '.join(valid_fields)}")
+        return
+
     num_replaced = 0
     for _, card in stats_db.stats.items():
-        if card.author == author1:
-            card.author = author2
+        current_value = getattr(card, field, None)
+
+        # Handle case-insensitive comparison for string fields
+        if isinstance(current_value, str) and current_value.lower() == old_value.lower():
+            setattr(card, field, new_value)
             num_replaced += 1
 
     stats_db.save()
-    queue_message(
-        interaction,
-        f"Replaced {num_replaced} instances of '{author1}' with '{author2}'."
-    )
+    queue_message(interaction, f"Replaced {num_replaced} instances of {field}='{old_value}' with '{new_value}'.")
 
 
 def manual_metadata_entry(interaction: Interaction,
@@ -1287,11 +1364,25 @@ def manual_metadata_entry(interaction: Interaction,
     # If no updates were provided, show current metadata
     if not updates:
         metadata_dict = card.to_dict()
-        pretty_metadata = '\n'.join(f"{k}: {v}" for k, v in metadata_dict.items())
-        queue_message(
-            interaction,
-            f"Current metadata for **{name}**:\n```{pretty_metadata}```"
-        )
+
+        # Get aliases for this card
+        aliases = get_card_aliases(name)
+        if aliases:
+            metadata_dict['aliases'] = ', '.join(aliases)
+
+        # Build sorted metadata string
+        sorted_metadata = []
+        for key in COLUMN_ORDER:
+            if key in metadata_dict:
+                sorted_metadata.append(f"{key}: {metadata_dict[key]}")
+
+        # Add any remaining keys not in COLUMN_ORDER
+        for key, value in metadata_dict.items():
+            if key not in COLUMN_ORDER:
+                sorted_metadata.append(f"{key}: {value}")
+
+        pretty_metadata = '\n'.join(sorted_metadata)
+        queue_message(interaction, f"Current metadata for **{name}**:\n```{pretty_metadata}```")
         return
 
     stats_db.save()
@@ -1305,8 +1396,8 @@ def manual_metadata_entry(interaction: Interaction,
 
 
 def export_stats_to_file(interaction: Interaction,
-                               only_ability: bool = False,
-                               as_csv: bool = True) -> None:
+                         only_ability: bool = False,
+                         as_csv: bool = True) -> None:
     """
     Export card statistics to a file (excluding rulebook entries).
 
@@ -1321,19 +1412,29 @@ def export_stats_to_file(interaction: Interaction,
         if "Rulebook" not in card.path
     }
 
+    # Get all card aliases using helper function
+    card_to_aliases = get_card_aliases()
+
+    # Add aliases to filtered_stats
+    for name in filtered_stats:
+        if name in card_to_aliases:
+            filtered_stats[name]['aliases'] = ', '.join(sorted(card_to_aliases[name]))
+        else:
+            filtered_stats[name]['aliases'] = ''
+
     if as_csv:
         df = pd.DataFrame.from_dict(filtered_stats).transpose()
         df_filtered = df[df["ability"].notna()].copy()
 
-        # Sort by type first, then by index (name) alphabetically
-        # Reset index to make it a column, sort, then set it back
-        df_filtered = df_filtered.reset_index()
+        # Reorder columns (only include columns that exist)
+        existing_columns = [col for col in COLUMN_ORDER if col in df_filtered.columns]
+        df_filtered = df_filtered[existing_columns]
+
+        # Sort alphabetically by path
         df_filtered = df_filtered.sort_values(
-            by=['type', 'index'],
-            key=lambda x: x.str.lower() if x.dtype == 'object' else x
+            by='path',
+            key=lambda x: x.str.lower()
         )
-        df_filtered = df_filtered.set_index('index')
-        df_filtered.index.name = None  # Remove index name for cleaner output
 
         filename = f"{EXPORTED_STATS_NAME}.csv"
         df_filtered.to_csv(filename)
@@ -1365,6 +1466,11 @@ def export_stats_to_file(interaction: Interaction,
                 current_type = card_type
 
             f.write(f"{name}\n")
+
+            # Add aliases right after name
+            if name in card_to_aliases:
+                aliases_str = ', '.join(sorted(card_to_aliases[name]))
+                f.write(f"Aliases: {aliases_str}\n")
 
             if only_ability:
                 if card.ability:
@@ -1427,7 +1533,7 @@ __all__ = [
     'get_old_stats_as_dict',
     'update_stats',
     'list_orphans',
-    'mass_replace_author',
+    'mass_replace_field',
     'manual_metadata_entry',
     'export_stats_to_file',
     'export_rulebook_to_file',
