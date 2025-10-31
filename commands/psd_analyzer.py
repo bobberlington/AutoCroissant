@@ -1196,6 +1196,7 @@ def update_stats(interaction: Optional[Interaction] = None,
             _notify(card.split('```')[0])
 
     # Always refresh card_repo stats
+    queue_command(card_repo.populate_files)
     queue_command(card_repo.prep_dataframes)
 
     return problem_cards
@@ -1395,6 +1396,85 @@ def manual_metadata_entry(interaction: Interaction,
     )
 
 
+def view_old_metadata(interaction: Interaction,
+                     query: str,
+                     version: int = 0) -> None:
+    """
+    View old metadata for a card from the history.
+
+    Args:
+        interaction: Discord interaction
+        query: Card name query
+        version: Version index (-1 for oldest, 0 for most recent old version,
+                1 for second most recent, etc.)
+    """
+    path = card_repo.get_card_path(query)
+    if not path:
+        queue_message(interaction, f"No card found matching '{query}'.")
+        return
+
+    name = basename(path).replace('_', ' ')
+
+    # Check if card has old versions
+    if name not in stats_db.old_stats or not stats_db.old_stats[name]:
+        queue_message(interaction, f"No old versions found for **{name}**.")
+        return
+
+    old_versions = stats_db.old_stats[name]
+
+    # Handle version indexing
+    # -1 means oldest (first in list)
+    # 0 means newest old version (last in list)
+    # positive numbers count back from most recent
+    if version == -1:
+        index = 0
+    elif version >= 0:
+        index = len(old_versions) - 1 - version
+    else:
+        # Negative numbers other than -1: count from beginning
+        index = abs(version) - 1
+
+    # Validate index
+    if index < 0 or index >= len(old_versions):
+        queue_message(
+            interaction,
+            f"Invalid version index. **{name}** has {len(old_versions)} old version(s).\n"
+            f"Use -1 for oldest, 0 for most recent old version, or 1-{len(old_versions)-1} for older versions."
+        )
+        return
+
+    card = old_versions[index]
+    metadata_dict = card.to_dict()
+
+    # Get aliases for this card
+    aliases = get_card_aliases(name)
+    if aliases:
+        metadata_dict['aliases'] = ', '.join(aliases)
+
+    # Add version info
+    version_text = "oldest" if index == 0 else f"version {len(old_versions) - index - 1}"
+    if index == len(old_versions) - 1:
+        version_text = "most recent old version"
+
+    # Build sorted metadata string
+    sorted_metadata = []
+    for key in COLUMN_ORDER:
+        if key in metadata_dict:
+            sorted_metadata.append(f"{key}: {metadata_dict[key]}")
+
+    # Add any remaining keys not in COLUMN_ORDER
+    for key, value in metadata_dict.items():
+        if key not in COLUMN_ORDER:
+            sorted_metadata.append(f"{key}: {value}")
+
+    pretty_metadata = '\n'.join(sorted_metadata)
+
+    queue_message(
+        interaction,
+        f"Old metadata for **{name}** ({version_text} of {len(old_versions)}):\n```{pretty_metadata}```"
+    )
+
+
 def export_stats_to_file(interaction: Interaction,
                          only_ability: bool = False,
                          as_csv: bool = True) -> None:
@@ -1535,6 +1615,7 @@ __all__ = [
     'list_orphans',
     'mass_replace_field',
     'manual_metadata_entry',
+    'view_old_metadata',
     'export_stats_to_file',
     'export_rulebook_to_file',
     'init_psd',
