@@ -188,8 +188,11 @@ async def slash_push(interaction: Interaction):
 
 
 update_bot = to_thread(update_bot)
-@tree.command(name="update", description="Does a push, then pull, then restarts.")
-async def slash_update(interaction: Interaction):
+@tree.command(name="update", description="Push pickles, pull latest code, and restart the bot.")
+@app_commands.describe(
+    force_reset="If True, discard all local changes and reset to remote (dangerous!)"
+)
+async def slash_update(interaction: Interaction, force_reset: Optional[bool] = False):
     if perms_check(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
@@ -197,7 +200,7 @@ async def slash_update(interaction: Interaction):
     process_dispatch_queue.stop()
     process_edit_queue.stop()
     await interaction.response.send_message(f"Doing a complete update of the bot!")
-    await update_bot(interaction)
+    await update_bot(interaction, force_reset)
 
 
 ####################
