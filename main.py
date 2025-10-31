@@ -60,6 +60,7 @@ from commands.psd_analyzer import (
     init_psd,
     list_orphans,
     manual_metadata_entry,
+    view_old_metadata,
     update_stats,
     mass_replace_field,
 )
@@ -424,6 +425,20 @@ async def slash_update_metadata(
         card_type,
         types,
     )
+
+
+view_old_metadata = to_thread(view_old_metadata)
+@tree.command(name="view_old_metadata", description="View old metadata versions for a card.")
+@app_commands.describe(
+    query='The card to view old metadata for.',
+    version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions.'
+)
+async def slash_view_old_metadata(
+    interaction: Interaction,
+    query: str,
+    version: int = 0):
+    await interaction.response.defer()
+    await view_old_metadata(interaction, query, version)
 
 
 mass_replace_field = to_thread(mass_replace_field)
