@@ -139,6 +139,15 @@ def make_fake_interaction(channel_id: int, guild_id: Optional[int] = None):
         channel_id: Discord channel ID
         guild_id: Optional Discord guild ID
     """
+
+    class FakeUser:
+        """Minimal user object representing the bot."""
+        def __init__(self, id: int = 1011264680683110433, name: str = "AutoCroissant", discriminator: str = "0225"):
+            self.id = id
+            self.name = name
+            self.discriminator = discriminator
+            self.bot = True
+
     class FakeResponse:
         def __init__(self, channel_id: int):
             self.channel_id = channel_id
@@ -175,7 +184,7 @@ def make_fake_interaction(channel_id: int, guild_id: Optional[int] = None):
             self.guild_id = guild_id
             self.response = FakeResponse(channel_id)
             self.followup = FakeFollowup(channel_id)
-            self.user = None
+            self.user = FakeUser()
             self.guild = Object(id=guild_id) if guild_id else None
             self.channel = Object(id=channel_id)
 
