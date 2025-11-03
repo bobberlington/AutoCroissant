@@ -221,6 +221,9 @@ async def slash_set_reminder(interaction: Interaction,
                              offset: Optional[str] = "",
                              frequency: Optional[str] = "",
                              command: Optional[str] = ""):
+    if perms_check(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await set_reminder(interaction, msg, when, offset, frequency, command)
 
 
