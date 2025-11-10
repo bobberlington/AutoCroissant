@@ -707,7 +707,7 @@ async def slash_purge(interaction: Interaction,
                       num: Optional[int] = 100,
                       bulk: Optional[bool] = False):
     await interaction.response.defer(ephemeral=True, thinking=False)
-    await purge(interaction, num, user if user else client.user.id, bulk)
+    await purge(interaction, num, user.id if user else client.user.id, bulk)
 
 
 list_guilds = to_thread(list_guilds)
