@@ -219,7 +219,7 @@ def make_simple_fake_interaction(channel_id: int, guild_id: Optional[int] = None
 @lru_cache(maxsize=128)
 def convert_value(value: str) -> Any:
     """Convert a string to int, float, or bool if possible, otherwise keep as string."""
-    value = value.strip().lower()
+    value = value.strip()
 
     if value in {"true", "false"}:
         return value == "true"
