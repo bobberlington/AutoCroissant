@@ -221,7 +221,7 @@ def convert_value(value: str) -> Any:
     """Convert a string to int, float, or bool if possible, otherwise keep as string."""
     value = value.strip()
 
-    if value in {"true", "false"}:
+    if value.lower() in {"true", "false"}:
         return value == "true"
 
     for convert in (int, float):
