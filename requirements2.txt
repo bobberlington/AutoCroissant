@@ -1,4 +1,4 @@
--i https://download.pytorch.org/whl/nightly/cu124
+#-i https://download.pytorch.org/whl/nightly/cu124
 torch
 torchvision
 torchaudio
