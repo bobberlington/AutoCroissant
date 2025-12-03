@@ -13,7 +13,7 @@ from commands.utils import (
     make_fake_interaction,
     parse_named_args,
 )
-from global_config import REMIND_PKL
+from global_config import REMIND_PKL, TIMEZONE
 
 reminders = defaultdict(list)
 
@@ -29,6 +29,7 @@ def init_reminder():
     Initialize the reminder system by loading existing reminders from disk.
 
     If the pickle file doesn't exist or is empty, initializes with an empty dictionary.
+    Reschedules any past-due reminders that have a frequency to their next interval.
     """
     global reminders
     print(f"Trying to open {REMIND_PKL}.")
@@ -36,6 +37,28 @@ def init_reminder():
         with open(REMIND_PKL, 'rb') as f:
             reminders = load(f)
         print(f"Existing dict found in {REMIND_PKL}, updating entries...")
+
+        # Reschedule past-due reminders with frequencies
+        now = datetime.now(TIMEZONE)
+        changed = False
+
+        for guild_id, reminder_list in reminders.items():
+            for reminder in reminder_list:
+                # Only reschedule if it has a frequency and the time has passed
+                if reminder.get("frequency") and reminder["when"] <= now:
+                    original_time = reminder["when"]
+
+                    # Keep adding intervals until we're in the future
+                    while reminder["when"] <= now:
+                        reminder["when"] = reminder["when"] + reminder["frequency"]
+
+                    print(f"Rescheduled reminder {reminder['id']} from {original_time} to {reminder['when']}")
+                    changed = True
+
+        if changed:
+            save_reminders()
+            print("Saved rescheduled reminders to disk.")
+
     except (EOFError, FileNotFoundError):
         print(f"{REMIND_PKL} is empty or missing.")
 
@@ -53,8 +76,10 @@ def parse_time_str(when_str: str) -> datetime | None:
     when_str = when_str.strip().upper().replace(" ", "")
     for fmt in ("%H:%M", "%I%p", "%I:%M%p"):
         try:
-            pst = ZoneInfo("America/Los_Angeles")
-            return datetime.combine(datetime.now(pst).date(), datetime.strptime(when_str, fmt).time(), tzinfo=pst)
+            now = datetime.now(TIMEZONE)
+            naive_time = datetime.strptime(when_str, fmt).time()
+            return datetime(year=now.year, month=now.month, day=now.day,
+                            hour=naive_time.hour, minute=naive_time.minute, tzinfo=TIMEZONE)
         except ValueError:
             continue
     return None
@@ -75,8 +100,9 @@ def parse_interval(time_str: str) -> timedelta | None:
         return None
     time_str = time_str.strip().lower()
     try:
-        val = int(time_str[:-1])
-        unit = time_str[-1]
+        length = len(time_str)
+        val = int(time_str[:length - 1])
+        unit = time_str[length - 1]
         return {
             "s": timedelta(seconds=val),
             "m": timedelta(minutes=val),
@@ -150,7 +176,7 @@ def check_reminder():
     Called automatically every second by the bot's task loop.
     """
     global reminders
-    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    now = datetime.now(TIMEZONE)
     changed = False
 
     for guild_id, reminder_list in list(reminders.items()):
