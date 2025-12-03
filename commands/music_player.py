@@ -115,7 +115,7 @@ def play_next_song() -> None:
     # Loop the last song if enabled
     if state.loop_song and prev_music:
         def _play_loop():
-            state.vc.play(FFmpegOpusAudio(source=prev_music[-1], before_options='-nostdin', options='-vn'), after=after_play)
+            state.vc.play(FFmpegOpusAudio(source=prev_music[len(prev_music) - 1], before_options='-nostdin', options='-vn'), after=after_play)
         queue_command(_play_loop)
         return
 
@@ -296,7 +296,7 @@ def replay_all(interaction: Interaction) -> None:
         music_queue.extend(unique_prev)
         prev_music.clear()
         if music_queue:
-            prev_music.append(music_queue[-1])
+            prev_music.append(music_queue[len(music_queue) - 1])
     else:
         queue_message(interaction, "No previously played songs.")
 
@@ -328,7 +328,7 @@ def shuffle_music(interaction: Interaction) -> None:
 def skip(interaction: Interaction) -> None:
     """Skip the current song."""
     if state.vc and (state.vc.is_playing() or state.vc.is_paused()):
-        queue_message(interaction, f"Skipping song: {prev_music[-1] if prev_music else 'unknown'}")
+        queue_message(interaction, f"Skipping song: {prev_music[len(prev_music) - 1] if prev_music else 'unknown'}")
         state.vc.stop()
     else:
         queue_message(interaction, "Not currently playing a song.")
@@ -350,10 +350,10 @@ def pause(interaction: Interaction) -> None:
     """Pause or resume playback."""
     if state.vc and state.vc.is_playing():
         if not state.vc.is_paused():
-            queue_message(interaction, f"Paused song: {prev_music[-1] if prev_music else 'unknown'}")
+            queue_message(interaction, f"Paused song: {prev_music[len(prev_music) - 1] if prev_music else 'unknown'}")
             state.vc.pause()
         else:
-            queue_message(interaction, f"Unpaused song: {prev_music[-1] if prev_music else 'unknown'}")
+            queue_message(interaction, f"Unpaused song: {prev_music[len(prev_music) - 1] if prev_music else 'unknown'}")
             state.vc.resume()
     else:
         queue_message(interaction, "Not currently playing a song.")
@@ -391,7 +391,7 @@ def clear_queue(interaction: Interaction) -> None:
 def stop(interaction: Interaction) -> None:
     """Stop playback and clear the queue."""
     if state.vc:
-        prev_song = prev_music[-1] if prev_music else ""
+        prev_song = prev_music[len(prev_music) - 1] if prev_music else ""
         queue_message(interaction, f"Clearing queue and stopping song: {prev_song}")
         prev_music.extend(music_queue)
         music_queue.clear()

@@ -15,9 +15,6 @@ EXCLUDE_FILES = {
     'commands/__init__.py',
     'commands/update_bot.py',           # Uses execv/execl for restart
     'commands/utils.py',                # Core utilities, decorators, dynamic behavior
-    'commands/management.py',           # Complex async operations with discord.py
-    'commands/music_player.py',         # ThreadPoolExecutor with Process/Queue-like issues
-    'commands/diffusion.py',            # PyTorch callbacks and dynamic function registration
 }
 
 # Files that CAN be compiled safely
@@ -27,6 +24,9 @@ INCLUDE_FILES = [
     'commands/help.py',
     'commands/psd_analyzer.py',
     'commands/query_card.py',
+    'commands/management.py',           # Complex async operations with discord.py
+    'commands/music_player.py',         # ThreadPoolExecutor with Process/Queue-like issues
+    'commands/diffusion.py',            # PyTorch callbacks and dynamic function registration
 ]
 
 # Compiler directives for optimization
