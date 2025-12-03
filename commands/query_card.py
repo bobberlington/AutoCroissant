@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from difflib import get_close_matches, SequenceMatcher
 from discord import Interaction
-from os.path import basename
+from os.path import basename, splitext
 from pickle import load, dump
 from requests import get
 from typing import Optional
@@ -238,8 +238,7 @@ class CardRepository:
 
         # Handle exact matches
         if ability.startswith('"') and ability.endswith('"'):
-            ability = ability[1:-1]
-            pattern = r"(?:^|\s|$|\b)" + escape(ability) + r"(?:^|\s|$|\b)"
+            pattern = r"(?:^|\s|$|\b)" + escape(ability.strip('"')) + r"(?:^|\s|$|\b)"
             if opposite:
                 return self.cards_dff[~self.cards_dff["ability"].str.contains(pattern, na=False)]
             return self.cards_dff[self.cards_dff["ability"].str.contains(pattern, na=False)]
@@ -373,7 +372,7 @@ class CardRepository:
         closest = self._find_closest_match(query)
         if not closest:
             return None
-        return self.git_files[closest][:-4]
+        return splitext(self.git_files[closest])[0]
 
 
 # ========================

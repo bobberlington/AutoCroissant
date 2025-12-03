@@ -6,7 +6,7 @@ from enum import Enum
 from github import Github, Repository
 from logging import getLogger, CRITICAL
 from os import walk
-from os.path import getmtime, basename, expanduser, join as path_join
+from os.path import getmtime, basename, expanduser, dirname, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
 from re import Pattern, compile as re_compile
@@ -272,7 +272,7 @@ class CardClassifier:
         if not relative_path:
             return {"type": CardType.UNKNOWN.value}
 
-        folders = relative_path.split('/')[:-1]
+        folders = dirname(relative_path)
         if not folders:
             return {"type": CardType.UNKNOWN.value}
 
@@ -283,12 +283,12 @@ class CardClassifier:
             "MDW": lambda: {"type": CardType.MDW.value, "ability": None},
             "Field": lambda: {
                 "type": CardType.FIELD.value,
-                "stars": int(folders[-1].split()[0]),
+                "stars": int(folders[len(folders) - 1].split()[0]),
             },
             "Items": lambda: {
                 "type": CardType.ITEM.value,
-                "subtype": folders[-2].lower(),
-                "stars": int(folders[-1].split()[0]),
+                "subtype": folders[len(folders) - 2].lower(),
+                "stars": int(folders[len(folders) - 1].split()[0]),
             },
             "Creatures": lambda: CardClassifier._classify_creatures(folders),
             "N.M.E": lambda: {"type": CardType.NME.value},
@@ -307,8 +307,8 @@ class CardClassifier:
         """Classify creature cards, preserving existing series if available."""
         result = {
             "type": CardType.CREATURE.value,
-            "stars": int(folders[-1].split()[0]),
-            "series": folders[-2].lower(),
+            "stars": int(folders[len(folders) - 1].split()[0]),
+            "series": folders[len(folders) - 2].lower(),
             "hp": -1, "def": -1, "atk": -1, "spd": -1,
         }
         return result
@@ -317,7 +317,8 @@ class CardClassifier:
     def _classify_auxiliary(folders: list[str]) -> dict:
         """Classify auxiliary cards."""
         if len(folders) < 2:
-            return {"type": folders[-1].lower() if folders else CardType.UNKNOWN.value}
+            last_folder = folders[len(folders) - 1] if folders else CardType.UNKNOWN.value
+            return {"type": last_folder.lower() if isinstance(last_folder, str) else last_folder}
 
         aux_type = folders[1]
 
@@ -332,12 +333,12 @@ class CardClassifier:
             if folders[2] == "Debuffs":
                 return {
                     "type": CardType.DEBUFF.value,
-                    "stars": int(folders[-1].split()[0]),
+                    "stars": int(folders[len(folders) - 1].split()[0]),
                 }
             elif folders[2] == "Buffs":
                 return {"type": CardType.BUFF.value}
 
-        return {"type": folders[-1].lower()}
+        return {"type": folders[len(folders) - 1].lower()}
 
 
 class PSDParser:
@@ -359,7 +360,7 @@ class PSDParser:
         Returns:
             CardInfo object with extracted data
         """
-        name = basename(relative_path)[:-4].replace('_', ' ')
+        name = splitext(basename(relative_path))[0].replace('_', ' ')
 
         # Get existing card if it exists
         existing_card = self.stats_db.stats.get(name)
@@ -593,7 +594,7 @@ class PSDParser:
         """Remove type bboxes that are too high up."""
         if not bboxes:
             return bboxes
-        max_height = max(bboxes[-1][1].y // 3, 400)
+        max_height = max(bboxes[len(bboxes) - 1][1].y // 3, 400)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
     def _inject_type_names(self,
@@ -838,7 +839,7 @@ class RepositoryTraverser:
         for item in response.json().get("tree", []):
             path = item.get("path", "")
             if path.startswith("Types") and "Stars" not in path and '.' in path:
-                self.db.all_types.append(basename(path)[:-4].lower())
+                self.db.all_types.append(splitext(basename(path))[0].lower())
 
     def _populate_types_from_local(self, local_path: str) -> None:
         """Populate card types from local directory."""
@@ -847,7 +848,7 @@ class RepositoryTraverser:
         for folder, _, files in walk(types_dir):
             if folder.endswith("Types"):
                 for file in files:
-                    self.db.all_types.append(file[:-4].lower())
+                    self.db.all_types.append(splitext(file)[0].lower())
 
     def _construct_raw_url(self, repository: str, path: str) -> str:
         """
@@ -881,7 +882,7 @@ class RepositoryTraverser:
             if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
                 continue
 
-            name = basename(path)[:-4].replace('_', ' ')
+            name = splitext(basename(path))[0].replace('_', ' ')
             self.db.dirty_files.append(name)
 
             # Get timestamp and author metadata
@@ -957,8 +958,8 @@ class RepositoryTraverser:
                     continue
 
                 full_path = path_join(folder, file)
-                relative_path = full_path.split("TTSCardMaker")[-1].strip('/')
-                name = basename(relative_path)[:-4].replace('_', ' ')
+                relative_path = full_path.removeprefix("TTSCardMaker").strip('/')
+                name = splitext(basename(relative_path))[0].replace('_', ' ')
                 self.db.dirty_files.append(name)
 
                 # Get timestamp
@@ -1023,16 +1024,12 @@ class RepositoryTraverser:
 
         commits = repo.get_commits(path=path)
         if commits.totalCount == 0:
-            # No valid timestamp
             return (datetime(1000, 1, 1).timestamp(), None)
 
         # Set metadata author from FIRST commit (original author)
-        # Only if not already set
         if name not in self.db.stats or not self.db.stats[name].author:
-            # Author uses the first (oldest) commit - this is the original author
             return (commits[0].commit.committer.date.timestamp(), commits[commits.totalCount - 1].commit.committer.name)
 
-        # Return timestamp from most recent commit
         return (commits[0].commit.committer.date.timestamp(), None)
 
     @staticmethod

@@ -59,7 +59,7 @@ class CardMerger:
             return images[0]
 
         # Use last image as base (determines final dimensions)
-        base_image = images[-1]
+        base_image = images[len(images) - 1]
         height, width = base_image.shape[:2]
 
         # Resize all images to match base dimensions
@@ -80,7 +80,7 @@ class CardMerger:
 
         Each image contributes a horizontal slice from top to bottom.
         """
-        result = images[-1].copy()
+        result = images[len(images) - 1].copy()
         total_images = len(images)
         slice_height = height // total_images
 
