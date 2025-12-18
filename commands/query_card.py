@@ -110,13 +110,16 @@ class CardRepository:
     def _populate_aliases(self) -> None:
         """Populate aliases into the file registry."""
         for alias, target in self.git_file_alias.items():
-            alias_key = f"{alias}.png"
+            alias_key = f"{alias.lower()}.png"
+            target = target.lower()
 
             if target in self.git_files:
                 self.git_files[alias_key] = self.git_files[target]
             else:
-                # Find files ending with target
-                matches = [v for k, v in self.git_files.items() if k.endswith(target)]
+                matches = [
+                    v for k, v in self.git_files.items()
+                    if k.lower().endswith(target)
+                ]
                 if matches:
                     self.git_files[alias_key] = matches[0]
 
@@ -291,9 +294,17 @@ class CardRepository:
         print(f"Loading aliases from {ALIAS_PKL}")
         try:
             with open(ALIAS_PKL, 'rb') as f:
-                self.git_file_alias = load(f)
+                raw_aliases = load(f)
+
+            # Normalize aliases to lowercase
+            self.git_file_alias = {
+                k.lower(): v.lower()
+                for k, v in raw_aliases.items()
+            }
+
         except (EOFError, FileNotFoundError):
             print(f"{ALIAS_PKL} doesn't exist, creating empty file...")
+            self.git_file_alias = {}
             self.save_aliases()
 
     def save_aliases(self) -> None:
@@ -499,16 +510,17 @@ def query_rulebook(interaction: Interaction,
         queue_message(interaction, f"Displayed {results_to_show} of {total_results} results. Use limit parameter to see more.")
 
 
-def print_all_aliases() -> str:
-    """Get formatted string of all aliases."""
+def print_all_aliases() -> list[str]:
+    """Get formatted chunks of all aliases."""
     if not card_repo.git_file_alias:
-        return "```No aliases defined.```"
+        return ["```No aliases defined.```"]
 
-    lines = ["```"]
+    lines = []
     for key, val in sorted(card_repo.git_file_alias.items()):
         lines.append(f"{key:20s} -> {val}")
-    lines.append("```")
-    return "\n".join(lines)
+
+    full_message = "```\n" + "\n".join(lines) + "\n```"
+    return split_long_message(full_message)
 
 
 async def manage_alias(interaction: Interaction, key: Optional[str], val: Optional[str]) -> None:
@@ -526,14 +538,11 @@ async def manage_alias(interaction: Interaction, key: Optional[str], val: Option
             await interaction.response.send_message("```No aliases defined.```")
             return
 
-        lines = ["```"]
-        for alias_key, alias_val in sorted(card_repo.git_file_alias.items()):
-            lines.append(f"{alias_key:20s} -> {alias_val}")
-        lines.append("```")
-        await interaction.response.send_message("\n".join(lines))
+        for chunk in print_all_aliases():
+            queue_message(interaction, chunk)
         return
 
-    key = key.lower()
+    key = key.strip().lower()
 
     # Delete alias if val is None or empty
     if not val:
@@ -548,17 +557,16 @@ async def manage_alias(interaction: Interaction, key: Optional[str], val: Option
         return
 
     # Create alias
-    val = val.lower() if val.endswith(".png") else f"{val}.png"
+    val = val.strip().lower()
+    if not val.endswith(".png"):
+        val = f"{val}.png"
 
     # Find target in git_files
     target_path = None
-    if val in card_repo.git_files:
-        target_path = card_repo.git_files[val]
-    else:
-        for filename, path in card_repo.git_files.items():
-            if filename.endswith(val):
-                target_path = path
-                break
+    for filename, path in card_repo.git_files.items():
+        if filename.lower() == val or filename.lower().endswith(val):
+            target_path = path
+            break
 
     if not target_path:
         await interaction.response.send_message(f"No card found matching '{val}'. Alias not created.")
