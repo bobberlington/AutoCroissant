@@ -768,7 +768,7 @@ class RepositoryTraverser:
     def traverse_remote(self,
                         repository: str,
                         interaction: Optional[Interaction] = None,
-                        output_problematic: bool = True) -> list[str]:
+                        output_problematic: bool = True) -> tuple[list[str], int]:
         """
         Traverse remote GitHub repository.
 
@@ -796,14 +796,14 @@ class RepositoryTraverser:
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
 
-        return problems, num_new
+        return (problems, num_new)
 
     def traverse_local(self,
                        repository: str,
                        local_path: str,
                        interaction: Optional[Interaction] = None,
                        output_problematic: bool = True,
-                       use_local_timestamp: bool = True) -> list[str]:
+                       use_local_timestamp: bool = True) -> tuple[list[str], int]:
         """
         Traverse local repository directory.
 
@@ -832,7 +832,7 @@ class RepositoryTraverser:
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
 
-        return problems, num_new
+        return (problems, num_new)
 
     def _populate_types_from_response(self, response) -> None:
         """Populate card types from API response."""
@@ -868,7 +868,7 @@ class RepositoryTraverser:
                                      repo: Repository.Repository,
                                      repository: str,
                                      interaction: Optional[Interaction],
-                                     output_problematic: bool) -> list[str]:
+                                     output_problematic: bool) -> tuple[list[str], int]:
         """Process files from API response."""
         problematic_cards = []
         num_updated = 0
@@ -933,14 +933,14 @@ class RepositoryTraverser:
                 self._send_progress(interaction, num_updated)
 
         self._send_summary(interaction, num_new, num_old, num_moved)
-        return self._format_problems(problematic_cards), num_new
+        return (self._format_problems(problematic_cards), num_new)
 
     def _process_local_files(self,
                              local_path: str,
                              repo: Optional[Repository.Repository],
                              interaction: Optional[Interaction],
                              output_problematic: bool,
-                             use_local_timestamp: bool) -> list[str]:
+                             use_local_timestamp: bool) -> tuple[list[str], int]:
         """Process files from local directory."""
         problematic_cards = []
         num_updated = 0
@@ -1008,7 +1008,7 @@ class RepositoryTraverser:
                     self._send_progress(interaction, num_updated)
 
         self._send_summary(interaction, num_new, num_old, num_moved)
-        return self._format_problems(problematic_cards), num_new
+        return (self._format_problems(problematic_cards), num_new)
 
     def _get_remote_timestamp(self,
                               repo: Optional[Repository.Repository],
