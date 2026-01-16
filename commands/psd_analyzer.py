@@ -791,12 +791,12 @@ class RepositoryTraverser:
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db)
 
-        problems, num_updated = self._process_files_from_response(resp, repo, repository, interaction, output_problematic)
+        problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic)
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
 
-        return problems, num_updated
+        return problems, num_new
 
     def traverse_local(self,
                        repository: str,
@@ -827,12 +827,12 @@ class RepositoryTraverser:
         self._populate_types_from_local(local_path)
         self.parser = PSDParser(self.db.all_types, self.db)
 
-        problems, num_updated = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp)
+        problems, num_new = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp)
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
 
-        return problems, num_updated
+        return problems, num_new
 
     def _populate_types_from_response(self, response) -> None:
         """Populate card types from API response."""
@@ -933,7 +933,7 @@ class RepositoryTraverser:
                 self._send_progress(interaction, num_updated)
 
         self._send_summary(interaction, num_new, num_old, num_moved)
-        return self._format_problems(problematic_cards), num_updated
+        return self._format_problems(problematic_cards), num_new
 
     def _process_local_files(self,
                              local_path: str,
@@ -1008,7 +1008,7 @@ class RepositoryTraverser:
                     self._send_progress(interaction, num_updated)
 
         self._send_summary(interaction, num_new, num_old, num_moved)
-        return self._format_problems(problematic_cards), num_updated
+        return self._format_problems(problematic_cards), num_new
 
     def _get_remote_timestamp(self,
                               repo: Optional[Repository.Repository],
@@ -1164,19 +1164,19 @@ def update_stats(interaction: Optional[Interaction] = None,
 
     if use_local_repo:
         local_path = expanduser(LOCAL_DIR_LOC)
-        problem_cards, num_updated = traverser.traverse_local(
+        problem_cards, num_new = traverser.traverse_local(
             card_repo.repository,
             local_path,
             interaction,
             output_problematic,
             use_local_timestamp)
     else:
-        problem_cards, num_updated = traverser.traverse_remote(
+        problem_cards, num_new = traverser.traverse_remote(
             card_repo.repository,
             interaction,
             output_problematic)
 
-    if (num_updated > 0):
+    if (num_new > 0):
         stats_db.prune_clean_cards()
         stats_db.save()
 
