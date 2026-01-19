@@ -619,7 +619,7 @@ class PSDParser:
             type_name = type_bboxes[count][0]
             ability = (
                 ability[:match.start()] +
-                ' ' + type_name + ' ' +
+                ' [' + type_name + '] ' +
                 ability[match.end():]
             )
             count -= 1
