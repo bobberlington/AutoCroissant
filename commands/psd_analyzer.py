@@ -38,7 +38,7 @@ COLUMN_ORDER = [
     'problem', 'series', 'subtype'
 ]
 
-MISSPELT_CARD_TYPES = ['undread', 'tornado']
+MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 
 
 class CardType(Enum):
