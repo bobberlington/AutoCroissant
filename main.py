@@ -353,13 +353,15 @@ update_stats = to_thread(update_stats)
     output_problematic_cards='Should we output cards with consistency errors?',
     use_local_repo='Should we use the local cloned folder for updates?',
     use_local_timestamp='Should we use the local files modified time for timestamping?',
+    force_update='Should we forcefully update all cards (even ones that have not been edited)?',
 )
 async def slash_update_stats(interaction: Interaction,
                              output_problematic_cards: Optional[bool] = True,
                              use_local_repo: Optional[bool] = True,
-                             use_local_timestamp: Optional[bool] = True):
+                             use_local_timestamp: Optional[bool] = True,
+                             force_update: Optional[bool] = False):
     await interaction.response.defer()
-    await update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp)
+    await update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp, force_update)
 
 
 export_stats_to_file = to_thread(export_stats_to_file)

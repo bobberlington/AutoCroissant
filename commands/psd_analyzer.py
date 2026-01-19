@@ -38,6 +38,8 @@ COLUMN_ORDER = [
     'problem', 'series', 'subtype'
 ]
 
+MISSPELT_CARD_TYPES = ['undread', 'tornado']
+
 
 class CardType(Enum):
     """Enum for card types."""
@@ -427,10 +429,6 @@ class PSDParser:
         # Process stats
         self._process_stats(card, stat_trackers)
 
-        # Process types
-        if type_bboxes:
-            card.types = [name for name, _ in type_bboxes if name]
-
         # Set stars if extracted from PSD
         if get_stars_from_psd:
             card.stars = num_stars.value
@@ -466,6 +464,10 @@ class PSDParser:
         elif get_stars_from_psd and self._is_star_layer(layer):
             if layer.is_visible() and layer.has_pixels():
                 num_stars.value += 1
+        
+        # Problematic type layer
+        elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
+            card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
     def _process_text_layer(self,
                             layer,
@@ -768,7 +770,8 @@ class RepositoryTraverser:
     def traverse_remote(self,
                         repository: str,
                         interaction: Optional[Interaction] = None,
-                        output_problematic: bool = True) -> tuple[list[str], int]:
+                        output_problematic: bool = True,
+                        force_update: bool = False) -> tuple[list[str], int]:
         """
         Traverse remote GitHub repository.
 
@@ -791,7 +794,7 @@ class RepositoryTraverser:
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db)
 
-        problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic)
+        problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic, force_update)
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -803,7 +806,8 @@ class RepositoryTraverser:
                        local_path: str,
                        interaction: Optional[Interaction] = None,
                        output_problematic: bool = True,
-                       use_local_timestamp: bool = True) -> tuple[list[str], int]:
+                       use_local_timestamp: bool = True,
+                       force_update: bool = False) -> tuple[list[str], int]:
         """
         Traverse local repository directory.
 
@@ -827,7 +831,7 @@ class RepositoryTraverser:
         self._populate_types_from_local(local_path)
         self.parser = PSDParser(self.db.all_types, self.db)
 
-        problems, num_new = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp)
+        problems, num_new = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp, force_update)
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -868,7 +872,8 @@ class RepositoryTraverser:
                                      repo: Repository.Repository,
                                      repository: str,
                                      interaction: Optional[Interaction],
-                                     output_problematic: bool) -> tuple[list[str], int]:
+                                     output_problematic: bool,
+                                     force_update: bool) -> tuple[list[str], int]:
         """Process files from API response."""
         problematic_cards = []
         num_updated = 0
@@ -892,7 +897,7 @@ class RepositoryTraverser:
             # Check if update needed
             should_update, is_new = self._should_update_card(name, timestamp, path)
 
-            if not should_update:
+            if not force_update and not should_update:
                 num_old += 1
             else:
                 # Archive old version before updating (if not new)
@@ -940,7 +945,8 @@ class RepositoryTraverser:
                              repo: Optional[Repository.Repository],
                              interaction: Optional[Interaction],
                              output_problematic: bool,
-                             use_local_timestamp: bool) -> tuple[list[str], int]:
+                             use_local_timestamp: bool,
+                             force_update: bool) -> tuple[list[str], int]:
         """Process files from local directory."""
         problematic_cards = []
         num_updated = 0
@@ -973,7 +979,7 @@ class RepositoryTraverser:
                 # Check if update needed
                 should_update, is_new = self._should_update_card(name, timestamp, relative_path)
 
-                if not should_update:
+                if not force_update and not should_update:
                     num_old += 1
                 else:
                     # Archive old version before updating (if not new)
@@ -1134,6 +1140,7 @@ def update_stats(interaction: Optional[Interaction] = None,
                  output_problematic: bool = True,
                  use_local_repo: bool = True,
                  use_local_timestamp: bool = True,
+                 force_update: bool = True,
                  verbose: bool = True) -> list[str]:
     """
     Update card statistics database.
@@ -1169,12 +1176,14 @@ def update_stats(interaction: Optional[Interaction] = None,
             local_path,
             interaction,
             output_problematic,
-            use_local_timestamp)
+            use_local_timestamp,
+            force_update)
     else:
         problem_cards, num_new = traverser.traverse_remote(
             card_repo.repository,
             interaction,
-            output_problematic)
+            output_problematic,
+            force_update)
 
     if (num_new > 0):
         stats_db.prune_clean_cards()
