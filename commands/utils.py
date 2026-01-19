@@ -233,43 +233,40 @@ def convert_value(value: str) -> Any:
     return value
 
 
-def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
-    """
-    Split long text into Discord-safe chunks while preserving code blocks.
-
-    Args:
-        msg: Message to split
-        max_length: Maximum length per chunk
-    """
-    if len(msg) <= max_length:
-        return [msg]
-
+def split_long_message(msg: str, max_length: int) -> list[str]:
+    """Split long text into Discord-safe chunks while preserving code blocks."""
     parts = []
-    code_prefix = "```"
-    code_suffix = "```"
-    inside_code = msg.startswith(code_prefix) and msg.endswith(code_suffix)
+    code_fence = "```"
+    in_code = False
 
-    if inside_code:
-        msg = msg[len(code_prefix):-len(code_suffix)]
+    while msg:
+        if len(msg) <= max_length:
+            chunk = msg
+            msg = ""
+        else:
+            idx = msg.rfind("\n", 0, max_length)
+            if idx == -1:
+                idx = msg.rfind(" ", 0, max_length)
+            if idx == -1:
+                idx = max_length
 
-    while len(msg) > max_length:
-        # Try to split at newline
-        idx = msg.rfind("\n", 0, max_length)
-        if idx == -1:
-            # No newline found, split at space
-            idx = msg.rfind(" ", 0, max_length)
-        if idx == -1:
-            # No space found, hard split
-            idx = max_length
+            chunk = msg[:idx]
+            msg = msg[idx:].lstrip()
 
-        parts.append(msg[:idx])
-        msg = msg[idx:].lstrip()
+        # Count code fences in this chunk
+        fence_count = chunk.count(code_fence)
+        if fence_count % 2 == 1:
+            in_code = not in_code
 
-    if msg:
-        parts.append(msg)
+        # If chunk ends inside a code block, close it
+        if in_code:
+            chunk += f"\n{code_fence}"
 
-    if inside_code:
-        parts = [f"{code_prefix}{p}{code_suffix}" for p in parts]
+        parts.append(chunk)
+
+        # If next chunk continues inside a code block, reopen it
+        if in_code:
+            msg = f"{code_fence}\n{msg}"
 
     return parts
 

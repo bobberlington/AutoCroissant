@@ -56,10 +56,11 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [use_local_repo] [use_local_timestamp]:" : "Manually updates the card statistics database by scanning PSDs.\n"
-                                                                                          "- output_problematic_cards: Show cards with errors (default: True)\n"
-                                                                                          "- use_local_repo: Use local cloned folder vs remote (default: True)\n"
-                                                                                          "- use_local_timestamp: Use local file times vs GitHub (default: True)",
+    "/update_stats [output_problematic_cards] [use_local_repo] [use_local_timestamp] [force_update]:" : "Manually updates the card statistics database by scanning PSDs.\n"
+                                                                                                    "- output_problematic_cards: Show cards with errors (default: True).\n"
+                                                                                                    "- use_local_repo: Use local cloned folder vs remote (default: True).\n"
+                                                                                                    "- use_local_timestamp: Use local file times vs GitHub (default: True).\n"
+                                                                                                    "- force_update: Will process and update every single card, even if there have not been any changes to it (default: False).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Export only ability text (default: True)\n"
                                                    "- as_csv: Export as CSV instead of text (default: True)",

@@ -636,6 +636,24 @@ class CardValidator:
         "Sonic",
         "Twin Emperors",
     }
+    ABILITY_EXCLUSIONS: set[str] = {
+        "Crystal Bits",
+        "Bugzzy",
+        "Electro Probe",
+        "Galacta Warrior",
+        "God Tamer",
+        "Mini Bee",
+        "Paint Warrior",
+        "Red Bloon",
+        "Sabre",
+        "Shadow Duelist",
+        "Sword Knight",
+        "Tentacle",
+        "Whelp",
+        "Warrior Dee",
+        "The Master",
+        "Panda",
+    }
 
     @staticmethod
     def validate(card: CardInfo) -> list[str]:
@@ -657,7 +675,8 @@ class CardValidator:
         # Ability problems
         if (card.card_type != CardType.UNKNOWN.value and
             card.card_type != CardType.MDW.value and
-            not card.ability):
+            not card.ability and
+            card.name not in CardValidator.ABILITY_EXCLUSIONS):
             problems.append("ABILITY TEXT NOT FOUND")
 
         # Stat problems
@@ -666,6 +685,9 @@ class CardValidator:
 
         # Add any problems found during parsing
         if card.problems:
+            if ("NO ABILITY LAYER" in card.problems and
+                card.name in CardValidator.ABILITY_EXCLUSIONS):
+                card.problems.remove("NO ABILITY LAYER")
             problems.extend(card.problems)
 
         return problems
