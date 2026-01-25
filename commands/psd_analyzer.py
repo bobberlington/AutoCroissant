@@ -565,7 +565,7 @@ class PSDParser:
                 self._sort_by_position(type_bboxes)
             )
             ability_text = self._inject_type_names(
-                ability_text, type_bboxes
+                ability_text, type_bboxes, card
             )
             card.ability = self._spacing_pattern.sub(
                 r'\1', ability_text
@@ -600,7 +600,7 @@ class PSDParser:
         max_height = max(bboxes[len(bboxes) - 1][1].y // 3, 400)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
-    def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]]) -> str:
+    def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]], card: CardInfo) -> str:
         """Inject type names into ability text, including types that appear at the beginning or end."""
         if not type_bboxes:
             return ability
@@ -616,6 +616,16 @@ class PSDParser:
 
         # Mid-text matches (existing behavior)
         matches = list(self._whitespace_pattern.finditer(core_text))
+
+        num_matches = len(matches)
+        num_types = len(type_bboxes)
+
+        if num_matches != num_types:
+            if num_matches > 0 and num_types > 0:
+                card.problems.append(
+                    f"TYPE / WHITESPACE MISMATCH ({num_types} type{'s' if num_types != 1 else ''}, "
+                    f"{num_matches} gap{'s' if num_matches != 1 else ''})"
+                )
 
         injected = core_text
 
