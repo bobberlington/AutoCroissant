@@ -600,31 +600,49 @@ class PSDParser:
         max_height = max(bboxes[len(bboxes) - 1][1].y // 3, 400)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
-    def _inject_type_names(self,
-                           ability: str,
-                           type_bboxes: list[tuple[str, BoundingBox]]) -> str:
-        """Inject type names into ability text."""
-        matches = list(self._whitespace_pattern.finditer(ability))
-
-        if not matches or not type_bboxes:
+    def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]]) -> str:
+        """Inject type names into ability text, including types that appear at the beginning or end."""
+        if not type_bboxes:
             return ability
 
-        if len(type_bboxes) < len(matches):
-            # This will be flagged as a problem later
-            return ability
+        # Sort left-to-right / top-to-bottom just in case
+        type_bboxes = self._sort_by_position(type_bboxes)
 
-        # Replace matches in reverse order to maintain indices
-        count = len(type_bboxes) - 1
-        for match in reversed(matches):
-            type_name = type_bboxes[count][0]
-            ability = (
-                ability[:match.start()] +
-                ' [' + type_name + '] ' +
-                ability[match.end():]
-            )
-            count -= 1
+        # Detect leading/trailing whitespace BEFORE stripping
+        leading_ws = ability[:len(ability) - len(ability.lstrip())]
+        trailing_ws = ability[len(ability.rstrip()):]
 
-        return ability
+        core_text = ability.strip()
+
+        # Mid-text matches (existing behavior)
+        matches = list(self._whitespace_pattern.finditer(core_text))
+
+        injected = core_text
+
+        type_index = 0
+
+        # Inject leading type
+        if leading_ws and type_index < len(type_bboxes):
+            injected = f"[{type_bboxes[type_index][0]}] " + injected
+            type_index += 1
+
+        # Inject middle types (reverse order to preserve indices)
+        if matches:
+            if len(type_bboxes) - type_index >= len(matches):
+                for match in reversed(matches):
+                    type_name = type_bboxes[type_index][0]
+                    injected = (
+                        injected[:match.start()] +
+                        f" [{type_name}] " +
+                        injected[match.end():]
+                    )
+                    type_index += 1
+
+        # Inject trailing type
+        if trailing_ws and type_index < len(type_bboxes):
+            injected = injected + f" [{type_bboxes[type_index][0]}]"
+
+        return injected
 
 
 class CardValidator:
@@ -653,6 +671,7 @@ class CardValidator:
         "Warrior Dee",
         "The Master",
         "Panda",
+        "Chomp",
     }
 
     @staticmethod
