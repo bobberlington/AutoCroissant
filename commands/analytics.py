@@ -4,7 +4,6 @@ from discord import Interaction
 from pickle import load, dump
 from shlex import split as shlex_split
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from commands.utils import (
     slash_registry,

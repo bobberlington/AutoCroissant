@@ -1,31 +1,11 @@
-from diffusers import (
-    BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
-    DPMSolverSinglestepScheduler,
-    EulerAncestralDiscreteScheduler,
-    AutoPipelineForInpainting,
-    AutoPipelineForImage2Image,
-    StableDiffusionPipeline,
-    StableDiffusionXLPipeline,
-    FluxTransformer2DModel,
-    FluxPipeline,
-    FlowMatchEulerDiscreteScheduler,
-)
-from diffusers.utils import load_image
 from discord import Attachment, Interaction
 from gc import collect
 from os import listdir
 from os.path import exists, join
 from PIL.Image import Image, Resampling, fromarray
 from dataclasses import dataclass
-from transformers import BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
 from typing import Optional
 from queue import Queue
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    print("WARNING: Torch not installed, diffusion commands will not work.")
 
 import config
 from commands.utils import (
@@ -151,6 +131,20 @@ sdxl_rgb_factors_tensor = None
 sdxl_rgb_bias_tensor = None
 sd15_rgb_factors_tensor = None
 
+_torch = None
+
+def get_torch():
+    global _torch
+    if _torch is None:
+        try:
+            import torch
+            _torch = torch
+        except ImportError:
+            return None
+    return _torch
+
+def torch_available() -> bool:
+    return get_torch() is not None
 
 @dataclass
 class GenerationRequest:
@@ -198,7 +192,8 @@ async def get_qsize(interaction: Interaction):
 # ========================
 def init_pipeline():
     """Initialize the diffusion pipeline with current configuration."""
-    if not TORCH_AVAILABLE:
+    torch = get_torch()
+    if torch is None:
         print("ERROR: Cannot initialize pipeline - Torch is not installed")
         return
 
@@ -206,6 +201,7 @@ def init_pipeline():
         print("INFO: No model configured for initialization")
         return
 
+    from diffusers import AutoPipelineForImage2Image, AutoPipelineForInpainting
     global txt2img_pipe, img2img_pipe, inpaint_pipe, in_progress
     in_progress = True
 
@@ -263,6 +259,8 @@ def init_pipeline():
 
 def _init_flux_pipeline(dtype, device_map):
     """Initialize Flux pipeline with quantization."""
+    from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig, FluxPipeline, FluxTransformer2DModel, FlowMatchEulerDiscreteScheduler
+    from transformers import BitsAndBytesConfig, T5EncoderModel, CLIPTokenizer
     bfl_repo = "black-forest-labs/FLUX.1-dev"
 
     if VRAM_USAGE == "mps":
@@ -313,8 +311,8 @@ def _init_flux_pipeline(dtype, device_map):
 
     # Free memory before loading full pipeline
     collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if _torch.cuda.is_available():
+        _torch.cuda.empty_cache()
 
     return FluxPipeline.from_pretrained(
         bfl_repo,
@@ -329,6 +327,7 @@ def _init_flux_pipeline(dtype, device_map):
 
 def _init_sdxl_pipeline(dtype):
     """Initialize Stable Diffusion XL pipeline."""
+    from diffusers import StableDiffusionXLPipeline
     model_path = join(MODELS_FOLDER, MODEL)
     if not exists(model_path):
         raise FileNotFoundError(f"Model not found: {model_path}")
@@ -343,6 +342,7 @@ def _init_sdxl_pipeline(dtype):
 
 def _init_sd15_pipeline(dtype):
     """Initialize Stable Diffusion 1.5 pipeline."""
+    from diffusers import StableDiffusionPipeline
     model_path = join(MODELS_FOLDER, MODEL)
     if not exists(model_path):
         raise FileNotFoundError(f"Model not found: {model_path}")
@@ -356,6 +356,7 @@ def _init_sd15_pipeline(dtype):
 
 def _configure_scheduler(pipe):
     """Configure and return appropriate scheduler based on settings."""
+    from diffusers import DPMSolverSinglestepScheduler, EulerAncestralDiscreteScheduler
     if SCHEDULER_NAME.startswith("dpm++ sde"):
         scheduler = DPMSolverSinglestepScheduler.from_config(pipe.scheduler.config)
         scheduler.config.lower_order_final = True
@@ -393,24 +394,24 @@ def _precompute_rgb_tensors():
     """Precompute RGB conversion tensors for efficient latent-to-RGB conversion."""
     if "flux" in MODEL.lower():
         global flux_rgb_factors_tensor, flux_rgb_bias_tensor
-        flux_rgb_factors_tensor = torch.tensor(
-            FLUX_RGB_FACTORS, dtype=torch.float32
+        flux_rgb_factors_tensor = _torch.tensor(
+            FLUX_RGB_FACTORS, dtype=_torch.float32
         ).transpose(0, 1)
-        flux_rgb_bias_tensor = torch.tensor(
-            FLUX_RGB_FACTORS_BIAS, dtype=torch.float32
+        flux_rgb_bias_tensor = _torch.tensor(
+            FLUX_RGB_FACTORS_BIAS, dtype=_torch.float32
         )
     elif "xl" in MODEL.lower():
         global sdxl_rgb_factors_tensor, sdxl_rgb_bias_tensor
-        sdxl_rgb_factors_tensor = torch.tensor(
-            SDXL_RGB_FACTORS, dtype=torch.float32
+        sdxl_rgb_factors_tensor = _torch.tensor(
+            SDXL_RGB_FACTORS, dtype=_torch.float32
         ).transpose(0, 1)
-        sdxl_rgb_bias_tensor = torch.tensor(
-            SDXL_RGB_FACTORS_BIAS, dtype=torch.float32
+        sdxl_rgb_bias_tensor = _torch.tensor(
+            SDXL_RGB_FACTORS_BIAS, dtype=_torch.float32
         )
     else:
         global sd15_rgb_factors_tensor
-        sd15_rgb_factors_tensor = torch.tensor(
-            SD15_RGB_FACTORS, dtype=torch.float32
+        sd15_rgb_factors_tensor = _torch.tensor(
+            SD15_RGB_FACTORS, dtype=_torch.float32
         ).transpose(0, 1)
 
 
@@ -435,19 +436,23 @@ async def set_scheduler(interaction: Interaction, new_scheduler: Optional[str]):
 
 async def set_device(interaction: Interaction, new_device: Optional[int]):
     """Change the GPU device and reinitialize pipeline."""
+    if not torch_available():
+        await interaction.response.send_message("Torch is not available.")
+        return
+
     global DEVICE_NO, txt2img_pipe, img2img_pipe, inpaint_pipe
 
     if new_device is None:
-        device_count = torch.cuda.device_count() if TORCH_AVAILABLE and torch.cuda.is_available() else 0
+        device_count = _torch.cuda.device_count() if _torch.cuda.is_available() else 0
         await interaction.response.send_message(
             f"Current device: {DEVICE_NO}\n"
             f"Available CUDA devices: {device_count}"
         )
         return
 
-    if not TORCH_AVAILABLE or new_device < 0 or new_device >= torch.cuda.device_count():
+    if new_device < 0 or new_device >= _torch.cuda.device_count():
         await interaction.response.send_message(
-            f"Invalid device number. Must be between 0 and {torch.cuda.device_count() - 1}"
+            f"Invalid device number. Must be between 0 and {_torch.cuda.device_count() - 1}"
         )
         return
 
@@ -512,14 +517,14 @@ def _clear_pipelines():
     global txt2img_pipe, img2img_pipe, inpaint_pipe
     txt2img_pipe = img2img_pipe = inpaint_pipe = None
     collect()
-    if TORCH_AVAILABLE and torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if _torch.cuda.is_available():
+        _torch.cuda.empty_cache()
 
 
 # ========================
 # Image Generation
 # ========================
-def latent_to_rgb(latent: torch.Tensor) -> Image:
+def latent_to_rgb(latent) -> Image:
     """
     Convert latent space representation to RGB image for preview.
 
@@ -534,7 +539,7 @@ def latent_to_rgb(latent: torch.Tensor) -> Image:
     Returns:
         PIL Image or None if conversion fails
     """
-    if not TORCH_AVAILABLE:
+    if not torch_available():
         return None
 
     # Determine which tensors to use based on model type
@@ -588,7 +593,7 @@ def latent_to_rgb(latent: torch.Tensor) -> Image:
     latent_moved = latent.movedim(0, -1)
 
     # Apply linear transformation
-    latent_image = torch.nn.functional.linear(
+    latent_image = _torch.nn.functional.linear(
         latent_moved,
         rgb_factors,
         bias=rgb_bias
@@ -600,7 +605,7 @@ def latent_to_rgb(latent: torch.Tensor) -> Image:
         ((latent_image + 1.0) / 2.0)  # Map [-1, 1] to [0, 1]
         .clamp(0, 1)                   # Ensure valid range
         .mul(255)                       # Scale to [0, 255]
-    ).to(device="cpu", dtype=torch.uint8)
+    ).to(device="cpu", dtype=_torch.uint8)
 
     # Convert to PIL Image
     # Shape is now [H, W, 3]
@@ -608,7 +613,7 @@ def latent_to_rgb(latent: torch.Tensor) -> Image:
 
 
 def progress_check(interaction: Interaction, total_steps: int, seed: int,
-                   pipe, step: int, timestep: 'torch.Tensor', callback_kwargs: dict):
+                   pipe, step: int, timestep, callback_kwargs: dict):
     """Callback for displaying generation progress with preview images."""
     # Only update every 10% of progress
     if step % max(1, total_steps // 10) != 0:
@@ -651,10 +656,11 @@ def diffusion(interaction: Interaction, prompt: str, image_param: Optional[Attac
                     width: int = 512, resize: float = 1.0, cfg: float = 7.0,
                     strength: float = 0.8, seed: Optional[int] = None):
     """Main image generation function."""
-    if not TORCH_AVAILABLE:
-        queue_message(interaction, "Error: PyTorch is not installed. Cannot generate images.")
+    if not torch_available():
+        queue_message(interaction, "PyTorch is not installed.")
         return
 
+    from diffusers.utils import load_image
     global in_progress
 
     # Queue request if busy
@@ -689,7 +695,7 @@ def diffusion(interaction: Interaction, prompt: str, image_param: Optional[Attac
 
     # Setup generator
     device = "cuda" if VRAM_USAGE != "mps" else "mps"
-    generator = torch.Generator(device)
+    generator = _torch.Generator(device)
 
     if seed:
         generator = generator.manual_seed(seed)
@@ -718,8 +724,8 @@ def diffusion(interaction: Interaction, prompt: str, image_param: Optional[Attac
 
     # Clean up memory before generation
     collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if _torch.cuda.is_available():
+        _torch.cuda.empty_cache()
 
     # Generate image based on mode
     if mask_image:
