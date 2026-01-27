@@ -1,4 +1,4 @@
-from discord import Interaction, TextChannel, Forbidden, ClientException
+from discord import Interaction, TextChannel, Message, Forbidden, ClientException, HTTPException
 
 from commands.utils import queue_message, split_long_message
 
@@ -164,11 +164,10 @@ async def list_guild_channels(interaction: Interaction, guild_id: str) -> None:
         await interaction.followup.send(chunk)
 
 
-async def get_channel_messages(
-    interaction: Interaction,
-    guild_id: str,
-    channel_id: str,
-    limit: int = 50) -> None:
+async def get_channel_messages(interaction: Interaction,
+                               guild_id: str,
+                               channel_id: str,
+                               limit: int = 50) -> None:
     """
     Get the last X messages from a specific channel in a guild.
 
@@ -228,6 +227,51 @@ async def get_channel_messages(
         queue_message(interaction, "I don't have permission to read messages in that channel.")
 
 
+async def add_reactions(interaction: Interaction,
+                        reactions: str,
+                        message_id: str | None = None):
+    channel = interaction.channel
+    if not channel:
+        queue_message(interaction, "Invalid channel.", ephemeral=True)
+        return
+
+    # Resolve target message
+    try:
+        if message_id:
+            if not message_id.isdigit():
+                queue_message(interaction, "Message ID must be numeric.", ephemeral=True)
+                return
+            target_message = await channel.fetch_message(int(message_id))
+        else:
+            target_message: Message | None = None
+            async for msg in channel.history(limit=2):
+                target_message = msg
+                break
+
+            if not target_message:
+                queue_message(interaction, "No recent message found to react to.", ephemeral=True)
+                return
+
+    except (Forbidden, HTTPException):
+        queue_message(interaction, "I couldn't access that message.", ephemeral=True)
+        return
+
+    emoji_list = reactions.split()
+    if not emoji_list:
+        queue_message(interaction, "No reactions provided.", ephemeral=True)
+        return
+
+    added = 0
+    for emoji in emoji_list:
+        try:
+            await target_message.add_reaction(emoji)
+            added += 1
+        except HTTPException:
+            continue  # invalid emoji or permissions
+
+    queue_message(interaction, f"Added **{added}/{len(emoji_list)}** reactions to [this message]({target_message.jump_url}).", ephemeral=True)
+
+
 # ========================
 # Module Exports
 # ========================
@@ -239,4 +283,5 @@ __all__ = [
     'list_guild_channels',
     'get_channel_messages',
     'purge',
+    'add_reactions',
 ]

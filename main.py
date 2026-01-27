@@ -33,6 +33,7 @@ from commands.management import (
     list_guilds,
     purge,
     sync_commands_global,
+    add_reactions,
 )
 from commands.music_player import (
     clear_queue,
@@ -793,6 +794,18 @@ async def slash_get_channel_messages(interaction: Interaction,
         await interaction.response.send_message("You do not have permission.")
         return
     await get_channel_messages(interaction, guild_id, channel_id, limit)
+
+
+@tree.command(name="react", description="Add reactions to a message by ID or the last message in the channel.")
+@app_commands.describe(
+    reactions="Space-separated emojis (e.g. 👍 👎 or <:custom:1234567890>)",
+    message_id="Optional message ID to react to. Defaults to last message in channel.",
+)
+async def slash_react(interaction: Interaction,
+                      reactions: str,
+                      message_id: Optional[str] = None):
+    await interaction.response.defer(ephemeral=True, thinking=False)
+    await add_reactions(interaction, reactions, message_id)
 
 
 ########################

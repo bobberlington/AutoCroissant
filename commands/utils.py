@@ -233,7 +233,7 @@ def convert_value(value: str) -> Any:
     return value
 
 
-def split_long_message(msg: str, max_length: int) -> list[str]:
+def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
     """Split long text into Discord-safe chunks while preserving code blocks."""
     parts = []
     code_fence = "```"

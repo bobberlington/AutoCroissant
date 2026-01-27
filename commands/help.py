@@ -14,6 +14,9 @@ general_commands = {
     "/list_guilds:"                             : "Lists all guilds the bot is currently a member of (admin only).",
     "/leave_guild <guild_id>:"                  : "Forces the bot to leave a specified guild (admin only). Provide the guild ID.",
     "/sync_global:"                             : "Syncs all slash commands globally and per guild (admin only).",
+    "/react <emojis> [message_id]:"             : "Adds reactions to a message.\n"
+                                                  "- emojis: Space-separated emojis (👍 👎 or <:custom:123456>)\n"
+                                                  "- message_id: Optional. If omitted, reacts to the most recent message in the channel.",
 }
 
 text_commands = {
