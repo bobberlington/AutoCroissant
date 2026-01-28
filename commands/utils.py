@@ -235,11 +235,12 @@ def convert_value(value: str) -> Any:
 
 def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
     """Split long text into Discord-safe chunks while preserving code blocks."""
-    parts = []
+    parts: list[str] = []
     code_fence = "```"
     in_code = False
 
     while msg:
+        # Determine split point
         if len(msg) <= max_length:
             chunk = msg
             msg = ""
@@ -253,20 +254,22 @@ def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
             chunk = msg[:idx]
             msg = msg[idx:].lstrip()
 
-        # Count code fences in this chunk
+        # Count code fences in the chunk
         fence_count = chunk.count(code_fence)
+
+        # If we're currently inside a code block, reopen it at the start
+        if in_code:
+            chunk = f"{code_fence}\n{chunk}"
+
+        # Toggle code state if odd number of fences
         if fence_count % 2 == 1:
             in_code = not in_code
 
         # If chunk ends inside a code block, close it
         if in_code:
-            chunk += f"\n{code_fence}"
+            chunk = f"{chunk}\n{code_fence}"
 
         parts.append(chunk)
-
-        # If next chunk continues inside a code block, reopen it
-        if in_code:
-            msg = f"{code_fence}\n{msg}"
 
     return parts
 
