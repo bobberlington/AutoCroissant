@@ -947,7 +947,7 @@ class RepositoryTraverser:
                 num_old += 1
             else:
                 # Archive old version before updating (if not new)
-                if not is_new and name in self.db.stats:
+                if should_update and not is_new and name in self.db.stats:
                     old_card = self.db.stats[name]
                     self.db.old_stats[name].append(old_card)
 
@@ -1029,7 +1029,7 @@ class RepositoryTraverser:
                     num_old += 1
                 else:
                     # Archive old version before updating (if not new)
-                    if not is_new and name in self.db.stats:
+                    if should_update and not is_new and name in self.db.stats:
                         old_card = self.db.stats[name]
                         self.db.old_stats[name].append(old_card)
 
