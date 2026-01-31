@@ -9,7 +9,7 @@ from os import walk
 from os.path import getmtime, basename, expanduser, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
-from re import Pattern, compile as re_compile
+from re import compile as re_compile
 from requests import get
 from typing import Optional, Any
 from urllib.parse import quote
@@ -27,6 +27,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # Configuration
 # ========================
 UPDATE_RATE = 25
+TYPE_REGION_RATIO = 0.5
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
 EXPORTED_RULES_NAME = "rules"
@@ -395,16 +396,15 @@ class PSDParser:
 
         return card
 
-    def _extract_from_layers(self,
-                             psd: PSDImage,
-                             card: CardInfo,
-                             relative_path: str) -> None:
+    def _extract_from_layers(self, psd: PSDImage, card: CardInfo, relative_path: str) -> None:
         """Extract information from PSD layers."""
         longest_text = MutableValue("")
         num_stars = MutableValue(0)
         stat_trackers = StatTrackers()
         type_bboxes: list[tuple[str, BoundingBox]] = []
         abilities: list[tuple[str, BoundingBox]] = []
+
+        card_mid_y = int(psd.height * TYPE_REGION_RATIO)
 
         is_rulepage = "Rulebook" in relative_path
         get_stars_from_psd = any(
@@ -416,32 +416,22 @@ class PSDParser:
             self._process_layer(
                 layer, card, longest_text, num_stars,
                 stat_trackers, type_bboxes, abilities,
-                is_rulepage, get_stars_from_psd)
+                is_rulepage, get_stars_from_psd, card_mid_y)
 
-        # Process abilities
-        self._process_abilities(card, abilities, type_bboxes, longest_text.value)
-
-        # Process stats
+        self._process_abilities(card, abilities, type_bboxes, longest_text.value, card_mid_y)
         self._process_stats(card, stat_trackers)
 
-        # Set stars if extracted from PSD
         if get_stars_from_psd:
             card.stars = num_stars.value
 
-    def _process_layer(self,
-                       layer,
-                       card: CardInfo,
-                       longest_text: MutableValue,
-                       num_stars: MutableValue,
-                       stat_trackers: StatTrackers,
-                       type_bboxes: list,
-                       abilities: list,
-                       is_rulepage: bool,
-                       get_stars_from_psd: bool) -> None:
+    def _process_layer(self, layer, card: CardInfo, longest_text: MutableValue,
+                       num_stars: MutableValue, stat_trackers: StatTrackers,
+                       type_bboxes: list, abilities: list, is_rulepage: bool,
+                       get_stars_from_psd: bool, card_mid_y: int) -> None:
         """Process a single PSD layer."""
         # Text layers
         if layer.kind == "type":
-            self._process_text_layer(layer, longest_text, abilities, is_rulepage)
+            self._process_text_layer(layer, longest_text, abilities, is_rulepage, card_mid_y)
 
         # Stat layers
         elif self._is_stat_layer(layer):
@@ -450,7 +440,7 @@ class PSDParser:
         # Type layers
         elif (layer.name.lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
-            if bbox.y < 400:
+            if bbox.y < card_mid_y:
                 card.types.append(layer.name.lower())
             else:
                 type_bboxes.append((layer.name.lower(), bbox))
@@ -464,11 +454,8 @@ class PSDParser:
         elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
-    def _process_text_layer(self,
-                            layer,
-                            longest_text: MutableValue,
-                            abilities: list,
-                            is_rulepage: bool) -> None:
+    def _process_text_layer(self, layer, longest_text: MutableValue,
+                            abilities: list, is_rulepage: bool, card_mid_y: int) -> None:
         """Process text layer."""
         layer_text = str(layer.engine_dict["Editor"]["Text"])
         layer_text = (layer_text
@@ -482,7 +469,7 @@ class PSDParser:
         if layer.name.lower() == "ability" or is_rulepage:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             abilities.append((layer_text.strip('\'" '), bbox))
-        elif layer.bbox[1] > 400 and len(layer_text) > len(longest_text.value):
+        elif layer.bbox[1] > card_mid_y and len(layer_text) > len(longest_text.value):
             longest_text.value = layer_text
 
     def _is_stat_layer(self, layer) -> bool:
@@ -545,7 +532,7 @@ class PSDParser:
                            card: CardInfo,
                            abilities: list[tuple[str, BoundingBox]],
                            type_bboxes: list[tuple[str, BoundingBox]],
-                           longest_text: str) -> None:
+                           longest_text: str, card_mid_y: int) -> None:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
         ability_text = '\n'.join(text for text, _ in abilities)
@@ -556,15 +543,9 @@ class PSDParser:
                 card.problems.append("NO ABILITY LAYER")
 
         if ability_text:
-            type_bboxes = self._prune_type_bboxes(
-                self._sort_by_position(type_bboxes)
-            )
-            ability_text = self._inject_type_names(
-                ability_text, type_bboxes, card
-            )
-            card.ability = self._spacing_pattern.sub(
-                r'\1', ability_text
-            ).strip('\'" ').strip()
+            type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
+            ability_text = self._inject_type_names(ability_text, type_bboxes, card)
+            card.ability = self._spacing_pattern.sub(r'\1', ability_text).strip('\'" ').strip()
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
         """Process stat values."""
@@ -611,11 +592,11 @@ class PSDParser:
         return [item for row in rows for item in row]
 
     @staticmethod
-    def _prune_type_bboxes(bboxes: list[tuple[str, BoundingBox]]) -> list[tuple[str, BoundingBox]]:
+    def _prune_type_bboxes(bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> list[tuple[str, BoundingBox]]:
         """Remove type bboxes that are too high up."""
         if not bboxes:
             return bboxes
-        max_height = max(bboxes[len(bboxes) - 1][1].y // 3, 400)
+        max_height = max(bboxes[-1][1].y // 3, card_mid_y)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
     def _inject_type_names(self, ability: str,
