@@ -528,11 +528,8 @@ class PSDParser:
 
         return any("stars" in name for name in parent_names)
 
-    def _process_abilities(self,
-                           card: CardInfo,
-                           abilities: list[tuple[str, BoundingBox]],
-                           type_bboxes: list[tuple[str, BoundingBox]],
-                           longest_text: str, card_mid_y: int) -> None:
+    def _process_abilities(self, card: CardInfo, abilities: list[tuple[str, BoundingBox]],
+                           type_bboxes: list[tuple[str, BoundingBox]], longest_text: str, card_mid_y: int) -> None:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
         ability_text = '\n'.join(text for text, _ in abilities)
@@ -544,7 +541,7 @@ class PSDParser:
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
-            ability_text = self._inject_type_names(ability_text, type_bboxes, card)
+            ability_text = self._inject_type_names(ability_text.rstrip().rstrip("'\""), type_bboxes, card)
             card.ability = self._spacing_pattern.sub(r'\1', ability_text).strip('\'" ').strip()
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
@@ -608,7 +605,7 @@ class PSDParser:
         type_bboxes = self._sort_by_position(type_bboxes)
         types = [t for t, _ in type_bboxes]
 
-        lines = ability.splitlines(keepends=True)
+        lines = [line.rstrip(" '\n") + '\n' for line in ability.splitlines(keepends=True)]
         result_lines = []
         type_index = 0
 
@@ -622,9 +619,7 @@ class PSDParser:
                 result_lines.append(line)
                 continue
 
-            new_line = line
             offset = 0
-
             for match in matches:
                 if type_index >= len(types):
                     break
@@ -633,16 +628,16 @@ class PSDParser:
                 type_name = types[type_index]
 
                 replacement = f" [{type_name}] "
-                new_line = (
-                    new_line[:insert_at] +
+                line = (
+                    line[:insert_at] +
                     replacement +
-                    new_line[match.end() + offset:]
+                    line[match.end() + offset:]
                 ).lstrip()
 
                 offset += len(replacement) - (match.end() - match.start())
                 type_index += 1
 
-            result_lines.append(new_line)
+            result_lines.append(line)
 
         # Append remaining types to the end
         if type_index < len(types):
