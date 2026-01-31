@@ -200,11 +200,6 @@ class StatsDatabase:
         self.all_types: list[str] = []
         self.dirty_files: list[str] = []
 
-        # Pre-compile regex patterns
-        self._whitespace_pattern: Pattern = re_compile(r'\s{3,}|\s{3,}:')
-        self._spacing_pattern: Pattern = re_compile(r'\s+([:;,\.\?!])')
-        self._ascii_pattern: Pattern = re_compile(r'[^\x00-\x7f]')
-
         self._headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
         if GIT_TOKEN:
             print("Git token found, API limited to 5000 requests/hour.")
@@ -349,7 +344,7 @@ class PSDParser:
     def __init__(self, all_types: list[str], stats_db: StatsDatabase):
         self.all_types = all_types
         self.stats_db = stats_db
-        self._whitespace_pattern = re_compile(r'\s{3,}|\s{3,}:')
+        self._gap_pattern = re_compile(r'\s{3,}')
         self._spacing_pattern = re_compile(r'\s+([:;,\.\?!])')
 
     def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
