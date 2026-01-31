@@ -596,7 +596,7 @@ class PSDParser:
         """Remove type bboxes that are too high up."""
         if not bboxes:
             return bboxes
-        max_height = max(bboxes[-1][1].y // 3, card_mid_y)
+        max_height = max(bboxes[len(bboxes) - 1][1].y // 3, card_mid_y)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
     def _inject_type_names(self, ability: str,
