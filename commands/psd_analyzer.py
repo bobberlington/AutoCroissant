@@ -464,7 +464,7 @@ class PSDParser:
         elif get_stars_from_psd and self._is_star_layer(layer):
             if layer.is_visible() and layer.has_pixels():
                 num_stars.value += 1
-        
+
         # Problematic type layer
         elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
@@ -587,10 +587,33 @@ class PSDParser:
                 setattr(card.stats, stat_attr, value)
 
     @staticmethod
-    def _sort_by_position(items: list[tuple[str, BoundingBox]],
-                          epsilon: int = 10) -> list[tuple[str, BoundingBox]]:
-        """Sort items by position (y then x)."""
-        return sorted(items, key=lambda item: (item[1].y // epsilon, item[1].x))
+    def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:
+        """Sort items top-to-bottom, then left-to-right, grouping items into visual rows."""
+        if not items:
+            return items
+
+        # Sort primarily by Y
+        items = sorted(items, key=lambda i: i[1].y)
+
+        rows: list[list[tuple[str, BoundingBox]]] = []
+
+        for item in items:
+            placed = False
+            for row in rows:
+                # Compare Y against first item in the row
+                if abs(item[1].y - row[0][1].y) <= row_threshold:
+                    row.append(item)
+                    placed = True
+                    break
+            if not placed:
+                rows.append([item])
+
+        # Sort each row left-to-right
+        for row in rows:
+            row.sort(key=lambda i: i[1].x)
+
+        # Flatten rows
+        return [item for row in rows for item in row]
 
     @staticmethod
     def _prune_type_bboxes(bboxes: list[tuple[str, BoundingBox]]) -> list[tuple[str, BoundingBox]]:
@@ -600,59 +623,58 @@ class PSDParser:
         max_height = max(bboxes[len(bboxes) - 1][1].y // 3, 400)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
-    def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]], card: CardInfo) -> str:
-        """Inject type names into ability text, including types that appear at the beginning or end."""
-        if not type_bboxes:
+    def _inject_type_names(self, ability: str,
+                           type_bboxes: list[tuple[str, BoundingBox]], card: CardInfo) -> str:
+        if not ability or not type_bboxes:
             return ability
 
-        # Sort left-to-right / top-to-bottom just in case
+        # Sort icons top-to-bottom, then left-to-right
         type_bboxes = self._sort_by_position(type_bboxes)
+        types = [t for t, _ in type_bboxes]
 
-        # Detect leading/trailing whitespace BEFORE stripping
-        leading_ws = ability[:len(ability) - len(ability.lstrip())]
-        trailing_ws = ability[len(ability.rstrip()):]
-
-        core_text = ability.strip()
-
-        # Mid-text matches (existing behavior)
-        matches = list(self._whitespace_pattern.finditer(core_text))
-
-        num_matches = len(matches)
-        num_types = len(type_bboxes)
-
-        if num_matches != num_types:
-            if num_matches > 0 and num_types > 0:
-                card.problems.append(
-                    f"TYPE / WHITESPACE MISMATCH ({num_types} type{'s' if num_types != 1 else ''}, "
-                    f"{num_matches} gap{'s' if num_matches != 1 else ''})"
-                )
-
-        injected = core_text
-
+        lines = ability.splitlines(keepends=True)
+        result_lines = []
         type_index = 0
 
-        # Inject leading type
-        if leading_ws and type_index < len(type_bboxes):
-            injected = f"[{type_bboxes[type_index][0]}] " + injected
-            type_index += 1
+        for line in lines:
+            if type_index >= len(types):
+                result_lines.append(line)
+                continue
 
-        # Inject middle types (reverse order to preserve indices)
-        if matches:
-            if len(type_bboxes) - type_index >= len(matches):
-                for match in reversed(matches):
-                    type_name = type_bboxes[type_index][0]
-                    injected = (
-                        injected[:match.start()] +
-                        f" [{type_name}] " +
-                        injected[match.end():]
-                    )
-                    type_index += 1
+            matches = list(self._gap_pattern.finditer(line))
+            if not matches:
+                result_lines.append(line)
+                continue
 
-        # Inject trailing type
-        if trailing_ws and type_index < len(type_bboxes):
-            injected = injected + f" [{type_bboxes[type_index][0]}]"
+            new_line = line
+            offset = 0
 
-        return injected
+            for match in matches:
+                if type_index >= len(types):
+                    break
+
+                insert_at = match.start() + offset
+                type_name = types[type_index]
+
+                replacement = f" [{type_name}] "
+                new_line = (
+                    new_line[:insert_at] +
+                    replacement +
+                    new_line[match.end() + offset:]
+                )
+
+                offset += len(replacement) - (match.end() - match.start())
+                type_index += 1
+
+            result_lines.append(new_line)
+
+        # Append remaining types to the end
+        if type_index < len(types):
+            remaining = ' '.join(f"[{t}]" for t in types[type_index:])
+            last_line_index = len(result_lines) - 1
+            result_lines[last_line_index] = f"{result_lines[last_line_index]} {remaining}"
+
+        return ''.join(result_lines)
 
 
 class CardValidator:
@@ -672,7 +694,7 @@ class CardValidator:
         "God Tamer",
         "Mini Bee",
         "Paint Warrior",
-        "Red Bloon",
+        "PoD01Red Bloon",
         "Sabre",
         "Shadow Duelist",
         "Sword Knight",
@@ -682,6 +704,7 @@ class CardValidator:
         "The Master",
         "Panda",
         "Chomp",
+        "Abyss Watcher",
     }
 
     @staticmethod
