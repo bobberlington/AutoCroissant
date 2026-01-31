@@ -468,7 +468,7 @@ class PSDParser:
 
         if layer.name.lower() == "ability" or is_rulepage:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
-            abilities.append((layer_text.strip('\'" '), bbox))
+            abilities.append((layer_text, bbox))
         elif layer.bbox[1] > card_mid_y and len(layer_text) > len(longest_text.value):
             longest_text.value = layer_text
 
@@ -637,7 +637,7 @@ class PSDParser:
                     new_line[:insert_at] +
                     replacement +
                     new_line[match.end() + offset:]
-                )
+                ).lstrip()
 
                 offset += len(replacement) - (match.end() - match.start())
                 type_index += 1
@@ -648,7 +648,8 @@ class PSDParser:
         if type_index < len(types):
             remaining = ' '.join(f"[{t}]" for t in types[type_index:])
             last_line_index = len(result_lines) - 1
-            result_lines[last_line_index] = f"{result_lines[last_line_index]} {remaining}"
+            last_line = result_lines[last_line_index].rstrip('\n')
+            result_lines[last_line_index] = f"{last_line} {remaining}"
 
         return ''.join(result_lines)
 
