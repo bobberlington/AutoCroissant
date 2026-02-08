@@ -9,7 +9,7 @@ from os import walk
 from os.path import getmtime, basename, expanduser, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
-from re import compile as re_compile
+from re import compile as re_compile, sub
 from requests import get
 from typing import Optional, Any
 from urllib.parse import quote
@@ -346,7 +346,7 @@ class PSDParser:
         self.all_types = all_types
         self.stats_db = stats_db
         self._gap_pattern = re_compile(r'\s{3,}')
-        self._spacing_pattern = re_compile(r'\s+([:;,\.\?!])')
+        self._spacing_pattern = re_compile(r'\s{2,}')
 
     def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
         """
@@ -532,17 +532,19 @@ class PSDParser:
                            type_bboxes: list[tuple[str, BoundingBox]], longest_text: str, card_mid_y: int) -> None:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
-        ability_text = '\n'.join(text for text, _ in abilities)
+        ability_text = '\n'.join(text.strip('\'"') for text, _ in abilities)
 
         if not ability_text:
-            ability_text = longest_text
+            ability_text = longest_text.strip('\'"')
             if ability_text:
                 card.problems.append("NO ABILITY LAYER")
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
-            ability_text = self._inject_type_names(ability_text.rstrip().rstrip("'\""), type_bboxes, card)
-            card.ability = self._spacing_pattern.sub(r'\1', ability_text).strip('\'" ').strip()
+            ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
+            ability_text = sub(r'\s{2,}', ' ', ability_text)
+            ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
+            card.ability = ability_text.strip(' \'"')
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
         """Process stat values."""
@@ -596,8 +598,7 @@ class PSDParser:
         max_height = max(bboxes[len(bboxes) - 1][1].y // 3, card_mid_y)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
 
-    def _inject_type_names(self, ability: str,
-                           type_bboxes: list[tuple[str, BoundingBox]], card: CardInfo) -> str:
+    def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]]) -> str:
         if not ability or not type_bboxes:
             return ability
 
@@ -619,32 +620,24 @@ class PSDParser:
                 result_lines.append(line)
                 continue
 
-            offset = 0
             for match in matches:
                 if type_index >= len(types):
                     break
 
-                insert_at = match.start() + offset
+                before = line[:match.start()].rstrip()
+                after = line[match.end():].lstrip()
                 type_name = types[type_index]
 
-                replacement = f" [{type_name}] "
-                line = (
-                    line[:insert_at] +
-                    replacement +
-                    line[match.end() + offset:]
-                ).lstrip()
-
-                offset += len(replacement) - (match.end() - match.start())
+                line = f"{before} [{type_name}] {after}"
                 type_index += 1
 
             result_lines.append(line)
 
-        # Append remaining types to the end
-        if type_index < len(types):
+        # Append remaining types
+        if type_index < len(types) and result_lines:
             remaining = ' '.join(f"[{t}]" for t in types[type_index:])
             last_line_index = len(result_lines) - 1
-            last_line = result_lines[last_line_index].rstrip('\n')
-            result_lines[last_line_index] = f"{last_line} {remaining}"
+            result_lines[last_line_index] = result_lines[last_line_index].rstrip('\n') + f" {remaining}\n"
 
         return ''.join(result_lines)
 
