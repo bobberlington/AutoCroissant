@@ -542,7 +542,7 @@ class PSDParser:
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
-            ability_text = sub(r'\s{2,}', ' ', ability_text)
+            ability_text = sub(r'[ \t]{2,}', ' ', ability_text)
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
             card.ability = ability_text.strip(' \'"')
 
@@ -620,20 +620,23 @@ class PSDParser:
                 result_lines.append(line)
                 continue
 
+            new_line = []
+            last_end = 0
             for match in matches:
                 if type_index >= len(types):
                     break
 
-                before = line[:match.start()].rstrip()
-                after = line[match.end():].lstrip()
-                type_name = types[type_index]
+                new_line.append(line[last_end:match.start()].rstrip())
+                new_line.append(f" [{types[type_index]}] ")
 
-                line = f"{before} [{type_name}] {after}"
                 type_index += 1
+                last_end = match.end()
 
-            result_lines.append(line)
+            # remainder of line
+            new_line.append(line[last_end:].lstrip())
+            result_lines.append(''.join(new_line))
 
-        # Append remaining types
+        # Append remaining types to the last line
         if type_index < len(types) and result_lines:
             remaining = ' '.join(f"[{t}]" for t in types[type_index:])
             last_line_index = len(result_lines) - 1
