@@ -532,7 +532,7 @@ class PSDParser:
                            type_bboxes: list[tuple[str, BoundingBox]], longest_text: str, card_mid_y: int) -> None:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
-        ability_text = '\n'.join(text.strip('\'"') for text, _ in abilities)
+        ability_text = '\n'.join(text.strip('\'"\n') for text, _ in abilities)
 
         if not ability_text:
             ability_text = longest_text.strip('\'"')
@@ -627,7 +627,8 @@ class PSDParser:
                     break
 
                 new_line.append(line[last_end:match.start()].rstrip())
-                new_line.append(f" [{types[type_index]}] ")
+                prefix = ' ' if new_line and not new_line[len(new_line) - 1].endswith('\n') else ''
+                new_line.append(f"{prefix}[{types[type_index]}] ")
 
                 type_index += 1
                 last_end = match.end()
