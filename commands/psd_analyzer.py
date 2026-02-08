@@ -535,7 +535,7 @@ class PSDParser:
         ability_text = '\n'.join(text.strip('\'"\n') for text, _ in abilities)
 
         if not ability_text:
-            ability_text = longest_text.strip('\'"')
+            ability_text = longest_text.strip('\'"\n')
             if ability_text:
                 card.problems.append("NO ABILITY LAYER")
 
@@ -627,15 +627,14 @@ class PSDParser:
                     break
 
                 new_line.append(line[last_end:match.start()].rstrip())
-                prefix = ' ' if new_line and not new_line[len(new_line) - 1].endswith('\n') else ''
-                new_line.append(f"{prefix}[{types[type_index]}] ")
+                new_line.append(f" [{types[type_index]}] ")
 
                 type_index += 1
                 last_end = match.end()
 
             # remainder of line
             new_line.append(line[last_end:].lstrip())
-            result_lines.append(''.join(new_line))
+            result_lines.append(''.join(new_line).lstrip())
 
         # Append remaining types to the last line
         if type_index < len(types) and result_lines:
