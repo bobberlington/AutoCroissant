@@ -536,7 +536,7 @@ class PSDParser:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
-        return ability_text.strip(' \'"')
+        return ability_text.strip(' \'"\n')
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
         """Process stat values."""
@@ -632,7 +632,7 @@ class PSDParser:
         if type_index < len(types) and result_lines:
             remaining = ' '.join(f"[{t}]" for t in types[type_index:])
             last_line_index = len(result_lines) - 1
-            result_lines[last_line_index] = result_lines[last_line_index].rstrip('\n') + f" {remaining}\n"
+            result_lines[last_line_index] = result_lines[last_line_index].rstrip('\n') + f" {remaining}"
 
         return ''.join(result_lines)
 
