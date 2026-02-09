@@ -346,7 +346,6 @@ class PSDParser:
         self.all_types = all_types
         self.stats_db = stats_db
         self._gap_pattern = re_compile(r'\s{3,}')
-        self._spacing_pattern = re_compile(r'\s{2,}')
 
     def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
         """
@@ -536,7 +535,6 @@ class PSDParser:
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
-            ability_text = sub(r'[ \t]{2,}', ' ', ability_text)
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
         return ability_text.strip(' \'"')
 
