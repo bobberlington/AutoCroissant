@@ -398,7 +398,6 @@ class PSDParser:
 
     def _extract_from_layers(self, psd: PSDImage, card: CardInfo, relative_path: str) -> None:
         """Extract information from PSD layers."""
-        longest_text = MutableValue("")
         num_stars = MutableValue(0)
         stat_trackers = StatTrackers()
         type_bboxes: list[tuple[str, BoundingBox]] = []
@@ -414,24 +413,27 @@ class PSDParser:
 
         for layer in psd.descendants():
             self._process_layer(
-                layer, card, longest_text, num_stars,
+                layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
                 is_rulepage, get_stars_from_psd, card_mid_y)
 
-        self._process_abilities(card, abilities, type_bboxes, longest_text.value, card_mid_y)
+        if abilities:
+            card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
+        else:
+            card.problems.append("NO ABILITY LAYER")
         self._process_stats(card, stat_trackers)
 
         if get_stars_from_psd:
             card.stars = num_stars.value
 
-    def _process_layer(self, layer, card: CardInfo, longest_text: MutableValue,
+    def _process_layer(self, layer, card: CardInfo,
                        num_stars: MutableValue, stat_trackers: StatTrackers,
                        type_bboxes: list, abilities: list, is_rulepage: bool,
                        get_stars_from_psd: bool, card_mid_y: int) -> None:
         """Process a single PSD layer."""
         # Text layers
         if layer.kind == "type":
-            self._process_text_layer(layer, longest_text, abilities, is_rulepage, card_mid_y)
+            self._process_text_layer(layer, abilities, is_rulepage, card_mid_y)
 
         # Stat layers
         elif self._is_stat_layer(layer):
@@ -454,8 +456,7 @@ class PSDParser:
         elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
-    def _process_text_layer(self, layer, longest_text: MutableValue,
-                            abilities: list, is_rulepage: bool, card_mid_y: int) -> None:
+    def _process_text_layer(self, layer, abilities: list, is_rulepage: bool, card_mid_y: int) -> None:
         """Process text layer."""
         layer_text = str(layer.engine_dict["Editor"]["Text"])
         layer_text = (layer_text
@@ -469,8 +470,6 @@ class PSDParser:
         if layer.name.lower() == "ability" or is_rulepage:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             abilities.append((layer_text, bbox))
-        elif layer.bbox[1] > card_mid_y and len(layer_text) > len(longest_text.value):
-            longest_text.value = layer_text
 
     def _is_stat_layer(self, layer) -> bool:
         """Check if layer is a stat layer."""
@@ -528,23 +527,18 @@ class PSDParser:
 
         return any("stars" in name for name in parent_names)
 
-    def _process_abilities(self, card: CardInfo, abilities: list[tuple[str, BoundingBox]],
-                           type_bboxes: list[tuple[str, BoundingBox]], longest_text: str, card_mid_y: int) -> None:
+    def _process_abilities(self, abilities: list[tuple[str, BoundingBox]],
+                           type_bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> str | None:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
         ability_text = '\n'.join(text.strip('\'"\n') for text, _ in abilities)
-
-        if not ability_text:
-            ability_text = longest_text.strip('\'"\n')
-            if ability_text:
-                card.problems.append("NO ABILITY LAYER")
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
             ability_text = sub(r'[ \t]{2,}', ' ', ability_text)
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
-            card.ability = ability_text.strip(' \'"')
+        return ability_text.strip(' \'"')
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
         """Process stat values."""
