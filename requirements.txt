@@ -1,6 +1,7 @@
 accelerate
 bitsandbytes
 cython
+davey
 diffusers
 discord.py
 GitPython
