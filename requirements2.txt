@@ -2,3 +2,10 @@
 torch
 torchvision
 torchaudio
+accelerate
+bitsandbytes
+diffusers
+peft
+protobuf
+sentencepiece
+transformers
