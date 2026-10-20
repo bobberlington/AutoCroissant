@@ -225,6 +225,18 @@ bar is set per region: stat-bar cells and text boxes must match Photoshop. Full-
 
 Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,000/month) isn't needed.
 
+## Queued (2026-10-20, user)
+
+- **Move the website data files out of MDW/** (`Card Authors.txt`, `Card Edits.json`, `Website Admins.txt`,
+  `Constructed Ban List.txt`) to `site/` (directly under it, not `site/data/`): bot first (read the new path, fall
+  back to the old; deploy), then one TTSCardMaker commit (`git mv` + build_site.py constants + edit.js file map +
+  site.yml and tts-save.yml sparse checkouts/filters + README), then drop the fallback. Wait for the Task 4 pass to
+  land its psd_analyzer split first.
+- **Two kinds of card edits.** The pipeline (Task 3 step 4), `CardEdits` and the editor must distinguish edits that
+  change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
+  problems_ok, allow_high_stats, dup_of, series, creatures); only the first kind is baked and removed.
+- **Rules skill:** `.claude/skills/impossibility-simulator-rules` (the game itself, from the rulebook pages).
+
 ## Task 3c. Effect layers on pushes (after Task 3)
 
 Port `MDW/Scripts/Effect Layers - All Cards.jsx` (Photoshop-only ExtendScript) to Python on the fork: find status
