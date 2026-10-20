@@ -1,13 +1,14 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load this skill for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage (low/medium/high/mps/distributed), KEEPVIDEO, POSTPROCESS, match ratio, /set_ratio, /set_repo, /set_scheduler, /set_model, /set_lora, /set_device, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, POSSIBLE_SCHEDULERS, LOCAL_DIR_LOC, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH, STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), or the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS). Contains the full 11-field config.py table (field NAMES only — values are secret), global_config.py constants, a per-module constant catalog, prod-vs-experimental status for each flag, the runtime-settable vs restart-required table (the /set_* commands do NOT persist across restart), the update_stats defaults (force_update False in both places since 2026-10-19; local mode and its use_local_repo/use_local_timestamp options archived 2026-10-20), the vram_usage=='mps' yt-dlp side channel, an add-a-new-config-field checklist, and re-verification greps for every table.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load this skill for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH, STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device, POSSIBLE_SCHEDULERS). Contains the config.py field table (field NAMES only — values are secret; 7 fields main reads, plus the AI fields on the branch), global_config.py constants, a per-module constant catalog, prod-vs-experimental status for each flag, the runtime-settable vs restart-required table (the /set_* commands do NOT persist across restart), the update_stats defaults (force_update False in both places since 2026-10-19; local mode and its use_local_repo/use_local_timestamp options archived 2026-10-20), the browser_cookies yt-dlp switch (fallback vram_usage=='mps'), an add-a-new-config-field checklist, and re-verification greps for every table.
 ---
 
 # AutoCroissant: Configuration and Flags
 
 All facts verified against the working tree on 2026-07-11; re-verified 2026-10-19 against HEAD a7a4bb3 plus
 the uncommitted working tree (new: icon-font constants in psd_analyzer, commands/type_emojis.py, the
-reminder constants in analytics.py, `force_update` default). Line numbers and defaults DRIFT —
+reminder constants in analytics.py, `force_update` default); re-verified 2026-10-20 against HEAD 9fb3093
+(AI code only on branch `archive/ai-generation`, `browser_cookies`, `SITE_URL`). Line numbers and defaults DRIFT —
 before relying on any table here after the repo has moved, rerun the one-line commands in
 "Provenance and maintenance" at the bottom. The master drift check is:
 
@@ -24,7 +25,7 @@ grep -rn "getattr(config" --include="*.py" .
 | Secrets + per-machine knobs | `config.py` (repo root) | NO — gitignored, mode 0700 | on restart only (read once at import) |
 | Shared constants | `global_config.py` | yes | on restart (code edit) |
 | Module constants | the `# Configuration` block at the top of each `commands/*.py` | yes | on restart (code edit) |
-| Runtime setters | `/set_ratio`, `/set_repo`, `/set_scheduler`, `/set_model`, `/set_lora`, `/set_device` | n/a | immediately — and LOST on restart |
+| Runtime setters | `/set_ratio`, `/set_repo` (the four AI setters are on branch `archive/ai-generation`) | n/a | immediately — and LOST on restart |
 
 Mental model: `config.py` is read ONCE, at import time, into module-level constants via
 `getattr(config, "field", default)`. Nothing in the codebase ever re-reads it, and nothing ever
@@ -41,8 +42,8 @@ Ground rules:
   2026-07-11 and 2026-10-19: `ls -l config.py`).
 - Gitignored (`.gitignore`, "Discord Bot Specific" section: `config.py`). Confirm with
   `git check-ignore -v config.py`.
-- PER-MACHINE. The bot runs on the owner's Mac (`vram_usage='mps'`) and a CUDA box at different
-  times; each has its own `config.py` with different values. A field you add on one machine does
+- PER-MACHINE. Production is the jetson (systemd `autocroissant.service`); the owner develops on
+  a Mac. Each has its own `config.py` with different values. A field you add on one machine does
   not exist on the other until someone hand-edits that machine's file. Every consumer therefore
   uses a `getattr` default — except TOKEN.
 - The file must EXIST for the bot (and for any script importing `commands.*`) to even import:
@@ -50,54 +51,71 @@ Ground rules:
   line; every other field falls back to its default.
 - Import side effect worth knowing: `query_card` prints a token-PRESENCE line at import
   ("Git token found, API limited to 5000 requests/hour." or the 60/hour variant,
-  commands/query_card.py:42-45). Presence only — values are never printed.
+  commands/query_card.py:48-51). Presence only — values are never printed.
 
-### All 11 fields (as of 2026-07-11; same 11 on 2026-10-19)
+### The 7 fields main reads (as of 2026-10-20)
 
 | Field | Required? | Default (getattr) | Read at | Status | Effect |
 |---|---|---|---|---|---|
-| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:9); used by `client.run(TOKEN)` (main.py:895) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
-| `ADMINS` | no | `[]` (commands/utils.py:21) | utils.py | prod | list of Discord user IDs (ints) allowed past `perms_check` — see gate table below |
-| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/query_card.py:25, commands/psd_analyzer.py:37 AND commands/type_emojis.py:17 — three independent reads as of 2026-10-19) | query_card, psd_analyzer, type_emojis | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for remote timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis) |
-| `HF_TOKEN` | no | `""` (commands/diffusion.py:29) | diffusion | experimental (AI) | HuggingFace token. Used ONLY inside `_init_flux_pipeline` (diffusion.py:267-324) to download the gated `black-forest-labs/FLUX.1-dev` repo. Irrelevant unless `model` contains "flux" |
-| `model` | no | `""` (diffusion.py:24) | diffusion | experimental (AI) | `""` DISABLES pipeline init entirely (`if not MODEL: return`, diffusion.py:200-202). Otherwise dispatch by substring: "flux" → Flux from HF; "xl" → SDXL from `./models/<model>`; else SD1.5 from `./models/<model>` (diffusion.py:215-222, 328-354). Missing file raises FileNotFoundError, caught by init's try/except — bot keeps running (diffusion.py:250-253) |
-| `lora` | no | `""` (diffusion.py:25) | diffusion | experimental (AI) | LoRA filename inside `./models/loras/`; loaded only if the file exists (diffusion.py:230-232) |
-| `device_no` | no | `0` (diffusion.py:26) | diffusion | experimental (AI) | CUDA GPU index, passed as `gpu_id` to the CPU-offload calls — only matters for `vram_usage` low/medium on the CUDA box (diffusion.py:388, 390) |
-| `scheduler_name` | no | `""` (diffusion.py:27) | diffusion | experimental (AI) | `""` or unrecognized → keep the model's default scheduler (`_configure_scheduler` returns None, diffusion.py:357-372). Recognized prefixes: "dpm++ sde" (DPMSolverSinglestep, + Karras sigmas if it endswith "karras" and model isn't flux), "euler a" (EulerAncestralDiscrete). The `POSSIBLE_SCHEDULERS` whitelist is enforced only by `/set_scheduler`, NOT for the config.py value — a typo silently falls back to the default scheduler |
-| `vram_usage` | no | `"low"` (diffusion.py:28) | diffusion AND music_player (side channel!) | experimental (AI) + quirk | memory strategy — full mode table below |
-| `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
-| `POSTPROCESS` | no | `False` (music_player.py:61) | music_player | prod | if True, appends a yt-dlp `FFmpegExtractAudio` postprocessor: mp3 at 320k (music_player.py:61-67) |
+| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:11); used by `client.run(TOKEN)` (main.py:811) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
+| `ADMINS` | no | `[]` (commands/utils.py:20) | utils.py | prod | list of Discord user IDs (ints) allowed past `perms_check` — see gate table below |
+| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/query_card.py:25, commands/psd_analyzer.py:42 AND commands/type_emojis.py:17 — three independent reads) | query_card, psd_analyzer, type_emojis | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis) |
+| `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:38) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
+| `vram_usage` | no | `""` in the fallback (music_player.py:38) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
+| `KEEPVIDEO` | no | `True` (commands/music_player.py:55) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
+| `POSTPROCESS` | no | `False` (music_player.py:62) | music_player | prod | if True, appends a yt-dlp `FFmpegExtractAudio` postprocessor: mp3 at 320k (music_player.py:62-68) |
+
+### AI fields (branch `archive/ai-generation` only)
+
+Main never reads these; a config.py that still has them is harmless. On the branch they are read in
+commands/diffusion.py:26-31:
+
+| Field | Default | Effect |
+|---|---|---|
+| `HF_TOKEN` | `""` | HuggingFace token, used ONLY by `_init_flux_pipeline` to download the gated `black-forest-labs/FLUX.1-dev`. Irrelevant unless `model` contains "flux" |
+| `model` | `""` | `""` DISABLES pipeline init (`if not MODEL: return`). Otherwise by substring: "flux" → Flux from HF; "xl" → SDXL from `./models/<model>`; else SD1.5. A missing file is caught by init's try/except — the bot keeps running |
+| `lora` | `""` | LoRA filename in `./models/loras/`; loaded only if the file exists |
+| `device_no` | `0` | CUDA GPU index (`gpu_id` of the CPU-offload calls); matters only for `vram_usage` low/medium |
+| `scheduler_name` | `""` | `""` or unrecognized → the model's default scheduler. Recognized: "dpm++ sde" (+ Karras if it ends in "karras", not flux), "euler a". `POSSIBLE_SCHEDULERS` is enforced only by `/set_scheduler`, so a config.py typo silently falls back |
+| `vram_usage` | `"low"` | memory strategy — mode table below |
 
 Prod-vs-experimental doctrine (user-stated 2026-07-11): the AI/diffusion capability is an
-EXPERIMENT. The five diffusion fields plus HF_TOKEN must be absent-able: with none of them set
-(and even with torch not installed) the bot must boot and run every non-AI feature. That is what
-the getattr defaults + `model=''` + lazy torch import guarantee. Details and rules for keeping it
-that way: see **autocroissant-ai-boundary** (branch `archive/ai-generation`).
+EXPERIMENT. Since 2026-10-20 it lives only on branch `archive/ai-generation`; main has no AI code
+and boots without any AI field or torch. Details: **autocroissant-ai-boundary** (branch `archive/ai-generation`).
+
+### browser_cookies — the music downloader's Safari cookies
+
+`commands/music_player.py:38` reads
+`cookies_from_browser: bool = bool(getattr(config, "browser_cookies", getattr(config, "vram_usage", "") == "mps"))`;
+when true, yt-dlp gets `"cookiesfrombrowser": ("safari", None, None, None)` (music_player.py:56). Set
+`browser_cookies = True` only on a machine with Safari (the Mac). A config.py without `browser_cookies`
+falls back to the old side channel `vram_usage == "mps"` (default `""`), so old Mac configs keep their
+cookies. This replaced the vram_usage-only hack on 2026-10-20 (BUGS_AND_IMPROVEMENTS S1).
 
 ### ADMINS — which commands it gates
 
-`perms_check(interaction)` (commands/utils.py:306-316) is INVERTED: it returns **True when the
+`perms_check(interaction)` (commands/utils.py:249-259) is INVERTED: it returns **True when the
 user LACKS permission** (`interaction.user.id not in ADMINS`). Every call site reads
 `if perms_check(...): send "You do not have permission"; return`. Misreading this polarity is a
 known review trap — the invariant is owned by **autocroissant-architecture-contract**.
 
-Commands gated by `perms_check` in main.py (all 12 call sites, verified 2026-10-19; line numbers
+Commands gated by `perms_check` in main.py (all 12 call sites, verified 2026-10-20; line numbers
 drift — re-derive with `grep -n "perms_check" main.py`):
 
 | Slash command | main.py line |
 |---|---|
-| `/stop_bot` | 163 |
-| `/pull` | 177 |
-| `/push` | 187 |
-| `/update` | 200 |
-| `/set_reminder` | 229 |
-| `/list_guilds` | 723 |
-| `/leave_guild` | 738 |
-| `/sync_global` | 747 |
-| `/sync_emojis` (added 2026-10-19) | 762 |
-| `/list_guild_members` | 778 |
-| `/list_guild_channels` | 793 |
-| `/get_channel_messages` | 813 |
+| `/stop_bot` | 154 |
+| `/pull` | 168 |
+| `/push` | 178 |
+| `/update` | 191 |
+| `/set_reminder` | 220 |
+| `/list_guilds` | 629 |
+| `/leave_guild` | 644 |
+| `/sync_global` | 653 |
+| `/sync_emojis` (added 2026-10-19) | 668 |
+| `/list_guild_members` | 684 |
+| `/list_guild_channels` | 699 |
+| `/get_channel_messages` | 719 |
 
 Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
 - `/remove_reminder` lets admins remove any reminder and everyone else only their own.
@@ -105,8 +123,8 @@ Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
   Reminders saved before 2026-10-19 have no creator and still run as the bot (`LEGACY_RUNS_AS_BOT`); the bot's
   own id is in the dev Mac's ADMINS. Mechanism: autocroissant-architecture-contract invariant 9.
 
-Quirk, stated plainly: `/restart_bot` (main.py:152-158) is NOT gated — anyone in the guild can
-restart the bot, while `/stop_bot` is admin-only. Observed code fact as of 2026-10-19; whether
+Quirk, stated plainly: `/restart_bot` (main.py:143-149) is NOT gated — anyone in the guild can
+restart the bot, while `/stop_bot` is admin-only. Observed code fact as of 2026-10-20; whether
 that is intentional is unknown (candidate cleanup — route through autocroissant-change-control).
 
 ### vram_usage — the five modes
@@ -115,7 +133,7 @@ that is intentional is unknown (candidate cleanup — route through autocroissan
 
 
 Accepted values are never validated anywhere; they are plain string comparisons in
-`_apply_memory_optimizations` (diffusion.py:375-390) and `init_pipeline` (diffusion.py:210-212).
+`_apply_memory_optimizations` (diffusion.py:377-392) and `init_pipeline` (diffusion.py:212-214).
 A typo (e.g. "lo") silently lands in a fallthrough: float16, VAE slicing+tiling, no offload, no
 device placement. One line per mode — **the canonical full mode table (dtype, offload, VAE opts,
 quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `archive/ai-generation`):
@@ -124,32 +142,20 @@ quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `ar
 |---|---|
 | `low` (default) | float16; VAE slicing+tiling; sequential CPU offload (`gpu_id=device_no`) — least VRAM, slowest |
 | `medium` | float16; VAE slicing+tiling; model CPU offload (`gpu_id=device_no`) |
-| `high` | float16; `_apply_memory_optimizations` applies NOTHING (no VAE opts, no offload). No code path explicitly moves the pipe to CUDA in this mode (the only pipe `.to(...)` is the mps one, line 378; line 697's `device` only seeds the `torch.Generator`) — UNVERIFIED on the CUDA box (detail: autocroissant-ai-boundary (branch `archive/ai-generation`)) |
-| `mps` | **float32**; `pipe.to(device='mps')`, nothing else; Flux unquantized (bitsandbytes is CUDA-only); **plus the yt-dlp side channel below** |
-| `distributed` | float16; VAE slicing+tiling; no CPU offload; `device_map='balanced'` when >1 CUDA GPU — wired only into the Flux init path (diffusion.py:212, 216) |
-
-**The mps side channel (experimental/quirk — flag it whenever you touch vram_usage):**
-`commands/music_player.py:37` reads
-`cookies_from_browser: bool = getattr(config, "vram_usage", False) == "mps"`, and when true,
-yt-dlp gets `"cookiesfrombrowser": ("safari", None, None, None)` (music_player.py:55). So a
-DIFFUSION memory flag also switches the MUSIC downloader to Safari browser cookies. Rationale:
-the Mac is the only machine running mps and the only one with Safari — the flag doubles as a
-"am I on the Mac?" detector. Consequences: set `vram_usage='mps'` on a non-Mac and yt-dlp will
-try to read Safari cookies that don't exist; run the Mac with any other value and downloads lose
-the cookie support. Note the getattr default here is `False` (vs `"low"` in diffusion.py:28) —
-harmless (`False == "mps"` is False) but the same field has two different defaults in two files;
-keep that in mind when grepping. This hack is a candidate for replacement with an explicit field
-(route through autocroissant-change-control).
+| `high` | float16; `_apply_memory_optimizations` applies NOTHING (no VAE opts, no offload). No code path explicitly moves the pipe to CUDA in this mode (the only pipe `.to(...)` is the mps one, line 380; line 699's `device` only seeds the `torch.Generator`) — UNVERIFIED on CUDA (detail: autocroissant-ai-boundary (branch `archive/ai-generation`)) |
+| `mps` | **float32**; `pipe.to(device='mps')`, nothing else; Flux unquantized (bitsandbytes is CUDA-only). On main, `mps` only matters as the browser_cookies fallback (above) |
+| `distributed` | float16; VAE slicing+tiling; no CPU offload; `device_map='balanced'` when >1 CUDA GPU — wired only into the Flux init path (diffusion.py:214, 218) |
 
 ## global_config.py — committed shared constants
 
-Whole file, 9 lines (verify: `cat global_config.py`):
+Whole file, 10 lines (verify: `cat global_config.py`):
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `LOCAL_DIR_LOC` | `"~/Desktop/TTSCardMaker"` | the documented clone location of the card repo. The bot itself no longer reads it (local mode was archived 2026-10-20); the diagnostics scripts (parse_one.py, gap_trace.py) and the archived traversal on branch `archive/local-update-stats` expand it with `expanduser`. This path convention is load-bearing across the toolchain |
 | `ALIAS_PKL` | `"aliases.pkl"` | card-alias pickle (committed to git) |
 | `STATS_PKL` | `"stats.pkl"` | the card stats database pickle (committed) |
+| `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
 | `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
@@ -160,35 +166,33 @@ Pickle schemas and commit discipline are owned by **impossibility-cards-referenc
 ## Module-constant catalog
 
 Every `commands/*.py` opens with a `# Configuration` (or `# Configurable Parameters`) block.
-Catalog per module, verified 2026-07-11; psd_analyzer, type_emojis and analytics re-verified 2026-10-19:
+Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 
-### commands/psd_analyzer.py (lines 29-52)
+### commands/psd_analyzer.py (lines 31-63)
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs `/update_stats` downloads ahead of parsing |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `browser_cookies` (config.py, 2026-10-20) | absent = False | yt-dlp reads browser cookies; old configs fall back to `vram_usage == "mps"` (S1, fixed) |
-| `SITE_URL` (global_config.py, 2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | card browser; `/query` Card page buttons, search links, `/website` |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, psd_analyzer.py:1161) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, psd_analyzer.py:1693) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
-| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:1664, 1671) — gitignored via `*.csv` / `*.txt` |
-| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:1725) |
-| `COLUMN_ORDER` | 15 field names, `'aliases'`…`'subtype'` | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:1521, 1606, 1655) |
+| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:2208, 2215) — gitignored via `*.csv` / `*.txt` |
+| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:2269) |
+| `COLUMN_ORDER` | 15 field names, `'aliases'`…`'subtype'` | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:2065, 2150, 2199) |
 | `MISSPELT_CARD_TYPES` | `['undread', 'tornado', 'error']` | layer names that trigger the MISSPELT TYPE validation problem (as of 2026-07-11 exactly one live card trips it: the "20 Creature Types" rulebook page, per inspect_pickle.py) |
 | `ICON_FONT_PREFIX` (2026-10-19) | `"stoogedings"` | a text-layer style run whose font PostScript name starts with this (case-insensitive) is read as icon tokens; the font's full name is `stoogedings-Regular`. Changing it without renaming the font in TTSCardMaker silently turns token parsing off |
-| `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read from the local clone or fetched from raw.githubusercontent.com in remote mode. Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
+| `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read by `_repo_text`: fetched by blob sha through the GitHub API and cached in `_file_cache` (only the offline diagnostics helper `_icons_from_local` reads a local clone). Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
 | `ICON_VARIANTS` (2026-10-19) | `("", "tint", "sticker", "no")` | the `:variant` suffixes the parser accepts; any other suffix is an `UNKNOWN ICON TOKEN` problem |
 | `ICON_SCAN_PATTERN` (2026-10-19) | `\[[^\[\]\r\n\x03]{1,48}\]` or one character in U+E000–U+F8FF or ★ (U+2605) | what the parser treats as a candidate token: a bracketed run of 1-48 characters on one line, a Private Use Area character, or the star. Semantics: impossibility-cards-reference §4.1 |
 | `EDITS_PATH` (2026-10-20) | `"MDW/Card Edits.json"` | website fixes. Read on every `/update_stats` (`CardEdits`, `_apply_edits`; PSD values kept in `card.parsed_values`) and by `populate_files` for website names/aliases. Missing or bad JSON: warning, cards unchanged |
-| `AUTHORS_PATH` (2026-10-20) | `"MDW/Card Authors.txt"` | card-repo path of the authors file. It is read from GitHub on every remote `/update_stats` and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
+| `AUTHORS_PATH` (2026-10-20) | `"MDW/Card Authors.txt"` | card-repo path of the authors file. It is read on every `/update_stats` (`_repo_text`, cached by blob sha) and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` | 5 card names (psd_analyzer.py:831-837) | cards exempt from the stats>10 check |
-| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_analyzer.py:838-857) | cards allowed to have no ability layer |
+| `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` | 5 card names (psd_analyzer.py:1255-1261) | cards exempt from the stats>10 check |
+| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_analyzer.py:1262-1281) | cards allowed to have no ability layer |
 
 The two exclusion sets are per-card whitelists the owner wants to eventually eliminate ("perfect
 extraction" goal). Their semantics and the validation rules live in
@@ -203,27 +207,27 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:627) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:714) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
-### commands/utils.py (lines 17-21)
+### commands/utils.py (lines 16-20)
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `BREAK_LEN` | `1950` | max chunk length for `split_long_message` (Discord hard limit is 2000; 50 chars of headroom preserves ``` code fences). Queue/splitting mechanics: autocroissant-architecture-contract |
 | `ADMINS` | getattr, default `[]` | see config.py table above |
 
-### commands/music_player.py (lines 27-67)
+### commands/music_player.py (lines 27-68)
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `MUSIC_BASE_DIR` | `"music/"` | download/playback directory (gitignored; the dir is kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite .gitignore's `!music/.gitkeep` exception) |
-| `SKIP_FILES` | `{".gitignore", ".DS_Store"}` | filenames ignored when traversing `music/` (used music_player.py:157, 457) |
-| `cookies_from_browser` | derived: `vram_usage == "mps"` | the side channel — see vram_usage section |
-| `ydl_opts` | dict, music_player.py:50-58 | yt-dlp options: bestaudio, restricted filenames, `music/%(title)s-%(id)s.%(ext)s` template, `keepvideo` from KEEPVIDEO, Safari `cookiesfrombrowser` iff mps, quiet. `POSTPROCESS=True` appends mp3-320k extraction (61-67). Built ONCE at import — all three config fields are restart-required |
+| `SKIP_FILES` | `{".gitignore", ".DS_Store"}` | filenames ignored when traversing `music/` (used music_player.py:158, 458) |
+| `cookies_from_browser` | derived (line 38): `browser_cookies`, else `vram_usage == "mps"` | see the browser_cookies section |
+| `ydl_opts` | dict, music_player.py:51-59 | yt-dlp options: bestaudio, restricted filenames, `music/%(title)s-%(id)s.%(ext)s` template, `keepvideo` from KEEPVIDEO, Safari `cookiesfrombrowser` iff `cookies_from_browser`, quiet. `POSTPROCESS=True` appends mp3-320k extraction (62-68). Built ONCE at import — all its config fields are restart-required |
 
-### commands/diffusion.py (lines 19-117)
+### commands/diffusion.py (lines 21-119)
 
 > **AI left main on 2026-10-20:** this section applies to branch `archive/ai-generation` (main has no AI code).
 
@@ -232,8 +236,8 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 |---|---|---|
 | `MODELS_FOLDER` | `"./models/"` | where `.safetensors` checkpoints live (gitignored; the dirs are kept by the tracked `models/README` and `models/loras/README` stubs — no `.gitkeep` exists despite .gitignore's `!models/.gitkeep` exception) |
 | `LORAS_FOLDER` | `"./models/loras/"` | where LoRA `.safetensors` live |
-| `POSSIBLE_SCHEDULERS` | `["dpm++ sde", "dpm++ sde karras", "euler a"]` | whitelist enforced by `/set_scheduler` only (diffusion.py:425) |
-| `SD15_RGB_FACTORS`, `SDXL_RGB_FACTORS(+_BIAS)`, `FLUX_RGB_FACTORS(+_BIAS)` | matrices, diffusion.py:34-117 | latent→RGB preview math cribbed from ComfyUI's latent_formats.py — not tunables, leave alone |
+| `POSSIBLE_SCHEDULERS` | `["dpm++ sde", "dpm++ sde karras", "euler a"]` | whitelist enforced by `/set_scheduler` only (diffusion.py:427) |
+| `SD15_RGB_FACTORS`, `SDXL_RGB_FACTORS(+_BIAS)`, `FLUX_RGB_FACTORS(+_BIAS)` | matrices, diffusion.py:36-119 | latent→RGB preview math cribbed from ComfyUI's latent_formats.py — not tunables, leave alone |
 
 ### commands/type_emojis.py (lines 14-26, added 2026-10-19; not compiled)
 
@@ -274,7 +278,7 @@ autocroissant-run-and-operate §9.
 | Constant | Meaning |
 |---|---|
 | `EXCLUDE_FILES` | 8 entries never compiled, each with an in-file reason comment (config files, main.py entry point, update_bot.py's execv/execl, utils.py dynamic behavior, `__init__`s) |
-| `INCLUDE_FILES` | the 8 command modules that DO get compiled (type_emojis.py, added 2026-10-19, is in neither list, so it is never compiled) |
+| `INCLUDE_FILES` | the 7 command modules that DO get compiled (diffusion.py left with the AI code on 2026-10-20; type_emojis.py, added 2026-10-19, is in neither list, so it is never compiled) |
 | `COMPILER_DIRECTIVES` | `wraparound: False` (negative indexing ban!), `boundscheck: False`, `cdivision: True`, etc. |
 
 Why these are set this way, the build/clean commands, and the stale-`.so`-shadows-your-`.py`
@@ -284,38 +288,34 @@ trap: **autocroissant-build-and-env**.
 
 THE classic confusion in this bot. Two facts, verified by reading every setter:
 
-1. The six `/set_*` commands assign to in-memory state (module globals or `card_repo`
-   attributes). **None of them writes config.py** — no file write exists in any of them.
-   Changes evaporate on restart. And restarts are routine: every `/update` (the multi-machine
-   pickle-sync flow) restarts the bot, silently resetting anything set at runtime.
-2. `config.py` is the ONLY persistence, and only for the fields it has: the five diffusion
-   fields (+ tokens/ADMINS/music flags). `match_ratio` and `repository` are NOT config.py fields
-   at all — they reset to their hardcoded defaults on every restart, and there is no way to
-   persist a change short of editing `commands/query_card.py`.
+1. The two `/set_*` commands on main assign to `card_repo` attributes in memory. **Neither
+   writes config.py** — no file write exists in either. Changes evaporate on restart. And
+   restarts are routine: every `/update` (the multi-machine pickle-sync flow) restarts the bot,
+   silently resetting anything set at runtime.
+2. `config.py` is the ONLY persistence, and only for the fields it has (tokens/ADMINS/music
+   flags). `match_ratio` and `repository` are NOT config.py fields at all — they reset to their
+   hardcoded defaults on every restart, and there is no way to persist a change short of editing
+   `commands/query_card.py`.
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (query_card.py:582-599; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:602-620) | `"MichaelJSr/TTSCardMaker"` — always |
-| `/set_scheduler` | global `SCHEDULER_NAME` (diffusion.py:421-434; whitelists `POSSIBLE_SCHEDULERS`) | config.py `scheduler_name` (or `""`) |
-| `/set_model` | global `MODEL` (diffusion.py:464-485; offers "flux" + `./models/*.safetensors`) | config.py `model` (or `""` = AI off) |
-| `/set_lora` | global `LORA` (diffusion.py:488-512) | config.py `lora` (or `""`) |
-| `/set_device` | global `DEVICE_NO` (diffusion.py:437-461; validates against `torch.cuda.device_count()`) | config.py `device_no` (or `0`) |
+| `/set_ratio` | `card_repo.match_ratio` (query_card.py:670-687; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:690-708) | `"MichaelJSr/TTSCardMaker"` — always |
 
-Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`, `HF_TOKEN`,
-`vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
+Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`,
+`browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
 
-How the diffusion setters take effect: each one calls `_clear_pipelines()` (diffusion.py:515-519,
-sets all three pipes to None); the NEXT generation request sees `not txt2img_pipe` and runs
-`init_pipeline()` with the mutated globals (diffusion.py:677-679), telling the user
-"Initializing AI pipeline... This may take a few minutes."
+> Branch `archive/ai-generation` only: `/set_scheduler`, `/set_model`, `/set_lora` and `/set_device`
+> set the diffusion globals `SCHEDULER_NAME`, `MODEL`, `LORA`, `DEVICE_NO` (reset to the config.py
+> values on restart). Each calls `_clear_pipelines()`, so the next generation re-runs `init_pipeline()`.
+> Details: autocroissant-ai-boundary.
 
 Each `/set_*` command called with no argument is the read path: it replies with the current
-value (and the available options) without changing anything — the cheapest way to inspect live
+value without changing anything — the cheapest way to inspect live
 state.
 
 Related wart (owned by autocroissant-architecture-contract): main.py defines `slash_set_ratio`
-TWICE — the second def (~main.py:317) is actually `/set_repo`'s handler; both commands work
+TWICE — the second def (~main.py:314) is actually `/set_repo`'s handler; both commands work
 because the decorator registered each at def time. Don't "fix" casually.
 
 ## Defaults-mismatch traps
@@ -323,7 +323,7 @@ because the decorator registered each at def time. Don't "fix" casually.
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (psd_analyzer.py:1289, main.py:363). Code that wants a forced re-parse must pass
+   (psd_analyzer.py:1829, main.py:361). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -332,11 +332,12 @@ because the decorator registered each at def time. Don't "fix" casually.
    slash command and from `update_stats()`, the traversal lives on branch `archive/local-update-stats`
    (not in main, not compiled), and stored reminders drop the options (`RETIRED_OPTIONS` above).
    (Do not run update_stats at all while merely investigating config — it mutates pickles.)
-3. **Same field, two defaults:** `vram_usage` defaults to `"low"` in diffusion.py:28 but `False`
-   in music_player.py:37. Behaviorally harmless today; a grep for the field must check BOTH.
-4. **Unvalidated config.py values:** neither `vram_usage` nor `scheduler_name` is checked against
-   a whitelist at init — typos silently degrade (fallthrough memory behavior; default scheduler).
-   Only the `/set_*` paths validate.
+3. **Same field, two meanings:** on main `vram_usage` is only the browser_cookies fallback
+   (music_player.py:38, default `""`); on branch `archive/ai-generation` it is the diffusion memory
+   mode (default `"low"`). A grep for the field must check both.
+4. **Unvalidated config.py values (branch `archive/ai-generation`):** neither `vram_usage` nor
+   `scheduler_name` is checked against a whitelist at init — typos silently degrade (fallthrough
+   memory behavior; default scheduler). Only the `/set_*` paths validate.
 
 ## How to add a new config field (checklist)
 
@@ -348,20 +349,20 @@ when missing takes the bot down on the OTHER machine at its next startup.
    `MY_FIELD = getattr(config, "my_field", <safe default>)`. Never `config.my_field` bare, never
    `from config import my_field` — only TOKEN does that, deliberately fatal.
 2. Pick the default so that a machine WITHOUT the field behaves exactly as before the change.
-   Test mentally against both machines: the Mac (mps, Safari, AI installed) and the CUDA box.
+   Test mentally against both machines: the dev Mac (Safari) and the jetson (production).
 3. Add the field by hand to `config.py` on the machine(s) that need a non-default value. Keep
    mode 0700. NEVER commit it — confirm with `git check-ignore -v config.py` and never weaken
    .gitignore.
 4. If it changes user-visible behavior, document it in `commands/help.py`'s dicts and the
    `@tree.command(description=...)` / `@app_commands.describe` text (templates:
    **autocroissant-docs-and-style**).
-5. If it's AI-related: consume it ONLY in `commands/diffusion.py` behind getattr, keep torch
-   imports lazy, and verify core startup is untouched (rules and the clean-venv proof:
-   **autocroissant-ai-boundary** (branch `archive/ai-generation`)).
+5. If it's AI-related: the AI code lives only on branch `archive/ai-generation`. There, consume it
+   ONLY in `commands/diffusion.py` behind getattr, keep torch imports lazy, and verify core startup
+   is untouched (rules: **autocroissant-ai-boundary**).
 6. If it needs live toggling, add a `/set_*` command — and accept that the runtime change won't
    persist; config.py stays the only persistence. Say so in the command's help text.
-7. Update this skill: add the field to the 11-field table (making it 12), and extend the
-   provenance greps. Route the code change itself through **autocroissant-change-control**.
+7. Update this skill: add the field to the "fields main reads" table (making it 8), and extend
+   the provenance greps. Route the code change itself through **autocroissant-change-control**.
 
 ## When NOT to use this skill
 
@@ -379,38 +380,36 @@ when missing takes the bot down on the OTHER machine at its next startup.
 ## Provenance and maintenance
 
 Everything above was verified 2026-07-11 by the commands below; the rows touched on 2026-10-19
-were re-run that day. Flags drift: regenerate each
+and 2026-10-20 were re-run those days. Flags drift: regenerate each
 table with its command before quoting it in the future.
 
 | Fact / table | Re-verification command (cwd = repo root) |
 |---|---|
 | Master getattr map (all config.py consumers + defaults) | `grep -rn "getattr(config" --include="*.py" .` |
 | TOKEN is the only hard import; run site | `grep -rn "from config import" --include="*.py" .` and `grep -n "client.run" main.py` |
-| The 11 field names (NAMES ONLY — never print values) | `python3 -c "import config; print(sorted(k for k in dir(config) if not k.startswith('_')))"` |
+| config.py field names (NAMES ONLY — never print values) | `python3 -c "import config; print(sorted(k for k in dir(config) if not k.startswith('_')))"` |
 | config.py mode 0700 + gitignored | `ls -l config.py` and `git check-ignore -v config.py` |
 | perms_check gate list + the ungated /restart_bot | `grep -n "perms_check" main.py` then read each hit's enclosing `@tree.command`; `grep -n -A2 'name="restart_bot"' main.py` |
-| perms_check inversion | `sed -n '306,317p' commands/utils.py` |
+| perms_check inversion | `sed -n '249,259p' commands/utils.py` |
 | psd_analyzer constants | `grep -n "UPDATE_RATE\|TYPE_REGION_RATIO\|EXCLUDE_FOLDERS\|EXPORTED_\|COLUMN_ORDER\|MISSPELT_CARD_TYPES\|^ICON_" commands/psd_analyzer.py` |
 | Exclusion set sizes/locations | `grep -n "EXCESSIVE_STAT_EXCLUSIONS\|ABILITY_EXCLUSIONS" commands/psd_analyzer.py` |
 | UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/psd_analyzer.py` |
 | query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | BREAK_LEN | `grep -n "BREAK_LEN = " commands/utils.py` |
-| music constants + side channel + ydl_opts | `grep -n "MUSIC_BASE_DIR\|SKIP_FILES\|cookiesfrombrowser\|keepvideo\|postprocessors\|preferredquality" commands/music_player.py` |
-| diffusion folders/schedulers | `grep -n "MODELS_FOLDER\|LORAS_FOLDER\|POSSIBLE_SCHEDULERS" commands/diffusion.py` |
-| vram mode behaviors | `sed -n '375,391p' commands/diffusion.py` plus `grep -n "device_map\|float32\|Generator" commands/diffusion.py` |
-| model='' disables init; graceful failure | `sed -n '193,258p' commands/diffusion.py` |
-| HF_TOKEN is Flux-only | `grep -n "HF_TOKEN" commands/diffusion.py` (all hits inside `_init_flux_pipeline` except the getattr) |
-| GIT_TOKEN consumers/rate-limit prints | `grep -n "GIT_TOKEN" commands/query_card.py commands/psd_analyzer.py` |
-| Setters mutate globals, never write config.py | `grep -n "global \|card_repo\." commands/diffusion.py commands/query_card.py` within lines 421-520 / 582-620; confirm zero `open(`/`write` in those ranges |
-| Setter → lazy re-init path | `grep -n "_clear_pipelines\|if not txt2img_pipe" commands/diffusion.py` |
-| update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/psd_analyzer.py` (only the two force_update lines) |
-| Icon-font constants | `grep -n "^ICON_" commands/psd_analyzer.py` (49-52) |
+| music constants + browser_cookies + ydl_opts | `grep -n "MUSIC_BASE_DIR\|SKIP_FILES\|browser_cookies\|cookiesfrombrowser\|keepvideo\|postprocessors\|preferredquality" commands/music_player.py` |
+| No AI code on main | `ls commands/diffusion.py` fails; `grep -n "set_model\|set_lora\|set_scheduler\|set_device" main.py` is empty |
+| Branch only: diffusion folders/schedulers | `git grep -n "MODELS_FOLDER\|LORAS_FOLDER\|POSSIBLE_SCHEDULERS" archive/ai-generation -- commands/diffusion.py` |
+| Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
+| GIT_TOKEN consumers/rate-limit prints | `grep -n "GIT_TOKEN" commands/query_card.py commands/psd_analyzer.py commands/type_emojis.py` |
+| Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
+| update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/psd_analyzer.py` (no use_local hits; every force_update default is False — main.py:361, psd_analyzer.py:1829) |
+| Icon-font constants | `grep -n "^ICON_" commands/psd_analyzer.py` (54-60) |
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
-| Reminder constants | `sed -n '26,51p' commands/analytics.py` |
+| Reminder constants | `sed -n '26,56p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
-| global_config constants | `cat global_config.py` (9 lines) |
+| global_config constants | `cat global_config.py` (10 lines) |
 | setup.py build config | `sed -n '8,45p' setup.py` |
-| Gitignore coverage (config.py, reminder.pkl, music/, models/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|models/\|csv\|txt" .gitignore` |
+| Gitignore coverage (config.py, reminder.pkl, music/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|csv\|txt" .gitignore` |
 
 When any command's output disagrees with this file, the repo wins: update the table, re-date the
 "as of" stamps, and note the change here.

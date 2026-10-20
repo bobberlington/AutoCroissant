@@ -120,9 +120,10 @@ too: it is the number every fancier approach must beat.
 **No LLM or embedding dependency may ever enter `requirements.txt` (core).** As of 2026-07-11
 it holds exactly 11 packages (cython, davey, discord.py, GitPython, numpy, opencv-python,
 pandas, psd-tools, PyGithub, requests, yt-dlp) after that day's reorg (committed in a7a4bb3;
-still 11 on 2026-10-19, with `discord.py>=2.5`);
-the torch stack lives in `requirements2.txt`. Anything heavy goes to requirements2.txt at
-most, behind the lazy-import pattern — boundary doctrine in autocroissant-ai-boundary (branch `archive/ai-generation`).
+still 11 on 2026-10-20, with `discord.py>=2.5`).
+`requirements2.txt` and the torch stack live only on branch `archive/ai-generation` (removed from
+main in 05c643e). Anything heavy goes in a separate requirements file at most, behind the
+lazy-import pattern — boundary doctrine in autocroissant-ai-boundary (same branch).
 
 ---
 
@@ -131,9 +132,13 @@ most, behind the lazy-import pattern — boundary doctrine in autocroissant-ai-b
 Ambition (A), art flavor. Goal: `/ai` output that looks like an Impossibility Simulator card
 instead of generic Stable Diffusion output.
 
+**Branch note:** `/ai`, `/set_lora`, `commands/diffusion.py` and `requirements2.txt` exist only on
+branch `archive/ai-generation` (ed21cd2); main dropped them in 05c643e. Line refs below are on
+that branch, and nothing here runs until it is restored or merged.
+
 ### Why the current state falls short
 
-`/ai` (main.py:485) drives stock SD 1.5 / SDXL / Flux pipelines (commands/diffusion.py).
+`/ai` (main.py:495) drives stock SD 1.5 / SDXL / Flux pipelines (commands/diffusion.py).
 Nothing anywhere knows the game's art conventions — the frame layout, the flat-color icon
 style, the per-series looks. Every generation starts from zero style knowledge.
 
@@ -153,10 +158,11 @@ style, the per-series looks. Every generation starts from zero style knowledge.
 
   20–60 images is squarely LoRA-feasible; Kirby (58) is the obvious first target. Isaac (10)
   is too thin to train alone.
-- **The LoRA plumbing already works.** `LORAS_FOLDER = "./models/loras/"` (diffusion.py:22-23);
-  pipeline init calls `load_lora_weights` when a LoRA is set (diffusion.py:230-232); `/set_lora`
-  (main.py:561; `set_lora` diffusion.py:488) lists every `*.safetensors` in the folder, swaps
-  the global, and clears pipelines for lazy re-init. Dropping a file into `models/loras/` and
+- **The LoRA plumbing exists on the branch.** `LORAS_FOLDER = f"{MODELS_FOLDER}loras/"`
+  (diffusion.py:24-25, i.e. `./models/loras/`); pipeline init calls `load_lora_weights` when a
+  LoRA is set (diffusion.py:232-234); `/set_lora` (main.py:571; `set_lora` diffusion.py:490)
+  lists every `*.safetensors` in the folder, swaps the global, and clears pipelines for lazy
+  re-init. Once the branch is restored or merged, dropping a file into `models/loras/` and
   running `/set_lora` is the ENTIRE integration — zero new code. (Runtime `/set_lora` does not
   persist across restart; the persistent field is `lora` in config.py —
   autocroissant-config-and-flags.)
@@ -178,7 +184,7 @@ choice; it is the first experimental variable.
 Training is not this repo's job — use any standard LoRA trainer on another machine/venv, on
 the Kirby set first. This repo's role is only: source images (`Creatures/Kirby/**/*.png`) and
 the drop-in point (`models/loras/<name>.safetensors`, then `/set_lora` — never committed;
-models/ is on the never-commit list, autocroissant-change-control).
+the branch's .gitignore ignores models/).
 
 **Step 3 — Blind A/B with the friend group.** Show 5 real cards + 5 generated, shuffled;
 each friend labels each image real/generated. Pre-register the pass bar before showing anyone
@@ -209,7 +215,7 @@ executes perfectly.
 
 ### Residue 3a — Line-position estimation for bbox-anchored injection (OPEN)
 
-**Why open:** today's type-icon injection (`_inject_type_names`, psd_analyzer.py:782-826 as of 2026-10-20)
+**Why open:** today's type-icon injection (`_inject_type_names`, psd_analyzer.py:1206-1250 as of 2026-10-20)
 assigns icons to `\s{3,}` text gaps by global reading order and never checks whether an
 icon's y-coordinate matches the line it lands in. The fix everyone wants — anchor each icon
 to its text LINE by (x, y) — hits a wall: **psd-tools exposes only the whole text layer's
@@ -269,7 +275,7 @@ Small item; the hobby constraint bites hardest here.
 ### Why the current state (mostly) does NOT fall short
 
 Pickles-in-git WORKS: `/push` / `/pull` / `/update` move `stats.pkl` / `old_stats.pkl` /
-`aliases.pkl` between the Mac and the CUDA box and they are the ONLY synced state
+`aliases.pkl` between the Mac and the jetson and they are the ONLY synced state
 (autocroissant-run-and-operate owns the flow). The real pain points, for the record:
 
 1. **Schema coupling** — unpickling requires this repo on `sys.path` with config.py present,
@@ -300,7 +306,7 @@ point; `diff_stats.py` is a ready-made zero-loss checker.
 
 ### You have a result when... (the bar any replacement must beat)
 
-**Zero-loss handoff in BOTH directions (Mac → CUDA box → Mac, `diff_stats.py` reporting 0/0/0
+**Zero-loss handoff in BOTH directions (Mac → jetson → Mac, `diff_stats.py` reporting 0/0/0
 after the round trip) with NO new infrastructure to babysit.** Pickles-in-git already meets
 this bar. **"Do nothing" is the current best option** — a replacement that merely ties has
 lost, because it costs a migration.
@@ -346,13 +352,14 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 | Rulebook search is substring | `grep -n "str.contains" commands/query_card.py` (inside `rulebook_search_engine`; def: `grep -n "def rulebook_search_engine" commands/query_card.py`) |
 | Ability DSL location | `grep -n "def ability_search_engine" commands/query_card.py` |
 | Export functions / filenames | `grep -n "def export_" commands/psd_analyzer.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
-| /export, /query, /ai, /set_lora registrations | `grep -n 'name="' main.py` (lists every slash-command registration; scan for export_cards, export_rulebook, query_rulebook, ai, set_lora) |
+| /export, /query registrations | `grep -n 'name="' main.py` (lists every slash-command registration; scan for export_cards, export_rulebook, query_rulebook) |
+| /ai, /set_lora registrations (branch only) | `git grep -n -e 'name="ai"' -e set_lora archive/ai-generation -- main.py` |
 | Exports gitignored | `grep -n csv .gitignore; grep -n txt .gitignore` |
 | aliases.pkl entry count (60) | `python3 -c "import pickle; print(len(pickle.load(open('aliases.pkl','rb'))))"` |
 | Total PNGs (1003) | `python3 -c "import glob,os; print(len(glob.glob(os.path.expanduser('~/Desktop/TTSCardMaker/**/*.png'), recursive=True)))"` |
 | Per-series counts (Kirby 58, Isaac 10, ...) | the `find ... Creatures -type d` loop in Item 2 Step 1 |
 | PNG dimensions 1200x2400 | `find ~/Desktop/TTSCardMaker/Creatures/Kirby -name '*.png' -exec python3 -c "import sys; from PIL import Image; print(Image.open(sys.argv[1]).size)" {} \; -quit` |
-| LoRA folder & loading | `grep -n LORAS_FOLDER commands/diffusion.py; grep -n "def set_lora" commands/diffusion.py` |
+| LoRA folder & loading (branch only) | `git grep -n -e LORAS_FOLDER -e 'def set_lora' archive/ai-generation -- commands/diffusion.py` |
 | requirements.txt is core-only (11 pkgs) | `cat requirements.txt` (reorg of 2026-07-11 committed in a7a4bb3) |
 | Injection is gap-ordinal, not line-anchored | `grep -n _gap_pattern commands/psd_analyzer.py; grep -n "def _inject_type_names" commands/psd_analyzer.py` |
 | CardInfo/StatsDatabase coupling points | `grep -n "class CardInfo" commands/psd_analyzer.py; grep -n "class StatsDatabase" commands/psd_analyzer.py; grep -n "def to_dict" commands/psd_analyzer.py` |

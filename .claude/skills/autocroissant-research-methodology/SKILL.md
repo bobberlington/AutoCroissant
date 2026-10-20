@@ -150,9 +150,9 @@ What this looks like here, concretely:
 fb47b5d (2026-01-15 17:23) added the save gate `if (num_updated > 0): save` intending "only
 write pickles when something changed". Predict-then-check question: *what value does
 `num_updated` take on a no-change run?* Answer, from the code: it increments once per traversed
-PSD (psd_analyzer.py:1046 — it is the progress counter), so the gate is always true — a no-op.
+PSD (psd_analyzer.py:1046 on 2026-07-11 — it is the progress counter), so the gate is always true — a no-op.
 The owner caught it within 20 minutes: **4e03190** (17:43, message "am forehead") switched the
-gate to `num_new` (psd_analyzer.py:1325 on 2026-10-20). Two morals: (a) before shipping any
+gate to `num_new` (now `if num_new > 0 or traverser.changed:`, psd_analyzer.py:1870 on 2026-10-20). Two morals: (a) before shipping any
 gate/threshold, state the value you expect the variable to hold in the boring case — if you
 can't, you don't know what it counts; (b) commit messages here are sometimes jokes ("am
 forehead") — verify diffs, not messages.
@@ -228,8 +228,9 @@ retirement                          — dated entry in autocroissant-failure-arc
 
 **Honesty note:** this repo has NO feature-flag system, no experiment framework, no A/B
 anything. The entire experiment mechanism is (a) a `getattr(config, "field", default)` read —
-the live pattern at diffusion.py:24-29, music_player.py:37/54/61, psd_analyzer.py:34,
-utils.py:21, query_card.py:24 — plus (b) runtime `/set_*` commands that do NOT persist across
+the live pattern in commands/ (2026-10-20: music_player.py:38/55/62, psd_analyzer.py:42,
+utils.py:20, query_card.py:25, type_emojis.py:17; re-find with `git grep -n 'getattr(config' -- '*.py'`)
+— plus (b) runtime `/set_*` commands that do NOT persist across
 restart (autocroissant-config-and-flags). That is enough for a hobby project. Do not add
 ceremony beyond it.
 
@@ -242,7 +243,7 @@ result. This repo already practices it (all verified in git):
 |---|---|---|---|
 | `commands/Text_Export.jsx` (Photoshop-side text export) | 2023-11-17 → 2025-01-19 | added 2a5a799, deleted 7fc6f63 | Superseded by parsing PSDs directly in Python |
 | descriptions.pkl era | → 2025-03-10 | deleted bb58387; schema later replaced wholesale by CardInfo dataclasses (366c8d9 "Big massive refactor") | Data schemas get retired too; pickles are code-coupled |
-| requirements-linux*.txt (per-OS requirement files) | 2024-08 → 2024-08-18 | deleted 3f9a96d | Wrong split axis; the split that stuck is core-vs-AI (requirements.txt vs requirements2.txt, reorganized 2026-07-11 — autocroissant-build-and-env) |
+| requirements-linux*.txt (per-OS requirement files) | 2024-08 → 2024-08-18 | deleted 3f9a96d | Wrong split axis; the split that stuck is core-vs-AI (requirements.txt vs requirements2.txt, reorganized 2026-07-11 — autocroissant-build-and-env; requirements2.txt left main with the AI code on 2026-10-20, branch `archive/ai-generation`) |
 | TYPE/WHITESPACE MISMATCH validator problem | 2026-01-24 → 2026-01-30 | added fed8a83, removed 081b1fd | Retired when injection improved; the campaign lists restoring it as a ranked candidate — retired ≠ forbidden forever, IF the retirement was documented |
 | Whitespace collapsing in ability text | 2026-02-08 04:34 → 16:33 | 1c26747 → 3bbaa2b | Permanently fenced off: gaps are the injection signal |
 
@@ -314,7 +315,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | f7c915c introduced BOTH the dirname-classify and removeprefix bugs (2025-12-02) | `git show f7c915c -- commands/psd_analyzer.py` — read the hunks touching `dirname` and `removeprefix` |
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |
-| `num_updated` increments for EVERY traversed PSD; gate now `num_new > 0` (:1446 on 2026-10-20) | `grep -n -e 'num_updated += 1' -e 'num_new > 0' commands/psd_analyzer.py` |
+| `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_new > 0 or traverser.changed` (:1870 on 2026-10-20) | `grep -n -e 'num_updated += 1' -e 'num_new > 0' commands/psd_analyzer.py` |
 | stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 | Timestamp clustering confirms remote-mode attribution | the Counter one-liner and its expected numbers live in autocroissant-analysis-toolkit Recipe 2 |
 | Balloon 1: cca0aaf old_stats 3196→12041; reverted same day by eb9aa84 | `git show --stat cca0aaf` then `git show -s --format='%ci %s' eb9aa84` |

@@ -39,13 +39,13 @@ Glossary (used throughout):
 
 | Term | Meaning |
 |---|---|
-| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_analyzer.py:413 as of 2026-10-20) where a type icon visually sits |
-| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_analyzer.py:507; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
+| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_analyzer.py:686 as of 2026-10-20) where a type icon visually sits |
+| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_analyzer.py:841; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
-| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_analyzer.py:33,470). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
-| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_analyzer.py:782) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_analyzer.py:821-824) |
-| sweep | One `update_stats()` traversal (local dir walk or GitHub trees API) that reparses changed cards |
+| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_analyzer.py:38,743). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
+| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_analyzer.py:1206) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_analyzer.py:1244-1248) |
+| sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
 
@@ -90,7 +90,7 @@ Metric definitions (all verified 2026-07-11):
 (UNKNOWN type, wrong paths, mass archiving). Introduced by cythonization commit f7c915c
 (2025-12-02). Full story: **autocroissant-failure-archaeology** Entry 1.
 
-**What landed** (working tree, 2026-10-19; uncommitted at that date — record the hash when it is):
+**What landed** (2026-10-19, committed in 53db8ee):
 exactly the Gate 0b candidate this phase specified, plus the `relpath` import:
 
 ```python
@@ -301,7 +301,7 @@ It re-drives the real `PSDParser` methods and prints 6 numbered steps. What each
 | [3] joined text with `<GAP:n>` markers | every 3+ space run the injector will target | a gap that is really table formatting; a missing gap where an icon sits (author used ≤2 spaces) |
 | [4] below-midline icons, sorted + prune decision | injection candidates, row grouping (40px), `max(last_y//3, card_mid_y)` threshold | a legitimate icon in `dropped:` (prune too aggressive); row grouping merging two visual rows |
 | [5] gap count vs kept types | the ordinal balance | MISMATCH → leftovers appended to last line, or gaps left unfilled |
-| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_analyzer.py:538) having eaten a legitimate gap before punctuation |
+| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_analyzer.py:1146 on 2026-10-20) having eaten a legitimate gap before punctuation |
 
 ### Worked example — The Lich King (verified 2026-07-11)
 
@@ -345,7 +345,7 @@ you cannot predict is not ready to be coded. Unproven ideas below are labeled CA
 
 ### Option 1 — The relative-path fix (DONE 2026-10-19) + a local-mode regression harness (open)
 
-**Status:** the fix shipped to the working tree on 2026-10-19 (Phase 0). Local mode left the bot on
+**Status:** the fix landed on 2026-10-19 (Phase 0, committed in 53db8ee). Local mode left the bot on
 2026-10-20; the sweep below now runs through `update_stats_local()`, copied into the sandbox from branch
 `archive/local-update-stats` (`mkdir -p archive && git show archive/local-update-stats:archive/local_update_stats.py > archive/local_update_stats.py`).
 What remains open is the HARNESS: scripting the two checks from autocroissant-validation-and-qa §4.1 (old-vs-new parser over
@@ -355,8 +355,8 @@ in minutes. The predictions below are kept because they are the harness's expect
 **Theory obligation (met):** nothing else in local mode is path-sensitive. `_populate_types_from_local`
 walks `Types/` directly; the `EXCLUDE_FOLDERS` skip splits the absolute folder into parts; file access
 uses the absolute path and only classification/storage uses the relative one. **Why it was ranked
-first:** it unblocks fast local iteration for everything below — remote sweeps cost 1+ API call per
-card and minutes of wall time; local-timestamp sweeps make no API calls.
+first:** it unblocks fast local iteration for everything below — remote sweeps then cost 1+ API call per
+card and minutes of wall time (since 2026-10-20 only changed PSDs cost requests); local-timestamp sweeps make no API calls.
 
 **Predicted numbers, stated before running** (all in a SANDBOX; procedure owned by
 autocroissant-validation-and-qa):
@@ -405,7 +405,7 @@ check. It thrashed because the equality is false for legitimate layouts:
   were missed or icons misrouted. The threshold must be tuned by a corpus census, not intuition.
 - C2 (gaps side): fire only when kept_types > 0 AND at least one gap on an icon-bearing card
   remains unfilled after injection — and measure this BEFORE the punctuation cleanup at
-  psd_analyzer.py:727 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
+  psd_analyzer.py:1146 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
   would vanish from the final text).
 - C3 (guard): kept_types == 0 → never fire (exempts Warcraftian Hunter and the 4 rulebook tables).
 
@@ -480,7 +480,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 | The 5 EXCESSIVE_STAT_EXCLUSIONS | Cards whose summed stat digits exceed 10 | Verify each with parse_one against the visible bars; if the sum is faithful, the >10 rule (not the card) is what needs redesign — the list encodes game content in code. CANDIDATE: data-driven expected-max instead of a name list |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
-`ability == ""` with `ability is None` (`not card.ability`, psd_analyzer.py:879 as of 2026-10-20). The parser
+`ability == ""` with `ability is None` (`not card.ability`, psd_analyzer.py:1305 as of 2026-10-20). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
 `None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
 card; only `None` (or absence of the layer) is a problem. **Predicted effect:**
@@ -504,8 +504,8 @@ those gates, as of 2026-07-11:
    full stop. Nominate newly certified cards (e.g., a burned-down exclusion card) as new goldens so
    N grows.
 2. **Sandbox sweep gate (remote mode, force_update=True, unchanged upstream):** diff_stats pre vs
-   post → `0/0/0`; old_stats unchanged (the e7befd5 guard skips archiving when timestamps are
-   equal); problem REPORT = exactly the current re-validation set (5 today; fewer only if your
+   post → `0/0/0`; old_stats unchanged (since 2026-10-20 history is appended only when a PSD's blob
+   changed or the card moved); problem REPORT = exactly the current re-validation set (5 today; fewer only if your
    change predicted the specific disappearances).
 3. **Sandbox sweep gate (local traversal from branch `archive/local-update-stats`, copied into the sandbox; the option 1 fix is in since 2026-10-19):** Tier A/B numbers as
    predicted in option 1, after subtracting rows that the unchanged (HEAD) parser also produces
@@ -528,20 +528,19 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | Treat above-midline icons as inline types (or lower/remove the midline) | `d0bb28c` (2026-01-30) replaced a top-400px rule with `TYPE_REGION_RATIO=0.5` because creature-type tags live in the top region | The Lich King carries `undead` twice: a tag at y=21 and an inline icon at y=2239. Erase the midline and every tag becomes a bogus injection candidate |
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
-| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:389 → `manual_metadata_entry`, psd_analyzer.py:1403; 2026-10-20 lines). And know its verified semantics, below |
+| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:388 → `manual_metadata_entry`, psd_analyzer.py:1947; 2026-10-20 lines). And know its verified semantics, below |
 | Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
-**What the code shows about manual entries vs the next sweep** (verified 2026-07-11 — state no
-more than this): `manual_metadata_entry` creates a missing card as
-`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:1453 as of 2026-10-20) whose `timestamp`
-defaults to `0.0` (CardInfo field default, psd_analyzer.py:192); the command cannot set a
-timestamp. `_should_update_card` (psd_analyzer.py:964) reparses when
-`stored_timestamp < new_timestamp` or the path changed — so a manually CREATED entry (timestamp
-0.0) is overwritten by the next sweep of any kind, its manual version archived to old_stats first.
-Manual EDITS to an existing entry leave its real timestamp untouched: they survive non-force sweeps
-while the PSD is unchanged, and are overwritten by any `force_update:True` sweep or once the PSD's
-mtime/commit date advances. Conclusion the code supports: `/update_metadata` is a between-sweeps
-correction tool, not a durable fix. Durable fixes live in the parser or in the source PSD.
+**What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
+change — state no more than this): `manual_metadata_entry` creates a missing card as
+`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:1997) with `timestamp` 0.0 and no
+`blob_sha`; the command cannot set either. `_psd_changed` (psd_analyzer.py:1379) re-parses a card that
+is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
+since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
+existing entry survive until the PSD's blob changes, `cards:` names the card, or `force_update:True`; a
+re-parse of an unchanged blob does not archive the manual version to old_stats. Conclusion the code
+supports: `/update_metadata` is a between-sweeps correction tool, not a durable fix. Durable fixes live
+in the parser, the source PSD, or `MDW/Card Edits.json` (re-applied after every re-parse).
 
 ---
 
@@ -552,7 +551,7 @@ correction tool, not a durable fix. Durable fixes live in the parser or in the s
 - How to run/interpret the five diagnostic scripts themselves → **autocroissant-diagnostics-and-tooling**
   (this skill only consumes them).
 - A live symptom that is not extraction (bot won't start, commands missing, messages not sending,
-  music, diffusion) → **autocroissant-debugging-playbook**.
+  music) → **autocroissant-debugging-playbook**.
 - The removeprefix bug's full story, evidence, and fix → **autocroissant-failure-archaeology** Entry 1.
 - Migrating cards to stoogedings tokens (the font, the JSX prototype, Photoshop pitfalls) →
   **ttscardmaker-companion**; how the parser reads tokens → **impossibility-cards-reference** §4.1.
@@ -568,7 +567,7 @@ correction tool, not a durable fix. Durable fixes live in the parser or in the s
 Everything dated 2026-07-11 was measured that day on the owner's Mac against stats.pkl at commit
 `284d13c` and the local TTSCardMaker clone (upstream latest 2026-06-18). Phase 0, Option 1's status,
 the glossary line numbers and the items marked 2026-10-19 were updated that day (HEAD a7a4bb3 plus
-the uncommitted working tree; the TTSCardMaker clone is now shallow at 3a268ca). Line numbers drift; each
+the working tree, since committed in 53db8ee; the TTSCardMaker clone is now shallow at 3a268ca). Line numbers drift; each
 volatile fact below has a one-line re-verification. After any landed parser change, re-run Phase 1
 and append a scoreboard row; if a Phase 3 option ships or retires, move its entry (retirements are
 documented in autocroissant-failure-archaeology).
@@ -578,14 +577,14 @@ documented in autocroissant-failure-archaeology).
   `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py; grep -c removeprefix commands/psd_analyzer.py` (0)
 - Bug introduction in f7c915c (history):
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
-- Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:363):
+- Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:361):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=False default since 2026-10-19 (psd_analyzer.py:1289):
+- Python-side `update_stats` force_update=False default since 2026-10-19 (psd_analyzer.py:1829 on 2026-10-20):
   `grep -n "force_update: bool = " commands/psd_analyzer.py`
-- `_populate_types_from_local` (psd_analyzer.py:1038, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+- `_populate_types_from_local` (psd_analyzer.py:1495 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
   `grep -n -A9 "def _populate_types_from_local" commands/psd_analyzer.py`
-- Pipeline line numbers (2026-10-20) — gap regex :416, TYPE_REGION_RATIO :33, card_mid_y :473, prune :778,
-  inject :785, leftover-append :823-827, punctuation cleanup :730, `not card.ability` :882:
+- Pipeline line numbers (2026-10-20) — gap regex :686, TYPE_REGION_RATIO :38, card_mid_y :743, prune :1199,
+  inject :1206, leftover-append :1244-1248, punctuation cleanup :1146, `not card.ability` :1305:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_analyzer.py`
   and for the cleanup line `grep -n "ability_text = sub" commands/psd_analyzer.py`
 - Exclusion sizes 18 + 5: the two awk commands in Gate 1c.
@@ -605,9 +604,9 @@ documented in autocroissant-failure-archaeology).
   `git show 081b1fd -- commands/psd_analyzer.py | grep -B2 -A8 MISMATCH` (removed).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
-- Manual-entry semantics (2026-10-20: CardInfo timestamp default :195, `_should_update_card` :967,
-  `manual_metadata_entry` :1403, CardInfo creation :1453; /update_metadata at main.py:389):
-  `grep -n "timestamp: float = \|def _should_update_card\|def manual_metadata_entry" commands/psd_analyzer.py; grep -n "update_metadata" main.py`
+- Manual-entry semantics (2026-10-20: CardInfo timestamp default :449, `_psd_changed` :1379,
+  `manual_metadata_entry` :1947, CardInfo creation :1997; /update_metadata at main.py:388):
+  `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.
 - Font adoption count (0 of 813 PSDs on 2026-10-19) and the migration backlog (45 PSDs / 81

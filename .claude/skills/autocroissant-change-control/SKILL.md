@@ -1,6 +1,6 @@
 ---
 name: autocroissant-change-control
-description: How changes are classified, gated, and shipped in AutoCroissant. Load this BEFORE committing, pushing, merging, or reverting anything; before adding, renaming, or removing a slash command; before touching the pickles (stats.pkl, old_stats.pkl, aliases.pkl) or running /push, /pull, /update, or /update_stats (a pickle push now also publishes to the TTSCardMaker card website); before editing requirements.txt/requirements2.txt, .gitignore, or setup.py INCLUDE_FILES; before renaming or moving CardInfo/CardStats or any commands/*.py module; and whenever you are tempted to "clean up" odd-looking code (x[len(x)-1], double spaces, duplicate function names, the func = to_thread(func) lines). Contains: the four change classes and their gates, the /push//pull//update self-update anatomy and its pickles-ours/code-theirs merge strategy, the PICKLE commit convention and the diff_stats.py gate, the never-commit list, the add-a-slash-command checklist, a non-negotiables table with the historical incident behind each rule, and a list of changes that look safe but aren't.
+description: How changes are classified, gated, and shipped in AutoCroissant. Load this BEFORE committing, pushing, merging, or reverting anything; before adding, renaming, or removing a slash command; before touching the pickles (stats.pkl, old_stats.pkl, aliases.pkl) or running /push, /pull, /update, or /update_stats (a pickle push now also publishes to the TTSCardMaker card website); before editing requirements.txt, .gitignore, or setup.py INCLUDE_FILES; before renaming or moving CardInfo/CardStats or any commands/*.py module; and whenever you are tempted to "clean up" odd-looking code (x[len(x)-1], double spaces, duplicate function names, the func = to_thread(func) lines). Contains: the four change classes and their gates, the /push//pull//update self-update anatomy and its pickles-ours/code-theirs merge strategy, the PICKLE commit convention and the diff_stats.py gate, the never-commit list, the add-a-slash-command checklist, a non-negotiables table with the historical incident behind each rule, and a list of changes that look safe but aren't.
 ---
 
 # AutoCroissant change control
@@ -8,9 +8,8 @@ description: How changes are classified, gated, and shipped in AutoCroissant. Lo
 How changes get classified, gated, and shipped in this repo. AutoCroissant is a
 personal Discord bot with **no tests, no CI, no README** — the rules below are the
 entire safety system, and every one of them exists because something broke.
-Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits); re-verified 2026-10-19
-(HEAD a7a4bb3, 193 commits, plus an uncommitted working-tree batch: psd_analyzer fixes and icon-font
-parsing, commands/type_emojis.py, the reminder rewrite, management.py Cython fix).
+Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits); re-verified 2026-10-20
+(HEAD 9fb3093, 207 commits).
 
 **Jargon, defined once:**
 
@@ -19,11 +18,11 @@ parsing, commands/type_emojis.py, the reminder rewrite, management.py Cython fix
   are **committed to git**. Constants `STATS_PKL` / `OLD_STATS_PKL` / `ALIAS_PKL` in
   `global_config.py:5-8`.
 - **PICKLE commit**: a commit containing only pickle files, message literally
-  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:22`).
+  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:23`).
 - **Dev machine**: where a human edits code and runs `git push`.
-- **Running host**: whichever machine currently runs the bot (the owner's Mac or a
-  CUDA box, at different times). It receives code via the bot's own `/pull` /
-  `/update` Discord commands and is the only legitimate writer of pickles.
+- **Running host**: whichever machine currently runs the bot. Production is the Jetson
+  (systemd `autocroissant.service`, Python 3.10); the owner's Mac at other times. It
+  is the only legitimate writer of pickles.
 - **TTSCardMaker**: the separate repo of ~904 card PSDs (`MichaelJSr/TTSCardMaker`,
   cloned at `~/Desktop/TTSCardMaker`). Card artwork/text lives THERE, not here. Since 2026-10-19 it also
   holds the stoogedings icon font and the card website that reads this repo's pickles
@@ -33,9 +32,9 @@ parsing, commands/type_emojis.py, the reminder rewrite, management.py Cython fix
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → running host picks it up via `/pull` (+ `/restart_bot`) or `/update` from Discord | Checklist below if it adds a command; non-negotiables table always |
-| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/alias`, `/update_metadata`, `/mass_replace` — all four call the pickle save, psd_analyzer.py:1327/1399/1447/1534 as of 2026-10-20 + query_card's save_aliases); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
-| (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, HF_TOKEN, model, vram_usage, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
+| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `python3.10 setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale | Checklist below if it adds a command; non-negotiables table always |
+| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()` in psd_analyzer.py; `/alias` calls query_card's `save_aliases`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
+| (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker and push THERE; this repo only re-parses via `/update_stats` (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the pickle gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
 If your change mixes classes, split it. In particular: **never put pickle changes
@@ -43,7 +42,7 @@ and code changes in the same commit** — rationale in the next section.
 
 ## The self-update machinery (what /push, /pull, /update actually do)
 
-All in `commands/update_bot.py` (registered in `main.py:171-204`). **The canonical
+All in `commands/update_bot.py` (registered in `main.py:165-198`). **The canonical
 step-by-step anatomy — every message each command prints, the failure table, the
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
@@ -52,16 +51,16 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
   (`aliases.pkl stats.pkl old_stats.pkl`), message literally `PICKLE`, then
   `pull --rebase --autostash` onto new code (since 2026-10-20) and pushes, including a leftover
   unpushed PICKLE commit; "already up to date" only when nothing is ahead of origin.
-- **/pull** → `git_pull()` (update_bot.py:33-101): fetch + merge — NOT the "hard
+- **/pull** → `git_pull()` (update_bot.py:42-110): fetch + merge — NOT the "hard
   reset" its Discord description claims (stale text; fixing descriptions is
   autocroissant-docs-and-style territory). On merge **CONFLICT** it auto-resolves per
   file — **pickles → `checkout --ours` (running host's data wins); everything else →
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
   `AUTO-RESOLVE: ...` merge commit.
-- **/update** → `update_bot()` (update_bot.py:122-147): stops the three send/edit
-  queue loops first (main.py:200-202), then `/push` + `/pull` + restart. With
+- **/update** → `update_bot()` (update_bot.py:131-156): stops the three send/edit
+  queue loops first (main.py:194-196), then `/push` + `/pull` + restart. With
   `force_reset:True` it instead runs `git reset --hard origin/main`
-  (update_bot.py:104-119) and restarts.
+  (update_bot.py:113-128) and restarts.
 
 ### What the merge strategy implies
 
@@ -81,7 +80,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
    ONLY when the reverted commit touches pickles alone, and only with the diff_stats.py
    gate re-run on the result before any push. Step-by-step recovery procedure:
    autocroissant-debugging-playbook §1.
-3. **`force_reset:True` is dangerous** — main.py:194 literally labels it
+3. **`force_reset:True` is dangerous** — main.py:188 literally labels it
    `(dangerous!)`. It skips the pickle push entirely and hard-resets to
    `origin/main`, discarding ALL local state: uncommitted code edits AND every
    pickle change since the last successful /push (e.g. an afternoon of
@@ -93,8 +92,8 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
 
 **The user-ranked #1 costliest failure class in this project is pickle data
 corruption.** A committed-and-pushed bad pickle propagates to the other host on its
-next /update — and, once TTSCardMaker's GitHub Pages site is enabled, to the public card
-website within about 6 hours (it builds from the pickles on this repo's `main`;
+next /update, and to the live card website (https://michaeljsr.github.io/TTSCardMaker/)
+within about 6 hours (its 6-hourly build reads the pickles on this repo's `main`;
 ttscardmaker-companion §2.5).
 
 Before ANY pickle push (i.e. before running /push or /update after anything touched
@@ -111,13 +110,14 @@ deleted, mass path changes, type counts shifting, hundreds of cards whose only c
 `timestamp` (the signature of a sweep that used local mtimes, BUGS_AND_IMPROVEMENTS B6: only possible from
 the archived traversal on branch `archive/local-update-stats` since local mode was archived on 2026-10-20), and old_stats.pkl
 growing more than about 10% in one run (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl` —
-diff_stats.py reads stats.pkl only). Interpretation guide and the other
+diff_stats.py reads stats.pkl only). A version is archived only when its PSD blob changed or the
+card moved, so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all. Interpretation guide and the other
 four scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance
 procedure for parser changes (goldens → sandbox sweep → diff review):
 **autocroissant-validation-and-qa**.
 
 **Why reminder.pkl is gitignored while the other three pickles are committed**
-(`.gitignore:39`, `REMIND_PKL` in global_config.py:8): stats/old_stats/aliases are
+(`.gitignore:39`, `REMIND_PKL` in global_config.py:9): stats/old_stats/aliases are
 the shared card database that must stay consistent across the two hosting machines —
 syncing them is the whole point of /push//update. reminder.pkl is volatile runtime
 scheduling state that mutates whenever reminders fire or reschedule; committing it
@@ -126,41 +126,39 @@ three card pickles and never reminder.pkl.
 
 ## What must NEVER be committed
 
-Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-19 after an
-(uncommitted) `.gitignore` update that added `reminder.pkl.tmp` and `.claude/settings.local.json` and
-fixed the `*.pyd`/`*.dll` patterns:
+Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-20 (53db8ee
+added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`/`*.dll` patterns;
+05c643e dropped the `models/` lines with the AI code):
 
 | Path | .gitignore line | Why |
 |---|---|---|
-| `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN, HF_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
+| `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
 | `.ssh/` | 37 | Credentials, same reasoning |
 | `reminder.pkl` | 39 | Volatile per-host scheduling state (see above) |
 | `reminder.pkl.tmp` | 41 (added 2026-10-19) | Transient file from the atomic reminder save (2026-10-19 rewrite). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
-| `.claude/settings.local.json` | 52 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
+| `.claude/settings.local.json` | 48 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
 | `music/` | 44 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
-| `models/` | 48 | Multi-GB diffusion .safetensors live here on AI-enabled machines (dirs kept by the tracked `models/README` / `models/loras/README` stubs — no `.gitkeep` exists despite the `!models/.gitkeep` exception) |
-| `*.log`, `logs/`, `*.csv`, `*.txt` | 67-70 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
+| `*.log`, `logs/`, `*.csv`, `*.txt` | 63-66 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
 | `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 7, 14-15, 19-22, 28 | Cython build artifacts; see autocroissant-build-and-env for the stale-.so trap |
 
-**Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` and
-`requirements2.txt` are tracked — only because already-tracked files ignore
-.gitignore. Any NEW `.txt` (or `.csv`) file you create will be **silently skipped by
-`git add .`**. If a new text file genuinely belongs in the repo, that is a
+**Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` is
+tracked — only because already-tracked files ignore .gitignore. Any NEW `.txt` (or
+`.csv`) file you create will be **silently skipped by `git add .`**. If a new text file genuinely belongs in the repo, that is a
 deliberate change-control decision: either force-add it or (better) amend
 .gitignore in a reviewed code commit.
 
 ## Checklist: add a new slash command
 
-Worked example to imitate: the `/update_stats` block at main.py:355-369 (2026-10-19).
+Worked example to imitate: the `/update_stats` block at main.py:352-364 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
    query_card.py, parsing in psd_analyzer.py, admin in management.py, etc.). Plain
    `def` is fine — it will be thread-wrapped. The body must follow the queue rules:
    never `await` Discord or call `interaction.followup` directly from worker code;
    send via `queue_message` / `queue_file` / `queue_edit` / `queue_command`
-   (commands/utils.py:38-62). **autocroissant-architecture-contract** owns the
+   (commands/utils.py:37-61). **autocroissant-architecture-contract** owns the
    full contract (queues, 15-minute interaction-token fallback, `perms_check`
-   inversion — it returns True when the user LACKS permission, utils.py:306).
+   inversion — it returns True when the user LACKS permission, utils.py:249).
 2. **Register it in main.py**, copying the house pattern exactly:
    ```python
    my_worker = to_thread(my_worker)                # rebind FIRST, on its own line
@@ -172,39 +170,39 @@ Worked example to imitate: the `/update_stats` block at main.py:355-369 (2026-10
        await interaction.response.defer()          # or send_message(...) for quick acks
        await my_worker(interaction, some_arg)
    ```
-   `to_thread` (utils.py:68-77) wraps blocking functions in `asyncio.to_thread` and
+   `to_thread` (utils.py:67-76) wraps blocking functions in `asyncio.to_thread` and
    passes `async def` workers through unchanged, so the rebind line is correct for
    both. Keep the `func = to_thread(func)` line immediately BEFORE the decorated
    wrapper — that is the convention every block follows; see "looks safe but isn't"
    for why you must not delete or fold it.
    Admin-only commands start with the `if perms_check(interaction): ... return`
-   block (copy it from /push, main.py:187-189). The newest example of a whole admin
-   command block is `/sync_emojis` (main.py:749-762, added 2026-10-19).
+   block (copy it from /push, main.py:178-180). The newest example of a whole admin
+   command block is `/sync_emojis` (main.py:659-672, added 2026-10-19).
 3. **Add `@app_commands.describe`** for every parameter. Description wording and
    style: **autocroissant-docs-and-style**. Note Discord quirks that already shaped
-   signatures here: big integers (seeds, IDs) are passed as `str` because Discord
+   signatures here: big integers (guild/user IDs) are passed as `str` because Discord
    ints cap around 15 digits.
 4. **Add a help entry** in `commands/help.py`: pick the right dict
-   (`general_commands`:6, `text_commands`:22, `card_commands`:31,
-   `stats_commands`:61, `ai_commands`:80, `music_commands`:102), key format
+   (`general_commands`:6, `text_commands`:22, `card_commands`:35,
+   `stats_commands`:70, `music_commands`:90), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:126) dispatches on the category word.
+   `print_help` (help.py:114) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
-   the modules listed in `INCLUDE_FILES` (setup.py:21-30); new files are uncompiled
+   the 7 modules listed in `INCLUDE_FILES` (setup.py:21-29); new files are uncompiled
    by default (the newest example: `commands/type_emojis.py`, 2026-10-19, deliberately
    left out). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
-   (setup.py:36) applies: **no negative indexing anywhere in the file** — use
+   (setup.py:35) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
    that is already declared (declare it once; the management.py incident,
    autocroissant-failure-archaeology Entry 10.5). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
    registration (that is why update_bot.py and utils.py sit in EXCLUDE_FILES,
    setup.py:9-18).
-6. **Ship and sync.** Push from the dev machine; on the running host run `/update`
-   (or `/pull` + `/restart_bot`). Commands register with Discord at startup:
-   `on_ready` (main.py:108-127) records every command in `slash_registry` (which is
+6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
+   (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
+   `on_ready` (main.py:100-119) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
-   (`sync_guild_commands`, main.py:99-103). If the command does not appear after
-   restart, run `/sync_global` (main.py:741). Client-side, Discord may need a
+   (`sync_guild_commands`, main.py:92-96). If the command does not appear after
+   restart, run `/sync_global` (main.py:651). Client-side, Discord may need a
    reload before new commands show up.
 7. **Verify** by invoking the command in Discord; do not run `python3 main.py`
    casually to test — starting the bot connects it to the live guilds
@@ -226,7 +224,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
 
 ## Changes that look safe but aren't
 
-- **Renaming or moving `CardInfo`/`CardStats` (psd_analyzer.py:123, :94), or renaming
+- **Renaming or moving `CardInfo`/`CardStats` (psd_analyzer.py:444, :214), or renaming
   `commands/psd_analyzer.py`.** Pickle stores the class's import path; the committed
   stats.pkl/old_stats.pkl would fail to unpickle on every machine after the next
   pull. Schema/location changes require a data migration shipped in lockstep —
@@ -248,11 +246,9 @@ ignored — read the story before you decide the rule doesn't apply to you.
   first *invoked*, not at startup — so it survives a smoke test and dies in
   production. Keep rebind-then-decorator, one block per command.
 - **Adding a new `.txt`/`.csv`/`.log` file and assuming git tracks it.** The
-  gitignore globs (lines 67-70 as of 2026-10-19) silently exclude it (see the trap note above).
-- **Adding a dependency to `requirements.txt` that belongs in `requirements2.txt`**
-  (or vice versa). requirements.txt = core bot; requirements2.txt = AI enablement
-  (torch, diffusers, etc., first line is the commented CUDA index URL). Breaking the
-  split breaks non-negotiable #4.
+  gitignore globs (lines 63-66 as of 2026-10-20) silently exclude it (see the trap note above).
+- **Adding torch/diffusers or other AI deps to `requirements.txt`.** That breaks
+  non-negotiable #4 (AI lives only on `archive/ai-generation`).
 - **Hand-committing pickles from a dev machine**, or `git add -A` after a run that
   touched them. Your data loses to `--ours` on the running host, and you have broken
   the PICKLE-only revert property (see merge-strategy implications).
@@ -289,7 +285,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
 ## Provenance and maintenance
 
 All file:line references verified 2026-07-11 at commit 284d13c; the ones changed in this file
-re-verified 2026-10-19 (HEAD a7a4bb3 + uncommitted working tree). Line numbers drift;
+re-verified 2026-10-20 (HEAD 9fb3093). Line numbers drift;
 re-verify with the commands below (run from `/Users/michaelsrouji/Desktop/AutoCroissant`)
 before relying on any of them. If a check disagrees with this file, trust the check
 and update this file.
@@ -300,9 +296,9 @@ and update this file.
 | /push adds only the three pickles, message PICKLE | `grep -n "git.add\|PICKLE" commands/update_bot.py` |
 | Merge strategy: pickles ours, code theirs | `grep -n -- "--ours\|--theirs" commands/update_bot.py` |
 | force_reset behavior and its "dangerous!" label | `grep -n "force_reset" main.py commands/update_bot.py` |
-| restart via startup.sh with execl fallback | `grep -n "execv\|execl" commands/update_bot.py` |
-| Gitignore coverage (config.py, .ssh, reminder.pkl, music, models, txt/csv/log) | `git check-ignore -v config.py reminder.pkl music/x models/x a.txt a.csv a.log` |
-| Tracked pickles + grandfathered requirements*.txt | `git ls-files '*.pkl' '*.txt'` |
+| restart: `./startup.sh` if present, else re-exec main.py (the Jetson has no startup.sh) | `grep -n "execv\|execl" commands/update_bot.py` |
+| Gitignore coverage (config.py, .ssh, reminder.pkl, music, txt/csv/log) | `git check-ignore -v config.py reminder.pkl music/x a.txt a.csv a.log` |
+| Tracked pickles + grandfathered requirements.txt | `git ls-files '*.pkl' '*.txt'` |
 | Incident hashes and their diffs | `git show --stat cca0aaf eb9aa84 366c8d9 f7c915c` ; `git show dd800bc` ; `git show 3bbaa2b 4bcee6b` |
 | Cython include/exclude lists and wraparound=False | `grep -n "wraparound\|INCLUDE_FILES\|EXCLUDE_FILES" setup.py` |
 | to_thread passes coroutines through; queue_* helpers | `grep -n "def to_thread\|def queue_" commands/utils.py` |

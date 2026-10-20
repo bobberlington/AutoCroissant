@@ -5,7 +5,7 @@ description: The chronicle of every major AutoCroissant investigation, dead end,
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added) and **2026-10-20** (Entries 10.10-10.11). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, single branch `main`, 193 commits (HEAD a7a4bb3 "skills and memories") plus an uncommitted 2026-10-19 working-tree batch, no tests, no CI. Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added) and **2026-10-20** (Entries 10.10-10.16). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no tests, no CI. Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -20,7 +20,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 
 | # | Battle | Status |
 |---|---|---|
-| 1 | The removeprefix local-mode bug (flagship) | **FIXED** 2026-10-19 (relpath; uncommitted working tree); local mode itself archived 2026-10-20 (Entry 10.12) |
+| 1 | The removeprefix local-mode bug (flagship) | **FIXED** 2026-10-19 (relpath; committed in 53db8ee); local mode itself archived 2026-10-20 (Entry 10.12) |
 | 2 | The Feb 8 2026 whitespace saga | settled by 3bbaa2b + 4bcee6b |
 | 3 | The reverted PICKLE & duplicate archiving | fixed in e7befd5 (+4e03190) |
 | 4 | TYPE/WHITESPACE MISMATCH check | removed in 081b1fd; smarter revival = campaign candidate |
@@ -29,13 +29,13 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers archived) | fixed in the working tree, uncommitted as of 2026-10-20 |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16) |
 
 ---
 
 ## Entry 1 — The removeprefix local-mode bug (FLAGSHIP, FIXED 2026-10-19)
 
-**Status: FIXED in the working tree on 2026-10-19** (not yet committed; record the hash here when it is). Was BUGS_AND_IMPROVEMENTS B1. For the 7+ months it was live, production data stayed healthy only because every update ran in remote mode. The story below is kept because the failure mode (a mechanical sweep changing semantics in an unexercised code path) will happen again.
+**Status: FIXED on 2026-10-19**, committed in 53db8ee. Was BUGS_AND_IMPROVEMENTS B1. For the 7+ months it was live, production data stayed healthy only because every update ran in remote mode. The story below is kept because the failure mode (a mechanical sweep changing semantics in an unexercised code path) will happen again.
 
 ### Symptom
 
@@ -114,7 +114,7 @@ Windows host ever runs local mode.
 
 ### Status and what replaced the operating rule
 
-- **FIXED** (working tree, 2026-10-19). Signature to re-check: `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py`
+- **FIXED** (2026-10-19, 53db8ee). Signature to re-check: `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py`
   hits (:115) and `grep -rn removeprefix commands/` is empty.
 - The old rule "always pass `use_local_repo:False`" was retired for the PATH reason only. A second local-mode hazard
   found the same day keeps remote mode the recommended default: with the default `use_local_timestamp:True`, local
@@ -129,7 +129,7 @@ Windows host ever runs local mode.
 
 ## Entry 2 — The Feb 8 2026 whitespace saga
 
-**Settled lesson: whitespace in ability text is load-bearing. NEVER collapse runs of spaces.** Gaps of 3+ spaces (`\s{3,}`, `_gap_pattern`, psd_analyzer.py:413 as of 2026-10-20) are where type icons visually sit — they are the *input signal* for type injection, and leftover gaps in stored text are *evidence* of undetected icons.
+**Settled lesson: whitespace in ability text is load-bearing. NEVER collapse runs of spaces.** Gaps of 3+ spaces (`\s{3,}`, `_gap_pattern`, psd_analyzer.py:686 as of 2026-10-20) are where type icons visually sit — they are the *input signal* for type injection, and leftover gaps in stored text are *evidence* of undetected icons.
 
 ### Symptom
 
@@ -153,7 +153,7 @@ The Freezer and Mini Doomer parsed with junk spacing/quotes around injected `[ty
 Pre-saga and post-saga, the **only** whitespace transformation applied to ability text is punctuation tightening, applied AFTER injection:
 
 ```python
-ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_analyzer.py:727 as of 2026-10-20
+ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_analyzer.py:1146 as of 2026-10-20
 ```
 
 The rejected transformations (do not reintroduce): `sub(r'\s{2,}', ' ', ...)` (1c26747, also ate newlines) and `sub(r'[ \t]{2,}', ' ', ...)` (d6d1278, still destroyed gap evidence and legitimate spacing).
@@ -208,7 +208,7 @@ Companion fixes the same month stopped the pickles being *saved* when nothing ch
 
 ### Status
 
-Fixed in **e7befd5**; balloon #1 reverted in **eb9aa84**; old_stats stable since 2026-02 (77KB → 82.9KB over four months of routine PICKLEs). If old_stats jumps >10% in one PICKLE again, suspect a new archive-path bug and diff with `diff_stats.py` before pushing (autocroissant-change-control gate).
+Fixed in **e7befd5**; balloon #1 reverted in **eb9aa84**; old_stats stable since 2026-02 (77KB → 82.9KB over four months of routine PICKLEs). Since 9fb3093 (2026-10-20, Entry 10.15) the guard is `old.path != path or getattr(old, "blob_sha", None) != sha`: history is appended only when the PSD's blob changed or the card moved, so re-parses of unchanged PSDs via `cards:` or `force_update` archive nothing. If old_stats jumps >10% in one PICKLE again, suspect a new archive-path bug and diff with `diff_stats.py` before pushing (autocroissant-change-control gate).
 
 ---
 
@@ -230,7 +230,7 @@ Six days in January 2026, the validator emitted `TYPE / WHITESPACE MISMATCH (N t
 
 1. **Legitimate mismatches exist.** A type at the start or end of a line consumes a type icon without any mid-text `\s{3,}` gap — the *exact* case 0490195 had just added support for. Whole-text gap counting therefore under-counts on healthy cards, so count inequality is not a reliable error signal.
 2. **The concurrent placement bug polluted the data.** With 0490195's index-shift bug live, gap/type accounting was wrong on the very cards used to judge the check.
-3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_analyzer.py:820-824 (2026-10-20):
+3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_analyzer.py:1244-1248 (2026-10-20):
 
 ```python
         # Append remaining types to the last line
@@ -262,10 +262,10 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 
 ## Entry 6 — The cythonization wave (Dec 2025) and its long tail
 
-- **f7c915c** (2025-12-02 20:18, "cythonized the code"): `setup.py` born (181 lines) — compiles command modules with `wraparound=False`, `boundscheck=False`, `cdivision=True` (setup.py:33-45); `cython` added to requirements.txt; `.gitignore` +73/−14 (87 changed lines) of build-artifact patterns; and a mechanical sweep converting every `x[-1]` to `x[len(x) - 1]` across frankenstein/psd_analyzer/query_card (negative indexing is banned under `wraparound=False`). **Cost of the sweep**: the removeprefix bug (Entry 1, fixed 2026-10-19) and the `dirname` classify bug (fixed fb47b5d) — both born in this one commit.
-- **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive today as ironic annotations on the INCLUDE list (setup.py:27-29). Also converted music_player's remaining `[-1]`s.
-- **Excluded from compilation, with reasons** (setup.py:9-18 comments, current): `main.py` (entry point), `config.py`/`global_config.py` (configuration), `commands/update_bot.py` (uses execv/execl for restart), `commands/utils.py` (core utilities, decorators, dynamic behavior), `__init__` files, setup.py itself. Net: **8 of 10 command modules compiled** as of 2026-07-11; since 2026-10-19 there are 11 command modules, because the new `commands/type_emojis.py` is not in INCLUDE_FILES (uncompiled by default).
-- **dd800bc** (2026-01-30 23:15): a `bboxes[-1]` had crept back into psd_analyzer (`max_height = max(bboxes[-1][1].y // 3, card_mid_y)`); converted to `bboxes[len(bboxes) - 1]`. Nothing enforces the idiom automatically — it is maintained by hand, and this commit is proof stragglers happen. Do NOT "clean up" `x[len(x) - 1]` back to `x[-1]` in the 8 compiled modules.
+- **f7c915c** (2025-12-02 20:18, "cythonized the code"): `setup.py` born (181 lines) — compiles command modules with `wraparound=False`, `boundscheck=False`, `cdivision=True` (setup.py:32-44 on 2026-10-20); `cython` added to requirements.txt; `.gitignore` +73/−14 (87 changed lines) of build-artifact patterns; and a mechanical sweep converting every `x[-1]` to `x[len(x) - 1]` across frankenstein/psd_analyzer/query_card (negative indexing is banned under `wraparound=False`). **Cost of the sweep**: the removeprefix bug (Entry 1, fixed 2026-10-19) and the `dirname` classify bug (fixed fb47b5d) — both born in this one commit.
+- **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive as ironic annotations on the INCLUDE list (setup.py:27-28 on main; the diffusion line left with the AI code, Entry 10.16). Also converted music_player's remaining `[-1]`s.
+- **Excluded from compilation, with reasons** (setup.py:9-18 comments, current): `main.py` (entry point), `config.py`/`global_config.py` (configuration), `commands/update_bot.py` (uses execv/execl for restart), `commands/utils.py` (core utilities, decorators, dynamic behavior), `__init__` files, setup.py itself. Net: **8 of 10 command modules compiled** as of 2026-07-11; **7 of 10** since 2026-10-20 (`commands/type_emojis.py` arrived uncompiled on 2026-10-19; `diffusion.py` left main, Entry 10.16).
+- **dd800bc** (2026-01-30 23:15): a `bboxes[-1]` had crept back into psd_analyzer (`max_height = max(bboxes[-1][1].y // 3, card_mid_y)`); converted to `bboxes[len(bboxes) - 1]`. Nothing enforces the idiom automatically — it is maintained by hand, and this commit is proof stragglers happen. Do NOT "clean up" `x[len(x) - 1]` back to `x[-1]` in the 7 compiled modules.
 - **bf9478e** (2026-01-26 17:02, "lazily import torch and diffusers"): closed the era — `import torch` at module top replaced by `get_torch()` / `torch_available()`, so the compiled+core bot runs with zero AI overhead. Doctrine and mechanics owned by autocroissant-ai-boundary (branch `archive/ai-generation`).
 - **Today (2026-10-19)**: no `.so`/`.c` artifacts exist in the working tree. The stale-`.so`-shadows-your-`.py` trap and build/clean procedure are owned by autocroissant-build-and-env.
 - **Cython 3.3 tail (2026-10-19)**: management.py had silently stopped compiling under Cython 3.3 — Entry 10.5.
@@ -284,8 +284,8 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 | `commands/Text_Export.jsx` | 2a5a799 2023-11-17 | **7fc6f63** 2025-01-19 "In progress work on psd_analyzer" | A third-party **Photoshop ExtendScript** ("TextConvert.Export 1.1" by Bramus, customized with `write_stats_at_end`/`last_path`). The original extraction pipeline: open PSDs in Photoshop, batch-export text layers to text files, build the descriptions database from the exports. Abandoned once in-Python `psd-tools` parsing matured. Replacement: `PSDParser` in commands/psd_analyzer.py. |
 | `descriptions/creatures.csv` | descriptions era | **c91d7b6** 2025-01-31 | CSV sidecar of the exported-text era. Same fate as above. |
 | `descriptions.pkl` | 2a5a799 2023-11-17 | **bb58387** 2025-03-10 | The exported-text database itself. Fully superseded by `stats.pkl` as the single source. |
-| `commands/convert_nf4_flux.py` | 1efe116 2024-08-20 | **f40152e** 2025-01-15 | 144 lines vendored from transformers internals (`_replace_with_bnb_linear`, `create_quantized_param`...) to hand-quantize Flux to NF4 before libraries supported it. Superseded the day diffusers/transformers shipped native `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4")` — used in current diffusion.py:262-287. |
-| `requirements-linux.txt`, `requirements-linux2.txt` | b22dd42 2024-07-18 | **3f9a96d** 2024-08-18 | One-month experiment: Linux/CUDA-box dep lists pinning torch wheels via a Stanford mirror (`-f https://cs.stanford.edu/~nfliu/...`). Superseded by the single `requirements2.txt` with a pip index-URL line — commented out by **ca0b821** (2025-12-02) so plain installs are platform-neutral (CUDA box uncomments it). As of 2026-07-11 an **uncommitted** reorg makes requirements.txt core-only and requirements2.txt the full AI set — details owned by autocroissant-build-and-env. |
+| `commands/convert_nf4_flux.py` | 1efe116 2024-08-20 | **f40152e** 2025-01-15 | 144 lines vendored from transformers internals (`_replace_with_bnb_linear`, `create_quantized_param`...) to hand-quantize Flux to NF4 before libraries supported it. Superseded the day diffusers/transformers shipped native `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4")` — used in `_init_flux_pipeline`, `archive/ai-generation:commands/diffusion.py:262-290` (removed from main, Entry 10.16). |
+| `requirements-linux.txt`, `requirements-linux2.txt` | b22dd42 2024-07-18 | **3f9a96d** 2024-08-18 | One-month experiment: Linux/CUDA-box dep lists pinning torch wheels via a Stanford mirror (`-f https://cs.stanford.edu/~nfliu/...`). Superseded by the single `requirements2.txt` with a pip index-URL line — commented out by **ca0b821** (2025-12-02) so plain installs are platform-neutral (CUDA box uncomments it). The 2026-07-11 reorg (committed in a7a4bb3) made requirements.txt core-only and requirements2.txt the full AI set; requirements2.txt left main with the AI code (Entry 10.16). |
 | `commands/tools.py` | 5c3b1ab 2024-07-14 (brought `to_thread`) | not dead | **Correction**: not deleted — **renamed** to `commands/utils.py` in f40152e (2025-01-15), `commands/{tools.py => utils.py}` with 0 content change. |
 | `music/README`, `models/output/README` | — | b4af57e 2024-12-20, b22dd42 2024-07-18 | Placeholder READMEs to keep empty dirs in git; dropped once .gitignore/dir conventions settled. |
 | `metadata.pkl` | fbc407b 2025-05-05 ("added the META pkl...") | **366c8d9** 2025-10-20 | Dict-pickle sidecar of the pre-refactor era; folded into CardInfo fields in stats.pkl (Entry 5). |
@@ -298,13 +298,13 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 
 - **Symptom**: long messages with multiple ``` code blocks split mid-fence, breaking Discord rendering; then splitting crashed outright.
 - **Root cause & fixes**: old `split_long_message` only handled a message that both started AND ended with a single fence. **e21b986** (2026-01-18) rewrote it with an `in_code` fence-tracking loop — but also removed the `max_length` default, breaking callers that passed no argument. **d699b3f** (2026-01-26) restored `max_length: int = BREAK_LEN`.
-- **Status**: fixed; current `split_long_message` at utils.py:236, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_analyzer.py:838 as of 2026-10-20.)
+- **Status**: fixed; current `split_long_message` at utils.py:195, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_analyzer.py:1262 as of 2026-10-20.)
 
 ### 8.2 Deploy items / card.types clobber + force_update born
 
 - **Symptom**: item cards (the "deploy items") showed wrong types.
-- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_analyzer.py:507-510 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
-- **Fix**: **f94d95f** (2026-01-18) deleted the overwrite. Same commit: added `MISSPELT_CARD_TYPES = ['undread', 'tornado']` validator (now `+ 'error'`, psd_analyzer.py:45 as of 2026-10-19 — today's single problem card "20 Creature Types" trips `tornado`), and threaded the `force_update` parameter end-to-end (slash param born here; its interaction with archiving is Entry 3).
+- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_analyzer.py:841-844 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
+- **Fix**: **f94d95f** (2026-01-18) deleted the overwrite. Same commit: added `MISSPELT_CARD_TYPES = ['undread', 'tornado']` validator (now `+ 'error'`, psd_analyzer.py:50 as of 2026-10-20 — today's single problem card "20 Creature Types" trips `tornado`), and threaded the `force_update` parameter end-to-end (slash param born here; its interaction with archiving is Entry 3).
 - **Status**: fixed in f94d95f.
 
 ### 8.3 Don't overwrite stats with empty stats
@@ -335,7 +335,7 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 ### 8.7 Seed as string (Discord 15-digit int limit)
 
 - **Symptom class**: Discord integer options cap around 15 digits; RNG seeds are 64-bit.
-- **Settled convention**: `/ai`'s `seed` param is `Optional[str]`, converted with `int(seed)` + error reply. The in-code comment at main.py:514: "ints are limited to 15 digits or less by discord, so I need to take it as a str and then convert it to an int". Do not "fix" the param type back to int.
+- **Settled convention**: `/ai`'s `seed` param is `Optional[str]`, converted with `int(seed)` + error reply. The in-code comment at `archive/ai-generation:main.py:524` (`/ai` left main, Entry 10.16): "ints are limited to 15 digits or less by discord, so I need to take it as a str and then convert it to an int". Do not "fix" the param type back to int.
 
 ---
 
@@ -356,11 +356,11 @@ Earlier internal notes/briefs contain these errors. The diffs win. Do not propag
 
 ---
 
-## Entry 10 — The 2026-10-19/20 fix batch (uncommitted working tree)
+## Entry 10 — The 2026-10-19/20 fix batch
 
 These fixes landed together on 2026-10-19 alongside the stoogedings icon-font parsing (impossibility-cards-reference
-§4.1), `commands/type_emojis.py` and the reminder rewrite. None had a commit hash when this was written: once
-committed, replace "working tree" with the hash. Line numbers are 2026-10-19 readings.
+§4.1), `commands/type_emojis.py` and the reminder rewrite. "Working tree" below means uncommitted when written; 10.1-10.13 were
+committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbers are 2026-10-19 readings.
 
 ### 10.1 Scheduled `/update_stats` inherited the dangerous default (was B2)
 
@@ -382,21 +382,21 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1144-1147 on 2026-10-20).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1045 on 2026-10-20, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; 1289 on 2026-10-20), matching main.py:363.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; 1829 on 2026-10-20), matching main.py:361.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -469,7 +469,8 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
   and freshly checked out. Each such card is re-parsed, its current version appended to old_stats.pkl
   (the Entry 3 balloon pattern) and its timestamp replaced by an mtime.
 - **Root cause**: `_should_update_card` compares the stored timestamp with whatever timestamp the
-  traversal supplies; local mtimes and commit dates are not comparable. Unchanged.
+  traversal supplies; local mtimes and commit dates are not comparable. (`_should_update_card` survives only on
+  `archive/local-update-stats`; main compares blob shas, Entry 10.15.)
 - **Mitigation (2026-10-20)**: the DEFAULT changed. `use_local_repo` now defaults to False in the slash
   command (main.py:365, describe string "Parse the local clone instead of GitHub (default False). Pair
   with use_local_timestamp:False.") and in `update_stats()` (psd_analyzer.py:1399); help.py says the same.
@@ -517,7 +518,7 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
   → `output_problematic_cards:False force_update:False`, the old parser reading capitalised `True` as False;
   `/sync_emojis refresh:True` unchanged); the archived traversal parsed a one-card temp clone with a
   repo-relative path.
-- **Status**: done (working tree, uncommitted). Revive local mode only after fixing its change signal (B6).
+- **Status**: done (53db8ee). Revive local mode only after fixing its change signal (B6).
 
 ---
 
@@ -529,7 +530,7 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
   included), plus grep for every call site, found these with no callers:
   - `utils.convert_value` and `utils.parse_named_args`: the old scheduler's argument parser (10.7, was C10).
   - `utils.url_to_pilimage`, `utils.cv2_to_pil`, `utils.pil_to_cv2`: image conversions from the diffusion work. The
-    bot uses only `url_to_cv2image`/`cv2discordfile` (/frankenstein) and `pildiscordfile` (/ai).
+    bot uses only `url_to_cv2image`/`cv2discordfile` (/frankenstein) and `pildiscordfile` (/ai, since moved off main, 10.16).
   - `CardRepository._exact_match_pattern` (query_card.py `__post_init__`): compiled in 366c8d9 (Entry 5) and
     never read. It was broken too: the string isn't an f-string, so it matched the literal text `{pattern}`.
   - All of these are deleted. Old code: `git show a7a4bb3:commands/utils.py` and
@@ -544,7 +545,7 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
   scratch venv lacked). grep finds no remaining references.
 - **Kept on purpose** (reachable, or used by tooling): gap/type injection (fallback for cards not in the icon font),
   `RETIRED_OPTIONS` and the reminder migration, `_populate_types_from_local`/`_icons_from_local` (diagnostics
-  scripts), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features.
+  scripts), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features (AI later moved off main, 10.16).
   `analytics.parse_time_str` (a one-line public wrapper of `_parse_when`, written in the rewrite and uncalled) was
   left in place as a candidate.
 
@@ -561,8 +562,11 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
 - **Why**: every run asked GitHub for each PSD's commits (~1,600 requests, minutes) even when nothing changed, and
   only saved when a PSD changed, so author/edit/duplicate changes were lost on quiet runs.
 - **What changed**: `card.blob_sha`; tree with If-None-Match (304 ends the run); PSDs by blob sha, 4 downloads
-  ahead; small files cached by sha; `cards:` option; save when anything changed. First run adopted shas with
-  31 requests. Measured: nothing changed = 1 request, 0.4 s.
+  ahead; small files cached by sha; `cards:` option; save when anything changed. Each re-parsed card still costs one commit lookup
+  (`_get_remote_timestamp`). The ETag cache is in memory, so the first run after a restart gets the full tree.
+  First run adopted shas with 31 requests. Measured: nothing changed = 1 request, 0.4 s.
+- **Follow-up (9fb3093, same day)**: old_stats history is appended only when the blob changed or the card moved, so
+  re-parsing unchanged PSDs via `cards:` or `force_update` no longer archives them (Entry 3).
 
 ### 10.16 AI generation moved off main (2026-10-20)
 
@@ -597,25 +601,25 @@ Rules: date-stamp volatile facts; label unproven fixes "candidate"; if the entry
 
 ## Provenance and maintenance
 
-Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-10-19 against HEAD = a7a4bb3 ("skills and memories", which also committed the requirements split) plus the uncommitted 2026-10-19 working-tree batch (Entry 10). Re-verification one-liners for every volatile fact (cwd = repo root):
+Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-10-19 against HEAD = a7a4bb3 ("skills and memories", which also committed the requirements split) plus the 2026-10-19 working-tree batch (Entry 10, since committed in 53db8ee). Re-verification one-liners for every volatile fact (cwd = repo root):
 
 | Fact | Re-verify with |
 |---|---|
-| New history since this file | `git log --oneline -5` (anything above a7a4bb3 → review entries; a commit containing the Entry 10 batch → record its hash in Entries 1 and 10) |
-| Entry 1 fixed | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115 on the archive branch; was psd_analyzer.py:1226 before the archive) and `grep -rn removeprefix commands/` (expect empty); once committed, `git log -S removeprefix --oneline -- commands/psd_analyzer.py` shows the fix commit above f7c915c |
+| New history since this file | `git log --oneline -5` (anything above 9fb3093 → review entries) |
+| Entry 1 fixed | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115 on the archive branch; was psd_analyzer.py:1226 before the archive) and `grep -rn removeprefix commands/` (expect empty); `git log -S removeprefix --oneline -- commands/psd_analyzer.py` shows the fix 53db8ee above f7c915c |
 | Entry 1 origin diff | `git show f7c915c -- commands/psd_analyzer.py \| grep -B5 -A5 removeprefix`; old code: `git show 366c8d9:commands/psd_analyzer.py \| grep -n 'relative_path ='` |
 | Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
-| Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (one branch: archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
+| Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_analyzer.py` |
-| Entry 10 fixes present | `grep -n 'remove(local_file)\|startswith(.\.)\|force_update: bool = False' commands/psd_analyzer.py` (1147, 1045, 1000/1289); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 221); `grep -n 'target_message: Message' commands/management.py` (one hit, before the `try`) |
+| Entry 10 fixes present | `grep -n 'remove(local_file)\|startswith(.\.)\|force_update: bool = False' commands/psd_analyzer.py` (1668, 1502, 1446/1829); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 221); `grep -n 'target_message: Message' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |
-| Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_analyzer.py` (:730 on 2026-10-20) |
-| MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_analyzer.py` (:823 on 2026-10-20) |
-| Archive guard | `git show e7befd5`; current: `grep -n 'should_update and not is_new' commands/psd_analyzer.py` |
+| Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_analyzer.py` (:1146 on 2026-10-20) |
+| MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_analyzer.py` (:1244 on 2026-10-20) |
+| Archive guard | `git show e7befd5`; current: `grep -n 'history only when' commands/psd_analyzer.py` |
 | Save gate ("am forehead") | `git show 4e03190 \| grep 'num_new > 0'`; `git show fb47b5d \| grep 'num_updated > 0'` |
 | Deleted artifacts list | `git log --diff-filter=D --name-only --format='DELETED-IN %h %ad %s' --date=short \| head -40` |
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/psd_analyzer.py commands/query_card.py commands/frankenstein.py commands/music_player.py` |
-| Line numbers cited (drift-prone) | psd_analyzer.py: `grep -n 'def update_stats\|_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS' commands/psd_analyzer.py` → 1287 / 416 / 45 / 841 as of 2026-10-20 (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
+| Line numbers cited (drift-prone) | psd_analyzer.py: `grep -n 'def update_stats\|_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS' commands/psd_analyzer.py` → 1827 / 686 / 50 / 1262 as of 2026-10-20 (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |

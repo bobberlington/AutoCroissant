@@ -7,7 +7,7 @@ description: Domain reference for the Impossibility Simulator card game AS ENCOD
 
 All counts and line numbers verified 2026-07-11; §3.3, §4.1, §6 timestamp semantics and §8-9
 updated 2026-10-19 (icon font, `.DS_Store` fix, `force_update` default) and 2026-10-20 (exact token
-spellings, remote-mode default). Line numbers drift; every volatile fact has a
+spellings, remote-mode default, blob-sha re-parsing, new CardInfo fields, §6 line refs). Line numbers drift; every volatile fact has a
 re-verification one-liner in "Provenance and maintenance" at the bottom. Commands assume
 cwd = `/Users/michaelsrouji/Desktop/AutoCroissant` (this repo's root).
 
@@ -110,8 +110,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (psd_analyzer.py:31) is checked against every path segment
-during BOTH remote and local stats traversal (psd_analyzer.py:922, 994). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (psd_analyzer.py:39) is checked against every path segment
+during stats traversal and duplicate-PNG detection (psd_analyzer.py:1648, 1568). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -433,13 +433,13 @@ autocroissant-psd-extraction-campaign). Verbatim, psd_analyzer.py:642-668:
 
 ## 6. Data schemas: CardInfo and the pickles
 
-`CardInfo` and `CardStats` are `@dataclass`es in `commands/psd_analyzer.py` (:122-193, :93-119).
+`CardInfo` and `CardStats` are `@dataclass`es in `commands/psd_analyzer.py` (:443-530, :213-239).
 Consequence: **unpickling stats.pkl/old_stats.pkl requires this repo on sys.path with a config.py
 present** (module import chain; it also prints token-presence noise). Pickles from before the
 2025-10-20 "Big massive refactor" (366c8d9) were plain dicts. Loading pattern the diagnostics
 scripts use: run from the repo root with `sys.path.insert(0, '.')`.
 
-CardInfo fields → pickle/dataframe keys (`to_dict` :138-168, `from_dict` :170-193):
+CardInfo fields → pickle/dataframe keys (`to_dict` :470-505, `from_dict` :508-530):
 
 | Field | Dict key | Notes |
 |---|---|---|
@@ -454,16 +454,25 @@ CardInfo fields → pickle/dataframe keys (`to_dict` :138-168, `from_dict` :170-
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
 | `author` | `author` | omitted when falsy |
+| `display_name` / `note` / `hidden` | same | from Card Edits.json (duplicates also get a `display_name`); omitted when falsy |
+| `duplicate_of` | same | the original card, for another PNG of the same PSD; omitted when falsy |
+| `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
+
+`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names` and `blob_sha` live only in the pickle
+(stats.pkl stores CardInfo objects); they are not `to_dict` keys. `from_dict` ignores every field after `author`.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
-cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:36-40) fixes export/display order:
+cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:44-48) fixes export/display order:
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
 subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-psd_analyzer.py:1167-1188). A card re-parses when its timestamp is newer than stored OR its path
-changed (`_should_update_card` :967-994); `force_update` overrides. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (psd_analyzer.py:1289), the same as the slash command (main.py:363);
+psd_analyzer.py:1706), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
+changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
+if committed since the newest stored timestamp; otherwise they just get their sha recorded.
+`force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
+is `update_stats(force_update=False)` (psd_analyzer.py:1827), the same as the slash command (main.py:361);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `MDW/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20), the
@@ -493,10 +502,11 @@ autocroissant-change-control):
 | `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
-`old_stats.pkl` receives a snapshot whenever a card is about to be re-parsed, when its path
-changed, and when it disappears from the repo (`prune_clean_cards`, psd_analyzer.py:244-253 —
+`old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
+(psd_analyzer.py:1673-1674; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing), and when it disappears from the repo (`prune_clean_cards`, psd_analyzer.py:581-590 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
-`_update_old_stats_paths` (psd_analyzer.py:763-773) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (psd_analyzer.py:1367-1377) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,

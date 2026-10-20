@@ -11,11 +11,12 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-20: C13 token spellings (10.11); B6 by archiving local mode (10.10, 10.12); C10 and other dead helpers
   (10.7, 10.13); D5 stale stats.pkl (re-parsed and pushed: 795fd23, 7d0e29f).
 - 2026-10-20 parser fixes: stars counted per star; stat bars per row (Sonic 20, Sans 1, heart bars counted);
-  multi-creature cards get per-creature stats; duplicates (`<Name>N.png`) recorded (impossibility-cards-reference
-  §2, §3.4).
+  multi-creature cards get per-creature stats (impossibility-cards-reference §2, §3.4); duplicates (`<Name>N.png`)
+  recorded with `duplicate_of` (ttscardmaker-companion §2.1, §2.5).
 - 2026-10-20: AI generation moved to branch `archive/ai-generation` (B3 went with it); S1 fixed with `config.browser_cookies`; C4 fixed (10.16).
 - 2026-10-20 operations: `/update_stats` re-parses only PSDs whose blob changed and saves after edits-only runs
-  (10.15); `/push` rebases onto new code first; history rewritten to drop an attribution trailer (10.14).
+  (10.15); old_stats history is appended only when a PSD's blob changed or the card moved (forced re-parses no longer
+  archive); `/push` rebases onto new code first; history rewritten to drop an attribution trailer (10.14).
 
 ---
 
@@ -43,13 +44,13 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Issue | Where |
 |---|-------|-------|
-| C1 | `/pull` help + description claim "hard reset, than a git pull" — the code does fetch+merge (pickles-ours/code-theirs); the hard reset only exists behind `/update force_reset:True`. Also "than" → "then". | `commands/help.py:10`, `main.py:175` |
-| C2 | Four commands missing from help.py: `/view_old_metadata`, `/list_guild_members`, `/list_guild_channels`, `/get_channel_messages` (55 registered, 51 documented as of 2026-10-19). | `commands/help.py` |
-| C3 | `/export_cards only_ability` — help says default True, code default is False. | `commands/help.py:76` vs `main.py` signature |
+| C1 | `/pull` help + description claim "hard reset, then a git pull" — the code does fetch+merge (pickles-ours/code-theirs); the hard reset only exists behind `/update force_reset:True`. The main.py description also says "than" (help.py already says "then"). | `commands/help.py:10`, `main.py:166` |
+| C2 | Four commands missing from help.py: `/view_old_metadata`, `/list_guild_members`, `/list_guild_channels`, `/get_channel_messages` (50 registered, 46 documented as of 2026-10-20). | `commands/help.py` |
+| C3 | `/export_cards only_ability` — help says default True, code default is False. | `commands/help.py:76` vs `main.py:374` |
 | C5 | Duplicate function names in main.py (`slash_set_ratio` ×2, `slash_delete_song` ×2). Harmless today (decorators registered at def time) but fragile — rename carefully, never "clean up" casually. | `main.py` |
 | C6 | `/list_guild_members` requires the members intent, which `main.py` never enables — the command always fails with the ClientException message. Enable the intent (and in the Discord dev portal) or remove the command. | `main.py` intents block, `commands/management.py` |
 | C14 | `/query` and ability-search images use `raw.githubusercontent.com/.../main/...` links, so old Discord messages show the newest image. Use the latest commit sha of the card's PNG instead (planned: NEXT_SESSION_PLAN.md). | `commands/query_card.py` `get_card_url` |
-| C12 | Pillow is still not declared in `requirements.txt`, and a third module now imports it at top level (`commands/type_emojis.py`). It arrives only through psd-tools. | `requirements.txt` |
+| C12 | Pillow is still not declared in `requirements.txt`. `commands/type_emojis.py:8` is now the only module that imports it at top level, and it arrives only through psd-tools. | `requirements.txt` |
 
 ### 1.5 Pending live verification (as of 2026-10-19)
 
@@ -57,7 +58,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 |---|------|-------------------|-----------------------|--------------|
 | V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
 | V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19 | Not known to have fired against live Discord yet. Watch the first startup's `migrated command` log lines and the first firing | `autocroissant-run-and-operate` §9 |
-| V3 | Cython build on a host | Done on the jetson 2026-10-20 (all 8 modules, Cython 3.3.0) | Nothing | `autocroissant-build-and-env` §5 |
+| V3 | Cython build on a host | Done on the jetson 2026-10-20 (Cython 3.3.0; 8 modules then, 7 since the AI move) | Nothing | `autocroissant-build-and-env` §5 |
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
@@ -106,13 +107,18 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 3. Sync help.py with reality (C1–C3) in one docs pass — checklist in `.claude/skills/autocroissant-docs-and-style/SKILL.md`.
 4. Small cleanup: C12 (declare Pillow).
 
-### 2.4 Planned next (NEXT_SESSION_PLAN.md)
+### 2.4 Planned next (NEXT_SESSION_PLAN.md; Task 3 first)
 
-1. Commit-sha image links for `/query` (C14).
-2. TTS save automation: audit the save against the repo, then a script (and a command) that adds new cards to
-   their decks, fills in names, pins image links to commit shas only when a card changed, and updates the global
+1. PSD edits from website edits with the psd-tools fork, no Photoshop or browser (Task 3, the main effort; plan
+   decision D4). Photopea is the reference renderer and emergency fallback until the fork meets its targets. Runs
+   on GitHub Actions, else on the jetson once it has Python 3.11+ (Task 0, in parallel).
+2. Commit-sha image links for `/query` (C14; Task 1).
+3. Emoji sync inside `/update_stats`: upload or replace only icons whose blob changed, then drop the weekly
+   `/sync_emojis` reminder (Task 1b).
+4. TTS save automation (Task 2): audit the save against the repo, then a script (and a command) that adds new cards
+   to their decks, fills in names, pins image links to commit shas only when a card changed, and updates the global
    Lua's large-card list.
-3. PSD edits from website edits: Photopea (verified 2026-10-20) with psd-tools for the edit; fork as fallback.
+5. A website "Table" tab to view and edit the save (Task 2b).
 
 ### 2.5 Deep optimization and refinement pass (all code)
 
@@ -140,6 +146,6 @@ One pass over every module, measured before and after, with no behavior change u
 
 - Re-verify the OPEN bugs before working on them (one-liners in each owning skill's
   "Provenance and maintenance" section); line numbers drift.
-- Library note: six skill frontmatter descriptions contain unquoted `word: word` constructs —
+- Library note: eight skill frontmatter descriptions contain unquoted `word: word` constructs —
   fine for the current lenient loader, need quoting if a strict YAML parser is ever adopted.
 - This file is an index, not a second home for the stories. Keep entries to a few lines; link the owner skill.

@@ -1,37 +1,38 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "weekly emoji sync", "sync emojis" / "/sync_emojis" / "type emojis not showing", or "where do files go" (exports, music downloads, models, temp files). Contains: the exact start command and what healthy startup output looks like line by line; on_ready init order; stopping/restarting (/stop_bot, /restart_bot, Ctrl-C, startup.sh); the per-guild command-sync model and /sync_global; the full anatomy of the git self-update flow (/push, /pull, /update, PICKLE commits, auto-merge that keeps local pickles and takes remote code, force_reset danger, every failure message and what it means) — this is the ANATOMY home; live triage of a broken update belongs to autocroissant-debugging-playbook; the multi-machine handoff runbook (pickles are the ONLY synced state); operating /update_stats (OPERATING RULE as of 2026-10-20 - plain /update_stats is remote mode, the safe default; local mode is opt-in and must be paired with use_local_timestamp:False, otherwise it re-archives every card; a pickle push also refreshes the TTSCardMaker website); artifact-location conventions; reminder operations (the 2026-10-19 rewrite: when formats like "sun 3AM", compound frequencies, name:value commands, reminders run as their creator, who may remove them); type-emoji operations (/sync_emojis, startup sync, per-bot-identity emojis); and a guild-admin command quick table.
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "weekly emoji sync", "sync emojis" / "/sync_emojis" / "type emojis not showing", or "where do files go" (exports, music downloads, temp files). Contains: the exact start command and what healthy startup output looks like line by line; on_ready init order; stopping/restarting (/stop_bot, /restart_bot, Ctrl-C, startup.sh, the jetson's systemd service); the per-guild command-sync model and /sync_global; the full anatomy of the git self-update flow (/push with its rebase onto origin, /pull, /update, PICKLE commits, auto-merge that keeps local pickles and takes remote code, force_reset danger, every failure message and what it means) — this is the ANATOMY home; live triage of a broken update belongs to autocroissant-debugging-playbook; the multi-machine handoff runbook (pickles are the ONLY synced state); operating /update_stats (OPERATING RULE as of 2026-10-20 - just run /update_stats: it reads GitHub and re-parses only PSDs whose blob changed; local mode is archived on a branch; a pickle push also refreshes the TTSCardMaker website); artifact-location conventions; reminder operations (the 2026-10-19 rewrite: when formats like "sun 3AM", compound frequencies, name:value commands, reminders run as their creator, who may remove them); type-emoji operations (/sync_emojis, startup sync, per-bot-identity emojis); and a guild-admin command quick table.
 ---
 
 # AutoCroissant: Run and Operate
 
 Operational runbook, verified against the code on 2026-07-11; sections 1, 5, 7, 8, 9 and 11 re-verified
-2026-10-19 against the uncommitted working tree (HEAD a7a4bb3); section 7 updated 2026-10-20 for the
-remote-mode default. Audience: an operator (human or model)
+2026-10-19 against the uncommitted working tree (HEAD a7a4bb3); sections 1, 3, 5, 7 and 8 re-verified
+2026-10-20 (HEAD 9fb3093). Audience: an operator (human or model)
 with zero prior context. All commands assume cwd = repo root (`/Users/michaelsrouji/Desktop/AutoCroissant`
 on this Mac). "Admin" means your Discord user ID is in the `ADMINS` list in `config.py`
-(`perms_check`, commands/utils.py:306 — note it returns True when you LACK permission).
+(`perms_check`, commands/utils.py:249 — note it returns True when you LACK permission).
 On the dev Mac (2026-10-19) `config.TOKEN` logs in as the "Waxwell" bot identity; the AutoCroissant
 token line is commented out. Which identity is logged in matters for type emojis (section 11).
 
-Production topology (owner-stated 2026-07-11): the bot runs on the owner's Mac OR a CUDA box,
-at different times — whichever machine is on hosts it. The three committed pickles
+Production topology (2026-10-20): the bot runs on the jetson as systemd `autocroissant.service`
+(section 3); the Mac is for development. The three committed pickles
 (`stats.pkl`, `old_stats.pkl`, `aliases.pkl`) are the database, and the bot's own git commands
 (`/push`, `/update`) are how state moves between machines. Everything else is per-machine.
+Section 6 is only for a (rare) host move.
 
 ## 1. Starting the bot
 
 Prerequisites (see autocroissant-build-and-env for building the environment):
 
-- [ ] cwd is the repo root. Every path in the bot is relative (`stats.pkl`, `music/`, `models/`,
+- [ ] cwd is the repo root. Every path in the bot is relative (`stats.pkl`, `music/`,
       `./startup.sh`). Starting from anywhere else makes the bot silently rebuild EMPTY databases —
       the tell is `stats.pkl is empty or doesn't exist, rebuilding...` in the output. Stop immediately
       if you see that on a machine that should have data.
 - [ ] `config.py` exists in the repo root with a valid `TOKEN`. It is SECRET (never print or commit it).
       main.py:9 does `from config import TOKEN` — a missing/invalid config.py kills the process at import.
 - [ ] No stale compiled artifacts: if `*.so` files exist from an old Cython build they shadow the `.py`
-      files you just pulled. `python3 setup.py clean` first (none exist as of 2026-10-19; details in
-      autocroissant-build-and-env).
+      files you just pulled. `python3 setup.py clean` first (none on the Mac as of 2026-10-19; the jetson
+      rebuilds them on every deploy, section 3; details in autocroissant-build-and-env).
 
 Start it:
 
@@ -42,44 +43,44 @@ python3 main.py
 ### What healthy startup output looks like (as of 2026-07-11; 2026-10-19 additions marked)
 
 ```
-Git token found, API limited to 5000 requests/hour.    <- import time: StatsDatabase() (psd_analyzer.py:204-208)
-Git token found, API limited to 5000 requests/hour.    <- import time: CardRepository() (query_card.py:42-45); "No git token in config..." if GIT_TOKEN unset
-We have logged in as AutoCroissant#....                <- on_ready (main.py:107)
-Registered 55 slash commands for reminder system.      <- slash_registry populated (main.py:111-113); 55 as of 2026-10-19
-Bot initialization complete                            <- loops started (main.py:124-127)
-Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:101)
+Git token found, API limited to 5000 requests/hour.    <- import time: StatsDatabase() (psd_analyzer.py:542-545)
+Git token found, API limited to 5000 requests/hour.    <- import time: CardRepository() (query_card.py:48-51); "No git token in config..." if GIT_TOKEN unset
+We have logged in as AutoCroissant#....                <- on_ready (main.py:102)
+Registered 50 slash commands for reminder system.      <- slash_registry populated (main.py:104-106); 50 as of 2026-10-20
+Bot initialization complete                            <- loops started (main.py:116-119)
+Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:96)
 Trying to open reminder.pkl.                           <- init_reminder
 reminder.pkl is empty or missing.                      <- or "Existing dict found in reminder.pkl, updating entries..." plus "Rescheduled reminder <id> from <t1> to <t2>" and (2026-10-19, first start after the rewrite) "Reminder <id>: migrated command `...` -> `...`" lines
 Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
 Loaded existing old stats from old_stats.pkl
-Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:334); counts as of 2026-07-11
+Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:401); counts as of 2026-07-11
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N = 0 once synced
-INFO: No model configured for initialization           <- init_pipeline; see below for variants
 ```
 
 Lines after "Bot initialization complete" come from queued async work and can interleave.
 The token-presence line prints TWICE because two module singletons each print it at import.
 
-### on_ready init order (main.py:108-127)
+### on_ready init order (main.py:101-119)
 
 `on_ready` populates `slash_registry` (command name -> callback; this is what lets reminders run
-bot commands), spawns a per-guild command sync task, then QUEUES five init functions and finally
-starts the three queue-drain loops (main.py:124-126). Queued work only executes once the loops
+bot commands), spawns a per-guild command sync task, then QUEUES four init functions and finally
+starts the three queue-drain loops (main.py:116-118). Queued work only executes once the loops
 start draining — so the loops effectively start first, and nothing is sent to Discord before they run.
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `init_reminder` (analytics.py:956) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
-| `init_psd` (psd_analyzer.py:1745) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
-| `init_query` (query_card.py:628) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (exactly 1 API call) | Non-200: "Warning: Failed to populate files from repository (status N)" — /query will be broken |
+| `init_psd` (psd_analyzer.py:2289) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
+| `init_query` (query_card.py:715) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (exactly 1 API call) | Non-200: "Warning: Failed to populate files from repository (status N)" — /query will be broken |
 | `init_type_emojis(client)` (type_emojis.py:218; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). 1 GitHub tree API call + 1 Discord list call; uploads only on first start per identity | Failure prints "Emoji sync failed: <err>"; replies then show `[fire]` as plain text. Nothing else depends on it |
-| `init_pipeline` (diffusion.py:193) | Initializes the diffusion pipeline | No torch installed: "ERROR: Cannot initialize pipeline - Torch is not installed"; no `model` in config.py: "INFO: No model configured for initialization". Both are clean no-ops — the bot runs fully without AI (see autocroissant-ai-boundary (branch `archive/ai-generation`)) |
 
-The three loops (main.py:839-887) each tick once per second: `process_command_queue` (also enqueues
+AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
+
+The three loops (main.py:749-803) each tick once per second: `process_command_queue` (also enqueues
 `check_reminder` every tick — that is the reminder heartbeat), `process_dispatch_queue` (message/file
 sends), `process_edit_queue` (edits). All bot output rides these queues, so replies have up to ~1 s of
 latency by design. Depth on the queue model: autocroissant-architecture-contract.
@@ -88,7 +89,7 @@ latency by design. Depth on the queue model: autocroissant-architecture-contract
 
 Every slash command in main.py follows one pattern: `func = to_thread(func)` then a
 `@tree.command(...)` wrapper that calls it. Worker code never awaits Discord directly; it calls
-`queue_message` / `queue_file` / `queue_edit` / `queue_command` (commands/utils.py:38-62) and the
+`queue_message` / `queue_file` / `queue_edit` / `queue_command` (commands/utils.py:42-61) and the
 loops deliver. If an interaction token has expired (Discord kills them after 15 minutes), delivery
 falls back to a plain `channel.send` — so output from long jobs arrives as a normal channel message
 instead of a reply. That is expected, not a bug. Admin gating is a `perms_check(interaction)` call at
@@ -98,9 +99,9 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 
 | Way | Gate | What happens |
 |---|---|---|
-| `/stop_bot` | admin | Stops the three loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:161-171) |
-| `/restart_bot` | NONE (verified main.py:152-158 on 2026-10-19 — no perms_check; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
-| Ctrl-C in the terminal | local | discord.py shuts down; main.py:896-897 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
+| `/stop_bot` | admin | Stops the three loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:152-162) |
+| `/restart_bot` | NONE (verified main.py:143-149 on 2026-10-20 — no perms_check; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
+| Ctrl-C in the terminal | local | discord.py shuts down; main.py:812-813 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
 
 `restart_bot()` (commands/update_bot.py:9-13) does `execv('./startup.sh', argv)`; on
 `FileNotFoundError` it falls back to `execl(python, python, main.py ...)` — i.e. re-exec the same
@@ -115,8 +116,7 @@ Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push f
 **startup.sh is a deploy-machine artifact, NOT in the repo** (verified absent 2026-07-11; the repo has
 no startup.sh and .gitignore would not exclude it — it simply was never committed). Operators may
 create one per machine, e.g. a build-then-run script (`python3 setup.py build_ext --inplace &&
-exec python3 main.py`), but its contents are per-machine and UNVERIFIED — do not assume what it does
-on the CUDA box. Two traps:
+exec python3 main.py`), but its contents are per-machine and UNVERIFIED (the jetson has none). Two traps:
 
 - Only `FileNotFoundError` triggers the fallback. A startup.sh that exists but is not executable
   raises `PermissionError`, which is NOT caught: the restart fails, the process stays alive with all
@@ -126,11 +126,11 @@ on the CUDA box. Two traps:
 
 ## 4. Command sync model
 
-- On EVERY start, `sync_guild_commands` (main.py:99-103) runs per guild: `tree.copy_global_to(guild)`
+- On EVERY start, `sync_guild_commands` (main.py:92-96) runs per guild: `tree.copy_global_to(guild)`
   then `tree.sync(guild=guild)`. Guild-scoped syncs take effect essentially immediately, so after a
   restart the commands are current in every guild the bot is in (a stale Discord client may need a
   restart/reload to show them — client-side cache, not the bot).
-- `/sync_global` (admin; main.py:741-747 -> management.py:74-96) clears the tree's global command set,
+- `/sync_global` (admin; main.py:651-656 -> management.py:74-96) clears the tree's global command set,
   syncs that (now-empty) global set, then re-copies and re-syncs each guild, finishing with
   "Commands synced globally and to N guilds." Use it to clean up duplicated/stale command entries
   (e.g. commands appearing twice because a global copy lingers). Discord platform note (not
@@ -145,12 +145,15 @@ All three are admin-gated. This is how the bot updates ITSELF from Discord. Remo
 https, push over `ssh://git@github.com/bobberlington/AutoCroissant.git` (verified `git remote -v`);
 the gitignored `.ssh/` directory in the repo root holds the deploy key (never commit or print it).
 
-### /push — commit and push the pickles (update_bot.py:16-30)
+### /push — commit, rebase, push the pickles (update_bot.py:16-39)
 
-`git add aliases.pkl stats.pkl old_stats.pkl` -> `git commit -m "PICKLE"` -> `git push`.
-That is the entire commit convention: pickle snapshots are commits named PICKLE.
-Success: "Successfully pushed!". Nothing changed: "Pickles are already up to date.".
-Anything else: "Push failed: <err>" (then the exception re-raises).
+`git add aliases.pkl stats.pkl old_stats.pkl` -> `git commit -m "PICKLE"` (no-op if nothing changed) ->
+`git pull --rebase --autostash origin main` (picks up code pushed since the last pull) -> `git push`.
+Pickle snapshots are commits named PICKLE.
+Success: "Successfully pushed!" (also pushes a PICKLE commit left by an earlier failed push).
+Nothing ahead of origin/main after the rebase: "Pickles are already up to date.".
+Rebase fails (conflict, network, auth): `git rebase --abort`, then "Push failed: <err>" and a re-raise; the
+local PICKLE commit stays. If no rebase had started, the abort's own "No rebase in progress" is the error shown.
 
 GATE (owned by autocroissant-change-control, summarized here): pickle corruption is the #1
 costliest failure class in this project's history — run the diff before every push:
@@ -164,9 +167,9 @@ Since 2026-10-19 a pushed PICKLE is also PUBLIC: the TTSCardMaker card website b
 pickles on AutoCroissant's `main` (every TTSCardMaker push, every 6 h, or on demand), so a bad push
 shows up on the site within hours. Site mechanics: ttscardmaker-companion.
 
-### /pull — fetch and merge (update_bot.py:33-101)
+### /pull — fetch and merge (update_bot.py:42-110)
 
-Despite its Discord description text ("Does a hard reset, than a git pull" — main.py:175; help.py:10
+Despite its Discord description text ("Does a hard reset, than a git pull" — main.py:166; help.py:10
 repeats the hard-reset claim, spelled "then"), **/pull does NOT hard-reset anything**; both
 descriptions are stale. Actual behavior:
 
@@ -188,7 +191,7 @@ Consequence of "local pickles win": if machine B pulls while holding OLDER pickl
 (because machine A pushed newer ones and B never pulled before diverging), the auto-merge would keep
 B's stale pickles. The handoff runbook below exists to prevent ever being in that state.
 
-### /update — push, pull, restart (main.py:195-208 -> update_bot.py:122-147)
+### /update — push, pull, restart (main.py:186-199 -> update_bot.py:131-156)
 
 Sequence: stop all three queue loops -> "Doing a complete update of the bot!" ->
 "Pushing aliases.pkl, stats.pkl, and old_stats.pkl." -> git_push -> "Pulling latest changes from
@@ -197,7 +200,7 @@ on the way back up).
 
 `force_reset:True` replaces push+pull with `git fetch` + `git reset --hard origin/main`
 ("Force reset mode: Local changes will be discarded!" / "Hard reset complete" / "Warning: All local
-changes have been discarded!" — update_bot.py:104-119). **DANGEROUS: this discards local pickles,
+changes have been discarded!" — update_bot.py:113-128). **DANGEROUS: this discards local pickles,
 i.e. every card parse and alias created since the last successful /push is gone.** When is it ever
 right? Only when the clone is wedged (half-finished merge/rebase the bot cannot resolve) AND you have
 verified the local pickles are expendable — either already on origin (diff_stats against
@@ -208,18 +211,18 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 
 | Message | Meaning / action |
 |---|---|
-| "Pickles are already up to date." | No pickle changes since last PICKLE commit. Normal. |
-| "Push failed: <err>" | Commit/push error — usually ssh key or remote reachability. If inside /update, the update aborts. |
+| "Pickles are already up to date." | Nothing local is ahead of origin/main after the rebase. Normal. |
+| "Push failed: <err>" | Rebase conflict (aborted), fetch/auth failure, or push error (ssh key, a race). A remote that is merely ahead is handled by the rebase. If inside /update, the update aborts. |
 | "Git pull failed: <err>" | Merge machinery failed; read the git error. Rebase fallback may follow. |
 | "Rebase also failed: ..." + "Manual intervention may be required." | Bot cannot self-heal the clone. SSH in, `git status`, resolve, restart. |
-| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:203-205) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
+| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:194-196) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
 | "Restarting bot!" then nothing | Process replaced by execv/execl. Watch the terminal/host for the fresh startup lines. |
 
 ## 6. Multi-machine handoff runbook
 
 The pickles are the ONLY state that follows the bot. Per-machine and NOT synced (verified in
-.gitignore): `config.py`, `.ssh/`, `reminder.pkl`, `music/`, `models/`, all `*.csv`/`*.txt` exports,
-venvs. Both machines need their own config.py and deploy key already in place.
+.gitignore): `config.py`, `.ssh/`, `reminder.pkl`, `music/`, all `*.csv`/`*.txt` exports, compiled
+`*.so`, venvs. Both machines need their own config.py and deploy key already in place.
 
 Moving hosting from machine A (currently running) to machine B:
 
@@ -249,13 +252,17 @@ Moving hosting from machine A (currently running) to machine B:
 ## 7. Operating /update_stats
 
 **Cost (since 2026-10-20):** a card is re-parsed only when its PSD's git blob sha (from the tree) differs from
-`card.blob_sha`. Nothing changed: 1 request (the tree, sent with If-None-Match; GitHub answers 304). Per changed
-card: 1 commit lookup + the PSD by blob sha (4 downloads run ahead of parsing). Small files (authors, edits, icon
-manifest) download only when their blob changes. `cards:Sonic, Pix` re-parses just those (after a parser fix);
-`force_update:True` re-downloads every PSD. The run saves whenever anything changed, PSD or not.
+`card.blob_sha` (`_psd_changed`), or it is new or moved. Nothing changed: 1 request (the tree, sent with
+If-None-Match; GitHub answers 304 and the run ends with "Nothing changed in the card repo since the last
+update."). The ETag cache (`_tree_etags`) is in memory only, so the first run after a restart gets the full tree
+and compares shas instead. Per re-parsed card: 1 commit lookup + the PSD by blob sha (4 downloads run ahead of
+parsing). Small files (authors, edits, icon manifest) download only when their blob changes. `cards:Sonic, Pix`
+also re-parses those (after a parser fix); `force_update:True` re-downloads every PSD. The run saves whenever
+anything changed, PSD or not. Cards saved before blob shas existed cost one `get_commits(since=...)` pass the
+first time.
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-psd_analyzer.py:1287; slash wrapper main.py:355-365.
+psd_analyzer.py:1827; slash wrapper main.py:352-364.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -280,36 +287,28 @@ psd_analyzer.py:1287; slash wrapper main.py:355-365.
 >   with `timestamp` as the changed field, or old_stats.pkl growing by more than about 10%
 >   (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl`). Post-update checks are owned by
 >   autocroissant-validation-and-qa.
-> - **Pending as of 2026-10-19:** stats.pkl is stale for 61 cards (59 abilities, 2 star counts edited in
->   PSDs after the last sweep; BUGS_AND_IMPROVEMENTS D5). A plain `/update_stats`, the diff gate
->   (expect about 61 modified cards, 0 path or type changes) and `/push` clears it.
 
-The two flags (slash defaults in parentheses, main.py:362-363). The GitHub trees API lists the PSDs, each
-card's last-commit date is the change signal, and each changed PSD is downloaded via `urlretrieve` and deleted
-right after parsing. (`use_local_repo` and `use_local_timestamp` existed until 2026-10-20; see the rule.)
+The three options (slash defaults in parentheses, main.py:360-362). (`use_local_repo` and
+`use_local_timestamp` existed until 2026-10-20; see the rule.)
 
-| Flag (default) | What it actually does |
+| Option (default) | What it actually does |
 |---|---|
-| `output_problematic_cards` (True) | Run `CardValidator` on each reparsed card and post the problems to the channel |
-| `force_update` (False) | Reparse EVERY card regardless of timestamps. Archiving still needs a newer timestamp or a path change. (The Python-level default was True until 2026-10-19; it is now False, matching the slash command) |
+| `output_problematic_cards` (True) | Run `CardValidator` on each re-parsed card and post the problems to the channel |
+| `force_update` (False) | Re-parse EVERY card and skip the 304 shortcut. The old version goes to old_stats only if the PSD's blob changed or the card moved, so a forced sweep of unchanged cards adds no history. (The Python-level default was True until 2026-10-19) |
+| `cards` ("") | Comma-separated card names to re-parse anyway (e.g. after a parser fix); also skips the 304 shortcut. Same archiving rule |
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-cards EXAMINED — the count includes unchanged cards; psd_analyzer.py:32,1161) -> the summary
-(psd_analyzer.py:1200):
+RE-PARSED cards; psd_analyzer.py:34,1693) -> the summary (psd_analyzer.py:1745):
 
 ```
-N had newer timestamps or were new.
-M did not have newer timestamps.
-K cards changed location.
+N cards changed or new, M unchanged, K moved.
 ```
 
-- N ("newer or new") is what gates saving: only `N > 0` triggers `prune_clean_cards()` + pickle save
-  (psd_analyzer.py:1325-1327). Pruning is the deletion mechanism: cards not seen this traversal move
-  to `old_stats`.
-- K counts path-only moves. Verified quirk: a run with ONLY moves (N == 0) reparses and mutates the
-  in-memory DB but does NOT save the pickles — the moves are lost on restart. If you need moves
-  persisted, rerun with `force_update:True`.
+- N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
+- Saving (psd_analyzer.py:1868-1871): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
+  not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
+  stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved.
 - Then "Card statistics update complete!" and, if enabled, the problem cards: full detail first
   (path + fenced problem list, split into <=1950-char chunks), then a names-only line per card —
   all posted to the invoking channel. There are TWO problem baselines (surface distinction owned
@@ -319,21 +318,16 @@ K cards changed location.
   legitimately posts 5 (adds Computer Virus, Anubisath Guardian, Qiraji Soldier, Silithid).
   The corruption alarm is NEW names in the report — not a count of 5 on a full sweep.
 
-Remote-mode API budget (derivation owned by autocroissant-analysis-toolkit Recipe 4; verified
-logic; find the code with the provenance grep): 2 requests of fixed overhead + 1 `get_commits` lookup per
-NON-EXCLUDED PSD — the `EXCLUDE_FOLDERS` check (MDW/Markers, 91 PSDs) `continue`s BEFORE the
-timestamp fetch, and the commit date IS the change detector, so it is per-card, not
-per-changed-card — plus up to 1 extra request per new/author-missing card. With ~813 non-excluded
-PSDs (2026-07-11) a no-change sweep is ≈ 2 + 813 ≈ 815 requests, ~16% of the 5000/hr `GIT_TOKEN`
-budget (≈6 sweeps/hour theoretical; treat 2-3 as the practical ceiling, per analysis-toolkit) —
-fine for a daily cadence. Without a token (60/hr) a remote run CANNOT finish (it will die mid-run;
-exact failure mode untested). Check for the "Git token found" startup line.
+API budget: PSDs under `EXCLUDE_FOLDERS` (`Markers`, `MDW`) are skipped before any request, and the commit
+lookup (`_get_remote_timestamp`, per_page=1 client) runs only for re-parsed cards (a new or author-less card
+pages once more for its first commit). A daily run spends a few requests; `force_update:True` on ~813 cards
+spends a large share of the 5000/hr `GIT_TOKEN` budget, so don't schedule it. Without a token (60/hr) a forced
+or first-ever run cannot finish; check for the "Git token found" startup line.
 
-Each changed PSD is downloaded with `urlretrieve` (psd_analyzer.py:1139) and, since
-2026-10-19, deleted right after parsing (psd_analyzer.py:1144-1147). A run also fetches the icon-font
-manifest `MDW/Fonts/stoogedings-src/stoogedings.json` once from raw.githubusercontent.com
-(not an API call); the offline diagnostics scripts read the same file from the clone. If it is missing, icon tokens still
-parse by plain names (impossibility-cards-reference §4.1).
+PSDs come through the git/blobs API (`_download`/`_blob`, psd_analyzer.py:1410-1440) into a temp file deleted
+right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
+files through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
+from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
 
 ## 8. Artifact conventions — where files land
 
@@ -346,21 +340,20 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `reminder.pkl.tmp` | every reminder save (written, fsynced, then renamed over reminder.pkl) | repo root, normally gone within milliseconds | NO (gitignored since 2026-10-19, `.gitignore:41`). If a hard kill leaves one behind, delete it |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
-| Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:53,236,246) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `urlretrieve`; deleted after each parse since 2026-10-19 (psd_analyzer.py:1144-1147; before that they piled up, archaeology Entry 10.2) | n/a |
+| Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:53,237,247) | NO (`music/` gitignored) |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, psd_analyzer.py:1429-1440); deleted after each parse (psd_analyzer.py:1668; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | Type emojis | /sync_emojis, startup sync | Discord-side application emojis owned by the logged-in bot identity (no local file) | n/a |
-| Diffusion models / LoRAs | operator-provisioned | `./models/*.safetensors`, `./models/loras/` (diffusion.py:22-23) | NO (`models/` gitignored) — per-machine |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 
 ## 9. Reminders operations
 
 Rewritten 2026-10-19 (commands/analytics.py, 957 lines; uncommitted as of that date). Times are
-Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:9), so they follow daylight
-saving. `check_reminder` is queued once per second by the command loop (main.py:841). History of
+Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:10), so they follow daylight
+saving. `check_reminder` is queued once per second by the command loop (main.py:751). History of
 what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
 invariants: autocroissant-architecture-contract.
 
-### /set_reminder (admin only, main.py:229)
+### /set_reminder (admin only, main.py:206)
 
 | Option | Accepts | Notes |
 |---|---|---|
@@ -440,10 +433,10 @@ The first is stored as `/update_stats`. The second is the weekly emoji sync
 
 | Command | Gate | Notes |
 |---|---|---|
-| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:702-714) |
+| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:612-623) |
 | `/list_guilds` | admin | Name, ID, member count per guild |
 | `/leave_guild guild_id` | admin | Numeric ID required |
-| `/list_guild_members guild_id` | admin | Requires the privileged members intent, which is NOT enabled — main.py:93-94 sets only `Intents.default()` + `message_content`. So as of 2026-10-19 this command always replies "Intents.members must be enabled to use this." (ClientException handler, management.py:135-136). Enabling the intent is a code+portal change: route via autocroissant-change-control |
+| `/list_guild_members guild_id` | admin | Requires the privileged members intent, which is NOT enabled — main.py:86-87 sets only `Intents.default()` + `message_content`. So as of 2026-10-19 this command always replies "Intents.members must be enabled to use this." (ClientException handler, management.py:135-136). Enabling the intent is a code+portal change: route via autocroissant-change-control |
 | `/list_guild_channels guild_id` | admin | Works with default intents |
 | `/get_channel_messages guild_id channel_id [limit]` | admin | Default 50, `-1` = all (1M cap); text channels only; oldest first; permission failure -> "I don't have permission to read messages in that channel." |
 | `/react reactions [message_id]` | none | Space-separated emojis (`👍 👎` or `<:custom:1234567890>`); no id = most recent message; replies "Added X/Y reactions..." |
@@ -465,7 +458,7 @@ text instead of a code block, because code blocks don't render emojis.
 - **Startup**: `init_type_emojis` uploads only the MISSING ones (none deleted, none re-uploaded) and loads
   the token map. Terminal line: "Type emojis: 126 icons and crossed-out variants in <repo>, N uploaded, 126
   ready." Until it finishes, or if it fails ("Emoji sync failed: ..."), tokens stay as plain text.
-- **/sync_emojis `[refresh]` `[prune]`** (admin only, main.py:750-762): same sync, reported in the channel.
+- **/sync_emojis `[refresh]` `[prune]`** (admin only, main.py:660-672): same sync, reported in the channel.
   `refresh:True` deletes and re-uploads every icon (use it after editing a PNG; a plain sync never notices an
   edited image). `prune:True` deletes bot emojis whose icon is no longer in the repo; without it they are only
   listed ("No longer in Types/ (kept, use prune:True to delete)").
@@ -487,7 +480,7 @@ text instead of a code block, because code blocks don't render emojis.
 
 - Building or fixing the Python environment, ffmpeg/opus, Cython builds, requirements split ->
   **autocroissant-build-and-env**.
-- Something is BROKEN (won't start, commands missing, silent bot, stats look wrong, music/diffusion
+- Something is BROKEN (won't start, commands missing, silent bot, stats look wrong, music
   failures) -> **autocroissant-debugging-playbook** (this skill only tells you what healthy looks like).
 - Changing code, pickles-as-data decisions, what may be committed, force_reset approval ->
   **autocroissant-change-control**.
@@ -504,37 +497,37 @@ text instead of a code block, because code blocks don't render emojis.
 
 Written 2026-07-11 against the working tree at commit 284d13c ("PICKLE"); sections 1, 5, 7, 8, 9, 11
 and the line numbers in 3, 4 and 10 re-verified 2026-10-19 against HEAD a7a4bb3 plus the uncommitted
-working tree (adds commands/type_emojis.py). Every claim was verified by
+working tree (adds commands/type_emojis.py); sections 1, 3, 5, 7, 8 again 2026-10-20 (HEAD
+9fb3093). Every claim was verified by
 reading main.py, commands/update_bot.py, commands/analytics.py, commands/management.py,
 commands/help.py, commands/psd_analyzer.py, commands/query_card.py, commands/music_player.py,
-commands/diffusion.py, commands/utils.py, global_config.py, and .gitignore. Line numbers drift —
+commands/utils.py, global_config.py, and .gitignore. Line numbers drift —
 re-find volatile facts with these before trusting them:
 
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(init\|process_.*_queue.start\|Bot initialization complete" main.py` |
-| Slash-command count (55 on 2026-10-19) | `grep -c "@tree.command" main.py` |
+| Slash-command count (50 on 2026-10-20) | `grep -c "@tree.command" main.py` |
 | Members intent still off | `grep -n "Intents" main.py` |
 | /restart_bot still ungated | `grep -n -A4 'name="restart_bot"' main.py` |
 | /update stops loops first | `grep -n -B2 -A6 'name="update"' main.py` |
 | startup.sh still absent from repo | `ls startup.sh; git ls-files startup.sh` |
 | execv/execl fallback | `grep -n -A4 "def restart_bot" commands/update_bot.py` |
-| PICKLE commit convention / merge strategy | `grep -n "PICKLE\|--ours\|--theirs\|AUTO-RESOLVE" commands/update_bot.py` |
+| PICKLE commit convention / push rebase / merge strategy | `grep -n "PICKLE\|--rebase\|rev_list\|--ours\|--theirs\|AUTO-RESOLVE" commands/update_bot.py` |
 | Push remote is ssh | `git remote -v` |
-| update_stats has only output_problematic_cards + force_update (local mode archived 2026-10-20) | `grep -n -A4 "def slash_update_stats" main.py`; `grep -n -A4 "^def update_stats" commands/psd_analyzer.py`; `grep -rn "use_local" main.py commands/` (only analytics.py `RETIRED_OPTIONS`) |
+| update_stats options are output_problematic_cards, force_update, cards (local mode archived 2026-10-20) | `grep -n -A4 "def slash_update_stats" main.py`; `grep -n -A4 "^def update_stats" commands/psd_analyzer.py`; `grep -rn "use_local" main.py commands/` (only analytics.py `RETIRED_OPTIONS`) |
 | Local traversal archived on its own branch, not in main | `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `ls archive 2>/dev/null` (nothing: main has no archive folder) |
 | Retired reminder options dropped | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py`; `grep -n "^REMINDER_VERSION" commands/analytics.py` (3) |
-| UPDATE_RATE / summary line | `grep -n "UPDATE_RATE\|had newer timestamps" commands/psd_analyzer.py` |
-| Save-gate on num_new (moves-only runs unsaved) | `grep -n -A2 "num_new > 0" commands/psd_analyzer.py` |
-| Remote per-card API cost (exclusions skipped pre-fetch) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp" commands/psd_analyzer.py` (exclude check must sit above the timestamp fetch in `_process_files_from_response`) |
-| urlretrieve temp files deleted after parse | `grep -n "urlretrieve(\|remove(local_file)" commands/psd_analyzer.py` (1139, 1147) |
+| Blob-sha change check, blob downloads, 304, summary, save gate | `grep -n "_psd_changed\|def _download\|def _blob\|If-None-Match\|changed or new\|num_new > 0 or traverser.changed" commands/psd_analyzer.py` |
+| old_stats archived only on blob change or move | `grep -n -B1 "old_stats\[name\].append(old)" commands/psd_analyzer.py` |
+| Per-card cost (exclusions skipped, commit lookup only for re-parsed cards) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp\|per_page=1" commands/psd_analyzer.py` |
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
 | reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
-| Music/export/model paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_\|MODELS_FOLDER\|LORAS_FOLDER" commands/psd_analyzer.py commands/diffusion.py` |
+| Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
 | Card/rulebook dataframe counts, newest pickle timestamp | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 
 Maintenance: update the date stamps and counts above whenever the pickles are refreshed or commands

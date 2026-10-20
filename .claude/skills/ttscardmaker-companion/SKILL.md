@@ -6,13 +6,13 @@ description: Load this skill for anything on the TTSCardMaker side of the projec
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
 
 AutoCroissant (the Discord bot) reads card PSDs from **TTSCardMaker** (`MichaelJSr/TTSCardMaker`, cloned at
-`~/Desktop/TTSCardMaker`; a blobless partial clone that is also shallow — depth 1, so `git log` there shows only
-the latest commit (3a268ca on 2026-10-19); use GitHub for history). On 2026-10-19 three things were added on the TTSCardMaker side
-that the bot now depends on or feeds: the **stoogedings** icon font, a static **card-browser website**, and a
+`~/Desktop/TTSCardMaker`; a blobless partial clone that is also shallow, so `git log` there shows only recent
+history; use GitHub, or `git fetch --unshallow --filter=blob:none`, for older commits). On 2026-10-19 three things
+were added on the TTSCardMaker side that the bot now depends on or feeds: the **stoogedings** icon font, a static **card-browser website**, and a
 **missing-fonts audit**. Photoshop scripting recipes were worked out along the way. This skill is their operational
-home. Facts verified 2026-10-19 against TTSCardMaker HEAD `3a268ca`. **Everything described here is still
-uncommitted in TTSCardMaker** (`MDW/Fonts/stoogedings.ttf`, `MDW/Fonts/stoogedings-src/`, `site/`, `.github/`).
-Nothing is pushed yet, and GitHub Pages is not enabled.
+home. Committed and pushed to TTSCardMaker `main`: 54278c1 (stoogedings font + `stoogedings-src/`, Effect Layers
+scripts, missing card fonts), c3e9f66 (effect layers), 3ef3776 (`site/`, `.github/workflows/site.yml`,
+`MDW/Card Authors.txt`), then 81ca0ea..027fd0d (site features). The site is live (§2).
 
 The parser side of tokens (how `psd_analyzer.py` reads a layer set in the font, plus the four new problems) is owned
 by **impossibility-cards-reference §4.1**. This skill only summarizes it.
@@ -23,20 +23,20 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,142,544 bytes, PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,136,060 bytes, PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
 | Build venv | `MDW/Fonts/stoogedings-src/.venv/` (gitignored by `stoogedings-src/.gitignore`) | Local only |
 | Icon sources | `Types/*.png` (35 "type" icons), `Types/Stars/*.png` (56 "star" icons) | Source art |
 | Letter / badge fonts the build embeds | `MDW/Fonts/BreeSerif-Regular.ttf` (OFL letters), `MDW/Fonts/ChangaOne-Regular.ttf` (badge labels) | Inputs |
-| Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/README.md` | Source |
+| Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/requirements.txt`, `site/README.md` | Source |
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_analyzer.py` (`ICON_FONT_PREFIX`, `ICON_MANIFEST_PATH`, `IconVocabulary`), `commands/type_emojis.py` | See §1.7 |
-| Card authors file | `MDW/Card Authors.txt`: `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, uncommitted |
-| Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, uncommitted (§6) |
+| Card authors file | `MDW/Card Authors.txt`: `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
+| Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
 | Scratch work: audit outputs, Photoshop test JSX, migration prototype | `/private/tmp/fontexplore/` (**volatile: macOS wipes /tmp on reboot; nothing there is committed**) | Scratch |
 
@@ -148,9 +148,9 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 4. Install: copy the TTF to `~/Library/Fonts/` (or open it in Font Book), replacing the old copy. Photoshop pitfalls
    are in §4.
 5. In TTSCardMaker, commit the PNG(s), `stoogedings.ttf` and `stoogedings.json` together (the script's docstring
-   says to). After that, the bot side needs no code change. The parser reads the manifest from GitHub on every
-   `/update_stats` (`_icons_from_response`; the offline diagnostics scripts read the clone's copy with
-   `_icons_from_local`). Run `/sync_emojis` so new icons get emojis
+   says to). After that, the bot side needs no code change. The parser reads the manifest from GitHub on each
+   `/update_stats` (`_icons_from_response` via `_repo_text`, re-downloaded only when its blob changes; the offline
+   diagnostics scripts read the clone's copy with `_icons_from_local`). Run `/sync_emojis` so new icons get emojis
    (the bot also uploads missing ones at startup).
 
 ### 1.5 How it is built, and the renderer facts behind the design
@@ -190,7 +190,7 @@ same spellings; the website is still more lenient:
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
 | AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_analyzer.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant` | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
-| Website, `norm()` in build_site.py:60 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font; harmless for display (it only reads parser output), but its docstring "shared with the parser and the font" is out of date since 2026-10-20 |
+| Website, `norm()` in build_site.py:99 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
 Emoji names differ from manifest keys in exactly two cases: `fragile equip` → `fragile_equip`, and
 `thunderfury_blessed_blade_of_the_starseeker` → `thunderfury_blessed_blade_of_the`. The 126 emojis are
@@ -216,10 +216,8 @@ spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old 
 ## 2. The card-browser website
 
 **Live since 2026-10-20 at https://michaeljsr.github.io/TTSCardMaker/** (Pages source: "GitHub Actions").
-- The `github-pages` environment allows deployments from `main` and from `card-browser-demo`. That temporary demo
-  branch was pushed for the user's review before the site was merged to `main`.
-- Once `site/` and `.github/` are on `main`, remove `card-browser-demo` from the environment's deployment branches and
-  delete the branch (the user wants no spare branches; memory `commit-to-main`).
+- The `github-pages` environment allows deployments only from `main` (custom branch policy). The temporary
+  `card-browser-demo` review branch was removed from the policy and deleted after the merge (memory `commit-to-main`).
 
 ### 2.1 Data flow (site/build/build_site.py)
 
@@ -267,11 +265,10 @@ TTSCardMaker Actions runner (same trusted circle today).
 
 ### 2.2 Workflow (.github/workflows/site.yml)
 
-- **Triggers:** push to `main`, cron `17 */6 * * *`, and `workflow_dispatch`. Only on the demo branch, the push trigger
-  also lists `card-browser-demo`.
+- **Triggers:** push to `main`, cron `17 */6 * * *`, and `workflow_dispatch`.
 - **Checkout:** `actions/checkout@v7`, `fetch-depth: 0` + `filter: blob:none` (every commit and tree, about 25 MB, no
-  contents), plus a non-cone sparse checkout of `/site/`, `/Types/`, the manifest, the ban list and
-  `/MDW/Card Authors.txt`.
+  contents), plus a non-cone sparse checkout of `/site/`, `/Types/`, the manifest, the ban list,
+  `/MDW/Card Authors.txt`, `/MDW/Card Edits.json` and `/MDW/Website Admins.txt`.
 - **Steps:**
   - `setup-python@v7` (3.12, pip cache) → `pip install -r site/build/requirements.txt` (pillow) → `configure-pages@v6`
   - a cache-key step hashing `git ls-tree -r HEAD | grep -i '\.png$'`, then `actions/cache@v6` on `site/.cache` with key
@@ -366,7 +363,7 @@ The diff-gate before pushes is owned by **autocroissant-change-control**; /updat
 (`swift /private/tmp/fontexplore/scripts/installed_fonts.swift`) and a scan of the PostScript name inside every
 font file on the Mac (1,780 files, `find_fonts_by_psname.py`) agree.
 
-**Added to `MDW/Fonts/` and installed that day (uncommitted):**
+**Added to `MDW/Fonts/` and installed that day (committed in 54278c1):**
 - `NotoColorEmoji-SVG.otf`: adobe-fonts/noto-emoji-svg 2.100.
 - `consola.ttf`, `consolab.ttf`, `consolai.ttf`, `consolaz.ttf` (Consolas 5.22, four styles) and `cambria.ttc` / `cambriab|i|z.ttf` (Cambria 5.96):
   - Extracted with macOS `bsdtar` from Microsoft's free PowerPoint Viewer (`PowerPointViewer.exe` → `ppviewer.cab`).
@@ -403,7 +400,7 @@ including `AdobeInvisFont`. **25 PostScript names are used in card text but not 
 |---|---|
 | Photoshop bundles it privately (fine in Photoshop, absent elsewhere) | `MyriadPro-Regular` (18): Photoshop 2023 ships `Contents/Required/PDFL/Resource/Fonts/MyriadPro-Regular.otf`; it is also on Adobe Fonts |
 | Adobe Fonts (activate in Creative Cloud; verified listings 2026-10-20) | `Consolas`, `Consolas-Bold`, `Consolas-Italic` (46/46/37: **the whole rulebook**), `Cambria` (1), `JavaneseText` (4: the Croissant cards, Magnum Opus), `MyriadArabic-Regular` (6; only on invisible characters such as a leading U+FEFF, so harmless) |
-| Free download, **installed 2026-10-20** | `NotoColorEmoji-SVG` (1 card + 2 rulebook pages): adobe-fonts/noto-emoji-svg release 2.100, Apache-2.0, in `~/Library/Fonts` and copied to `MDW/Fonts/` (uncommitted) |
+| Free download, **installed 2026-10-20** | `NotoColorEmoji-SVG` (1 card + 2 rulebook pages): adobe-fonts/noto-emoji-svg release 2.100, Apache-2.0, in `~/Library/Fonts` and copied to `MDW/Fonts/` (committed in 54278c1) |
 | Microsoft Office for Windows only (not on Adobe Fonts) | `Pristina-Regular` (2), `Elephant-Regular` (1, a single apostrophe), `OCRAExtended` (1). Copy PRISTINA.TTF, ELEPHNT.TTF and OCRAEXT.TTF from `C:\Windows\Fonts` on a PC with Office. `Century` was found and installed on 2026-10-19 |
 | Font Book can download and activate | `BookAntiqua` (1), `CenturyGothic-Bold` (1) |
 | macOS ships it (`/System/Library/Fonts/Supplemental`) | `ArialMT` (4), `ArialNarrow` (1), `ArialNarrow-Bold` (1), `ComicSansMS` (4), `ComicSansMS-Bold` (2), `Impact` (3), `TimesNewRomanPSMT` (7), `MicrosoftSansSerif` (1) |
@@ -414,8 +411,9 @@ Recommendations:
 - (a) Before editing rulebook PSDs, activate Consolas through Adobe Fonts, or Photoshop will substitute and reflow.
 - (b) The owner's call (2026-10-20): "for any fonts you find, add them to the fonts folder, there isnt any issue with
   having them in that folder." So found fonts, commercial ones included, go into `MDW/Fonts/` (and get installed).
-  Note: the card-browser workflow checks out only `site/`, `Types/`, the font manifest and the ban list, and it publishes
-  only `site/dist`, so `MDW/Fonts/` never goes onto the website. It does go into the GitHub repo if committed.
+  Note: the card-browser workflow checks out only `site/`, `Types/`, the font manifest, the ban list, `Card Authors.txt`,
+  `Card Edits.json` and `Website Admins.txt`, and it publishes
+  only `site/dist`, so `MDW/Fonts/` never goes onto the website. It is in the GitHub repo.
 - (c) The audit only reads text layers, so the parser is unaffected by missing fonts. psd-tools reads stored text,
   not rendered glyphs.
 
@@ -618,8 +616,8 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 
 ## Provenance and maintenance
 
-All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca, everything above uncommitted); §1.2 badges and
-§1.6 matching rules updated 2026-10-20. Run the commands from
+All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.6 matching rules updated
+2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash
@@ -642,7 +640,7 @@ grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)
 curl -sI https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/stats.pkl | head -1
 # AutoCroissant side (run in ~/Desktop/AutoCroissant)
-grep -n "^ICON_FONT_PREFIX\|^ICON_MANIFEST_PATH" commands/psd_analyzer.py      # 49, 50
+grep -n "^ICON_FONT_PREFIX\|^ICON_MANIFEST_PATH" commands/psd_analyzer.py      # 54, 55
 grep -n "^MAX_NAME_LEN\|^NO_SUFFIX\|^ICON_FOLDERS" commands/type_emojis.py     # 19, 21, 20
 # Missing-font audit inputs still present? (scratch; may be gone after reboot)
 ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps/convert_demo.jsx
@@ -650,8 +648,6 @@ ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps
 
 Maintenance rules:
 - If the website's `norm()` is aligned with the parser, update the §1.6 website row.
-- Once the TTSCardMaker work is committed, replace "uncommitted" with the commit hash. Once Pages is enabled, update
-  §2.2 and the website URL.
 - If the migration prototype is moved into the repo, replace every `/private/tmp/fontexplore` path.
 - When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 70 / 126 /
   U+E05A).

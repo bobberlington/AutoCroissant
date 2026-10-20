@@ -231,10 +231,11 @@ stop, you changed more than you think.
 
 **Step 2 — Full sweep IN THE SANDBOX (the expensive gate).**
 
-Exact signature, verified 2026-10-20 at psd_analyzer.py:1287:
+Exact signature, verified 2026-10-20 at psd_analyzer.py:1827 (`cards` is a comma-separated list of
+names to re-parse anyway):
 
 ```python
-def update_stats(interaction=None, output_problematic=True, force_update=False, verbose=True)
+def update_stats(interaction=None, output_problematic=True, force_update=False, verbose=True, cards="")
 ```
 
 (`force_update` defaulted to True in Python until 2026-10-19; it now matches the slash command's
@@ -256,20 +257,21 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   2026-10-19 (archaeology Entry 1). Read its diff differently: every card's `timestamp` changes to a
   local mtime and every card is archived into old_stats, so compare fields other than `timestamp`, and
   ignore old_stats growth. Never promote its pickles to the live repo (BUGS_AND_IMPROVEMENTS B6).
-- **API budget warning:** remote mode makes 2 fixed calls plus one `repo.get_commits(path=...)`
-  call per NON-EXCLUDED PSD — timestamps are fetched *before* the force_update check
-  (psd_analyzer.py:1116), but AFTER the `EXCLUDE_FOLDERS` skip (psd_analyzer.py:1109), so a
-  sweep costs ≈ 2 + 813 ≈ **815 API calls regardless of flags** (~16% of the 5000/hr GIT_TOKEN
-  limit; 60/hr without a token — impossible). Derivation owned by autocroissant-analysis-toolkit
-  Recipe 4. `force_update=True` additionally downloads every PSD via `urlretrieve` (each temp
-  file is deleted right after parsing since 2026-10-19). Minutes of wall time. Run it once per
-  promotion, never in a loop.
+- **API budget warning:** change detection compares each PSD's blob sha in the tree with
+  `card.blob_sha` (`_psd_changed`, psd_analyzer.py:1379); an unchanged PSD costs no requests. Each
+  re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus
+  `get_commits` in `_get_remote_timestamp` (psd_analyzer.py:1719): `totalCount` is one request and
+  `commits[0]` another (the client uses per_page=1); a new or authorless card also walks every
+  commit page for its first author. So `force_update=True` costs ≈ 813 × 3 ≈ **2,440+ calls**
+  (about half the 5000/hr GIT_TOKEN limit; impossible at 60/hr without a token), plus the tree
+  request and the small-file blobs; a default run costs only the changed PSDs. A forced run, or
+  the first after a restart (the tree ETag is in memory), always gets the full tree. Minutes of
+  wall time. Run it once per promotion, never in a loop.
 - Headless quirk (harmless): at the end `update_stats` queues `card_repo.populate_files` /
-  `prep_dataframes` onto the bot's command queue (psd_analyzer.py:1344-1345); with no bot
+  `prep_dataframes` onto the bot's command queue (psd_analyzer.py:1888-1889); with no bot
   running nothing drains it and the process just exits.
 - With `verbose=True` (default) the sweep prints progress, a summary
-  (`N had newer timestamps or were new / N did not / N changed location`), and the full
-  problem output (Channel A+B).
+  (`N cards changed or new, N unchanged, N moved.`), and the full problem output (Channel A+B).
 
 Gate: the sweep completes and saved (`stats.pkl` mtime changed). Proceed to steps 3–4;
 the sweep's own printed problem list previews step 4.
@@ -285,16 +287,15 @@ python3 $S/diff_stats.py stats_before.pkl stats.pkl --verbose  # per-field old -
 Gate: **every added/removed/modified row is explained by the intended change** (the
 `--verbose` field diffs and the aggregated field-change counts make mass effects obvious).
 Expected explainable classes: cards your change intentionally re-parses differently;
-cards genuinely edited upstream in TTSCardMaker since the pickle was last updated (on
-2026-10-19: 61 cards — 59 abilities and 2 star counts, BUGS_AND_IMPROVEMENTS D5 — so a sweep
-today shows those rows even with a neutral code change; separate them with method A in
-section 4.1). Red flags = reject: unexplained `removed` rows (traversal missed files), mass `path`
-changes (the old removeprefix bug signature), mass `type → unknown` (classification broke),
-timestamp-only churn you can't account for. Also compare `old_stats` growth:
-`python3 $S/inspect_pickle.py` summary in the sandbox — archived-version count above the
-baseline (218 names / 223 versions) must be explained (unexplained ballooning is the
-eb9aa84 duplicate-archiving family; `diff_stats.py` cannot diff old_stats.pkl — it only
-handles stats-shaped pickles).
+cards genuinely edited upstream in TTSCardMaker since the pickle was last updated (separate them
+with method A in section 4.1). Red flags = reject: unexplained `removed` rows (traversal missed
+files), mass `path` changes (the old removeprefix bug signature), mass `type → unknown`
+(classification broke), timestamp-only churn you can't account for. Also compare `old_stats` growth:
+`python3 $S/inspect_pickle.py` summary in the sandbox. A sweep archives a card only when its PSD
+blob changed or it moved (a forced re-parse of an unchanged PSD adds no history), so every
+archived version above the pre-sweep count (run the same summary before step 2) must be one of
+those (unexplained ballooning is the eb9aa84 duplicate-archiving family; `diff_stats.py` cannot
+diff old_stats.pkl — it only handles stats-shaped pickles).
 
 **Step 4 — Problem counts must not increase (both surfaces).**
 
@@ -335,7 +336,9 @@ matters: it separates "my code changed output" from "the PSDs changed upstream",
 diff cannot do.
 
 **Method B — sandboxed forced LOCAL sweep vs the stored remote data.**
-1. Sandbox per Step 0 (copy of the repo and pickles in /tmp).
+1. Sandbox per Step 0 (copy of the repo and pickles in /tmp), checked out at 795fd23: the archived
+   traversal calls `RepositoryTraverser._should_update_card`, which bacab06 removed, so on current
+   main it raises AttributeError.
 2. In the sandbox (local mode was archived on 2026-10-20; on 2026-10-19 this step was
    `update_stats(interaction=None, use_local_repo=True, force_update=True)`):
    the archived traversal is not in main, so first copy it out of its branch (the sandbox is a `cp -r`,
@@ -460,7 +463,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
-| `update_stats` signature & line (1287; force_update=False; no local options since 2026-10-20) (2026-10-20) | `grep -n -A4 "def update_stats" commands/psd_analyzer.py` |
+| `update_stats` signature & line (1827; force_update=False; cards=""; no local options since 2026-10-20) (2026-10-20) | `grep -n -A4 "def update_stats" commands/psd_analyzer.py` |
 | Exclusion-list sizes (18 / 5) | `python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), len(V.EXCESSIVE_STAT_EXCLUSIONS))"` |
 | Exclusion-list definitions & lines (834, 841) (2026-10-20) | `grep -n "EXCESSIVE_STAT_EXCLUSIONS\|ABILITY_EXCLUSIONS: set" commands/psd_analyzer.py` |
 | Parse-time problem sites (490, 524; icon problems 631-663) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_analyzer.py` |
@@ -475,15 +478,14 @@ re-verification below disagrees with this file, the repo wins; update this file
 | Golden expected values | the three `parse_one.py` + one `gap_trace.py` commands in section 3 |
 | Freezer byte-equality vs stats.pkl | compare `parse_one` ability block to `python3 $SCRIPTS/inspect_pickle.py "The Freezer"` |
 | HEAD-vs-working diff clean (0/0/0) | `git show HEAD:stats.pkl > /tmp/stats_head.pkl && python3 $SCRIPTS/diff_stats.py /tmp/stats_head.pkl stats.pkl` |
-| Slash-command force_update default (main.py:363) (2026-10-20) | `grep -n "force_update" main.py` |
+| Slash-command force_update default (main.py:361) (2026-10-20) | `grep -n "force_update" main.py` |
 | MISMATCH check history | `git show -s --oneline fed8a83 081b1fd` and `git show fed8a83 -- commands/psd_analyzer.py` |
 | eb9aa84 revert exists | `git show -s --oneline eb9aa84` |
-| Remote-sweep API cost (get_commits per PSD, pre-gate) | `grep -n "_get_remote_timestamp\|get_commits" commands/psd_analyzer.py` |
+| Remote-sweep API cost (blob + get_commits per re-parsed PSD, post-gate) | `grep -n "_get_remote_timestamp\|get_commits\|_blob\|_psd_changed" commands/psd_analyzer.py` |
 | PSD count (~904) | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` |
 
 Maintenance triggers: any accepted parser/validator change (update baselines + golden
-table + date-stamps); a new golden nomination (section 3 procedure); the D5 refresh landing
-(the 61 upstream-edited cards stop showing in sweep diffs; re-date section 4 step 3); the first
+table + date-stamps); a new golden nomination (section 3 procedure); the first
 card migrated to stoogedings tokens (expect Channel-A icon problems to become possible; add a
 token golden); exclusion-list membership changes (update counts here AND the acceptance
 explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).

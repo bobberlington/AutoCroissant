@@ -124,7 +124,7 @@ so it merges with the bot's updates. Start after Task 2's audit and rules exist.
 The user's call (2026-10-20): spend as many tokens and as much time as needed to make the psd-tools fork good enough
 to replace Photopea. Fork: https://github.com/MichaelJSr/psd-tools, cloned at `~/Desktop/psd-tools` (main just past
 v1.25.0, `upstream` remote; read its `CLAUDE.md` first). Needs Python >= 3.11: on the jetson, after Task 0. Research, harness and data: `~/Documents/psd-research/`
-(`REPORT.md`; `fork/patches.py` holds the gradient fix).
+(`REPORT.md`, whose Photopea-first verdict is superseded by D4; `fork/patches.py` holds the gradient fix).
 
 **Where things stand:** unpatched psd-tools 1.25 renders card structure right but stat bars flat (the
 gradient-length bug) and is 0.2-45% off the official PNGs (median 1.68% on 50 cards; Jetpack 45%, Regenerative
