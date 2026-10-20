@@ -55,9 +55,22 @@ from source: `--enable-optimizations --with-lto=full --enable-shared --with-open
 `/usr/local/openssl-3`. 4 cores, 6 GB RAM.
 1. Finish the inventory: both units' ExecStart, OJWikibot's and homelab's requirements, shebangs, anything else
    importing 3.10 paths.
-2. Build 3.14 (latest patch) with the same recipe and OpenSSL; `make -j4` under nohup (PGO+LTO: expect 1.5-3 h);
-   `make altinstall` so 3.10 stays until the end. Fallback if the build fails: a python-build-standalone 3.14
-   (`uv python install 3.14`).
+2. Build 3.14 (latest patch) with the user's recipe (the same one 3.10 used; `ax_cv_c_float_words_bigendian=no` is
+   required because `-flto` breaks configure's float byte-order check):
+   ```
+   ax_cv_c_float_words_bigendian=no ./configure \
+     --enable-optimizations \
+     --with-lto=full \
+     --enable-shared \
+     --with-openssl=/usr/local/openssl-3 \
+     --with-openssl-rpath=auto \
+     CFLAGS="-O3 -march=native -fomit-frame-pointer -flto" \
+     CPPFLAGS="-I/usr/local/openssl-3/include" \
+     LDFLAGS="-Wl,-O1 -Wl,--as-needed -flto -Wl,-rpath=/usr/local/openssl-3/lib" \
+     PKG_CONFIG_PATH=/usr/local/openssl-3/lib/pkgconfig
+   ```
+   then `make -j4` under nohup (PGO+LTO: expect 1.5-3 h) and `sudo make altinstall` so 3.10 stays until the end.
+   Fallback if the build fails: a python-build-standalone 3.14 (`uv python install 3.14`).
 3. Per bot, a venv on 3.14 with its requirements. Watch: `distutils` is gone (AutoCroissant's setup.py imports
    `distutils.command.clean`; use setuptools'), `audioop` is gone (discord.py voice needs `audioop-lts`), aarch64
    wheels for numpy/pandas/opencv/davey/aggdraw (build from source if missing). Rebuild AutoCroissant's Cython
