@@ -33,6 +33,13 @@ with `<sha>` = the latest commit where that PNG's blob changed (Puzzled Cat -> `
 2. Refresh on /update_stats (the tree ETag says when) and at startup; `get_card_url` uses it, falls back to `main`.
 3. Done when: replies use sha links, no extra requests per /query, survives a restart.
 
+## Task 1b. Emoji sync inside /update_stats (small)
+
+The startup sync only uploads missing emojis, and only at restart; the weekly reminder `f590a57e` (`/sync_emojis`,
+Sun 3 AM) covers new icons between restarts, and neither refreshes an edited icon. Instead: during /update_stats,
+compare `Types/` and `Types/Stars/` blob shas (already in the tree) with a small stored map and upload or replace
+only those emojis. Then remove the reminder: `/remove_reminder reminder_id:f590a57e`.
+
 ## Task 2. TTS save auto-update (bot)
 
 **Context:** new cards are added by hand to several decks in the save, and their Name typed on the card. Image
@@ -97,9 +104,25 @@ Plan:
    website shows "PSD pending" until it lands. Try the jetson later.
 4. **First milestone:** stats only (lowest risk), on 3 test cards, verified by opening one PSD in Photoshop.
    Then names, then ability text.
-5. **Fallback / previews:** send the gradient fix upstream (needs the user's GitHub account for the PR); if Photopea
-   breaks or blocks automation, build the psd-tools fork per the report (effects + adjustments ~2-3 weeks, text
-   engine ~4-8 weeks), budget unlimited (D4).
+5. **Photopea can't be forked:** it is closed source (proprietary; no public source). Bugs we hit (text placed
+   10-34 px high, read-only `totalTextStyle`, ActionManager `setd` hang) can only be reported to its developer. The
+   only "own copy" is the paid self-hosted edition ($500-2,000/month, billed yearly): not worth it while the free
+   one works.
+
+## Task 3b. psd-tools fork (start alongside Task 3)
+
+Goal: a fully owned, browser-free renderer and editor, so the pipeline can run on the jetson without Photopea and
+the website gets exact previews. Budget unlimited (D4). Upstream-first: every change is also a PR to psd-tools.
+1. Fork `psd-tools/psd-tools` to the user's GitHub (ask first); pin the bot, site and pipeline to a tag of the
+   fork only when a change we need isn't released upstream.
+2. Gradient-overlay length fix (`fork/patches.py` in the research folder) with a test; PR upstream.
+3. Drop shadow and outer glow: build on the open upstream PRs #679/#680 rather than duplicating them.
+4. Missing adjustments (vibrance, gradient map, channel mixer, colour balance), then inner shadow/glow, bevel,
+   satin, perceptual gradients.
+5. Text engine (EngineData layout, freetype-py + uharfbuzz, style runs, Photoshop line breaking), calibrated on
+   our 973 text layers.
+6. Harness: all ~813 cards scored against the official PNGs on every change (target: median < 0.5% off; no card
+   > 2%). When it passes, the pipeline drops Photopea.
 
 ## Task 4. Deep optimization and refinement pass
 
@@ -107,5 +130,5 @@ BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurr
 
 ## Order
 
-Task 1 -> Task 2 steps 1-3 (report to the user) -> Task 3 first milestone -> Task 2 steps 4-6 -> Task 2b -> rest
-of Task 3 -> Task 4.
+Task 1 -> Task 1b -> Task 2 steps 1-3 (report to the user) -> Task 3 first milestone (+ Task 3b steps 1-2) -> Task 2
+steps 4-6 -> Task 2b -> rest of Task 3 and 3b -> Task 4.
