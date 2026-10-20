@@ -168,6 +168,12 @@ Nickname) misses it; a loose "Militron" card sits on the table.
 
 ## Task 2b. View and edit the TTS save on the website
 
+**Status 2026-10-20:** done (0d49893, live): a "Table" tab (`site/assets/table.js`, `tts.js`) loads the save on
+demand, lists decks and bags with their cards and rules, gives players the download link, and lets editors move,
+copy, add, remove, reorder and rename; publishing re-applies the staged operations to the fresh save and commits it
+byte-for-byte like the bot (a JS port of the updater's serializer), and keeps `TTS/decks.json` in step (a card whose
+last copy leaves a rule-synced deck is excluded; one put in that the rule doesn't cover is included).
+
 A "Table" tab on the card browser: load the save from TTSCardMaker (on demand; 5.5 MB), show decks and bags with
 their cards, and let editors (same sign-in and batch as card edits) move or copy cards between decks, remove or
 add cards, rename decks and reorder. Publishing applies the operations to a fresh copy of the save and commits it,
