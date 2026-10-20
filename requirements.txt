@@ -5,7 +5,9 @@ GitPython
 numpy
 opencv-python
 pandas
+Pillow
 psd-tools
 PyGithub
+PyNaCl
 requests
 yt-dlp

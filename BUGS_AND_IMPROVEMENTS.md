@@ -51,7 +51,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 | C5 | Duplicate function names in main.py (`slash_set_ratio` ×2, `slash_delete_song` ×2). Harmless today (decorators registered at def time) but fragile — rename carefully, never "clean up" casually. | `main.py` |
 | C6 | `/list_guild_members` requires the members intent, which `main.py` never enables — the command always fails with the ClientException message. Enable the intent (and in the Discord dev portal) or remove the command. | `main.py` intents block, `commands/management.py` |
 | C14 | `/query` and ability-search images use `raw.githubusercontent.com/.../main/...` links, so old Discord messages show the newest image. Use the latest commit sha of the card's PNG instead (planned: NEXT_SESSION_PLAN.md). | `commands/query_card.py` `get_card_url` |
-| C12 | Pillow is still not declared in `requirements.txt`. `commands/type_emojis.py:8` is now the only module that imports it at top level, and it arrives only through psd-tools. | `requirements.txt` |
 
 ### 1.5 Pending live verification (as of 2026-10-19)
 
@@ -106,7 +105,7 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 1. A defensive dispatch loop (B5): the single point of silence.
 2. Fix B4's `await` and C6's intent mismatch.
 3. Sync help.py with reality (C1–C3) in one docs pass — checklist in `.claude/skills/autocroissant-docs-and-style/SKILL.md`.
-4. Small cleanup: C12 (declare Pillow).
+4. ~~C12 (declare Pillow)~~ done 2026-10-20: Pillow and PyNaCl are declared.
 
 ### 2.4 Planned next (NEXT_SESSION_PLAN.md; Task 3 first)
 

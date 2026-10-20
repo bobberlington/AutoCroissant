@@ -65,8 +65,8 @@ they ride in as dependencies of other packages. Verified via pip metadata 2026-0
 
 | Hidden dep | Arrives via | Who needs it | Evidence |
 |---|---|---|---|
-| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:8` (emoji images), the only PIL import on main; `main.py:72` and `query_card.py:15` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Still undeclared as of 2026-10-19 (BUGS_AND_IMPROVEMENTS C12). |
-| PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it) | discord.py itself only requires aiohttp; it does not pull PyNaCl. |
+| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:8` (emoji images), the only PIL import on main; `main.py:72` and `query_card.py:15` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Declared explicitly since 2026-10-20. |
+| PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it) | discord.py itself only requires aiohttp (and audioop-lts on 3.13+); it does not pull PyNaCl. Declared explicitly since 2026-10-20. |
 
 **The rule**: if psd-tools or PyGithub is ever removed from `requirements.txt`, add
 `Pillow` and/or `PyNaCl` explicitly in the same commit. The rationale: nothing in this
