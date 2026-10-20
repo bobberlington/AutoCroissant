@@ -52,8 +52,12 @@ AutoCroissant stay main-only).
 (requirements.txt; psd-tools 1.25.0) and `~/venvs/ojwikibot` (requirements + requirements-dev); both setup.py builds
 compile on 3.14; both units' ExecStart point at their venv (`/etc/systemd/system/*.service`; OJWikibot's copies in
 `scripts/services/msrouji/` still say python3.10). Parser regression psd-tools 1.18 vs 1.25: 813 cards, 0 differences.
-Remaining: step 6 after a stable week (remove 3.10, keep `/usr/local/openssl-3`), then refresh the build-and-env and
-run-and-operate skills (they still name python3.10).
+Step 6 done the same day (user's call): 3.10 removed (`/usr/local/bin/python3.10*`, `pip3.10`, `/usr/local/lib/python3.10`,
+`libpython3.10*`, headers, pkgconfig, `~/.local/lib/python3.10` and the 24 `~/.local/bin` scripts with 3.10 shebangs);
+`/usr/local/bin/python3`, `python3-config` and `pip3` now point at 3.14; `/usr/local/openssl-3` kept. Power-cycled with
+`jetson-powercycle cycle` (Shelly plug, 20 s off): ssh back in 75 s, both bots logged in within 90 s of boot, no failed
+units, docker (jellyfin, adguardhome) up; the only boot errors are the usual L4T noise (initramfs magic, lp/ppdev
+modules, imx219 camera probes, nvphs). The build-and-env and run-and-operate skills are refreshed by the Task 4 docs step.
 
 Why: the psd-tools fork (and psd-tools >= 1.20) needs Python >= 3.11; the jetson runs 3.10.19 with psd-tools 1.18.
 Inventory (2026-10-20): `autocroissant.service` and `ojwikibot.service` run `/usr/local/bin/python3.10`; no cron
