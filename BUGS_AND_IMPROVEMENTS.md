@@ -55,15 +55,14 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Item | What was verified | What is still missing | Detail owner |
 |---|------|-------------------|-----------------------|--------------|
-| V1 | `/sync_emojis` and the startup emoji sync (126 application emojis) | Offline, with a fake client and real GitHub downloads | Not yet run against live Discord. Watch the first startup log line `Type emojis: ... uploaded, ... ready.` and run `/query_rulebook` once to see emojis | `autocroissant-run-and-operate` §11 |
+| V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
 | V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19 | Not known to have fired against live Discord yet. Watch the first startup's `migrated command` log lines and the first firing | `autocroissant-run-and-operate` §9 |
 | V3 | Cython build on a host | Done on the jetson 2026-10-20 (all 8 modules, Cython 3.3.0) | Nothing | `autocroissant-build-and-env` §5 |
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
 Owned by `ttscardmaker-companion`:
-- The website and editor are committed on TTSCardMaker main but not pushed (7 local commits, 2026-10-20). Until
-  then the bot finds no `MDW/Card Authors.txt` or `MDW/Card Edits.json` on GitHub.
+- The website and editor are live (pushed 2026-10-20); the bot reads `MDW/Card Authors.txt` and `MDW/Card Edits.json`.
 - The website unpickles the bot's pickles with stub classes for `commands.*`: anyone who can push AutoCroissant
   `main` can run code in the TTSCardMaker Actions job, and renaming CardInfo attributes blanks website fields.
 - 7 fonts are still missing from `MDW/Fonts` (Windows/Office ones, BabaUI).
@@ -113,7 +112,7 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 2. TTS save automation: audit the save against the repo, then a script (and a command) that adds new cards to
    their decks, fills in names, pins image links to commit shas only when a card changed, and updates the global
    Lua's large-card list.
-3. PSD edits from website edits, without Photoshop where possible.
+3. PSD edits from website edits: Photopea (verified 2026-10-20) with psd-tools for the edit; fork as fallback.
 
 ### 2.5 Deep optimization and refinement pass (all code)
 
