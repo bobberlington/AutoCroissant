@@ -64,7 +64,7 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 **Step 1 — Build the corpus OUTSIDE the bot.** Do not touch bot code yet. Either run
 `/export_rulebook` and `/export_cards` from Discord when the bot is up (files land in the repo
-root, gitignored via `*.txt`/`*.csv`, .gitignore:62-63), or build offline from the pickle.
+root, gitignored via `*.txt`/`*.csv`, .gitignore:71-72), or build offline from the pickle.
 This exact snippet was dry-run 2026-07-11 and produced 48 pages / 765 cards (expect two
 "Git token found" import-chain print lines — that is NOT the bot starting):
 

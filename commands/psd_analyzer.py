@@ -18,12 +18,13 @@ from re import IGNORECASE, compile as re_compile, match as re_match, sub
 from requests import get
 from requests.exceptions import RequestException
 from typing import Optional, Any
-from urllib.parse import quote
 import pandas as pd
 
 import config
 from global_config import STATS_PKL, OLD_STATS_PKL
 from commands.query_card import card_repo
+from commands.repo_history import refresh as refresh_history
+from commands.type_emojis import sync_changed_emojis
 from commands.utils import queue_message, queue_file, queue_edit, queue_command, split_long_message
 
 getLogger("psd_tools").setLevel(CRITICAL)
@@ -1481,6 +1482,7 @@ class RepositoryTraverser:
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
         _tree_etags[repository] = resp.headers.get("ETag")
+        queue_command(_refresh_links, repository)       # tree fetched: re-pin image links
 
         return (problems, num_new)
 
@@ -1621,18 +1623,6 @@ class RepositoryTraverser:
                 print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
-    def _construct_raw_url(self, repository: str, path: str) -> str:
-        """
-        Construct a raw GitHub URL from a repository path.
-
-        Args:
-            path: Relative path within the repository (e.g., "Creatures/Kirby/5 Star/Magolor.psd")
-
-        Returns:
-            Full raw GitHub URL
-        """
-        return f"https://raw.githubusercontent.com/{repository}/main/{quote(path, safe='/')}"
-
     def _process_files_from_response(self,
                                      response,
                                      repository: str,
@@ -1763,6 +1753,17 @@ class RepositoryTraverser:
 # ========================
 # Helper Functions
 # ========================
+def _forget_tree(repository: str) -> None:
+    """Drop the tree ETag so the next /update_stats refetches and retries."""
+    _tree_etags.pop(repository, None)
+
+
+def _refresh_links(repository: str) -> None:
+    """Re-pin image links; on failure drop the tree ETag so the next /update_stats retries."""
+    if not refresh_history():
+        _forget_tree(repository)
+
+
 def get_card_aliases(card_name: str = None) -> dict[str, list[str]] | list[str]:
     """
     Build a reverse lookup of cards to aliases.
@@ -1883,6 +1884,9 @@ def update_stats(interaction: Optional[Interaction] = None,
         # Card names only
         for card in problem_cards:
             _notify(card.split('```')[0])
+
+    if traverser.tree is not None:                  # tree changed (not 304): refresh edited type emojis
+        queue_command(sync_changed_emojis, interaction, traverser.repository, traverser.shas, _forget_tree)
 
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree)

@@ -267,9 +267,9 @@ Untested against live Discord as of 2026-10-19 (BUGS_AND_IMPROVEMENTS V1). Opera
 | "Emoji sync failed: ... has no attribute 'fetch_application_emojis'" | `python3 -c "import discord; print(discord.__version__)"` | discord.py older than 2.5 | `pip install -U "discord.py>=2.5"` (**autocroissant-build-and-env** §2) |
 | "Emoji sync failed: 403/404 ..." on the GitHub listing | Is GIT_TOKEN set; is `/set_repo` pointing at the card repo? | Rate limit without a token, or a wrong repo | Fix the token or `/set_repo`, then `/sync_emojis` |
 | Report lists "Failed: <name> (...)" | The error text per emoji | Discord rejected an upload (name, size, or the application's emoji limit) | Fix the icon or name; rerun |
-| An edited Types/ icon still shows the old image | Was the sync run with `refresh:True`? | A plain sync uploads only missing emojis | `/sync_emojis refresh:True` |
+| An edited Types/ icon still shows the old image | Did an /update_stats since the edit say "Type emojis: ... updated"? | /update_stats refreshes emojis only when the tree changed; an edit made while `type_emojis.json` was missing is adopted as current at startup | `/sync_emojis refresh:True` |
 | Emojis work on one host but not another | Which bot identity is logged in (config.py comment lines only - never print values) | Application emojis belong to the identity; each identity syncs its own set at its first startup | Let the other identity start once, or run `/sync_emojis` there |
-| A renamed icon left an old emoji behind | Report line "No longer in Types/ (kept, ...)" | Plain syncs never delete | `/sync_emojis prune:True` (and see **ttscardmaker-companion** §1.7 before renaming icons) |
+| A renamed icon left an old emoji behind | Report line "No longer in Types/ (kept, ...)" | /update_stats deletes only emojis listed in `type_emojis.json`; /sync_emojis without prune never deletes | `/sync_emojis prune:True` (and see **ttscardmaker-companion** §1.7 before renaming icons) |
 
 ---
 

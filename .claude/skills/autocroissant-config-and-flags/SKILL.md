@@ -148,7 +148,7 @@ quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `ar
 
 ## global_config.py — committed shared constants
 
-Whole file, 10 lines (verify: `cat global_config.py`):
+Whole file, 12 lines (verify: `cat global_config.py`):
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -158,6 +158,9 @@ Whole file, 10 lines (verify: `cat global_config.py`):
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
 | `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
+| `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
+| `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | type emoji name -> blob sha of the icon it was made from, written by commands/type_emojis.py; gitignored, per machine. Missing or unreadable = startup adopts the existing emojis as current (no re-upload) |
+| `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"` | bare blobless clone of the card repo, fetched on startup and after each /update_stats tree change; cloned on first use. Only rev-list/ls-tree/fetch run there (diff/log would download blobs) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
 Pickle schemas and commit discipline are owned by **impossibility-cards-reference** and
@@ -407,7 +410,7 @@ table with its command before quoting it in the future.
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
 | Reminder constants | `sed -n '26,56p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
-| global_config constants | `cat global_config.py` (10 lines) |
+| global_config constants | `cat global_config.py` (12 lines) |
 | setup.py build config | `sed -n '8,45p' setup.py` |
 | Gitignore coverage (config.py, reminder.pkl, music/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|csv\|txt" .gitignore` |
 

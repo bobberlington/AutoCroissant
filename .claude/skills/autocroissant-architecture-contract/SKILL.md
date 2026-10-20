@@ -218,8 +218,8 @@ the one send that needs no interaction. FakeInteraction rides the error path **b
 config.py  (SECRET - tokens; names only)      global_config.py  (paths, pickle names, TIMEZONE)
      ^                                              ^
      | import config (module level)                 |
-     |  utils, query_card, psd_analyzer,            |  analytics, query_card,
-     |  music_player, type_emojis                   |  psd_analyzer, update_bot
+     |  utils, query_card, psd_analyzer,            |  analytics, query_card, psd_analyzer,
+     |  music_player, type_emojis                   |  update_bot, repo_history, type_emojis
      |
 main.py  (registration + queue loops; imports every commands module)
  |- commands.utils         queues, to_thread, perms_check, FakeInteraction  <- everyone's base
@@ -227,10 +227,11 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.management    -> utils
  |- commands.analytics     -> utils, global_config
  |- commands.music_player  -> utils, config
- |- commands.query_card    -> utils, config, global_config, type_emojis (module level, 2026-10-19)
- |- commands.type_emojis   -> utils, config; query_card.card_repo LAZILY inside _list_type_icons
+ |- commands.query_card    -> utils, config, global_config, type_emojis (module level, 2026-10-19), repo_history
+ |- commands.type_emojis   -> utils, config, global_config; query_card.card_repo LAZILY inside _list_type_icons
  |                            [2026-10-19; NOT in setup.py INCLUDE_FILES, so never compiled]
- |- commands.psd_analyzer  -> utils, config, global_config, query_card (module level!)
+ |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links; NOT compiled]
+ |- commands.psd_analyzer  -> utils, config, global_config, query_card, repo_history, type_emojis (module level!)
  |- commands.frankenstein  -> utils, query_card (card_repo)
  '- commands.update_bot    -> global_config ONLY  (no utils: bypasses queues on purpose, invariant 3)
 
@@ -332,8 +333,8 @@ updated and line numbers re-checked 2026-10-20.
   4). Full checklist with gates: **autocroissant-change-control**.
 - **New recurring/background work**: do NOT add a fourth `tasks.loop`. One-shot deferred work →
   `queue_command(fn, ...)` (runs next tick in a thread). Recurring work on a schedule → prefer a
-  reminder that runs a slash command (`/set_reminder ... frequency:1w command:/sync_emojis` is the
-  2026-10-19 example); only if that can't work, follow the `check_reminder` pattern: cheap per-tick
+  reminder that runs a slash command (`/set_reminder ... frequency:1d command:/update_stats` is the
+  usual example); only if that can't work, follow the `check_reminder` pattern: cheap per-tick
   body, single-flight, heavy work queued onward (invariant 7).
 - **Long-running work** (parsing sweeps, downloads): it already runs in a thread — report
   progress with `queue_edit`, expect your interaction token to expire, and rely on the fallback chain

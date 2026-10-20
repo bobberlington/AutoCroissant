@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import config
 from global_config import ALIAS_PKL, SITE_URL, STATS_PKL
+from commands.repo_history import raw_url
 from commands.type_emojis import render_type_tokens
 from commands.utils import queue_message, split_long_message
 
@@ -35,6 +36,7 @@ class CardRepository:
     def __post_init__(self):
         self.git_file_alias: dict[str, str] = {}
         self.git_files: dict[str, str] = {}
+        self.blobs: dict[str, str] = {}                  # png path -> blob sha, for commit-pinned links
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
@@ -78,6 +80,7 @@ class CardRepository:
                 status, tree, self._tree_etag = response.status_code, response.json(), response.headers.get("ETag", "")
         self._tree = tree
         self.git_files.clear()
+        self.blobs.clear()
         self.ambiguous_names.clear()
 
         # Process PNG files from repository
@@ -86,6 +89,7 @@ class CardRepository:
             if not path.endswith(".png"):
                 continue
 
+            self.blobs[path] = item.get("sha", "")
             self._add_file_to_registry(path)
 
         # Add aliases to registry
@@ -434,8 +438,8 @@ class CardRepository:
                 print(f"Card not found: {filename}")
                 return
 
-        # Keep slashes unencoded
-        return f"https://raw.githubusercontent.com/{self.repository}/main/{quote(self.git_files[filename], safe='/')}"
+        path = self.git_files[filename]
+        return raw_url(self.repository, path, self.blobs.get(path))     # pinned to the card's last commit
 
     def get_card_path(self, query: str) -> Optional[str]:
         """

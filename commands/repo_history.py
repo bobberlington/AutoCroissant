@@ -1,0 +1,165 @@
+from json import dump, load
+from os import environ, replace
+from os.path import exists, expanduser
+from shutil import rmtree
+from subprocess import CalledProcessError, run
+from threading import Lock
+from time import monotonic
+from typing import Optional
+from urllib.parse import quote
+
+from global_config import HISTORY_CLONE, HISTORY_JSON
+
+# ========================
+# Configuration
+# ========================
+REPOSITORY = "MichaelJSr/TTSCardMaker"          # the card repo the history clone mirrors
+GIT_TIMEOUT = 300                               # seconds per git call
+
+# ========================
+# Global State
+# ========================
+_paths: dict = {}                               # repo path -> (blob sha, last commit that changed it)
+_head = ""                                      # main's commit _paths describes
+_loaded = False
+_lock = Lock()
+
+
+# ========================
+# Helper Functions
+# ========================
+def _git(*args: str) -> str:
+    """Run git in the history clone (blobless: only rev-list, ls-tree, fetch here, never diff/log)."""
+    return run(["git", "-C", expanduser(HISTORY_CLONE), *args], capture_output=True, encoding="utf-8",
+               check=True, timeout=GIT_TIMEOUT, env={**environ, "GIT_TERMINAL_PROMPT": "0"}).stdout
+
+
+def _tree(commit: str) -> dict:
+    """A commit's files: path -> blob sha."""
+    files = {}
+    for entry in _git("ls-tree", "-r", "-z", commit).split("\0"):
+        meta, _, path = entry.partition("\t")
+        parts = meta.split(" ")
+        if len(parts) == 3 and parts[1] == "blob":
+            files[path] = parts[2]
+    return files
+
+
+def _walk(head: str, last: str, known: dict) -> Optional[dict]:
+    """
+    The paths at head with the commit that last changed each, walking only commits after last.
+
+    Args:
+        head: Commit to describe
+        last: Commit known describes ("" walks all of history)
+        known: Map at last
+
+    Returns:
+        {path: (blob, commit)}, or None when the new commits don't continue from last
+    """
+    rows = [line.split() for line in _git("rev-list", "--parents", "--topo-order", "--reverse",
+                                          f"{last}..{head}" if last else head).splitlines()]
+    if not rows:
+        return known if head == last else None
+    new = {row[0] for row in rows}
+    children: dict = {}
+    for row in rows:
+        for parent in row[1:]:
+            if parent not in new and parent != last:
+                return None                     # joins older history (force push): walk it all
+            children[parent] = children.get(parent, 0) + 1
+
+    maps = {last: known} if last else {}
+    for commit, *parents in rows:               # parents come first
+        olds = [maps[p] for p in parents]
+        current = {}
+        for path, blob in _tree(commit).items():
+            # unchanged when it matches any parent (first match, like git log); else changed here
+            current[path] = next(((blob, old[path][1]) for old in olds if path in old and old[path][0] == blob),
+                                 (blob, commit))
+        maps[commit] = current
+        for p in parents:
+            children[p] -= 1
+            if not children[p]:
+                del maps[p]
+    return maps.get(head)
+
+
+def _load() -> None:
+    """Read the saved map once."""
+    global _paths, _head, _loaded
+    _loaded = True
+    if not exists(HISTORY_JSON):
+        return
+    try:
+        with open(HISTORY_JSON, encoding="utf-8") as f:
+            data = load(f)
+        _paths, _head = {p: tuple(v) for p, v in data["paths"].items()}, data["head"]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        print(f"Could not read {HISTORY_JSON}, rebuilding it: {e}")
+
+
+def _save() -> None:
+    """Write the map atomically."""
+    tmp = f"{HISTORY_JSON}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        dump({"head": _head, "paths": _paths}, f)
+    replace(tmp, HISTORY_JSON)
+
+
+# ========================
+# Public API Functions
+# ========================
+def refresh() -> bool:
+    """Fetch the history clone and walk new commits. Never raises; False on failure (the old map stays)."""
+    global _paths, _head
+    with _lock:
+        try:
+            if not _loaded:
+                _load()
+            clone = expanduser(HISTORY_CLONE)
+            if exists(clone):
+                _git("fetch", "--quiet", "origin", "+refs/heads/main:refs/heads/main")
+            else:                                   # clone beside it, then rename: no half clone left behind
+                rmtree(f"{clone}.tmp", ignore_errors=True)
+                run(["git", "clone", "--quiet", "--bare", "--filter=blob:none",
+                     f"https://github.com/{REPOSITORY}.git", f"{clone}.tmp"], capture_output=True, encoding="utf-8",
+                    check=True, timeout=GIT_TIMEOUT, env={**environ, "GIT_TERMINAL_PROMPT": "0"})
+                replace(f"{clone}.tmp", clone)
+            head = _git("rev-parse", "main").strip()
+            if head == _head:
+                return True
+            start = monotonic()
+            paths = None
+            if _head:
+                try:
+                    paths = _walk(head, _head, _paths)
+                except CalledProcessError:          # old head gone from the clone
+                    pass
+            if paths is None:
+                paths = _walk(head, "", {})
+            if paths is None:
+                raise ValueError(f"no history walked to {head}")
+            _paths, _head = paths, head
+            _save()
+            print(f"Repo history: {len(paths)} files at {head[:8]} ({monotonic() - start:.1f}s)")
+            return True
+        except Exception as e:
+            print(f"Repo history refresh failed, keeping the old links: {e} {getattr(e, 'stderr', '') or ''}")
+            return False
+
+
+def raw_url(repository: str, path: str, blob: Optional[str] = None) -> str:
+    """A raw link pinned to the commit that last changed path, if blob matches it; else the main link."""
+    found = _paths.get(path) if repository == REPOSITORY else None
+    ref = found[1] if found and blob and found[0] == blob else "main"
+    return f"https://raw.githubusercontent.com/{repository}/{ref}/{quote(path, safe='/')}"
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'refresh',
+    'raw_url',
+]

@@ -69,6 +69,7 @@ from commands.query_card import (
     set_match_ratio,
     set_repository,
 )
+from commands.repo_history import refresh as refresh_history
 from commands.type_emojis import init_type_emojis, sync_type_emojis
 from commands.update_bot import git_pull, git_push, restart_bot, update_bot
 from commands.utils import (
@@ -111,6 +112,7 @@ async def on_ready():
     queue_command(init_reminder)
     queue_command(init_psd)
     queue_command(init_query)
+    queue_command(refresh_history)                      # commit-pinned card image links
     queue_command(init_type_emojis, client)
 
     process_command_queue.start()
@@ -657,9 +659,9 @@ async def slash_sync_global(interaction: Interaction):
 
 
 sync_type_emojis = to_thread(sync_type_emojis)
-@tree.command(name="sync_emojis", description="Uploads the Types/ icons as the bot's emojis (admin only).")
+@tree.command(name="sync_emojis", description="Uploads missing and edited Types/ icons as the bot's emojis (admin only).")
 @app_commands.describe(
-    refresh="Re-upload every icon, e.g. after one was edited (default False).",
+    refresh="Re-upload every icon, even unchanged ones (default False).",
     prune="Delete bot emojis whose icon is no longer in Types/ (default False).",
 )
 async def slash_sync_emojis(interaction: Interaction,

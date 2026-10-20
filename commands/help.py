@@ -51,8 +51,8 @@ card_commands = {
                                                   "- String contains: type~creature, series~kirby (case-insensitive)\n"
                                                   "- Combine conditions: '\"damage\" & type==creature & hp>7'\n"
                                                   "- Fuzzy matching works for non-exact text queries",
-    "/sync_emojis [refresh] [prune]:"           : "Uploads every icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only).\n"
-                                                  "- refresh: Re-upload every icon, e.g. after one was edited\n"
+    "/sync_emojis [refresh] [prune]:"           : "Uploads every missing or edited icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only). /update_stats does this too when the card repo changed.\n"
+                                                  "- refresh: Re-upload every icon, even unchanged ones\n"
                                                   "- prune: Delete bot emojis whose icon is no longer in Types/",
     "/set_ratio [value]:"                       : "View or set the fuzzy match tolerance (0.0-1.0). "
                                                   "No argument shows current ratio. Higher = stricter matching.",
@@ -68,7 +68,7 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed.\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and re-uploads edited type emojis.\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
                                                                "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
                                                                "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",

@@ -100,11 +100,11 @@ Notes verified from `setup.py` (2026-07-11):
 - The build ALSO runs the artifact cleanup first (`clean_artifacts()` is called at the
   top of `__main__`, setup.py:138), so every build is a from-clean rebuild. Side
   effect: both commands delete ALL `*.html` files anywhere under the repo (rglob).
-- Compiled modules (`INCLUDE_FILES`, setup.py:21-29) — 7 of the 10 `commands/` modules
+- Compiled modules (`INCLUDE_FILES`, setup.py:21-29) — 7 of the 11 `commands/` modules
   (2026-10-20): analytics, frankenstein, help, psd_analyzer, query_card, management,
   music_player.
-- **Not compiled because it is in neither list:** `commands/type_emojis.py` (added 2026-10-19).
-  New modules are uncompiled by default; that one was deliberately left out. Note that compiled
+- **Not compiled because they are in neither list:** `commands/type_emojis.py` (added 2026-10-19) and
+  `commands/repo_history.py` (2026-10-20). New modules are uncompiled by default; both were deliberately left out. Note that compiled
   `query_card` imports it at module level, which is fine (compiled code can import plain modules).
 - Never compiled (`EXCLUDE_FILES`, setup.py:9-18), with the reasons stated in the
   file's comments: `main.py` (entry point — keep as Python), `commands/update_bot.py`
@@ -269,7 +269,7 @@ Line numbers drift; re-verify volatile facts with:
 | type_emojis.py uncompiled | `grep -c type_emojis setup.py` (0) |
 | davey optional (try/except in discord.py) | `grep -rn -A2 "import davey" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/gateway.py` |
 | Exclude list + reasons | `grep -n "EXCLUDE_FILES" -A12 setup.py` |
-| Include list (7 files of 10 command modules) | `grep -n "INCLUDE_FILES = " -A10 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (10) |
+| Include list (7 files of 11 command modules) | `grep -n "INCLUDE_FILES = " -A10 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (11) |
 | Compiler directives | `grep -n "COMPILER_DIRECTIVES" -A14 setup.py` |
 | No compiled artifacts in tree | `find . -name "*.so" -not -path "./.git/*"` |
 | Negative-index idiom commit | `git show dd800bc \| grep -E "^[-+].*bboxes"` |

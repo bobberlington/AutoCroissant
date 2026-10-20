@@ -338,11 +338,12 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.pkl`, `old_stats.pkl`, `aliases.pkl` | /update_stats, /alias, metadata commands | repo root | YES — the database, synced via /push |
 | `reminder.pkl` | /set_reminder | repo root | NO (gitignored) — per-machine |
 | `reminder.pkl.tmp` | every reminder save (written, fsynced, then renamed over reminder.pkl) | repo root, normally gone within milliseconds | NO (gitignored since 2026-10-19, `.gitignore:41`). If a hard kill leaves one behind, delete it |
+| `repo_history.json` | startup and every /update_stats that fetched a changed tree (commands/repo_history.py) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:53,237,247) | NO (`music/` gitignored) |
 | /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, psd_analyzer.py:1429-1440); deleted after each parse (psd_analyzer.py:1668; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
-| Type emojis | /sync_emojis, startup sync | Discord-side application emojis owned by the logged-in bot identity (no local file) | n/a |
+| Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 
 ## 9. Reminders operations
@@ -382,7 +383,7 @@ Copy-paste examples:
 /set_reminder when:tomorrow 9AM msg:Game night tonight!
 ```
 
-The first is stored as `/update_stats`. The second is the weekly emoji sync
+The first is stored as `/update_stats`. The second is a weekly full emoji sync, now just an example: /update_stats keeps emojis current
 (section 11).
 
 ### Whose permissions a reminder uses
@@ -455,15 +456,22 @@ text instead of a code block, because code blocks don't render emojis.
 - **They belong to the logged-in bot identity.** On the dev Mac that is "Waxwell" (2026-10-19); the
   production AutoCroissant identity has its own set, uploaded on its own first startup. Same token on two
   machines = same emojis.
-- **Startup**: `init_type_emojis` uploads only the MISSING ones (none deleted, none re-uploaded) and loads
-  the token map. Terminal line: "Type emojis: 126 icons and crossed-out variants in <repo>, N uploaded, 126
+- **Startup**: `init_type_emojis` uploads only the MISSING ones (none deleted, none re-uploaded), records existing
+  emojis that `type_emojis.json` lacks as current, and loads the token map. Terminal line: "Type emojis: 126 icons and crossed-out variants in <repo>, N uploaded, 126
   ready." Until it finishes, or if it fails ("Emoji sync failed: ..."), tokens stay as plain text.
-- **/sync_emojis `[refresh]` `[prune]`** (admin only, main.py:660-672): same sync, reported in the channel.
-  `refresh:True` deletes and re-uploads every icon (use it after editing a PNG; a plain sync never notices an
-  edited image). `prune:True` deletes bot emojis whose icon is no longer in the repo; without it they are only
-  listed ("No longer in Types/ (kept, use prune:True to delete)").
-- **Weekly upkeep**: `/set_reminder when:sun 3AM frequency:1w command:/sync_emojis` picks up NEW icons. Add
-  `refresh:True` only if edited icons should be refreshed every week (it re-uploads all 126).
+- **/update_stats keeps them current** (2026-10-20): after a changed tree (never on "Nothing changed"),
+  `sync_changed_emojis` compares each icon's blob sha with `type_emojis.json` (emoji name -> blob it was made
+  from, gitignored) and replaces only emojis whose icon is new or edited (with its `_no` copy), deletes the
+  ones whose icon is gone, and says one line: "Type emojis: 2 updated, 1 removed" (silent when nothing
+  changed; no Discord call then). Icons download by blob sha (git/blobs API, one request per
+  changed icon, so a full `refresh:True` wants GIT_TOKEN), not raw main. Without the
+  JSON (first start after deploy, or deleted) startup adopts the existing emojis, so nothing is re-uploaded;
+  an icon edited meanwhile needs `/sync_emojis refresh:True`. On any failure the tree ETag is dropped and the
+  line ends "(next /update_stats retries)".
+- **/sync_emojis `[refresh]` `[prune]`** (admin only): the manual full sync, reported in the channel. Uploads
+  missing icons and icons edited since their emoji was made; `refresh:True` re-uploads every icon.
+  `prune:True` deletes bot emojis whose icon is no longer in the repo; without it they are only listed ("No
+  longer in Types/ (kept, use prune:True to delete)"). It retries failed uploads (not deletes) right away.
 - **Rendering rules** (`render_type_tokens`): a known token becomes its emoji; `[fire:no]` becomes the
   `fire_no` emoji, or 🚫 followed by the fire emoji if `fire_no` doesn't exist; unknown brackets such as `[X]`
   or `[Status]` stay as text.

@@ -128,7 +128,7 @@ three card pickles and never reminder.pkl.
 
 Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-20 (53db8ee
 added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`/`*.dll` patterns;
-05c643e dropped the `models/` lines with the AI code):
+05c643e dropped the `models/` lines with the AI code; repo_history.json and type_emojis.json lines added 2026-10-20 shifted the rest by 6):
 
 | Path | .gitignore line | Why |
 |---|---|---|
@@ -136,9 +136,11 @@ added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`
 | `.ssh/` | 37 | Credentials, same reasoning |
 | `reminder.pkl` | 39 | Volatile per-host scheduling state (see above) |
 | `reminder.pkl.tmp` | 41 (added 2026-10-19) | Transient file from the atomic reminder save (2026-10-19 rewrite). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
-| `.claude/settings.local.json` | 48 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
-| `music/` | 44 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
-| `*.log`, `logs/`, `*.csv`, `*.txt` | 63-66 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
+| `repo_history.json`, `.tmp` | 43-44 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
+| `type_emojis.json`, `.tmp` | 46-47 (added 2026-10-20) | Per-machine map of type emoji name -> icon blob it was made from (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
+| `.claude/settings.local.json` | 54 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
+| `music/` | 50 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
+| `*.log`, `logs/`, `*.csv`, `*.txt` | 69-72 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
 | `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 7, 14-15, 19-22, 28 | Cython build artifacts; see autocroissant-build-and-env for the stale-.so trap |
 
 **Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` is
@@ -246,7 +248,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
   first *invoked*, not at startup — so it survives a smoke test and dies in
   production. Keep rebind-then-decorator, one block per command.
 - **Adding a new `.txt`/`.csv`/`.log` file and assuming git tracks it.** The
-  gitignore globs (lines 63-66 as of 2026-10-20) silently exclude it (see the trap note above).
+  gitignore globs (lines 69-72 as of 2026-10-20) silently exclude it (see the trap note above).
 - **Adding torch/diffusers or other AI deps to `requirements.txt`.** That breaks
   non-negotiable #4 (AI lives only on `archive/ai-generation`).
 - **Hand-committing pickles from a dev machine**, or `git add -A` after a run that

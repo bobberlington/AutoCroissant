@@ -150,8 +150,8 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 5. In TTSCardMaker, commit the PNG(s), `stoogedings.ttf` and `stoogedings.json` together (the script's docstring
    says to). After that, the bot side needs no code change. The parser reads the manifest from GitHub on each
    `/update_stats` (`_icons_from_response` via `_repo_text`, re-downloaded only when its blob changes; the offline
-   diagnostics scripts read the clone's copy with `_icons_from_local`). Run `/sync_emojis` so new icons get emojis
-   (the bot also uploads missing ones at startup).
+   diagnostics scripts read the clone's copy with `_icons_from_local`). The next `/update_stats` uploads emojis for new icons
+   (so do startup and `/sync_emojis`).
 
 ### 1.5 How it is built, and the renderer facts behind the design
 
@@ -203,15 +203,15 @@ own set. Live Discord upload is untested as of 2026-10-19.
 
 | Change in TTSCardMaker | Font | Bot parser | Bot emojis | Website |
 |---|---|---|---|---|
-| **Add** a PNG | New codepoint after rebuild | Picked up automatically (Types/ listing + manifest) | Uploaded at next startup or `/sync_emojis` | Picked up on next build |
-| **Rename** a PNG (e.g. `fire.png` → `flame.png`) | New key and new codepoint. The old key stays, with its glyph skipped. Existing PSDs typed `[fire]` **show letters** | Old `[fire]` tokens become `UNKNOWN ICON TOKEN` (since 2026-10-20 `IconVocabulary.build` ignores manifest entries whose PNG is gone), matching the letters the card now shows. `card.types` names change for image-layer icons | Old `fire`/`fire_no` emojis stay until `/sync_emojis prune:True`. Stored `[fire]` tokens keep rendering with the old emoji | `[fire]` in ability text loses its icon (icons are built from the tree, not the manifest) |
-| **Delete** a PNG | Glyph skipped, codepoint reserved | Its tokens are flagged `UNKNOWN ICON TOKEN` | Stale emoji until pruned | Icon gone |
+| **Add** a PNG | New codepoint after rebuild | Picked up automatically (Types/ listing + manifest) | Uploaded by the next `/update_stats`, startup or `/sync_emojis` | Picked up on next build |
+| **Rename** a PNG (e.g. `fire.png` → `flame.png`) | New key and new codepoint. The old key stays, with its glyph skipped. Existing PSDs typed `[fire]` **show letters** | Old `[fire]` tokens become `UNKNOWN ICON TOKEN` (since 2026-10-20 `IconVocabulary.build` ignores manifest entries whose PNG is gone), matching the letters the card now shows. `card.types` names change for image-layer icons | Old `fire`/`fire_no` emojis are deleted by the next `/update_stats` (older ones not in `type_emojis.json` need `/sync_emojis prune:True`). Until then stored `[fire]` tokens keep rendering with the old emoji | `[fire]` in ability text loses its icon (icons are built from the tree, not the manifest) |
+| **Delete** a PNG | Glyph skipped, codepoint reserved | Its tokens are flagged `UNKNOWN ICON TOKEN` | Deleted by the next `/update_stats` | Icon gone |
 | Add an **alias** (edit the JSON, rebuild) | New spellings | Accepted at next `/update_stats` | n/a (works on canonical names) | Search/render accept it |
 | Add a **timing tag** | Edit `badge_tags` | Nothing: text stays `(TAG)` | n/a | Edit `text.js` `tagInfo` and `style.css` |
 
 Rule: **never rename or delete an icon PNG to "fix" a name. Add an alias instead.** If you must rename, the change
 spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old token or layer name) and the bot
-(`/sync_emojis prune:True`, then `/update_stats`). Class (d) gates apply: autocroissant-change-control.
+(`/update_stats`, which also deletes the old emojis). Class (d) gates apply: autocroissant-change-control.
 
 ## 2. The card-browser website
 
