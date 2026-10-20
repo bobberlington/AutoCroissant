@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from difflib import get_close_matches, SequenceMatcher
-from discord import Interaction
+from discord import Embed, Interaction
 from os.path import basename, splitext
 from pickle import load, dump
 from requests import get
@@ -11,7 +11,7 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 import config
-from global_config import ALIAS_PKL, STATS_PKL
+from global_config import ALIAS_PKL, SITE_URL, STATS_PKL
 from commands.type_emojis import render_type_tokens
 from commands.utils import queue_message, split_long_message
 
@@ -35,6 +35,7 @@ class CardRepository:
     def __post_init__(self):
         self.git_file_alias: dict[str, str] = {}
         self.git_files: dict[str, str] = {}
+        self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
@@ -76,6 +77,7 @@ class CardRepository:
         # Add aliases to registry
         self._populate_aliases()
         self._populate_edit_names()
+        self._populate_site_ids()
 
         return response.status_code
 
@@ -332,6 +334,23 @@ class CardRepository:
                 for name in extra:
                     self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", path)
 
+    def _populate_site_ids(self) -> None:
+        """Website card ids, for "Card page" links."""
+        try:
+            reply = get(f"{SITE_URL}/data/cards.json", timeout=30)
+            reply.raise_for_status()
+            cards = reply.json().get("cards", [])
+        except Exception as e:
+            print(f"Could not read the website's cards: {e}")
+            return
+        self.site_ids = {basename(c["png"]).lower(): (c["id"], c.get("color") or "") for c in cards if c.get("png")}
+
+    def site_url(self, filename: str) -> Optional[str]:
+        """The card's page on the website, for a registry file name (aliases included)."""
+        path = self.git_files.get(filename.lower())
+        found = self.site_ids.get(basename(path).lower()) if path else None
+        return f"{SITE_URL}/c/{found[0]}/" if found else None
+
     def prep_dataframes(self) -> None:
         """Load card statistics from pickle file."""
         from commands.psd_analyzer import get_stats_as_dict
@@ -341,6 +360,8 @@ class CardRepository:
         if not cards_df.empty:
             if "hidden" in cards_df:                    # hidden on the website
                 cards_df = cards_df[cards_df["hidden"] != True]
+            if "duplicate_of" in cards_df:              # same card as its original
+                cards_df = cards_df[cards_df["duplicate_of"].isna()]
 
             # Separate cards and rulebook entries
             has_ability = cards_df["ability"].notna()
@@ -412,6 +433,13 @@ class CardRepository:
 # ========================
 # Discord Command Functions
 # ========================
+def _stats_card(filename: str):
+    """The stats entry for a registry file name (aliases resolve to their PNG)."""
+    from commands.psd_analyzer import stats_db
+    path = card_repo.git_files.get(filename.lower())
+    return stats_db.stats.get(splitext(basename(path))[0].replace("_", " ")) if path else None
+
+
 def query_name(interaction: Interaction, query: str) -> None:
     """
     Query and display a card by name.
@@ -426,7 +454,20 @@ def query_name(interaction: Interaction, query: str) -> None:
         queue_message(interaction, "No card found!")
         return
 
-    queue_message(interaction, card_repo.get_card_url(closest))
+    url, page = card_repo.get_card_url(closest), card_repo.site_url(closest)
+    links = [("Card page", page)] if page else None
+    card = _stats_card(closest)
+    shown = getattr(card, "display_name", None) if card else None
+    extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
+             getattr(card, "note", None) or "" if card else ""]
+    if card and (shown or any(extra)):                  # website name, note or duplicate: an embed says so
+        found = card_repo.site_ids.get(basename(card_repo.git_files.get(closest, "")).lower())
+        embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
+                      color=int(found[1][1:], 16) if found and found[1] else None)
+        embed.set_image(url=url)
+        queue_message(interaction, None, embed=embed, links=links)
+    else:
+        queue_message(interaction, url, links=links)
 
     # Notify if name is ambiguous
     if closest in card_repo.ambiguous_names:
@@ -473,7 +514,8 @@ def query_ability(interaction: Interaction,
         # Index is the full path without .png extension
         queue_message(interaction, card_repo.get_card_url(basename(index)))
 
-    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.")
+    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.",
+                  links=[("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")])
 
 
 def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
@@ -529,8 +571,8 @@ def query_rulebook(interaction: Interaction,
         for chunk in split_long_message(render_type_tokens(ability, escape=True)):
             queue_message(interaction, f"**{name}**\n{chunk}")
 
-    if results_to_show < total_results:
-        queue_message(interaction, f"Displayed {results_to_show} of {total_results} results. Use limit parameter to see more.")
+    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results." if results_to_show < total_results else "Done.",
+                  links=[("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(search_text.strip())}")])
 
 
 def print_all_aliases() -> list[str]:

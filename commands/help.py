@@ -33,7 +33,9 @@ text_commands = {
 }
 
 card_commands = {
-    "/query <query>:"                           : "Posts the requested card image from the repo by name. Uses fuzzy matching.",
+    "/query <query>:"                           : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
+                                                  "The Card page button opens it on the website; website names and notes show too.",
+    "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
                                                    "- howmany: If True, only returns the count instead of images\n",

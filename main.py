@@ -1,6 +1,8 @@
 from asyncio import create_task
 from sys import exit
-from discord import Attachment, Client, Intents, Interaction, Member, app_commands
+from discord import Attachment, ButtonStyle, Client, Intents, Interaction, Member, app_commands
+from discord.ui import Button, View
+from global_config import SITE_URL
 from discord.app_commands import Choice, CommandTree
 from discord.errors import HTTPException
 from discord.ext import tasks
@@ -265,6 +267,12 @@ query_name = to_thread(query_name)
 async def slash_query_name(interaction: Interaction,
                            query: str):
     await query_name(interaction, query)
+
+
+@tree.command(name="website", description="Link to the card browser website.")
+async def slash_website(interaction: Interaction):
+    await interaction.response.send_message(f"**Card browser:** {SITE_URL}/\nEvery card, the rulebook, a deck builder and stats. "
+                                            "Editors fix card data there; the bot picks it up on /update_stats.")
 
 
 query_ability_num_occur = to_thread(query_ability_num_occur)
@@ -849,6 +857,12 @@ async def process_command_queue():
 async def process_dispatch_queue():
     while dispatch_queue:
         interaction, send_kwargs = dispatch_queue.popleft()
+        links = send_kwargs.pop("links", None)          # [(label, url)] -> link buttons (a View needs the event loop)
+        if links:
+            view = View()
+            for label, url in links:
+                view.add_item(Button(label=label, url=url, style=ButtonStyle.link))
+            send_kwargs["view"] = view
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(**send_kwargs)

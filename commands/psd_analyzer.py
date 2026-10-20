@@ -11,7 +11,8 @@ from os import listdir, remove, walk
 from os.path import basename, isdir, isfile, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
-from re import compile as re_compile, sub
+from copy import deepcopy
+from re import IGNORECASE, compile as re_compile, match as re_match, sub
 from requests import get
 from requests.exceptions import RequestException
 from typing import Optional, Any
@@ -50,6 +51,7 @@ ICON_FONT_PREFIX = "stoogedings"                                  # PostScript n
 ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json" # aliases + codepoints, written by the font build
 AUTHORS_PATH = "MDW/Card Authors.txt"                             # who made each card; wins over the database
 EDITS_PATH = "MDW/Card Edits.json"                                # website fixes; win over the PSD
+TITLE_REGION_RATIO = 0.12                                         # hidden text above this = a duplicate's title
 ICON_VARIANTS = ("", "tint", "sticker", "no")
 ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
@@ -81,11 +83,21 @@ DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every
 
 
 @dataclass
+class BarRow:
+    """One bar row: its visible digit layers and where it sits."""
+    group: int                                   # id of the row's parent (the stat block)
+    name: str                                    # row group name: "1", "Light", "Hp Dark"
+    block: str = ""                              # stat block name: "hp", "def dark"
+    outer: int = 0                               # id of the group around the block
+    items: list = field(default_factory=list)    # visible (digit, layer kind)
+
+
+@dataclass
 class StatTracker:
     """Tracks whether a stat was found and its visible digit layers, per bar row (the layers' parent group)."""
     found: bool = False
     value: Optional[int] = None
-    rows: dict = field(default_factory=dict)     # id(row group) -> (id(the row group's parent), [(digit, layer kind)])
+    rows: dict = field(default_factory=dict)     # id(row group) -> BarRow
 
     @staticmethod
     def _row_value(items: list) -> tuple[int, bool]:
@@ -107,23 +119,42 @@ class StatTracker:
             return (lit if lit else max(0, 10 - len(items))), True
         return sum(digits), False
 
-    def total(self) -> Optional[int]:
+    def total(self, rows: Optional[list] = None) -> Optional[int]:
         """
-        The stat's value: the rows add up (Sonic's speed is two rows, 20; multi-creature cards add their creatures).
-        Rows of cells drawn twice in one group (Tainted Lazarus's "Light" and "Hp Dark" hearts) count once.
+        The stat's value: rows add up (Royal Eradicator Main Cannon's attack is 10 + 2). Rows of cells drawn twice
+        in one block (Tainted Lazarus's "Light" and "Hp Dark" hearts) count once. Empty rows are skipped.
         """
-        if not self.rows:
-            return None
         groups: dict = {}
-        for group, items in self.rows.values():
-            groups.setdefault(group, []).append(self._row_value(items))
+        for row in self.rows.values() if rows is None else rows:
+            if row.items:
+                groups.setdefault(row.group, []).append(self._row_value(row.items))
+        if not groups:
+            return None
         value = 0
-        for rows in groups.values():
-            if len(rows) > 1 and all(per_cell for _, per_cell in rows):
-                value += max(row_value for row_value, _ in rows)
+        for found in groups.values():
+            if len(found) > 1 and all(per_cell for _, per_cell in found):
+                value += max(row_value for row_value, _ in found)
             else:
-                value += sum(row_value for row_value, _ in rows)
+                value += sum(row_value for row_value, _ in found)
         return value
+
+    def by_creature(self) -> dict:
+        """Rows per creature (0 = shared): rows named "1", "2", ... (Pix), or a stat block repeated (Tainted Lazarus)."""
+        outers: dict = {}
+        for row in self.rows.values():
+            if row.items and row.outer not in outers.setdefault(row.block.lower(), []):
+                outers[row.block.lower()].append(row.outer)
+        repeated = any(len(o) > 1 for o in outers.values())
+        out: dict = {}
+        for row in self.rows.values():
+            if row.name.strip().isdigit():
+                index = int(row.name)
+            elif repeated and row.outer in outers.get(row.block.lower(), []):
+                index = outers[row.block.lower()].index(row.outer) + 1
+            else:
+                index = 0
+            out.setdefault(index, []).append(row)
+        return out
 
 
 @dataclass
@@ -133,6 +164,34 @@ class StatTrackers:
     defense: StatTracker = field(default_factory=StatTracker)
     attack: StatTracker = field(default_factory=StatTracker)
     speed: StatTracker = field(default_factory=StatTracker)
+
+    def creatures(self) -> Optional[list]:
+        """
+        Each creature's stats on a multi-creature card, else None. A stat only creature 1 has a value for is
+        shared (Pix's HP); an empty row next to filled ones is a full bar (10). Uncertain: check on the website.
+        """
+        split = {key: getattr(self, key).by_creature() for key in ("hp", "defense", "attack", "speed")}
+        filled = lambda rows: [r for r in rows if r.items]
+        many = sum(1 for s in split.values() if len([i for i, rows in s.items() if i and filled(rows)]) >= 2)
+        count = max((i for s in split.values() for i in s), default=0)
+        if count < 2 or many < 2:
+            return None
+        out = []
+        for i in range(1, count + 1):
+            values = {}
+            for key, s in split.items():
+                tracker = getattr(self, key)
+                others = [j for j, rows in s.items() if j > 1 and filled(rows)]
+                if filled(s.get(i, [])):
+                    values[key] = tracker.total(filled(s[i]))
+                elif filled(s.get(0, [])):
+                    values[key] = tracker.total(filled(s[0]))          # a shared row ("shared health")
+                elif filled(s.get(1, [])) and not others:
+                    values[key] = tracker.total(filled(s[1]))          # only creature 1 drawn: shared
+                else:
+                    values[key] = 10 if tracker.found else -1
+            out.append(CardStats(**values))
+        return out
 
 
 @dataclass
@@ -230,7 +289,7 @@ class CardEdits:
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
-             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool}
+             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list}
     NULLABLE = {"subtype", "series", "stars", "hp", "def", "atk", "spd"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "stars": "stars",
              "types": "types", "ability": "ability", "note": "note", "hidden": "hidden", "problems_ok": "problems_ok",
@@ -238,7 +297,8 @@ class CardEdits:
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
-                "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",)}
+                "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",),
+                "creatures": ("SEVERAL CREATURES",)}
 
     @classmethod
     def valid(cls, name: str, value) -> bool:
@@ -249,6 +309,10 @@ class CardEdits:
             return name in cls.NULLABLE
         if kind is int:
             return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        if name == "creatures":                 # [{"hp": 7, "def": 4, "atk": 5, "spd": 6}, ...]
+            return isinstance(value, list) and all(isinstance(c, dict) and all(
+                k in cls.STATS and (v is None or (isinstance(v, int) and not isinstance(v, bool) and v >= 0))
+                for k, v in c.items()) for c in value)
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
         return isinstance(value, kind)
@@ -265,6 +329,8 @@ class CardEdits:
         return edits
 
     def get(self, card: CardInfo, name: str):
+        if name == "creatures":
+            return [{k: (lambda v: v if v >= 0 else None)(getattr(c, a)) for k, a in self.STATS.items()} for c in card.creatures] if getattr(card, "creatures", None) else None
         if name in self.STATS:
             value = getattr(card.stats, self.STATS[name])
             return value if value >= 0 else None
@@ -274,7 +340,11 @@ class CardEdits:
         return list(value) if isinstance(value, list) else value
 
     def set(self, card: CardInfo, name: str, value) -> None:
-        if name in self.STATS:
+        if name == "creatures":
+            card.creatures = [CardStats(**{a: -1 if c.get(k) is None else c[k] for k, a in self.STATS.items()}) for c in value] if value else None
+            if card.creatures:
+                card.stats = deepcopy(card.creatures[0])
+        elif name in self.STATS:
             setattr(card.stats, self.STATS[name], -1 if value is None else value)
         elif name == "problems":
             card.problems = list(value or [])
@@ -286,7 +356,9 @@ class CardEdits:
         before = repr(card)
         for key, value in (getattr(card, "parsed_values", None) or {}).items():
             self.set(card, key, value)
-        fields = {k: v for k, v in self.cards.get(CardAuthors.key(name), {}).items() if k in self.ATTRS or k in self.STATS}
+        fields = {k: v for k, v in self.cards.get(CardAuthors.key(name), {}).items() if k in self.ATTRS or k in self.STATS or k == "creatures"}
+        if "creatures" in fields:                   # set first, so a single-stat edit can still change creature 1
+            fields = {"creatures": fields.pop("creatures"), **fields}
         saved = {key: self.get(card, key) for key in fields}
         if fields:
             saved["problems"] = list(card.problems)
@@ -386,6 +458,9 @@ class CardInfo:
     problems_ok: bool = False
     allow_high_stats: bool = False
     parsed_values: Optional[dict] = None      # PSD values of edited fields
+    creatures: Optional[list] = None          # CardStats per creature (multi-creature cards)
+    duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
+    alt_names: Optional[list] = None          # hidden title layers: names of the duplicates
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -416,9 +491,11 @@ class CardInfo:
 
         if self.problems:
             result["problem"] = self.problems
-        for key in ("display_name", "note", "hidden"):
+        for key in ("display_name", "note", "hidden", "duplicate_of"):
             if getattr(self, key, None):
                 result[key] = getattr(self, key)
+        if getattr(self, "creatures", None):
+            result["creatures"] = [c.to_dict() for c in self.creatures]
 
         return result
 
@@ -500,7 +577,7 @@ class StatsDatabase:
         """Move cards not in dirty_files to old_stats."""
         cards_to_remove = []
         for name, card in self.stats.items():
-            if name not in self.dirty_files:
+            if name not in self.dirty_files and not getattr(card, "duplicate_of", None):
                 self.old_stats[name].append(card)
                 cards_to_remove.append(name)
 
@@ -680,6 +757,9 @@ class PSDParser:
                 is_rulepage, get_stars_from_psd, card_mid_y)
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
+        titles = [" ".join((layer.text or "").split()) for layer in text_layers
+                  if not layer.is_visible() and layer.bbox[1] < psd.height * TITLE_REGION_RATIO]
+        card.alt_names = [t for t in titles if t and len(t) <= 40 and t.lower() != card.name.lower()] or None
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
@@ -951,10 +1031,12 @@ class PSDParser:
         for stat_key, tracker in stat_map.items():
             if any(stat_key in name for name in parent_names):
                 tracker.found = True
+                parent = layer.parent
+                block = getattr(parent, "parent", None)
+                row = tracker.rows.setdefault(id(parent), BarRow(id(block), parent.name, getattr(block, "name", "") or "",
+                                                                 id(getattr(block, "parent", None))))
                 if layer.is_visible():
-                    parent = layer.parent
-                    _, row = tracker.rows.setdefault(id(parent), (id(getattr(parent, "parent", None)), []))
-                    row.append((int(layer.name), layer.kind))
+                    row.items.append((int(layer.name), layer.kind))
                 break
 
     def _count_stars(self, psd: PSDImage) -> int:
@@ -1073,6 +1155,11 @@ class PSDParser:
             if tracker.found:
                 value = tracker.total()
                 setattr(card.stats, stat_attr, value if value is not None else 10)
+        creatures = stat_trackers.creatures()
+        if creatures:
+            card.creatures = creatures
+            card.stats = deepcopy(creatures[0])
+            card.problems.append("SEVERAL CREATURES: check each one's stats on the website")
 
     @staticmethod
     def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:
@@ -1264,6 +1351,7 @@ class RepositoryTraverser:
         self.parser: Optional[PSDParser] = None
         self._github_client: Optional[Github] = None
         self.edits: Optional[CardEdits] = None
+        self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
 
     def _check_for_path_change(self, name: str, new_path: str) -> bool:
         """
@@ -1355,8 +1443,10 @@ class RepositoryTraverser:
 
         self.edits = self._edits_from_response(resp, repository)
         problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic, force_update)
-        self._apply_authors(self._authors_from_response(resp, repository))
-        self._apply_edits()
+        self.changed += self._apply_authors(self._authors_from_response(resp, repository))
+        self.changed += self._apply_edits()
+        self.changed += self._sync_duplicates(resp)
+        self.changed += self._apply_edits()             # the duplicates' own edits
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -1437,6 +1527,49 @@ class RepositoryTraverser:
         except (RequestException, ValueError) as e:
             print(f"Could not read {EDITS_PATH}; edits stay as they are: {e}")
             return None
+
+    def _sync_duplicates(self, response) -> int:
+        """
+        Duplicates: <Name>N.png next to <Name>.psd with no PSD of its own (A_Snack2.png "Breakfast"). Each is
+        recorded as a copy of the original's card with duplicate_of set. Returns how many entries changed.
+        """
+        paths = [item.get("path", "") for item in response.json().get("tree", [])]
+        lower = {p.lower() for p in paths}
+        found = {}
+        for path in paths:
+            m = re_match(r"(.+?)(\d+)\.png$", path, IGNORECASE)
+            if (not m or any(folder in EXCLUDE_FOLDERS for folder in path.split("/")) or "Rulebook" in path
+                    or f"{m.group(1)}{m.group(2)}.psd".lower() in lower or f"{m.group(1)}.psd".lower() not in lower):
+                continue
+            original = basename(m.group(1)).replace("_", " ")
+            if original in self.db.stats and not self.db.stats[original].duplicate_of:
+                found[splitext(basename(path))[0].replace("_", " ")] = (original, int(m.group(2)), basename(path).lower())
+        before = {n: repr(c) for n, c in self.db.stats.items() if getattr(c, "duplicate_of", None)}
+        for name in before:
+            if name not in found:
+                del self.db.stats[name]
+        siblings: dict = {}
+        for name, (original, number, _) in found.items():
+            siblings.setdefault(original, []).append(number)
+        for name, (original, number, png) in found.items():
+            src = self.db.stats[original]
+            card = deepcopy(src)
+            card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
+            card.display_name = self._duplicate_name(png, src, number, sorted(siblings[original]))
+            self.db.stats[name] = card
+            self.db.dirty_files.append(name)            # not pruned as a missing PSD
+        return sum(1 for n in found if before.get(n) != repr(self.db.stats[n])) + sum(1 for n in before if n not in found)
+
+    @staticmethod
+    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list) -> str:
+        """The /alias pointing at this PNG, else the PSD's hidden title in order, else the original's name."""
+        aliases = [a for a, target in card_repo.git_file_alias.items() if target.lower() == png]
+        if aliases:
+            return " ".join(w[:1].upper() + w[1:] for w in max(aliases, key=len).replace("_", " ").split())
+        titles = getattr(original, "alt_names", None) or []
+        if len(titles) == len(numbers):
+            return titles[numbers.index(number)]
+        return original.display_name or original.name
 
     def _apply_edits(self) -> int:
         """Apply the website fixes to every card. Returns how many changed."""
@@ -1710,8 +1843,9 @@ def update_stats(interaction: Optional[Interaction] = None,
         output_problematic,
         force_update)
 
-    if (num_new > 0):
+    if num_new > 0:
         stats_db.prune_clean_cards()
+    if num_new > 0 or traverser.changed:
         stats_db.save()
 
     if verbose:

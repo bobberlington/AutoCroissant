@@ -223,9 +223,10 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
 - **Anything else** (value layers or groups, plus "0" decorations: Clots, False Knight): the visible
   digits add up.
 
-Rows add up, so stats can pass 10: Sonic's speed is two rows (20), Royal Eradicator Main Cannon's
-attack 10 + 2, and multi-creature cards (Pix, Twin Emperors, Tainted Lazarus's two sides) add their
-creatures. `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` lists the cards allowed past 10; any other
+Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
+cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
+`card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES" (a guess:
+Twin Emperors' 2nd DEF reads 4, the card shows 10). Fix them with the website's per-creature edit. `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` lists the cards allowed past 10; any other
 card over 10 gets the problem "STATS TOO HIGH". A digit-named group that holds digit layers is a row,
 not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin
 Emperors' empty "1" in "shared health"). If a stat was found but every digit layer is hidden, the

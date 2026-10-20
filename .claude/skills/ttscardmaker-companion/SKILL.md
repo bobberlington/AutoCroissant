@@ -345,6 +345,10 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 - **Card edits:** pushed card content changes images immediately, but text and stats only after the bot re-parses
   and pushes.
 - **Authors:** both sides read `MDW/Card Authors.txt` with the same rule, so authors agree whatever the bot recorded.
+- **Duplicates:** `/update_stats` records `<Name>N.png` (no PSD of its own) as a copy of `<Name>`'s card with
+  `duplicate_of`; name = edit > `/alias` > the PSD's hidden title (in order) > the original's. Search skips them.
+- **Bot ↔ site:** `/query` replies have a Card page button (ids from the site's cards.json) and show website
+  names/notes; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
 - **Website edits:** `MDW/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
   triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
   `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (psd_analyzer.py).
