@@ -356,7 +356,7 @@ class CardEdits:
         else:
             setattr(card, self.ATTRS[name], list(value) if isinstance(value, list) else value)
 
-    def apply(self, name: str, card: CardInfo) -> bool:
+    def apply(self, name: str, card: "CardInfo") -> bool:
         """Put back the PSD values, then apply this card's edits. Returns whether the card changed."""
         before = repr(card)
         for key, value in (getattr(card, "parsed_values", None) or {}).items():
