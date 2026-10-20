@@ -106,6 +106,12 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 `FileNotFoundError` it falls back to `execl(python, python, main.py ...)` — i.e. re-exec the same
 interpreter on main.py. The process is REPLACED, so silence after "Restarting bot!" is normal.
 
+**Production (the jetson, 2026-10-20):** systemd `autocroissant.service`; no startup.sh, so /restart_bot
+re-execs main.py. Deploy: `git pull --ff-only`, `python3.10 setup.py build_ext --inplace` (compiled .so
+load before .py; ~6 min), `sudo systemctl restart autocroissant`, check `journalctl -u autocroissant`.
+Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push from the box with
+`SSH_AUTH_SOCK=/run/autocroissant/ssh-agent.sock git push`. Memory: jetson-server.
+
 **startup.sh is a deploy-machine artifact, NOT in the repo** (verified absent 2026-07-11; the repo has
 no startup.sh and .gitignore would not exclude it — it simply was never committed). Operators may
 create one per machine, e.g. a build-then-run script (`python3 setup.py build_ext --inplace &&

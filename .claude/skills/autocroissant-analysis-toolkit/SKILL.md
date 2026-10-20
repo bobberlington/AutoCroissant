@@ -320,10 +320,10 @@ autocroissant-run-and-operate.)
 2. **Read the loop and tag every network call** (`commands/psd_analyzer.py`, verified 2026-07-11):
    - `traverse_remote` — one `get(...git/trees/main?recursive=1)` (line 820) + one
      `Github(...).get_repo(...)` (line 826): **2 requests fixed overhead**.
-   - `_process_files_from_response` — for EVERY non-excluded PSD, `_get_remote_timestamp` (line
-     929) calls `repo.get_commits(path=path)` (line 1066) **BEFORE** the should-update decision
-     (line 932). The update check cannot save you these requests: **813 requests minimum, every
-     sweep, even if nothing changed**. (New cards can cost an extra page: the original-author
+   - **Superseded 2026-10-20:** changed PSDs are now found by comparing tree blob shas with
+     `card.blob_sha` (no request per card); the tree is sent with If-None-Match (304 = nothing to
+     do). Historical note below: before that, `_process_files_from_response` called
+     `repo.get_commits(path=path)` for EVERY PSD: **813 requests minimum, every sweep**. (New cards can cost an extra page: the original-author
      lookup indexes the oldest commit, line 1072. Today 0 stored cards lack an author, so routine
      sweeps don't pay this.)
    - Per CHANGED card only: one `urlretrieve` of the PSD from raw.githubusercontent.com (line

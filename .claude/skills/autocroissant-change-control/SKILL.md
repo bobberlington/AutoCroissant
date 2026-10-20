@@ -48,9 +48,10 @@ step-by-step anatomy — every message each command prints, the failure table, t
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
 
-- **/push** → `git_push()` (update_bot.py:16-30): commits ONLY the three card pickles
-  (`aliases.pkl stats.pkl old_stats.pkl`), message literally `PICKLE`, then pushes —
-  nothing else, ever.
+- **/push** → `git_push()` (update_bot.py): commits ONLY the three card pickles
+  (`aliases.pkl stats.pkl old_stats.pkl`), message literally `PICKLE`, then
+  `pull --rebase --autostash` onto new code (since 2026-10-20) and pushes, including a leftover
+  unpushed PICKLE commit; "already up to date" only when nothing is ahead of origin.
 - **/pull** → `git_pull()` (update_bot.py:33-101): fetch + merge — NOT the "hard
   reset" its Discord description claims (stale text; fixing descriptions is
   autocroissant-docs-and-style territory). On merge **CONFLICT** it auto-resolves per

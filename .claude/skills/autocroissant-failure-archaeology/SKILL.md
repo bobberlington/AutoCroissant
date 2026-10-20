@@ -548,6 +548,22 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
   `analytics.parse_time_str` (a one-line public wrapper of `_parse_when`, written in the rewrite and uncalled) was
   left in place as a candidate.
 
+### 10.14 History rewritten to drop an attribution trailer (2026-10-20)
+
+- **Why**: 9280fea (a PICKLE commit made on the jetson) carried a `Co-Authored-By` line; the owner asked to remove it.
+- **What changed**: 9280fea, 2d5e85c, c2a9c2a were re-created as c7f2d19, 53db8ee, f2013eb (same trees, authors and
+  dates; 2d5e85c's message shortened) and force-pushed with a lease. The jetson was moved to c7f2d19 (same tree).
+  Anyone who pulled before: `git fetch && git reset --hard origin/main`.
+- **Prevention**: the jetson now has the Mac's global commit-msg hook (`~/.git-hooks`), which strips such lines.
+
+### 10.15 /update_stats: timestamp sweep replaced by blob shas (2026-10-20)
+
+- **Why**: every run asked GitHub for each PSD's commits (~1,600 requests, minutes) even when nothing changed, and
+  only saved when a PSD changed, so author/edit/duplicate changes were lost on quiet runs.
+- **What changed**: `card.blob_sha`; tree with If-None-Match (304 ends the run); PSDs by blob sha, 4 downloads
+  ahead; small files cached by sha; `cards:` option; save when anything changed. First run adopted shas with
+  31 requests. Measured: nothing changed = 1 request, 0.4 s.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):

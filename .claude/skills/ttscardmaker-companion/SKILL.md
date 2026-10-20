@@ -236,6 +236,8 @@ spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old 
 | Ban list | `MDW/Constructed Ban List.txt`, matched on letters and digits (`alnum`) incl. aliases | `parse_banlist` |
 | **Duplicates** | A numbered PNG with no PSD of its own next to a card's PSD (`A_Snack.psd` → `A_Snack2.png`, `A_Snack3.png`). The team's rule: duplicates always share the original's PSD. Each becomes its own card with the original's data, `dup` = original id (the original gets `dups`). Its name is the alias pointing at that PNG (longest, capitalised: "breakfast" → Breakfast), else the original's name. Its author is the original's. Duplicates don't count as mentioning cards and are left out of the Stats page. The other names are hidden title layers in the PSD (Breakfast, Supper; Grape Juice; Inconspicuous Watermelon), but which PNG gets which name is only recorded by `/alias` | `main`, `dupsOf` (app.js) |
 | Unused status effects | Debuffs/buffs that no card's text names get `_unused` (Unused flag, filter, and a list on the Stats page) | app.js `init` |
+| **Website admins** | `MDW/Website Admins.txt` (GitHub logins; the repo owner is always one). A personal repo gives collaborators only write, so admin is a site rule: ban list, hidden cards, people, this list | `parse_admins`; edit.js `isAdmin` |
+| **Creatures** | stats.pkl `creatures` (bot split) or the `creatures` edit → `entry.creatures` [{hp, def, atk, spd}]; card stats = creature 1 | `main`, `apply_edits` |
 | Unparsed cards | PSDs/PNGs under Creatures/, Items/, Field/, N.M.E/ and Auxiliary/ that aren't in stats.pkl: image only, classified by folder | `main`, `classify` |
 
 The pickles are loaded **without AutoCroissant code** (`_Unpickler` stubs every `commands.*` class). Renaming
@@ -321,7 +323,9 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | Stats: counts, **"Starting-hand choices"** (legal, unbanned cards per hand tier vs how many the hand needs; replaced the stacked star-level bars on 2026-10-20), averages heat table (OKLab ramp, text always ≥ 4.5:1: `heatScale`), distributions, outlier scatter, table views | `site/assets/stats.js` |
 | Theme, badge colors, version viewer layout | `site/assets/style.css` |
 | Data shape, images, versions, authors, OG pages, ban list, unparsed cards, cache-busting, `Card Edits.json` (`apply_edits`) | `site/build/build_site.py` |
-| **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits) | `site/assets/edit.js` |
+| **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
+| **Sharing**: address bar shows `c/<id>/` (cards) and `d/#/deck/…` (hands) via `syncUrl` (base pinned at load); Share dialog (s): link, Discord message with `[name](<url>)`, image to clipboard, embed preview | `site/assets/app.js` |
+| **Link previews**: per-card `c/<id>/index.html` with og tags, `og:image` = 480 px JPEG `thumbs/<blob16>-og.jpg` (from the 720 webp), `theme-color` = card accent color; `og.jpg` banner; `d/` page | `site/build/build_site.py` (`og_tags`, `share_text`, `accent_color`, `site_banner`) |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
 - **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
