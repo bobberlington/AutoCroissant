@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 of 50 registered commands missing from help.py as of 2026-10-20), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (16 skills on main, including ttscardmaker-companion for the TTSCardMaker side; the AI skill is on branch archive/ai-generation).
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 of 51 registered commands missing from help.py as of 2026-10-20), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (16 skills on main, including ttscardmaker-companion for the TTSCardMaker side; the AI skill is on branch archive/ai-generation).
 ---
 
 # AutoCroissant docs and style
@@ -46,10 +46,10 @@ router function, and `__all__`. Note help.py is itself a cythonized module
 | `general_commands` | 6 | 11 | `general` (also the fallback) |
 | `text_commands` | 22 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
 | `card_commands` | 35 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 70 | 6 | `stats` |
+| `stats_commands` | 70 | 7 (`/update_tts_save` added 2026-10-20) | `stats` |
 | `music_commands` | 90 | 17 | `music` |
 
-Total: 47 keys, 46 real commands documented. The `"Query Syntax:"` key
+Total: 48 keys, 47 real commands documented. The `"Query Syntax:"` key
 (help.py:44) is a sanctioned pseudo-entry — a non-command key used to document
 the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
 colon like real keys so they render uniformly.
@@ -114,7 +114,7 @@ add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 
 ### 3.1 Coverage drift: 4 registered commands have no help.py entry
 
-main.py registers **50** commands; help.py documents **46** (2026-10-20). Missing — the
+main.py registers **51** commands; help.py documents **47** (2026-10-20, after `/update_tts_save`). Missing — the
 same four as on 2026-07-11:
 
 | Command | Registered at | Belongs in |
@@ -163,7 +163,7 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 ## 4. Command description conventions (main.py describe strings)
 
-Derived from the live registrations (50 on 2026-10-20); follow these when writing new ones.
+Derived from the live registrations (51 on 2026-10-20); follow these when writing new ones.
 Re-find line numbers by quoting the example text. The cleanest recent end-to-end example is
 `/sync_emojis` (main.py:660-672 + its help.py entry): admin marker in both surfaces, defaults
 stated in every describe string.
@@ -474,9 +474,9 @@ grep -n -A1 'help_wanted == "stats"' commands/help.py        # 122-123 → stats
 # Slash choices for /help include stats (Choice noise is exactly why extraction is anchored)
 grep -n 'Choice(name="stats"' main.py                        # 135
 
-# Registered-vs-documented drift audit (expect 50 vs 46; 4 missing as listed in §3.1)
-grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 50
-grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 46
+# Registered-vs-documented drift audit (expect 51 vs 47; 4 missing as listed in §3.1)
+grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 51
+grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 47
 # full diff procedure: §3.1 comm commands
 
 # D1 /pull drift: docs claim hard reset; git_pull has none
@@ -519,5 +519,5 @@ ls .claude/skills/ | wc -l                                    # 16
 
 Maintenance rules for this file: when a §3 drift instance is fixed, delete its
 row and re-run the audit; when a command is added, re-run the §3.1 diff and
-update the counts (50/46) and dict-entry table; when a 17th skill appears, add
+update the counts (51/47) and dict-entry table; when a 17th skill appears, add
 its ownership row in §7.3. Refresh the date stamps whenever you touch this file.

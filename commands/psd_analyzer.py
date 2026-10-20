@@ -24,6 +24,7 @@ import config
 from global_config import STATS_PKL, OLD_STATS_PKL
 from commands.query_card import card_repo
 from commands.repo_history import refresh as refresh_history
+from commands.tts_save import save_affected, update_after_stats
 from commands.type_emojis import sync_changed_emojis
 from commands.utils import queue_message, queue_file, queue_edit, queue_command, split_long_message
 
@@ -1887,6 +1888,8 @@ def update_stats(interaction: Optional[Interaction] = None,
 
     if traverser.tree is not None:                  # tree changed (not 304): refresh edited type emojis
         queue_command(sync_changed_emojis, interaction, traverser.repository, traverser.shas, _forget_tree)
+        if save_affected(traverser.repository, traverser.shas):
+            queue_command(update_after_stats, interaction, traverser.repository, _forget_tree)
 
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree)

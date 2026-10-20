@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "weekly emoji sync", "sync emojis" / "/sync_emojis" / "type emojis not showing", or "where do files go" (exports, music downloads, temp files). Contains: the exact start command and what healthy startup output looks like line by line; on_ready init order; stopping/restarting (/stop_bot, /restart_bot, Ctrl-C, startup.sh, the jetson's systemd service); the per-guild command-sync model and /sync_global; the full anatomy of the git self-update flow (/push with its rebase onto origin, /pull, /update, PICKLE commits, auto-merge that keeps local pickles and takes remote code, force_reset danger, every failure message and what it means) — this is the ANATOMY home; live triage of a broken update belongs to autocroissant-debugging-playbook; the multi-machine handoff runbook (pickles are the ONLY synced state); operating /update_stats (OPERATING RULE as of 2026-10-20 - just run /update_stats: it reads GitHub and re-parses only PSDs whose blob changed; local mode is archived on a branch; a pickle push also refreshes the TTSCardMaker website); artifact-location conventions; reminder operations (the 2026-10-19 rewrite: when formats like "sun 3AM", compound frequencies, name:value commands, reminders run as their creator, who may remove them); type-emoji operations (/sync_emojis, startup sync, per-bot-identity emojis); and a guild-admin command quick table.
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "weekly emoji sync", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", or "where do files go" (exports, music downloads, temp files). Contains: the exact start command and what healthy startup output looks like line by line; on_ready init order; stopping/restarting (/stop_bot, /restart_bot, Ctrl-C, startup.sh, the jetson's systemd service); the per-guild command-sync model and /sync_global; the full anatomy of the git self-update flow (/push with its rebase onto origin, /pull, /update, PICKLE commits, auto-merge that keeps local pickles and takes remote code, force_reset danger, every failure message and what it means) — this is the ANATOMY home; live triage of a broken update belongs to autocroissant-debugging-playbook; the multi-machine handoff runbook (pickles are the ONLY synced state); operating /update_stats (OPERATING RULE as of 2026-10-20 - just run /update_stats: it reads GitHub and re-parses only PSDs whose blob changed; local mode is archived on a branch; a pickle push also refreshes the TTSCardMaker website); artifact-location conventions; reminder operations (the 2026-10-19 rewrite: when formats like "sun 3AM", compound frequencies, name:value commands, reminders run as their creator, who may remove them); type-emoji operations (/sync_emojis, startup sync, per-bot-identity emojis); the TTS save updater (/update_tts_save, the automatic run after /update_stats, the players' download link); and a guild-admin command quick table.
 ---
 
 # AutoCroissant: Run and Operate
@@ -46,7 +46,7 @@ python3 main.py
 Git token found, API limited to 5000 requests/hour.    <- import time: StatsDatabase() (psd_analyzer.py:542-545)
 Git token found, API limited to 5000 requests/hour.    <- import time: CardRepository() (query_card.py:48-51); "No git token in config..." if GIT_TOKEN unset
 We have logged in as AutoCroissant#....                <- on_ready (main.py:102)
-Registered 50 slash commands for reminder system.      <- slash_registry populated (main.py:104-106); 50 as of 2026-10-20
+Registered 51 slash commands for reminder system.      <- slash_registry populated (main.py:104-106); 51 as of 2026-10-20
 Bot initialization complete                            <- loops started (main.py:116-119)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:96)
 Trying to open reminder.pkl.                           <- init_reminder
@@ -329,6 +329,38 @@ right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedin
 files through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
 
+### TTS save (/update_tts_save, added 2026-10-20)
+
+The Tabletop Simulator save lives in the card repo at `TTS/Impossibility Simulator.json` (`TTS_SAVE_PATH`).
+commands/tts_save.py downloads main's copy by blob sha into a temp dir, updates it (image links pinned to commit
+shas, renames followed, missing cards added to complete decks, Nicknames set to the website's names, role tags
+cleared, the Lua resizeTargets table regenerated) and, when anything changed, commits it to main through the
+GitHub git data API with `GIT_TOKEN` (message like "TTS save: 812 links pinned, 3 cards added"). If main moved
+meanwhile, it redoes the update on the new save (3 tries). It never writes a checkout; the temp dir is deleted.
+
+- **When it runs:** `/update_tts_save` (admin only) on demand; and automatically after a `/update_stats` that
+  fetched a changed tree (never on "Nothing changed") when an image blob (.png/.jpg/.jpeg, any case),
+  `TTS/decks.json`, `MDW/Card Edits.json` or the save itself differs from the previous tree, or a run is owed
+  (the previous automatic run failed, or none ran since startup: the first changed-tree /update_stats after a
+  restart always runs it). One run at a time. `/update_stats` is not admin-gated, so any user's
+  /update_stats can lead to a bot commit of the save.
+- **Inputs:** the rules, the save and `MDW/Card Edits.json` come from main; names from the website (when it is
+  unreachable, Nicknames are left as they are); never from a local checkout. The history clone (and its links map) must
+  be at main's head, else the run is retried 10 s later, then fails after 3 tries (also when nothing would
+  change) and the next /update_stats retries.
+- **Where the report goes:** the invoking channel (for the automatic run, the /update_stats interaction, also
+  when a reminder ran it): a short summary (header lines and section titles with counts), the full markdown
+  report as `tts_save_report.md`, then the download link. The automatic run posts only when it committed or failed
+  ("TTS save update failed: ... (next /update_stats retries)"); `/update_tts_save` always posts.
+- **Players' download link:** `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<commit>/TTS/Impossibility%20Simulator.json`
+  (the commit just made; with no change, the `main` link). The 5.5 MB save is never attached in Discord.
+- **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
+  `partial` for hand-picked decks). The bot reads main's copy. Edit it in TTSCardMaker and push; the next
+  /update_stats picks it up. A rule that matches no PNG leaves its deck alone and is listed under Errors.
+- **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root) updates a local file in place
+  and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it.
+- Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
+
 ## 8. Artifact conventions — where files land
 
 All paths relative to the CWD the bot was started from (= repo root, always).
@@ -343,6 +375,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:53,237,247) | NO (`music/` gitignored) |
 | /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, psd_analyzer.py:1429-1440); deleted after each parse (psd_analyzer.py:1668; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| TTS save working copy | /update_tts_save, /update_stats after card image changes | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo | n/a |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 
@@ -515,7 +548,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(init\|process_.*_queue.start\|Bot initialization complete" main.py` |
-| Slash-command count (50 on 2026-10-20) | `grep -c "@tree.command" main.py` |
+| Slash-command count (51 on 2026-10-20, with /update_tts_save) | `grep -c "@tree.command" main.py` |
 | Members intent still off | `grep -n "Intents" main.py` |
 | /restart_bot still ungated | `grep -n -A4 'name="restart_bot"' main.py` |
 | /update stops loops first | `grep -n -B2 -A6 'name="update"' main.py` |
@@ -532,6 +565,7 @@ re-find volatile facts with these before trusting them:
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
 | reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
+| TTS save wiring | `grep -n "update_tts_save\|save_affected\|update_after_stats" main.py commands/psd_analyzer.py`; `grep -n "^TTS_SAVE_PATH" global_config.py` |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |

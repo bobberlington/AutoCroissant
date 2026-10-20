@@ -68,10 +68,14 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and re-uploads edited type emojis.\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and re-uploads edited type emojis. "
+                                                               "When card images, TTS/decks.json, MDW/Card Edits.json or the TTS save changed, it also updates the TTS save (as /update_tts_save; posts only when the save changed or the update failed).\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
                                                                "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
                                                                "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",
+    "/update_tts_save:"                         : "Updates the Tabletop Simulator save on the card repo (TTS/Impossibility Simulator.json) and commits it (admin only): "
+                                                  "pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
+                                                  "Posts a summary, the full report as a file, and the save's download link.",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Export only ability text (default: True)\n"
                                                    "- as_csv: Export as CSV instead of text (default: True)",

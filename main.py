@@ -70,6 +70,7 @@ from commands.query_card import (
     set_repository,
 )
 from commands.repo_history import refresh as refresh_history
+from commands.tts_save import update_tts_save
 from commands.type_emojis import init_type_emojis, sync_type_emojis
 from commands.update_bot import git_pull, git_push, restart_bot, update_bot
 from commands.utils import (
@@ -364,6 +365,16 @@ async def slash_update_stats(interaction: Interaction,
                              cards: Optional[str] = ""):
     await interaction.response.defer()
     await update_stats(interaction, output_problematic_cards, force_update, cards=cards)
+
+
+update_tts_save = to_thread(update_tts_save)
+@tree.command(name="update_tts_save", description="Updates the Tabletop Simulator save on the card repo and posts its download link (admin only).")
+async def slash_update_tts_save(interaction: Interaction):
+    if perms_check(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
+    await interaction.response.defer()
+    await update_tts_save(interaction)
 
 
 export_stats_to_file = to_thread(export_stats_to_file)

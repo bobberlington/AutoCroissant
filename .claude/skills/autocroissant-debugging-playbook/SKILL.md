@@ -139,7 +139,7 @@ prints, tracebacks, loop-crash lines) against what reached Discord.
 
 Sync model: `on_ready` copies global commands to each guild and syncs per guild
 (main.py:92-109) and prints `Synced commands to guild: <name> (<id>)` per guild plus
-`Registered N slash commands for reminder system.` (50 as of 2026-10-20, built from `tree.get_commands()` at main.py:104-106, including
+`Registered N slash commands for reminder system.` (51 as of 2026-10-20, built from `tree.get_commands()` at main.py:104-106, including
 `/sync_emojis` - a quick sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroissant-run-and-operate**.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
@@ -330,7 +330,7 @@ grep -n "def queue_message\|def queue_command" commands/utils.py         # appen
 grep -n "BREAK_LEN = " commands/utils.py                                 # 1950 (~19)
 
 # Section 3 - slash sync
-grep -c "@tree.command" main.py                                          # 50 as of 2026-10-20
+grep -c "@tree.command" main.py                                          # 51 as of 2026-10-20
 grep -n "async def slash_set_ratio\|async def slash_delete_song" main.py # duplicate names (2 hits each)
 grep -n "clear_commands" commands/management.py                          # /sync_global mechanics (~86)
 grep -c "on_guild_join" main.py                                          # 0 - no join-time sync

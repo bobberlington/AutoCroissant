@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load this skill for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH, STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device, POSSIBLE_SCHEDULERS). Contains the config.py field table (field NAMES only — values are secret; 7 fields main reads, plus the AI fields on the branch), global_config.py constants, a per-module constant catalog, prod-vs-experimental status for each flag, the runtime-settable vs restart-required table (the /set_* commands do NOT persist across restart), the update_stats defaults (force_update False in both places since 2026-10-19; local mode and its use_local_repo/use_local_timestamp options archived 2026-10-20), the browser_cookies yt-dlp switch (fallback vram_usage=='mps'), an add-a-new-config-field checklist, and re-verification greps for every table.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load this skill for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, TTS_SAVE_PATH, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH, STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device, POSSIBLE_SCHEDULERS). Contains the config.py field table (field NAMES only — values are secret; 7 fields main reads, plus the AI fields on the branch), global_config.py constants, a per-module constant catalog, prod-vs-experimental status for each flag, the runtime-settable vs restart-required table (the /set_* commands do NOT persist across restart), the update_stats defaults (force_update False in both places since 2026-10-19; local mode and its use_local_repo/use_local_timestamp options archived 2026-10-20), the browser_cookies yt-dlp switch (fallback vram_usage=='mps'), an add-a-new-config-field checklist, and re-verification greps for every table.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -59,7 +59,7 @@ Ground rules:
 |---|---|---|---|---|---|
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:11); used by `client.run(TOKEN)` (main.py:811) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:20) | utils.py | prod | list of Discord user IDs (ints) allowed past `perms_check` — see gate table below |
-| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/query_card.py:25, commands/psd_analyzer.py:42 AND commands/type_emojis.py:17 — three independent reads) | query_card, psd_analyzer, type_emojis | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis) |
+| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/query_card.py:25, commands/psd_analyzer.py:42, commands/type_emojis.py:17 AND commands/tts_save.py — four independent reads) | query_card, psd_analyzer, type_emojis, tts_save | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (without it the update reports and stops before committing) |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:38) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:38) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:55) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
@@ -148,7 +148,7 @@ quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `ar
 
 ## global_config.py — committed shared constants
 
-Whole file, 12 lines (verify: `cat global_config.py`):
+Whole file, 14 lines (verify: `cat global_config.py`):
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -161,6 +161,7 @@ Whole file, 12 lines (verify: `cat global_config.py`):
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | type emoji name -> blob sha of the icon it was made from, written by commands/type_emojis.py; gitignored, per machine. Missing or unreadable = startup adopts the existing emojis as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"` | bare blobless clone of the card repo, fetched on startup and after each /update_stats tree change; cloned on first use. Only rev-list/ls-tree/fetch run there (diff/log would download blobs) |
+| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` (and /update_stats after card image changes) updates and commits; players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
 Pickle schemas and commit discipline are owned by **impossibility-cards-reference** and
@@ -258,6 +259,19 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 Name rules (lowercase; dots and apostrophes dropped; other non-alphanumeric runs → `_`; 32-char cut) are
 in `emoji_name`. They must stay compatible with the parser's canonical token names — see
 ttscardmaker-companion §1.6.
+
+### commands/tts_save.py (Configuration block, added 2026-10-20; not compiled)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `RULES_PATH` | `"TTS/decks.json"` | deck rules (which repo PNGs each complete deck holds). The bot reads main's copy; standalone runs read the checkout's, else raw main |
+| `GIT_TOKEN` | getattr, default `""` (config import is optional here so the standalone run needs no config.py) | API auth and the commit |
+| `COMMIT_TRIES` | `3` | when main moved before the ref update (409/422; GitHub's message ends up in the error) or the history clone (or its links map) is not at main's head, the whole update is redone on the new save, this many times in all |
+| `LAG_PAUSE` | `10` s | wait before redoing a run whose history clone lagged main |
+| `API_TIMEOUT` | `120` s | per GitHub API call (the save blob is 5.5 MB, 7.4 MB as base64) |
+| `REPORT_FILE` | `"tts_save_report.md"` | name of the report attached in Discord |
+| `_retry` | in-memory, starts `True` | a run is owed (the last automatic one failed, or none ran since startup): the next changed-tree /update_stats runs it regardless |
+| `_watched` | in-memory, starts `None` | {path: blob} of the watched files (images, rules, Card Edits.json, the save) in the last changed tree /update_stats gave `save_affected`; the next one is compared with it |
 
 ### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
 
@@ -403,14 +417,15 @@ table with its command before quoting it in the future.
 | No AI code on main | `ls commands/diffusion.py` fails; `grep -n "set_model\|set_lora\|set_scheduler\|set_device" main.py` is empty |
 | Branch only: diffusion folders/schedulers | `git grep -n "MODELS_FOLDER\|LORAS_FOLDER\|POSSIBLE_SCHEDULERS" archive/ai-generation -- commands/diffusion.py` |
 | Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
-| GIT_TOKEN consumers/rate-limit prints | `grep -n "GIT_TOKEN" commands/query_card.py commands/psd_analyzer.py commands/type_emojis.py` |
+| GIT_TOKEN consumers/rate-limit prints | `grep -n "GIT_TOKEN" commands/query_card.py commands/psd_analyzer.py commands/type_emojis.py commands/tts_save.py` |
+| tts_save constants | `grep -n "^[A-Z_]* = \|^GIT_TOKEN" commands/tts_save.py` |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/psd_analyzer.py` (no use_local hits; every force_update default is False — main.py:361, psd_analyzer.py:1829) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_analyzer.py` (54-60) |
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
 | Reminder constants | `sed -n '26,56p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
-| global_config constants | `cat global_config.py` (12 lines) |
+| global_config constants | `cat global_config.py` (14 lines) |
 | setup.py build config | `sed -n '8,45p' setup.py` |
 | Gitignore coverage (config.py, reminder.pkl, music/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|csv\|txt" .gitignore` |
 
