@@ -14,7 +14,7 @@ description: Load this when you need to understand or safely modify HOW AutoCroi
 - What cards/PSDs/queries mean → impossibility-cards-reference ; measuring tools → autocroissant-diagnostics-and-tooling
 - Improving the parser → autocroissant-psd-extraction-campaign ; proving things → autocroissant-analysis-toolkit
 - "Has this been tried?" / why is this code weird → autocroissant-failure-archaeology
-- AI/diffusion and its isolation → autocroissant-ai-boundary ; future ideas → autocroissant-research-frontier
+- AI/diffusion: removed from main 2026-10-20; code and its skill are on branch `archive/ai-generation` ; future ideas → autocroissant-research-frontier
 - "How do I know I'm right" → autocroissant-research-methodology ; help text / style / skill upkeep → autocroissant-docs-and-style
 - The TTSCardMaker side (icon font, Types/ icons, card website, Photoshop scripting) → ttscardmaker-companion
 - THIS skill: how the system works + the invariants. Read "The execution model" before writing code.
@@ -249,7 +249,7 @@ keep it that way.
 lazy `get_torch()` (diffusion.py:136-144) and `from diffusers import ...` inside init/generation
 functions (diffusion.py:204 and later) — so the whole bot imports and runs with zero AI dependencies
 installed. The doctrine, VRAM modes, and requirements2.txt enablement path are owned by
-**autocroissant-ai-boundary**.
+**autocroissant-ai-boundary** (branch `archive/ai-generation`).
 
 ## Why pickles-in-git is the database
 
@@ -381,7 +381,7 @@ updated 2026-10-20.
 - **Incident history and the removeprefix bug's full story** → **autocroissant-failure-archaeology**.
 - **Operating reminders and type emojis day to day** → **autocroissant-run-and-operate** §9, §11.
 - **The TTSCardMaker side of icons, the font manifest and the website** → **ttscardmaker-companion**.
-- **AI/diffusion doctrine and enablement** → **autocroissant-ai-boundary**.
+- **AI/diffusion doctrine and enablement** → **autocroissant-ai-boundary** (branch `archive/ai-generation`).
 
 ## Provenance and maintenance
 

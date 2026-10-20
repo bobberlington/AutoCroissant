@@ -34,7 +34,8 @@ music_queue: deque[str] = deque()
 prev_music: deque[str] = deque(maxlen=1000)
 
 executor = ThreadPoolExecutor(max_workers=2)
-cookies_from_browser: bool = getattr(config, "vram_usage", False) == "mps"
+# yt-dlp reads browser cookies when config.browser_cookies is True (old configs: vram_usage == "mps")
+cookies_from_browser: bool = bool(getattr(config, "browser_cookies", getattr(config, "vram_usage", "") == "mps"))
 
 @dataclass
 class MusicState:

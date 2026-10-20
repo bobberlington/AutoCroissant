@@ -36,7 +36,7 @@ Quick orientation:
 
 Reorganized 2026-07-11 per the owner's doctrine: AI is an experiment and must stay
 separate and toggleable; the bot must run perfectly without it. The doctrine itself is
-owned by **autocroissant-ai-boundary** — this section is the install mechanics.
+owned by **autocroissant-ai-boundary** (branch `archive/ai-generation`) — this section is the install mechanics.
 
 **Status: committed in a7a4bb3** ("skills and memories", 2026-07-11), so every checkout has the
 split. On 2026-10-19 `requirements.txt` has one more uncommitted change: `discord.py` became
@@ -63,6 +63,9 @@ committed).
 | yt-dlp | Music downloading (`commands/music_player.py:12`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
 ### requirements2.txt — AI enablement (optional)
+
+> **AI left main on 2026-10-20:** this section applies to branch `archive/ai-generation` (main has no AI code).
+
 
 `pip install -r requirements2.txt` — the torch trio (torch, torchvision, torchaudio)
 plus accelerate, bitsandbytes, diffusers, peft, protobuf, sentencepiece, transformers.
@@ -116,7 +119,7 @@ torch install:
 |---|---|---|
 | torch install | `pip install -r requirements2.txt` as-is (PyPI torch, MPS backend) | Uncomment the `#-i .../nightly/cu124` first line of requirements2.txt first |
 | Generation device (`torch.Generator`) | `mps` | `cuda` (`diffusion.py:697`) |
-| Diffusion dtype / quantization / offload | float32, unquantized Flux, `pipe.to('mps')` — no offloading | float16, nf4-quantized Flux, offload varies per mode — the canonical per-mode table (dtype, offload, VAE opts, quantization, incl. the UNVERIFIED `high`-mode pipeline-placement caveat) is owned by **autocroissant-ai-boundary** |
+| Diffusion dtype / quantization / offload | float32, unquantized Flux, `pipe.to('mps')` — no offloading | float16, nf4-quantized Flux, offload varies per mode — the canonical per-mode table (dtype, offload, VAE opts, quantization, incl. the UNVERIFIED `high`-mode pipeline-placement caveat) is owned by **autocroissant-ai-boundary** (branch `archive/ai-generation`) |
 | yt-dlp cookies | `cookiesfrombrowser = ('safari', ...)` — enabled by the check `getattr(config, "vram_usage", False) == "mps"` (`music_player.py:37`, used at :55). This is a Mac-detection hack: `vram_usage` doubles as an OS probe. Flag it whenever you touch either music cookies or vram modes. | No browser cookies passed to yt-dlp |
 
 Mode semantics beyond install (defaults, `/set_model` etc.): **autocroissant-config-and-flags**.
@@ -282,7 +285,7 @@ find . -name "*.so" -not -path "./.git/*"             # empty = no stale compile
 - Starting/operating the bot, the self-update flow, multi-machine handoff, where
   artifacts land at runtime → **autocroissant-run-and-operate**.
 - Why AI must stay separate, lazy-torch mechanics, rules for adding AI features →
-  **autocroissant-ai-boundary** (this skill only covers installing that stack).
+  **autocroissant-ai-boundary** (branch `archive/ai-generation`) (this skill only covers installing that stack).
 - What each config.py / global_config.py field means, runtime-settable vs
   restart-required → **autocroissant-config-and-flags**.
 - Debugging a running bot's misbehavior → **autocroissant-debugging-playbook**

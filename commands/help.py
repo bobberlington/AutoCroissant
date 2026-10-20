@@ -4,7 +4,7 @@ from commands.utils import queue_message, split_long_message
 
 
 general_commands = {
-    "/help <text/card/ai/music/general>:"       : "Prints the help message pertaining to the specified command category.",
+    "/help <text/card/music/stats/general>:"    : "Prints the help message pertaining to the specified command category.",
     "/restart_bot:"                             : "Restarts the bot.",
     "/stop_bot:"                                : "Stops the bot (admin only).",
     "/pull:"                                    : "Does a hard reset, then a git pull, and reports status (admin only).",
@@ -86,28 +86,6 @@ stats_commands = {
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 
-ai_commands = {
-    "/ai <prompt> [image] [mask_image] [url] [mask_url] [steps] [height] [width] [resize] [cfg] [strength] [seed]:" :
-                                                  "Generate AI images using text prompts and optional input images.\n"
-                                                  "- prompt: Description of desired image\n"
-                                                  "- image: Upload image to modify (img2img)\n"
-                                                  "- mask_image: Control which parts to modify (black=keep, white=change)\n"
-                                                  "- url/mask_url: URLs instead of uploads\n"
-                                                  "- steps: Generation steps (default: 50)\n"
-                                                  "- height/width: Output dimensions (default: 512x512)\n"
-                                                  "- resize: Multiply output size (default: 1.0)\n"
-                                                  "- cfg: Creativity vs prompt adherence (default: 7.0)\n"
-                                                  "- strength: How much to modify input image (default: 0.8)\n"
-                                                  "- seed: For reproducible results (default: random)",
-    "/ai_queue:"                                : "Shows the current AI generation queue and details of each queued request.",
-    "/set_scheduler [scheduler]:"               : "View or set the diffusion scheduler. No argument shows current and available options.\n"
-                                                  "Available: 'dpm++ sde', 'dpm++ sde karras', 'euler a'",
-    "/set_device [device]:"                     : "View or set the CUDA device number. No argument shows current device and available count.",
-    "/set_model [model]:"                       : "View or set the diffusion model. No argument shows current model and available options.\n"
-                                                  "Options include 'flux' (HuggingFace) and local .safetensors files.",
-    "/set_lora [lora]:"                         : "View or set the LoRA to use. No argument shows current LoRA and available options.",
-}
-
 music_commands = {
     "/play <song> [play_next]:"                 : "Adds a song to the queue (local file/folder or URL to song/playlist).\n"
                                                   "- play_next: True to add to front of queue (default: False)",
@@ -138,8 +116,6 @@ def print_help(interaction: Interaction, help_wanted: str):
         wanted_commands = text_commands
     elif help_wanted == "card":
         wanted_commands = card_commands
-    elif help_wanted == "ai":
-        wanted_commands = ai_commands
     elif help_wanted == "music":
         wanted_commands = music_commands
     elif help_wanted == "stats":

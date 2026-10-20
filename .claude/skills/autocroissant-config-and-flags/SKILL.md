@@ -72,7 +72,7 @@ Prod-vs-experimental doctrine (user-stated 2026-07-11): the AI/diffusion capabil
 EXPERIMENT. The five diffusion fields plus HF_TOKEN must be absent-able: with none of them set
 (and even with torch not installed) the bot must boot and run every non-AI feature. That is what
 the getattr defaults + `model=''` + lazy torch import guarantee. Details and rules for keeping it
-that way: see **autocroissant-ai-boundary**.
+that way: see **autocroissant-ai-boundary** (branch `archive/ai-generation`).
 
 ### ADMINS — which commands it gates
 
@@ -111,17 +111,20 @@ that is intentional is unknown (candidate cleanup — route through autocroissan
 
 ### vram_usage — the five modes
 
+> **AI left main on 2026-10-20:** this section applies to branch `archive/ai-generation` (main has no AI code).
+
+
 Accepted values are never validated anywhere; they are plain string comparisons in
 `_apply_memory_optimizations` (diffusion.py:375-390) and `init_pipeline` (diffusion.py:210-212).
 A typo (e.g. "lo") silently lands in a fallthrough: float16, VAE slicing+tiling, no offload, no
 device placement. One line per mode — **the canonical full mode table (dtype, offload, VAE opts,
-quantization, per-mode caveats) lives in autocroissant-ai-boundary**:
+quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `archive/ai-generation`):
 
 | Value | One-line behavior |
 |---|---|
 | `low` (default) | float16; VAE slicing+tiling; sequential CPU offload (`gpu_id=device_no`) — least VRAM, slowest |
 | `medium` | float16; VAE slicing+tiling; model CPU offload (`gpu_id=device_no`) |
-| `high` | float16; `_apply_memory_optimizations` applies NOTHING (no VAE opts, no offload). No code path explicitly moves the pipe to CUDA in this mode (the only pipe `.to(...)` is the mps one, line 378; line 697's `device` only seeds the `torch.Generator`) — UNVERIFIED on the CUDA box (detail: autocroissant-ai-boundary) |
+| `high` | float16; `_apply_memory_optimizations` applies NOTHING (no VAE opts, no offload). No code path explicitly moves the pipe to CUDA in this mode (the only pipe `.to(...)` is the mps one, line 378; line 697's `device` only seeds the `torch.Generator`) — UNVERIFIED on the CUDA box (detail: autocroissant-ai-boundary (branch `archive/ai-generation`)) |
 | `mps` | **float32**; `pipe.to(device='mps')`, nothing else; Flux unquantized (bitsandbytes is CUDA-only); **plus the yt-dlp side channel below** |
 | `distributed` | float16; VAE slicing+tiling; no CPU offload; `device_map='balanced'` when >1 CUDA GPU — wired only into the Flux init path (diffusion.py:212, 216) |
 
@@ -166,6 +169,7 @@ Catalog per module, verified 2026-07-11; psd_analyzer, type_emojis and analytics
 | `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs `/update_stats` downloads ahead of parsing |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
+| `browser_cookies` (config.py, 2026-10-20) | absent = False | yt-dlp reads browser cookies; old configs fall back to `vram_usage == "mps"` (S1, fixed) |
 | `SITE_URL` (global_config.py, 2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | card browser; `/query` Card page buttons, search links, `/website` |
 | `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, psd_analyzer.py:1161) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
@@ -220,6 +224,9 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 | `ydl_opts` | dict, music_player.py:50-58 | yt-dlp options: bestaudio, restricted filenames, `music/%(title)s-%(id)s.%(ext)s` template, `keepvideo` from KEEPVIDEO, Safari `cookiesfrombrowser` iff mps, quiet. `POSTPROCESS=True` appends mp3-320k extraction (61-67). Built ONCE at import — all three config fields are restart-required |
 
 ### commands/diffusion.py (lines 19-117)
+
+> **AI left main on 2026-10-20:** this section applies to branch `archive/ai-generation` (main has no AI code).
+
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -350,7 +357,7 @@ when missing takes the bot down on the OTHER machine at its next startup.
    **autocroissant-docs-and-style**).
 5. If it's AI-related: consume it ONLY in `commands/diffusion.py` behind getattr, keep torch
    imports lazy, and verify core startup is untouched (rules and the clean-venv proof:
-   **autocroissant-ai-boundary**).
+   **autocroissant-ai-boundary** (branch `archive/ai-generation`)).
 6. If it needs live toggling, add a `/set_*` command — and accept that the runtime change won't
    persist; config.py stays the only persistence. Say so in the command's help text.
 7. Update this skill: add the field to the 11-field table (making it 12), and extend the
@@ -361,7 +368,7 @@ when missing takes the bot down on the OTHER machine at its next startup.
 - Setting up an environment from scratch, installing requirements, Cython build/clean mechanics
   → **autocroissant-build-and-env**.
 - What a flag's SUBSYSTEM actually does beyond the flag (diffusion pipeline internals →
-  **autocroissant-ai-boundary**; card parsing/validation semantics →
+  **autocroissant-ai-boundary** (branch `archive/ai-generation`); card parsing/validation semantics →
   **impossibility-cards-reference**; queue/dispatch machinery →
   **autocroissant-architecture-contract**).
 - Starting/operating the bot, reminders in practice, the /push//update flow →

@@ -200,14 +200,17 @@ unhealthy starts:
 
 ## 7. "AI generation fails / OOM"
 
-VRAM modes, model routing, and enable/disable runbooks are owned by **autocroissant-ai-boundary**.
+> **AI left main on 2026-10-20:** this section applies to branch `archive/ai-generation` (main has no AI code).
+
+
+VRAM modes, model routing, and enable/disable runbooks are owned by **autocroissant-ai-boundary** (branch `archive/ai-generation`).
 Triage layer only:
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
-| `/ai` replies "PyTorch is not installed." | Intentional? | torch absent = the AI boundary doing its job (diffusion.py:659-660); core bot runs fine without it | `python3 -c "import torch"` in the bot's env | Enable via requirements2.txt if wanted: **autocroissant-ai-boundary** |
+| `/ai` replies "PyTorch is not installed." | Intentional? | torch absent = the AI boundary doing its job (diffusion.py:659-660); core bot runs fine without it | `python3 -c "import torch"` in the bot's env | Enable via requirements2.txt if wanted: **autocroissant-ai-boundary** (branch `archive/ai-generation`) |
 | stdout: `INFO: No model configured for initialization` | config.py `model` field empty | `init_pipeline` returns without building pipelines when model is '' (diffusion.py:200-202) | TRAP (verified code path): with torch installed but model empty, `/ai` prints "Initializing AI pipeline...", init does nothing, then the NoneType pipeline call crashes and WEDGES `in_progress` (section 4) | Set a model (`/set_model` or config.py), `/restart_bot`, retry |
-| OOM / dtype / device errors mid-generation | stdout traceback | Wrong VRAM mode for the machine | - | Mode table: **autocroissant-ai-boundary**. Then `/restart_bot` - the failed run wedged `in_progress` (diffusion.py:681 vs :780, no try/finally) |
+| OOM / dtype / device errors mid-generation | stdout traceback | Wrong VRAM mode for the machine | - | Mode table: **autocroissant-ai-boundary** (branch `archive/ai-generation`). Then `/restart_bot` - the failed run wedged `in_progress` (diffusion.py:681 vs :780, no try/finally) |
 | "Request queued" but never starts | `/ai_queue` | Wedged `in_progress` | See section 4 row | `/restart_bot` |
 
 ---
@@ -293,7 +296,7 @@ When history matters, always run `git show <hash>` and read the diff. Curated in
 - Installing/rebuilding the environment, Cython specifics -> **autocroissant-build-and-env**.
 - Normal operations (start/stop/deploy/handoff/reminder ops) -> **autocroissant-run-and-operate**.
 - What a config field/flag means or how to set it -> **autocroissant-config-and-flags**.
-- Enabling/disabling AI, VRAM modes, torch install -> **autocroissant-ai-boundary**.
+- Enabling/disabling AI, VRAM modes, torch install -> **autocroissant-ai-boundary** (branch `archive/ai-generation`).
 - Card-domain semantics (folder classification, layer rules, query DSL) -> **impossibility-cards-reference**.
 - The icon font, Types/ icon naming, the card website, Photoshop scripting -> **ttscardmaker-companion**.
 

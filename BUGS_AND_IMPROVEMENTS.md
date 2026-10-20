@@ -13,6 +13,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-20 parser fixes: stars counted per star; stat bars per row (Sonic 20, Sans 1, heart bars counted);
   multi-creature cards get per-creature stats; duplicates (`<Name>N.png`) recorded (impossibility-cards-reference
   §2, §3.4).
+- 2026-10-20: AI generation moved to branch `archive/ai-generation` (B3 went with it); S1 fixed with `config.browser_cookies`; C4 fixed (10.16).
 - 2026-10-20 operations: `/update_stats` re-parses only PSDs whose blob changed and saves after edits-only runs
   (10.15); `/push` rebases onto new code first; history rewritten to drop an attribution trailer (10.14).
 
@@ -24,7 +25,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
 |---|-----|-------|--------|---------------------------|--------------|
-| B3 | **`/ai` wedges permanently after any mid-generation exception.** (Moves with the AI code to its branch; see NEXT_SESSION_PLAN.md.) `in_progress = True` is set with no `try/finally`; an exception (bad URL, OOM, model misconfig) leaves it stuck and every later `/ai` only prints "Request queued." until restart. | `commands/diffusion.py` (`diffusion()`, `in_progress` set ~line 681, cleared ~line 780) | AI capability silently dead until bot restart | Restart bot to clear; candidate fix: wrap generation in `try/finally: in_progress = False` + drain queue | `autocroissant-debugging-playbook` §hangs |
 | B4 | **`init_vc` crashes when the caller is not in a voice channel.** `await queue_message(...)` awaits a plain function's `None` return → `TypeError` instead of the intended "You are not in a voice channel." message. | `commands/music_player.py` (~line 177) | `/play` from outside a voice channel errors instead of replying | Candidate fix: drop the `await` (queue_message is sync) | `autocroissant-debugging-playbook` §music |
 | B5 | **The dispatch loop can die permanently.** Exceptions outside the caught set stop a `tasks.loop` for good: (a) deleted/unavailable channel → `client.get_channel()` returns `None` → `AttributeError` **inside the fallback**; (b) >2000-char content that fails in the fallback path too. After that, the whole bot goes silent (all sends flow through this loop). **Partly mitigated 2026-10-19:** reminders now skip channels the bot can't see (`_channel_missing` in analytics.py), so the scheduler no longer feeds the loop a dead channel; every other sender still can, and `process_dispatch_queue`/`process_edit_queue` in main.py are unchanged. | `main.py` (`process_dispatch_queue`, fallback `client.get_channel(...).send(...)`) | One poisoned message silences the entire bot until restart | Candidate fix: wrap each drain iteration in `try/except` + log; guard `get_channel()` None | `autocroissant-architecture-contract` §known-weak points |
 
@@ -46,17 +46,10 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 | C1 | `/pull` help + description claim "hard reset, than a git pull" — the code does fetch+merge (pickles-ours/code-theirs); the hard reset only exists behind `/update force_reset:True`. Also "than" → "then". | `commands/help.py:10`, `main.py:175` |
 | C2 | Four commands missing from help.py: `/view_old_metadata`, `/list_guild_members`, `/list_guild_channels`, `/get_channel_messages` (55 registered, 51 documented as of 2026-10-19). | `commands/help.py` |
 | C3 | `/export_cards only_ability` — help says default True, code default is False. | `commands/help.py:76` vs `main.py` signature |
-| C4 | `/help` usage line omits the working "stats" category. | `commands/help.py:7` |
 | C5 | Duplicate function names in main.py (`slash_set_ratio` ×2, `slash_delete_song` ×2). Harmless today (decorators registered at def time) but fragile — rename carefully, never "clean up" casually. | `main.py` |
 | C6 | `/list_guild_members` requires the members intent, which `main.py` never enables — the command always fails with the ClientException message. Enable the intent (and in the Discord dev portal) or remove the command. | `main.py` intents block, `commands/management.py` |
 | C14 | `/query` and ability-search images use `raw.githubusercontent.com/.../main/...` links, so old Discord messages show the newest image. Use the latest commit sha of the card's PNG instead (planned: NEXT_SESSION_PLAN.md). | `commands/query_card.py` `get_card_url` |
 | C12 | Pillow is still not declared in `requirements.txt`, and a third module now imports it at top level (`commands/type_emojis.py`). It arrives only through psd-tools. | `requirements.txt` |
-
-### 1.4 Doctrine leak (design smell, owner-acknowledged)
-
-| # | Issue | Detail owner |
-|---|-------|--------------|
-| S1 | Music's yt-dlp Safari-cookie behavior is keyed off `vram_usage == "mps"` — an AI config field steering a core feature. Candidate: dedicated config field (e.g. `browser_cookies`), getattr-defaulted off. Must be done when the AI code leaves main. | `autocroissant-ai-boundary` §known leaks |
 
 ### 1.5 Pending live verification (as of 2026-10-19)
 
@@ -98,7 +91,9 @@ Ranked menu:
 4. **Bbox-anchored type injection** — place `[type]` by icon coordinates instead of gap ordinals; the line-position estimation sub-problem is genuinely open. Matters only for cards not migrated by item 2.
 5. **Exclusion-list burn-down** — 23 cards (18 ability + 5 stats); per-card recipe in the campaign; D3 above is the first easy win. Result when: both lists reach zero with problem count stable.
 
-### 2.2 AI that knows the game (behind the AI boundary)
+### 2.2 AI that knows the game (on branch `archive/ai-generation`)
+
+Main has no AI code since 2026-10-20; image generation lives on the branch. Any AI feature below would start there.
 
 Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 1. **Game-grounded Q&A (`/ask`)** — corpus already exportable (48 rulebook pages + 813 structured cards); build the 20-question eval set FIRST, then a zero-dependency keyword baseline, only then heavier retrieval. Result when: ≥15/20 eval answers correct with citations. No LLM/embedding dep may enter core `requirements.txt`.
@@ -107,9 +102,9 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 
 ### 2.3 Operational hardening (small, high-value)
 
-1. `try/finally` for `in_progress` (B3) and a defensive dispatch loop (B5) — the two single-points-of-silence.
+1. A defensive dispatch loop (B5): the single point of silence.
 2. Fix B4's `await` and C6's intent mismatch.
-3. Sync help.py with reality (C1–C4) in one docs pass — checklist in `.claude/skills/autocroissant-docs-and-style/SKILL.md`.
+3. Sync help.py with reality (C1–C3) in one docs pass — checklist in `.claude/skills/autocroissant-docs-and-style/SKILL.md`.
 4. Small cleanup: C12 (declare Pillow).
 
 ### 2.4 Planned next (NEXT_SESSION_PLAN.md)
@@ -119,7 +114,6 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
    their decks, fills in names, pins image links to commit shas only when a card changed, and updates the global
    Lua's large-card list.
 3. PSD edits from website edits, without Photoshop where possible.
-4. Move the torch/AI generation code to a branch and out of main (with S1 and B3).
 
 ### 2.5 Deep optimization and refinement pass (all code)
 
@@ -135,7 +129,7 @@ One pass over every module, measured before and after, with no behavior change u
 - **Concurrency:** confirm every blocking call runs off the event loop; one lock per pickle.
 - **Tests:** a small offline suite (parser goldens on ~30 PSDs, CardEdits, duplicates, creature split,
   update_stats with a fake tree) run before every push.
-- **Docs:** help.py matches the commands (C1-C4); skills' line numbers refreshed.
+- **Docs:** help.py matches the commands (C1-C3); skills' line numbers refreshed.
 
 ### 2.6 Explicitly parked
 

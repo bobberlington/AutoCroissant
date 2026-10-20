@@ -1,6 +1,6 @@
 from asyncio import create_task
 from sys import exit
-from discord import Attachment, ButtonStyle, Client, Intents, Interaction, Member, app_commands
+from discord import ButtonStyle, Client, Intents, Interaction, Member, app_commands
 from discord.ui import Button, View
 from global_config import SITE_URL
 from discord.app_commands import Choice, CommandTree
@@ -16,15 +16,6 @@ from commands.analytics import (
     list_reminders,
     remove_reminder,
     set_reminder,
-)
-from commands.diffusion import (
-    diffusion,
-    get_qsize,
-    init_pipeline,
-    set_device,
-    set_lora,
-    set_model,
-    set_scheduler,
 )
 from commands.frankenstein import frankenstein
 from commands.help import print_help
@@ -121,7 +112,6 @@ async def on_ready():
     queue_command(init_psd)
     queue_command(init_query)
     queue_command(init_type_emojis, client)
-    queue_command(init_pipeline)
 
     process_command_queue.start()
     process_dispatch_queue.start()
@@ -141,7 +131,6 @@ print_help = to_thread(print_help)
 @app_commands.choices(help_type=[
     Choice(name="text", value="text"),
     Choice(name="card", value="card"),
-    Choice(name="ai", value="ai"),
     Choice(name="music", value="music"),
     Choice(name="stats", value="stats"),
     Choice(name="general", value="general"),
@@ -486,95 +475,6 @@ list_orphans = to_thread(list_orphans)
 async def slash_list_orphans(interaction: Interaction):
     await interaction.response.defer()
     await list_orphans(interaction)
-
-
-####################
-#   AI COMMANDS    #
-####################
-diffusion = to_thread(diffusion)
-@tree.command(name="ai", description="Generate AI images. '/help ai' for details.")
-@app_commands.describe(
-    prompt='A description of the image you want generated.',
-    image='Modify this image based off the prompt.',
-    mask_image='Control which parts of the image to modify. Black = dont modify, white = modify.',
-    url='Modify the image at this url based off the prompt.',
-    mask_url='Uses the image at this url as the control mask.',
-    steps='How long to spend generating the image. Default = 50.',
-    height='How many pixels tall should the image be. Default = 512.',
-    width='How many pixels wide should the image be. Default = 512.',
-    resize='Multiply the output image\'s size by this value. Default = 1 (1x).',
-    cfg='Scalar between creativity and conformity to prompt. Default = 7.',
-    strength='How much of the attached image to modify. Default = 0.8 (80%).',
-    seed='Used to control output, same seed = same output. Default is randomized.',
-)
-async def slash_ai(interaction: Interaction,
-                   prompt: str,
-                   image: Optional[Attachment],
-                   mask_image: Optional[Attachment],
-                   url: Optional[str],
-                   mask_url: Optional[str],
-                   steps: Optional[int] = 50,
-                   height: Optional[int] = 512,
-                   width: Optional[int] = 512,
-                   resize: Optional[float] = 1.0,
-                   cfg: Optional[float] = 7.0,
-                   strength: Optional[float] = 0.8,
-                   seed: Optional[str] = None):
-    if seed:
-        # ints are limited to 15 digits or less by discord, so I need to take it as a str and then convert it to an int
-        try:
-            seed = int(seed)
-        except ValueError:
-            await interaction.response.send_message("Seed must be an integer.")
-            return
-    await interaction.response.defer()
-    await diffusion(interaction, prompt, image, mask_image, url, mask_url, steps, height, width, resize, cfg, strength, seed)
-
-
-get_qsize = to_thread(get_qsize)
-@tree.command(name="ai_queue", description="Returns the current ai queue size and the content of each queued request.")
-async def slash_ai_queue(interaction: Interaction):
-    await get_qsize(interaction)
-
-
-set_scheduler = to_thread(set_scheduler)
-@tree.command(name="set_scheduler", description="Set the scheduler.")
-@app_commands.describe(
-    scheduler='The scheduler you want. Leaving blank tells you the current scheduler.',
-)
-async def slash_set_schedule(interaction: Interaction,
-                             scheduler: Optional[str]):
-    await set_scheduler(interaction, scheduler)
-
-
-set_device = to_thread(set_device)
-@tree.command(name="set_device", description="Set the device.")
-@app_commands.describe(
-    device='The device number you want to set. Leaving blank tells you the current device.',
-)
-async def slash_set_device(interaction: Interaction,
-                           device: Optional[int]):
-    await set_device(interaction, device)
-
-
-set_model = to_thread(set_model)
-@tree.command(name="set_model", description="Set the model.")
-@app_commands.describe(
-    model='The model you want to set. Leaving blank tells you the current model.',
-)
-async def slash_set_model(interaction: Interaction,
-                          model: Optional[str]):
-    await set_model(interaction, model)
-
-
-set_lora = to_thread(set_lora)
-@tree.command(name="set_lora", description="Set the lora.")
-@app_commands.describe(
-    lora='The lora you want to set. Leaving blank tells you the current lora.',
-)
-async def slash_set_lora(interaction: Interaction,
-                         lora: Optional[str]):
-    await set_lora(interaction, lora)
 
 
 ####################

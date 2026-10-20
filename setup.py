@@ -26,7 +26,6 @@ INCLUDE_FILES = [
     'commands/query_card.py',
     'commands/management.py',           # Complex async operations with discord.py
     'commands/music_player.py',         # ThreadPoolExecutor with Process/Queue-like issues
-    'commands/diffusion.py',            # PyTorch callbacks and dynamic function registration
 ]
 
 # Compiler directives for optimization

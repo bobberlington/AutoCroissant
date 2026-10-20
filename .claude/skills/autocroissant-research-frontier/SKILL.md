@@ -105,7 +105,7 @@ expansion. Score it against the 20 eval questions ("does the top-3 retrieved tex
 answer?"). Only if retrieval quality is the bottleneck do you graduate to an
 embedding/LLM experiment — still offline. A `/ask` slash command happens LAST, only after an
 offline winner exists, and is gated like every AI feature (lazy imports, clean degradation —
-autocroissant-ai-boundary owns the rules; the add-a-slash-command checklist is in
+autocroissant-ai-boundary (branch `archive/ai-generation`) owns the rules; the add-a-slash-command checklist is in
 autocroissant-change-control).
 
 ### You have a result when...
@@ -122,7 +122,7 @@ it holds exactly 11 packages (cython, davey, discord.py, GitPython, numpy, openc
 pandas, psd-tools, PyGithub, requests, yt-dlp) after that day's reorg (committed in a7a4bb3;
 still 11 on 2026-10-19, with `discord.py>=2.5`);
 the torch stack lives in `requirements2.txt`. Anything heavy goes to requirements2.txt at
-most, behind the lazy-import pattern — boundary doctrine in autocroissant-ai-boundary.
+most, behind the lazy-import pattern — boundary doctrine in autocroissant-ai-boundary (branch `archive/ai-generation`).
 
 ---
 
@@ -328,7 +328,7 @@ the owning skill (commands → run-and-operate, config → config-and-flags, etc
   research residue.
 - **Methodology / evidence-bar questions** ("is this proven?", hypothesis discipline,
   adversarial refutation, idea lifecycle) → **autocroissant-research-methodology**.
-- Adding an AI feature or dependency TODAY → **autocroissant-ai-boundary** (rules) +
+- Adding an AI feature or dependency TODAY → **autocroissant-ai-boundary** (branch `archive/ai-generation`) (rules) +
   **autocroissant-change-control** (gates).
 - Understanding what the bot currently does → **autocroissant-architecture-contract** /
   **impossibility-cards-reference**.

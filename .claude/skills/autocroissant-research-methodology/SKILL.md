@@ -268,7 +268,7 @@ Verified provenance — useful because it tells you where to LOOK for the next o
    proven idea source.
 3. **Operational pain.** Lazy torch/diffusers imports bf9478e (2026-01-26) — born from the bot
    paying AI startup cost when AI wasn't wanted; it grew into the whole AI-boundary doctrine
-   (autocroissant-ai-boundary). Likewise the 2026-07-11 requirements split (core vs AI) came
+   (autocroissant-ai-boundary (branch `archive/ai-generation`)). Likewise the 2026-07-11 requirements split (core vs AI) came
    from two-machine install pain, not from a roadmap.
 
 **Implication — keep a low-friction intake.** SUGGESTION (not an existing convention): a pinned

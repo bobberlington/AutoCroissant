@@ -77,7 +77,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | `init_psd` (psd_analyzer.py:1745) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
 | `init_query` (query_card.py:628) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (exactly 1 API call) | Non-200: "Warning: Failed to populate files from repository (status N)" — /query will be broken |
 | `init_type_emojis(client)` (type_emojis.py:218; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). 1 GitHub tree API call + 1 Discord list call; uploads only on first start per identity | Failure prints "Emoji sync failed: <err>"; replies then show `[fire]` as plain text. Nothing else depends on it |
-| `init_pipeline` (diffusion.py:193) | Initializes the diffusion pipeline | No torch installed: "ERROR: Cannot initialize pipeline - Torch is not installed"; no `model` in config.py: "INFO: No model configured for initialization". Both are clean no-ops — the bot runs fully without AI (see autocroissant-ai-boundary) |
+| `init_pipeline` (diffusion.py:193) | Initializes the diffusion pipeline | No torch installed: "ERROR: Cannot initialize pipeline - Torch is not installed"; no `model` in config.py: "INFO: No model configured for initialization". Both are clean no-ops — the bot runs fully without AI (see autocroissant-ai-boundary (branch `archive/ai-generation`)) |
 
 The three loops (main.py:839-887) each tick once per second: `process_command_queue` (also enqueues
 `check_reminder` every tick — that is the reminder heartbeat), `process_dispatch_queue` (message/file

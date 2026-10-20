@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the six command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 of 55 registered commands missing from help.py as of 2026-10-19), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills, including ttscardmaker-companion for the TTSCardMaker side).
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 of 55 registered commands missing from help.py as of 2026-10-19), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (16 skills on main, including ttscardmaker-companion for the TTSCardMaker side; the AI skill is on branch archive/ai-generation).
 ---
 
 # AutoCroissant docs and style
@@ -158,7 +158,8 @@ is False (full metadata export). The main.py describe string (main.py:371)
 dodges the question by stating no default at all — which is how the lie
 survived.
 
-**D3 — /help's own entry omits its "stats" category.** help.py:7 advertises
+**D3 — /help's own entry omits its "stats" category.** (Fixed 2026-10-20: it now reads
+`/help <text/card/music/stats/general>`.) help.py:7 advertised
 `/help <text/card/ai/music/general>`, but the Choice list includes `stats`
 (main.py:144) and `print_help` routes it (help.py:144-145). The docs
 undersell the code: users reading `/help` never learn the stats category
@@ -429,7 +430,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
-| autocroissant-ai-boundary | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
+| autocroissant-ai-boundary (branch `archive/ai-generation`) | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
 | autocroissant-psd-extraction-campaign | The executable extraction-improvement campaign |
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |

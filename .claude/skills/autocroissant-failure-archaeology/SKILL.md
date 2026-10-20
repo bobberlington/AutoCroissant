@@ -266,7 +266,7 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 - **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive today as ironic annotations on the INCLUDE list (setup.py:27-29). Also converted music_player's remaining `[-1]`s.
 - **Excluded from compilation, with reasons** (setup.py:9-18 comments, current): `main.py` (entry point), `config.py`/`global_config.py` (configuration), `commands/update_bot.py` (uses execv/execl for restart), `commands/utils.py` (core utilities, decorators, dynamic behavior), `__init__` files, setup.py itself. Net: **8 of 10 command modules compiled** as of 2026-07-11; since 2026-10-19 there are 11 command modules, because the new `commands/type_emojis.py` is not in INCLUDE_FILES (uncompiled by default).
 - **dd800bc** (2026-01-30 23:15): a `bboxes[-1]` had crept back into psd_analyzer (`max_height = max(bboxes[-1][1].y // 3, card_mid_y)`); converted to `bboxes[len(bboxes) - 1]`. Nothing enforces the idiom automatically — it is maintained by hand, and this commit is proof stragglers happen. Do NOT "clean up" `x[len(x) - 1]` back to `x[-1]` in the 8 compiled modules.
-- **bf9478e** (2026-01-26 17:02, "lazily import torch and diffusers"): closed the era — `import torch` at module top replaced by `get_torch()` / `torch_available()`, so the compiled+core bot runs with zero AI overhead. Doctrine and mechanics owned by autocroissant-ai-boundary.
+- **bf9478e** (2026-01-26 17:02, "lazily import torch and diffusers"): closed the era — `import torch` at module top replaced by `get_torch()` / `torch_available()`, so the compiled+core bot runs with zero AI overhead. Doctrine and mechanics owned by autocroissant-ai-boundary (branch `archive/ai-generation`).
 - **Today (2026-10-19)**: no `.so`/`.c` artifacts exist in the working tree. The stale-`.so`-shadows-your-`.py` trap and build/clean procedure are owned by autocroissant-build-and-env.
 - **Cython 3.3 tail (2026-10-19)**: management.py had silently stopped compiling under Cython 3.3 — Entry 10.5.
 - **Status**: settled discipline; its one long-lived casualty (Entry 1) was fixed 2026-10-19. The meta-lesson: mechanical rule-enforcement sweeps need per-line semantic review — `split(x)[-1] ≠ removeprefix(x)`.
@@ -563,6 +563,14 @@ committed, replace "working tree" with the hash. Line numbers are 2026-10-19 rea
 - **What changed**: `card.blob_sha`; tree with If-None-Match (304 ends the run); PSDs by blob sha, 4 downloads
   ahead; small files cached by sha; `cards:` option; save when anything changed. First run adopted shas with
   31 requests. Measured: nothing changed = 1 request, 0.4 s.
+
+### 10.16 AI generation moved off main (2026-10-20)
+
+- **Why**: the owner asked to take the torch/AI code out of main.
+- **What changed**: branch `archive/ai-generation` (ed21cd2) is main at faebfc7 with AI intact, plus a note. On main:
+  `commands/diffusion.py`, the six AI commands, `init_pipeline`, the "ai" help category, `pildiscordfile`,
+  `requirements2.txt`, `models/` and its .gitignore lines are gone; setup.py builds 7 modules. S1 fixed:
+  `config.browser_cookies` (old configs keep `vram_usage == "mps"`). C4 fixed. Bug B3 lives on with the branch.
 
 ## How to add an entry
 

@@ -8,7 +8,6 @@ from io import BytesIO
 from numpy import ndarray, array, asarray
 from os import listdir
 from os.path import join, isdir
-from PIL import Image
 from requests import get
 from typing import Callable, TypeVar, Awaitable, Any, Optional
 
@@ -100,14 +99,6 @@ def url_to_cv2image(url: str, readFlag=IMREAD_COLOR) -> ndarray:
 def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
     """Convert a cv2 image (ndarray) to a Discord File."""
     return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename=filename)
-
-
-def pildiscordfile(img: Image.Image, filename: str = "image.png") -> File:
-    """Convert a PIL image to a Discord File."""
-    buffer = BytesIO()
-    img.save(buffer, 'PNG')
-    buffer.seek(0)
-    return File(buffer, filename=filename)
 
 
 # ===================================================================
