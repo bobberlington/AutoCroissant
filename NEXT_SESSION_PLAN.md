@@ -161,6 +161,15 @@ bar is set per region: stat-bar cells and text boxes must match Photoshop. Full-
 
 Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,000/month) isn't needed.
 
+## Task 3c. Effect layers on pushes (after Task 3)
+
+Port `MDW/Scripts/Effect Layers - All Cards.jsx` (Photoshop-only ExtendScript) to Python on the fork: find status
+words with the text engine's character positions, cut them into `Ability FX: <words>` pixel layers, copy the layer
+styles from the status chart PSD (the authority), render them, re-export the PNG; idempotent like "Update all".
+Run it from the push pipeline for PSDs whose blob changed, only after a PSD has been quiet ~30 min (PSDs can't be
+merged; don't race their author), skip its own commits, honour a skip list in `MDW`, and post what changed in
+Discord. First prove it on all cards against the JSX batch's output.
+
 ## Task 4. Deep optimization and refinement pass
 
 BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurrency, tests, docs).
@@ -168,4 +177,4 @@ BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurr
 ## Order
 
 **Task 3 first and foremost** (the user wants the next session spent on it), with **Task 0 in parallel** (the long
-Python build runs in the background). Quick wins if useful in between: Task 1, Task 1b. Then Task 2 steps 1-3 (audit report to the user) -> Task 2 steps 4-6 -> Task 2b -> Task 4.
+Python build runs in the background); Task 3c follows Task 3. Quick wins if useful in between: Task 1, Task 1b. Then Task 2 steps 1-3 (audit report to the user) -> Task 2 steps 4-6 -> Task 2b -> Task 4.
