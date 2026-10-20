@@ -236,6 +236,12 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
   problems_ok, allow_high_stats, dup_of, series, creatures); only the first kind is baked and removed.
 - **Rules skill:** `.claude/skills/impossibility-simulator-rules` (the game itself, from the rulebook pages).
+- **Subseries** (user, 2026-10-20): a card can have a subseries besides its series (Goombella: series Mario, subseries
+  Paper Mario: The Thousand-Year Door). Database-only edit: `subseries` (nullable string) in `Card Edits.json`. Website
+  side in progress (filters, search `subseries~`, card page, Stats breakdown, editor field in the database-only group).
+  Bot side after the Task 4 pass lands: `CardInfo.subseries` (+ `to_dict`/`from_dict`), `CardEdits.TYPES/NULLABLE/ATTRS`,
+  `prep_dataframes` column, query DSL `subseries==`/`subseries~`, `/query` output "Series · Subseries", `/update_metadata`
+  and `/mass_replace` fields, `/export_cards` column, help text, impossibility-cards-reference + docs-and-style updates.
 
 ## Task 3c. Effect layers on pushes (after Task 3)
 
