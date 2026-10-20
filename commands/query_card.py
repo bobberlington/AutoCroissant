@@ -36,6 +36,10 @@ class CardRepository:
         self.git_file_alias: dict[str, str] = {}
         self.git_files: dict[str, str] = {}
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
+        self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
+        self._tree_etag = ""
+        self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
+        self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
@@ -53,21 +57,31 @@ class CardRepository:
         """Get list of all git filenames."""
         return list(self.git_files.keys())
 
-    def populate_files(self) -> int:
+    def populate_files(self, tree: Optional[dict] = None) -> int:
         """
         Fetch and populate file listings from GitHub repository.
+
+        Args:
+            tree: A tree /update_stats just fetched (saves a request)
 
         Returns:
             HTTP status code (200 for success)
         """
+        status = 200
+        if tree is None:
+            url = f"https://api.github.com/repos/{self.repository}/git/trees/main?recursive=1"
+            headers = {**self._headers, **({"If-None-Match": self._tree_etag} if self._tree and self._tree_etag else {})}
+            response = get(url, headers=headers, timeout=30)
+            if response.status_code == 304:                   # unchanged: free, and no download
+                tree = self._tree
+            else:
+                status, tree, self._tree_etag = response.status_code, response.json(), response.headers.get("ETag", "")
+        self._tree = tree
         self.git_files.clear()
         self.ambiguous_names.clear()
 
-        url = f"https://api.github.com/repos/{self.repository}/git/trees/main?recursive=1"
-        response = get(url, headers=self._headers, timeout=30)
-
         # Process PNG files from repository
-        for item in response.json().get("tree", []):
+        for item in tree.get("tree", []):
             path: str = item.get("path", "")
             if not path.endswith(".png"):
                 continue
@@ -79,7 +93,7 @@ class CardRepository:
         self._populate_edit_names()
         self._populate_site_ids()
 
-        return response.status_code
+        return status
 
     def _add_file_to_registry(self, path: str) -> None:
         """Add a file path to the registry, handling duplicates."""
@@ -318,15 +332,20 @@ class CardRepository:
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json."""
         from commands.psd_analyzer import EDITS_PATH, CardEdits
-        try:
-            reply = get(f"https://raw.githubusercontent.com/{self.repository}/main/{quote(EDITS_PATH)}", timeout=30)
-            if reply.status_code == 404:
-                return
-            reply.raise_for_status()
-            names = CardEdits.parse(reply.text).names()
-        except Exception as e:
-            print(f"Could not read {EDITS_PATH}: {e}")
+        sha = next((item.get("sha") for item in (self._tree or {}).get("tree", []) if item.get("path") == EDITS_PATH), None)
+        if not sha:
             return
+        if self._edit_names[0] != sha:                           # download only when the file changed
+            try:
+                reply = get(f"https://api.github.com/repos/{self.repository}/git/blobs/{sha}", timeout=30,
+                            headers={**self._headers, "Accept": "application/vnd.github.raw"})
+                reply.raise_for_status()
+                reply.encoding = "utf-8"
+                self._edit_names = (sha, CardEdits.parse(reply.text).names())
+            except Exception as e:
+                print(f"Could not read {EDITS_PATH}: {e}")
+                return
+        names = self._edit_names[1]
         for card, extra in names.items():
             target = f"{card.replace(' ', '_')}.png"
             path = self.git_files.get(target) or next((v for k, v in self.git_files.items() if k.endswith("/" + target)), None)
@@ -337,9 +356,13 @@ class CardRepository:
     def _populate_site_ids(self) -> None:
         """Website card ids, for "Card page" links."""
         try:
-            reply = get(f"{SITE_URL}/data/cards.json", timeout=30)
+            reply = get(f"{SITE_URL}/data/cards.json", timeout=30,
+                        headers={"If-None-Match": self._site_etag} if self.site_ids and self._site_etag else {})
+            if reply.status_code == 304:                         # unchanged since the last look
+                return
             reply.raise_for_status()
             cards = reply.json().get("cards", [])
+            self._site_etag = reply.headers.get("ETag", "")
         except Exception as e:
             print(f"Could not read the website's cards: {e}")
             return

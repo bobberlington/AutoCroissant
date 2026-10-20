@@ -364,13 +364,15 @@ update_stats = to_thread(update_stats)
 @tree.command(name="update_stats", description="Manual call to update card stats.")
 @app_commands.describe(
     output_problematic_cards='Should we output cards with consistency errors?',
-    force_update='Should we forcefully update all cards (even ones that have not been edited)?',
+    force_update='Re-parse every card, even unchanged ones (downloads every PSD).',
+    cards='Card names to re-parse anyway, comma separated (e.g. after a parser fix).',
 )
 async def slash_update_stats(interaction: Interaction,
                              output_problematic_cards: Optional[bool] = True,
-                             force_update: Optional[bool] = False):
+                             force_update: Optional[bool] = False,
+                             cards: Optional[str] = ""):
     await interaction.response.defer()
-    await update_stats(interaction, output_problematic_cards, force_update)
+    await update_stats(interaction, output_problematic_cards, force_update, cards=cards)
 
 
 export_stats_to_file = to_thread(export_stats_to_file)

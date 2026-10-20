@@ -1,13 +1,15 @@
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from discord import Interaction, File
 from enum import Enum
 from github import Github, Repository
 from json import loads as json_loads
 from logging import getLogger, CRITICAL
-from os import listdir, remove, walk
+from os import fdopen, listdir, remove, walk
+from tempfile import mkstemp
 from os.path import basename, isdir, isfile, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
@@ -17,7 +19,6 @@ from requests import get
 from requests.exceptions import RequestException
 from typing import Optional, Any
 from urllib.parse import quote
-from urllib.request import urlretrieve, HTTPError
 import pandas as pd
 
 import config
@@ -31,6 +32,9 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # Configuration
 # ========================
 UPDATE_RATE = 25
+DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
+_tree_etags: dict = {}                                            # repository -> ETag of the last update's tree
+_file_cache: dict = {}                                            # repo path -> (blob sha, text) of small files
 TYPE_REGION_RATIO = 0.5
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 EXPORTED_STATS_NAME = "stats"
@@ -461,6 +465,7 @@ class CardInfo:
     creatures: Optional[list] = None          # CardStats per creature (multi-creature cards)
     duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
     alt_names: Optional[list] = None          # hidden title layers: names of the duplicates
+    blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -1352,26 +1357,12 @@ class RepositoryTraverser:
         self._github_client: Optional[Github] = None
         self.edits: Optional[CardEdits] = None
         self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
-
-    def _check_for_path_change(self, name: str, new_path: str) -> bool:
-        """
-        Check if a card's path has changed and update if needed.
-
-        Args:
-            name: Card name
-            new_path: New path for the card
-
-        Returns:
-            True if path changed, False otherwise
-        """
-        if name in self.db.stats:
-            old_path = self.db.stats[name].path
-            if old_path and old_path != new_path:
-                # Archive old version with the old path
-                old_card = self.db.stats[name]
-                self.db.old_stats[name].append(old_card)
-                return True
-        return False
+        self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
+        self.repository = ""
+        self.shas: dict = {}                     # repo path -> blob sha, from the tree
+        self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
+        self._repo_obj = None
+        self._recent: Optional[set] = None
 
     def _update_old_stats_paths(self) -> None:
         """
@@ -1385,34 +1376,68 @@ class RepositoryTraverser:
                 for old_card in self.db.old_stats[name]:
                     old_card.path = current_path
 
-    def _should_update_card(self,
-                            name: str,
-                            timestamp: float,
-                            new_path: str) -> tuple[bool, bool]:
-        """
-        Determine if a card should be updated.
+    def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
+        """Changed = new, moved or a different blob. Cards saved before blob shas: committed since the last update."""
+        card = self.db.stats.get(name)
+        if card is None or card.path != path:
+            return True
+        if getattr(card, "blob_sha", None):
+            return card.blob_sha != sha
+        recent = self._committed_since_update()
+        if recent is None or path in recent:
+            return True
+        card.blob_sha = sha                       # unchanged: remember its blob
+        self.changed += 1
+        return False
 
-        Args:
-            name: Card name
-            timestamp: New timestamp
-            new_path: New path
+    def _committed_since_update(self) -> Optional[set]:
+        """Paths committed after the newest stored card timestamp (one pass over those commits), or None."""
+        if self._recent is None:
+            newest = max((c.timestamp for c in self.db.stats.values() if (c.timestamp or 0) > 0), default=0)
+            if not newest:
+                return None
+            repo = Github(login_or_token=GIT_TOKEN).get_repo(self.repository)
+            self._recent = {f.filename for commit in repo.get_commits(since=datetime.fromtimestamp(newest, timezone.utc))
+                            for f in commit.files}
+        return self._recent
 
-        Returns:
-            Tuple of (should_update, is_new_card)
-        """
-        if name not in self.db.stats:
-            return (True, True)
+    def _repo(self) -> Repository.Repository:
+        if self._repo_obj is None:
+            self._github_client = Github(login_or_token=GIT_TOKEN, per_page=1)    # one commit per request
+            self._repo_obj = self._github_client.get_repo(self.repository)
+        return self._repo_obj
 
-        # Check for path change
-        path_changed = self._check_for_path_change(name, new_path)
+    def _blob(self, sha: str, stream: bool = False):
+        """A file's exact content by blob sha (raw.githubusercontent can lag behind the tree)."""
+        reply = get(f"https://api.github.com/repos/{self.repository}/git/blobs/{sha}", stream=stream, timeout=120,
+                    headers={**self.db._headers, "Accept": "application/vnd.github.raw"})
+        reply.raise_for_status()
+        return reply
 
-        # Check timestamp
-        timestamp_newer = self.db.stats[name].timestamp < timestamp
+    def _repo_text(self, path: str) -> Optional[str]:
+        """A small repo file's text; downloaded again only when its blob changed."""
+        sha = self.shas.get(path)
+        if sha is None:
+            return None
+        cached = _file_cache.get(path)
+        if not cached or cached[0] != sha:
+            reply = self._blob(sha)
+            reply.encoding = "utf-8"
+            _file_cache[path] = cached = (sha, reply.text)
+        return cached[1]
 
-        # Update if path changed OR timestamp is newer
-        should_update = path_changed or timestamp_newer
-
-        return (should_update, False)
+    def _download(self, path: str, sha: str) -> Optional[str]:
+        """A PSD into a temp file, or None."""
+        try:
+            with self._blob(sha, stream=True) as reply:
+                fd, name = mkstemp(suffix=".psd")
+                with fdopen(fd, "wb") as fh:
+                    for chunk in reply.iter_content(1 << 20):
+                        fh.write(chunk)
+            return name
+        except (RequestException, OSError) as e:
+            print(f"{path}: download failed ({e})")
+            return None
 
     def traverse_remote(self,
                         repository: str,
@@ -1430,19 +1455,24 @@ class RepositoryTraverser:
         Returns:
             List of formatted problem card messages
         """
-        resp = get(
-            f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1",
-            headers=self.db._headers,
-            timeout=30)
-
-        self._github_client = Github(login_or_token=GIT_TOKEN)
-        repo = self._github_client.get_repo(repository)
+        self.repository = repository
+        headers = dict(self.db._headers)
+        if not force_update and not self.only and _tree_etags.get(repository):
+            headers["If-None-Match"] = _tree_etags[repository]       # 304 when nothing changed (free)
+        resp = get(f"https://api.github.com/repos/{repository}/git/trees/main?recursive=1", headers=headers, timeout=30)
+        if resp.status_code == 304:
+            msg = "Nothing changed in the card repo since the last update."
+            queue_message(interaction, msg) if interaction else print(msg)
+            return ([], 0)
+        resp.raise_for_status()
+        self.tree = resp.json()
+        self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
 
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
         self.edits = self._edits_from_response(resp, repository)
-        problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic, force_update)
+        problems, num_new = self._process_files_from_response(resp, repository, interaction, output_problematic, force_update)
         self.changed += self._apply_authors(self._authors_from_response(resp, repository))
         self.changed += self._apply_edits()
         self.changed += self._sync_duplicates(resp)
@@ -1450,6 +1480,7 @@ class RepositoryTraverser:
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
+        _tree_etags[repository] = resp.headers.get("ETag")
 
         return (problems, num_new)
 
@@ -1483,7 +1514,7 @@ class RepositoryTraverser:
         manifest = None
         if ICON_MANIFEST_PATH in paths:
             try:
-                manifest = json_loads(get(self._construct_raw_url(repository, ICON_MANIFEST_PATH), timeout=30).text)
+                manifest = json_loads(self._repo_text(ICON_MANIFEST_PATH))
             except (RequestException, ValueError) as e:
                 print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
         return IconVocabulary.build(self.db.all_types, stars, manifest)
@@ -1494,9 +1525,7 @@ class RepositoryTraverser:
         if AUTHORS_PATH not in paths:
             return None
         try:
-            reply = get(self._construct_raw_url(repository, AUTHORS_PATH), timeout=30)
-            reply.raise_for_status()
-            return CardAuthors.parse(reply.text)
+            return CardAuthors.parse(self._repo_text(AUTHORS_PATH))
         except RequestException as e:
             print(f"Could not read {AUTHORS_PATH}; authors stay as they are: {e}")
             return None
@@ -1521,9 +1550,7 @@ class RepositoryTraverser:
         if EDITS_PATH not in paths:
             return None
         try:
-            reply = get(self._construct_raw_url(repository, EDITS_PATH), timeout=30)
-            reply.raise_for_status()
-            return CardEdits.parse(reply.text)
+            return CardEdits.parse(self._repo_text(EDITS_PATH))
         except (RequestException, ValueError) as e:
             print(f"Could not read {EDITS_PATH}; edits stay as they are: {e}")
             return None
@@ -1608,81 +1635,72 @@ class RepositoryTraverser:
 
     def _process_files_from_response(self,
                                      response,
-                                     repo: Repository.Repository,
                                      repository: str,
                                      interaction: Optional[Interaction],
                                      output_problematic: bool,
                                      force_update: bool) -> tuple[list[str], int]:
-        """Process files from API response."""
+        """Re-parse the PSDs whose blob changed (all with force_update). Unchanged cards cost no requests."""
         problematic_cards = []
-        num_updated = 0
-        num_new = 0
-        num_old = 0
-        num_moved = 0
-
+        num_updated = num_new = num_old = num_moved = 0
+        todo = []
         for item in response.json().get("tree", []):
             path = item.get("path", "")
-
-            # Check if any folder in the path is in EXCLUDE_FOLDERS
             if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
                 continue
-
             name = splitext(basename(path))[0].replace('_', ' ')
             self.db.dirty_files.append(name)
-
-            # Get timestamp and author metadata
-            timestamp, author = self._get_remote_timestamp(repo, path, name)
-
-            # Check if update needed
-            should_update, is_new = self._should_update_card(name, timestamp, path)
-
-            if not force_update and not should_update:
-                num_old += 1
+            if force_update or CardAuthors.key(name) in self.only or self._psd_changed(name, path, item.get("sha")):
+                todo.append((path, name, item.get("sha")))
             else:
-                # Archive old version before updating (if not new)
-                if should_update and not is_new and name in self.db.stats:
-                    old_card = self.db.stats[name]
-                    self.db.old_stats[name].append(old_card)
+                num_old += 1
 
-                if is_new:
-                    num_new += 1
-                # Check if it's a move vs a content update
-                elif name in self.db.stats and self.db.stats[name].path != path:
-                    num_moved += 1
-                else:
-                    num_new += 1
-
-                psd_url = self._construct_raw_url(repository, path)
-                try:
-                    local_file = urlretrieve(psd_url)[0]
-                except HTTPError:
-                    print(f"{psd_url} not found.")
+        pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
+        downloads = [pool.submit(self._download, path, sha) for path, _, sha in todo]
+        try:
+            for (path, name, sha), download in zip(todo, downloads):
+                local_file = download.result()
+                if local_file is None:
                     continue
-
                 try:
+                    timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
                     card = self.parser.parse(local_file, path)
                 finally:
                     remove(local_file)
+                old = self.db.stats.get(name)
+                if old is None:
+                    num_new += 1
+                else:
+                    self.db.old_stats[name].append(old)         # history
+                    if old.path != path:
+                        num_moved += 1
+                    else:
+                        num_new += 1
                 card.timestamp = timestamp
-                # Set author if it was fetched earlier
+                card.blob_sha = sha
                 if author and not card.author:
                     card.author = author
                 if self.edits:
                     self.edits.apply(name, card)
                 self.db.stats[name] = card
 
-                # Validate
                 if output_problematic:
                     problems = CardValidator.validate(card)
                     if problems:
                         problematic_cards.append((path, card, problems))
 
-            num_updated += 1
-            if num_updated % UPDATE_RATE == 0:
-                self._send_progress(interaction, num_updated)
+                num_updated += 1
+                if num_updated % UPDATE_RATE == 0:
+                    self._send_progress(interaction, num_updated)
+        finally:
+            for download in downloads:
+                download.cancel()
+            pool.shutdown(wait=True)
+            for download in downloads:                          # temp files left by an error
+                if download.done() and not download.cancelled() and download.result() and isfile(download.result()):
+                    remove(download.result())
 
         self._send_summary(interaction, num_new, num_old, num_moved)
-        return (self._format_problems(problematic_cards), num_new)
+        return (self._format_problems(problematic_cards), num_new + num_moved)
 
     def _get_remote_timestamp(self,
                               repo: Optional[Repository.Repository],
@@ -1723,7 +1741,7 @@ class RepositoryTraverser:
                       num_old: int,
                       num_moved: int = 0) -> None:
         """Send summary of update."""
-        msg = f"{num_new} had newer timestamps or were new.\n{num_old} did not have newer timestamps.\n{num_moved} cards changed location."
+        msg = f"{num_new} cards changed or new, {num_old} unchanged, {num_moved} moved."
 
         if interaction:
             queue_message(interaction, msg)
@@ -1808,7 +1826,8 @@ def get_old_stats_as_dict() -> dict[str, list[dict]]:
 def update_stats(interaction: Optional[Interaction] = None,
                  output_problematic: bool = True,
                  force_update: bool = False,
-                 verbose: bool = True) -> list[str]:
+                 verbose: bool = True,
+                 cards: str = "") -> list[str]:
     """
     Update card statistics database from the GitHub repository.
 
@@ -1817,7 +1836,8 @@ def update_stats(interaction: Optional[Interaction] = None,
     Args:
         interaction: Optional Discord interaction
         output_problematic: Whether to output problematic cards
-        force_update: Re-parse every card even if its last commit is not newer
+        force_update: Re-parse every card even if its PSD did not change
+        cards: Comma-separated card names to re-parse anyway (e.g. after a parser fix)
         verbose: Whether to display progress messages and problem summaries
 
     Returns:
@@ -1836,6 +1856,7 @@ def update_stats(interaction: Optional[Interaction] = None,
     stats_db.load()
     stats_db.dirty_files.clear()
     traverser = RepositoryTraverser(stats_db)
+    traverser.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
 
     problem_cards, num_new = traverser.traverse_remote(
         card_repo.repository,
@@ -1863,7 +1884,7 @@ def update_stats(interaction: Optional[Interaction] = None,
             _notify(card.split('```')[0])
 
     # Always refresh card_repo stats
-    queue_command(card_repo.populate_files)
+    queue_command(card_repo.populate_files, traverser.tree)
     queue_command(card_repo.prep_dataframes)
 
     return problem_cards

@@ -242,6 +242,12 @@ Moving hosting from machine A (currently running) to machine B:
 
 ## 7. Operating /update_stats
 
+**Cost (since 2026-10-20):** a card is re-parsed only when its PSD's git blob sha (from the tree) differs from
+`card.blob_sha`. Nothing changed: 1 request (the tree, sent with If-None-Match; GitHub answers 304). Per changed
+card: 1 commit lookup + the PSD by blob sha (4 downloads run ahead of parsing). Small files (authors, edits, icon
+manifest) download only when their blob changes. `cards:Sonic, Pix` re-parses just those (after a parser fix);
+`force_update:True` re-downloads every PSD. The run saves whenever anything changed, PSD or not.
+
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
 psd_analyzer.py:1287; slash wrapper main.py:355-365.
 
