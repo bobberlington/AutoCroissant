@@ -111,6 +111,18 @@ blob sha (raw `main` can lag). Then remove the reminder: `/remove_reminder remin
 
 ## Task 2. TTS save auto-update (bot)
 
+**Status 2026-10-20:** steps 1-7 done. Save committed as `TTS/Impossibility Simulator.json`, rules `TTS/decks.json`
+(audit: `~/Documents/tts-save/AUDIT.md`), updater `commands/tts_save.py` (`python -m commands.tts_save <save.json>`),
+`/update_tts_save` (admin) plus an automatic run after a /update_stats whose tree changed card images, the rules,
+Card Edits.json or the save. First production run: commit dceef8eb (867 links pinned, 12 cards added, ZOEY -> Z!!!!!
+rename, 56 Nicknames, 575 role tags cleared, 10 CustomDeck keys fixed, resizeTargets regenerated); the second run
+reported no changes. 29 website names were set to the printed card names first (Card Edits.json). The bot's
+fine-grained token is read-only on the card repo (POST git/blobs -> 403), so commits go through git objects in the
+history clone pushed over SSH with the AutoCroissant key; give the token Contents: write to use the API path.
+Players download the save from the raw link the bot posts (not attached in Discord: 5.5 MB). Decisions taken for the
+audit's open items: complete decks get missing cards at the rule's count; hand-picked and empty decks are left alone;
+cards outside a complete deck's rule are moved out unless listed in the rule's include; gone images are reported only.
+
 **Context:** new cards are added by hand to several decks in the save, and their Name typed on the card. Image
 links point at `main`, so with mod caching on players keep the first image they loaded.
 
