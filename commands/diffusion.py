@@ -1,3 +1,5 @@
+# Archived 2026-10-20: AI generation was removed from main (the user's request). This branch is main as of
+# faebfc7 with AI intact; run the bot from here on a GPU machine (see requirements2.txt).
 from discord import Attachment, Interaction
 from gc import collect
 from os import listdir
