@@ -8,8 +8,8 @@ general_commands = {
     "/restart_bot:"                             : "Restarts the bot.",
     "/stop_bot:"                                : "Stops the bot (admin only).",
     "/pull:"                                    : "Does a hard reset, then a git pull, and reports status (admin only).",
-    "/push:"                                    : "Does a git push and reports status (admin only).",
-    "/update:"                                  : "Does a push, then pull, then restarts (admin only).",
+    "/push:"                                    : "Commits the card pickles, rebases onto new code, pushes and reports status (admin only).",
+    "/update [force_reset]:"                    : "Does a push, then pull, then restarts (admin only). force_reset: hard reset to origin first (dangerous!).",
     "/purge [user] [num] [bulk]:"               : "Deletes messages. Can specify user, number of messages (default 100), and bulk mode.",
     "/list_guilds:"                             : "Lists all guilds the bot is currently a member of (admin only).",
     "/leave_guild <guild_id>:"                  : "Forces the bot to leave a specified guild (admin only). Provide the guild ID.",
@@ -68,9 +68,10 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update]:" : "Manually updates the card statistics database by scanning the PSDs on GitHub.\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed.\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
-                                                               "- force_update: Will process and update every single card, even if there have not been any changes to it (default: False).",
+                                                               "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
+                                                               "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Export only ability text (default: True)\n"
                                                    "- as_csv: Export as CSV instead of text (default: True)",

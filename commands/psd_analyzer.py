@@ -1670,7 +1670,8 @@ class RepositoryTraverser:
                 if old is None:
                     num_new += 1
                 else:
-                    self.db.old_stats[name].append(old)         # history
+                    if old.path != path or getattr(old, "blob_sha", None) != sha:
+                        self.db.old_stats[name].append(old)     # history only when the PSD changed or moved
                     if old.path != path:
                         num_moved += 1
                     else:
