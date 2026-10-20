@@ -12,6 +12,27 @@ Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardma
 - PSD research (report, Photopea harness, psd-tools patch, survey data): `~/Documents/psd-research/`. TTS survey
   scripts are in `/private/tmp/fontexplore/scripts/tts_survey*.py` (gone after a reboot; easy to redo).
 
+## Orchestration (ultracode, Fable 5.1 as orchestrator)
+
+The main session (Fable 5.1) plans, decides, reviews diffs and does every production action itself (pushes,
+jetson restarts, pickle commits); agents never touch production in parallel. Match agent, model and effort to the job
+(`agent({agentType, model, effort, isolation})` in workflows):
+
+| Job | Agent | Model / effort |
+|---|---|---|
+| Read-only sweeps (code maps, TTS save structure, PSD feature surveys) | `Explore` | sonnet, low-medium |
+| Designs with real trade-offs (text engine, effect compositor, TTS updater) | `Plan` judge panel: 3 independent designs, then judges | fable, high-xhigh |
+| Hard implementation (text engine, layout/line breaking, compositor math) | general-purpose | fable, xhigh |
+| Well-specified implementation (one effect or adjustment, emoji sync, sha links, TTS script pieces, website tab) | general-purpose, `isolation: 'worktree'` when several edit one repo | opus, high |
+| Adversarial verify (refute each fix: harness scores, tests, a Photoshop/Photopea reference) | general-purpose, 2-3 skeptics per change | opus, high (fable for text) |
+| Mechanical runs (score ~813 cards, regressions, builds) | plain scripts first; an agent only to read results | haiku/sonnet, low |
+| Docs, memories, plan upkeep | general-purpose | sonnet, medium |
+
+Rules: one agent owns a file at a time; worktrees only for parallel edits to the same repo; review gates (the TTS
+audit report, anything outward-facing) stop the workflow for the user; log anything a workflow skipped or sampled.
+The psd-tools fork works through feature branches and upstream PRs (normal for a fork; TTSCardMaker and
+AutoCroissant stay main-only).
+
 ## Decided (2026-10-20)
 
 | # | Decision |
