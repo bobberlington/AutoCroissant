@@ -156,7 +156,7 @@ so it merges with the bot's updates. Start after Task 2's audit and rules exist.
 ## Task 3. psd-tools fork: PSD edits on the jetson, no Photoshop, no browser (MAIN EFFORT)
 
 The user's call (2026-10-20): spend as many tokens and as much time as needed to make the psd-tools fork good enough
-to replace Photopea. Fork: https://github.com/MichaelJSr/psd-tools, cloned at `~/Desktop/psd-tools` (main just past
+to replace Photopea. Fork: https://github.com/MichaelJSr/psd-tools, cloned at `~/Documents/Tools/psd-tools` (main just past
 v1.25.0, `upstream` remote; read its `CLAUDE.md` first). Needs Python >= 3.11: on the jetson, after Task 0. Research, harness and data: `~/Documents/psd-research/`
 (`REPORT.md`, whose Photopea-first verdict is superseded by D4; `fork/patches.py` holds the gradient fix).
 

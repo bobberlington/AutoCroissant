@@ -1,7 +1,7 @@
+from setuptools import setup, Extension                 # before distutils: 3.12+ only has setuptools' copy
 from distutils.command.clean import clean as CleanCommand
 from Cython.Build import cythonize
 from pathlib import Path
-from setuptools import setup, Extension
 import shutil
 import sys
 
