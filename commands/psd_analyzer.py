@@ -49,6 +49,7 @@ MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
 ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json" # aliases + codepoints, written by the font build
 AUTHORS_PATH = "MDW/Card Authors.txt"                             # who made each card; wins over the database
+EDITS_PATH = "MDW/Card Edits.json"                                # website fixes; win over the PSD
 ICON_VARIANTS = ("", "tint", "sticker", "no")
 ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
@@ -219,6 +220,94 @@ class CardAuthors:
 
 
 @dataclass
+class CardEdits:
+    """
+    TTSCardMaker's MDW/Card Edits.json: card fixes from the website's Edit button.
+    {"cards": {"Card Name": {"field": value, "_by": ..., "_at": ...}}}; names match like the authors file.
+    Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
+    """
+    cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
+
+    TYPES = {"name": str, "type": str, "subtype": str, "series": str, "stars": int, "types": list,
+             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
+             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool}
+    NULLABLE = {"subtype", "series", "stars", "hp", "def", "atk", "spd"}
+    ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "stars": "stars",
+             "types": "types", "ability": "ability", "note": "note", "hidden": "hidden", "problems_ok": "problems_ok",
+             "allow_high_stats": "allow_high_stats"}
+    STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
+    FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
+                "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
+                "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",)}
+
+    @classmethod
+    def valid(cls, name: str, value) -> bool:
+        kind = cls.TYPES.get(name)
+        if kind is None:
+            return False
+        if value is None:
+            return name in cls.NULLABLE
+        if kind is int:
+            return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        if kind is list:
+            return isinstance(value, list) and all(isinstance(x, str) for x in value)
+        return isinstance(value, kind)
+
+    @classmethod
+    def parse(cls, text: str) -> "CardEdits":
+        """Raises ValueError for a file that isn't JSON; bad entries are skipped."""
+        data = json_loads(text)
+        cards = data.get("cards") if isinstance(data, dict) else None
+        edits = cls()
+        for name, fields in (cards if isinstance(cards, dict) else {}).items():
+            if isinstance(fields, dict):
+                edits.cards[CardAuthors.key(name)] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
+        return edits
+
+    def get(self, card: CardInfo, name: str):
+        if name in self.STATS:
+            value = getattr(card.stats, self.STATS[name])
+            return value if value >= 0 else None
+        if name == "problems":
+            return list(card.problems)
+        value = getattr(card, self.ATTRS[name], None)
+        return list(value) if isinstance(value, list) else value
+
+    def set(self, card: CardInfo, name: str, value) -> None:
+        if name in self.STATS:
+            setattr(card.stats, self.STATS[name], -1 if value is None else value)
+        elif name == "problems":
+            card.problems = list(value or [])
+        else:
+            setattr(card, self.ATTRS[name], list(value) if isinstance(value, list) else value)
+
+    def apply(self, name: str, card: CardInfo) -> bool:
+        """Put back the PSD values, then apply this card's edits. Returns whether the card changed."""
+        before = repr(card)
+        for key, value in (getattr(card, "parsed_values", None) or {}).items():
+            self.set(card, key, value)
+        fields = {k: v for k, v in self.cards.get(CardAuthors.key(name), {}).items() if k in self.ATTRS or k in self.STATS}
+        saved = {key: self.get(card, key) for key in fields}
+        if fields:
+            saved["problems"] = list(card.problems)
+            answered = tuple(p for key in fields for p in self.FIXED_BY.get(key, ()))
+            card.problems = [] if fields.get("problems_ok") else [p for p in card.problems if not answered or not p.startswith(answered)]
+        for key, value in fields.items():
+            self.set(card, key, value)
+        card.parsed_values = saved or None
+        return repr(card) != before
+
+    def names(self) -> dict[str, list[str]]:
+        """Card name -> website aliases and display name, for name lookups."""
+        out = {}
+        for key, fields in self.cards.items():
+            extra = list(fields.get("aliases") or []) + ([fields["name"]] if fields.get("name") else [])
+            if extra:
+                out[key] = extra
+        return out
+
+
+@dataclass
 class IconVocabulary:
     """Icon names the stoogedings font understands: Types/ icons, Types/Stars/ icons, their aliases and codepoints."""
     tokens: dict[str, tuple[str, str]] = field(default_factory=dict)   # accepted spelling -> (name, "type" | "star")
@@ -290,6 +379,13 @@ class CardInfo:
     stats: CardStats = field(default_factory=CardStats)
     problems: list[str] = field(default_factory=list)
     author: Optional[str] = None
+    # set from Card Edits.json
+    display_name: Optional[str] = None
+    note: Optional[str] = None
+    hidden: bool = False
+    problems_ok: bool = False
+    allow_high_stats: bool = False
+    parsed_values: Optional[dict] = None      # PSD values of edited fields
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -320,6 +416,9 @@ class CardInfo:
 
         if self.problems:
             result["problem"] = self.problems
+        for key in ("display_name", "note", "hidden"):
+            if getattr(self, key, None):
+                result[key] = getattr(self, key)
 
         return result
 
@@ -1101,6 +1200,8 @@ class CardValidator:
             List of problem descriptions
         """
         problems = []
+        if getattr(card, "problems_ok", False):           # checked on the website
+            return problems
 
         # Type problems
         if card.card_type == CardType.UNKNOWN.value:
@@ -1149,7 +1250,8 @@ class CardValidator:
 
         # Check for excessive stats — but skip excluded cards
         if (stats.has_excessive_stats() and
-            card.name not in CardValidator.EXCESSIVE_STAT_EXCLUSIONS):
+            card.name not in CardValidator.EXCESSIVE_STAT_EXCLUSIONS and
+            not getattr(card, "allow_high_stats", False)):
             problems.append("STATS TOO HIGH")
 
         return problems
@@ -1161,6 +1263,7 @@ class RepositoryTraverser:
         self.db = db
         self.parser: Optional[PSDParser] = None
         self._github_client: Optional[Github] = None
+        self.edits: Optional[CardEdits] = None
 
     def _check_for_path_change(self, name: str, new_path: str) -> bool:
         """
@@ -1250,8 +1353,10 @@ class RepositoryTraverser:
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
+        self.edits = self._edits_from_response(resp, repository)
         problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic, force_update)
         self._apply_authors(self._authors_from_response(resp, repository))
+        self._apply_edits()
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -1318,6 +1423,28 @@ class RepositoryTraverser:
                 changed += 1
         if changed:
             print(f"{changed} authors set from {AUTHORS_PATH}.")
+        return changed
+
+    def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
+        """The card repo's website fixes (EDITS_PATH), or None if missing or unreadable."""
+        paths = [item.get("path", "") for item in response.json().get("tree", [])]
+        if EDITS_PATH not in paths:
+            return None
+        try:
+            reply = get(self._construct_raw_url(repository, EDITS_PATH), timeout=30)
+            reply.raise_for_status()
+            return CardEdits.parse(reply.text)
+        except (RequestException, ValueError) as e:
+            print(f"Could not read {EDITS_PATH}; edits stay as they are: {e}")
+            return None
+
+    def _apply_edits(self) -> int:
+        """Apply the website fixes to every card. Returns how many changed."""
+        if self.edits is None:
+            return 0
+        changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
+        if changed:
+            print(f"{changed} cards changed by {EDITS_PATH}.")
         return changed
 
     def _icons_from_local(self, local_path: str) -> IconVocabulary:
@@ -1407,6 +1534,8 @@ class RepositoryTraverser:
                 # Set author if it was fetched earlier
                 if author and not card.author:
                     card.author = author
+                if self.edits:
+                    self.edits.apply(name, card)
                 self.db.stats[name] = card
 
                 # Validate

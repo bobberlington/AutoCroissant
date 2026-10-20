@@ -320,7 +320,8 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | Deck builder: the constructed hand from rulebook "03 Setting Up" (`HAND`; 17 cards; field ≤ 3★), saved decks, share code, import/export, random fill, print, TTS export. **The only place that shows "banned"** (picker markers, checks, random fill), besides the rulebook's ban list page and the Stats chart about constructed bans | `site/assets/deck.js` (+ `tileHtml(…, { constructed: true })` in app.js) |
 | Stats: counts, **"Starting-hand choices"** (legal, unbanned cards per hand tier vs how many the hand needs; replaced the stacked star-level bars on 2026-10-20), averages heat table (OKLab ramp, text always ≥ 4.5:1: `heatScale`), distributions, outlier scatter, table views | `site/assets/stats.js` |
 | Theme, badge colors, version viewer layout | `site/assets/style.css` |
-| Data shape, images, versions, authors, OG pages, ban list, unparsed cards, cache-busting | `site/build/build_site.py` |
+| Data shape, images, versions, authors, OG pages, ban list, unparsed cards, cache-busting, `Card Edits.json` (`apply_edits`) | `site/build/build_site.py` |
+| **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits) | `site/assets/edit.js` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
 - **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
@@ -344,6 +345,9 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 - **Card edits:** pushed card content changes images immediately, but text and stats only after the bot re-parses
   and pushes.
 - **Authors:** both sides read `MDW/Card Authors.txt` with the same rule, so authors agree whatever the bot recorded.
+- **Website edits:** `MDW/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
+  triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
+  `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (psd_analyzer.py).
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.

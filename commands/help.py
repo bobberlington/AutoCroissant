@@ -78,6 +78,7 @@ stats_commands = {
                                                   "- del_entry: Delete entire metadata entry\n"
                                                   "- types: Comma-separated list, e.g., 'fire,water'\n"
                                                   "- author: cards listed in TTSCardMaker's MDW/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
+                                                  "- fields fixed on the website (MDW/Card Edits.json) are set from that file again on the next /update_stats\n"
                                                   "- No parameters (except query) shows current metadata",
     "/mass_replace <field> <old> <new>:"        : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",

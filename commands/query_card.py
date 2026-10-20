@@ -75,6 +75,7 @@ class CardRepository:
 
         # Add aliases to registry
         self._populate_aliases()
+        self._populate_edit_names()
 
         return response.status_code
 
@@ -312,6 +313,25 @@ class CardRepository:
         with open(ALIAS_PKL, 'wb') as f:
             dump(self.git_file_alias, f)
 
+    def _populate_edit_names(self) -> None:
+        """Website aliases and names from the card repo's Card Edits.json."""
+        from commands.psd_analyzer import EDITS_PATH, CardEdits
+        try:
+            reply = get(f"https://raw.githubusercontent.com/{self.repository}/main/{quote(EDITS_PATH)}", timeout=30)
+            if reply.status_code == 404:
+                return
+            reply.raise_for_status()
+            names = CardEdits.parse(reply.text).names()
+        except Exception as e:
+            print(f"Could not read {EDITS_PATH}: {e}")
+            return
+        for card, extra in names.items():
+            target = f"{card.replace(' ', '_')}.png"
+            path = self.git_files.get(target) or next((v for k, v in self.git_files.items() if k.endswith("/" + target)), None)
+            if path:
+                for name in extra:
+                    self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", path)
+
     def prep_dataframes(self) -> None:
         """Load card statistics from pickle file."""
         from commands.psd_analyzer import get_stats_as_dict
@@ -319,6 +339,9 @@ class CardRepository:
         cards_df = DataFrame.from_dict(get_stats_as_dict()).transpose()
 
         if not cards_df.empty:
+            if "hidden" in cards_df:                    # hidden on the website
+                cards_df = cards_df[cards_df["hidden"] != True]
+
             # Separate cards and rulebook entries
             has_ability = cards_df["ability"].notna()
             is_rulebook = cards_df["path"].str.contains("Rulebook", na=False)
