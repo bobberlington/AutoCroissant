@@ -19,15 +19,24 @@ async def git_push(interaction: Interaction):
         git.add(ALIAS_PKL)
         git.add(STATS_PKL)
         git.add(OLD_STATS_PKL)
-        git.commit('-m', 'PICKLE')
+        try:
+            git.commit('-m', 'PICKLE')
+        except GitCommandError as e:
+            if "nothing to commit" not in str(e):
+                raise
+        try:
+            git.pull('--rebase', '--autostash', 'origin', 'main')    # code pushed since the last pull
+        except GitCommandError:
+            git.rebase('--abort')
+            raise
+        if git.rev_list('--count', 'origin/main..HEAD').strip() == "0":
+            await interaction.followup.send("Pickles are already up to date.")
+            return
         git.push()
         await interaction.followup.send("Successfully pushed!")
     except GitCommandError as e:
-        if "nothing to commit" in str(e) or "up-to-date" in str(e):
-            await interaction.followup.send("Pickles are already up to date.")
-        else:
-            await interaction.followup.send(f"Push failed: {str(e)}")
-            raise
+        await interaction.followup.send(f"Push failed: {str(e)}")
+        raise
 
 
 async def git_pull(interaction: Interaction):
