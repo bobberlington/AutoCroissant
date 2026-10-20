@@ -333,7 +333,7 @@ class CardEdits:
                 edits.cards[CardAuthors.key(name)] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
         return edits
 
-    def get(self, card: CardInfo, name: str):
+    def get(self, card: "CardInfo", name: str):
         if name == "creatures":
             return [{k: (lambda v: v if v >= 0 else None)(getattr(c, a)) for k, a in self.STATS.items()} for c in card.creatures] if getattr(card, "creatures", None) else None
         if name in self.STATS:
@@ -344,7 +344,7 @@ class CardEdits:
         value = getattr(card, self.ATTRS[name], None)
         return list(value) if isinstance(value, list) else value
 
-    def set(self, card: CardInfo, name: str, value) -> None:
+    def set(self, card: "CardInfo", name: str, value) -> None:
         if name == "creatures":
             card.creatures = [CardStats(**{a: -1 if c.get(k) is None else c[k] for k, a in self.STATS.items()}) for c in value] if value else None
             if card.creatures:
