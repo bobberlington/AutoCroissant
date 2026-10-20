@@ -5,7 +5,9 @@ description: Domain reference for the Impossibility Simulator card game AS ENCOD
 
 # Impossibility Simulator: the card data model, as encoded here
 
-All counts and line numbers verified 2026-07-11. Line numbers drift; every volatile fact has a
+All counts and line numbers verified 2026-07-11; §3.3, §4.1, §6 timestamp semantics and §8-9
+updated 2026-10-19 (icon font, `.DS_Store` fix, `force_update` default) and 2026-10-20 (exact token
+spellings, remote-mode default). Line numbers drift; every volatile fact has a
 re-verification one-liner in "Provenance and maintenance" at the bottom. Commands assume
 cwd = `/Users/michaelsrouji/Desktop/AutoCroissant` (this repo's root).
 
@@ -23,8 +25,9 @@ https://github.com/JasonBechdolt and maintained by friends since middle school."
 Photoshop file (`.psd`, the editable source of truth) with a rendered `.png` sibling (the image the
 bot posts in Discord, served from `raw.githubusercontent.com`). TTSCardMaker is cloned at
 `~/Desktop/TTSCardMaker` — that path is the documented convention, set as `LOCAL_DIR_LOC` in
-`global_config.py:4`. This bot (AutoCroissant) READS TTSCardMaker — over the GitHub API or from the
-local clone — parses the PSDs into a stats database (`stats.pkl`), and answers queries against it.
+`global_config.py:4`. This bot (AutoCroissant) READS TTSCardMaker over the GitHub API (reading the
+local clone, "local mode", was archived on 2026-10-20; the clone still serves the offline diagnostics
+scripts), parses the PSDs into a stats database (`stats.pkl`), and answers queries against it.
 The bot never writes to TTSCardMaker.
 
 Scale, measured 2026-07-11: 904 PSDs and 1003 PNGs in the clone; 813 entries in `stats.pkl`.
@@ -74,11 +77,25 @@ Creatures, and Debuffs, the leaf folder MUST start with an integer or `classify`
 see `autocroissant-build-and-env`; do not "clean it up".)
 
 **Stars from the PSD instead**: for `Auxiliary/Items`, `Auxiliary/Minions`, and `N.M.E` (exactly
-these three, matched as substrings of the relative path — psd_analyzer.py:408-411), stars are
-COUNTED from the PSD: each visible pixel-bearing layer whose ancestry (up to 3 levels) contains
-"stars" adds 1 (`_is_star_layer`, psd_analyzer.py:517-527; assignment at 425-426). In practice
-these are "Warpstar" smart-object layers under a "Stars" group — Mini Doomer has two, hence
-stars=2.
+these three, matched as substrings of the relative path), stars are COUNTED from the PSD: `PSDParser._count_stars`,
+since 2026-10-20.
+- **Search area:** every outermost visible group with "stars" in its name (`_star_groups`).
+- **Counting** (`_stars_in`): child groups count recursively. Visible pixel layers that overlap count as one star
+  (`_count_clusters`). Overlap means one layer's *core* center lies inside the other's core, where the core is the
+  box of pixels at least 50% opaque (`STAR_CORE_ALPHA`, `_core_box`). Glows, frames and the pieces of one star
+  merge; separate stars don't, even when, like Termination Shock's lens flares, their full boxes overlap.
+- **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
+  not "starfish") are counted the same way.
+- **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
+  2026-10-20 that was God Tamer (five "Delicate Flower" layers) and Bubble (a starfish).
+- **Header text:** icon-font stars in it are added on top (§4.1).
+
+**Why it changed:** the old rule added 1 per visible pixel layer with "stars" in its 3 nearest parent groups.
+A star made of several layers was counted several times: Indoctrination 20 (4 stars × 5 layers), Michael's
+Blessing 11 (5), Spawn of the Forbidden One 10 (4). Cards whose stars aren't under a "Stars" group came out as 0
+(Nasty Patty 3, Shell Shield 2). Checked over all 165 such cards: only those 5 changed, and every other count
+stayed the same. The fix reaches stats.pkl and the website at the next `/update_stats` + `/push`. Mini Doomer still
+has two "Warpstar" smart objects under "Stars", so stars=2.
 
 ### The creatures-vs-creature anomaly (do not fix silently)
 
@@ -166,10 +183,12 @@ joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and a
 
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
-Remote traversal yields 35 (psd_analyzer.py:875-881); LOCAL traversal (psd_analyzer.py:883-890)
-walks the directory and leaks macOS artifacts — verified: 36 entries including `'.ds_store'`.
-Harmless today (no layer is named .DS_Store) but visible in `parse_one.py` output; ignore it, and
-ignore the "Git token found..." lines the import chain prints.
+Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
+diagnostics scripts (`_populate_types_from_local`, psd_analyzer.py:1038) also yields 35 since 2026-10-19, when it started
+skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
+Ignore the "Git token found..." lines the import chain prints. Since 2026-10-19 a second vocabulary
+sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
+aliases for icon-font tokens (§4.1).
 
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon
 (psd_analyzer.py:442-447). Position decides its meaning, using
@@ -191,12 +210,27 @@ Two-stage name matching (psd_analyzer.py:473-515):
    substrings `hp` / `def` / `atk` / `spd` (first hit wins).
 
 Semantics: a digit layer FOUND under e.g. "Hp Dark" marks hp as present, whether visible or not.
-All VISIBLE digit layers for a stat are SUMMED (`tracker.value += int(layer.name)`,
-psd_analyzer.py:511-514). If a stat was found but every digit layer is hidden, the value defaults
-to **10** (psd_analyzer.py:553) — that is how maxed stats are encoded in the template. Never found
-→ stays −1 (only seeded for creatures/minions), which the validator reports. In Mini Doomer:
-"5" visible under Hp Dark → hp=5; visibility alone matters (the digit layers are `exposure` layers
-with no pixels).
+The VISIBLE digit layers are grouped by bar row (their parent group) and each row gives a value
+(`StatTracker._row_value` / `total`, psd_analyzer.py):
+
+- **Darkening adjustment layers** (the template: `exposure` layers named 0-9, no pixels): the one
+  visible digit; if several are visible, the lowest (it already darkens the rest of the bar; Sans had
+  "1" and "9" visible: defense 1, not 10). Mini Doomer: "5" visible under Hp Dark → hp=5.
+- **One drawn layer per cell, named 1-10** (heart bars: Blank Card, Dirty Bed, Tainted Lazarus):
+  count the lit cells (`pixel` layers) visible, or 10 minus the dark cells (`smartobject`) when only
+  those are visible. Adding up the names gave 55. A "Light" row and a "Dark" row in the same stat
+  group draw the same bar and count once.
+- **Anything else** (value layers or groups, plus "0" decorations: Clots, False Knight): the visible
+  digits add up.
+
+Rows add up, so stats can pass 10: Sonic's speed is two rows (20), Royal Eradicator Main Cannon's
+attack 10 + 2, and multi-creature cards (Pix, Twin Emperors, Tainted Lazarus's two sides) add their
+creatures. `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` lists the cards allowed past 10; any other
+card over 10 gets the problem "STATS TOO HIGH". A digit-named group that holds digit layers is a row,
+not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin
+Emperors' empty "1" in "shared health"). If a stat was found but every digit layer is hidden, the
+value defaults to **10**: that is how maxed stats are encoded in the template. Never found → stays
+−1 (only seeded for creatures/minions), which the validator reports.
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
@@ -258,6 +292,109 @@ snapshots of 2026-07-11; canonical current expected values live in autocroissant
 text, in parser code or in stored data — a 2026-02-08 eight-commit saga (7 parser commits + a
 mid-saga PICKLE) added `\s{2,}` collapsing and had to remove it entirely (3bbaa2b "Fix the issue
 of collapsing spaces" + 4bcee6b). Full story: autocroissant-failure-archaeology Entry 2.
+
+### 4.1 Cards that use the stoogedings icon font (added 2026-10-19)
+
+From 2026-10-19, card authors can type `[fire]` in the **stoogedings** icon font instead of placing an icon
+layer over a gap. The font lives at TTSCardMaker `MDW/Fonts/stoogedings.ttf`. Its build source and manifest are
+`MDW/Fonts/stoogedings-src/stoogedings.json`, which holds names, aliases and codepoints. The PSD text then
+literally contains the token, so no gap guessing is needed.
+
+`_process_text_layer` finds the character ranges set in that font by matching PostScript names that start with
+`stoogedings`. It does this with `_icon_font_spans`, using the style runs and the FontSet, with run lengths
+counted in UTF-16 units. If a layer has no such range, it takes the **old path byte-for-byte**. This was verified
+on all 813 PSDs on 2026-10-19 by comparing old and new parser output: 0 differences.
+
+For layers that do use the font, `_read_icon_tokens` rewrites what's in it:
+- Tokens are matched in any case, but otherwise only in the spellings the font itself draws (exact since
+  2026-10-20, `IconVocabulary.spellings`): the name's words joined by one space, `_`, `-` or nothing, plus the
+  same forms of each manifest alias. The result is canonical: `[Fragile_Equip]` becomes `[fragile equip]`,
+  `[dark matter]` (an alias) becomes `[darkmatter]`, and `[N.M.E]` works through its alias `n.m.e`.
+  Spellings the font would draw as letters — `[fragile.equip]`, `[fragile  equip]` (two spaces), `[ fire]`,
+  `[fire: no]` — are `UNKNOWN ICON TOKEN` problems. Until 2026-10-20 the parser also ignored dots, apostrophes
+  and extra spaces and so accepted those silently (archaeology Entry 10.11).
+- `:tint` and `:sticker` are dropped. `[x:no]` is kept as `[x:no]`, because it means "non-x".
+- Private-use characters inserted from the Glyphs panel become `[name]`, and `★` becomes `[star]`.
+
+The result is passed through `repr()`, since `str()` of a psd-tools engine string *is* its repr, and then the
+usual cleanup runs.
+
+Visible non-ability text in the font that sits above the midline is treated as a header:
+- Type tokens are appended to `card.types`.
+- Star tokens add to the star count, for the folders whose stars come from the PSD.
+
+Gap injection (section 4) still runs afterwards for image-layer icons, so mixed cards work.
+
+The vocabulary is `IconVocabulary`. It is built from `Types/` (the same names as `all_types`), `Types/Stars/`
+(lowercased, spaces as `_`) and the manifest. If the manifest is missing, it falls back to plain names.
+
+There are four new parse-time problems, all persisted:
+
+| Problem | Meaning |
+|---|---|
+| `UNKNOWN ICON TOKEN: [x]` | Typo or unknown variant. The card shows letters. |
+| `UNKNOWN ICON CHARACTER: U+XXXX` | A private-use character that isn't in the manifest. |
+| `ICON TOKEN NOT IN STOOGEDINGS FONT: [x]` | A known icon name typed in the body font. |
+| `ICON TOKEN PARTLY IN STOOGEDINGS FONT: [x]` | The font was only applied to part of the token. |
+
+**Badges.** The font also turns timing tags typed in it, such as `(1PGT)` or `(OYT)`, into colored pill
+badges (70 tags; exact uppercase only), adopted as part of the font on 2026-10-19 (look and sizes:
+ttscardmaker-companion §1.2). That is purely a rendering ligature: the text is still `(1PGT)`,
+so the parser stores it unchanged, and nothing in AutoCroissant parses badges. Matching rule for the
+parser: a tag in parentheses is never a token, because tokens need square brackets.
+
+**Vocabulary at a glance (2026-10-19).** 91 icons in the manifest (35 `type` from `Types/`, 56 `star` from
+`Types/Stars/`), fixed codepoints U+E000–U+E05A, 15 icons with aliases; variants `:tint`, `:sticker`, `:no`.
+The font, its badge list, codepoint allocation and rebuild procedure are owned by
+**ttscardmaker-companion** (§1). Remaining known mismatch: the manifest keeps entries for icons whose PNG
+was renamed or deleted, so their old tokens still parse while the rebuilt font draws letters
+(BUGS_AND_IMPROVEMENTS C13).
+
+**Adoption (2026-10-19).** No card PSD uses the font yet: 0 of 813 have a text layer in it, so every stored
+token today still comes from gap injection (§4). About 45 PSDs (81 smart-object icon layers) are the
+migration backlog; the conversion prototype is described in ttscardmaker-companion §5.
+
+**Discord rendering** lives in `commands/type_emojis.py`. `/sync_emojis` and the startup sync upload
+`Types/` and `Types/Stars/` as application emojis for whichever bot identity is running, plus a
+crossed-out `<name>_no` copy of each `Types/` icon (35 of them; stars get none), 126 in all.
+`render_type_tokens` turns `[fire]` into the fire emoji and `[fire:no]` into the `fire_no` emoji; only
+if that emoji is missing does it fall back to 🚫 followed by the fire emoji. Brackets that aren't a
+known emoji (`[X]`, `[Status]`) stay as text. Emoji names are derived from the canonical token
+(lowercase, other characters → `_`, max 32 characters), so `[fragile equip]` maps to `fragile_equip`.
+`/query_rulebook` now sends escaped plain text through it instead of a code block, because code
+blocks don't render emojis. Operations: autocroissant-run-and-operate §11.
+
+### 4.2 Word effects: overlay text layers and effect layers (added 2026-10-20)
+
+Some cards give a word or phrase in the ability text a glow, stroke or gradient, such as Gasoline's glowing red
+"Blazing". Since only layers named `ability` are read (§3.2), none of the decoration below changes the parsed text.
+
+- **Old way: overlay text layers.** A second text layer holds a copy of the word, hand-placed over the word in the
+  `Ability` text, with a layer style. Survey 2026-10-20: 53 overlays on 40 cards, each in the same font and size as
+  the word underneath, and the word always also in the `Ability` text. 27 of them use a different color from the
+  word underneath. Overlays sit outside the `Text` group 50 times out of 63 (13 inside), because that group's own
+  Stroke and Drop Shadow (on 652 of 765 cards) would otherwise outline the glow. Four more cards (Bulborb Larva,
+  Butterfly, Empress Bulblax, Apex Predator) hide `Ability` and lay the text out again in separately styled
+  layers. The hidden `Ability` is still what gets parsed. Overlays go stale silently when the text is edited.
+- **New way: effect layers.** TTSCardMaker `MDW/Scripts/Effect Layers.jsx` makes a pixel layer named
+  `<text layer> FX: <words>`, e.g. `Ability FX: Blazing` or `Ability FX: Overkill DMG carries over | Frozen`
+  (`|` separates phrases, matched in any case and across line breaks). It holds exactly those words' pixels, cut
+  from the text layer, with a layer style. The words keep the card's font, size and color, the script places the
+  layer above the text's group, and its "Update all" button rebuilds every effect layer after the text changes.
+  How it works and why fonts were rejected: ttscardmaker-companion §6.
+- **Parser handling** (`EFFECT_LAYER_TAG = " FX: "`, `PSDParser._check_effect_layer`): a non-group layer whose
+  name contains ` FX: ` is set aside, not parsed. After the walk, each **visible** effect layer is checked, giving
+  three new parse-time problems (persisted like the icon problems):
+
+| Problem | Meaning |
+|---|---|
+| `EFFECT LAYER WITHOUT TEXT LAYER: <name>` | No text layer has the name before ` FX: ` (renamed or deleted). |
+| `EFFECT LAYER WORDS NOT IN TEXT: <name>` | A phrase is no longer in that text layer. |
+| `EFFECT LAYER OUT OF DATE: <name> (run Effect Layers > Update all)` | Under 95% (`EFFECT_COVERAGE_MIN`) of the effect layer's opaque pixels sit on the text layer's own stored pixels: the text was edited or moved after the layer was made. A fresh layer scores 1.0. Gasoline with words inserted before "Blazing" scored 0.268, even though the word was still in the text. |
+
+The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only, so recoloring is fine). Text
+layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
+is skipped.
 
 ## 5. Validation semantics (`CardValidator`, psd_analyzer.py:640-733)
 
@@ -322,15 +459,28 @@ cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:36-40) fixes export/dis
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
 subtype.
 
-**Timestamp semantics**: local traversal = file mtime (psd_analyzer.py:1009); remote traversal =
-last-commit committer date (psd_analyzer.py:1072-1074). A card re-parses when its timestamp is
-newer than stored OR its path changed (`_should_update_card` :775-802); `force_update` overrides.
-The Python default `update_stats(force_update=True)` (:1177) is NOT what Discord uses — the slash
-command defaults it to False (main.py:363). **Author** = committer name of the FIRST commit
-touching the file (`commits[totalCount - 1]`, psd_analyzer.py:1072), fetched only in
-remote-timestamp mode and only when the card has no author yet; author and series survive reparses
-(`parse` copies them from the existing entry, psd_analyzer.py:379-382). `/update_metadata` can set
-any of this manually; `/list_orphans` lists author-less cards (0 today).
+**Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
+psd_analyzer.py:1167-1188). A card re-parses when its timestamp is newer than stored OR its path
+changed (`_should_update_card` :967-994); `force_update` overrides. Since 2026-10-19 the Python default
+is `update_stats(force_update=False)` (psd_analyzer.py:1289), the same as the slash command (main.py:363);
+before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
+file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
+the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `MDW/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20), the
+team's record of who made each card.
+- **Format:** two sections of `left = right` lines.
+  - `[people]`: git/GitHub name = display name.
+  - `[cards]`: Card Name = person. Matched in any case, with `_` and spaces alike.
+- **When:** every remote `/update_stats` applies it to every card, not just re-parsed ones (`_apply_authors`).
+- **Rule:** a listed card gets its listed person; any other card keeps its author. Either way the name goes through `[people]`.
+- **Seed:** the file was seeded from stats.pkl on 2026-10-20 (765 cards + 48 rulebook pages, 8 people, all identity
+  mappings), so applying it changed nothing.
+- **The website** applies the same rules at build time.
+
+Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20) of the first
+commit touching its path (`commits[totalCount - 1]`). It is fetched only when the card has no author yet. Many
+first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
+survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` still works, but for a
+card listed in the file, the file wins at the next `/update_stats`. `/list_orphans` lists author-less cards.
 
 Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
 autocroissant-change-control):
@@ -425,9 +575,11 @@ author, path, ability, types (the list is stringified, so `types~undead` works).
 ## 8. When NOT to use this skill
 
 - Running the bot, running `/update_stats`, pushing/pulling pickles, machine handoff →
-  **autocroissant-run-and-operate** (it owns the operating rule: as of 2026-07-11 always run
-  `/update_stats` with `use_local_repo:False` — a live local-path bug, story in
-  **autocroissant-failure-archaeology**).
+  **autocroissant-run-and-operate** (it owns the operating rule: since 2026-10-20 `/update_stats` reads
+  GitHub only; local mode was archived because local timestamps re-archive every card; history in
+  **autocroissant-failure-archaeology** Entries 1, 10.10 and 10.12).
+- The icon font itself (token grammar, badges, codepoints, rebuilding it), Types/ icon naming across
+  repos, the card website → **ttscardmaker-companion**.
 - Diagnosing or FIXING a mis-parsed card, shrinking the exclusion lists, changing injection
   heuristics → **autocroissant-psd-extraction-campaign** (executable plan) with
   **autocroissant-validation-and-qa** as the acceptance gate.
@@ -462,7 +614,11 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Alias count | `python3 -c "import pickle;print(len(pickle.load(open('aliases.pkl','rb'))))"` |
 | The 7 "creatures" cards | `ls ~/Desktop/TTSCardMaker/Auxiliary/Creatures/*.psd` |
 | Golden parses (Mini Doomer / Freezer / Lich King) | `parse_one.py` / `gap_trace.py` with the paths used in sections 3-4 (absolute paths into the clone; outputs include ignorable "Git token found" lines) |
-| Types vocabulary (35 remote vs 36 local w/ .ds_store) | `git -C ~/Desktop/TTSCardMaker ls-files Types/ \| grep -vc Stars` vs the `known types` line of any `parse_one.py` run |
+| Types vocabulary (35 remote and, since the 2026-10-19 dotfile fix, 35 local) | `git -C ~/Desktop/TTSCardMaker ls-files Types/ \| grep -vc Stars` vs the `known types` line of any `parse_one.py` run |
+| Icon-font parsing hooks (2026-10-19) | `grep -n "^ICON_\|class IconVocabulary\|def _icon_font_spans\|def _read_icon_tokens\|def _flag_misplaced_tokens" commands/psd_analyzer.py` |
+| Exact token spellings (2026-10-20) | `grep -n -A8 "def spellings" commands/psd_analyzer.py` (words joined by " ", "_", "-" or ""; `lookup` = exact lowercase match) |
+| Manifest size / codepoint range | `python3 -c "import json;m=json.load(open('$HOME/Desktop/TTSCardMaker/MDW/Fonts/stoogedings-src/stoogedings.json'))['icons'];p=sorted(int(v['pua'],16) for v in m.values());print(len(m),hex(p[0]),hex(p[-1]))"` (91 0xe000 0xe05a) |
+| Emoji count (126) and `_no` rule | `grep -n "NO_SUFFIX\|ICON_FOLDERS" commands/type_emojis.py`; count = Types PNGs × 2 + Stars PNGs |
 | README citation | `head -3 ~/Desktop/TTSCardMaker/README.md` |
 
 Maintenance: after any parser or repo change, re-run `inspect_pickle.py` and the three golden

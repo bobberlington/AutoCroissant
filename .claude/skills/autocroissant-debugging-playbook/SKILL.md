@@ -1,6 +1,6 @@
 ---
 name: autocroissant-debugging-playbook
-description: 'Symptom-to-triage playbook for live AutoCroissant failures. Load when something is BROKEN: "bot not responding" / "bot said nothing" / "message never arrived"; "stats look wrong" / "cards parsed wrong" / "everything is unknown type" / "old_stats ballooned" / pickle corruption; "slash command not showing up / stale / duplicated"; "command seems to hang" / "bot froze"; "bot won''t start" / "my edits don''t take effect"; "music silent" / "download fails" / yt-dlp errors / volume not working; "/ai stuck" / "Request queued forever" / OOM / "PyTorch is not installed."; "/update or /pull broke the bot" / merge conflict / bot never came back; "reminder didn''t fire" / scheduled command failed. Contains symptom-indexed triage tables with discriminating experiments, the dispatch/edit-queue fallback chains and their silent-loss modes, and the pickle-corruption git-revert recovery procedure. Deepest coverage: pickle corruption and Discord API quirks. Live triage only - design questions go to autocroissant-architecture-contract; incident history to autocroissant-failure-archaeology; self-update flow anatomy and message meanings to autocroissant-run-and-operate.'
+description: 'Symptom-to-triage playbook for live AutoCroissant failures. Load when something is BROKEN: "bot not responding" / "bot said nothing" / "message never arrived"; "stats look wrong" / "cards parsed wrong" / "everything is unknown type" / "old_stats ballooned" / pickle corruption; "slash command not showing up / stale / duplicated"; "command seems to hang" / "bot froze"; "bot won''t start" / "my edits don''t take effect"; "music silent" / "download fails" / yt-dlp errors / volume not working; "/ai stuck" / "Request queued forever" / OOM / "PyTorch is not installed."; "/update or /pull broke the bot" / merge conflict / bot never came back; "reminder didn''t fire" / scheduled command failed / "Reminder skipped its command" / "Reminders are off" / "You do not have permission" from a reminder; "emojis show as [fire] text" / "Emoji sync failed" / /sync_emojis. Contains symptom-indexed triage tables with discriminating experiments, the dispatch/edit-queue fallback chains and their silent-loss modes, and the pickle-corruption git-revert recovery procedure. Deepest coverage: pickle corruption and Discord API quirks. Live triage only - design questions go to autocroissant-architecture-contract; incident history to autocroissant-failure-archaeology; self-update flow anatomy and message meanings to autocroissant-run-and-operate.'
 ---
 
 # AutoCroissant Debugging Playbook
@@ -31,19 +31,20 @@ containing only pickle-file changes, created by the bot's own `/push` (commands/
 ## 1. "Stats/cards look wrong after an update" (pickle corruption - costliest failure class)
 
 The database is `stats.pkl` (dict name -> CardInfo) plus `old_stats.pkl` (archive of prior versions)
-and `aliases.pkl`. `update_stats` (commands/psd_analyzer.py:1173) traverses the TTSCardMaker card
-repo in one of two modes - local disk walk or GitHub trees API - reparses changed PSDs, archives the
-old version into old_stats, and saves. Corruption here silently propagates to the other machine via
+and `aliases.pkl`. `update_stats` (commands/psd_analyzer.py:1287) traverses the TTSCardMaker card
+repo through the GitHub trees API (the only mode since local mode was archived on 2026-10-20), reparses
+changed PSDs, archives the old version into old_stats, and saves. Corruption here silently propagates to the other machine via
 `/push`/`/pull`, so triage BEFORE pushing.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
-| Many/all cards suddenly "unknown" type, queries return nothing | `inspect_pickle.py` summary: "entries with suspicious (non repo-relative) paths" line | A local-mode `/update_stats` ran: the live removeprefix bug corrupts every path (see below) | Suspicious-paths count > 0 AND paths start with `Users/...` instead of `Creatures/...` etc. Also: the run's summary said hundreds of "cards changed location" | Do NOT `/push`. Recover via git revert (procedure below). Operating rule: always `/update_stats` with `use_local_repo:False` - see **autocroissant-run-and-operate**; bug story owned by **autocroissant-failure-archaeology** |
+| Many/all cards suddenly "unknown" type, queries return nothing | `inspect_pickle.py` summary: "entries with suspicious (non repo-relative) paths" line | A path regression. The historical cause, the removeprefix bug in local traversal, was fixed 2026-10-19 (`relpath`) and local mode was archived 2026-10-20, so seeing this now means new code (or pickles from the archived traversal on branch `archive/local-update-stats`) broke it again | Suspicious-paths count > 0 AND paths start with `Users/...` instead of `Creatures/...` etc. Also: the run's summary said hundreds of "cards changed location" | Do NOT `/push`. Recover via git revert (procedure below). `grep -n "relative_path = \|path = item" commands/psd_analyzer.py archive/local_update_stats.py` to see what changed; story: **autocroissant-failure-archaeology** Entry 1 |
+| Hundreds of cards "updated" after a run, old_stats.pkl jumped | `diff_stats.py --verbose` HEAD vs working: is `timestamp` the only changed field on most rows? | Pickles from a local-timestamp sweep reached the live checkout: `/update_stats` can't do this since 2026-10-20 (local mode archived), but `update_stats_local()` from branch `archive/local-update-stats`, copied out and run outside a sandbox, can. Local mtimes are newer than the stored GitHub commit dates (813/813 on 2026-10-19), so every card was re-parsed and archived (BUGS_AND_IMPROVEMENTS B6) | Field counts dominated by `timestamp`; `git cat-file -s HEAD:old_stats.pkl` vs `wc -c old_stats.pkl` shows a big jump | Do NOT `/push`. Restore with `git checkout -- stats.pkl old_stats.pkl` (nothing pushed yet) or the revert procedure below if pushed; rerun `/update_stats` (**autocroissant-run-and-operate** §7) |
 | One card's stats/ability wrong | `inspect_pickle.py "Card Name"` - is the DB record itself wrong? | Parser issue (gaps/type injection) vs query-layer issue | DB record correct but `/query` output wrong -> query layer (alias shadowing, fuzzy match at match_ratio 0.6, stale dataframes). DB record wrong -> parser | Parser root-causing recipes: **autocroissant-analysis-toolkit**; improving the parser: **autocroissant-psd-extraction-campaign** |
-| old_stats.pkl ballooned | `git log --oneline --stat -- old_stats.pkl \| head -30` - look for byte jumps | Duplicate archiving: every examined card archived even when unchanged | Compare versions count in `inspect_pickle.py` summary (223 versions / 218 names as of 2026-07-11) against last known good | Guard exists since e7befd5 (2026-01-31: `should_update and not is_new`, psd_analyzer.py:938 and 1020). Regression precedent: cca0aaf ballooned old_stats 3196 -> 12041 bytes, reverted same-day by eb9aa84 (2025-11-10) |
-| Cards vanished from stats after an update | `diff_stats.py` HEAD vs working (command below) - "removed" section | Traversal missed files (wrong path/mode), so `prune_clean_cards` (psd_analyzer.py:244-253) archived everything it didn't see | Removed cards you did not delete = traversal problem, not deletions | Revert procedure below; verify traversal mode before rerunning |
-| Update ran but nothing saved / stats stale | Bot stdout for the summary line "N had newer timestamps or were new..." (psd_analyzer.py:1091) | Save is gated: pickles only written when `num_new > 0` (psd_analyzer.py:1222-1224) | num_new = 0 in summary -> gate worked as designed (nothing changed) | This gate IS the fix for empty-stats overwrites (fb47b5d + 4e03190 "am forehead", both 2026-01-15 — the second commit switched the gate to the counter that actually works); don't "fix" it away |
-| Query results stale right after update | Did `populate_files`/`prep_dataframes` run? They are queued at the END of update_stats (psd_analyzer.py:1241-1242) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
+| old_stats.pkl ballooned | `git log --oneline --stat -- old_stats.pkl \| head -30` - look for byte jumps | Duplicate archiving: every examined card archived even when unchanged | Compare versions count in `inspect_pickle.py` summary (223 versions / 218 names as of 2026-07-11) against last known good | Guard exists since e7befd5 (2026-01-31: `should_update and not is_new`, psd_analyzer.py:1125 on 2026-10-20; the archived local traversal keeps its own copy). Regression precedent: cca0aaf ballooned old_stats 3196 -> 12041 bytes, reverted same-day by eb9aa84 (2025-11-10) |
+| Cards vanished from stats after an update | `diff_stats.py` HEAD vs working (command below) - "removed" section | Traversal missed files (wrong path/mode), so `prune_clean_cards` (psd_analyzer.py:311-320 as of 2026-10-20) archived everything it didn't see | Removed cards you did not delete = traversal problem, not deletions | Revert procedure below; check the GitHub tree listing (token, rate limit) before rerunning |
+| Update ran but nothing saved / stats stale | Bot stdout for the summary line "N had newer timestamps or were new..." (psd_analyzer.py:1200) | Save is gated: pickles only written when `num_new > 0` (psd_analyzer.py:1325-1327) | num_new = 0 in summary -> gate worked as designed (nothing changed) | This gate IS the fix for empty-stats overwrites (fb47b5d + 4e03190 "am forehead", both 2026-01-15 — the second commit switched the gate to the counter that actually works); don't "fix" it away |
+| Query results stale right after update | Did `populate_files`/`prep_dataframes` run? They are queued at the END of update_stats (psd_analyzer.py:1344-1345) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
 
 ### The traversal-mode discriminating experiment (run this first, always)
 
@@ -53,18 +54,18 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pic
 
 - `0` suspicious paths and a sane type distribution -> stats.pkl is healthy (as of 2026-07-11: 813
   cards, creature 297 ... rulebook 48, 0 suspicious).
-- `> 0`, examples starting with `Users/` -> a LOCAL-mode traversal wrote to the db: the live
-  removeprefix bug (psd_analyzer.py:1002 - still open while that grep hits). The signature:
-  suspicious-paths count > 0, stored paths starting `Users/`, and the run's summary flooding with
-  "cards changed location". The slash default is `use_local_repo=True` (main.py:361), so one bare
-  `/update_stats` triggers it - operating rule: always pass `use_local_repo:False`
-  (**autocroissant-run-and-operate**). Do NOT `/push`; recover via the git-revert procedure below.
-  Root-cause story: **autocroissant-failure-archaeology** Entry 1; the code fix is a labeled
-  CANDIDATE there and in **autocroissant-psd-extraction-campaign** Phase 0 - do not hot-patch
-  during an incident.
+- `> 0`, examples starting with `Users/` -> a LOCAL-mode traversal wrote absolute-style paths. This
+  was the removeprefix bug's signature until its 2026-10-19 fix (`relpath`); local mode has been archived
+  since 2026-10-20 (now on branch `archive/local-update-stats`), so today it means pickles from that archived code, or a
+  new path bug. Signature: suspicious-paths count > 0, stored paths
+  starting `Users/`, and the run's summary flooding with "cards changed location". Do NOT `/push`;
+  recover via the git-revert procedure below; do not hot-patch during an incident. Root-cause
+  story: **autocroissant-failure-archaeology** Entry 1.
+- `0` suspicious but hundreds of timestamp-only changes -> the local-timestamp re-archive (B6), see the
+  table above.
 
 Remote mode cannot produce this signature: its paths come straight from the GitHub trees API and are
-repo-relative by construction (psd_analyzer.py:918-925).
+repo-relative by construction (`_process_files_from_response`).
 
 ### Recovery: reverting a bad PICKLE commit (eb9aa84 precedent)
 
@@ -96,18 +97,18 @@ This is why `diff_stats.py` before every pickle push is the standing gate.
 
 ## 2. "Message never arrived / bot said nothing" (Discord API quirks - second costliest class)
 
-The dispatch chain (main.py:832-854), drained once per second:
+The dispatch chain (main.py:849-870), drained once per second:
 
 ```
 worker thread --queue_message/queue_file--> dispatch_queue --loop-->
   1. interaction.response.send_message(...)      if response not yet done
   2. else interaction.followup.send(...)         (attachments converted to files)
   3. on HTTPException/AttributeError:
-       drop the 'ephemeral' flag (main.py:847)
+       drop the 'ephemeral' flag (main.py:863)
        client.get_channel(interaction.channel_id).send(...)   <- plain channel message
 ```
 
-The edit chain (main.py:858-871) tries `interaction.edit_original_response(...)`; on the same
+The edit chain (main.py:875-887) tries `interaction.edit_original_response(...)`; on the same
 exceptions it falls back to `channel.send(...)` - i.e. a NEW message instead of an edit.
 
 Two Discord facts drive most of this: interaction tokens expire after 15 minutes (Discord-documented),
@@ -117,17 +118,17 @@ messages with no reply linkage, no ephemeral support.
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | Bot says nothing, no error visible anywhere | Is the process alive? Then stdout for `Unhandled exception in internal background task` | Dispatch loop crashed, or all loops were deliberately stopped | Run a trivial command like `/help`: reply -> dispatch alive, your problem is worker-side; no reply -> loops dead | `/restart_bot` (works with dead loops: it replies via `interaction.response` directly and exec-restarts, main.py:149-155; note it has NO permission check) |
-| Bot mute right after a failed `/update` | Discord for "Update failed:" + "Bot was NOT restarted due to errors." | `/update` stops all three loops BEFORE doing git work (main.py:200-202); on failure nothing restarts them | Those two messages arrive (sent via direct followup, not the queues) but nothing queued afterwards does | `/restart_bot`. Anything queued while loops were stopped is lost on restart (in-memory deques) |
+| Bot mute right after a failed `/update` | Discord for "Update failed:" + "Bot was NOT restarted due to errors." | `/update` stops all three loops BEFORE doing git work (main.py:203-205); on failure nothing restarts them | Those two messages arrive (sent via direct followup, not the queues) but nothing queued afterwards does | `/restart_bot`. Anything queued while loops were stopped is lost on restart (in-memory deques) |
 | Reply arrived as a plain message; the slash command shows "The application did not respond" | How long did the worker run? | Work exceeded 15 min -> token expired -> fallback path 3 | Expected: reply content still arrives, unattached; the "did not respond" banner is cosmetic | Working as designed. Long jobs (full update_stats, big exports) always end like this |
-| An ephemeral ("only you") reply became public or seems lost | Was the interaction old/expired? | Fallback pops `ephemeral` (main.py:847) - ephemeral cannot survive the channel.send fallback | Same reply within 15 min is ephemeral; after, it is public | Known weak point (listed in **autocroissant-architecture-contract**); don't rely on ephemeral for slow commands |
-| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (main.py:864-871). Progress users: AI previews (diffusion.py:626,633) and update_stats "N cards updated." every 25 cards (psd_analyzer.py:1077-1083, UPDATE_RATE psd_analyzer.py:29) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
+| An ephemeral ("only you") reply became public or seems lost | Was the interaction old/expired? | Fallback pops `ephemeral` (main.py:863) - ephemeral cannot survive the channel.send fallback | Same reply within 15 min is ephemeral; after, it is public | Known weak point (listed in **autocroissant-architecture-contract**); don't rely on ephemeral for slow commands |
+| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (main.py:880-887). Progress users: AI previews (diffusion.py:626,633) and update_stats "N cards updated." every 25 cards (`_send_progress`, psd_analyzer.py:1191-1197, UPDATE_RATE psd_analyzer.py:32) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
 | Nothing sent AND stdout shows a Python traceback | Read the traceback (often logged late as "Task exception was never retrieved") | The worker crashed before queueing; `queue_*` never raise (they just append, utils.py:38-62), so anything queued BEFORE the crash still arrives | Partial output followed by silence = mid-worker crash | Fix the worker bug; file the story in **autocroissant-failure-archaeology** |
 | Everything mute after one specific message | stdout: `Unhandled exception in internal background task 'process_dispatch_queue'` | A send raised INSIDE the fallback handler, killing the loop. discord.py 2.7.1 stops a tasks.loop permanently on any exception outside its retry set (OSError/ConnectionClosed/etc.) | Verified crash vectors (code reading): channel deleted or not in cache -> `get_channel()` returns None -> AttributeError on `.send`; or content > 2000 chars -> HTTPException in the fallback too | `/restart_bot`. Prevention for new code: always route long text through `split_long_message` (BREAK_LEN=1950, utils.py:20,236) and never queue to channels the bot cannot see |
-| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:131-198) | Deleted/invisible target channel is the loop-killer above | Check stdout for the background-task crash line | Remove the stale reminder (`/list_reminders`, `/remove_reminder`) |
+| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:131-198) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for the background-task crash line (other senders can still kill the loop) | Remove the stale reminder (`/list_reminders`, `/remove_reminder`) |
 
 Silent-loss modes, summarized: (1) `queue_*` functions never raise to callers - a full deque with no
 drainer is indistinguishable from success at the call site; (2) the three loops are stopped by
-`/restart_bot`, `/stop_bot`, and `/update` (main.py:151-153, 163-165, 200-202) - a failed update
+`/restart_bot`, `/stop_bot`, and `/update` (main.py:154-156, 166-168, 203-205 as of 2026-10-19) - a failed update
 leaves them stopped; (3) a crashed loop stays crashed until process restart; (4) ephemeral flags are
 dropped in fallback. The discriminating experiment is always the same: compare bot stdout (worker
 prints, tracebacks, loop-crash lines) against what reached Discord.
@@ -137,9 +138,9 @@ prints, tracebacks, loop-crash lines) against what reached Discord.
 ## 3. "Slash command missing / stale / duplicated in Discord"
 
 Sync model: `on_ready` copies global commands to each guild and syncs per guild
-(main.py:97-101, 113-114) and prints `Synced commands to guild: <name> (<id>)` per guild plus
-`Registered N slash commands for reminder system.` (54 registrations as of 2026-07-11 - a quick
-sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroissant-run-and-operate**.
+(main.py:99-103) and prints `Synced commands to guild: <name> (<id>)` per guild plus
+`Registered N slash commands for reminder system.` (55 registrations as of 2026-10-19, including
+`/sync_emojis` - a quick sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroissant-run-and-operate**.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
@@ -148,7 +149,7 @@ sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroi
 | Every command listed TWICE | Client shows two entries per name | Commands registered in both global and guild scope | `/sync_global` clears the global set then re-syncs guilds (management.py:86-93) | Run `/sync_global`; expect "Commands synced globally and to N guilds." |
 | Stale parameter list / description in the client | Try in a different client (mobile vs desktop) | Discord client-side cache | Fresh client shows the new schema | Ctrl+R (desktop client reload); guild syncs are near-immediate, global scope can take up to ~1 hour (Discord-documented) |
 | `CommandAlreadyRegistered` on startup | The failing command NAME in the traceback | Two `@tree.command` decorators with the same `name=` | - | Rename one; add-a-command checklist: **autocroissant-change-control** |
-| "Duplicate functions in main.py - is that the bug?" | No. | `slash_set_ratio` is defined twice (main.py:303 and 313 - the second is `/set_repo`'s handler) and `slash_delete_song` twice (main.py:687 and 694 - the second is `/delete_all_music`'s) | Both commands work: the decorator registers the function object at def time under distinct command names; Python's silent rebinding of the module-level name only affects later by-name references | A wart, not a fault. Do not "fix" casually - **autocroissant-architecture-contract** documents it |
+| "Duplicate functions in main.py - is that the bug?" | No. | `slash_set_ratio` is defined twice (main.py:307 and 317 - the second is `/set_repo`'s handler) and `slash_delete_song` twice (main.py:687 and 694 - the second is `/delete_all_music`'s) | Both commands work: the decorator registers the function object at def time under distinct command names; Python's silent rebinding of the module-level name only affects later by-name references | A wart, not a fault. Do not "fix" casually - **autocroissant-architecture-contract** documents it |
 
 ---
 
@@ -175,7 +176,7 @@ unhealthy starts:
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | `ModuleNotFoundError: No module named 'config'` | `ls config.py` | config.py missing (it is secret and never committed) | - | Recreate it; field names (values are secret): **autocroissant-config-and-flags** |
-| `Fatal error: ...` then exit 1 | The wrapped exception text (main.py:877-884 catches everything around `client.run`) | `Improper token has been passed.` = TOKEN wrong/rotated | - | Fix TOKEN in config.py |
+| `Fatal error: ...` then exit 1 | The wrapped exception text (main.py:893-900 catches everything around `client.run`) | `Improper token has been passed.` = TOKEN wrong/rotated | - | Fix TOKEN in config.py |
 | `PrivilegedIntentsRequired` | Discord developer portal | `intents.message_content = True` (main.py:92) requires the Message Content intent enabled for the app | - | Enable the intent in the portal |
 | Your code edits "don't take effect", or behavior is bizarrely old | `ls commands/*.so` | Stale compiled Cython artifacts shadow the edited .py at import time | Remove artifacts and rerun: behavior changes -> it was shadowing | `python3 setup.py clean` (custom CleanAll command). Build system detail: **autocroissant-build-and-env** |
 | Startup traceback unpickling stats.pkl (`ModuleNotFoundError`/`AttributeError` naming `commands.psd_analyzer` or `CardInfo`) | Did anything rename/move CardInfo, CardStats, or psd_analyzer.py? | Pickles store class paths; `stats_db.load` only catches EOFError/FileNotFoundError (psd_analyzer.py:222-242), so schema breakage propagates. If the rename also broke main.py's imports the process dies instantly; otherwise the bot runs with broken stats (init_psd is queued, its crash is just a task traceback) | `git log --oneline -- commands/psd_analyzer.py` for recent renames | Restore the original names. Renames are a gated change class: **autocroissant-change-control** |
@@ -227,23 +228,45 @@ commands/update_bot.py:
 | "Git pull failed: ... divergent branches" then "Attempting to reconcile divergent branches..." | Next message | Fallback `git pull --rebase` (update_bot.py:92-101) | "Rebase successful!" = recovered; "Manual intervention may be required." = it is | SSH to the machine and resolve by hand |
 | Update said "Restarting bot!" but the bot never came back | Is `./startup.sh` present on that machine? | `restart_bot` execs `./startup.sh`, falling back to `execl(python, main.py ...)` (update_bot.py:9-13). startup.sh exists only on deploy machines, not in the repo. The execl fallback re-runs the same interpreter: if the pull brought NEW dependencies, the boot then dies on ImportError | Check the process and its stdout on the box | Install deps (**autocroissant-build-and-env**), start manually (**autocroissant-run-and-operate**) |
 | "Warning: All local changes have been discarded!" | Did someone pass `force_reset:True`? | `git_reset_hard` ran (update_bot.py:104-119) - local pickles are GONE, replaced by remote | `diff_stats.py` remote-vs-backup if you have one | Damage control via **autocroissant-change-control**; the pickles on the remote are now the only truth |
-| "/pull did a hard reset?!" | It did not | `/pull`'s description string says "Does a hard reset, than a git pull" (main.py:172) but `git_pull` contains no reset - fetch + merge/rebase only | Read update_bot.py:33-101 | Stale description; doc-of-record fixes belong to **autocroissant-docs-and-style** |
+| "/pull did a hard reset?!" | It did not | `/pull`'s description string says "Does a hard reset, than a git pull" (main.py:175) but `git_pull` contains no reset - fetch + merge/rebase only | Read update_bot.py:33-101 | Stale description; doc-of-record fixes belong to **autocroissant-docs-and-style** |
 
 ---
 
-## 9. Reminder quirks
+## 9. Reminder quirks (rewritten system, 2026-10-19)
 
 Reminders live in `reminder.pkl` (gitignored - NOT synced across machines by `/push`; they die with
-the machine, see **autocroissant-run-and-operate** for handoff implications). `check_reminder` is
-queued every second by the command loop (main.py:825), so reminders only fire while the loops run.
+the machine, see **autocroissant-run-and-operate** §6 and §9). `check_reminder` is queued every
+second by the command loop (main.py:841), so reminders only fire while the loops run. The scheduler
+logs to stdout; most reminder problems are visible there first.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
-| Scheduled command misparsed / wrong args | The stored command string (`/list_reminders`) | Command kwargs must be `key:value` with NO space after the colon. `set_reminder` auto-repairs exactly the form `key: value` (`command.replace(': ', ':')`, analytics.py:136); any other spacing around the colon splits wrong in `parse_named_args` (utils.py:277-290) | `key : value` -> "key" becomes a positional arg and ":value" a kwarg with empty name | Rewrite the reminder as `key:value` |
-| Reminder fired at the wrong hour | What timezone did you assume? | Times are PST/PDT: `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py), parsed as `13:00`, `1PM`, or `1:30PM` (analytics.py:65-84) | - | State times in PST |
-| Repeating reminder "skipped" runs while bot was down | stdout at startup: `Rescheduled reminder <id> from ... to ...` | Past-due repeating reminders fast-forward to the next future slot at startup (analytics.py:47-58; added by 105198f, 2025-12-02). Past-due ONE-SHOT reminders instead fire immediately on the first tick | - | By design |
-| Scheduled `/update_stats` corrupted stats | The reminder's args | slash_registry maps the command name to the SLASH wrapper (main.py:109-111), so a bare scheduled `/update_stats` inherits the slash defaults - including `use_local_repo=True` (main.py:361) = the live corruption bug (section 1) | - | Any scheduled update_stats MUST include `use_local_repo:False`. Operating rule: **autocroissant-run-and-operate** |
-| "Unknown command: `x`" from a reminder | Exact spelling vs `/help` | Name not in slash_registry (lookup at analytics.py:209) | - | Use the slash command's exact name, no typos; kwarg names must match the wrapper's parameter names |
+| "✗ Reminder NOT set: ..." | The reason after the colon | `when`/`offset`/`frequency` unparseable or out of range (max 366 days), a date in the past, or the command failed its signature check (unknown option, bad value, required option missing) | The reason names the field | Fix that field; formats in **autocroissant-run-and-operate** §9 |
+| "⚠ Reminder `<id>` skipped its command: ..." at fire time | `/list_reminders` - the stored command | The command or one of its options was renamed or removed since the reminder was made (it is re-checked on every firing) | Compare with the current `/help` entry | Re-create the reminder, then `/remove_reminder reminder_id:<id>` |
+| "⚠ Reminder `<id>`: `/<name>` failed (...)" | stdout traceback "ERROR: reminder <id> command /<name> raised" | The command itself crashed | Run the same command by hand | Fix the command; the reminder keeps repeating |
+| A scheduled admin command replies "You do not have permission." | `/list_reminders` - who is the creator? | Reminders run as their creator since 2026-10-19 and the creator is not (or no longer) in ADMINS | Creator shown as `<@id>`; check ADMINS on this host | An admin re-creates it. Legacy reminders without a creator still run as the bot |
+| Every reminder command replies "✗ Reminders are off: ..." | stdout at startup: "ERROR: reminder.pkl could not be read" | Unreadable reminder.pkl; the file was left untouched on purpose | - | Move reminder.pkl aside and restart (fresh schedule), or repair it offline |
+| A reminder shows "⚠ DISABLED: <reason>" | stdout "is broken and was disabled" / "is disabled" | It crashed the scheduler or its stored data is unreadable; only that reminder stopped | - | `/remove_reminder` it and re-create |
+| Repeating reminder "skipped" runs while bot was down | stdout at startup: `Rescheduled reminder <id> from ... to ...` | By design: it fires once (if due) and jumps to its next future slot; missed runs are not replayed. Past-due ONE-SHOT reminders fire right after startup | - | By design |
+| One-shot reminder never fires, keeps moving an hour later | stdout "channel ... not found (deleted or no access); skipped." | Its channel is gone or invisible; it retries hourly (`CHANNEL_RETRY`) | - | Remove it, or restore the bot's access to the channel |
+| Reminder fired at the wrong hour | What timezone did you assume? | Times are Pacific: `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py), following daylight saving | The list shows a Discord relative timestamp next to the Pacific time | State times in Pacific time |
+| A stored `/update_stats use_local_repo:...` changed to plain `/update_stats` | stdout at start: "Reminder <id>: migrated command ... (dropped retired `use_local_repo:False`)" | By design since 2026-10-20: local mode was archived and `RETIRED_OPTIONS` (analytics.py:41) strips the removed options so the reminder keeps running (remote) | - | Nothing to do; operating rule in **autocroissant-run-and-operate** §7 |
+| An old reminder behaves differently after the 2026-10-19 rewrite | stdout at first start: "Reminder <id>: migrated command `old` -> `new`" | Migration kept the OLD meaning (old parser read only lowercase `true` as True; pre-v2 positional values follow the old option order) | Compare old and new command strings in the log | Re-create the reminder with the options you actually want |
+
+## 10. Type emojis (/sync_emojis, added 2026-10-19)
+
+Untested against live Discord as of 2026-10-19 (BUGS_AND_IMPROVEMENTS V1). Operations:
+**autocroissant-run-and-operate** §11.
+
+| Symptom | First check | Likely cause | Fix / pointer |
+|---|---|---|---|
+| `/query_rulebook` shows `[fire]` as text instead of an icon | stdout at startup: "Type emojis: ... ready." or "Emoji sync failed: ..." | The startup sync failed or has not finished, so the token map is empty | Run `/sync_emojis`; read its report |
+| "Emoji sync failed: ... has no attribute 'fetch_application_emojis'" | `python3 -c "import discord; print(discord.__version__)"` | discord.py older than 2.5 | `pip install -U "discord.py>=2.5"` (**autocroissant-build-and-env** §2) |
+| "Emoji sync failed: 403/404 ..." on the GitHub listing | Is GIT_TOKEN set; is `/set_repo` pointing at the card repo? | Rate limit without a token, or a wrong repo | Fix the token or `/set_repo`, then `/sync_emojis` |
+| Report lists "Failed: <name> (...)" | The error text per emoji | Discord rejected an upload (name, size, or the application's emoji limit) | Fix the icon or name; rerun |
+| An edited Types/ icon still shows the old image | Was the sync run with `refresh:True`? | A plain sync uploads only missing emojis | `/sync_emojis refresh:True` |
+| Emojis work on one host but not another | Which bot identity is logged in (config.py comment lines only - never print values) | Application emojis belong to the identity; each identity syncs its own set at its first startup | Let the other identity start once, or run `/sync_emojis` there |
+| A renamed icon left an old emoji behind | Report line "No longer in Types/ (kept, ...)" | Plain syncs never delete | `/sync_emojis prune:True` (and see **ttscardmaker-companion** §1.7 before renaming icons) |
 
 ---
 
@@ -272,22 +295,25 @@ When history matters, always run `git show <hash>` and read the diff. Curated in
 - What a config field/flag means or how to set it -> **autocroissant-config-and-flags**.
 - Enabling/disabling AI, VRAM modes, torch install -> **autocroissant-ai-boundary**.
 - Card-domain semantics (folder classification, layer rules, query DSL) -> **impossibility-cards-reference**.
+- The icon font, Types/ icon naming, the card website, Photoshop scripting -> **ttscardmaker-companion**.
 
 ---
 
 ## Provenance and maintenance
 
 Written 2026-07-11 against the working tree (branch `main`, HEAD 284d13c) and discord.py 2.7.1.
+Sections 1, 2 (reminder row), 3, 9 and 10 updated 2026-10-19 against HEAD a7a4bb3 plus the
+uncommitted working tree.
 Every claim above was verified by reading the cited code or git output on that date. Line numbers
 drift; before trusting one, re-find it:
 
 ```bash
 # Section 1 - pickle corruption
-grep -n 'removeprefix("TTSCardMaker")' commands/psd_analyzer.py          # live bug (expect ~1002)
-grep -n "use_local_repo: Optional\[bool\] = True" main.py                # slash default True (~361)
-grep -n "should_update and not is_new" commands/psd_analyzer.py          # e7befd5 guard (~938, ~1020)
-grep -n "num_new > 0" commands/psd_analyzer.py                           # save gate (~1222)
-grep -n "def prune_clean_cards" commands/psd_analyzer.py                 # deletion handling (~244)
+git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # :115, 2026-10-19 local-path fix, archived with local mode 2026-10-20
+grep -rn "use_local" main.py commands/                                   # gone since 2026-10-20 except RETIRED_OPTIONS (analytics.py ~41)
+grep -n "should_update and not is_new" commands/psd_analyzer.py          # e7befd5 guard (~1125)
+grep -n "num_new > 0" commands/psd_analyzer.py                           # save gate (~1325)
+grep -n "def prune_clean_cards" commands/psd_analyzer.py                 # deletion handling (~311)
 git log --format='%h %ad %s' --date=short -1 eb9aa84                     # revert precedent 2025-11-10
 git show --stat cca0aaf | tail -4                                        # old_stats 3196 -> 12041
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py | tail -6
@@ -301,7 +327,7 @@ grep -n "def queue_message\|def queue_command" commands/utils.py         # appen
 grep -n "BREAK_LEN = " commands/utils.py                                 # 1950 (~20)
 
 # Section 3 - slash sync
-grep -c "@tree.command" main.py                                          # 54 as of 2026-07-11
+grep -c "@tree.command" main.py                                          # 55 as of 2026-10-19
 grep -n "async def slash_set_ratio\|async def slash_delete_song" main.py # duplicate names (2 hits each)
 grep -n "clear_commands" commands/management.py                          # /sync_global mechanics (~86)
 grep -c "on_guild_join" main.py                                          # 0 - no join-time sync
@@ -322,19 +348,23 @@ grep -n "startup.sh\|execl" commands/update_bot.py                       # resta
 grep -n "checkout('--ours'\|checkout('--theirs'" commands/update_bot.py  # pickles ours / code theirs (~69, ~72)
 grep -n "'--rebase'" commands/update_bot.py                              # divergent fallback (~96)
 
-# Section 9 - reminders
-grep -n "replace(': ', ':')" commands/analytics.py                       # colon rule (~136)
-grep -n "Rescheduled reminder" commands/analytics.py                     # fast-forward (~54)
-grep -n "queue_command(check_reminder)" main.py                          # fires only while loops run (~825)
+# Section 9 - reminders (2026-10-19 rewrite)
+grep -n "skipped its command\|Reminders are off\|crashed the scheduler\|not found (deleted or no access)" commands/analytics.py   # user-visible messages
+grep -n "Rescheduled reminder\|migrated command" commands/analytics.py  # startup log lines
+grep -n "^RETIRED_OPTIONS\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT" commands/analytics.py
+grep -n "queue_command(check_reminder)" main.py                          # fires only while loops run (~841)
 grep -n "reminder.pkl" .gitignore                                        # not synced across machines
+
+# Section 10 - type emojis
+grep -n "Emoji sync failed\|No longer in Types" commands/type_emojis.py
+grep -n "discord" requirements.txt                                       # discord.py>=2.5
 
 # tasks.loop stop-on-exception (discord.py version-dependent)
 python3 -c "import discord; print(discord.__version__)"                  # 2.7.1 as of 2026-07-11
 ```
 
-Volatile facts to re-check when they matter: all line numbers above; the 813/223/54 counts; the
-requirements split (reorganized 2026-07-11, intentionally uncommitted at time of writing); the
-removeprefix bug's status (if `grep removeprefix commands/psd_analyzer.py` comes back empty, the bug
-was fixed - retire section 1's local-mode warning and update **autocroissant-run-and-operate**'s
-operating rule). If a cited hash stops matching the described diff, re-run `git show <hash>` and fix
+Volatile facts to re-check when they matter: all line numbers above; the 813/223/55 counts; the
+local-timestamp re-archive hazard (BUGS_AND_IMPROVEMENTS B6 - retired with local mode on 2026-10-20; the
+section 1 row stays for pickles produced by the archive);
+whether the dispatch loop gained a guard (B5). If a cited hash stops matching the described diff, re-run `git show <hash>` and fix
 the story here rather than deleting it.

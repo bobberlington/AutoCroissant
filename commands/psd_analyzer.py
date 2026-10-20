@@ -1,23 +1,26 @@
+from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from discord import Interaction, File
 from enum import Enum
 from github import Github, Repository
+from json import loads as json_loads
 from logging import getLogger, CRITICAL
-from os import walk
-from os.path import getmtime, basename, expanduser, splitext, join as path_join
+from os import listdir, remove, walk
+from os.path import basename, isdir, isfile, splitext, join as path_join
 from pickle import load, dump
 from psd_tools import PSDImage
 from re import compile as re_compile, sub
 from requests import get
+from requests.exceptions import RequestException
 from typing import Optional, Any
 from urllib.parse import quote
 from urllib.request import urlretrieve, HTTPError
 import pandas as pd
 
 import config
-from global_config import LOCAL_DIR_LOC, STATS_PKL, OLD_STATS_PKL
+from global_config import STATS_PKL, OLD_STATS_PKL
 from commands.query_card import card_repo
 from commands.utils import queue_message, queue_file, queue_edit, queue_command, split_long_message
 
@@ -41,6 +44,17 @@ COLUMN_ORDER = [
 
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 
+# stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
+# so the text itself says which icon sits where. Cards with image-layer icons keep using gap injection.
+ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
+ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json" # aliases + codepoints, written by the font build
+AUTHORS_PATH = "MDW/Card Authors.txt"                             # who made each card; wins over the database
+ICON_VARIANTS = ("", "tint", "sticker", "no")
+ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
+EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
+EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
+STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
+
 
 class CardType(Enum):
     """Enum for card types."""
@@ -62,11 +76,53 @@ class MutableValue:
     value: Any
 
 
+DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
+
+
 @dataclass
 class StatTracker:
-    """Tracks whether a stat was found and its accumulated value."""
+    """Tracks whether a stat was found and its visible digit layers, per bar row (the layers' parent group)."""
     found: bool = False
     value: Optional[int] = None
+    rows: dict = field(default_factory=dict)     # id(row group) -> (id(the row group's parent), [(digit, layer kind)])
+
+    @staticmethod
+    def _row_value(items: list) -> tuple[int, bool]:
+        """
+        One row's value, and whether the row draws one layer per cell.
+
+        - Darkening adjustment layers (the template's 0-9 exposure layers): the lowest visible digit, since that one
+          already darkens the rest of the bar (Sans had "1" and "9" visible: 1, not 10).
+        - One drawn layer per cell, named 1-10 (Blank Card, Dirty Bed and Tainted Lazarus's hearts): the lit cells
+          (pixel layers) visible, or 10 minus the dark cells when only those are visible. Adding up the names made 55.
+        - Otherwise the visible digits add up (value layers, plus any "0" decorations: Clots, False Knight).
+        """
+        digits = [digit for digit, _ in items]
+        drawn = [kind for _, kind in items if kind in DRAWN_LAYER_KINDS]
+        if len(items) > 1 and not drawn:
+            return min(digits), False
+        if len(items) > 1 and len(drawn) == len(items) and min(digits) >= 1:
+            lit = sum(1 for kind in drawn if kind == "pixel")
+            return (lit if lit else max(0, 10 - len(items))), True
+        return sum(digits), False
+
+    def total(self) -> Optional[int]:
+        """
+        The stat's value: the rows add up (Sonic's speed is two rows, 20; multi-creature cards add their creatures).
+        Rows of cells drawn twice in one group (Tainted Lazarus's "Light" and "Hp Dark" hearts) count once.
+        """
+        if not self.rows:
+            return None
+        groups: dict = {}
+        for group, items in self.rows.values():
+            groups.setdefault(group, []).append(self._row_value(items))
+        value = 0
+        for rows in groups.values():
+            if len(rows) > 1 and all(per_cell for _, per_cell in rows):
+                value += max(row_value for row_value, _ in rows)
+            else:
+                value += sum(row_value for row_value, _ in rows)
+        return value
 
 
 @dataclass
@@ -117,6 +173,106 @@ class CardStats:
             stat > 10 for stat in [self.hp, self.defense, self.attack, self.speed]
             if self.is_valid_stat(stat)
         )
+
+
+@dataclass
+class CardAuthors:
+    """
+    TTSCardMaker's MDW/Card Authors.txt: the team's record of who made each card.
+
+    Two sections of "left = right" lines (# starts a comment):
+      [people]  git/GitHub name = name to show for that person
+      [cards]   Card Name = person   (names match in any case, with _ and spaces alike)
+    A listed card gets its listed person; any other card keeps its author. Either way the result goes through
+    [people], so a git name becomes the display name. The website applies the same rules.
+    """
+    people: dict = field(default_factory=dict)      # lowercase git name -> display name
+    cards: dict = field(default_factory=dict)       # normalized card name -> person
+
+    @staticmethod
+    def key(name: str) -> str:
+        return sub(r"\s+", " ", name.replace("_", " ")).strip().lower()
+
+    @classmethod
+    def parse(cls, text: str) -> "CardAuthors":
+        authors, section = cls(), None
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                section = line.strip("[]").strip().lower()
+                continue
+            left, sep, right = line.partition("=")
+            left, right = left.strip(), right.strip()
+            if not sep or not left or not right:
+                continue
+            if section == "people":
+                authors.people[left.lower()] = right
+            elif section == "cards":
+                authors.cards[cls.key(left)] = right
+        return authors
+
+    def resolve(self, card_name: str, current: Optional[str]) -> Optional[str]:
+        person = self.cards.get(self.key(card_name), current)
+        return self.people.get(person.lower(), person) if person else person
+
+
+@dataclass
+class IconVocabulary:
+    """Icon names the stoogedings font understands: Types/ icons, Types/Stars/ icons, their aliases and codepoints."""
+    tokens: dict[str, tuple[str, str]] = field(default_factory=dict)   # accepted spelling -> (name, "type" | "star")
+    codepoints: dict[str, str] = field(default_factory=dict)           # private-use character -> name
+
+    @staticmethod
+    def spellings(text: str) -> set[str]:
+        """
+        Every spelling the font turns into this icon: words joined by a space, _, - or nothing.
+        Matching is exact apart from letter case, so a token the font would draw as plain letters
+        ("fragile.equip", "fragile  equip") is not read as an icon.
+        """
+        words = [w for w in sub(r"[ _\-]+", " ", text.lower()).split(" ") if w]
+        return {sep.join(words) for sep in (" ", "_", "-", "")}
+
+    def add(self, name: str, kind: str, aliases: tuple = ()) -> None:
+        """Register an icon under its own name and its aliases (first registration wins)."""
+        for spelling in (name,) + tuple(aliases):
+            for accepted in self.spellings(spelling):
+                self.tokens.setdefault(accepted, (name, kind))
+
+    def lookup(self, text: str) -> Optional[tuple[str, str]]:
+        """(name, kind) for a token's text, e.g. "Fragile Equip" -> ("fragile equip", "type"); None if unknown."""
+        return self.tokens.get(text.lower())
+
+    @classmethod
+    def build(cls, all_types: list[str], all_stars: list[str], manifest: Optional[dict]) -> 'IconVocabulary':
+        """
+        Build the vocabulary.
+
+        Args:
+            all_types: Types/ icon names (lowercased file stems, as used in card.types)
+            all_stars: Types/Stars/ icon names (lowercased, spaces as underscores)
+            manifest: Parsed stoogedings.json (aliases and codepoints), or None when the repo has none
+
+        Returns:
+            IconVocabulary
+        """
+        vocab = cls()
+        present = set(all_types) | set(all_stars)
+        for name, info in (manifest or {}).get("icons", {}).items():
+            if present and name not in present:
+                continue    # icon PNG renamed or deleted: the manifest keeps its codepoint, but the font no longer draws it
+            vocab.add(name, info.get("kind", "type"), tuple(info.get("aliases", ())))
+            if info.get("pua"):
+                vocab.codepoints[chr(int(info["pua"], 16))] = name
+        for name in all_types:
+            vocab.add(name, "type")
+        for name in all_stars:
+            vocab.add(name, "star")
+        star = vocab.lookup("star")
+        if star is not None:
+            vocab.codepoints.setdefault("★", star[0])   # the font draws ★ as the gold star
+        return vocab
 
 
 @dataclass
@@ -342,9 +498,10 @@ class CardClassifier:
 
 class PSDParser:
     """Parses PSD files to extract card information."""
-    def __init__(self, all_types: list[str], stats_db: StatsDatabase):
+    def __init__(self, all_types: list[str], stats_db: StatsDatabase, icons: Optional[IconVocabulary] = None):
         self.all_types = all_types
         self.stats_db = stats_db
+        self.icons = icons if icons is not None else IconVocabulary.build(all_types, [], None)
         self._gap_pattern = re_compile(r'\s{3,}')
 
     def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
@@ -410,11 +567,20 @@ class PSDParser:
             for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
         )
 
+        effect_layers = []
+        text_layers = []
         for layer in psd.descendants():
+            if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
+                effect_layers.append(layer)     # a pixel copy of words from a text layer; nothing to parse
+                continue
+            if layer.kind == "type":
+                text_layers.append(layer)
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
                 is_rulepage, get_stars_from_psd, card_mid_y)
+        for layer in effect_layers:
+            self._check_effect_layer(layer, text_layers, card)
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
@@ -423,7 +589,56 @@ class PSDParser:
         self._process_stats(card, stat_trackers)
 
         if get_stars_from_psd:
-            card.stars = num_stars.value
+            card.stars = num_stars.value + self._count_stars(psd)    # icon-font stars in the header + drawn stars
+            if not card.stars:
+                card.problems.append('NO STARS FOUND (put the star layers in a group named "Stars")')
+
+    def _check_effect_layer(self, layer, text_layers: list, card: CardInfo) -> None:
+        """
+        Flag an effect layer that no longer matches its text.
+
+        "Ability FX: Blazing" holds the word Blazing cut pixel-for-pixel from the "Ability" text layer, with a layer
+        style on top (MDW/Scripts/Effect Layers.jsx in TTSCardMaker). Editing the text without running the script's
+        Update all leaves the glow where the word used to be; then its pixels stop landing on the text's pixels.
+        """
+        if not layer.is_visible():
+            return
+        base_name, _, words = layer.name.partition(EFFECT_LAYER_TAG)
+        bases = [text_layer for text_layer in text_layers if text_layer.name == base_name]
+        if not bases:
+            self._add_problem(card, f"EFFECT LAYER WITHOUT TEXT LAYER: {layer.name}")
+            return
+        x0, y0, x1, y1 = layer.bbox
+        base = next((b for b in bases if b.bbox[0] < x1 and x0 < b.bbox[2] and b.bbox[1] < y1 and y0 < b.bbox[3]), bases[0])
+
+        text = sub(r"[\s\x03]+", " ", base.engine_dict["Editor"]["Text"].value).lower()
+        # "Frozen#2" means the 2nd occurrence of Frozen
+        phrases = [sub(r"\s+", " ", sub(r"#\d+$", "", word.strip())).lower() for word in words.split("|")]
+        if any(phrase and phrase not in text for phrase in phrases):
+            self._add_problem(card, f"EFFECT LAYER WORDS NOT IN TEXT: {layer.name}")
+            return
+        coverage = self._pixel_coverage(layer, base)
+        if coverage is not None and coverage < EFFECT_COVERAGE_MIN:
+            self._add_problem(card, f"EFFECT LAYER OUT OF DATE: {layer.name} (run Effect Layers > Update all)")
+
+    @staticmethod
+    def _pixel_coverage(layer, base) -> Optional[float]:
+        """Share of `layer`'s opaque pixels that sit on `base`'s pixels; None when either has no pixel data."""
+        try:
+            shape = layer.numpy("shape")
+            base_shape = base.numpy("shape")
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return None
+        if shape is None or base_shape is None:
+            return None
+        ys, xs = (shape[:, :, 0] > 0.5).nonzero()
+        if not len(xs):
+            return None
+        xs = xs + (layer.bbox[0] - base.bbox[0])
+        ys = ys + (layer.bbox[1] - base.bbox[1])
+        inside = (xs >= 0) & (ys >= 0) & (xs < base_shape.shape[1]) & (ys < base_shape.shape[0])
+        hits = int((base_shape[ys[inside], xs[inside], 0] > 0.2).sum())
+        return hits / len(xs)
 
     def _process_layer(self, layer, card: CardInfo,
                        num_stars: MutableValue, stat_trackers: StatTrackers,
@@ -432,7 +647,7 @@ class PSDParser:
         """Process a single PSD layer."""
         # Text layers
         if layer.kind == "type":
-            self._process_text_layer(layer, abilities, is_rulepage, card_mid_y)
+            self._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y)
 
         # Stat layers
         elif self._is_stat_layer(layer):
@@ -446,18 +661,39 @@ class PSDParser:
             else:
                 type_bboxes.append((layer.name.lower(), bbox))
 
-        # Star layers
+        # Star layers: counted per star by _count_stars once the walk is done
         elif get_stars_from_psd and self._is_star_layer(layer):
-            if layer.is_visible() and layer.has_pixels():
-                num_stars.value += 1
+            pass
 
         # Problematic type layer
         elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
-    def _process_text_layer(self, layer, abilities: list, is_rulepage: bool, card_mid_y: int) -> None:
-        """Process text layer."""
-        layer_text = str(layer.engine_dict["Editor"]["Text"])
+    def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
+                            is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int) -> None:
+        """
+        Process text layer.
+
+        Text set in the stoogedings font is read as icons: [fire]-style tokens (any case, spacing or alias) become
+        canonical [fire] tokens, and icon characters typed from the Glyphs panel become tokens too. Header text in
+        the font also adds to card.types, and to the star count where stars come from the PSD. Layers without the
+        font take the original path unchanged.
+        """
+        engine_text = layer.engine_dict["Editor"]["Text"]
+        is_ability = layer.name.lower() == "ability" or is_rulepage
+        icon_spans = self._icon_font_spans(layer, engine_text.value)
+        self._flag_misplaced_tokens(engine_text.value, icon_spans, card)
+        if icon_spans:
+            text, icons = self._read_icon_tokens(engine_text.value, icon_spans, card)
+            layer_text = repr(text)  # str() of the engine string is its repr, so the cleanup below is unchanged
+            if not is_ability and layer.is_visible() and layer.bbox[1] < card_mid_y:
+                for name, kind in icons:
+                    if kind == "type":
+                        card.types.append(name)
+                    elif kind == "star" and get_stars_from_psd:
+                        num_stars.value += 1
+        else:
+            layer_text = str(engine_text)
         layer_text = (layer_text
             .replace('\\r', '\n')
             .replace('\\n', '\n')
@@ -466,9 +702,111 @@ class PSDParser:
             .replace('\\ufeff', '')
             .rstrip())
 
-        if layer.name.lower() == "ability" or is_rulepage:
+        if is_ability:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             abilities.append((layer_text, bbox))
+
+    @staticmethod
+    def _icon_font_spans(layer, text: str) -> list[tuple[int, int]]:
+        """(start, end) index ranges of `text` set in the stoogedings font; empty when the layer doesn't use it."""
+        try:
+            font_set = layer.resource_dict["FontSet"]
+            runs = layer.engine_dict["StyleRun"]["RunArray"]
+            run_lengths = layer.engine_dict["StyleRun"]["RunLengthArray"]
+            fonts = [font_set[int(run["StyleSheet"]["StyleSheetData"].get("Font", 0))]["Name"].value for run in runs]
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return []
+        if not any(font.lower().startswith(ICON_FONT_PREFIX) for font in fonts):
+            return []
+
+        # Run lengths count UTF-16 units; characters outside the BMP (some emoji) take two
+        unit_starts = []
+        units = 0
+        for char in text:
+            unit_starts.append(units)
+            units += 2 if ord(char) > 0xFFFF else 1
+
+        spans = []
+        position = 0
+        for font, length in zip(fonts, run_lengths):
+            end = position + int(length)
+            if font.lower().startswith(ICON_FONT_PREFIX):
+                spans.append((bisect_left(unit_starts, position), bisect_left(unit_starts, end)))
+            position = end
+        return spans
+
+    @staticmethod
+    def _covered(start: int, end: int, spans: list[tuple[int, int]]) -> int:
+        """How many characters of text[start:end] fall inside the spans."""
+        return sum(max(0, min(end, b) - max(start, a)) for a, b in spans)
+
+    @staticmethod
+    def _add_problem(card: CardInfo, problem: str) -> None:
+        """Record a parse-time problem once."""
+        if problem not in card.problems:
+            card.problems.append(problem)
+
+    def _read_icon_tokens(self, text: str, spans: list[tuple[int, int]],
+                          card: CardInfo) -> tuple[str, list[tuple[str, str]]]:
+        """
+        Rewrite the icon-font tokens in a layer's text as canonical tokens.
+
+        "[Fire:Sticker]" -> "[fire]", "[Defensive Minion]" -> "[defensive_minion]", "[fire:no]" stays "[fire:no]",
+        and an icon character from the Glyphs panel -> "[fire]". Unknown tokens are left as typed and reported,
+        because the font shows them as plain letters on the card.
+
+        Args:
+            text: Raw layer text
+            spans: Ranges set in the icon font
+            card: Card being parsed (for problems)
+
+        Returns:
+            (rewritten text, [(icon name, "type" | "star"), ...] in text order)
+        """
+        out, icons, last = [], [], 0
+        for match in ICON_SCAN_PATTERN.finditer(text):
+            start, end = match.span()
+            if self._covered(start, end, spans) < end - start:
+                continue
+            piece = match.group(0)
+            if piece.startswith("["):
+                base, _, variant = piece[1:len(piece) - 1].partition(":")
+                variant = variant.lower()           # the font accepts no spaces around the variant either
+                hit = self.icons.lookup(base)
+                if hit is None or variant not in ICON_VARIANTS:
+                    self._add_problem(card, f"UNKNOWN ICON TOKEN: {piece}")
+                    continue
+                name, kind = hit
+                token = f"[{name}:no]" if variant == "no" else f"[{name}]"
+            else:
+                name = self.icons.codepoints.get(piece)
+                hit = self.icons.lookup(name) if name else None
+                if hit is None:
+                    self._add_problem(card, f"UNKNOWN ICON CHARACTER: U+{ord(piece):04X}")
+                    continue
+                kind = hit[1]
+                token = f"[{name}]"
+            out.append(text[last:start])
+            out.append(token)
+            last = end
+            icons.append((name, kind))
+        out.append(text[last:])
+        return "".join(out), icons
+
+    def _flag_misplaced_tokens(self, text: str, spans: list[tuple[int, int]], card: CardInfo) -> None:
+        """Report icon tokens that aren't fully in the icon font: on the card they show as literal "[fire]" text."""
+        for match in ICON_SCAN_PATTERN.finditer(text):
+            piece = match.group(0)
+            if not piece.startswith("["):
+                continue
+            base, _, variant = piece[1:len(piece) - 1].partition(":")
+            if self.icons.lookup(base) is None or variant.lower() not in ICON_VARIANTS:
+                continue
+            covered = self._covered(match.start(), match.end(), spans)
+            if covered == 0:
+                self._add_problem(card, f"ICON TOKEN NOT IN STOOGEDINGS FONT: {piece}")
+            elif covered < len(piece):
+                self._add_problem(card, f"ICON TOKEN PARTLY IN STOOGEDINGS FONT: {piece}")
 
     def _is_stat_layer(self, layer) -> bool:
         """Check if layer is a stat layer."""
@@ -488,6 +826,11 @@ class PSDParser:
         """Process stat layer."""
         if not layer.name.isdigit():
             return
+        # A digit-named group of digit layers is a bar row (multi-row bars name rows "1", "2", ...), not a value.
+        # Sonic's two speed rows "2" and "1" were added as 3 more speed. An empty one draws nothing (Twin Emperors'
+        # "shared health" has an empty "1" group, which made its 7 health 8).
+        if layer.is_group() and (len(layer) == 0 or any(child.name.isdigit() for child in layer)):
+            return
 
         parent_names = []
         current = layer.parent
@@ -497,22 +840,101 @@ class PSDParser:
             current = getattr(current, 'parent', None)
             depth += 1
 
-        # Map short names to StatTracker attributes
+        # Map short names to StatTracker attributes ("health": e.g. Twin Emperors' "shared health" row)
         stat_map = {
             "hp": stat_trackers.hp,
             "def": stat_trackers.defense,
             "atk": stat_trackers.attack,
             "spd": stat_trackers.speed,
+            "health": stat_trackers.hp,
         }
 
         for stat_key, tracker in stat_map.items():
             if any(stat_key in name for name in parent_names):
                 tracker.found = True
                 if layer.is_visible():
-                    if tracker.value is None:
-                        tracker.value = 0
-                    tracker.value += int(layer.name)
+                    parent = layer.parent
+                    _, row = tracker.rows.setdefault(id(parent), (id(getattr(parent, "parent", None)), []))
+                    row.append((int(layer.name), layer.kind))
                 break
+
+    def _count_stars(self, psd: PSDImage) -> int:
+        """
+        Stars drawn on a card whose star count comes from the PSD.
+
+        Each visible group with "stars" in its name is searched: child groups count recursively, and visible layers
+        that overlap (one's core center inside the other's core: a glow, a frame, or the pieces of one star) count
+        as one star. A star is often several layers, e.g. Indoctrination's pentagram and four pieces, which counting
+        layers made 20 stars instead of 4. With no such group, visible layers named "... Star ..." count the same way.
+        """
+        groups = self._star_groups(psd)
+        if groups:
+            return sum(self._stars_in(group) for group in groups)
+        named = [layer for layer in psd.descendants()
+                 if not layer.is_group() and layer.is_visible() and layer.has_pixels()
+                 and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()]
+        return self._count_clusters(named)
+
+    @staticmethod
+    def _star_groups(group) -> list:
+        """The outermost visible groups with "stars" in their name."""
+        found = []
+        for layer in group:
+            if not layer.is_group() or not layer.is_visible():
+                continue
+            if "stars" in layer.name.lower():
+                found.append(layer)
+            else:
+                found.extend(PSDParser._star_groups(layer))
+        return found
+
+    def _stars_in(self, group) -> int:
+        count, loose = 0, []
+        for layer in group:
+            if not layer.is_visible():
+                continue
+            if layer.is_group():
+                count += self._stars_in(layer)
+            elif layer.has_pixels():
+                loose.append(layer)
+        return count + self._count_clusters(loose)
+
+    @staticmethod
+    def _core_box(layer) -> tuple:
+        """Bounding box of the layer's mostly opaque pixels (its whole box if they can't be read)."""
+        x0, y0, x1, y1 = layer.bbox
+        try:
+            shape = layer.numpy("shape")
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            shape = None
+        if shape is not None:
+            ys, xs = (shape[:, :, 0] >= STAR_CORE_ALPHA).nonzero()
+            if len(xs):
+                return x0 + int(xs.min()), y0 + int(ys.min()), x0 + int(xs.max()) + 1, y0 + int(ys.max()) + 1
+        return x0, y0, x1, y1
+
+    @staticmethod
+    def _center_inside(a: tuple, b: tuple) -> bool:
+        cx, cy = (a[0] + a[2]) / 2, (a[1] + a[3]) / 2
+        return b[0] <= cx <= b[2] and b[1] <= cy <= b[3]
+
+    @classmethod
+    def _count_clusters(cls, layers: list) -> int:
+        """How many separate stars the layers draw: overlapping layers (see _count_stars) are one."""
+        boxes = [cls._core_box(layer) for layer in layers]
+        parent = list(range(len(boxes)))
+
+        def root(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                if cls._center_inside(boxes[i], boxes[j]) or cls._center_inside(boxes[j], boxes[i]):
+                    parent[root(i)] = root(j)
+        return len({root(i) for i in range(len(boxes))})
 
     def _is_star_layer(self, layer) -> bool:
         """Check if layer is a star layer."""
@@ -550,8 +972,8 @@ class PSDParser:
             ("attack", stat_trackers.attack),
             ("speed", stat_trackers.speed)]:
             if tracker.found:
-                value = tracker.value if tracker.value is not None else 10
-                setattr(card.stats, stat_attr, value)
+                value = tracker.total()
+                setattr(card.stats, stat_attr, value if value is not None else 10)
 
     @staticmethod
     def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:
@@ -826,46 +1248,10 @@ class RepositoryTraverser:
         repo = self._github_client.get_repo(repository)
 
         self._populate_types_from_response(resp)
-        self.parser = PSDParser(self.db.all_types, self.db)
+        self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
         problems, num_new = self._process_files_from_response(resp, repo, repository, interaction, output_problematic, force_update)
-
-        # Update old_stats paths after processing all files
-        self._update_old_stats_paths()
-
-        return (problems, num_new)
-
-    def traverse_local(self,
-                       repository: str,
-                       local_path: str,
-                       interaction: Optional[Interaction] = None,
-                       output_problematic: bool = True,
-                       use_local_timestamp: bool = True,
-                       force_update: bool = False) -> tuple[list[str], int]:
-        """
-        Traverse local repository directory.
-
-        Args:
-            repository: Repository name
-            local_path: Path to local repository
-            interaction: Optional Discord interaction
-            output_problematic: Whether to output problematic cards
-            use_local_timestamp: Use local file timestamps vs remote
-
-        Returns:
-            List of formatted problem card messages
-        """
-        if not use_local_timestamp:
-            print(f"Warning: Remote timestamps use API requests (limit: {5000 if GIT_TOKEN else 60}/hour)")
-            self._github_client = Github(login_or_token=GIT_TOKEN)
-            repo = self._github_client.get_repo(repository)
-        else:
-            repo = None
-
-        self._populate_types_from_local(local_path)
-        self.parser = PSDParser(self.db.all_types, self.db)
-
-        problems, num_new = self._process_local_files(local_path, repo, interaction, output_problematic, use_local_timestamp, force_update)
+        self._apply_authors(self._authors_from_response(resp, repository))
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
@@ -881,13 +1267,72 @@ class RepositoryTraverser:
                 self.db.all_types.append(splitext(basename(path))[0].lower())
 
     def _populate_types_from_local(self, local_path: str) -> None:
-        """Populate card types from local directory."""
+        """Populate card types from a local clone (offline diagnostics; /update_stats itself only reads GitHub)."""
         self.db.all_types.clear()
         types_dir = path_join(local_path, "Types")
         for folder, _, files in walk(types_dir):
             if folder.endswith("Types"):
                 for file in files:
-                    self.db.all_types.append(splitext(file)[0].lower())
+                    if not file.startswith('.'):
+                        self.db.all_types.append(splitext(file)[0].lower())
+
+    @staticmethod
+    def _star_name(path: str) -> str:
+        """Types/Stars/Dst Star.png -> "dst_star" (the name the icon font uses)."""
+        return splitext(basename(path))[0].lower().replace(" ", "_")
+
+    def _icons_from_response(self, response, repository: str) -> IconVocabulary:
+        """Icon vocabulary from the GitHub tree: Types/ and Types/Stars/ names plus the font's manifest, if any."""
+        paths = [item.get("path", "") for item in response.json().get("tree", [])]
+        stars = [self._star_name(p) for p in paths if p.startswith("Types/Stars/") and p.lower().endswith(".png")]
+        manifest = None
+        if ICON_MANIFEST_PATH in paths:
+            try:
+                manifest = json_loads(get(self._construct_raw_url(repository, ICON_MANIFEST_PATH), timeout=30).text)
+            except (RequestException, ValueError) as e:
+                print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
+        return IconVocabulary.build(self.db.all_types, stars, manifest)
+
+    def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
+        """The card repo's authors file (AUTHORS_PATH), or None if it's missing or unreadable."""
+        paths = [item.get("path", "") for item in response.json().get("tree", [])]
+        if AUTHORS_PATH not in paths:
+            return None
+        try:
+            reply = get(self._construct_raw_url(repository, AUTHORS_PATH), timeout=30)
+            reply.raise_for_status()
+            return CardAuthors.parse(reply.text)
+        except RequestException as e:
+            print(f"Could not read {AUTHORS_PATH}; authors stay as they are: {e}")
+            return None
+
+    def _apply_authors(self, authors: Optional[CardAuthors]) -> int:
+        """Set every card's author from the authors file (all cards, not just re-parsed ones). Returns how many changed."""
+        if authors is None:
+            return 0
+        changed = 0
+        for name, card in self.db.stats.items():
+            author = authors.resolve(name, card.author)
+            if author != card.author:
+                card.author = author
+                changed += 1
+        if changed:
+            print(f"{changed} authors set from {AUTHORS_PATH}.")
+        return changed
+
+    def _icons_from_local(self, local_path: str) -> IconVocabulary:
+        """Icon vocabulary from a local clone: Types/ and Types/Stars/ names plus the font's manifest, if any."""
+        stars_dir = path_join(local_path, "Types", "Stars")
+        stars = [self._star_name(f) for f in listdir(stars_dir) if f.lower().endswith(".png")] if isdir(stars_dir) else []
+        manifest = None
+        manifest_path = path_join(local_path, ICON_MANIFEST_PATH)
+        if isfile(manifest_path):
+            try:
+                with open(manifest_path, encoding="utf-8") as fh:
+                    manifest = json_loads(fh.read())
+            except (OSError, ValueError) as e:
+                print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
+        return IconVocabulary.build(self.db.all_types, stars, manifest)
 
     def _construct_raw_url(self, repository: str, path: str) -> str:
         """
@@ -954,7 +1399,10 @@ class RepositoryTraverser:
                     print(f"{psd_url} not found.")
                     continue
 
-                card = self.parser.parse(local_file, path)
+                try:
+                    card = self.parser.parse(local_file, path)
+                finally:
+                    remove(local_file)
                 card.timestamp = timestamp
                 # Set author if it was fetched earlier
                 if author and not card.author:
@@ -970,82 +1418,6 @@ class RepositoryTraverser:
             num_updated += 1
             if num_updated % UPDATE_RATE == 0:
                 self._send_progress(interaction, num_updated)
-
-        self._send_summary(interaction, num_new, num_old, num_moved)
-        return (self._format_problems(problematic_cards), num_new)
-
-    def _process_local_files(self,
-                             local_path: str,
-                             repo: Optional[Repository.Repository],
-                             interaction: Optional[Interaction],
-                             output_problematic: bool,
-                             use_local_timestamp: bool,
-                             force_update: bool) -> tuple[list[str], int]:
-        """Process files from local directory."""
-        problematic_cards = []
-        num_updated = 0
-        num_new = 0
-        num_old = 0
-        num_moved = 0
-
-        for folder, _, files in walk(local_path):
-            folder = folder.replace('\\', '/')
-            # Check if current folder or any parent folder is in EXCLUDE_FOLDERS
-            if any(part in EXCLUDE_FOLDERS for part in folder.split('/')):
-                continue
-
-            for file in files:
-                if not file.endswith('.psd'):
-                    continue
-
-                full_path = path_join(folder, file)
-                relative_path = full_path.removeprefix("TTSCardMaker").strip('/')
-                name = splitext(basename(relative_path))[0].replace('_', ' ')
-                self.db.dirty_files.append(name)
-
-                # Get timestamp
-                author = None
-                if use_local_timestamp:
-                    timestamp = getmtime(full_path)
-                else:
-                    timestamp, author = self._get_remote_timestamp(repo, relative_path, name)
-
-                # Check if update needed
-                should_update, is_new = self._should_update_card(name, timestamp, relative_path)
-
-                if not force_update and not should_update:
-                    num_old += 1
-                else:
-                    # Archive old version before updating (if not new)
-                    if should_update and not is_new and name in self.db.stats:
-                        old_card = self.db.stats[name]
-                        self.db.old_stats[name].append(old_card)
-
-                    if is_new:
-                        num_new += 1
-                    # Check if it's a move vs a content update
-                    elif name in self.db.stats and self.db.stats[name].path != relative_path:
-                        num_moved += 1
-                    else:
-                        num_new += 1
-
-                    # Parse local file
-                    card = self.parser.parse(full_path, relative_path)
-                    card.timestamp = timestamp
-                    # Set author if it was fetched earlier
-                    if author and not card.author:
-                        card.author = author
-                    self.db.stats[name] = card
-
-                    # Validate
-                    if output_problematic:
-                        problems = CardValidator.validate(card)
-                        if problems:
-                            problematic_cards.append((relative_path, card, problems))
-
-                num_updated += 1
-                if num_updated % UPDATE_RATE == 0:
-                    self._send_progress(interaction, num_updated)
 
         self._send_summary(interaction, num_new, num_old, num_moved)
         return (self._format_problems(problematic_cards), num_new)
@@ -1067,9 +1439,10 @@ class RepositoryTraverser:
         if commits.totalCount == 0:
             return (datetime(1000, 1, 1).timestamp(), None)
 
-        # Set metadata author from FIRST commit (original author)
+        # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
+        # (AUTHORS_PATH) corrects either afterwards.
         if name not in self.db.stats or not self.db.stats[name].author:
-            return (commits[0].commit.committer.date.timestamp(), commits[commits.totalCount - 1].commit.committer.name)
+            return (commits[0].commit.committer.date.timestamp(), commits[commits.totalCount - 1].commit.author.name)
 
         return (commits[0].commit.committer.date.timestamp(), None)
 
@@ -1172,18 +1545,17 @@ def get_old_stats_as_dict() -> dict[str, list[dict]]:
 # ========================
 def update_stats(interaction: Optional[Interaction] = None,
                  output_problematic: bool = True,
-                 use_local_repo: bool = True,
-                 use_local_timestamp: bool = True,
-                 force_update: bool = True,
+                 force_update: bool = False,
                  verbose: bool = True) -> list[str]:
     """
-    Update card statistics database.
+    Update card statistics database from the GitHub repository.
+
+    Local mode (walking the clone on disk) was archived on 2026-10-20 to branch archive/local-update-stats.
 
     Args:
         interaction: Optional Discord interaction
         output_problematic: Whether to output problematic cards
-        use_local_repo: Use local repository vs remote
-        use_local_timestamp: Use local timestamps vs remote
+        force_update: Re-parse every card even if its last commit is not newer
         verbose: Whether to display progress messages and problem summaries
 
     Returns:
@@ -1203,21 +1575,11 @@ def update_stats(interaction: Optional[Interaction] = None,
     stats_db.dirty_files.clear()
     traverser = RepositoryTraverser(stats_db)
 
-    if use_local_repo:
-        local_path = expanduser(LOCAL_DIR_LOC)
-        problem_cards, num_new = traverser.traverse_local(
-            card_repo.repository,
-            local_path,
-            interaction,
-            output_problematic,
-            use_local_timestamp,
-            force_update)
-    else:
-        problem_cards, num_new = traverser.traverse_remote(
-            card_repo.repository,
-            interaction,
-            output_problematic,
-            force_update)
+    problem_cards, num_new = traverser.traverse_remote(
+        card_repo.repository,
+        interaction,
+        output_problematic,
+        force_update)
 
     if (num_new > 0):
         stats_db.prune_clean_cards()

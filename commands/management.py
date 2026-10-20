@@ -235,7 +235,8 @@ async def add_reactions(interaction: Interaction,
         queue_message(interaction, "Invalid channel.", ephemeral=True)
         return
 
-    # Resolve target message
+    # Resolve target message (declared once: Cython rejects re-annotating a variable)
+    target_message: Message | None = None
     try:
         if message_id:
             if not message_id.isdigit():
@@ -243,7 +244,6 @@ async def add_reactions(interaction: Interaction,
                 return
             target_message = await channel.fetch_message(int(message_id))
         else:
-            target_message: Message | None = None
             async for msg in channel.history(limit=2):
                 target_message = msg
                 break

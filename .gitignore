@@ -14,10 +14,12 @@ __pycache__/
 *.c
 *.cpp
 
-# Compiled extension modules
-*.so      # Linux/Mac
-*.pyd     # Windows
-*.dll     # Windows (rare)
+# Compiled extension modules (comments can't share a line with a pattern in .gitignore)
+# Linux/Mac
+*.so
+# Windows
+*.pyd
+*.dll
 
 # HTML annotation files (if linetrace=True)
 *.html
@@ -35,6 +37,8 @@ config.py
 .ssh/
 
 reminder.pkl
+# reminders are saved by writing this temp file and renaming it; one can be left behind after a crash
+reminder.pkl.tmp
 
 # Music downloads
 music/
@@ -43,6 +47,9 @@ music/
 # Model files (if using AI features)
 models/
 !models/.gitkeep
+
+# Claude Code: personal settings stay local (the shared .claude/skills/ library is committed)
+.claude/settings.local.json
 
 # ===================================
 # IDE / Editor

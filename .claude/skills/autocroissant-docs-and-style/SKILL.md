@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the six command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 commands missing from help.py), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map.
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the six command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the known doc-vs-code drift instances (e.g. /pull claims a hard reset that git_pull never does; 4 of 55 registered commands missing from help.py as of 2026-10-19), the house code style (module skeleton with # ==== banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills, including ttscardmaker-companion for the TTSCardMaker side).
 ---
 
 # AutoCroissant docs and style
@@ -12,8 +12,9 @@ actually see is generated from code: the `/help` command reads dictionaries in
 `@app_commands.describe` strings from `main.py`. Those two surfaces plus this
 skill library are the only docs this project has — keeping them truthful is the
 whole job. Facts and line numbers verified 2026-07-11 (repo at commit 284d13c);
-re-verify with the commands in "Provenance and maintenance" before trusting a
-line number.
+sections 2, 3, 5 and 7 re-verified 2026-10-19 (HEAD a7a4bb3 plus the uncommitted
+working tree, which added /sync_emojis and rewrote the reminder entries). Re-verify
+with the commands in "Provenance and maintenance" before trusting a line number.
 
 The repo was READ-ONLY during this skill's authoring, so the drift found below
 is **recorded, not fixed**. Fixing it is a real change: route it through
@@ -34,23 +35,23 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (156 lines as of 2026-07-11) is six module-level dicts, a
+`commands/help.py` (164 lines as of 2026-10-19) is six module-level dicts, a
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
 ### 2.1 The six dicts
 
-| Dict | help.py line | Entries (2026-07-11) | /help category |
+| Dict | help.py line | Entries (2026-10-19) | /help category |
 |---|---|---|---|
 | `general_commands` | 6 | 11 | `general` (also the fallback) |
-| `text_commands` | 22 | 3 | `text` (reminders) |
-| `card_commands` | 31 | 8 keys = 7 commands + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 61 | 6 | `stats` |
-| `ai_commands` | 80 | 6 | `ai` |
-| `music_commands` | 102 | 17 | `music` |
+| `text_commands` | 22 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
+| `card_commands` | 36 | 9 keys = 8 commands (incl. `/sync_emojis`, added 2026-10-19) + 1 `"Query Syntax:"` pseudo-entry | `card` |
+| `stats_commands` | 69 | 6 | `stats` |
+| `ai_commands` | 88 | 6 | `ai` |
+| `music_commands` | 110 | 17 | `music` |
 
-Total: 51 keys, 50 real commands documented. The `"Query Syntax:"` key
-(help.py:38) is a sanctioned pseudo-entry — a non-command key used to document
+Total: 52 keys, 51 real commands documented. The `"Query Syntax:"` key
+(help.py:43) is a sanctioned pseudo-entry — a non-command key used to document
 the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
 colon like real keys so they render uniformly.
 
@@ -74,21 +75,21 @@ line a one-sentence summary and push parameter detail into bullets.
 
 ### 2.3 How print_help routes
 
-`print_help(interaction, help_wanted)` (help.py:126-148) is a plain if/elif
+`print_help(interaction, help_wanted)` (help.py:134-156) is a plain if/elif
 chain: `"text"` → text_commands, `"card"` → card_commands, `"ai"` →
 ai_commands, `"music"` → music_commands, `"stats"` → stats_commands
-(help.py:136-137), and **anything else falls through to general_commands**
-(else at help.py:138-139). So the code DOES route `"stats"` — it does not fall
+(help.py:144-145), and **anything else falls through to general_commands**
+(else at help.py:146-147). So the code DOES route `"stats"` — it does not fall
 to general — and the `"general"` choice works only via the fallback (there is
 no explicit `elif help_wanted == "general"`). The slash command's Choice list
-(main.py:136-143) offers exactly: text, card, ai, music, stats, general.
+(main.py:139-146) offers exactly: text, card, ai, music, stats, general.
 
 Rendering: entries are concatenated as `f"{cmd}\n{desc}\n\n"` inside a
 ` ``` ` code fence, split with `split_long_message` (1950-char BREAK_LEN), and
 sent via `queue_message` — never a direct await (see section 5.6).
 
 Adding a category = three edits in lockstep: new dict in help.py, new `elif` in
-`print_help`, new `Choice` in main.py:136-143 — plus updating `/help`'s own
+`print_help`, new `Choice` in main.py:139-146 — plus updating `/help`'s own
 signature key (see drift instance D3 for what happens when you skip that).
 
 ### 2.4 THE CHECKLIST (the rule this skill exists to enforce)
@@ -102,26 +103,31 @@ Every new or changed slash command updates **all three** in the SAME change:
    describe strings and correct them.
 
 Rationale: the audit below found 4 commands and 3 factual lies that
-accumulated precisely because these were treated as separate chores. The full
+accumulated precisely because these were treated as separate chores. The
+2026-10-19 additions followed the checklist: `/sync_emojis` landed with its main.py
+describe strings and a help.py entry in the same change, and the reminder rewrite
+updated both surfaces together (`(admin only)` now appears in BOTH places for
+`/set_reminder`). The full
 add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 `autocroissant-change-control`; this checklist is the documentation slice of it.
 
-## 3. Known drift (audited 2026-07-11 — recorded, not fixed)
+## 3. Known drift (audited 2026-07-11, re-audited 2026-10-19 — recorded, not fixed)
 
 ### 3.1 Coverage drift: 4 registered commands have no help.py entry
 
-main.py registers **54** commands; help.py documents **50**. Missing:
+main.py registers **55** commands; help.py documents **51** (2026-10-19; was 54/50 before
+`/sync_emojis`). Missing — the same four as on 2026-07-11:
 
 | Command | Registered at | Belongs in |
 |---|---|---|
 | `/view_old_metadata` | main.py:440 | `stats_commands` |
-| `/list_guild_members` | main.py:750 | `general_commands` (admin only) |
-| `/list_guild_channels` | main.py:765 | `general_commands` (admin only) |
-| `/get_channel_messages` | main.py:780 | `general_commands` (admin only) |
+| `/list_guild_members` | main.py:766 | `general_commands` (admin only) |
+| `/list_guild_channels` | main.py:781 | `general_commands` (admin only) |
+| `/get_channel_messages` | main.py:796 | `general_commands` (admin only) |
 
 Nothing in help.py refers to a nonexistent command (the reverse direction is
 clean). **Extraction trap**: do NOT grep for bare `name=` — `Choice(name=...)`
-lines (e.g. main.py:137-142) will pollute the list. Use the anchored pattern:
+lines (e.g. main.py:140-145) will pollute the list. Use the anchored pattern:
 
 ```bash
 grep -oE '@tree\.command\(name="[^"]+"' main.py | sed 's/@tree.command(name="//;s/"//' | sort > /tmp/main_cmds.txt
@@ -133,7 +139,7 @@ comm -13 /tmp/main_cmds.txt /tmp/help_cmds.txt   # documented but unregistered
 ### 3.2 Behavior drift: the docs lie about the code (3 verified instances)
 
 **D1 — /pull claims a hard reset that never happens.** help.py:10 says "Does a
-hard reset, then a git pull" and main.py:172 says the same ("...a hard reset,
+hard reset, then a git pull" and main.py:175 says the same ("...a hard reset,
 than a git pull" — note the "than" typo lives in the Discord UI). The actual
 implementation `git_pull` (commands/update_bot.py:33-101) does `git.fetch()`
 then a merge-based pull with pickles-ours/code-theirs conflict resolution —
@@ -142,10 +148,10 @@ then a merge-based pull with pickles-ours/code-theirs conflict resolution —
 `/update force_reset:True` (update_bot.py:131-133). This lie is dangerous in
 the scary direction: an admin might avoid `/pull` fearing it destroys local
 pickle changes, when it is actually the safe merge path. Fix = docs-only edit
-to help.py:10 and main.py:172; still route through change-control (description
+to help.py:10 and main.py:175; still route through change-control (description
 edits change what Discord re-syncs).
 
-**D2 — /export_cards documents the wrong default.** help.py:68 says
+**D2 — /export_cards documents the wrong default.** help.py:76 says
 "only_ability: Export only ability text (default: True)". The signature says
 `only_ability: Optional[bool] = False` (main.py:375). Code wins: the default
 is False (full metadata export). The main.py describe string (main.py:371)
@@ -154,7 +160,7 @@ survived.
 
 **D3 — /help's own entry omits its "stats" category.** help.py:7 advertises
 `/help <text/card/ai/music/general>`, but the Choice list includes `stats`
-(main.py:141) and `print_help` routes it (help.py:136-137). The docs
+(main.py:144) and `print_help` routes it (help.py:144-145). The docs
 undersell the code: users reading `/help` never learn the stats category
 exists. Classic "added a category, forgot the /help signature key" — the
 exact lockstep edit section 2.3 mandates.
@@ -165,7 +171,10 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 ## 4. Command description conventions (main.py describe strings)
 
-Derived from the 54 live registrations; follow these when writing new ones.
+Derived from the live registrations (54 on 2026-07-11, 55 on 2026-10-19); follow these when
+writing new ones. Line numbers in this table are 2026-07-11 readings — re-find them by quoting the
+example text. The cleanest recent end-to-end example is `/sync_emojis` (main.py:749-762 + its
+help.py entry, 2026-10-19): admin marker in both surfaces, defaults stated in every describe string.
 
 | Convention | Real example (verified 2026-07-11) |
 |---|---|
@@ -181,6 +190,7 @@ Derived from the 54 live registrations; follow these when writing new ones.
 Known inconsistency, do not copy: `/pull`, `/push`, `/update`, `/stop_bot` are
 perms-gated in code but their main.py descriptions lack "(admin only)" (their
 help.py entries have it). New admin commands put the marker in BOTH places.
+(`/set_reminder` had the same gap until 2026-10-19; it now carries the marker in both.)
 
 ## 5. House code style (derived from the code, not aspiration)
 
@@ -188,8 +198,10 @@ help.py entries have it). New admin commands put the marker in BOTH places.
 
 Verified against `commands/psd_analyzer.py`, `commands/query_card.py`,
 `commands/diffusion.py`, `commands/music_player.py`, `commands/help.py`,
-`commands/update_bot.py`. Canonical order (psd_analyzer.py and query_card.py
-are the cleanest exemplars):
+`commands/update_bot.py`; 2026-10-19 additions checked against `commands/type_emojis.py`
+and the rewritten `commands/analytics.py`. Canonical order (psd_analyzer.py and query_card.py
+are the cleanest exemplars; type_emojis.py, 232 lines, is the smallest complete one —
+Configuration, Helper Functions, Public API Functions, Initialization, Module Exports):
 
 1. **Imports** — `from x import y` block; then a blank line; then `import config`,
    `from global_config import ...`, `from commands.utils import ...`.
@@ -203,15 +215,17 @@ are the cleanest exemplars):
    (banner named "Public API Functions", "Discord Command Functions", "Music
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
-   (`stats_db = StatsDatabase()` + `init_psd` at psd_analyzer.py:1641-1642;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:626-627).
+   (`stats_db = StatsDatabase()` + `init_psd` at psd_analyzer.py:1744-1745;
+   `card_repo = CardRepository()` + `init_query` at query_card.py:627-628).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    with one standing exception: utils.py, the shared toolbox, has none.
 
 Sanctioned variants (don't "normalize" them): diffusion.py keeps its globals
 in a `# Global State` section near the top (diffusion.py:119-134) with
-`init_pipeline` under `# Pipeline Initialization` (190-193); music_player.py
+`init_pipeline` under `# Pipeline Initialization` (190-193); analytics.py (2026-10-19)
+does the same with `# Global State` and adds topical banners between Configuration and
+Public API (`Time Parsing`, `Command Parsing`, `Storage`, `Scheduler`); music_player.py
 puts `state = MusicState()` immediately after its dataclass (music_player.py:44)
 and has no bottom init section. main.py uses a different banner style —
 `####################` boxes per command category (e.g. main.py:128-130) — keep
@@ -227,9 +241,10 @@ Section banner format everywhere else, exactly 24 `=`:
 
 ### 5.2 Import style
 
-`from x import y` named imports are the house rule: 113 from-import lines vs 9
-plain `import` lines repo-wide (2026-07-11 census; the 9 are `import config`
-×5, `import pandas as pd`, `import logging`, and setup.py's `shutil`/`sys`).
+`from x import y` named imports are the house rule: 135 from-import lines vs 10
+plain `import` lines repo-wide (2026-10-19 census; was 113/9 on 2026-07-11; the 10 are
+`import config` ×6 — type_emojis.py is the sixth — `import pandas as pd`, `import logging`,
+and setup.py's `shutil`/`sys`).
 Even pickle is imported as `from pickle import load, dump` (query_card.py:5,
 psd_analyzer.py:10). The deliberate exception: `import config` as a module, so
 optional secret fields can be read with `getattr(config, "X", default)`. Follow
@@ -250,10 +265,13 @@ Never write `x[-1]` (or any negative index) in the 8 modules setup.py
 compiles: analytics, frankenstein, help, psd_analyzer, query_card, management,
 music_player, diffusion (setup.py:21-30). They build with `wraparound=False`,
 where negative indexing is undefined behavior, and a past `bboxes[-1]` was
-mechanically purged for exactly this reason (commit dd800bc; the one that
-escaped became the live removeprefix bug). Current census: 15
-`x[len(x) - 1]` occurrences, **zero** negative indexes in commands/ or
-main.py. Why the directive is set and the stale-.so trap it interacts with:
+mechanically purged for exactly this reason (commit dd800bc; the mechanical
+purge's semantic slip became the removeprefix local-path bug, fixed 2026-10-19). Current
+census (2026-10-19): 15 `x[len(x) - 1]` occurrences, **zero** negative indexes in
+commands/ or main.py (the 2026-10-19 icon-font code uses `piece[1:len(piece) - 1]` and
+`name[:MAX_NAME_LEN - len(NO_SUFFIX)]`, staying inside the rule). A second compiled-module
+rule arrived with Cython 3.3: declare an annotated variable once, never re-annotate it
+(autocroissant-build-and-env §5). Why the directive is set and the stale-.so trap it interacts with:
 `autocroissant-build-and-env`. Why you must not "clean up" the idiom:
 `autocroissant-change-control` non-negotiables.
 
@@ -403,12 +421,12 @@ neighboring fact, check this map and link instead.
 |---|---|
 | autocroissant-change-control | Change classes/gates, pickle-commit discipline, never-commit list, add-a-slash-command checklist, force_reset danger |
 | autocroissant-debugging-playbook | Symptom → triage tables for live failures |
-| autocroissant-failure-archaeology | Incident timeline, root causes with commit hashes, the removeprefix live-bug story, dead ends/reverts |
+| autocroissant-failure-archaeology | Incident timeline, root causes with commit hashes, the removeprefix bug story (fixed 2026-10-19), the 2026-10-19 fix batch, dead ends/reverts |
 | autocroissant-architecture-contract | Queue trio + to_thread model, module graph, singletons, registration pattern, invariants, known-weak points |
-| impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, validation, pickle schemas, query DSL |
+| impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, parser side of stoogedings icon tokens (§4.1), validation, pickle schemas, query DSL |
 | autocroissant-config-and-flags | Every config axis: config.py field names, constants, runtime-settable vs restart-required |
 | autocroissant-build-and-env | Env setup, requirements split, Cython build/clean, negative-indexing ban rationale, stale-.so trap |
-| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, artifact locations |
+| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
 | autocroissant-ai-boundary | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
@@ -416,6 +434,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |
 | autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause |
+| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
 | autocroissant-docs-and-style (THIS) | help.py/describe formats + sync checklist + drift audit; house code style; skill-library meta-rules; templates |
 
 ### 7.4 Add a new skill vs extend an existing one
@@ -426,7 +445,7 @@ Add a new skill only when a genuinely new AXIS appears — a capability or
 workflow no current owner covers — and then: claim ownership by adding a row
 to the map above (this file), write the frontmatter to the 7.1 contract,
 include "When NOT to use" naming the nearest siblings, and end with
-provenance. Prefer 16 sharp skills over 30 overlapping ones; overlap is how
+provenance. Prefer 17 sharp skills over 30 overlapping ones; overlap is how
 two skills drift into contradicting each other.
 
 ### 7.5 Skills never route around change-control
@@ -451,32 +470,33 @@ that disagrees with itself trains readers to ignore all of it.
 
 ## Provenance and maintenance
 
-All claims verified 2026-07-11 against commit 284d13c. Re-run before trusting;
-line numbers drift. Expected values in comments are the 2026-07-11 readings.
+All claims verified 2026-07-11 against commit 284d13c; re-verified 2026-10-19 against HEAD a7a4bb3
+plus the uncommitted working tree. Re-run before trusting; line numbers drift. Expected values in
+comments are the 2026-10-19 readings.
 
 ```bash
 # Six dicts + router exist; help.py length
-grep -nE '^(general|text|card|stats|ai|music)_commands = \{|^def print_help' commands/help.py   # lines 6,22,31,61,80,102,126
-wc -l commands/help.py                                                                          # 156
+grep -nE '^(general|text|card|stats|ai|music)_commands = \{|^def print_help' commands/help.py   # lines 6,22,36,69,88,110,134
+wc -l commands/help.py                                                                          # 164
 
 # print_help routes "stats"; else-fallback is general
-grep -n -A1 'help_wanted == "stats"' commands/help.py        # 136-137 → stats_commands
+grep -n -A1 'help_wanted == "stats"' commands/help.py        # 144-145 → stats_commands
 
 # Slash choices for /help include stats (Choice noise is exactly why extraction is anchored)
-grep -n 'Choice(name="stats"' main.py                        # 141
+grep -n 'Choice(name="stats"' main.py                        # 144
 
-# Registered-vs-documented drift audit (expect 54 vs 50; 4 missing as listed in §3.1)
-grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 54
-grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 50
+# Registered-vs-documented drift audit (expect 55 vs 51; 4 missing as listed in §3.1)
+grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 55
+grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 51
 # full diff procedure: §3.1 comm commands
 
 # D1 /pull drift: docs claim hard reset; git_pull has none
-grep -n 'hard reset' commands/help.py main.py                # help.py:10, main.py:172
+grep -n 'hard reset' commands/help.py main.py                # help.py:10, main.py:175
 grep -n 'def git_pull\|def git_reset_hard' commands/update_bot.py   # 33, 104
 sed -n '33,101p' commands/update_bot.py | grep -c reset      # 0 — git_pull's body never resets
 
 # D2 /export_cards default mismatch
-grep -n 'only_ability' commands/help.py main.py              # help.py:68 "(default: True)" vs main.py:375 "= False"
+grep -n 'only_ability' commands/help.py main.py              # help.py:76 "(default: True)" vs main.py:375 "= False"
 
 # D3 /help entry omits stats
 grep -n '"/help <' commands/help.py                          # 7: no "stats" in the category list
@@ -485,14 +505,14 @@ grep -n '"/help <' commands/help.py                          # 7: no "stats" in 
 grep -n -A1 '^# ========================$' commands/psd_analyzer.py commands/query_card.py commands/diffusion.py commands/music_player.py | grep -v '^\-\-$'
 
 # Singletons + init functions
-grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # psd_analyzer:1641, query_card:626, music_player:44
+grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # psd_analyzer:1865, query_card:627, music_player:44
 
 # __all__ ends every command module except utils.py
 grep -L '__all__' commands/*.py                              # only commands/utils.py
 
 # Import-style census (from-imports should dwarf plain imports)
-grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^from '    # 113
-grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^import '  # 9
+grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^from '    # 135
+grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^import '  # 10
 
 # len-1 idiom census; negative-index ban holds
 grep -rnE '\[len\([a-z_]+\) - 1\]' commands/ main.py | wc -l # 15
@@ -504,12 +524,11 @@ grep -n -A9 'INCLUDE_FILES = \[' setup.py                    # 8 modules incl. h
 # queue_* wrappers
 grep -n 'def queue_' commands/utils.py                       # defs at 38,43,49,55,60: queue_any/message/file/edit/command
 
-# Skill inventory matches the §7.3 ownership map (16 dirs when all agents land)
-ls .claude/skills/
+# Skill inventory matches the §7.3 ownership map (17 dirs as of 2026-10-19)
+ls .claude/skills/ | wc -l                                    # 17
 ```
 
 Maintenance rules for this file: when a §3 drift instance is fixed, delete its
 row and re-run the audit; when a command is added, re-run the §3.1 diff and
-update the counts (54/50) and dict-entry table; when a 17th skill appears, add
-its ownership row in §7.3. Refresh every "2026-07-11" stamp whenever you touch
-this file.
+update the counts (55/51) and dict-entry table; when an 18th skill appears, add
+its ownership row in §7.3. Refresh the date stamps whenever you touch this file.

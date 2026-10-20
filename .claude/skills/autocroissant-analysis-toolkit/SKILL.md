@@ -38,7 +38,9 @@ Jargon used below, once: a **PSD** is a layered Photoshop file, one per card, in
 in a card's ability text where a type icon visually sits. The **midline** is `height *
 TYPE_REGION_RATIO` (0.5); icons above it are the card's own types, icons below it are candidates
 for inline injection into the ability text. A **sweep** is one `/update_stats` traversal of all
-cards, in **local mode** (walk the clone) or **remote mode** (GitHub API).
+cards through the GitHub API (**remote mode**). **Local mode** (walking the clone) was the other path
+until it was archived on 2026-10-20 (now on branch `archive/local-update-stats`, not in main); the recipes below still mention it
+because it explains old data and history.
 
 ## When NOT to use this skill
 
@@ -115,8 +117,8 @@ PSD 1200x2400; TYPE_REGION_RATIO=0.5 -> card_mid_y=1200
 hp 7 def 6 atk 7 spd 5`, ability ending `Minions inherit [undead].`, `validator problems: NONE` —
 every number predicted by the trace. (These golden values are a snapshot of 2026-07-11 — canonical
 current expected values live in autocroissant-validation-and-qa §3; if the trace stops matching,
-check there before assuming a regression.) (It also prints `known types (36)` including a leaked
-`.ds_store` entry — a real artifact of populating types from the local `Types/` folder on macOS.)
+check there before assuming a regression.) (On 2026-07-11 it also printed `known types (36)`
+including a leaked `.ds_store` entry; since the 2026-10-19 dotfile fix it prints 35.)
 
 **Failure signatures** — how each classic failure looks in the same trace:
 
@@ -143,21 +145,26 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, psd_analyzer.py:1173, branches on `use_local_repo`).
+   `update_stats`, psd_analyzer.py:1287 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
 3. **Check the artifact** with standalone reads (Recipe 6 mechanics). Every fingerprint must agree;
    one disagreement kills the attribution.
 
 **Worked example — which mode built today's stats.pkl?** This is the experiment that established
-the removeprefix bug (introduced by f7c915c; full incident owned by
-autocroissant-failure-archaeology) had NOT corrupted production data.
+the removeprefix bug (introduced by f7c915c, fixed 2026-10-19; full incident owned by
+autocroissant-failure-archaeology Entry 1) had NOT corrupted production data. The method still
+applies after the fix: the TIMESTAMP fingerprint below is exactly how you would spot pickles from a
+local-mode run (local mtimes instead of commit times; BUGS_AND_IMPROVEMENTS B6; since 2026-10-20 only the
+archived `update_stats_local()` can produce them), even though the path fingerprint no longer differs
+between modes.
 
 Candidate paths and their fingerprints:
 
 | Path | Path-string fingerprint | Timestamp fingerprint |
 |---|---|---|
-| Local mode (`_process_local_files`, psd_analyzer.py:1002) | `relative_path = full_path.removeprefix("TTSCardMaker").strip('/')` on an ABSOLUTE walk path is a no-op → stored paths start `Users/michaelsrouji/...`, and classification sees top folder "Users" → mass UNKNOWN type | `getmtime` → local clone mtimes (whenever the clone was last pulled) |
+| Local mode (`_process_local_files`; psd_analyzer.py:1002 on 2026-07-11) | Before 2026-10-19: `relative_path = full_path.removeprefix("TTSCardMaker").strip('/')` on an ABSOLUTE walk path was a no-op → stored paths start `Users/michaelsrouji/...`, classification sees top folder "Users" → mass UNKNOWN type. Since the `relpath` fix: repo-relative, same as remote | `getmtime` → local clone mtimes (whenever the clone was last checked out) — still distinct from remote |
 | Remote mode (`_process_files_from_response`) | Tree-API paths → repo-relative, starting `Creatures/`, `Auxiliary/`, ... | `_get_remote_timestamp` → GitHub COMMIT times |
 
 The exact one-liners, and their real output (2026-07-11):
@@ -236,7 +243,9 @@ commit message is lying to you (here they sometimes joke).
 
    ```bash
    git log -S removeprefix --oneline -- commands/psd_analyzer.py
-   # f7c915c cythonized the code                <- introduced the live local-path bug
+   # f7c915c cythonized the code                <- introduced the local-path bug (2026-07-11 output;
+   #                                               once the 2026-10-19 fix is committed, its commit
+   #                                               appears above this line as the removal)
    git log -S 'TYPE / WHITESPACE MISMATCH' --oneline
    # 081b1fd fix bug with types being improperly placed in abilities   <- removed it
    # fed8a83 output a problem if num types does not match num gaps in ability   <- added it
@@ -275,8 +284,8 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
 - `git show 4e03190` — message: **"am forehead"** (same day, 17:43, twenty minutes later). Looks
   like a junk commit. The diff is the actual fix: every `return ..., num_updated` becomes
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
-  content-changed cards, so the gate finally does its job. (Still true at HEAD:
-  psd_analyzer.py:1222.)
+  content-changed cards, so the gate finally does its job. (Still true on 2026-10-20:
+  psd_analyzer.py:1325.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
 - Bonus name-lie inside the same loop: at HEAD, `num_new` ALSO counts content-updated existing
@@ -293,7 +302,7 @@ LAST one is usually the real fix and the first one the attempt — check both.
 ## Recipe 4 — Measure an API budget before running (remote /update_stats)
 
 **When to reach for it:** BEFORE any run that talks to the GitHub API in a loop — remote-mode
-`update_stats`, or local mode with `use_local_timestamp:False`. Predict the request count first;
+`update_stats`, or the archived local traversal with `use_local_timestamp=False`. Predict the request count first;
 if you can't, you're not ready to run it. (Do not run update_stats during analysis at all — this
 recipe exists so the OPERATOR knows the cost; operations guidance lives in
 autocroissant-run-and-operate.)
@@ -342,7 +351,7 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:823-871; queue helpers utils.py:38-62): three module-level
+**The mechanism** (verify at main.py:830-887; queue helpers utils.py:38-62): three module-level
 deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=1)`
 coroutine. Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
@@ -353,12 +362,12 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Path | Hops | Queue-added latency |
 |---|---|---|
 | Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 1s (avg ~0.5s) |
-| Queued command (reminder-fired via analytics.py:213, on_ready inits main.py:116-119, music/diffusion chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:118-122, music/diffusion chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
 
 Two structural caveats, both visible in the code: (a) `process_command_queue` re-enqueues
-`check_reminder` at the top of every tick (main.py:825) and pops it in the same tick — reminders
+`check_reminder` at the top of every tick (main.py:841 as of 2026-10-20) and pops it in the same tick — reminders
 are checked every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:834-854), so one slow Discord HTTP call
+loop awaits each send SEQUENTIALLY inside the tick (main.py:850-870 as of 2026-10-20), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
 **The diagnostic implication (the point of the recipe):** the queues can contribute at most ~2
@@ -370,7 +379,7 @@ autocroissant-debugging-playbook), never queue scheduling.** Don't investigate t
 **Conclusive result:** you state the expected latency for the exact path the command took (≤1s or
 ≤2s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:823-871.
+main.py:830-887.
 
 ---
 
@@ -469,24 +478,26 @@ unchanged cards were archived in one sweep" is.
 ## Provenance and maintenance
 
 Everything above was verified on 2026-07-11 against working tree + git history (repo at 192
-commits, branch `main`). Volatile facts and their one-line re-checks:
+commits, branch `main`). On 2026-10-19 the rows below that cite code were re-pointed to that day's
+line numbers (HEAD a7a4bb3 + the uncommitted working tree); the worked examples' OUTPUTS are still the
+2026-07-11 measurements. Volatile facts and their one-line re-checks:
 
 | Fact | Re-verify with |
 |---|---|
 | Scripts exist / arg handling (full paths needed) | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/` ; `grep -n 'expanduser().resolve()' .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py` |
 | Lich King golden trace ([1]-[6] numbers) | rerun the `gap_trace.py` command in Recipe 1 |
-| Gap regex `\s{3,}` :348; punctuation cleanup :538; leftover-append :631-635; NO ABILITY LAYER :422 | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER' commands/psd_analyzer.py` |
-| removeprefix no-op line (LIVE BUG, still open) | `grep -n 'removeprefix' commands/psd_analyzer.py` (:1002 today; story in autocroissant-failure-archaeology) |
+| Gap regex `\s{3,}` :413; punctuation cleanup :727; leftover-append :820-824; NO ABILITY LAYER :487 (2026-10-20) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER' commands/psd_analyzer.py` |
+| removeprefix no-op line — FIXED 2026-10-19 | `grep -n 'relpath(full_path' commands/psd_analyzer.py` (:1226) and `grep -c removeprefix commands/psd_analyzer.py` (0); story in autocroissant-failure-archaeology Entry 1 |
 | stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_pickle.py` |
 | Timestamp clustering (103 distinct; 769 shared; max cluster 64 @ 2026-02-08 04:11:26Z) | the Counter one-liner in Recipe 2 (drifts with every sweep — recompute, don't reuse) |
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
-| `num_new` gate at HEAD | `grep -n 'if (num_new > 0)' commands/psd_analyzer.py` (:1222 today) |
+| `num_new` gate at HEAD | `grep -n 'if (num_new > 0)' commands/psd_analyzer.py` (:1446 on 2026-10-20) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
-| Per-PSD get_commits before update decision; rate-limit warning | `grep -n 'get_remote_timestamp\|get_commits\|5000 if GIT_TOKEN' commands/psd_analyzer.py` (:929, :1066, :859 today) |
-| Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:823-871 today) |
-| Slash default `use_local_repo=True` (why remote-mode ops rule exists) | `grep -n 'use_local_repo: Optional' main.py` (:361 today) |
+| Per-PSD get_commits before update decision; rate-limit warning | `grep -n 'get_remote_timestamp\|get_commits\|5000 if GIT_TOKEN' commands/psd_analyzer.py` (2026-10-20: `_get_remote_timestamp` calls :1150 remote / :1235 local, `get_commits` :1290, warning :1048) |
+| Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:843-893 on 2026-10-19) |
+| Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, BUGS_AND_IMPROVEMENTS B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
 | Problem card list (today: 20 Creature Types / tornado) | the `c.problems` one-liner in Recipe 6 |

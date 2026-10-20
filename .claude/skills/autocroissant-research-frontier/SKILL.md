@@ -54,8 +54,8 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | Asset | Where | Why it matters |
 |---|---|---|
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:1615) writes `rules.txt`; `/export_rulebook` (main.py:382) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:1520) writes `stats.csv` with an aliases column; `/export_cards` (main.py:369) | Structured stats + ability text in one table |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:1718) writes `rules.txt`; `/export_rulebook` (main.py:382) | 48 pages of game rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:1623) writes `stats.csv` with an aliases column; `/export_cards` (main.py:369) | Structured stats + ability text in one table |
 | Type-annotated ability text | `_inject_type_names` (psd_analyzer.py:593) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
@@ -119,7 +119,8 @@ too: it is the number every fancier approach must beat.
 
 **No LLM or embedding dependency may ever enter `requirements.txt` (core).** As of 2026-07-11
 it holds exactly 11 packages (cython, davey, discord.py, GitPython, numpy, opencv-python,
-pandas, psd-tools, PyGithub, requests, yt-dlp) after today's intentional (uncommitted) reorg;
+pandas, psd-tools, PyGithub, requests, yt-dlp) after that day's reorg (committed in a7a4bb3;
+still 11 on 2026-10-19, with `discord.py>=2.5`);
 the torch stack lives in `requirements2.txt`. Anything heavy goes to requirements2.txt at
 most, behind the lazy-import pattern — boundary doctrine in autocroissant-ai-boundary.
 
@@ -208,7 +209,7 @@ executes perfectly.
 
 ### Residue 3a — Line-position estimation for bbox-anchored injection (OPEN)
 
-**Why open:** today's type-icon injection (`_inject_type_names`, psd_analyzer.py:593-637)
+**Why open:** today's type-icon injection (`_inject_type_names`, psd_analyzer.py:782-826 as of 2026-10-20)
 assigns icons to `\s{3,}` text gaps by global reading order and never checks whether an
 icon's y-coordinate matches the line it lands in. The fix everyone wants — anchor each icon
 to its text LINE by (x, y) — hits a wall: **psd-tools exposes only the whole text layer's
@@ -216,6 +217,12 @@ bbox (`layer.bbox`), not per-line boxes.** The campaign's Option 3 has a first a
 (uniform `line_height = (y2-y1)/num_lines` with clamping, worked Lich King numbers) and four
 labeled hard sub-problems; the hardest is soft-wrap — `num_lines` counted from `\n` in the
 extracted text diverges from RENDERED lines when text wraps.
+
+**Shrinking scope (2026-10-19):** cards whose inline icons are retyped as stoogedings tokens no
+longer need any position estimation — the token sits in the text where the icon renders
+(impossibility-cards-reference §4.1). The residue therefore applies only to cards not yet
+migrated (about 45 PSDs carry inline icon layers; ttscardmaker-companion §5). If the migration
+finishes, this residue closes by construction rather than by research.
 
 **Asset:** the diagnostics scripts (`dump_psd_layers.py`, `gap_trace.py`, `parse_one.py` in
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) print exactly the icon bboxes
@@ -346,7 +353,7 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 | Per-series counts (Kirby 58, Isaac 10, ...) | the `find ... Creatures -type d` loop in Item 2 Step 1 |
 | PNG dimensions 1200x2400 | `find ~/Desktop/TTSCardMaker/Creatures/Kirby -name '*.png' -exec python3 -c "import sys; from PIL import Image; print(Image.open(sys.argv[1]).size)" {} \; -quit` |
 | LoRA folder & loading | `grep -n LORAS_FOLDER commands/diffusion.py; grep -n "def set_lora" commands/diffusion.py` |
-| requirements.txt is core-only (11 pkgs) | `cat requirements.txt` (reorg of 2026-07-11 is intentionally uncommitted; working tree is truth) |
+| requirements.txt is core-only (11 pkgs) | `cat requirements.txt` (reorg of 2026-07-11 committed in a7a4bb3) |
 | Injection is gap-ordinal, not line-anchored | `grep -n _gap_pattern commands/psd_analyzer.py; grep -n "def _inject_type_names" commands/psd_analyzer.py` |
 | CardInfo/StatsDatabase coupling points | `grep -n "class CardInfo" commands/psd_analyzer.py; grep -n "class StatsDatabase" commands/psd_analyzer.py; grep -n "def to_dict" commands/psd_analyzer.py` |
 | PICKLE commit noise (23/192) | `git rev-list --count -i --grep=pickle HEAD` (23) and `git rev-list --count HEAD` (192) |

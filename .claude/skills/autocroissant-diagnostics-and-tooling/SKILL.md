@@ -120,7 +120,7 @@ Undead                                    smartobject True True (734, 2239, 808,
 |---|---|
 | `size` + `mid-y` | The midline that splits type icons into creature-types (above) vs inline candidates (below). NOTE: this script hardcodes ratio 0.5 in the printout; `gap_trace.py` imports the real `TYPE_REGION_RATIO`. If the constant ever changes, trust gap_trace's value. |
 | `kind` | psd-tools layer kind. `type` means a TEXT layer (yes, confusingly). `group`, `pixel`, `smartobject`, `exposure`, `shape` are the others you'll see. |
-| `vis` | `is_visible()`. Visibility drives stat digits (only VISIBLE digit layers are summed) and star counting. A stat "missing" is often a digit layer someone toggled off. |
+| `vis` | `is_visible()`. Visibility drives stat digits (only VISIBLE digit layers count, per bar row: see impossibility-cards-reference §3.4) and star counting. A stat "missing" is often a digit layer someone toggled off. |
 | `pix` | `has_pixels()`. Star counting and type icons need pixel presence. |
 | `bbox` | `(x1, y1, x2, y2)`. Compare y1 against mid-y to predict which side of the midline the parser puts an icon on. |
 | `TEXT:` (with `--text`) | Raw engine text before cleanup. Line breaks are `\r` (the parser converts to `\n`). Runs of 3+ literal spaces are the injection gaps — count them here to predict gap_trace's `<GAP:n>` markers. |
@@ -152,13 +152,12 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.p
   ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd
 ```
 
-**Annotated output** (Mini Doomer, fresh mode, verified 2026-07-11):
+**Annotated output** (Mini Doomer, fresh mode, verified 2026-07-11; the types line changed 2026-10-19):
 
 ```
-known types (36): ['.ds_store', 'active', 'attack', ... 'water', 'wind']
-                       ^- macOS .DS_Store artifact leaked into all_types when populated
-                          locally; harmless (no layer is named '.ds_store') but explains
-                          the count being 36, not 35. Remote populate would not include it.
+known types (35): ['active', 'attack', ... 'water', 'wind']
+                       ^- 35 since 2026-10-19. Before that, a macOS .DS_Store leaked in and
+                          the count was 36 (fixed: _populate_types_from_local skips dotfiles).
 relative path: Auxiliary/Minions/Mini_Doomer.psd     <- computed CORRECTLY by this script
 --------------------------------------------------------------------------------
 type        : minion
@@ -183,11 +182,16 @@ validator problems: NONE
 
 - `known types (N)` — the type vocabulary populated from the clone's `Types/` folder. If a type
   icon "isn't detected", first check its lowercased layer name is in this list.
-- `relative path` — this script computes the repo-relative path CORRECTLY (`relpath` against the
-  clone root). The bot's own local traversal currently computes it WRONG for absolute clone
-  paths (`removeprefix` no-op, psd_analyzer.py:1002) — so parse_one shows the *intended* parse,
-  which is NOT what a local-mode `/update_stats` would store today. Story and status: see
-  autocroissant-failure-archaeology ("removeprefix bug", commit f7c915c).
+- `relative path` — computed with `relpath` against the clone root, the same way the local traversal
+  did it from 2026-10-19 until local mode was archived on 2026-10-20 (now on branch `archive/local-update-stats`).
+  Before that fix local mode computed it wrong (the removeprefix bug, autocroissant-failure-archaeology
+  Entry 1). It matches the repo-relative paths `/update_stats` stores from the GitHub tree.
+- **Icon font (2026-10-20).** parse_one.py and gap_trace.py pass
+  `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
+  Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
+  GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
+  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived, for these scripts. gap_trace.py calls `_process_layer`, whose signature did
+  not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
   fresh parse showing no `author:`/`series:` line is normal, not a bug.
@@ -358,7 +362,8 @@ see when a card's stored text last changed.
 **The "suspicious paths" heuristic** (read the code before trusting it blindly): it flags any
 entry whose path's top folder is not in
 `("Creatures", "Items", "Field", "Auxiliary", "N.M.E", "MDW", "Rulebook", "Types")`.
-It exists to catch exactly the removeprefix corruption signature (paths starting `Users/...`).
+It exists to catch exactly the removeprefix corruption signature (paths starting `Users/...`; that
+bug was fixed 2026-10-19, but keep the check: it is cheap and catches any future path regression).
 Two caveats: (a) a legitimately NEW top-level folder in TTSCardMaker would false-positive —
 update the tuple in the script if the card repo grows one; (b) 0 here does not prove every path
 is *correct*, only that top folders look sane.
@@ -441,7 +446,8 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 | Signal | Meaning | Where the story lives |
 |---|---|---|
 | `removed` cards you did not delete (and no matching `added` rename) | traversal missed files — wrong mode or path | autocroissant-failure-archaeology |
-| mass `path` changes in field counts | the removeprefix local-path bug fired — STOP, do not push | autocroissant-failure-archaeology (commit f7c915c) |
+| mass `path` changes in field counts | a path regression (the removeprefix local-path bug's signature, fixed 2026-10-19) — STOP, do not push | autocroissant-failure-archaeology Entry 1 |
+| hundreds of modified cards whose only changed field is `timestamp` | pickles from a local-timestamp sweep (BUGS_AND_IMPROVEMENTS B6; since 2026-10-20 only the archived traversal on branch `archive/local-update-stats` can produce them); old_stats.pkl will have grown by one archived copy per card — STOP, do not push | autocroissant-run-and-operate §7 |
 | mass `type` → unknown (check with `--verbose`) | classification broke | impossibility-cards-reference for what classify should do |
 | huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert) | NOT visible in this script's output — measure with `inspect_pickle.py` summary (223 archived versions is the 2026-07-11 baseline) and `git diff --stat HEAD -- old_stats.pkl` |
 
@@ -481,9 +487,11 @@ echo $?
 5. The commit/push itself (PICKLE convention, who may push) is owned by
    autocroissant-change-control — this gate is a precondition, not a substitute.
 
-Extra rule as of 2026-07-11: any `/update_stats` run in LOCAL mode (`use_local_repo:True`) makes
-this gate MANDATORY before any pickle push, because of the live removeprefix bug (see
-autocroissant-failure-archaeology; operating rule in autocroissant-run-and-operate).
+Extra rule (2026-07-11, updated 2026-10-20): pickles produced by the LOCAL traversal never get pushed
+without this gate. Since 2026-10-20 that traversal exists only on branch `archive/local-update-stats` (not in main), for
+sandbox sweeps (local mode is gone from `/update_stats`). The original reason, the removeprefix path bug,
+was fixed on 2026-10-19; the lasting reason is the local-timestamp re-archiving above (operating rule in
+autocroissant-run-and-operate §7).
 
 ### Workflow 2 — single-card investigation pipeline ("why did THIS card parse wrong?")
 
@@ -563,6 +571,8 @@ Conventions (match the existing five — read one before writing):
   **autocroissant-debugging-playbook**.
 - **The stories behind the red flags** (removeprefix bug, whitespace saga, old_stats ballooning)
   → **autocroissant-failure-archaeology**.
+- **Whole-corpus parser regression checks** (old parser vs new parser on every PSD; sandboxed local
+  sweep) → **autocroissant-validation-and-qa** §4.1 (no script for them exists yet).
 - **First-principles analysis beyond these five tools** (API budgets, queue timing, designing a
   new experiment) → **autocroissant-analysis-toolkit**.
 
@@ -571,6 +581,13 @@ Conventions (match the existing five — read one before writing):
 All facts and golden outputs verified 2026-07-11 by running the scripts on this Mac (Python
 3.10.20, clone at `~/Desktop/TTSCardMaker`). Counts (813/218/223/1/0), the newest-card line, and
 the two-snapshot diff figures drift with every PICKLE commit — re-run before quoting.
+Updated 2026-10-19 by code reading only (the scripts were not re-run): the types count, the
+local-path fix and the new red-flag row; 2026-10-20: the scripts' icon-vocabulary change. On 2026-10-19 the Mac's
+`python3` (Homebrew 3.14.8) has no psd-tools, so the scripts need a venv first
+(autocroissant-build-and-env §1). On 2026-10-20 parse_one.py and gap_trace.py gained the icon
+vocabulary and parse_one.py's note on the removeprefix bug was rewritten; diff_stats.py's docstring
+(line 21) still names "the removeprefix local-path bug" as the meaning of mass path changes, which
+reads as history.
 
 Re-verification one-liners (from repo root):
 
@@ -604,10 +621,12 @@ python3 $S/dump_psd_layers.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of War
 Cited code locations (line numbers drift; re-find with these):
 
 ```bash
-grep -n "TYPE_REGION_RATIO = " commands/psd_analyzer.py            # 0.5 (line 30 as of 2026-07-11)
-grep -n "_extract_from_layers" commands/psd_analyzer.py            # gap_trace's mirrored method (def at 398)
+grep -n "TYPE_REGION_RATIO = " commands/psd_analyzer.py            # 0.5 (line 33 as of 2026-10-19)
+grep -n "_extract_from_layers" commands/psd_analyzer.py            # gap_trace's mirrored method (def at 463, 2026-10-20)
+grep -n "def _process_layer" commands/psd_analyzer.py              # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
 grep -n "Preserve author and series" commands/psd_analyzer.py      # parse_one --with-db semantics
-grep -n "removeprefix" commands/psd_analyzer.py                    # the live local-path bug (line 1002)
+grep -n "relpath(full_path" commands/psd_analyzer.py                # the 2026-10-19 local-path fix (line 1226); removeprefix gone
+grep -n "_icons_from_local" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-10-20)
 grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/TTSCardMaker" (line 4)
 grep -rn "def to_dict" commands/psd_analyzer.py                    # field-omission behavior in output
 ```

@@ -20,12 +20,16 @@ general_commands = {
 }
 
 text_commands = {
-    "/set_reminder [msg] [when] [offset] [frequency] [command]:" : "Set a reminder message to be sent at a specified time (e.g., '13:00' or '1PM' PST). "
-                                                                    "Optional: offset delay before first run (s/m/h/d/w), frequency for repeating (s/m/h/d/w), "
-                                                                    "and a bot command to execute (e.g., '/play_all').",
-    "/list_reminders [all] [hidden]:"           : "List all reminders in this channel (or in the whole server if 'all' is True). "
-                                                  "Set 'hidden' to True to show the list only to you.",
-    "/remove_reminder <reminder_id>:"           : "Remove a reminder by its unique ID. Use /list_reminders to find the ID.",
+    "/set_reminder [msg] [when] [offset] [frequency] [command]:" : "Posts a message and/or runs a bot command in this channel at a set time (admin only).\n"
+                                                                    "- msg: Message to post\n"
+                                                                    "- when: Pacific time (follows daylight saving): 13:00, 1PM, 1:30PM, sun 3AM, tomorrow 9AM or 2026-12-25 9AM. A bare time that already passed today fires right away\n"
+                                                                    "- offset: Delay added to the first run, e.g. 30m or 1d (default: none)\n"
+                                                                    "- frequency: Repeat interval in s/m/h/d/w, combinable like 1d12h (default: never)\n"
+                                                                    "- command: Bot command to run with your permissions, options as name:value, e.g. '/sync_emojis refresh:True'",
+    "/list_reminders [all] [hidden]:"           : "Lists reminders with their ID, next run, repeat, command and creator.\n"
+                                                  "- all: The whole server instead of this channel (default: False)\n"
+                                                  "- hidden: Show the list only to you (default: False)",
+    "/remove_reminder <reminder_id>:"           : "Removes a reminder by the 8-character ID from /list_reminders (admins, or the reminder's creator).",
 }
 
 card_commands = {
@@ -45,6 +49,9 @@ card_commands = {
                                                   "- String contains: type~creature, series~kirby (case-insensitive)\n"
                                                   "- Combine conditions: '\"damage\" & type==creature & hp>7'\n"
                                                   "- Fuzzy matching works for non-exact text queries",
+    "/sync_emojis [refresh] [prune]:"           : "Uploads every icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only).\n"
+                                                  "- refresh: Re-upload every icon, e.g. after one was edited\n"
+                                                  "- prune: Delete bot emojis whose icon is no longer in Types/",
     "/set_ratio [value]:"                       : "View or set the fuzzy match tolerance (0.0-1.0). "
                                                   "No argument shows current ratio. Higher = stricter matching.",
     "/set_repo [new_repo]:"                     : "View or set the GitHub repository (format: USER/REPO). "
@@ -59,11 +66,9 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [use_local_repo] [use_local_timestamp] [force_update]:" : "Manually updates the card statistics database by scanning PSDs.\n"
-                                                                                                    "- output_problematic_cards: Show cards with errors (default: True).\n"
-                                                                                                    "- use_local_repo: Use local cloned folder vs remote (default: True).\n"
-                                                                                                    "- use_local_timestamp: Use local file times vs GitHub (default: True).\n"
-                                                                                                    "- force_update: Will process and update every single card, even if there have not been any changes to it (default: False).",
+    "/update_stats [output_problematic_cards] [force_update]:" : "Manually updates the card statistics database by scanning the PSDs on GitHub.\n"
+                                                               "- output_problematic_cards: Show cards with errors (default: True).\n"
+                                                               "- force_update: Will process and update every single card, even if there have not been any changes to it (default: False).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Export only ability text (default: True)\n"
                                                    "- as_csv: Export as CSV instead of text (default: True)",
@@ -72,6 +77,7 @@ stats_commands = {
                                                   "Edit metadata for a card. Provide query to find card, then any fields to update.\n"
                                                   "- del_entry: Delete entire metadata entry\n"
                                                   "- types: Comma-separated list, e.g., 'fire,water'\n"
+                                                  "- author: cards listed in TTSCardMaker's MDW/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
                                                   "- No parameters (except query) shows current metadata",
     "/mass_replace <field> <old> <new>:"        : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",

@@ -1,6 +1,6 @@
 cython
 davey
-discord.py
+discord.py>=2.5
 GitPython
 numpy
 opencv-python

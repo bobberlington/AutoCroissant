@@ -1,6 +1,6 @@
 ---
 name: autocroissant-psd-extraction-campaign
-description: Load this skill to RUN the improvement campaign for AutoCroissant's hardest live problem - PSD ability/type/stat extraction. Trigger phrases and symptoms include "improve extraction", "perfect extraction", "parser campaign", "type injection wrong" / "[type] landed in the wrong place", "gaps vs types", "exclusion list" (ABILITY_EXCLUSIONS / EXCESSIVE_STAT_EXCLUSIONS / burn-down), "problem cards", "ABILITY TEXT NOT FOUND" / "STATS TOO HIGH" / "MISSPELT TYPE", "fix update_stats local mode" / removeprefix / relative-path bug, and any plan to change parsing heuristics in commands/psd_analyzer.py. It contains the owner's measurable goal (100 percent correct extraction, zero per-card exclusion lists), a decision-gated numbered campaign (Phase 0 removeprefix foundation -> Phase 1 baseline scoreboard -> Phase 2 gap_trace instrumentation -> Phase 3 ranked solution menu with predicted numbers -> Phase 4 validation and promotion), exact commands with verified expected outputs (2026-07-11 golden numbers), live suspect lists, fenced-off known wrong paths with their incident commits, and scoreboard re-measurement one-liners. Read-only phases are safe against the live repo; anything that writes pickles runs only in a sandbox copy.
+description: Load this skill to RUN the improvement campaign for AutoCroissant's hardest live problem - PSD ability/type/stat extraction. Trigger phrases and symptoms include "improve extraction", "perfect extraction", "parser campaign", "type injection wrong" / "[type] landed in the wrong place", "gaps vs types", "exclusion list" (ABILITY_EXCLUSIONS / EXCESSIVE_STAT_EXCLUSIONS / burn-down), "problem cards", "ABILITY TEXT NOT FOUND" / "STATS TOO HIGH" / "MISSPELT TYPE", "fix update_stats local mode" / removeprefix / relative-path bug (fixed 2026-10-19; Phase 0 done), "migrate cards to stoogedings tokens", and any plan to change parsing heuristics in commands/psd_analyzer.py. It contains the owner's measurable goal (100 percent correct extraction, zero per-card exclusion lists), a decision-gated numbered campaign (Phase 0 removeprefix foundation -> Phase 1 baseline scoreboard -> Phase 2 gap_trace instrumentation -> Phase 3 ranked solution menu with predicted numbers -> Phase 4 validation and promotion), exact commands with verified expected outputs (2026-07-11 golden numbers), live suspect lists, fenced-off known wrong paths with their incident commits, and scoreboard re-measurement one-liners. Read-only phases are safe against the live repo; anything that writes pickles runs only in a sandbox copy.
 ---
 
 # The PSD Extraction Campaign
@@ -10,9 +10,16 @@ extracting ability text, type icons, and stats from the ~904 card PSDs in `~/Des
 
 **The goal ("perfect extraction")**: 100% correct ability/type/stat extraction, with **zero
 per-card exclusion lists**. Today the parser is good but propped up by 23 hardcoded card names
-(18 `ABILITY_EXCLUSIONS` + 5 `EXCESSIVE_STAT_EXCLUSIONS`) and one live traversal bug that makes
-local-mode `/update_stats` dangerous. The campaign removes the props without breaking the 813 cards
-that parse correctly today.
+(18 `ABILITY_EXCLUSIONS` + 5 `EXCESSIVE_STAT_EXCLUSIONS`). The traversal bug that made local-mode
+`/update_stats` dangerous was fixed on 2026-10-19 (Phase 0). The campaign removes the remaining
+props without breaking the 813 cards that parse correctly today.
+
+**New lever since 2026-10-19: the stoogedings icon font.** A card whose inline icons are typed as
+`[fire]` tokens in the font needs no gap guessing at all; the parser reads the tokens directly
+(impossibility-cards-reference §4.1). No card uses it yet (0 of 813); about 45 PSDs (81 smart-object
+icon layers) are the migration backlog. Migrating a card is card-content work in TTSCardMaker
+(prototype and caveats: ttscardmaker-companion §5), but it is the most direct route to perfect
+inline types for those cards, and Options 2-3 below then matter only for unmigrated cards.
 
 **Success is MEASURED, never judged by eye.** Every phase ends at a gate with an expected number.
 If your run shows a different number, take the branch — do not rationalize and continue.
@@ -32,11 +39,12 @@ Glossary (used throughout):
 
 | Term | Meaning |
 |---|---|
-| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_analyzer.py:348) where a type icon visually sits |
-| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_analyzer.py:442; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
-| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_analyzer.py:30,405). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
-| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_analyzer.py:593) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_analyzer.py:632-635) |
+| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_analyzer.py:413 as of 2026-10-20) where a type icon visually sits |
+| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_analyzer.py:507; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
+| token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
+| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_analyzer.py:33,470). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
+| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_analyzer.py:782) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_analyzer.py:821-824) |
 | sweep | One `update_stats()` traversal (local dir walk or GitHub trees API) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
@@ -74,26 +82,47 @@ Metric definitions (all verified 2026-07-11):
 
 ---
 
-## Phase 0 — Restore a trustworthy foundation
+## Phase 0 — Restore a trustworthy foundation: DONE (2026-10-19)
 
-You cannot iterate on extraction quality while the local traversal mangles every path. Fix or
-route around this first.
+**What it was.** `_process_local_files` computed
+`relative_path = full_path.removeprefix("TTSCardMaker").strip('/')`, a no-op on the absolute paths
+`walk()` yields, so a local-mode `/update_stats` classified every card from a top folder of `Users`
+(UNKNOWN type, wrong paths, mass archiving). Introduced by cythonization commit f7c915c
+(2025-12-02). Full story: **autocroissant-failure-archaeology** Entry 1.
 
-**The bug in one paragraph** (full story with evidence is OWNED by
-**autocroissant-failure-archaeology** — read it before touching this code):
-`_process_local_files` computes `relative_path = full_path.removeprefix("TTSCardMaker").strip('/')`
-(commands/psd_analyzer.py:1002). `walk()` yields ABSOLUTE paths under
-`expanduser("~/Desktop/TTSCardMaker")`, so `removeprefix("TTSCardMaker")` is a no-op and
-`relative_path` keeps the absolute prefix. `CardClassifier.classify` then sees top folder `Users`
-→ every card gets UNKNOWN type, wrong stored paths, and mass path-change archiving. One local-mode
-`/update_stats` run would corrupt stats.pkl at scale — and `use_local_repo` defaults to True on the
-slash command (main.py:361). Introduced by cythonization commit f7c915c (2025-12-02), which replaced
-the previously correct `full_path.split("TTSCardMaker")[-1]` in a mechanical negative-index purge
-(Cython `wraparound=False`). Current data is fine because real sweeps have run in remote mode.
-**Operating rule until fixed (owned by autocroissant-run-and-operate): `/update_stats` must be run
-with `use_local_repo:False`.**
+**What landed** (working tree, 2026-10-19; uncommitted at that date — record the hash when it is):
+exactly the Gate 0b candidate this phase specified, plus the `relpath` import:
 
-### Gate 0a — Reproduce it, read-only
+```python
+relative_path = relpath(full_path, local_path).replace('\\', '/')   # psd_analyzer.py:1226 on 2026-10-19
+```
+
+(Since 2026-10-20 this line lives in `archive/local_update_stats.py` on branch `archive/local-update-stats`,
+not in main: local mode was archived out of the bot, see below.)
+
+**Measured results (2026-10-19)** — procedure in autocroissant-validation-and-qa §4.1:
+- Sandboxed forced LOCAL sweep: 813 cards, 0 typed UNKNOWN, "0 cards changed location", and
+  types, paths and stats identical to the stored remote-sweep data.
+- 59 ability and 2 star differences, all reproduced by the git-HEAD parser, so they are upstream PSD
+  edits newer than the bot's last sweep (BUGS_AND_IMPROVEMENTS D5), not effects of the fix.
+- Old parser vs new parser on all 813 PSDs: 0 differences.
+
+**Prediction vs measurement.** Option 1 below predicted Tier A would change only `timestamp`. The 61
+extra rows broke that prediction, and the explanation (stale stats.pkl, proven by the old parser
+reproducing them) was found before promotion — the methodology working as intended. Lesson: Tier A's
+precondition "stats.pkl matches the clone" must be checked first, or an old-vs-new parser run
+(method A) used to separate code effects from upstream edits.
+
+**What is still true about local mode.** The fix makes local mode path-correct, not
+timestamp-compatible: with `use_local_timestamp=True`, every card's mtime is newer than its stored
+commit date (813/813 on 2026-10-19), so a local run with local timestamps re-archives everything
+(option 1's own Tier A prediction said so; BUGS_AND_IMPROVEMENTS B6). On 2026-10-20 `/update_stats` first
+defaulted to remote mode, then local mode was ARCHIVED: the options are gone from the command, and the
+traversal survives as `update_stats_local()` on branch `archive/local-update-stats`, for sandbox sweeps only
+(operating rule owned by autocroissant-run-and-operate §7; story: autocroissant-failure-archaeology
+Entry 10.12).
+
+### Gate 0a — Regression check (keep running it after parser refactors)
 
 ```bash
 python3 - <<'EOF'
@@ -101,73 +130,30 @@ from os import walk
 from os.path import expanduser, join as path_join, relpath
 local_path = expanduser('~/Desktop/TTSCardMaker')
 for folder, _, files in walk(local_path):
-    folder = folder.replace('\\', '/')
     for file in files:
         if file.endswith('.psd'):
             full_path = path_join(folder, file)
-            print('full_path        :', full_path)
-            print('line-1002 result :', full_path.removeprefix('TTSCardMaker').strip('/'))
-            print('CANDIDATE relpath:', relpath(full_path, local_path))
+            print('full_path :', full_path)
+            print('relpath   :', relpath(full_path, local_path))
             raise SystemExit
 EOF
+git grep -n "relative_path = " archive/local-update-stats -- archive/local_update_stats.py   # :115
 ```
 
-**EXPECTED (2026-07-11):** `line-1002 result` starts with `Users/...` (the absolute path minus its
-leading slash — NOT repo-relative), while `CANDIDATE relpath` prints a clean repo-relative path
-(first walked PSD on this machine: `MDW/cardback_item.psd`).
+**EXPECTED (2026-10-19; file path updated 2026-10-20):** `relpath` prints a clean repo-relative path
+(first walked PSD on this machine: `MDW/cardback_item.psd`), and the grep shows the
+`relpath(full_path, local_path)` line in `_process_local_files`. If the grep shows a string operation (`removeprefix`, `split`, slicing)
+instead, the bug has been reintroduced — stop and read the fenced-off fix below.
 
-- If you see this → bug still live. Continue to Gate 0b; keep the remote-mode operating rule.
-- **If instead** `line-1002 result` is already repo-relative → the fix has landed. Confirm with
-  `grep -n "relative_path = " commands/psd_analyzer.py`, update this Phase to "historical", skip to
-  Phase 1, and re-run the full baseline (Phase 1) before trusting anything else here.
-- **If instead** the script prints nothing → the TTSCardMaker clone is missing or empty; nothing
-  else in this campaign will work. Fix the clone first (`LOCAL_DIR_LOC` in global_config.py).
-
-### Gate 0b — The candidate fix (NOT applied; label stays CANDIDATE until Phase 4 passes)
-
-The principled fix is:
-
-```python
-# commands/psd_analyzer.py:1002  (CANDIDATE - do not apply outside a change-control branch)
-relative_path = relpath(full_path, local_path).replace('\\', '/')
-```
-
-Note the import: psd_analyzer.py:9 (`from os.path import getmtime, basename, expanduser, splitext,
-join as path_join`) does NOT currently include `relpath`; the candidate fix must add it. Evidence
-the construction is right: the diagnostics scripts compute the relative path exactly this way
-(`relpath(psd_path, clone_root)`), and every `parse_one.py` run below classifies correctly with it.
-
-Blast-radius check — is anything else in local mode path-sensitive?
-
-1. `_populate_types_from_local` (psd_analyzer.py:883-890): **unaffected**. Verify by reading it:
-   it walks `path_join(local_path, "Types")` directly and filters with
-   `if folder.endswith("Types")` on the walked ABSOLUTE folder — the absolute path
-   `.../TTSCardMaker/Types` ends with `Types`, so the check passes, and `Types/Stars` is correctly
-   skipped (ends with `Stars`). Empirical proof: every diagnostic run below prints
-   `known types (36)` populated via this exact function in local mode.
-   `sed -n '883,890p' commands/psd_analyzer.py` to confirm.
-2. The `EXCLUDE_FOLDERS` skip (psd_analyzer.py:994) splits the absolute folder path into parts —
-   `Markers`/`MDW` still match as parts. Unaffected.
-3. `getmtime(full_path)` and `parser.parse(full_path, relative_path)` use the absolute path for
-   file access (correct) and the relative path only for classification/storage. The fix changes
-   exactly one behavior: what gets classified and stored.
-
-### FENCED-OFF wrong fix — do not do this
+### FENCED-OFF wrong fix — do not do this (kept as a lesson)
 
 `relative_path = full_path.removeprefix(local_path).strip('/')` (string-prefix stripping with the
 absolute clone path) LOOKS equivalent and is not. It breaks when `local_path` carries a trailing
 slash, when the walk yields a symlink-resolved or differently-normalized prefix, and it silently
 degrades to the same no-op failure mode when the prefix mismatches by one character — the exact
-shape of the bug you are fixing. `os.path.relpath(full_path, local_path)` normalizes both sides and
+shape of the original bug. `os.path.relpath(full_path, local_path)` normalizes both sides and
 fails loudly (`ValueError`/`..`-prefixed result) instead of silently mangling. The whole incident
 happened because a string operation was assumed to be a path operation; do not re-assume it.
-
-### Gate 0c — Promotion route
-
-The fix is a code change classified and gated by **autocroissant-change-control** (branch, review,
-the non-negotiables) and must pass the **autocroissant-validation-and-qa** sandbox sweep gates with
-the campaign-specific expected numbers in Phase 4 below (option 1 gives the predicted diffs). Do not
-merge on "the one-liner is obviously right" — f7c915c was also obviously right.
 
 ---
 
@@ -189,7 +175,8 @@ creatures 7; `cards with recorded parse problems: 1`; 0 orphans; newest `Anubisa
 
 - Higher card count / newer newest-timestamp → TTSCardMaker gained cards and a sweep ran; fine,
   update the scoreboard.
-- Suspicious paths > 0 → a local-mode sweep ran with the bug. STOP the campaign; this is now a
+- Suspicious paths > 0 → a local-mode sweep ran with the bug (since 2026-10-20 only the archived
+  traversal on branch `archive/local-update-stats` walks the clone). STOP the campaign; this is now a
   data-recovery incident: autocroissant-debugging-playbook ("stats look wrong") +
   autocroissant-change-control (pickle discipline). Do not proceed on corrupted baseline.
 - Problem count > 1 → run Gate 1b and classify each new entry before continuing.
@@ -356,29 +343,42 @@ Discipline (owned by **autocroissant-research-methodology**): every option state
 obligations and its predicted, measurable effect BEFORE you run anything. A change whose numbers
 you cannot predict is not ready to be coded. Unproven ideas below are labeled CANDIDATE.
 
-### Option 1 — The relative-path fix + a local-mode regression harness (do this first)
+### Option 1 — The relative-path fix (DONE 2026-10-19) + a local-mode regression harness (open)
 
-**Theory obligation:** Gate 0a/0b evidence; nothing else in local mode is path-sensitive (verified
-Gate 0b). **Why ranked first:** it unblocks fast local iteration for everything below — remote
-sweeps cost 1+ API call per changed card and minutes of wall time; local sweeps are free.
+**Status:** the fix shipped to the working tree on 2026-10-19 (Phase 0). Local mode left the bot on
+2026-10-20; the sweep below now runs through `update_stats_local()`, copied into the sandbox from branch
+`archive/local-update-stats` (`mkdir -p archive && git show archive/local-update-stats:archive/local_update_stats.py > archive/local_update_stats.py`).
+What remains open is the HARNESS: scripting the two checks from autocroissant-validation-and-qa §4.1 (old-vs-new parser over
+every PSD; sandboxed local sweep diffed field-by-field) so every future parser change can run them
+in minutes. The predictions below are kept because they are the harness's expected outputs.
+
+**Theory obligation (met):** nothing else in local mode is path-sensitive. `_populate_types_from_local`
+walks `Types/` directly; the `EXCLUDE_FOLDERS` skip splits the absolute folder into parts; file access
+uses the absolute path and only classification/storage uses the relative one. **Why it was ranked
+first:** it unblocks fast local iteration for everything below — remote sweeps cost 1+ API call per
+card and minutes of wall time; local-timestamp sweeps make no API calls.
 
 **Predicted numbers, stated before running** (all in a SANDBOX; procedure owned by
 autocroissant-validation-and-qa):
 
 - Tier A (fast, local timestamps): sandbox force sweep with the fix
-  (`update_stats(None, True, True, True, True)` headless) then
+  (`update_stats_local(force_update=True)` from the archive branch, copied in as above, headless; on 2026-10-19
+  this was `update_stats(None, True, True, True, True)`) then
   `diff_stats.py <pre.pkl> <post.pkl>` shows `added: 0 removed: 0`, and `field change counts`
   contains ONLY `{'timestamp': 813}` — local mtimes replace remote commit dates; every other field
   byte-identical. old_stats grows by one archived copy per card whose mtime is newer than the
   stored timestamp (≤813; on a fresh clone, all). Summary line reads `813 had newer timestamps or
   were new ... 0 cards changed location.`
-- Tier B (full equivalence, `use_local_timestamp=False` — costs ~813+ GitHub API calls, needs
+- Tier B (full equivalence, `update_stats_local(use_local_timestamp=False, force_update=True)` — costs ~813+ GitHub API calls, needs
   GIT_TOKEN's 5000/hr): `diff_stats.py` reports `0/0/0`, exit 0, and old_stats is unchanged —
   local traversal becomes bit-identical to remote traversal on an unchanged clone. Precondition:
   clone at the same commit as upstream main.
 - Both tiers: the sweep's problem report lists exactly today's 5 re-validation cards.
-- With the UNFIXED code, Tier A instead shows mass `path` changes and `type` → unknown — run it
-  once in the sandbox if you want to see the failure shape; never against live pickles.
+- Measured 2026-10-19 (Tier A, forced): `path`/`type`/`types`/`stats` unchanged on all 813, 0 location
+  changes; plus 59 ability and 2 star rows from upstream PSD edits (Phase 0). Until D5's refresh lands,
+  expect those 61 rows on top of the timestamp-only prediction. Tier B has not been run.
+- With the pre-2026-10-19 code, Tier A showed mass `path` changes and `type` → unknown; to see that
+  failure shape, run HEAD~ code in a sandbox, never against live pickles.
 
 **If Tier A shows any non-timestamp field changes** → the parser is nondeterministic or
 environment-sensitive for those cards; gap_trace each before shipping the fix. **If Tier B is not
@@ -405,7 +405,7 @@ check. It thrashed because the equality is false for legitimate layouts:
   were missed or icons misrouted. The threshold must be tuned by a corpus census, not intuition.
 - C2 (gaps side): fire only when kept_types > 0 AND at least one gap on an icon-bearing card
   remains unfilled after injection — and measure this BEFORE the punctuation cleanup at
-  psd_analyzer.py:538, which eats a gap that sits directly before punctuation (Lich King's gap
+  psd_analyzer.py:727 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
   would vanish from the final text).
 - C3 (guard): kept_types == 0 → never fire (exempts Warcraftian Hunter and the 4 rulebook tables).
 
@@ -480,7 +480,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 | The 5 EXCESSIVE_STAT_EXCLUSIONS | Cards whose summed stat digits exceed 10 | Verify each with parse_one against the visible bars; if the sum is faithful, the >10 rule (not the card) is what needs redesign — the list encodes game content in code. CANDIDATE: data-driven expected-max instead of a name list |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
-`ability == ""` with `ability is None` (`not card.ability`, psd_analyzer.py:690). The parser
+`ability == ""` with `ability is None` (`not card.ability`, psd_analyzer.py:879 as of 2026-10-20). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
 `None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
 card; only `None` (or absence of the layer) is a problem. **Predicted effect:**
@@ -507,8 +507,10 @@ those gates, as of 2026-07-11:
    post → `0/0/0`; old_stats unchanged (the e7befd5 guard skips archiving when timestamps are
    equal); problem REPORT = exactly the current re-validation set (5 today; fewer only if your
    change predicted the specific disappearances).
-3. **Sandbox sweep gate (local mode, after option 1):** Tier A/B numbers exactly as predicted in
-   option 1. Any surprise field in `field change counts` = not ready.
+3. **Sandbox sweep gate (local traversal from branch `archive/local-update-stats`, copied into the sandbox; the option 1 fix is in since 2026-10-19):** Tier A/B numbers as
+   predicted in option 1, after subtracting rows that the unchanged (HEAD) parser also produces
+   (upstream PSD edits; 61 on 2026-10-19). Any other surprise field in `field change counts` = not
+   ready.
 4. **Problem-count non-increase:** re-validation census (Gate 1e) after the sandbox sweep must not
    contain any NEW name. New names = regression, regardless of how good the diff looks.
 5. Then and only then: change-control for the code; PICKLE commit convention + diff-before-push for
@@ -526,13 +528,14 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | Treat above-midline icons as inline types (or lower/remove the midline) | `d0bb28c` (2026-01-30) replaced a top-400px rule with `TYPE_REGION_RATIO=0.5` because creature-type tags live in the top region | The Lich King carries `undead` twice: a tag at y=21 and an inline icon at y=2239. Erase the midline and every tag becomes a bogus injection candidate |
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
-| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:389 → `manual_metadata_entry`, psd_analyzer.py:1300). And know its verified semantics, below |
+| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:389 → `manual_metadata_entry`, psd_analyzer.py:1403; 2026-10-20 lines). And know its verified semantics, below |
+| Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
 **What the code shows about manual entries vs the next sweep** (verified 2026-07-11 — state no
 more than this): `manual_metadata_entry` creates a missing card as
-`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:1349-1353) whose `timestamp`
-defaults to `0.0` (CardInfo field default, psd_analyzer.py:128); the command cannot set a
-timestamp. `_should_update_card` (psd_analyzer.py:775) reparses when
+`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:1453 as of 2026-10-20) whose `timestamp`
+defaults to `0.0` (CardInfo field default, psd_analyzer.py:192); the command cannot set a
+timestamp. `_should_update_card` (psd_analyzer.py:964) reparses when
 `stored_timestamp < new_timestamp` or the path changed — so a manually CREATED entry (timestamp
 0.0) is overwritten by the next sweep of any kind, its manual version archived to old_stats first.
 Manual EDITS to an existing entry leave its real timestamp untouched: they survive non-force sweeps
@@ -550,7 +553,9 @@ correction tool, not a durable fix. Durable fixes live in the parser or in the s
   (this skill only consumes them).
 - A live symptom that is not extraction (bot won't start, commands missing, messages not sending,
   music, diffusion) → **autocroissant-debugging-playbook**.
-- The removeprefix bug's full story, evidence, and status → **autocroissant-failure-archaeology**.
+- The removeprefix bug's full story, evidence, and fix → **autocroissant-failure-archaeology** Entry 1.
+- Migrating cards to stoogedings tokens (the font, the JSX prototype, Photoshop pitfalls) →
+  **ttscardmaker-companion**; how the parser reads tokens → **impossibility-cards-reference** §4.1.
 - Operating a sweep on the live bot (`/update_stats` etiquette, multi-machine handoff) →
   **autocroissant-run-and-operate**.
 - Sandbox construction and the general acceptance procedure → **autocroissant-validation-and-qa**;
@@ -561,23 +566,26 @@ correction tool, not a durable fix. Durable fixes live in the parser or in the s
 ## Provenance and maintenance
 
 Everything dated 2026-07-11 was measured that day on the owner's Mac against stats.pkl at commit
-`284d13c` and the local TTSCardMaker clone (upstream latest 2026-06-18). Line numbers drift; each
+`284d13c` and the local TTSCardMaker clone (upstream latest 2026-06-18). Phase 0, Option 1's status,
+the glossary line numbers and the items marked 2026-10-19 were updated that day (HEAD a7a4bb3 plus
+the uncommitted working tree; the TTSCardMaker clone is now shallow at 3a268ca). Line numbers drift; each
 volatile fact below has a one-line re-verification. After any landed parser change, re-run Phase 1
 and append a scoreboard row; if a Phase 3 option ships or retires, move its entry (retirements are
 documented in autocroissant-failure-archaeology).
 
-- Bug line (was psd_analyzer.py:1002) and its content:
-  `grep -n 'removeprefix("TTSCardMaker")' commands/psd_analyzer.py`
-- Bug introduction in f7c915c:
+- Phase 0 fix present (psd_analyzer.py:1226 until 2026-10-20; now archive/local_update_stats.py:115 on branch
+  archive/local-update-stats) and the old bug gone:
+  `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py; grep -c removeprefix commands/psd_analyzer.py` (0)
+- Bug introduction in f7c915c (history):
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
-- Slash defaults use_local_repo=True (main.py:361), force_update=False (main.py:363):
-  `grep -n "use_local_repo: Optional" main.py; grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=True default (psd_analyzer.py:1177):
-  `grep -n "force_update: bool = True" commands/psd_analyzer.py`
-- `_populate_types_from_local` unaffected (psd_analyzer.py:883-890):
-  `grep -n "_populate_types_from_local" commands/psd_analyzer.py` then read those 8 lines.
-- Pipeline line numbers — gap regex :348, TYPE_REGION_RATIO :30, card_mid_y :405, prune :586,
-  inject :593, leftover-append :632-635, punctuation cleanup :538, `not card.ability` :690:
+- Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:363):
+  `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
+- Python-side `update_stats` force_update=False default since 2026-10-19 (psd_analyzer.py:1289):
+  `grep -n "force_update: bool = " commands/psd_analyzer.py`
+- `_populate_types_from_local` (psd_analyzer.py:1038, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+  `grep -n -A9 "def _populate_types_from_local" commands/psd_analyzer.py`
+- Pipeline line numbers (2026-10-20) — gap regex :416, TYPE_REGION_RATIO :33, card_mid_y :473, prune :778,
+  inject :785, leftover-append :823-827, punctuation cleanup :730, `not card.ability` :882:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_analyzer.py`
   and for the cleanup line `grep -n "ability_text = sub" commands/psd_analyzer.py`
 - Exclusion sizes 18 + 5: the two awk commands in Gate 1c.
@@ -597,8 +605,10 @@ documented in autocroissant-failure-archaeology).
   `git show 081b1fd -- commands/psd_analyzer.py | grep -B2 -A8 MISMATCH` (removed).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
-- Manual-entry semantics (CardInfo timestamp default :128, `_should_update_card` :775,
-  `manual_metadata_entry` :1300, CardInfo creation :1349-1353; /update_metadata at main.py:389):
+- Manual-entry semantics (2026-10-20: CardInfo timestamp default :195, `_should_update_card` :967,
+  `manual_metadata_entry` :1403, CardInfo creation :1453; /update_metadata at main.py:389):
   `grep -n "timestamp: float = \|def _should_update_card\|def manual_metadata_entry" commands/psd_analyzer.py; grep -n "update_metadata" main.py`
-- `/update_stats` operating rule (`use_local_repo:False` until the fix ships): owned by
-  autocroissant-run-and-operate; confirm the bug is still live with Gate 0a before relying on it.
+- `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
+  sandbox sweeps): owned by autocroissant-run-and-operate §7.
+- Font adoption count (0 of 813 PSDs on 2026-10-19) and the migration backlog (45 PSDs / 81
+  smart-object icon layers): ttscardmaker-companion §5.

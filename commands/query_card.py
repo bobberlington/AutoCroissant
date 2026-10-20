@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import config
 from global_config import ALIAS_PKL, STATS_PKL
+from commands.type_emojis import render_type_tokens
 from commands.utils import queue_message, split_long_message
 
 filterwarnings('ignore')
@@ -45,7 +46,6 @@ class CardRepository:
             print("No git token in config, API limited to 60 requests/hour.")
 
         self._stat_pattern = compile(r"^(\w+)(<|<=|==|>=|>)(\d+)$", IGNORECASE)
-        self._exact_match_pattern = compile(r'(?:^|\s|$|\b){pattern}(?:^|\s|$|\b)')
 
     @property
     def git_filenames(self) -> list[str]:
@@ -503,8 +503,8 @@ def query_rulebook(interaction: Interaction,
             break
 
         ability = row.get("ability", "No text available")
-        for chunk in split_long_message(ability):
-            queue_message(interaction, f"**{name}**\n```\n{chunk}\n```")
+        for chunk in split_long_message(render_type_tokens(ability, escape=True)):
+            queue_message(interaction, f"**{name}**\n{chunk}")
 
     if results_to_show < total_results:
         queue_message(interaction, f"Displayed {results_to_show} of {total_results} results. Use limit parameter to see more.")

@@ -14,12 +14,15 @@ Usage (run from anywhere; repo root is derived from this file's location):
 Notes:
   * Requires config.py to exist in the repo root (the bot module import chain
     reads it). No network calls are made and nothing is saved.
-  * The repo-relative path is computed HERE, correctly, relative to the
-    TTSCardMaker clone root. The bot's own local traversal
-    (_process_local_files) currently computes it WRONG for absolute clone
-    locations -- see the autocroissant-failure-archaeology skill ("removeprefix
-    bug", introduced in commit f7c915c). This script shows what the parser
-    produces when given the CORRECT relative path.
+  * The repo-relative path is computed here with relpath against the
+    TTSCardMaker clone root, which gives the same repo-relative paths that
+    /update_stats stores from the GitHub tree (the archived local traversal on
+    branch archive/local-update-stats used the same construction; story:
+    autocroissant-failure-archaeology).
+  * The stoogedings icon vocabulary (Types/, Types/Stars/, aliases and
+    codepoints from the font's manifest) is read from the clone and matches
+    what /update_stats builds from GitHub, so cards that use the icon font
+    parse exactly as in production.
 """
 import sys
 from os.path import expanduser, relpath
@@ -75,7 +78,7 @@ def main() -> int:
     print(f"relative path: {relative_path}")
     print("-" * 80)
 
-    parser = PSDParser(db.all_types, db)
+    parser = PSDParser(db.all_types, db, traverser._icons_from_local(str(clone_root)))
     card = parser.parse(str(psd_path), relative_path)
     problems = CardValidator.validate(card)
 

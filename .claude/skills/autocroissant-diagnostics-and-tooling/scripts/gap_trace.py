@@ -63,8 +63,9 @@ def main() -> int:
     )
 
     db = StatsDatabase()
-    RepositoryTraverser(db)._populate_types_from_local(str(clone_root))
-    parser = PSDParser(db.all_types, db)
+    traverser = RepositoryTraverser(db)
+    traverser._populate_types_from_local(str(clone_root))
+    parser = PSDParser(db.all_types, db, traverser._icons_from_local(str(clone_root)))   # stoogedings vocabulary
 
     psd = PSDImage.open(str(psd_path))
     card_mid_y = int(psd.height * TYPE_REGION_RATIO)

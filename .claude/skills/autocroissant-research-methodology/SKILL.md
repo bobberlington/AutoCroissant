@@ -57,7 +57,7 @@ Observations were listed before any mechanism was argued:
 | O1 | `commands/psd_analyzer.py:1002` computes `relative_path = full_path.removeprefix("TTSCardMaker").strip('/')`, but `walk()` yields absolute paths (`/Users/.../Desktop/TTSCardMaker/...`), so `removeprefix` is a no-op and `classify()` sees top folder "Users" → every card UNKNOWN type, wrong stored path | code read |
 | O2 | The line was introduced by f7c915c "cythonized the code" (2025-12-02) — the bug has existed for over seven months | git |
 | O3 | **NEGATIVE:** stats.pkl today is healthy — 813 cards, **0** non-repo-relative paths, exactly 1 problem card (`inspect_pickle.py`, 2026-07-11) | measurement |
-| O4 | The slash-command default is `use_local_repo=True` — the buggy path is the DEFAULT path | code read |
+| O4 | The slash-command default is `use_local_repo=True` — the buggy path is the DEFAULT path (true on 2026-07-11; the default became False on 2026-10-20) | code read |
 
 Candidate mechanisms, tested against the whole table:
 
@@ -74,8 +74,19 @@ last-COMMIT dates from the GitHub API, so cards touched in the same TTSCardMaker
 share second-exact identical timestamps — a pattern local file mtimes cannot produce. Measured
 2026-07-11 and confirmed (second-exact clusters found); the executable fingerprint experiment
 and its numbers live in autocroissant-analysis-toolkit Recipe 2. Mechanism accepted; full story
-owned by autocroissant-failure-archaeology; the operating consequence (`use_local_repo:False`
-until fixed) owned by autocroissant-run-and-operate.
+owned by autocroissant-failure-archaeology; the operating consequence owned by
+autocroissant-run-and-operate.
+
+**Epilogue (2026-10-19).** The fix (`relpath`) was promoted only after a measured prediction held:
+a sandboxed forced local sweep reproduced the stored remote data's types, paths and stats on all 813
+cards. Two lessons rode along. (1) The sweep also showed 61 unexpected rows; instead of explaining
+them away, an independent experiment (old parser vs new parser on every PSD: 0 differences) proved
+they were upstream PSD edits, not the fix. (2) Fixing the path did not make local mode safe: the
+same O3-style reasoning applied to timestamps shows local mtimes are newer than every stored commit
+date, so a default local run still re-archives everything. Retiring one hazard is not evidence the
+mode is clean — re-derive every fingerprint (here: paths AND timestamps). The owner's conclusion on
+2026-10-20 was to archive local mode out of the bot (now on branch `archive/local-update-stats`;
+autocroissant-failure-archaeology Entry 10.12): a path nobody runs in production is where bugs hide.
 
 ### The corollary: finding one bug is not evidence there isn't a second
 
@@ -84,11 +95,12 @@ f7c915c introduced **two** unknown-type bugs in the same mechanical negative-ind
 - `relative_path.split('/')[:-1]` → `dirname(relative_path)` in `classify` — `dirname` returns
   a STRING, so `folders[0]` became the first *character* of the path → UNKNOWN for everything.
   Fixed six weeks later by fb47b5d (2026-01-15, "fix bug with unknown type...").
-- `full_path.split("TTSCardMaker")[-1]` → `removeprefix("TTSCardMaker")` — still live as of
-  2026-07-11 (psd_analyzer.py:1002).
+- `full_path.split("TTSCardMaker")[-1]` → `removeprefix("TTSCardMaker")` — live from 2025-12-02
+  until 2026-10-19, when `relpath` replaced it (psd_analyzer.py:1226; the line moved to
+  `archive/local_update_stats.py` on branch `archive/local-update-stats` when local mode was archived on 2026-10-20).
 
 Fixing the dirname bug made the UNKNOWN symptom disappear in the mode being tested, and the
-second bug sat unnoticed for another six months. If the observation table had included "which
+second bug sat unnoticed for another nine months. If the observation table had included "which
 modes were exercised after the fix?", the gap would have been visible. **Do not stop at the
 first mechanism that explains the symptom you happened to look at; stop when the table has no
 unexplained rows.**
@@ -140,7 +152,7 @@ write pickles when something changed". Predict-then-check question: *what value 
 `num_updated` take on a no-change run?* Answer, from the code: it increments once per traversed
 PSD (psd_analyzer.py:1046 — it is the progress counter), so the gate is always true — a no-op.
 The owner caught it within 20 minutes: **4e03190** (17:43, message "am forehead") switched the
-gate to `num_new` (today at psd_analyzer.py:1222). Two morals: (a) before shipping any
+gate to `num_new` (psd_analyzer.py:1325 on 2026-10-20). Two morals: (a) before shipping any
 gate/threshold, state the value you expect the variable to hold in the boring case — if you
 can't, you don't know what it counts; (b) commit messages here are sometimes jokes ("am
 forehead") — verify diffs, not messages.
@@ -297,12 +309,12 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 
 | Fact | Re-verify with |
 |---|---|
-| removeprefix live-bug line (was :1002) | `grep -n 'removeprefix("TTSCardMaker")' commands/psd_analyzer.py` |
-| Slash default `use_local_repo=True` (O4; was main.py:361) | `grep -n 'use_local_repo' main.py` |
+| removeprefix line (was :1002) replaced by relpath on 2026-10-19 (:1226), archived with local mode on 2026-10-20 | `git grep -n -e 'relpath(full_path' -e 'removeprefix(' archive/local-update-stats -- archive/local_update_stats.py` (one relpath hit at :115, no removeprefix call) |
+| Slash default `use_local_repo=True` (O4, a 2026-07-11 observation; False on 2026-10-20, then the option was removed the same day) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py) |
 | f7c915c introduced BOTH the dirname-classify and removeprefix bugs (2025-12-02) | `git show f7c915c -- commands/psd_analyzer.py` — read the hunks touching `dirname` and `removeprefix` |
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |
-| `num_updated` increments for EVERY traversed PSD (was :1046); gate now `num_new > 0` (was :1222) | `grep -n -e 'num_updated += 1' -e 'num_new > 0' commands/psd_analyzer.py` |
+| `num_updated` increments for EVERY traversed PSD; gate now `num_new > 0` (:1446 on 2026-10-20) | `grep -n -e 'num_updated += 1' -e 'num_new > 0' commands/psd_analyzer.py` |
 | stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 | Timestamp clustering confirms remote-mode attribution | the Counter one-liner and its expected numbers live in autocroissant-analysis-toolkit Recipe 2 |
 | Balloon 1: cca0aaf old_stats 3196→12041; reverted same day by eb9aa84 | `git show --stat cca0aaf` then `git show -s --format='%ci %s' eb9aa84` |
@@ -315,13 +327,13 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | getattr(config, ..., default) is the only flag mechanism | `grep -rn 'getattr(config' commands/ main.py` |
 | Retirements: Text_Export.jsx (7fc6f63), descriptions.pkl (bb58387), requirements-linux* (3f9a96d) | `git log --all --diff-filter=D --format='%h %ad %s' --date=short -- '*Text_Export.jsx' descriptions.pkl 'requirements-linux*'` |
 | Idea provenance commits: 0490195, d699b3f, bf9478e, 105198f | `git show -s --format='%h %ad %s' 0490195 d699b3f bf9478e 105198f` |
-| requirements.txt is core-only (2026-07-11 reorg, intentionally uncommitted) | `grep -ic -e torch -e diffusers -e transformers requirements.txt` (prints 0; exit code 1 because no matches is expected) |
+| requirements.txt is core-only (2026-07-11 reorg, committed in a7a4bb3) | `grep -ic -e torch -e diffusers -e transformers requirements.txt` (prints 0; exit code 1 because no matches is expected) |
 | Counter-case PSDs exist locally | `ls ~/Desktop/TTSCardMaker/MDW/cardback.psd ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` |
 
 Maintenance rules:
-- If the removeprefix bug gets fixed, update section 1's "still live" wording and defer the fix
-  story to autocroissant-failure-archaeology and autocroissant-psd-extraction-campaign — do not
-  grow the worked example here; its value is the reasoning shape, which stays true.
+- The removeprefix bug was fixed 2026-10-19; section 1's wording was updated and the fix story
+  lives in autocroissant-failure-archaeology Entry 1 and autocroissant-psd-extraction-campaign
+  Phase 0. Do not grow the worked example further; its value is the reasoning shape.
 - If a golden or exclusion list changes, the numbers in the counter-case table (row 4) must be
   re-counted; certification itself belongs to autocroissant-validation-and-qa.
 - New retirements go in section 4's table ONLY with a hash and date, and only after the

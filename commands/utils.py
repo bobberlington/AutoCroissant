@@ -1,9 +1,9 @@
 from asyncio import iscoroutinefunction, get_running_loop, to_thread as asyncio_to_thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from cv2 import imdecode, imencode, cvtColor, IMREAD_COLOR, COLOR_BGR2RGB, COLOR_RGB2BGR
+from cv2 import imdecode, imencode, IMREAD_COLOR
 from discord import File, Interaction, Object
-from functools import lru_cache, wraps
+from functools import wraps
 from io import BytesIO
 from numpy import ndarray, array, asarray
 from os import listdir
@@ -102,27 +102,12 @@ def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
     return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename=filename)
 
 
-def url_to_pilimage(url: str) -> Image.Image:
-    """Fetch an image from a URL and return it as a PIL Image."""
-    return Image.open(get(url, stream=True, timeout=30).raw).convert("RGBA")
-
-
 def pildiscordfile(img: Image.Image, filename: str = "image.png") -> File:
     """Convert a PIL image to a Discord File."""
     buffer = BytesIO()
     img.save(buffer, 'PNG')
     buffer.seek(0)
     return File(buffer, filename=filename)
-
-
-def cv2_to_pil(cv2_img: ndarray) -> Image.Image:
-    """Convert an OpenCV image (BGR) to a PIL Image (RGB)."""
-    return Image.fromarray(cvtColor(cv2_img, COLOR_BGR2RGB))
-
-
-def pil_to_cv2(pil_img: Image.Image) -> ndarray:
-    """Convert a PIL Image (RGB) to an OpenCV image (BGR)."""
-    return cvtColor(array(pil_img), COLOR_RGB2BGR)
 
 
 # ===================================================================
@@ -216,23 +201,6 @@ def make_simple_fake_interaction(channel_id: int, guild_id: Optional[int] = None
 # ===================================================================
 # Misc
 # ===================================================================
-@lru_cache(maxsize=128)
-def convert_value(value: str) -> Any:
-    """Convert a string to int, float, or bool if possible, otherwise keep as string."""
-    value = value.strip()
-
-    if value.lower() in {"true", "false"}:
-        return value == "true"
-
-    for convert in (int, float):
-        try:
-            return convert(value)
-        except ValueError:
-            continue
-
-    return value
-
-
 def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
     """Split long text into Discord-safe chunks while preserving code blocks."""
     parts: list[str] = []
@@ -272,22 +240,6 @@ def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
         parts.append(chunk)
 
     return parts
-
-
-def parse_named_args(parts):
-    """
-    Split a list like ['prompt:sunset', 'height:512'] into args=[], kwargs={...},
-    converting numeric and boolean values automatically.
-    """
-    args = []
-    kwargs = {}
-    for p in parts:
-        if ":" in p:
-            key, value = p.split(":", 1)
-            kwargs[key] = convert_value(value)
-        else:
-            args.append(convert_value(p))
-    return args, kwargs
 
 
 def recursively_traverse(directory: str, prefix: str = "") -> str:

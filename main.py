@@ -8,6 +8,7 @@ from typing import Optional
 
 from config import TOKEN
 from commands.analytics import (
+    bind_reminder_client,
     check_reminder,
     init_reminder,
     list_reminders,
@@ -75,6 +76,7 @@ from commands.query_card import (
     set_match_ratio,
     set_repository,
 )
+from commands.type_emojis import init_type_emojis, sync_type_emojis
 from commands.update_bot import git_pull, git_push, restart_bot, update_bot
 from commands.utils import (
     command_queue,
@@ -116,6 +118,7 @@ async def on_ready():
     queue_command(init_reminder)
     queue_command(init_psd)
     queue_command(init_query)
+    queue_command(init_type_emojis, client)
     queue_command(init_pipeline)
 
     process_command_queue.start()
@@ -207,14 +210,15 @@ async def slash_update(interaction: Interaction, force_reset: Optional[bool] = F
 ####################
 #   TEXT COMMANDS  #
 ####################
+bind_reminder_client(client)  # lets the scheduler skip reminders whose channel is gone
 set_reminder = to_thread(set_reminder)
-@tree.command(name="set_reminder", description="Set a reminder.")
+@tree.command(name="set_reminder", description="Set a reminder that posts a message and/or runs a bot command (admin only).")
 @app_commands.describe(
     msg="What message to send.",
-    when="When to send a message in PST (ex. 13:00 or 1PM).",
-    offset="Delay before first run (s/m/h/d/w). Default = none.",
-    frequency="How often to repeat (s/m/h/d/w). Default = never.",
-    command="Optional bot command to run (e.g. /play_all, /update_stats True True False).",
+    when="Pacific time: 13:00, 1PM, sun 3AM, tomorrow 9AM, 2026-12-25 9AM. Past times today fire now.",
+    offset="Delay added to the first run (s/m/h/d/w, e.g. 30m or 1d). Default = none.",
+    frequency="How often to repeat (s/m/h/d/w, e.g. 1d, 1w or 1d12h). Default = never.",
+    command="Bot command to run with your permissions, options as name:value (e.g. /sync_emojis refresh:True).",
 )
 async def slash_set_reminder(interaction: Interaction,
                              msg: Optional[str] = "",
@@ -241,9 +245,9 @@ async def slash_list_reminders(interaction: Interaction,
 
 
 remove_reminder = to_thread(remove_reminder)
-@tree.command(name="remove_reminder", description="Remove a reminder by its ID.")
+@tree.command(name="remove_reminder", description="Remove a reminder by its ID (admins, or the reminder's creator).")
 @app_commands.describe(
-    reminder_id="The ID of the reminder to remove.",
+    reminder_id="The 8-character ID shown by /list_reminders.",
 )
 async def slash_remove_reminder(interaction: Interaction,
                                 reminder_id: str):
@@ -352,17 +356,13 @@ update_stats = to_thread(update_stats)
 @tree.command(name="update_stats", description="Manual call to update card stats.")
 @app_commands.describe(
     output_problematic_cards='Should we output cards with consistency errors?',
-    use_local_repo='Should we use the local cloned folder for updates?',
-    use_local_timestamp='Should we use the local files modified time for timestamping?',
     force_update='Should we forcefully update all cards (even ones that have not been edited)?',
 )
 async def slash_update_stats(interaction: Interaction,
                              output_problematic_cards: Optional[bool] = True,
-                             use_local_repo: Optional[bool] = True,
-                             use_local_timestamp: Optional[bool] = True,
                              force_update: Optional[bool] = False):
     await interaction.response.defer()
-    await update_stats(interaction, output_problematic_cards, use_local_repo, use_local_timestamp, force_update)
+    await update_stats(interaction, output_problematic_cards, force_update)
 
 
 export_stats_to_file = to_thread(export_stats_to_file)
@@ -744,6 +744,22 @@ async def slash_sync_global(interaction: Interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await sync_commands_global(interaction, tree, client)
+
+
+sync_type_emojis = to_thread(sync_type_emojis)
+@tree.command(name="sync_emojis", description="Uploads the Types/ icons as the bot's emojis (admin only).")
+@app_commands.describe(
+    refresh="Re-upload every icon, e.g. after one was edited (default False).",
+    prune="Delete bot emojis whose icon is no longer in Types/ (default False).",
+)
+async def slash_sync_emojis(interaction: Interaction,
+                            refresh: Optional[bool] = False,
+                            prune: Optional[bool] = False):
+    if perms_check(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
+    await interaction.response.send_message("Syncing type emojis...")
+    await sync_type_emojis(interaction, client, refresh, prune)
 
 
 list_guild_members = to_thread(list_guild_members)

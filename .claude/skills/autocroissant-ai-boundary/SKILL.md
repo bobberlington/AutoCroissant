@@ -58,10 +58,11 @@ Three independent levels, from hardest off to lightest:
 
 ### Switch 1: the requirements split
 
-As of 2026-07-11 (verified by `git diff HEAD`, and note: **this split is an uncommitted
-working-tree change today** — HEAD 284d13c still has the AI packages mixed into requirements.txt):
+As of 2026-07-11, and **committed in a7a4bb3** ("skills and memories", same day; re-checked
+2026-10-19):
 
-- `requirements.txt` (core, 11 packages): cython, davey, discord.py, GitPython, numpy,
+- `requirements.txt` (core, 11 packages): cython, davey, discord.py (`>=2.5` since 2026-10-19,
+  for the application-emoji API — a core feature, not AI), GitPython, numpy,
   opencv-python, pandas, psd-tools, PyGithub, requests, yt-dlp.
 - `requirements2.txt` (AI stack, 10 packages behind the commented cu124 index line): torch,
   torchvision, torchaudio, accelerate, bitsandbytes, diffusers, peft, protobuf, sentencepiece,
@@ -288,7 +289,7 @@ the diffusion pattern:
 - The full config-field and constants catalog, or which settings persist across restart →
   `autocroissant-config-and-flags`.
 - The AI research ideas themselves → `autocroissant-research-frontier`.
-- Committing the requirements split, applying any candidate fix above, or any other repo change →
+- Applying any candidate fix above, or any other repo change →
   `autocroissant-change-control`.
 - Queue/dispatch architecture that AI commands ride on → `autocroissant-architecture-contract`.
 
@@ -303,9 +304,9 @@ these before relying on any cited number:
 | diffusers imports all inside functions | `grep -rn "from diffusers" --include="*.py" .` | 6 hits, all in commands/diffusion.py: 204, 262, 330, 345, 359, 663 |
 | Only transformers import | `grep -rn "from transformers" --include="*.py" .` | diffusion.py:263 |
 | cu124 index commented | `head -1 requirements2.txt` | `#-i https://download.pytorch.org/whl/nightly/cu124` |
-| Split still uncommitted? | `git status --short -- requirements.txt requirements2.txt` | ` M` on both while uncommitted; empty once committed (then re-date this skill) |
-| Split contents | `git diff HEAD -- requirements.txt requirements2.txt` | 7 AI packages moved out of core |
-| Startup init queueing | `grep -n "queue_command(init_pipeline)" main.py` | main.py:119 |
+| Split committed | `git log --oneline -1 -- requirements2.txt` | a7a4bb3 (2026-07-11); on 2026-10-19 `git status` shows only requirements.txt modified (the `discord.py>=2.5` floor) |
+| Split contents | `git show a7a4bb3 -- requirements.txt requirements2.txt` | 7 AI packages moved out of core |
+| Startup init queueing | `grep -n "queue_command(init_pipeline)" main.py` | main.py:122 (2026-10-19; last of five queued inits) |
 | Soft-off message | `grep -n "No model configured" commands/diffusion.py` | line 201 |
 | Polite /ai message | `grep -n "PyTorch is not installed" commands/diffusion.py` | line 660 |
 | Lazy-import commit | `git show --stat bf9478e` | 2026-01-26, commands/diffusion.py +54/-49 (analytics.py hunk is an unrelated unused-import removal) |

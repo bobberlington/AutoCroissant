@@ -1,20 +1,21 @@
 ---
 name: autocroissant-build-and-env
-description: Load this skill whenever the task involves installing, setting up, or rebuilding the AutoCroissant environment or its Cython build — trigger words include install, setup, environment, venv, requirements, pip, dependencies, torch install, CUDA, MPS, new machine, migrate machine, ffmpeg, opus, voice not working after install, cython, compile, build, build_ext, setup.py, stale .so, "my edits don't take effect", ImportError after install, Pillow/PyNaCl missing. Contains verified prerequisites (Python version, ffmpeg/opus, config.py minimum), the requirements.txt vs requirements2.txt split (core bot vs AI enablement) with what every package is for, the Pillow/PyNaCl transitive-dependency traps, a Mac (mps) vs CUDA box differences table, the full Cython build/clean procedure with compiler-directive consequences (negative-indexing ban, C division), directory conventions (models/, music/, .ssh/), and copy-pasteable from-scratch checklists for dev-only and full-host environments plus an env smoke test.
+description: Load this skill whenever the task involves installing, setting up, or rebuilding the AutoCroissant environment or its Cython build — trigger words include install, setup, environment, venv, requirements, pip, dependencies, torch install, CUDA, MPS, new machine, migrate machine, ffmpeg, opus, voice not working after install, cython, compile, build, build_ext, setup.py, stale .so, "my edits don't take effect", ImportError after install, Pillow/PyNaCl missing, "redeclared" / CompileError from Cython 3.3, discord.py>=2.5 / application emojis / AttributeError fetch_application_emojis, "python3 has no psd_tools", which Python to use. Contains verified prerequisites (Python version and the 2026-10-19 state of the Mac's interpreters, ffmpeg/opus, config.py minimum), the requirements.txt vs requirements2.txt split (core bot vs AI enablement) with what every package is for, the Pillow/PyNaCl transitive-dependency traps, a Mac (mps) vs CUDA box differences table, the full Cython build/clean procedure with compiler-directive consequences (negative-indexing ban, C division, Cython 3.3's no-re-annotation rule; all 8 modules compile with Cython 3.3.0 since 2026-10-19; type_emojis.py stays uncompiled), directory conventions (models/, music/, .ssh/), and copy-pasteable from-scratch checklists for dev-only and full-host environments plus an env smoke test.
 ---
 
 # AutoCroissant: Build and Environment
 
 Recreating the bot's environment from scratch on either machine type (the owner's Mac
 or the CUDA box), the optional Cython build, and the known traps. All facts verified
-against the repo on 2026-07-11 unless marked otherwise. All commands assume
+against the repo on 2026-07-11 unless marked otherwise; sections 1, 2, 3 and 5 re-verified
+2026-10-19 (HEAD a7a4bb3 plus the uncommitted working tree). All commands assume
 `cwd = /Users/michaelsrouji/Desktop/AutoCroissant` (repo root) unless stated.
 
 Quick orientation:
 
 - Two requirements files: `requirements.txt` (core bot, always) and
   `requirements2.txt` (AI enablement, optional). The bot runs fully without the second.
-- Cython compilation is OPTIONAL. No `.so` files exist in the working tree today;
+- Cython compilation is OPTIONAL. No `.so` files exist in the working tree (2026-10-19);
   plain `python3 main.py` is how the bot currently runs.
 - `config.py` is secret, gitignored, and must be created by hand on every machine.
 
@@ -22,14 +23,14 @@ Quick orientation:
 
 | Prereq | Detail | Verified how (2026-07-11) |
 |---|---|---|
-| Python 3.10+ | 3.10.20 at `/usr/local/bin/python3` is the verified-working interpreter on the Mac. Dependencies warn that 3.10 is deprecated (discord.py recommends 3.11+). **Guidance, not a verified requirement: prefer 3.11+ for any NEW env.** | `python3 --version` |
+| Python 3.10+ | On 2026-07-11, 3.10.20 at `/usr/local/bin/python3` was the verified-working interpreter on the Mac. **On 2026-10-19 that is gone:** `/usr/local/bin/python3` is a symlink to Homebrew `python3.14` (3.14.8) with discord.py 2.7.1, Pillow 12.3.0 and Cython 3.3.0 but **no psd-tools** (and no setuptools), so it cannot import the bot. The only env with psd-tools is a scratch venv, `/private/tmp/fontexplore/venv` (3.14.8: psd-tools 1.25.0, Cython 3.3.0, discord.py 2.7.1, pandas 3.0.6, PyGithub 2.10.0, pillow 13.0.0), and /tmp is wiped on reboot. Create a durable `.venv` (section 7a) before any parser or bot work. Guidance: prefer 3.11+ for new envs. | `python3 --version; python3 -c "import psd_tools"` |
 | git | Needed to clone; also the bot's self-update commands drive git via GitPython (`commands/update_bot.py:2`). | `git --version` |
 | C compiler | Only if you will run the Cython build (section 5). Xcode CLT on Mac, gcc on Linux. | `cc --version` |
 | ffmpeg on PATH | Required for music playback: the player streams through `FFmpegOpusAudio` (`commands/music_player.py:4`), which spawns the `ffmpeg` binary. The `POSTPROCESS` config flag adds an ffmpeg mp3 extraction step too (music_player.py:61-63). Mac has 8.1.1 via Homebrew (`/opt/homebrew/bin/ffmpeg`). | `which ffmpeg` |
 | PyNaCl | Required for Discord voice encryption. You do NOT install it directly — it arrives transitively via PyGithub (see section 3, this is a trap). | `python3 -m pip show PyNaCl` |
 | opus library | Standard discord.py voice requirement. This bot's `FFmpegOpusAudio` path delegates opus encoding to ffmpeg, so libopus is only strictly needed if anything switches to PCM audio (the volume-control path suggests exactly that, music_player.py:314). Cheap insurance: `brew install opus` / `apt install libopus0`. Labeled guidance. | `brew list opus` |
 | config.py | Created BY HAND in the repo root; gitignored; contains tokens — never commit, never print. Only `TOKEN` is required to boot: `main.py:9` is `from config import TOKEN` and every other field is read with `getattr(config, ..., default)` (e.g. diffusion.py:24-29, utils.py:21). A TOKEN-only config boots, but `ADMINS` then defaults to `[]` so admin-gated commands deny everyone. Field names and semantics: see **autocroissant-config-and-flags**. | `grep -n "from config import" main.py` |
-| TTSCardMaker clone (full host only) | The card-source repo is expected at `~/Desktop/TTSCardMaker` (`global_config.py:4`, `LOCAL_DIR_LOC`). Remote-mode operation works without it — and until the local-path bug is fixed, remote mode (`use_local_repo:False`) is the safe mode anyway (story in **autocroissant-failure-archaeology**). | `ls ~/Desktop/TTSCardMaker` |
+| TTSCardMaker clone (full host only) | The card-source repo is expected at `~/Desktop/TTSCardMaker` (`global_config.py:4`, `LOCAL_DIR_LOC`). The bot works without it: `/update_stats` reads GitHub only since local mode was archived on 2026-10-20 (to branch `archive/local-update-stats`; autocroissant-run-and-operate §7). The clone serves the diagnostics scripts (parse_one.py, gap_trace.py), sandbox sweeps, and the stoogedings icon font build (ttscardmaker-companion). | `ls ~/Desktop/TTSCardMaker` |
 
 ## 2. The requirements split
 
@@ -37,12 +38,11 @@ Reorganized 2026-07-11 per the owner's doctrine: AI is an experiment and must st
 separate and toggleable; the bot must run perfectly without it. The doctrine itself is
 owned by **autocroissant-ai-boundary** — this section is the install mechanics.
 
-**Status: the reorg is an UNCOMMITTED working-tree change as of 2026-07-11** — HEAD
-284d13c still has the AI packages mixed into requirements.txt, so a fresh checkout or a
-`force_reset` does NOT have this split. Check with
-`git status --short -- requirements.txt requirements2.txt` (` M` on both while
-uncommitted; empty once committed — then re-date this section). Committing it is a
-change-control decision (**autocroissant-change-control**).
+**Status: committed in a7a4bb3** ("skills and memories", 2026-07-11), so every checkout has the
+split. On 2026-10-19 `requirements.txt` has one more uncommitted change: `discord.py` became
+`discord.py>=2.5` (application-emoji API, see the table). Check with
+`git status --short -- requirements.txt requirements2.txt` (` M requirements.txt` until that is
+committed).
 
 ### requirements.txt — core bot (always install)
 
@@ -52,7 +52,7 @@ change-control decision (**autocroissant-change-control**).
 |---|---|
 | cython | Build tooling for the optional `setup.py` compile (section 5). Harmless if you never compile. |
 | davey | Optional Discord "DAVE" voice end-to-end-encryption lib (0.1.6 as of 2026-07-11). discord.py imports it inside `try/except ImportError` (verified in installed discord 2.7.1, `gateway.py`), so the bot runs without it — the Mac's current env does not even have it installed. |
-| discord.py | The Discord API library (2.7.1 on the Mac). Its only hard dependency is aiohttp. |
+| discord.py (`>=2.5` since 2026-10-19) | The Discord API library (2.7.1 on the Mac). Its only hard dependency is aiohttp. The floor exists because `commands/type_emojis.py` uses `Client.fetch_application_emojis` / `create_application_emoji`, both `versionadded:: 2.5`; on an older install the emoji sync fails with "Emoji sync failed: ... has no attribute ..." while everything else works. Upgrade with `pip install -U "discord.py>=2.5"` |
 | GitPython | The bot's self-update commands (`/push`, `/pull`, `/update`) drive git from `commands/update_bot.py:2`. |
 | numpy | Image array plumbing in `commands/utils.py:8` and `commands/frankenstein.py:3`. |
 | opencv-python | Image encode/decode/resize: `commands/utils.py:4` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:1`. |
@@ -97,7 +97,7 @@ they ride in as dependencies of other packages. Verified via pip metadata 2026-0
 
 | Hidden dep | Arrives via | Who needs it | Evidence |
 |---|---|---|---|
-| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image` in `commands/utils.py:11` AND `from PIL.Image import ...` in `commands/diffusion.py:5` | Remove psd-tools and the whole bot fails at import, not just PSD parsing. |
+| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image` in `commands/utils.py:11`, `from PIL.Image import ...` in `commands/diffusion.py:5`, and since 2026-10-19 `from PIL import Image, ImageDraw` in `commands/type_emojis.py:8` (emoji images) | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Still undeclared as of 2026-10-19 (BUGS_AND_IMPROVEMENTS C12). |
 | PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it) | discord.py itself only requires aiohttp; it does not pull PyNaCl. |
 
 **The rule**: if psd-tools or PyGithub is ever removed from `requirements.txt`, add
@@ -135,9 +135,12 @@ Notes verified from `setup.py` (2026-07-11):
 - The build ALSO runs the artifact cleanup first (`clean_artifacts()` is called at the
   top of `__main__`, setup.py:139), so every build is a from-clean rebuild. Side
   effect: both commands delete ALL `*.html` files anywhere under the repo (rglob).
-- Compiled modules (`INCLUDE_FILES`, setup.py:21-30) — 8 of the 10 `commands/` modules:
-  analytics, frankenstein, help, psd_analyzer, query_card, management, music_player,
-  diffusion.
+- Compiled modules (`INCLUDE_FILES`, setup.py:21-30) — 8 of the 11 `commands/` modules
+  (2026-10-19): analytics, frankenstein, help, psd_analyzer, query_card, management,
+  music_player, diffusion.
+- **Not compiled because it is in neither list:** `commands/type_emojis.py` (added 2026-10-19).
+  New modules are uncompiled by default; that one was deliberately left out. Note that compiled
+  `query_card` imports it at module level, which is fine (compiled code can import plain modules).
 - Never compiled (`EXCLUDE_FILES`, setup.py:9-18), with the reasons stated in the
   file's comments: `main.py` (entry point — keep as Python), `commands/update_bot.py`
   (uses `execv`/`execl` for restart), `commands/utils.py` (core utilities, decorators,
@@ -155,12 +158,17 @@ without their incident get ignored, so each one carries its story:
 | `boundscheck=False` | Out-of-range indexes are undefined behavior (crash or garbage), not a clean `IndexError`. Check lengths before indexing. |
 | `cdivision=True` | C division semantics for negatives: quotient truncates toward zero and `%` takes the dividend's sign. In Python `-7 // 2 == -4` and `-7 % 2 == 1`; in compiled code they become `-3` and `-1`. Any div/mod on possibly-negative ints must be reasoned about. |
 | `embedsignature=True` | Function signatures survive into docstrings — `help()` still works on compiled functions. |
+| (Cython 3.3 itself, not a directive) | **Declare an annotated variable once.** Cython 3.3 rejects re-annotating a name already declared in the same function (`'target_message' redeclared`), which plain Python allows. `cythonize()` then raises `CompileError` before `setup()` runs, and because `clean_artifacts()` already deleted the old artifacts, the host ends up with NO compiled modules and runs plain Python without any obvious sign. This hit `commands/management.py` (`add_reactions`) until 2026-10-19: autocroissant-failure-archaeology Entry 10.5. Since the fix, all 8 INCLUDE_FILES modules compile with Cython 3.3.0 and setup.py's directives (scratch build, 2026-10-19). |
 | Also set | `language_level='3'`, `initializedcheck=False`, `infer_types=True`, `overflowcheck=False`, `profile=False`, `linetrace=False`. |
 
 ### Compilation is optional — and the stale-.so trap
 
-- As of 2026-07-11 there are **no** `.so`/`.c` artifacts in the working tree; the bot
+- As of 2026-10-19 there are **no** `.so`/`.c` artifacts in the working tree; the bot
   runs as plain Python. Deploy machines MAY compile for speed; nothing requires it.
+- **New since 2026-10-19:** a host whose startup.sh runs the build with Cython 3.3 used to fail
+  on management.py and fall back to plain Python silently. With the fix it now really compiles,
+  so the stale-.so trap below becomes live on that host. After pulling new code there, rebuild
+  (or `python3 setup.py clean`) before trusting any behavior change.
 - **The trap**: an import like `from commands import psd_analyzer` picks a compiled
   `commands/psd_analyzer.*.so` OVER `commands/psd_analyzer.py`. A stale `.so` from an
   old build silently shadows your edited `.py`. Symptom: your edits do not take
@@ -173,14 +181,16 @@ Check for artifacts (also useful before trusting any test result):
 find . -name "*.so" -not -path "./.git/*"
 ```
 
-- Artifacts are gitignored (`*.so`, `*.c`, `*.cpp`, `build/`, `__pycache__/`).
-  One quirk verified in `.gitignore` (lines 18-20): the entries
+- Artifacts are gitignored (`*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/`, `__pycache__/`).
+  History of one quirk (verified 2026-07-11 at `.gitignore` lines 18-20, before the fix): the entries
   `*.so      # Linux/Mac`, `*.pyd     # Windows`, `*.dll     # Windows (rare)` carry
   trailing text — gitignore has no trailing comments, so those three patterns are
   literal and match nothing. `*.so` is safely covered by the bare `*.so` on line 7,
   but `*.pyd`/`*.dll` are covered by nothing: if a Windows machine ever compiles
-  (setup.py has win32 branches), `.pyd` files would show up as untracked and could get
-  committed by a careless `git add .`.
+  (setup.py has win32 branches), `.pyd` files would have shown up as untracked and could have been
+  committed by a careless `git add .`. **Fixed 2026-10-19** (working tree): the comments moved to
+  their own lines, so `*.so`, `*.pyd` and `*.dll` (lines 19-22) all match now
+  (`git check-ignore -v a.pyd a.dll`).
 
 ## 6. Directory conventions
 
@@ -226,9 +236,13 @@ Then:
    insurance: opus (section 1). Verify: `which ffmpeg`.
 5. Clone the card source where the bot expects it:
    `git clone https://github.com/MichaelJSr/TTSCardMaker ~/Desktop/TTSCardMaker`
-   (path is `LOCAL_DIR_LOC`, global_config.py:4). Remote-only operation works without
-   it, and remote mode is currently the safe update mode regardless
-   (**autocroissant-failure-archaeology**).
+   (path is `LOCAL_DIR_LOC`, global_config.py:4). The bot works without it: `/update_stats`
+   reads GitHub only since local mode was archived on 2026-10-20
+   (**autocroissant-run-and-operate** §7). The repo's history is about 25 GB of PSDs; the dev Mac's clone
+   is blobless (`--filter=blob:none`) and shallow (depth 1) as of 2026-10-19, so local `git log`
+   there has no history (ttscardmaker-companion). Local checkouts also give every PSD a fresh
+   mtime, which is why local-timestamp updates misfired and local mode was archived
+   (autocroissant-run-and-operate §7).
 6. Diffusion models: drop `*.safetensors` into `models/` (LoRAs into `models/loras/`)
    and set the `model` config field. No model configured = no pipeline init, by design.
 7. Deploy key: place the bot's SSH key pair in `.ssh/` if this machine will run
@@ -273,14 +287,17 @@ find . -name "*.so" -not -path "./.git/*"             # empty = no stale compile
   restart-required → **autocroissant-config-and-flags**.
 - Debugging a running bot's misbehavior → **autocroissant-debugging-playbook**
   (except the stale-.so shadow trap, which is owned here).
-- The full story of the f7c915c removeprefix regression and other incidents →
-  **autocroissant-failure-archaeology**.
+- The full story of the f7c915c removeprefix regression, the Cython 3.3 management.py
+  failure and other incidents → **autocroissant-failure-archaeology**.
+- Building the stoogedings icon font (its own venv and requirements in TTSCardMaker) →
+  **ttscardmaker-companion**.
 
 ## Provenance and maintenance
 
 Verified 2026-07-11 on the owner's Mac (Python 3.10.20, discord.py 2.7.1,
-psd-tools 1.14.2, PyGithub 2.9.1, torch 2.9.0, ffmpeg 8.1.1). Line numbers drift;
-re-verify volatile facts with:
+psd-tools 1.14.2, PyGithub 2.9.1, torch 2.9.0, ffmpeg 8.1.1). Re-verified 2026-10-19:
+system python3 is now Homebrew 3.14.8 without psd-tools (section 1); Cython 3.3.0.
+Line numbers drift; re-verify volatile facts with:
 
 | Fact | Re-verify with |
 |---|---|
@@ -288,10 +305,14 @@ re-verify volatile facts with:
 | Pillow arrives via psd-tools | `python3 -m pip show psd-tools \| grep Requires` |
 | PyNaCl arrives via PyGithub | `python3 -m pip show PyGithub \| grep Requires` |
 | discord.py needs only aiohttp | `python3 -m pip show discord.py \| grep Requires` |
-| Top-level PIL imports | `grep -n "from PIL" commands/utils.py commands/diffusion.py` |
+| Top-level PIL imports | `grep -n "from PIL" commands/*.py` (utils:11, diffusion:5, type_emojis:8) |
+| discord.py floor and why | `grep -n "discord" requirements.txt` (`discord.py>=2.5`); `grep -n "versionadded:: 2.5" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/client.py` |
+| Which interpreter has the bot's deps | `ls -l /usr/local/bin/python3; python3 -c "import psd_tools"` (fails on 2026-10-19) |
+| Cython 3.3 compiles all 8 | in a scratch copy with setuptools available: `python3 setup.py build_ext --inplace` (never in the live checkout on a running host); quick single-file check: cythonize `commands/management.py` with setup.py's directives and expect no "redeclared" error |
+| type_emojis.py uncompiled | `grep -c type_emojis setup.py` (0) |
 | davey optional (try/except in discord.py) | `grep -rn -A2 "import davey" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/gateway.py` |
 | Exclude list + reasons | `grep -n "EXCLUDE_FILES" -A12 setup.py` |
-| Include list (8 files) | `grep -n "INCLUDE_FILES = " -A10 setup.py` |
+| Include list (8 files of 11 command modules) | `grep -n "INCLUDE_FILES = " -A10 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (11) |
 | Compiler directives | `grep -n "COMPILER_DIRECTIVES" -A14 setup.py` |
 | No compiled artifacts in tree | `find . -name "*.so" -not -path "./.git/*"` |
 | Negative-index idiom commit | `git show dd800bc \| grep -E "^[-+].*bboxes"` |
