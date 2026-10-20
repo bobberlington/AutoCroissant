@@ -19,11 +19,11 @@ Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardma
 | D1 | TTSCardMaker pushed. |
 | D2 | The TTS save lives in TTSCardMaker, kept up to date by the bot. The website can view and edit it (move cards between decks and other actions TTS allows). |
 | D3 | "Latest commit per PNG" comes from the history clone on the jetson. |
-| D4 | No Aspose. Photopea first; if it fails, build a psd-tools fork, with as much time and money as it takes to make it fully functional. |
+| D4 | No Aspose. Photopea works, but the goal is a psd-tools fork good enough to replace it on the jetson with no browser (unlimited time/tokens). Edits run on GitHub Actions if possible, else on the jetson. |
 | D5 | Cards in the save that no longer exist in the repo: report only for now. |
 | D6 | AI is on `archive/ai-generation` (done); `/frankenstein` stays on main. |
 
-## Task 1. Commit-sha image links (small; do first)
+## Task 1. Commit-sha image links (small)
 
 `/query`, ability-search results and embeds post `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<sha>/<path>`
 with `<sha>` = the latest commit where that PNG's blob changed (Puzzled Cat -> `24742d07…`).
@@ -79,50 +79,45 @@ their cards, and let editors (same sign-in and batch as card edits) move or copy
 add cards, rename decks and reorder. Publishing applies the operations to a fresh copy of the save and commits it,
 so it merges with the bot's updates. Start after Task 2's audit and rules exist.
 
-## Task 3. PSD edits from website edits (Photopea; psd-tools fork as fallback)
+## Task 3. psd-tools fork: PSD edits on the jetson, no Photoshop, no browser (MAIN EFFORT)
 
-Research (full report, harness and data: `~/Documents/psd-research/REPORT.md`):
-- **Photopea works.** Headless renders are 0.2-2.2% off the official PNGs (psd-tools 1.25: 0.2-16%), 1 s per card,
-  73-85 MB PSDs fine. Stat edits change only the right pixels; PSDs saved by Photopea keep layers, effects, smart
-  objects and text runs.
-- **Text:** Photopea's own text API wipes style runs. What works: rewrite the text in EngineData with psd-tools
-  (runs mapped per character), then open in Photopea and set `textItem.tracking = tracking` to force a re-render.
-  Photopea draws text 10-34 px higher than Photoshop: calibrate per layer (text-box error 24-34% -> 6-8%).
-- **psd-tools bug:** 90° gradient overlays render flat (`angle % 90`); a one-line fix takes Sonic 8.8 -> 3.3%.
-- Runner: GitHub Actions (x64). Fonts must come from a public origin (raw.githubusercontent of `MDW/Fonts`), not
-  localhost; a missing font raises a blocking Alert.
+The user's call (2026-10-20): spend as many tokens and as much time as needed to make the psd-tools fork good enough
+to replace Photopea. Fork: https://github.com/MichaelJSr/psd-tools, cloned at `~/Desktop/psd-tools` (main =
+v1.25.0, `upstream` remote; read its `CLAUDE.md` first). Research, harness and data: `~/Documents/psd-research/`
+(`REPORT.md`; `fork/patches.py` holds the gradient fix).
 
-Plan:
-1. **Pipeline** (`TTSCardMaker/site/psd/` or a bot module; decide where): for each card in `Card Edits.json`:
-   psd-tools applies the edit to the PSD (stats/stars/types: toggle layers, per creature row; text/name: rewrite
-   EngineData keeping runs; new status words coloured from the status chart) -> Photopea renders the original and
-   the edited PSD, re-renders edited text with the calibrated offset, saves the PSD -> **delta merge**: the official
-   PNG outside the changed region (dilated diff), Photopea's pixels inside it.
-2. **Gate:** reject when the changed region is larger than expected, a font is missing, or re-parsing the new PSD
-   doesn't give the edited values. On pass, one commit: PSD + PNG + the baked fields removed from Card Edits.json.
-3. **Runner:** a TTSCardMaker workflow on pushes that change `MDW/Card Edits.json` (Playwright + Photopea); the
-   website shows "PSD pending" until it lands. Try the jetson later.
-4. **First milestone:** stats only (lowest risk), on 3 test cards, verified by opening one PSD in Photoshop.
-   Then names, then ability text.
-5. **Photopea can't be forked:** it is closed source (proprietary; no public source). Bugs we hit (text placed
-   10-34 px high, read-only `totalTextStyle`, ActionManager `setd` hang) can only be reported to its developer. The
-   only "own copy" is the paid self-hosted edition ($500-2,000/month, billed yearly): not worth it while the free
-   one works.
+**Where things stand:** psd-tools renders card structure and stat bars right, but is 0.2-16% off the official PNGs
+(median 1.68% on 50 cards). Photopea is 0.2-2.2% off and handles text, so it is the **reference renderer** while
+we build (and the emergency fallback). Upstream: drop shadow PR #679 is open (updated 2026-10-14); outer glow #680
+was closed; no text rendering work exists anywhere open source.
 
-## Task 3b. psd-tools fork (start alongside Task 3)
+**What "good enough" means:** edits only replace the pixels they change (delta merge onto the official PNG), so the
+bar is set per region: stat-bar cells and text boxes must match Photoshop. Full-card targets for previews: median
+< 0.5% off, no card > 2%.
 
-Goal: a fully owned, browser-free renderer and editor, so the pipeline can run on the jetson without Photopea and
-the website gets exact previews. Budget unlimited (D4). Upstream-first: every change is also a PR to psd-tools.
-1. Fork `psd-tools/psd-tools` to the user's GitHub (ask first); pin the bot, site and pipeline to a tag of the
-   fork only when a change we need isn't released upstream.
-2. Gradient-overlay length fix (`fork/patches.py` in the research folder) with a test; PR upstream.
-3. Drop shadow and outer glow: build on the open upstream PRs #679/#680 rather than duplicating them.
-4. Missing adjustments (vibrance, gradient map, channel mixer, colour balance), then inner shadow/glow, bevel,
-   satin, perceptual gradients.
-5. Text engine (EngineData layout, freetype-py + uharfbuzz, style runs, Photoshop line breaking), calibrated on
-   our 973 text layers.
-6. Harness: all ~813 cards scored against the official PNGs on every change (target: median < 0.5% off; no card
-   > 2%). When it passes, the pipeline drops Photopea.
+1. **Harness first:** score every card (~813) psd-tools vs the official PNG, per layer kind and effect; plus a text
+   harness: render each text layer and compare with its own stored raster in the PSD (exact ground truth for ~3,500
+   text layers). Run it after every change.
+2. **Rendering fixes, by impact:** the gradient-length bug (Sonic 8.8 -> 3.3%); drop shadow (build on #679);
+   outer glow; vibrance, gradient map, channel mixer, colour balance; inner shadow/glow, bevel, satin; perceptual
+   gradients. Each with tests, each also a PR upstream.
+3. **Text engine:** parse EngineData (runs, paragraph styles, point vs box text, transforms); fonts from
+   TTSCardMaker `MDW/Fonts` (87 used; report missing ones); uharfbuzz shaping + freetype-py rasterizing; leading,
+   tracking, kerning, alignment/justification, line breaking close to Adobe's composer, faux styles, caps,
+   underline, baseline shift; text effects (stroke, shadow, glow). Calibrate on the text harness.
+4. **Edit pipeline (Python only):** for each card in `Card Edits.json`: apply the edit to the PSD (layer toggles per
+   stat row/creature; text and name via EngineData keeping runs; new status words coloured from the status chart)
+   -> render the changed layers -> delta-merge onto the official PNG -> gate (re-parse gives the edited values,
+   changed region as expected, no missing font) -> one commit: PSD + PNG + the baked fields removed from
+   `Card Edits.json`. The website shows "PSD pending" until it lands.
+5. **Runner:** a GitHub Actions workflow on pushes that change `MDW/Card Edits.json` (pure Python, fork pinned). If
+   Actions can't do it (time, size or download limits), the jetson handles the card browser's edit requests: the bot
+   notices the Card Edits.json change (its blob sha in the tree) and runs the pipeline.
+6. **Done when:** the harness meets the targets, and 10 real edits (stats, a name, ability text with coloured
+   status words) look identical to Photoshop when opened on the Mac. Then Photopea is dropped.
+7. Pin the bot, website and pipeline to a fork tag only while a needed change isn't released upstream.
+
+Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,000/month) isn't needed.
 
 ## Task 4. Deep optimization and refinement pass
 
@@ -130,5 +125,5 @@ BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurr
 
 ## Order
 
-Task 1 -> Task 1b -> Task 2 steps 1-3 (report to the user) -> Task 3 first milestone (+ Task 3b steps 1-2) -> Task 2
-steps 4-6 -> Task 2b -> rest of Task 3 and 3b -> Task 4.
+**Task 3 first and foremost** (the user wants the next session spent on it). Quick wins if useful in between:
+Task 1, Task 1b. Then Task 2 steps 1-3 (audit report to the user) -> Task 2 steps 4-6 -> Task 2b -> Task 4.
