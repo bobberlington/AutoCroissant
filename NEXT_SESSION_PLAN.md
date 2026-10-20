@@ -236,6 +236,14 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
   problems_ok, allow_high_stats, dup_of, series, creatures); only the first kind is baked and removed.
 - **Rules skill:** `.claude/skills/impossibility-simulator-rules` (the game itself, from the rulebook pages).
+- **Rulebook data issues** found while writing the rules skill (details: `~/Documents/rules-skill/rulebook.md`,
+  end sections): /query_rulebook and the website carry hidden or off-canvas text players never see (duplicate
+  paragraphs on 09, a hidden PASSIVES block on 11, an older resolve-order draft on 12 Reactions2 that contradicts
+  12 Reactions3, an older ITEMS block on 22); type-injection slips on pages 14, 14.2, 15, 16, 19.2, 20 (icons appended
+  after page numbers, `[support]` for the machine icon, swallowed minion icon gaps, lost star glyphs on 08); rulebook
+  contradictions (21 NORMAL damage formula vs 07/10; 12.3 Hardened stacks; 07.3 text vs picture; 19 vs 09 on when
+  status effects proc); tags used on cards but defined nowhere: (XCD), (XGCD), (XU) and 1GCD/2CD/1CD/2U/2GCD/3U/4U.
+  Fixes are card/rulebook content (TTSCardMaker) plus a parser rule to skip hidden text layers on rulebook pages.
 - **Subseries** (user, 2026-10-20): a card can have a subseries besides its series (Goombella: series Mario, subseries
   Paper Mario: The Thousand-Year Door). Database-only edit: `subseries` (nullable string) in `Card Edits.json`. Website
   side in progress (filters, search `subseries~`, card page, Stats breakdown, editor field in the database-only group).
