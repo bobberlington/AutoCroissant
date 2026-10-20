@@ -47,6 +47,14 @@ AutoCroissant stay main-only).
 
 ## Task 0. Jetson: Python 3.14 for everything, then remove 3.10 (parallel track)
 
+**Status 2026-10-20:** steps 1-5 done. Python 3.14.8 built with the recipe below in `~/build/python/Python-3.14.8`
+(1 h; `make altinstall` + `sudo ldconfig`; missing only _dbm, _tkinter, _zstd). Venvs `~/venvs/autocroissant`
+(requirements.txt; psd-tools 1.25.0) and `~/venvs/ojwikibot` (requirements + requirements-dev); both setup.py builds
+compile on 3.14; both units' ExecStart point at their venv (`/etc/systemd/system/*.service`; OJWikibot's copies in
+`scripts/services/msrouji/` still say python3.10). Parser regression psd-tools 1.18 vs 1.25: 813 cards, 0 differences.
+Remaining: step 6 after a stable week (remove 3.10, keep `/usr/local/openssl-3`), then refresh the build-and-env and
+run-and-operate skills (they still name python3.10).
+
 Why: the psd-tools fork (and psd-tools >= 1.20) needs Python >= 3.11; the jetson runs 3.10.19 with psd-tools 1.18.
 Inventory (2026-10-20): `autocroissant.service` and `ojwikibot.service` run `/usr/local/bin/python3.10`; no cron
 jobs; `~/Documents/homelab` to check; ~90 packages in 3.10's site and `~/.local/lib/python3.10`. 3.10 was built
