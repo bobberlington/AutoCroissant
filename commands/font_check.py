@@ -692,12 +692,15 @@ def main(args: Optional[list] = None) -> int:
     token_from_env()
     index = FontIndex(options.fonts)
     if options.repo:
-        if options.whole_tree:
-            psds = {p: (s, options.author) for p, s in tree_blobs(options.repo, options.after).items() if is_card_psd(p)}
-            fonts_added, notes = [], []
-        else:
-            psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author)
-        report = check_blobs(options.repo, psds, index)
+        try:
+            if options.whole_tree:
+                psds = {p: (s, options.author) for p, s in tree_blobs(options.repo, options.after).items() if is_card_psd(p)}
+                fonts_added, notes = [], []
+            else:
+                psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author)
+            report = check_blobs(options.repo, psds, index)
+        except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
+            report, fonts_added, notes = Report(), [], [f"GitHub API: {e}"]
         report.fonts_added, report.errors = fonts_added, report.errors + notes
     elif options.all:
         report = check_checkout(options.all, index)

@@ -32,11 +32,12 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Build venv | `MDW/Fonts/stoogedings-src/.venv/` (gitignored by `stoogedings-src/.gitignore`) | Local only |
 | Icon sources | `Types/*.png` (35 "type" icons), `Types/Stars/*.png` (56 "star" icons) | Source art |
 | Letter / badge fonts the build embeds | `MDW/Fonts/BreeSerif-Regular.ttf` (OFL letters), `MDW/Fonts/ChangaOne-Regular.ttf` (badge labels) | Inputs |
-| Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/requirements.txt`, `site/README.md` | Source |
+| Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit,profile,pick,inline,details,decks}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/requirements.txt`, `site/README.md` | Source |
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | TTS save workflow | `.github/workflows/tts-save.yml` (keeps `TTS/Impossibility Simulator.json` current with the bot's updater; rules `TTS/decks.json`; §2.6) | Source |
 | Font check workflow | `.github/workflows/font-check.yml` (on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping; never reverts; §3) | Source |
+| Card check workflow | `.github/workflows/card-check.yml` (2026-10-21, push guard rule 2: on a push changing a PSD, `site/Card Edits.json` or `Types/`, the bot's parser and validator notes for the pushed PSDs, as a job summary, a commit comment and a Discord role ping with plain wording; AutoCroissant `commands/card_check.py`, sparse list `card_check.SPARSE_FILES`, the same `DISCORD_FONT_WEBHOOK` secret; never reverts; §3) | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
 | Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
@@ -326,6 +327,10 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | Token → icon, `(TAG)` → badge, card-name links, word diffs | `site/assets/text.js` |
 | Deck builder: the constructed hand from rulebook "03 Setting Up" (`HAND`; 17 cards; field ≤ 3★), saved decks, share code, import/export, random fill, print, TTS export. **The only place that shows "banned"** (picker markers, checks, random fill), besides the rulebook's ban list page and the Stats chart about constructed bans | `site/assets/deck.js` (+ `tileHtml(…, { constructed: true })` in app.js) |
 | Stats: counts, **"Starting-hand choices"** (legal, unbanned cards per hand tier vs how many the hand needs; replaced the stacked star-level bars on 2026-10-20), averages heat table (OKLab ramp, text always ≥ 4.5:1: `heatScale`), distributions, outlier scatter, table views | `site/assets/stats.js` |
+| **Profiles and People** (2026-10-21): sign-in top right, opt-in `site/profiles/<login>.json` through the publish flow, People tab (leaderboard from `data/contributions.json`: cards, edits as publish batches, commits; plain titles), person pages `#/u/<key>` (profile, contributions, Cards panel, Decks panel), full-page profile editor `#/u/<login>/edit` with the visual card picker | `site/assets/profile.js`, `site/assets/pick.js` (reusable: `data-choose`), `edit.js`, `build_site.py` (`read_profiles`, `contributions`, `u/<login>/` pages) |
+| **Inline editing** (2026-10-21): in edit mode the card page is the editor (stat cells, ability, name, chips in place; drag cards onto Author or Series; one batch bar; the form stays as All fields) | `site/assets/inline.js` |
+| **Details dropdown** (2026-10-21): the PSD's structure at the bottom of the card dialog from `data/details/<id>.json` (fonts with layers and a supplied flag, text layers, effects, canvas, icon style, stat rows, FX/overlay layers, template deviations, layer tree) | `site/assets/details.js`, `build_site.py` (`load_bot_json`, `join_details`) |
+| **Published decks** (2026-10-21): `#/decks` browser (public only), `#/decks/<owner>/<slug>` pages, publishing from the Deck builder through the batch, private decks encrypted in the browser and listed only on the owner's page | `site/assets/decks.js`, `edit.js`, `profile.js`, `build_site.py` (`read_decks`) |
 | Theme, badge colors, version viewer layout | `site/assets/style.css` |
 | Data shape, images, versions, authors, OG pages, ban list, unparsed cards, cache-busting, `Card Edits.json` (`apply_edits`) | `site/build/build_site.py` |
 | **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
@@ -472,7 +477,17 @@ author is the commit's GitHub login, else the pusher. The bot's `/fonts` runs th
 Elephant-Regular, JavaneseText, MyriadArabic-Regular, OCRAExtended, Pristina-Regular) on 15 cards, 29 visible layers (30
 with Baba's hidden `Name`); the ten Mac-only faces are in `MDW/Fonts` since fb37995 + ec3a6f1 and Papyrus-Regular /
 Kung-Fu-Panda resolve through the aliases, so they no longer appear. Later standardization rules (AutoCroissant
-docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5) take this Action's shape.
+docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5) take this Action's shape. **Rule 2, the card check (2026-10-21):**
+`.github/workflows/card-check.yml` runs AutoCroissant's `commands/card_check.py` on every push changing a PSD, `site/Card Edits.json`
+or `Types/` (and by hand with `all`): the pushed PSDs by blob sha, Types/, the icon manifest and the edits file from the pushed tree,
+no card-repo checkout at all; the bot files are `card_check.SPARSE_FILES` (card_check, font_check, github_api, psd_parser,
+card_models, card_edits, global_config; pip `psd-tools fonttools requests`). It reports what `/update_stats` prints for each card
+(the parser's own notes such as NO STARS FOUND, MISSPELT TYPE, SEVERAL CREATURES are also the website's Parser notes; the
+validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, ABILITY TEXT NOT FOUND, UNKNOWN TYPE are printed only), after the card's
+edits entry and `ABILITY_EXCLUSIONS`. Same three outputs and the same secret; the Discord line is plain: "<login> has pushed <card>
+with: <note>; <note>." An unreadable PSD or a failed API call is one error line, exit 0 (both checkers since 2026-10-21).
+The first whole-repo dispatch ran on 2026-10-21 (run 39690899334; expected: Bubble and God_Tamer NO STARS FOUND, 20_Creature_Types
+MISSPELT TYPE: tornado, Tainted_Lazarus, Pix, Twin_Emperors SEVERAL CREATURES, Computer_Virus HP/DEF/ATK/SPD NOT FOUND).
 
 ## 4. Photoshop automation (macOS, Photoshop 2023)
 
@@ -682,7 +697,7 @@ working tree on d7c6c15 (`grep -n "PSD_FIELDS\|valid_verdict\|reparsePending" si
 uncommitted font-check.yml on 8393b3b (that day's `--all` numbers; step order, FreeType-style names and the force-push fallback re-checked the same day, review); §2.6's bot checkout list gained
 `commands/git_commit.py` 2026-10-21 against the uncommitted tts-save.yml on f5a0e50 (review: tts_save.py:33,37 import it); §6 step 4's
 pipeline bullet written 2026-10-21 against AutoCroissant's uncommitted `commands/psd_edit.py` (`fx_name`, `set_text_layer`) on ac3ae57 and the
-JSX trial copies under `/private/tmp/fontexplore/fx/mig/out/`. Run the commands from
+JSX trial copies under `/private/tmp/fontexplore/fx/mig/out/`. §0's module list, §2.4's four website rows (profiles/People, inline editing, Details dropdown, published decks), §0's card-check row and §3's rule 2 written 2026-10-21 against TTSCardMaker a3451c8 and AutoCroissant df4a439. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash
@@ -704,6 +719,8 @@ grep -n "cron\|workflow_dispatch\|branches\|sparse-checkout:\|filter:" .github/w
 grep -n "cron\|paths:\|/commands/\|/global_config.py\|AUTOCROISSANT_\|ln -s" .github/workflows/tts-save.yml
 # Font check workflow: triggers, the three bot files, the secret by name only, the comment permission (expect no "discord.com" hit)
 grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_FONT_WEBHOOK\|contents: write\|discord.com" .github/workflows/font-check.yml
+# Card check workflow: the same, seven bot files (expect no "discord.com" hit; the sparse list equals card_check.SPARSE_FILES)
+grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_FONT_WEBHOOK\|contents: write\|discord.com" .github/workflows/card-check.yml
 # Site data source and deck rules
 grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_MAX_STARS =" site/assets/deck.js
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)

@@ -397,6 +397,27 @@ def test_repo_mode_push(fonts_dir, fake_psds, monkeypatch, tmp_path, capsys):
     assert "**Fonts added to MDW/Fonts:** `Pristina.ttf`" in capsys.readouterr().out
 
 
+def test_repo_mode_api_failure_is_one_line_and_exit_0(fonts_dir, monkeypatch, tmp_path, capsys):
+    """A 5xx after the retries, no network or a truncated tree: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
+    monkeypatch.setattr(ga, "sleep", lambda s: None)                              # get_with_retry's waits
+    replies = {"503": lambda url: Reply(503), "truncated": lambda url: Reply(body={"truncated": True, "tree": []})}
+
+    def connection_error(url):
+        from requests import ConnectionError
+        raise ConnectionError("no network")
+    replies["offline"] = connection_error
+    out, disc = tmp_path / "r.json", tmp_path / "d.json"
+    for case, expected in (("503", "GitHub API: 503"), ("truncated", "GitHub API: the tree listing is truncated"), ("offline", "GitHub API: no network")):
+        monkeypatch.setattr(ga, "get", lambda url, **kw: replies[case](url))
+        args = ["--fonts", str(fonts_dir), "--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--json", str(out), "--discord", str(disc)]
+        assert fc.main(args + (["--whole-tree"] if case == "truncated" else [])) == 0
+        text = capsys.readouterr().out
+        assert "0 card PSDs read" in text and f"\nErrors:\n- {expected}" in text, (case, text)
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert data["cards"] == [] and data["errors"][0].startswith(expected)
+        assert json.loads(disc.read_text(encoding="utf-8")) == {}
+
+
 def test_repo_mode_single_commit_and_whole_tree(fonts_dir, fake_psds, monkeypatch, tmp_path):
     a = b"psd-a"
     fake_psds[a] = {"BabaUI": ["Name"]}
