@@ -466,12 +466,18 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 `problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names` and `blob_sha` live only in the pickle
 (stats.pkl stores CardInfo objects); they are not `to_dict` keys.
 
-**Two kinds of Card Edits.json edits** (`CardEdits`, card_edits.py). `name`, `type`, `subtype`, `stars`, `types`,
-`hp`/`def`/`atk`/`spd`, `ability` and `creatures` override what the parser read from the PSD; `note`, `hidden`,
-`problems_ok`, `allow_high_stats`, `series` and `subseries` are database-only: no PSD layer holds them. Either way
-`apply()` saves the pre-edit value in `parsed_values` so dropping the edit restores it — the PSD value for the first
-kind; for the second the folder name for `series`, `False` for the bools, `None` for `note`/`subseries` (unless
-`/update_metadata` had set them). `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
+**Two kinds of Card Edits.json edits, PSD-backed or not** (`CardEdits.KIND`, card_edits.py, 2026-10-20, splits the second into folder and database; the same table is `PSD_FIELDS`
+in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`def`/`atk`/`spd`, `ability` are printed
+on the card image, so the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md §3) bakes them into the PSD and PNG and the
+website shows "PSD pending" until then (`name` only when it differs from the `Text/Name` layer, which the parser never
+reads). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
+`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures` live in the file alone (`creatures` overrides the
+parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
+`parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
+database-only ones (unless `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
+(`{"state": "baked" | "refused", "for": {field: value}, "psd": "<blob8>", "reason": ...}`; "pending" is never written, the
+website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
+keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:348-352) and a Card Edits.json value wins again at the
 next `/update_stats`.
@@ -635,6 +641,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
 | DSL internals | `grep -n '_stat_pattern\|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
+| Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = \|PSD_STATES\|def psd_state\|def set_psd_state" commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | Clone location | `grep -n LOCAL_DIR_LOC global_config.py` |
 | Slash surface + update_stats defaults | `grep -n 'tree.command(name="query\|name="alias\|name="update_stats' main.py` and `sed -n '359,365p' main.py` |

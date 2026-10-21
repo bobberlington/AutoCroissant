@@ -134,3 +134,71 @@ def test_creatures_then_single_stat():
     assert [c.to_dict() for c in card.creatures] == [{"hp": 7, "def": 4, "atk": 5, "spd": 5},
                                                     {"hp": 5, "def": -1, "atk": -1, "spd": -1}]
     assert card.stats.to_dict() == {"hp": 9, "def": 4, "atk": 5, "spd": 5}
+
+
+# ========================
+# Two kinds of edits (EDIT_PIPELINE_DESIGN section 3)
+# ========================
+KINDS = [("name", "psd"), ("stars", "psd"), ("types", "psd"), ("hp", "psd"), ("def", "psd"), ("atk", "psd"), ("spd", "psd"),
+         ("ability", "psd"), ("type", "folder"), ("subtype", "folder"), ("series", "folder"), ("subseries", "database"),
+         ("note", "database"), ("aliases", "database"), ("dup_of", "database"), ("hidden", "database"),
+         ("problems_ok", "database"), ("allow_high_stats", "database"), ("creatures", "database")]
+SAMPLE = {"name": "Foo Prime", "stars": 3, "types": ["ice"], "hp": 7, "def": 7, "atk": 7, "spd": 7, "ability": "New.", "type": "item",
+          "subtype": "heal", "series": "Mario", "subseries": "Paper Mario", "note": "n", "aliases": ["f"], "dup_of": "Bar", "hidden": True,
+          "problems_ok": True, "allow_high_stats": True,
+          "creatures": [{"hp": None, "def": 2, "atk": 3, "spd": 4}, {"hp": 5, "def": 6, "atk": 7, "spd": 8}]}   # creature 1 = the card's stats
+PSD_VALUES = {"name": None, "stars": 2, "types": ["fire"], "hp": None, "def": 2, "atk": 3, "spd": 4, "ability": ""}   # what _card(stars=2) read
+FOLDER_VALUES = {"type": "creature", "subtype": None, "series": "mario"}
+
+
+def test_kind_covers_every_field():
+    assert CardEdits.KIND.keys() == CardEdits.TYPES.keys() == dict(KINDS).keys()
+    assert set(CardEdits.KIND.values()) == {"psd", "folder", "database"}
+
+
+@pytest.mark.parametrize("name,kind", KINDS)
+def test_kind_table(name, kind):
+    """Each field's kind; apply saves what the edit replaces (the PSD's value, the folder's, or nothing) and dropping it restores."""
+    assert CardEdits.KIND[name] == kind
+    card = _card(series="mario", stars=2)
+    original = repr(card)
+    e = _edits({"Foo Bar": {name: SAMPLE[name]}})
+    applied = name in CardEdits.ATTRS or name in CardEdits.STATS or name == "creatures"
+    assert e.apply("Foo Bar", card) is applied                # aliases and dup_of never touch the card
+    if applied:
+        assert e.get(card, name) == SAMPLE[name]
+        saved = card.parsed_values[name]
+        if kind == "psd":
+            assert saved == PSD_VALUES[name]
+        elif kind == "folder":
+            assert saved == FOLDER_VALUES[name]
+        else:
+            assert saved in (None, False)                     # database-only: no PSD or folder value exists
+    assert CardEdits().apply("Foo Bar", card) is applied
+    assert repr(card) == original
+
+
+def test_psd_meta_rides_beside_by_and_at():
+    """_psd (the pipeline's verdict) is kept like _by/_at: out of the edits, readable, writable, ignored by apply()."""
+    verdict = {"state": "refused", "for": {"hp": 5}, "psd": "e0b11bab", "reason": "stat>10: not yet", "at": "2026-10-20T00:00:00Z"}
+    e = _edits({"Foo_Bar": {"hp": 5, "_by": "web", "_at": "2026-10-20T00:00:00Z", "_psd": verdict},
+                "Baz": {"note": "x", "_psd": {"state": "pending"}}, "Qux": {"note": "y"}})
+    assert e.cards["foo bar"] == {"hp": 5}
+    assert e.meta["foo bar"] == {"_by": "web", "_at": "2026-10-20T00:00:00Z", "_psd": verdict}
+    assert e.psd_state("Foo Bar") == verdict
+    assert e.psd_state("Baz") is None and e.psd_state("Qux") is None and e.psd_state("Nobody") is None
+    card = _card()
+    assert e.apply("Foo Bar", card) is True
+    assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["MISSPELT TYPE: tornado"]}
+    e.set_psd_state("FOO BAR", {"state": "baked", "for": {"hp": 5}})
+    assert e.psd_state("Foo Bar")["state"] == "baked" and e.meta["foo bar"]["_by"] == "web"
+    e.set_psd_state("Foo Bar", None)
+    assert e.psd_state("Foo Bar") is None and e.meta["foo bar"] == {"_by": "web", "_at": "2026-10-20T00:00:00Z"}
+    with pytest.raises(ValueError):
+        e.set_psd_state("Foo Bar", {"state": "done"})
+    with pytest.raises(ValueError):
+        e.set_psd_state("Foo Bar", {"state": "pending"})       # pending is the website's computation, never written
+    e.set_psd_state("New Card", {"state": "baked"})            # a card with no edits yet
+    assert e.psd_state("New Card") == {"state": "baked"} and "new card" not in e.cards
+    e.set_psd_state("Nobody", None)
+    assert "nobody" not in e.meta                              # removing nothing leaves no empty meta behind

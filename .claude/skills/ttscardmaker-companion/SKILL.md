@@ -193,7 +193,7 @@ same spellings; the website is still more lenient:
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
 | AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant` | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
-| Website, `norm()` in build_site.py:99 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
+| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
 Emoji names differ from manifest keys in exactly two cases: `fragile equip` → `fragile_equip`, and
 `thunderfury_blessed_blade_of_the_starseeker` → `thunderfury_blessed_blade_of_the`. The 126 emojis are
@@ -355,7 +355,14 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   names, notes and series/subseries; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
 - **Website edits:** `site/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
   triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
-  `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (card_edits.py).
+  `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (card_edits.py); so is each field's kind
+  (printed on the card image / from the folder / database-only): `PSD_FIELDS`, `FROM`, `CardEdits.KIND` (2026-10-20,
+  docs/EDIT_PIPELINE_DESIGN.md §3 and §9). cards.json carries `pending` (image fields still to be baked by the edit
+  pipeline, `name` excepted), `refused` (the pipeline's `_psd` verdict while the edit and PSD are unchanged) and
+  `reparsePending` (the PSD's tree blob differs from the bot's `blob_sha`); app.js shows them as "PSD pending: …",
+  "Image update refused: …" and "Re-parse pending" on the card page, tiles, table rows and the Changes tab; the
+  `pending` flag filters pending and refused cards; the editor marks pending rows. A malformed `_psd` is logged and skipped
+  like any wrong-typed field; a refusal shows only while its `for` values and `psd` blob prefix still match (review fix 2026-10-20).
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.
@@ -644,7 +651,9 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 
 All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.6 matching rules updated
 2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d (commit list above extended to 13ac680 the same day from the GitHub API); §2.6 (tts-save.yml,
-env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be. Run the commands from
+env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be; the website-edits
+bullet's kinds and badge keys (`PSD_FIELDS`, `pending`/`refused`/`reparsePending`) written 2026-10-20 against the uncommitted
+working tree on d7c6c15 (`grep -n "PSD_FIELDS\|valid_verdict\|reparsePending" site/build/build_site.py`); `norm()` re-cited at :102 the same day. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash
