@@ -7,6 +7,7 @@ Start a session at `docs/NEXT_SESSION_PLAN.md`. Everything here is prose; proced
 | Document | What it is | Read it when |
 |---|---|---|
 | `docs/NEXT_SESSION_PLAN.md` | The plan: state, decisions, tasks with status, Queued, Ideas 5-21, Order | Starting a session; before picking work |
+| `docs/EDIT_PIPELINE_DESIGN.md` | The PSD edit pipeline (Task 3 steps 4-7): two kinds of edits, per-card gates, delta merge, Actions runner with jetson fallback, "PSD pending", acceptance | Before implementing or changing how website edits reach the PSDs |
 | `docs/BUGS_AND_IMPROVEMENTS.md` | Open bugs (B/D/V rows), retired rows, candidate improvements; each row names its owner skill | Before fixing or proposing anything; after a fix (move the story to failure-archaeology) |
 | `docs/Campaigns/SIMULATOR_CAMPAIGN.md` | Play tab: hand test stats, sandbox table, rules automation, ability scripts, batch simulation (item 16) | Designing or estimating the Play tab |
 | `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` | Game reports from Tabletop Simulator and the browser; home of the report schema, §4 (item 17) | Anything that reads or writes a game report |
