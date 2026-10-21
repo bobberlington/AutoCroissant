@@ -112,6 +112,23 @@ def test_sync_decks(save, repo):
     assert again == save                                                  # complete now: nothing to do
 
 
+def test_sync_decks_keeps_non_png_and_skips_bad_entries(save, repo):
+    jpg = HEAL + "J.jpg"
+    repo.tree[jpg] = "bj"
+    deck = save["ObjectStates"][0]
+    deck["ContainedObjects"].append(_card("000007", jpg, 700))
+    rules = deepcopy(RULES)
+    rules["decks"]["bbbbbb"] = {"rule": "oops"}                           # malformed: only its own deck is skipped
+    before = deepcopy(save["ObjectStates"][1])
+    report = tts._Report()
+    tts._sync_decks(save, rules, repo, Names(), report)
+    assert jpg in [tts._face_path(c) for c in deck["ContainedObjects"]]   # rules only cover PNGs: never removed
+    assert [(n, p, k) for _, removed in report.removed for n, p, k in removed] == [("X", X, 1)]
+    assert save["ObjectStates"][1] == before and any("bad entry" in x for x in report.errors)
+    with pytest.raises(ValueError):
+        tts._decks([])
+
+
 def test_fix_keys(repo):
     shown = {"FaceURL": f"{RAW}main/{tts._encode(A)}"}
     own = {"FaceURL": f"{RAW}main/{tts._encode(B)}"}

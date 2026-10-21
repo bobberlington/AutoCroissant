@@ -65,6 +65,7 @@ API = f"{API_BASE}{CARD_REPO}/"
 API_TIMEOUT = 120                                   # the save is 5.5 MB (7.4 MB as base64)
 COMMIT_TRIES = 3                                    # main moved meanwhile: redo the update on the new save
 CONFLICT = (409, 422)                               # ref update refused (not a fast forward)
+NO_WRITE = (401, 403, 404)                          # blob upload refused: the token can't write (classic PATs get 404)
 LAG_PAUSE = 10                                      # s before retrying a history clone behind main
 REPORT_FILE = "tts_save_report.md"
 PUSH_URL = f"git@github.com:{CARD_REPO}.git"       # git fallback: pushed with the service's SSH agent
@@ -75,7 +76,7 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocro
 # Global State
 # ========================
 _lock = Lock()                                      # one run at a time
-_cant_write = False                                 # POST git/blobs got a 403: commit over SSH until a restart
+_cant_write = False                                 # POST git/blobs got a NO_WRITE status: commit over SSH until a restart
 _objects: dict = {}                                 # git object sha -> tree entries / blob bytes (immutable)
 _used: set = set()                                  # shas read this run; older ones are dropped
 _site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
@@ -451,34 +452,42 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         if deck.get("Name") != "Deck":
             continue
         guid = deck.get("GUID", "")
-        entry = rules.get("decks", {}).get(guid) or {}
-        rule = entry.get("rule")
-        label = f"`{guid}` {deck.get('Nickname') or '(unnamed)'}" + (f", {entry['where']}" if entry.get("where") else "")
-        if not rule:
-            report.left.append(f"{label}: no rule in {RULES_PATH}")
+        label = f"`{guid}` {deck.get('Nickname') or '(unnamed)'}"
+        try:                                                # a malformed entry skips only its own deck
+            entry = rules.get("decks", {}).get(guid) or {}
+            rule = entry.get("rule")
+            label += f", {entry['where']}" if entry.get("where") else ""
+            if not rule:
+                report.left.append(f"{label}: no rule in {RULES_PATH}")
+                continue
+            label += f" ({_rule_text(rule)})"
+            cards = deck.get("ContainedObjects") or []
+            if rule.get("partial"):
+                report.left.append(f"{label}: hand-picked, {len(cards)} cards kept as they are")
+                continue
+            if not cards or not rule.get("count"):
+                report.left.append(f"{label}: empty, left empty")
+                continue
+            wanted = _rule_cards(rule, repo.pngs)
+            count = int(rule["count"])
+            counts = {p: int(c) for p, c in (entry.get("odd_counts") or {}).items()}
+            back = entry.get("back")
+            back = back if back in repo.tree else None
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            report.errors.append(f"{label}: bad entry in {RULES_PATH} ({type(e).__name__}: {e}); deck left alone.")
             continue
-        label += f" ({_rule_text(rule)})"
-        cards = deck.get("ContainedObjects") or []
-        if rule.get("partial"):
-            report.left.append(f"{label}: hand-picked, {len(cards)} cards kept as they are")
-            continue
-        if not cards or not rule.get("count"):
-            report.left.append(f"{label}: empty, left empty")
-            continue
-        wanted = _rule_cards(rule, repo.pngs)
         if not wanted:                                      # a typo or a renamed folder: never empty the deck
             report.errors.append(f"{label}: its rule matches no repo image; deck left alone.")
             continue
         present = {_face_path(c) for c in cards}
         missing = [p for p in wanted if p not in present]
-        outside = [c for c in cards if _face_path(c) in repo.tree and _face_path(c) not in wanted]
+        outside = [c for c in cards if (_face_path(c) or "").lower().endswith(".png")    # rules only cover PNGs
+                   and _face_path(c) in repo.tree and _face_path(c) not in wanted]
         if not missing and not outside:
             continue
-        counts = {p: int(c) for p, c in (entry.get("odd_counts") or {}).items()}
         sibling = cards[len(cards) - 1]
         base = _entry(sibling) or {}
-        back = entry.get("back")
-        back_url = repo.url(back) if back in repo.tree else base.get("BackURL", "")
+        back_url = repo.url(back) if back else base.get("BackURL", "")
         added = []
         for path in missing:
             if path not in ids:
@@ -489,7 +498,7 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
             face = deepcopy(base)
             face.update(FaceURL=repo.url(path), BackURL=back_url, NumWidth=1, NumHeight=1)
             name = names.of(path)
-            copies = counts.get(path, int(rule["count"]))
+            copies = counts.get(path, count)
             for _ in range(copies):
                 card = deepcopy(sibling)
                 while True:
@@ -593,6 +602,13 @@ def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> 
     report.lua_removed = [k for k in old if k not in wanted]
 
 
+def _decks(rules):
+    """The parsed rules, if their top level is an object with a "decks" object."""
+    if not isinstance(rules, dict) or not isinstance(rules.get("decks", {}), dict):
+        raise ValueError('no "decks" object')
+    return rules
+
+
 def _load_rules(repo: _Repo, errors: list, given: Optional[tuple] = None):
     """TTS/decks.json: given as (text or None, source) by the bot, else from the checkout, else GitHub (raw, main)."""
     local = join(repo.checkout, RULES_PATH)
@@ -601,13 +617,13 @@ def _load_rules(repo: _Repo, errors: list, given: Optional[tuple] = None):
             text, source = given
             if text is None:
                 raise FileNotFoundError(f"not in {source}")
-            return loads(text), source
+            return _decks(loads(text)), source
         if exists(local):
             with open(local, encoding="utf-8") as f:
-                return load(f), "the checkout"
+                return _decks(load(f)), "the checkout"
         reply = get(f"{RAW}{CARD_BRANCH}/{_encode(RULES_PATH)}", timeout=HTTP_TIMEOUT)
         reply.raise_for_status()
-        return reply.json(), "GitHub"
+        return _decks(reply.json()), "GitHub"
     except (OSError, ValueError) as e:
         errors.append(f"{RULES_PATH} not read ({e}): no cards added.")
         return None, "nowhere"
@@ -899,7 +915,7 @@ def _blob(sha: str) -> bytes:
 def update_repo_save() -> tuple:
     """
     Update the save on the card repo's main and commit it through the GitHub API (blocking; one run at a time);
-    when the token can't write (403, or no token), through git objects in the history clone pushed over SSH.
+    when the token can't write (401/403/404, or no token), through git objects in the history clone pushed over SSH.
     Rules and Card Edits.json come from main too. Only a temp dir is written. When main moves meanwhile (or the
     history clone lags it), the update is redone on the new save, up to COMMIT_TRIES times.
 
@@ -940,7 +956,7 @@ def update_repo_save() -> tuple:
             if GIT_TOKEN and not via_git:
                 reply = _api("POST", "git/blobs", check=False,
                              json={"content": b64encode(data).decode("ascii"), "encoding": "base64"})
-                via_git = reply.status_code == 403      # token can't write: git over SSH
+                via_git = reply.status_code in NO_WRITE     # token can't write: git over SSH
                 limited = (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
                            or "rate limit" in reply.text.lower())   # a secondary limit may send no header
                 _cant_write = via_git and not limited   # a rate limit is only this run's

@@ -352,9 +352,9 @@ Two ways to run it:
   so it does not run again.
 - **By hand: `/update_tts_save`** (admin only). The bot downloads main's copy by blob sha into a temp dir, updates
   it and, when anything changed, commits it to main through the GitHub git data API with `GIT_TOKEN` (message like
-  "TTS save: 812 links pinned, 3 cards added"; when the token can't write: git objects in the history clone pushed
-  over SSH). If main moved meanwhile, it redoes the update on the new save (3 tries). It never writes a checkout;
-  the temp dir is deleted. One run at a time.
+  "TTS save: 812 links pinned, 3 cards added"; when the token can't write — 401/403/404 on the blob upload, or no
+  token — git objects in the history clone pushed over SSH). If main moved meanwhile, it redoes the update on the
+  new save (3 tries). It never writes a checkout; the temp dir is deleted. One run at a time.
 - **`/update_stats` does not run it.** Until 2026-10-20 a changed-tree /update_stats queued a run
   (`save_affected` / `update_after_stats`); the Action replaced that and the code was deleted.
 - **Inputs (bot run):** the rules, the save and `site/Card Edits.json` (`EDITS_PATHS`) come from main; names from the website (when it is
@@ -368,7 +368,8 @@ Two ways to run it:
   (the commit just made; with no change, the `main` link). The 5.5 MB save is never attached in Discord.
 - **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
   `partial` for hand-picked decks). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
-  picks it up. A rule that matches no PNG leaves its deck alone and is listed under Errors.
+  picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
+  under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.
 - **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a
   local file in place and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it. `TTS/decks.json` and
   `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
