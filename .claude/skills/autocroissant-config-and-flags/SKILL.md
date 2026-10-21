@@ -57,7 +57,7 @@ Ground rules:
 
 | Field | Required? | Default (getattr) | Read at | Status | Effect |
 |---|---|---|---|---|---|
-| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:879) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
+| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:880) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
 | `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, repo_traverser, type_emojis and tts_save import it from there) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
@@ -224,7 +224,7 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:750) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:771) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -342,8 +342,8 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (query_card.py:705-722; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:725-744) | `"MichaelJSr/TTSCardMaker"` — always |
+| `/set_ratio` | `card_repo.match_ratio` (query_card.py:726-743; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:746-765) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`,
 `browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.

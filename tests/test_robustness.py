@@ -122,9 +122,11 @@ def test_long_content_is_split(channels):
     lines = [f"song {i:04d} " + "x" * 40 for i in range(130)]           # like /queue of 130 songs
     text = "Queued songs:\n```" + "\n".join(lines) + "```"
     assert len(text) > 6000
-    utils.queue_file(inter, File(BytesIO(b"abc"), filename="a.txt"), content=text, ephemeral=True)
+    am = Object(1)                                                      # an allowed_mentions stand-in
+    utils.queue_file(inter, File(BytesIO(b"abc"), filename="a.txt"), content=text, ephemeral=True, allowed_mentions=am)
     _drain()
     sent = [kw for _, kw in inter.log]
+    assert all(kw["allowed_mentions"] is am for kw in sent)                # every chunk, not only the last
     assert [kind for kind, _ in inter.log] == ["response"] + ["followup"] * (len(sent) - 1)
     assert len(sent) >= 4 and all(len(kw["content"]) <= 2000 and kw["ephemeral"] for kw in sent)
     assert all("file" not in kw for kw in sent[:len(sent) - 1]) and sent[len(sent) - 1]["file"].filename == "a.txt"
@@ -166,9 +168,11 @@ def test_long_edit_keeps_ephemeral(channels, ephemeral):
         inter.log.append(("edit", kw))
         return Sent(ephemeral)
     inter.edit_original_response = edit
-    utils.queue_edit(inter, content="x" * 4500)
+    am = Object(1)
+    utils.queue_edit(inter, content="x" * 4500, allowed_mentions=am)
     asyncio.run(main.process_edit_queue.coro())
     assert [kw.get("ephemeral", False) for _, kw in utils.dispatch_queue] == [ephemeral, ephemeral]
+    assert all(kw["allowed_mentions"] is am for _, kw in utils.dispatch_queue)
 
 
 def test_failed_long_edit_keeps_its_order(channels, capsys):

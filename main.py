@@ -746,6 +746,7 @@ async def slash_react(interaction: Interaction,
 # Queue Handling Loops #
 ########################
 MAX_CONTENT = 2000                                      # Discord's message length limit
+LAST_ONLY = ("file", "files", "attachments", "embed", "embeds", "view", "links")   # a split message's last chunk only
 _running: set = set()                                   # queued commands in flight
 
 
@@ -766,7 +767,7 @@ def _split_content(queue, interaction, kwargs: dict) -> bool:
     if not isinstance(content, str) or len(content) <= MAX_CONTENT:
         return False
     chunks = split_long_message(content)
-    extra = {"ephemeral": kwargs["ephemeral"]} if "ephemeral" in kwargs else {}
+    extra = {k: v for k, v in kwargs.items() if k not in LAST_ONLY}   # ephemeral, allowed_mentions... on every chunk
     items = [(interaction, {**extra, "content": c}) for c in chunks[:len(chunks) - 1]]
     items.append((interaction, {**kwargs, "content": chunks[len(chunks) - 1]}))   # files/embeds ride on the last
     for item in reversed(items):
@@ -822,7 +823,7 @@ async def _edit(interaction, edit_kwargs: dict) -> None:
         chunks = split_long_message(content)
         edit_kwargs["content"] = chunks[0]
         rest = chunks[1:]
-    extra = {}
+    extra = {"allowed_mentions": edit_kwargs["allowed_mentions"]} if "allowed_mentions" in edit_kwargs else {}
     try:
         msg = await interaction.edit_original_response(**edit_kwargs)
         if getattr(getattr(msg, "flags", None), "ephemeral", False):

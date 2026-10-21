@@ -182,7 +182,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
    (`stats_db = StatsDatabase()` at card_models.py:206 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:750-751).
+   `card_repo = CardRepository()` + `init_query` at query_card.py:771-772).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    with one standing exception: utils.py, the shared toolbox, has none.

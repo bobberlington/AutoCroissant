@@ -556,12 +556,12 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
 existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:649-702). At `populate_files` time each alias key is inserted into `git_files` as
+(query_card.py:670-723). At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
 Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
 `red_bloon -> pod01red_bloon.png`.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:194-264)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:215-285)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
 :315-334): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
@@ -597,12 +597,12 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:301-313). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:322-334). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:244) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:315-339). 48 pages today.
+   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:336-360). 48 pages today.
 10. Results return card IMAGES (urls via `get_card_url`); `howmany:True` returns just the count;
     `limit` caps output (main.py:276-290).
 

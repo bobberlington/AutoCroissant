@@ -41,9 +41,9 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
   text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:315 —
-  literally one `str.contains` call; wrapper at query_card.py:595, registered main.py:293).
+  literally one `str.contains` call; wrapper at query_card.py:616, registered main.py:293).
   Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:232): `|` OR,
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:253): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.

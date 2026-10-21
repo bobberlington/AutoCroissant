@@ -358,7 +358,7 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:742-875; queue helpers commands/utils.py:25-60): three module-level
+**The mechanism** (verify at main.py:742-876; queue helpers commands/utils.py:25-60): three module-level
 deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=1)`
 coroutine. Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
@@ -372,9 +372,9 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:117-121, music chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
 
 Two structural caveats, both visible in the code: (a) `process_command_queue` re-enqueues
-`check_reminder` at the top of every tick (main.py:840 as of 2026-10-20) and pops it in the same tick — reminders
+`check_reminder` at the top of every tick (main.py:841 as of 2026-10-20) and pops it in the same tick — reminders
 are checked every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:852-861 as of 2026-10-20), so one slow Discord HTTP call
+loop awaits each send SEQUENTIALLY inside the tick (main.py:853-862 as of 2026-10-20), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
 **Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
@@ -392,7 +392,7 @@ autocroissant-debugging-playbook), never queue scheduling.** Don't investigate t
 **Conclusive result:** you state the expected latency for the exact path the command took (≤1s or
 ≤2s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:742-875.
+main.py:742-876.
 
 ---
 

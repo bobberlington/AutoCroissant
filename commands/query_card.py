@@ -72,30 +72,13 @@ class CardRepository:
         status = 200
         repo = repository or self.repository
         with self._tree_lock:                                   # _tree and _tree_etag change together
-            if tree is not None:
-                self._tree_etag = etag or ""                    # an ETag must match _tree
-            else:
-                same = repo == self.repository              # an ETag only matches its own repo
-                etag = self._tree_etag if same and self._tree and self._tree_etag else ""
-                why = ""
-                try:
-                    response = fetch_tree(repo, etag)
-                    if response.status_code == 304:                 # unchanged: free, and no download
-                        tree = self._tree
-                    elif response.status_code == 200:
-                        body = response.json()                      # untyped: tree is a dict under Cython
-                        if isinstance(body, dict):
-                            tree, self._tree_etag = body, response.headers.get("ETag", "")
-                    else:
-                        status, why = response.status_code, f"HTTP {response.status_code}"
-                except (RequestException, ValueError) as e:         # ValueError: a body that isn't JSON
-                    status, why = 0, f"{type(e).__name__}: {e}"
-                if not isinstance(tree, dict):                      # keep the last good tree (B7)
-                    print(f"Card list: GitHub tree fetch for {repo} failed ({why or 'not a tree'}); "
+            if tree is None:
+                tree, etag, status, why = self._fetch_tree(repo)
+                if tree is None:                                # keep the last good tree (B7)
+                    print(f"Card list: GitHub tree fetch for {repo} failed ({why}); "
                           f"keeping the last good list ({len(self.git_files)} entries)")
-                    return 0 if status == 200 else status
-            self.repository = repo
-            self._tree = tree
+                    return status
+            self.repository, self._tree, self._tree_etag = repo, tree, etag or ""   # an ETag must match _tree
         self.git_files.clear()
         self.blobs.clear()
         self.ambiguous_names.clear()
@@ -115,6 +98,44 @@ class CardRepository:
         self._populate_site_ids()
 
         return status
+
+    def _fetch_tree(self, repo: str) -> tuple:
+        """
+        GET repo's tree, with the cached ETag when it is repo's (hold _tree_lock).
+
+        Returns:
+            (tree, its ETag, 200, "") or (None, "", status (0: no reply or not a tree), why)
+        """
+        etag = self._tree_etag if repo == self.repository and self._tree and self._tree_etag else ""
+        try:
+            response = fetch_tree(repo, etag)
+            if response.status_code == 304:                 # unchanged: free, and no download
+                return self._tree, etag, 200, ""
+            if response.status_code != 200:
+                return None, "", response.status_code, f"HTTP {response.status_code}"
+            body = response.json()                          # untyped: tree is a dict under Cython
+        except (RequestException, ValueError) as e:         # ValueError: a body that isn't JSON
+            return None, "", 0, f"{type(e).__name__}: {e}"
+        if not isinstance(body, dict):
+            return None, "", 0, "not a tree"
+        return body, response.headers.get("ETag", ""), 200, ""
+
+    def current_tree(self) -> tuple:
+        """
+        The tree for other readers (type emojis), fetched with the card list's ETag. A newer tree is kept for the
+        card list (its next fetch is a 304), so the fallback is never older than what a reader last got.
+
+        Returns:
+            (tree, "") or, when GitHub failed, (the last good tree, why); raises when there is no tree yet
+        """
+        with self._tree_lock:
+            tree, etag, _, why = self._fetch_tree(self.repository)
+            if tree is not None:
+                self._tree, self._tree_etag = tree, etag
+                return tree, ""
+            if self._tree is None:
+                raise RuntimeError(f"GitHub tree fetch for {self.repository} failed ({why})")
+            return self._tree, why
 
     def _add_file_to_registry(self, path: str) -> None:
         """Add a file path to the registry, handling duplicates."""

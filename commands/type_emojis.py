@@ -11,10 +11,9 @@ from discord import Client, Interaction
 from discord.utils import escape_markdown
 from PIL import Image, ImageDraw
 from requests import get
-from requests.exceptions import RequestException
 
 from global_config import EMOJI_JSON, STARS_DIR, TYPES_DIR
-from commands.github_api import fetch_blob, fetch_tree
+from commands.github_api import fetch_blob
 from commands.repo_history import raw_url
 from commands.utils import queue_long_message
 
@@ -100,24 +99,9 @@ def _list_type_icons() -> tuple[str, dict[str, tuple[str, str, bool]]]:
     """
     from commands.query_card import card_repo  # lazy, like query_card's own late imports
 
-    with card_repo._tree_lock:                  # one tree fetch at a time: at startup, the card list's or this one
-        known, etag = card_repo._tree, card_repo._tree_etag
-        try:                                    # with the card list's ETag: 304 = its tree is current
-            response = fetch_tree(card_repo.repository, etag if isinstance(known, dict) and etag else "")
-            if response.status_code == 304 and isinstance(known, dict):
-                tree = known
-            else:
-                response.raise_for_status()
-                tree = response.json()
-            if not isinstance(tree, dict):
-                raise ValueError("not a tree")
-            if known is None and response.headers.get("ETag"):    # card list not loaded yet: its fetch can 304
-                card_repo._tree, card_repo._tree_etag = tree, response.headers["ETag"]
-        except (RequestException, ValueError) as e:
-            if not isinstance(card_repo._tree, dict):
-                raise
-            print(f"Type emojis: GitHub tree listing failed ({e}); using the last good card tree")
-            tree = card_repo._tree
+    tree, why = card_repo.current_tree()        # the card list's tree and ETag: 304 = its tree is current
+    if why:
+        print(f"Type emojis: GitHub tree listing failed ({why}); using the last good card tree")
     shas = {item.get("path", ""): item.get("sha", "") for item in tree.get("tree", [])}
     return card_repo.repository, _icons(shas)
 

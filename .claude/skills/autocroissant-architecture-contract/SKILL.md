@@ -36,8 +36,8 @@ plain **sync** function in `commands/*.py`, pushed off the loop into a worker th
 `asyncio.to_thread`. Worker threads are forbidden from touching Discord directly; instead they append
 their output to three module-level deques in `commands/utils.py` (`command_queue`, `dispatch_queue`,
 `edit_queue`, utils.py:25-27). Three `@tasks.loop(seconds=1)` coroutines in `main.py`
-(`process_command_queue` main.py:839, `process_dispatch_queue` main.py:853, `process_edit_queue`
-main.py:865) drain those deques once per second **on the event loop** and perform the actual Discord
+(`process_command_queue` main.py:840, `process_dispatch_queue` main.py:854, `process_edit_queue`
+main.py:866) drain those deques once per second **on the event loop** and perform the actual Discord
 I/O, with a built-in fallback chain. That is the whole model: loop owns Discord, threads own work,
 deques are the only bridge.
 
@@ -45,18 +45,18 @@ deques are the only bridge.
 
 | Queue (utils.py:25-27) | Entry shape | Filled by | Drained by | What draining does |
 |---|---|---|---|---|
-| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:838-849) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
-| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:852-861) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
-| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:864-875; `_edit` 814-832) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
+| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:839-850) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
+| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:853-862) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
+| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:865-876; `_edit` 814-832) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
 
 Mechanics you must know:
 
 - **`to_thread(func)`** (utils.py:80-89) wraps a sync function so awaiting it runs it in a thread via
   `asyncio.to_thread`. Critical subtlety: if `func` is already a coroutine function it is returned
-  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:748-756) execute
+  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:748-757) execute
   both sync workers and the async slash callbacks stored in `slash_registry` with one code path.
 - **`to_threadpool(func, executor)`** (utils.py:92-101) is the bounded variant. `run_command` routes to
-  it when the queued kwargs contain `executor` (main.py:751-752) — so **`executor` is a reserved kwarg
+  it when the queued kwargs contain `executor` (main.py:752-753) — so **`executor` is a reserved kwarg
   name** for anything sent through `queue_command`; a worker function with its own `executor` parameter
   would have it silently popped. Sole current user: music downloads, capped at a 2-worker
   `ThreadPoolExecutor` (music_player.py:35, used at music_player.py:264 and 277) so a playlist can't
@@ -83,7 +83,7 @@ Mechanics you must know:
 2. **Centralized fallbacks survive interaction-token expiry.** Discord interaction tokens die after
    15 minutes. Long jobs (full `/update_stats` sweep, playlist download) outlive them.
    The dispatch loop's chain — `response.send_message` if not yet responded, else `followup.send`, and
-   on `HTTPException`/`AttributeError` a raw `channel.send` (main.py:782-794) — means a late result
+   on `HTTPException`/`AttributeError` a raw `channel.send` (main.py:783-795) — means a late result
    degrades to a plain channel message instead of vanishing. Every send written as `queue_*` gets this
    for free; every send written by hand does not.
 3. **Serialization + self-throttling.** One drain point per second batches sends and naturally stays
@@ -105,9 +105,9 @@ Mechanics you must know:
 | 2 | **All Discord output from worker code goes through `queue_message`/`queue_file`/`queue_edit`/`queue_any`/`queue_command`** (utils.py:36-60). | Direct calls from a thread produce never-awaited coroutines (message silently lost) or thread-unsafe loop access. You also forfeit the fallback chain: your send dies permanently at the 15-minute token expiry instead of degrading to `channel.send`, and reminders (which run your command with a FakeInteraction) break because FakeInteraction only implements the queue-facing surface. |
 | 3 | **The three queue loops must be running for ANYTHING to send.** Started in `on_ready` (main.py:123-125); deliberately STOPPED by `/restart_bot` (main.py:152-154), `/stop_bot` (main.py:164-166), `/update` (main.py:201-203) so no queued output races process replacement. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (update_bot.py:18, 47, 136), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
 | 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (48 occurrences as of 2026-10-20; e.g. main.py:258, 359). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:110-111), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
-| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:206, re-exported by psd_analyzer), `card_repo` (query_card.py:750), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:32, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
+| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:206, re-exported by psd_analyzer), `card_repo` (query_card.py:771), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); every card module reaches utils: psd_analyzer → repo_traverser → query_card → type_emojis → utils (since the 2026-10-20 split). | Any tool that unpickles `stats.pkl` must have this repo on `sys.path` AND a config.py present — `CardInfo`/`CardStats` are dataclasses defined in `commands.card_models` with `__module__` pinned to `commands.psd_analyzer` (the facade re-exports them), so unpickling imports the facade and the chain reaches `config`. This is why the diagnostics scripts run from the repo root; code outside this repo must stub the classes, as TTSCardMaker's website build does (`_Unpickler` in site/build/build_site.py). config.py is SECRET — never print or read its values. |
-| 7 | **`check_reminder` is re-queued every tick — reminder-path work must stay cheap, and stay single-flight.** The first statement of `process_command_queue` is `queue_command(check_reminder)` (main.py:840); the entry drains on the next tick, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
+| 7 | **`check_reminder` is re-queued every tick — reminder-path work must stay cheap, and stay single-flight.** The first statement of `process_command_queue` is `queue_command(check_reminder)` (main.py:841); the entry drains on the next tick, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:161-163). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
 
@@ -129,7 +129,7 @@ asyncio.to_thread -> WORKER THREAD runs sync query_name()
 dispatch_queue (deque, utils.py:25)
       |
       v  (next 1-second tick, back on the event loop)
-process_dispatch_queue (main.py:853)
+process_dispatch_queue (main.py:854)
       |- interaction.response.send_message(**kw)     if response not yet done
       |- interaction.followup.send(**kw)             if already responded/deferred
       '- client.get_channel(channel_id).send(**kw)   on HTTPException/AttributeError
@@ -176,7 +176,7 @@ them from this repo's main (ttscardmaker-companion §2).
 ### (c) A reminder firing (slash_registry + FakeInteraction), as of 2026-10-19
 
 ```
-process_command_queue tick (main.py:840)
+process_command_queue tick (main.py:841)
       v
 check_reminder() in a worker thread (analytics.py:819)
       |  _check_lock non-blocking acquire (overlapping pass -> return) ; then under _lock:
@@ -304,7 +304,7 @@ optimization pass.
    music_player.py:32). `random.shuffle` does indexed swaps and deque middle-indexing is O(n), so the
    shuffle is O(n²)-ish. Correct, and fine at hobby-scale queue lengths; would hurt at tens of
    thousands of entries. Not worth fixing until it is.
-3. **The dispatch fallback drops `ephemeral`** (main.py:784, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
+3. **The dispatch fallback drops `ephemeral`** (main.py:785, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
    before `channel.send`). A reply the user expected to be private — e.g. `/list_reminders`
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
@@ -351,7 +351,7 @@ optimization pass.
    message, changes the execution model or the output, so both wait for the owner
    (docs/BUGS_AND_IMPROVEMENTS.md §2.5; `docs/Finished/optimization-pass-2026-10-20/profile.md`).
 11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:138-143) and
-   `save_aliases` (query_card.py:359-362) write in place, unlike reminder.pkl's tmp + fsync + replace, and
+   `save_aliases` (query_card.py:380-383) write in place, unlike reminder.pkl's tmp + fsync + replace, and
    nothing locks them against a concurrent `/push` or `/restart_bot`; a kill mid-write leaves a truncated
    pickle (network-robustness audit item 2; open).
 
@@ -371,7 +371,7 @@ optimization pass.
 - **Work that must await Discord APIs other than sending messages** (emoji, guild management): an
   `async def` worker in the style of `sync_type_emojis` — await the Discord calls, thread every blocking
   step with `asyncio.to_thread`, report through `queue_message`.
-- **Bounded parallelism**: pass `executor=<ThreadPoolExecutor>` through `queue_command` (main.py:751-752)
+- **Bounded parallelism**: pass `executor=<ThreadPoolExecutor>` through `queue_command` (main.py:752-753)
   as the music downloader does; remember `executor` is a reserved kwarg name.
 - **Retiring a feature (owner's rule, 2026-10-20: archives go on branches)**: delete the code from main and
   commit it to its own branch `archive/<topic>`, made from main in a separate worktree so uncommitted work on
