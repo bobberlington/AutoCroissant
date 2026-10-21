@@ -1,0 +1,19 @@
+{
+ "alt_names": null,
+ "blob": "a1cbe647a8977c6f57c7327269755f79049e2551",
+ "card": {
+  "ability": "When played, choose a creature to negate until this is destroyed.\nTakes damage equal to the star level -1 of the negated creature at (ENDGT).",
+  "def": 0,
+  "hp": 4,
+  "path": "Items/Active/3 Stars/Black_Light_Bulb.psd",
+  "stars": 3,
+  "subtype": "active",
+  "timestamp": 0.0,
+  "type": "item",
+  "types": [
+   "active"
+  ]
+ },
+ "path": "Items/Active/3 Stars/Black_Light_Bulb.psd",
+ "validator": []
+}

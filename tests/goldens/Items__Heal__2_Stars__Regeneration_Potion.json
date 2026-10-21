@@ -1,0 +1,19 @@
+{
+ "alt_names": [
+  "Grape Juice"
+ ],
+ "blob": "4a88db7f00c5cd903c9d7db19b4ecb358da85ce5",
+ "card": {
+  "ability": "Inflict 3T3 Regen.",
+  "path": "Items/Heal/2 Stars/Regeneration_Potion.psd",
+  "stars": 2,
+  "subtype": "heal",
+  "timestamp": 0.0,
+  "type": "item",
+  "types": [
+   "food"
+  ]
+ },
+ "path": "Items/Heal/2 Stars/Regeneration_Potion.psd",
+ "validator": []
+}

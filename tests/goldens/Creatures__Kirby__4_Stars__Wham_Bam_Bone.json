@@ -1,0 +1,21 @@
+{
+ "alt_names": null,
+ "blob": "42af907699e33bb9eac937cbc5e21dca83029fc8",
+ "card": {
+  "ability": "Attacks have 100% lifesteal.\n(OFS)/(BOGT) Enemy team loses 2 SP.",
+  "atk": 6,
+  "def": 4,
+  "hp": 6,
+  "path": "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd",
+  "series": "kirby",
+  "spd": 6,
+  "stars": 4,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "undead"
+  ]
+ },
+ "path": "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd",
+ "validator": []
+}

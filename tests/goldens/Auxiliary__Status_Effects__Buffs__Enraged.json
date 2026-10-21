@@ -1,0 +1,15 @@
+{
+ "alt_names": null,
+ "blob": "3b51305d575e12f347554e5f7ffb3f21495240ae",
+ "card": {
+  "ability": "+25% ATK",
+  "path": "Auxiliary/Status Effects/Buffs/Enraged.psd",
+  "timestamp": 0.0,
+  "type": "buff",
+  "types": [
+   "buffstack"
+  ]
+ },
+ "path": "Auxiliary/Status Effects/Buffs/Enraged.psd",
+ "validator": []
+}

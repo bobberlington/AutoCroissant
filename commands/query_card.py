@@ -3,15 +3,18 @@ from difflib import get_close_matches, SequenceMatcher
 from discord import Embed, Interaction
 from os.path import basename, splitext
 from pickle import load, dump
+from asyncio import to_thread
+from threading import Lock
 from requests import get
+from requests.exceptions import RequestException
 from typing import Optional
 from warnings import filterwarnings
-from pandas import DataFrame, concat, merge
+from pandas import DataFrame, Index, concat, merge
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-import config
-from global_config import ALIAS_PKL, SITE_URL, STATS_PKL
+from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATH, RULEBOOK_DIR, SITE_URL, STATS_PKL
+from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
 from commands.type_emojis import render_type_tokens
 from commands.utils import queue_message, split_long_message
@@ -21,9 +24,8 @@ filterwarnings('ignore')
 # ========================
 # Configuration
 # ========================
-DEFAULT_REPOSITORY = "MichaelJSr/TTSCardMaker"
+DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
-GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 
 
 @dataclass
@@ -40,18 +42,13 @@ class CardRepository:
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
+        self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
-        self._headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
-
-        if GIT_TOKEN:
-            print("Git token found, API limited to 5000 requests/hour.")
-        else:
-            print("No git token in config, API limited to 60 requests/hour.")
-
+        self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
         self._stat_pattern = compile(r"^(\w+)(<|<=|==|>=|>)(\d+)$", IGNORECASE)
 
     @property
@@ -59,26 +56,46 @@ class CardRepository:
         """Get list of all git filenames."""
         return list(self.git_files.keys())
 
-    def populate_files(self, tree: Optional[dict] = None) -> int:
+    def populate_files(self, tree: Optional[dict] = None, repository: Optional[str] = None,
+                       etag: Optional[str] = None) -> int:
         """
         Fetch and populate file listings from GitHub repository.
 
         Args:
             tree: A tree /update_stats just fetched (saves a request)
+            repository: Switch to this repository, only if its tree loads (/set_repo)
+            etag: That tree's ETag, so the next fetch can be a 304
 
         Returns:
             HTTP status code (200 for success)
         """
         status = 200
-        if tree is None:
-            url = f"https://api.github.com/repos/{self.repository}/git/trees/main?recursive=1"
-            headers = {**self._headers, **({"If-None-Match": self._tree_etag} if self._tree and self._tree_etag else {})}
-            response = get(url, headers=headers, timeout=30)
-            if response.status_code == 304:                   # unchanged: free, and no download
-                tree = self._tree
+        repo = repository or self.repository
+        with self._tree_lock:                                   # _tree and _tree_etag change together
+            if tree is not None:
+                self._tree_etag = etag or ""                    # an ETag must match _tree
             else:
-                status, tree, self._tree_etag = response.status_code, response.json(), response.headers.get("ETag", "")
-        self._tree = tree
+                same = repo == self.repository              # an ETag only matches its own repo
+                etag = self._tree_etag if same and self._tree and self._tree_etag else ""
+                why = ""
+                try:
+                    response = fetch_tree(repo, etag)
+                    if response.status_code == 304:                 # unchanged: free, and no download
+                        tree = self._tree
+                    elif response.status_code == 200:
+                        body = response.json()                      # untyped: tree is a dict under Cython
+                        if isinstance(body, dict):
+                            tree, self._tree_etag = body, response.headers.get("ETag", "")
+                    else:
+                        status, why = response.status_code, f"HTTP {response.status_code}"
+                except (RequestException, ValueError) as e:         # ValueError: a body that isn't JSON
+                    status, why = 0, f"{type(e).__name__}: {e}"
+                if not isinstance(tree, dict):                      # keep the last good tree (B7)
+                    print(f"Card list: GitHub tree fetch for {repo} failed ({why or 'not a tree'}); "
+                          f"keeping the last good list ({len(self.git_files)} entries)")
+                    return 0 if status == 200 else status
+            self.repository = repo
+            self._tree = tree
         self.git_files.clear()
         self.blobs.clear()
         self.ambiguous_names.clear()
@@ -275,14 +292,25 @@ class CardRepository:
         exact_matches = self.cards_dff[self.cards_dff["ability"].str.contains(escape(ability), na=False)]
 
         # Fuzzy matches
-        scores = self.cards_dff["ability"].apply(
-            lambda x: SequenceMatcher(None, ability, x.lower()).ratio()
-        )
-        fuzzy_matches = self.cards_dff.loc[scores[scores > self.match_ratio].index]
+        fuzzy_matches = self.cards_dff.loc[self._fuzzy_labels(ability)]
 
         # Combine and remove duplicates by index
         combined = concat([exact_matches, fuzzy_matches])
         return combined[~combined.index.duplicated(keep='first')]
+
+    def _fuzzy_labels(self, ability: str) -> Index:
+        """Cards whose SequenceMatcher ratio with the query beats match_ratio, in frame order."""
+        if self._lowered[0] is not self.cards_dff:            # built once per prep_dataframes
+            self._lowered = (self.cards_dff, [(label, text.lower()) for label, text in self.cards_dff["ability"].items()])
+        la, cut = len(ability), self.match_ratio
+        keep = []
+        for label, text in self._lowered[1]:
+            lb = len(text)
+            if la + lb and 2.0 * min(la, lb) / (la + lb) <= cut:   # ratio()'s upper bound: can't match
+                continue
+            if SequenceMatcher(None, ability, text).ratio() > cut:
+                keep.append(label)
+        return Index(keep, dtype=self.cards_dff.index.dtype)
 
     def rulebook_search_engine(self, search_text: str) -> DataFrame:
         """
@@ -335,17 +363,13 @@ class CardRepository:
 
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json."""
-        from commands.psd_analyzer import EDITS_PATH, CardEdits
+        from commands.psd_analyzer import CardEdits
         sha = next((item.get("sha") for item in (self._tree or {}).get("tree", []) if item.get("path") == EDITS_PATH), None)
         if not sha:
             return
         if self._edit_names[0] != sha:                           # download only when the file changed
             try:
-                reply = get(f"https://api.github.com/repos/{self.repository}/git/blobs/{sha}", timeout=30,
-                            headers={**self._headers, "Accept": "application/vnd.github.raw"})
-                reply.raise_for_status()
-                reply.encoding = "utf-8"
-                self._edit_names = (sha, CardEdits.parse(reply.text).names())
+                self._edit_names = (sha, CardEdits.parse(blob_text(self.repository, sha)).names())
             except Exception as e:
                 print(f"Could not read {EDITS_PATH}: {e}")
                 return
@@ -392,7 +416,7 @@ class CardRepository:
 
             # Separate cards and rulebook entries
             has_ability = cards_df["ability"].notna()
-            is_rulebook = cards_df["path"].str.contains("Rulebook", na=False)
+            is_rulebook = cards_df["path"].str.contains(RULEBOOK_DIR, na=False)
 
             # Cards DataFrame (excludes rulebook)
             self.cards_dff = cards_df[has_ability & ~is_rulebook].copy()
@@ -411,10 +435,13 @@ class CardRepository:
 
     def _find_closest_match(self, query: str) -> Optional[str]:
         """Find closest matching card filename."""
-        matches = get_close_matches(self._normalize_card_name(query), self.git_filenames, n=1, cutoff=self.match_ratio)
+        key = self._normalize_card_name(query)
+        if key in self.git_files and len(key) < 200:    # exact: the only 1.0 score (difflib's autojunk starts at 200)
+            return key
+        matches = get_close_matches(key, self.git_filenames, n=1, cutoff=self.match_ratio)
         return matches[0] if matches else None
 
-    def get_card_url(self, filename: str) -> str | None:
+    def get_card_url(self, filename: str) -> Optional[str]:
         """
         Get full GitHub URL for a card.
 
@@ -462,9 +489,9 @@ class CardRepository:
 # ========================
 def _stats_card(filename: str):
     """The stats entry for a registry file name (aliases resolve to their PNG)."""
-    from commands.psd_analyzer import stats_db
+    from commands.psd_analyzer import card_name, stats_db
     path = card_repo.git_files.get(filename.lower())
-    return stats_db.stats.get(splitext(basename(path))[0].replace("_", " ")) if path else None
+    return stats_db.stats.get(card_name(path)) if path else None
 
 
 def query_name(interaction: Interaction, query: str) -> None:
@@ -703,13 +730,14 @@ async def set_repository(interaction: Interaction, new_repo: Optional[str] = Non
         await interaction.response.send_message(f"Current repository: {card_repo.repository}")
         return
 
-    card_repo.repository = new_repo
-    status = card_repo.populate_files()
+    await interaction.response.defer()
+    old_repo = card_repo.repository                     # switched only once new_repo's tree loads
+    status = await to_thread(card_repo.populate_files, None, new_repo)  # off the event loop (retries can take seconds)
 
     if status != 200:
-        await interaction.response.send_message(f"Error {status} when connecting to {new_repo}")
+        await interaction.followup.send(f"Error {status or 'no response'} when connecting to {new_repo}; still using {old_repo}.")
     else:
-        await interaction.response.send_message(f"Repository set to {card_repo.repository}")
+        await interaction.followup.send(f"Repository set to {card_repo.repository}")
 
 
 # ========================

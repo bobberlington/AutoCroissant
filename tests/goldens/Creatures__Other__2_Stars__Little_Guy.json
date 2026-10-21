@@ -1,0 +1,18 @@
+{
+ "alt_names": null,
+ "blob": "bb6e2d1112a9b543859779df3579e63042f48885",
+ "card": {
+  "ability": "Attacks are piercing.\n(2PGT) May perform an attack.\nOnly gains 50% ATK from outside sources.\nThis ability cannot be copied.",
+  "atk": 1,
+  "def": 2,
+  "hp": 4,
+  "path": "Creatures/Other/2 Stars/Little_Guy.psd",
+  "series": "other",
+  "spd": 4,
+  "stars": 2,
+  "timestamp": 0.0,
+  "type": "creature"
+ },
+ "path": "Creatures/Other/2 Stars/Little_Guy.psd",
+ "validator": []
+}

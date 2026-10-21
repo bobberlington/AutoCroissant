@@ -1,0 +1,19 @@
+{
+ "alt_names": [
+  "Inconspicuous Watermelon"
+ ],
+ "blob": "f9f8522624a4338e5d124fa6f4a04e64f6c05256",
+ "card": {
+  "ability": "Heal 3 HP.\nCleanse 1 star debuffs.",
+  "path": "Items/Heal/2 Stars/Watermelon.psd",
+  "stars": 2,
+  "subtype": "heal",
+  "timestamp": 0.0,
+  "type": "item",
+  "types": [
+   "food"
+  ]
+ },
+ "path": "Items/Heal/2 Stars/Watermelon.psd",
+ "validator": []
+}

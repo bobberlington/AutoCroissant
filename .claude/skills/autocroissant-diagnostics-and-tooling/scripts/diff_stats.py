@@ -53,8 +53,8 @@ def main() -> int:
         new = load_stats(sys.argv[2])
     except Exception as e:  # noqa: BLE001
         print(f"ERROR loading pickles: {e}")
-        print("(unpickling CardInfo requires running from a checkout whose "
-              "commands/psd_analyzer.py still defines it, with config.py present)")
+        print("(unpickling CardInfo requires running from a checkout where "
+              "commands.psd_analyzer imports cleanly and exports it, with config.py present)")
         return 2
 
     added = sorted(set(new) - set(old))

@@ -1,0 +1,782 @@
+{
+ "all_types": [
+  "buff",
+  "debuffupgrade",
+  "nme",
+  "equip",
+  "machine",
+  "support",
+  "infliction",
+  "dark",
+  "fire",
+  "darkmatter",
+  "deploy",
+  "defensive_minion",
+  "negation",
+  "offensive_minion",
+  "electric",
+  "unknown",
+  "debuffstack",
+  "undead",
+  "counter",
+  "panda",
+  "girl",
+  "fragile equip",
+  "rock",
+  "field",
+  "debuff",
+  "wind",
+  "lightshadow",
+  "light",
+  "food",
+  "null",
+  "ice",
+  "water",
+  "attack",
+  "buffstack",
+  "active"
+ ],
+ "stars": [
+  "6star",
+  "7star",
+  "8star",
+  "crystal_star",
+  "crystal_star_pmttydns_icon",
+  "diamond_star",
+  "diamond_star_pmttydns_icon",
+  "dst_star",
+  "elden_ring",
+  "elden_stars",
+  "emerald_star",
+  "emerald_star_pmttydns_icon",
+  "faith",
+  "fallen_star",
+  "feather",
+  "garnet_star",
+  "garnet_star_pmttydns_icon",
+  "gold_star",
+  "gold_star_pmttydns_icon",
+  "greed",
+  "guild_seal",
+  "hk_star",
+  "isaac_no_circle",
+  "lol_star",
+  "mario_star",
+  "monkey_d_star",
+  "nebula_star",
+  "nether_star",
+  "ninja_star",
+  "null_star",
+  "omori_star",
+  "patrick_star",
+  "repo_orb",
+  "ruby_star",
+  "ruby_star_pmttydns_icon",
+  "sapphire_star_pmttydns_icon",
+  "sapphire_starold",
+  "scrap",
+  "silksong_star",
+  "solar_sun",
+  "star_of_beth",
+  "starstorm",
+  "stuffed_star",
+  "the_poorly_drawn_barnstar",
+  "thunderfury_blessed_blade_of_the_starseeker",
+  "triforce",
+  "warpstar",
+  "yinyangultra",
+  "bfables",
+  "bgold",
+  "bronze",
+  "isaac",
+  "nuke",
+  "silver",
+  "star",
+  "undertale"
+ ],
+ "manifest": {
+  "icons": {
+   "attack": {
+    "kind": "type",
+    "file": "Types/Attack.png",
+    "pua": "E000",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "counter": {
+    "kind": "type",
+    "file": "Types/Counter.png",
+    "pua": "E001",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "defensive_minion": {
+    "kind": "type",
+    "file": "Types/Defensive_Minion.png",
+    "pua": "E002",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "deploy": {
+    "kind": "type",
+    "file": "Types/Deploy.png",
+    "pua": "E003",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "equip": {
+    "kind": "type",
+    "file": "Types/Equip.png",
+    "pua": "E004",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "food": {
+    "kind": "type",
+    "file": "Types/Food.png",
+    "pua": "E005",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "fragile equip": {
+    "kind": "type",
+    "file": "Types/Fragile Equip.png",
+    "pua": "E006",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "girl": {
+    "kind": "type",
+    "file": "Types/Girl.png",
+    "pua": "E007",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "infliction": {
+    "kind": "type",
+    "file": "Types/Infliction.png",
+    "pua": "E008",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "nme": {
+    "kind": "type",
+    "file": "Types/NME.png",
+    "pua": "E009",
+    "aliases": [
+     "n.m.e"
+    ],
+    "tint": "auto"
+   },
+   "negation": {
+    "kind": "type",
+    "file": "Types/Negation.png",
+    "pua": "E00A",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "offensive_minion": {
+    "kind": "type",
+    "file": "Types/Offensive_Minion.png",
+    "pua": "E00B",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "wind": {
+    "kind": "type",
+    "file": "Types/Wind.png",
+    "pua": "E00C",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "active": {
+    "kind": "type",
+    "file": "Types/active.png",
+    "pua": "E00D",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "buff": {
+    "kind": "type",
+    "file": "Types/buff.png",
+    "pua": "E00E",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "buffstack": {
+    "kind": "type",
+    "file": "Types/buffstack.png",
+    "pua": "E00F",
+    "aliases": [
+     "buff stack"
+    ],
+    "tint": "auto"
+   },
+   "dark": {
+    "kind": "type",
+    "file": "Types/dark.png",
+    "pua": "E010",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "darkmatter": {
+    "kind": "type",
+    "file": "Types/darkmatter.png",
+    "pua": "E011",
+    "aliases": [
+     "dark matter"
+    ],
+    "tint": "silhouette"
+   },
+   "debuff": {
+    "kind": "type",
+    "file": "Types/debuff.png",
+    "pua": "E012",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "debuffstack": {
+    "kind": "type",
+    "file": "Types/debuffstack.png",
+    "pua": "E013",
+    "aliases": [
+     "debuff stack"
+    ],
+    "tint": "auto"
+   },
+   "debuffupgrade": {
+    "kind": "type",
+    "file": "Types/debuffupgrade.png",
+    "pua": "E014",
+    "aliases": [
+     "debuff upgrade"
+    ],
+    "tint": "auto"
+   },
+   "electric": {
+    "kind": "type",
+    "file": "Types/electric.png",
+    "pua": "E015",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "field": {
+    "kind": "type",
+    "file": "Types/field.png",
+    "pua": "E016",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "fire": {
+    "kind": "type",
+    "file": "Types/fire.png",
+    "pua": "E017",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "ice": {
+    "kind": "type",
+    "file": "Types/ice.png",
+    "pua": "E018",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "light": {
+    "kind": "type",
+    "file": "Types/light.png",
+    "pua": "E019",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "lightshadow": {
+    "kind": "type",
+    "file": "Types/lightshadow.png",
+    "pua": "E01A",
+    "aliases": [
+     "light shadow"
+    ],
+    "tint": "auto"
+   },
+   "machine": {
+    "kind": "type",
+    "file": "Types/machine.png",
+    "pua": "E01B",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "null": {
+    "kind": "type",
+    "file": "Types/null.png",
+    "pua": "E01C",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "panda": {
+    "kind": "type",
+    "file": "Types/panda.png",
+    "pua": "E01D",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "rock": {
+    "kind": "type",
+    "file": "Types/rock.png",
+    "pua": "E01E",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "support": {
+    "kind": "type",
+    "file": "Types/support.png",
+    "pua": "E01F",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "undead": {
+    "kind": "type",
+    "file": "Types/undead.png",
+    "pua": "E020",
+    "aliases": [],
+    "tint": {
+     "mode": "detail",
+     "cut": "dark"
+    }
+   },
+   "unknown": {
+    "kind": "type",
+    "file": "Types/unknown.png",
+    "pua": "E021",
+    "aliases": [],
+    "tint": {
+     "mode": "detail",
+     "cut": "dark"
+    }
+   },
+   "water": {
+    "kind": "type",
+    "file": "Types/water.png",
+    "pua": "E022",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "6star": {
+    "kind": "star",
+    "file": "Types/Stars/6star.png",
+    "pua": "E023",
+    "aliases": [
+     "6 star"
+    ],
+    "tint": "silhouette"
+   },
+   "7star": {
+    "kind": "star",
+    "file": "Types/Stars/7star.png",
+    "pua": "E024",
+    "aliases": [
+     "7 star"
+    ],
+    "tint": "silhouette"
+   },
+   "8star": {
+    "kind": "star",
+    "file": "Types/Stars/8star.png",
+    "pua": "E025",
+    "aliases": [
+     "8 star"
+    ],
+    "tint": "silhouette"
+   },
+   "crystal_star": {
+    "kind": "star",
+    "file": "Types/Stars/Crystal_Star.png",
+    "pua": "E026",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "crystal_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Crystal_Star_PMTTYDNS_icon.png",
+    "pua": "E027",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "diamond_star": {
+    "kind": "star",
+    "file": "Types/Stars/Diamond_Star.png",
+    "pua": "E028",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "diamond_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Diamond_Star_PMTTYDNS_icon.png",
+    "pua": "E029",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "dst_star": {
+    "kind": "star",
+    "file": "Types/Stars/Dst Star.png",
+    "pua": "E02A",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "elden_ring": {
+    "kind": "star",
+    "file": "Types/Stars/Elden Ring.png",
+    "pua": "E02B",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "elden_stars": {
+    "kind": "star",
+    "file": "Types/Stars/Elden Stars.png",
+    "pua": "E02C",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "emerald_star": {
+    "kind": "star",
+    "file": "Types/Stars/Emerald_Star.png",
+    "pua": "E02D",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "emerald_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Emerald_Star_PMTTYDNS_icon.png",
+    "pua": "E02E",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "faith": {
+    "kind": "star",
+    "file": "Types/Stars/Faith.png",
+    "pua": "E02F",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "fallen_star": {
+    "kind": "star",
+    "file": "Types/Stars/Fallen_Star.png",
+    "pua": "E030",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "feather": {
+    "kind": "star",
+    "file": "Types/Stars/Feather.png",
+    "pua": "E031",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "garnet_star": {
+    "kind": "star",
+    "file": "Types/Stars/Garnet_Star.png",
+    "pua": "E032",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "garnet_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Garnet_Star_PMTTYDNS_icon.png",
+    "pua": "E033",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "gold_star": {
+    "kind": "star",
+    "file": "Types/Stars/Gold_Star.png",
+    "pua": "E034",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "gold_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Gold_Star_PMTTYDNS_icon.png",
+    "pua": "E035",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "greed": {
+    "kind": "star",
+    "file": "Types/Stars/Greed.png",
+    "pua": "E036",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "guild_seal": {
+    "kind": "star",
+    "file": "Types/Stars/Guild Seal.png",
+    "pua": "E037",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "hk_star": {
+    "kind": "star",
+    "file": "Types/Stars/Hk star.png",
+    "pua": "E038",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "isaac_no_circle": {
+    "kind": "star",
+    "file": "Types/Stars/Isaac_No_Circle.png",
+    "pua": "E039",
+    "aliases": [
+     "isaac no circle"
+    ],
+    "tint": "silhouette"
+   },
+   "lol_star": {
+    "kind": "star",
+    "file": "Types/Stars/Lol star.png",
+    "pua": "E03A",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "mario_star": {
+    "kind": "star",
+    "file": "Types/Stars/Mario Star.png",
+    "pua": "E03B",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "monkey_d_star": {
+    "kind": "star",
+    "file": "Types/Stars/Monkey_D_Star.png",
+    "pua": "E03C",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "nebula_star": {
+    "kind": "star",
+    "file": "Types/Stars/Nebula Star.png",
+    "pua": "E03D",
+    "aliases": [],
+    "tint": {
+     "mode": "detail",
+     "cut": "dark"
+    }
+   },
+   "nether_star": {
+    "kind": "star",
+    "file": "Types/Stars/Nether_Star.png",
+    "pua": "E03E",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "ninja_star": {
+    "kind": "star",
+    "file": "Types/Stars/Ninja Star.png",
+    "pua": "E03F",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "null_star": {
+    "kind": "star",
+    "file": "Types/Stars/Null Star.png",
+    "pua": "E040",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "omori_star": {
+    "kind": "star",
+    "file": "Types/Stars/Omori star.png",
+    "pua": "E041",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "patrick_star": {
+    "kind": "star",
+    "file": "Types/Stars/Patrick Star.png",
+    "pua": "E042",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "repo_orb": {
+    "kind": "star",
+    "file": "Types/Stars/REPO Orb.png",
+    "pua": "E043",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "ruby_star": {
+    "kind": "star",
+    "file": "Types/Stars/Ruby_Star.png",
+    "pua": "E044",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "ruby_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Ruby_Star_PMTTYDNS_icon.png",
+    "pua": "E045",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "sapphire_star_pmttydns_icon": {
+    "kind": "star",
+    "file": "Types/Stars/Sapphire_Star_PMTTYDNS_icon.png",
+    "pua": "E046",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "sapphire_starold": {
+    "kind": "star",
+    "file": "Types/Stars/Sapphire_Starold.png",
+    "pua": "E047",
+    "aliases": [
+     "sapphire star"
+    ],
+    "tint": "silhouette"
+   },
+   "scrap": {
+    "kind": "star",
+    "file": "Types/Stars/Scrap.png",
+    "pua": "E048",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "silksong_star": {
+    "kind": "star",
+    "file": "Types/Stars/Silksong star.png",
+    "pua": "E049",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "solar_sun": {
+    "kind": "star",
+    "file": "Types/Stars/Solar Sun.png",
+    "pua": "E04A",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "star_of_beth": {
+    "kind": "star",
+    "file": "Types/Stars/Star of beth.png",
+    "pua": "E04B",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "starstorm": {
+    "kind": "star",
+    "file": "Types/Stars/Starstorm.png",
+    "pua": "E04C",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "stuffed_star": {
+    "kind": "star",
+    "file": "Types/Stars/Stuffed_Star.png",
+    "pua": "E04D",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "the_poorly_drawn_barnstar": {
+    "kind": "star",
+    "file": "Types/Stars/The_Poorly_Drawn_Barnstar.png",
+    "pua": "E04E",
+    "aliases": [
+     "poorly drawn barnstar",
+     "barnstar"
+    ],
+    "tint": "auto"
+   },
+   "thunderfury_blessed_blade_of_the_starseeker": {
+    "kind": "star",
+    "file": "Types/Stars/Thunderfury_Blessed_Blade_Of_The_Starseeker.png",
+    "pua": "E04F",
+    "aliases": [
+     "thunderfury"
+    ],
+    "tint": "auto"
+   },
+   "triforce": {
+    "kind": "star",
+    "file": "Types/Stars/Triforce.png",
+    "pua": "E050",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "warpstar": {
+    "kind": "star",
+    "file": "Types/Stars/Warpstar.png",
+    "pua": "E051",
+    "aliases": [
+     "warp star"
+    ],
+    "tint": "auto"
+   },
+   "yinyangultra": {
+    "kind": "star",
+    "file": "Types/Stars/YinYangUltra.png",
+    "pua": "E052",
+    "aliases": [
+     "yin yang ultra",
+     "yin yang"
+    ],
+    "tint": "silhouette"
+   },
+   "bfables": {
+    "kind": "star",
+    "file": "Types/Stars/bFables.png",
+    "pua": "E053",
+    "aliases": [],
+    "tint": {
+     "mode": "detail",
+     "cut": "dark"
+    }
+   },
+   "bgold": {
+    "kind": "star",
+    "file": "Types/Stars/bgold.png",
+    "pua": "E054",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "bronze": {
+    "kind": "star",
+    "file": "Types/Stars/bronze.png",
+    "pua": "E055",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "isaac": {
+    "kind": "star",
+    "file": "Types/Stars/isaac.png",
+    "pua": "E056",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "nuke": {
+    "kind": "star",
+    "file": "Types/Stars/nuke.png",
+    "pua": "E057",
+    "aliases": [],
+    "tint": "auto"
+   },
+   "silver": {
+    "kind": "star",
+    "file": "Types/Stars/silver.png",
+    "pua": "E058",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "star": {
+    "kind": "star",
+    "file": "Types/Stars/star.png",
+    "pua": "E059",
+    "aliases": [],
+    "tint": "silhouette"
+   },
+   "undertale": {
+    "kind": "star",
+    "file": "Types/Stars/undertale.png",
+    "pua": "E05A",
+    "aliases": [],
+    "tint": "auto"
+   }
+  }
+ }
+}

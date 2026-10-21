@@ -1,0 +1,21 @@
+{
+ "alt_names": null,
+ "blob": "52f7566b2a026f83466dae6787f8c394a0f74cf8",
+ "card": {
+  "ability": "(OFS) This creature is inflicted with 1T Plague and 1T2 Smeckeldorfed.\nThe duration for Plague and Smeckeldorfed do not go down on this creature.\nIf this creature is inflicted with Plague, this creature may sneeze when attacking, taking 4 CDMG and inflicting 3T Sickness.",
+  "atk": 7,
+  "def": 6,
+  "hp": 8,
+  "path": "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd",
+  "series": "mario",
+  "spd": 8,
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "rock"
+  ]
+ },
+ "path": "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd",
+ "validator": []
+}

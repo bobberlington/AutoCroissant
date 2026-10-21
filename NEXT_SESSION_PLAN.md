@@ -57,7 +57,7 @@ Step 6 done the same day (user's call): 3.10 removed (`/usr/local/bin/python3.10
 `/usr/local/bin/python3`, `python3-config` and `pip3` now point at 3.14; `/usr/local/openssl-3` kept. Power-cycled with
 `jetson-powercycle cycle` (Shelly plug, 20 s off): ssh back in 75 s, both bots logged in within 90 s of boot, no failed
 units, docker (jellyfin, adguardhome) up; the only boot errors are the usual L4T noise (initramfs magic, lp/ppdev
-modules, imx219 camera probes, nvphs). The build-and-env and run-and-operate skills are refreshed by the Task 4 docs step.
+modules, imx219 camera probes, nvphs). The build-and-env and run-and-operate skills were refreshed by the Task 4 docs step (2026-10-20).
 
 Why: the psd-tools fork (and psd-tools >= 1.20) needs Python >= 3.11; the jetson runs 3.10.19 with psd-tools 1.18.
 Inventory (2026-10-20): `autocroissant.service` and `ojwikibot.service` run `/usr/local/bin/python3.10`; no cron
@@ -247,7 +247,7 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
 - **Subseries** (user, 2026-10-20): a card can have a subseries besides its series (Goombella: series Mario, subseries
   Paper Mario: The Thousand-Year Door). Database-only edit: `subseries` (nullable string) in `Card Edits.json`. Website
   side in progress (filters, search `subseries~`, card page, Stats breakdown, editor field in the database-only group).
-  Bot side after the Task 4 pass lands: `CardInfo.subseries` (+ `to_dict`/`from_dict`), `CardEdits.TYPES/NULLABLE/ATTRS`,
+  Bot side after the Task 4 pass lands: `CardInfo.subseries` (+ `to_dict`), `CardEdits.TYPES/NULLABLE/ATTRS`,
   `prep_dataframes` column, query DSL `subseries==`/`subseries~`, `/query` output "Series · Subseries", `/update_metadata`
   and `/mass_replace` fields, `/export_cards` column, help text, impossibility-cards-reference + docs-and-style updates.
 
@@ -263,6 +263,20 @@ Discord. First prove it on all cards against the JSX batch's output.
 ## Task 4. Deep optimization and refinement pass
 
 BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurrency, tests, docs).
+
+**Status (2026-10-20): done** (one commit on main; numbers in BUGS §2.5, audits in `~/Documents/ac-optimization/`).
+- Tests: `tests/` (220 offline tests, 38 parser goldens, `requirements-dev.txt`); run with
+  `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` before every push.
+- Robustness: B4, B5, B7, C1-C3, C5, C6 fixed; `/list_guild_members` removed (50 commands); the queue loops survive a bad
+  item; git network calls time out after 120 s; temp files always removed.
+- Network and speed: 1 commit request per changed card, lookups beside downloads, one tree fetch shared by the card list and
+  the emoji listing, fuzzy ability search x18, lazy cv2/yt_dlp/PyGithub; outputs identical (813 cards, 0 differences).
+- Code health: `psd_analyzer.py` split into `card_models` / `card_edits` / `psd_parser` / `repo_traverser` behind the
+  `psd_analyzer` facade (pickles unchanged), `github_api.py`, repo paths in `global_config.py`; 11 compiled modules, so a
+  deploy MUST rebuild (`setup.py build_ext --inplace`).
+- Docs: help.py and describe strings match all 50 commands; skills' line references and module map refreshed.
+- Open (owner decisions or later): B8 (deletion alone doesn't prune), B9 (blob 5xx still records the tree ETag),
+  B10 (atomic pickle saves + lock), the 1 s queue tick, one message per search result, admin gates on /purge etc.
 
 ## Order
 

@@ -1,0 +1,22 @@
+{
+ "alt_names": null,
+ "blob": "7adf506f84d455c628be1f9bf89888a30fdffadf",
+ "card": {
+  "ability": "",
+  "atk": 6,
+  "def": 2,
+  "hp": 5,
+  "path": "Auxiliary/Minions/Anubisath_Guardian.psd",
+  "spd": 4,
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "minion",
+  "types": [
+   "offensive_minion"
+  ]
+ },
+ "path": "Auxiliary/Minions/Anubisath_Guardian.psd",
+ "validator": [
+  "ABILITY TEXT NOT FOUND"
+ ]
+}

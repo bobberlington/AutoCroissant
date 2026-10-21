@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: Load this skill for anything on the TTSCardMaker side of the project (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, "[fire]" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1PGT), (OYT), (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, share links /c/<slug>/, Open Graph previews, "the website is stale", missing fonts, font audit, "Photoshop says fonts are missing", Photoshop scripting, JSX, ExtendScript, ActionManager, `open -a "Adobe Photoshop 2023"`, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on "Blazing"), overlay text layers, effect layers "Ability FX: …", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, PSUserConfig WarnRunningScripts, and the MDW folder's .asl/.aco/templates. Contains the font's token and badge grammar, manifest schema, codepoint rules, rebuild/install checklist, tested Photoshop/CoreText renderer facts, a font-vs-parser-vs-emoji-vs-website matching table, a cross-repo "what breaks if you rename an icon" table, the website's data flow, workflow, Pages setup, local preview and feature-to-file map, the 25-font missing-fonts audit with where to get each, Photoshop automation recipes and pitfalls, and the status of the PSD migration prototype.
+description: Load this skill for anything on the TTSCardMaker side of the project (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, "[fire]" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1PGT), (OYT), (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, share links /c/<slug>/, Open Graph previews, "the website is stale", missing fonts, font audit, "Photoshop says fonts are missing", Photoshop scripting, JSX, ExtendScript, ActionManager, `open -a "Adobe Photoshop 2023"`, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on "Blazing"), overlay text layers, effect layers "Ability FX: …", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, PSUserConfig WarnRunningScripts, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status.
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -14,7 +14,7 @@ home. Committed and pushed to TTSCardMaker `main`: 54278c1 (stoogedings font + `
 scripts, missing card fonts), c3e9f66 (effect layers), 3ef3776 (`site/`, `.github/workflows/site.yml`,
 `MDW/Card Authors.txt`), then 81ca0ea..027fd0d (site features). The site is live (§2).
 
-The parser side of tokens (how `psd_analyzer.py` reads a layer set in the font, plus the four new problems) is owned
+The parser side of tokens (how `psd_parser.py` reads a layer set in the font, plus the four new problems) is owned
 by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 ---
@@ -34,7 +34,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
-| Bot code that depends on the font | AutoCroissant `commands/psd_analyzer.py` (`ICON_FONT_PREFIX`, `ICON_MANIFEST_PATH`, `IconVocabulary`), `commands/type_emojis.py` | See §1.7 |
+| Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
 | Card authors file | `MDW/Card Authors.txt`: `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
@@ -188,7 +188,7 @@ same spellings; the website is still more lenient:
 | Consumer | Normalization | Aliases | Notes |
 |---|---|---|---|
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
-| AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_analyzer.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant` | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
+| AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant` | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
 | Website, `norm()` in build_site.py:99 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
@@ -352,7 +352,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   names/notes; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
 - **Website edits:** `MDW/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
   triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
-  `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (psd_analyzer.py).
+  `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (card_edits.py).
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.
@@ -609,7 +609,7 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 |---|---|
 | How the parser reads font tokens, canonical forms, the four ICON problems, gap injection | impossibility-cards-reference (§4.1, §4) |
 | Values and defaults of `ICON_FONT_PREFIX`, `ICON_MANIFEST_PATH`, `ICON_VARIANTS`, and the type_emojis constants | autocroissant-config-and-flags |
-| Running `/update_stats`, `/push`, `/sync_emojis`, reminders such as the weekly emoji sync | autocroissant-run-and-operate |
+| Running `/update_stats`, `/push`, `/sync_emojis`, reminders | autocroissant-run-and-operate |
 | Gating a pickle push (now also a website publish) | autocroissant-change-control |
 | Proving a parser change is neutral (old-vs-new parser over all PSDs, sandboxed sweep) | autocroissant-validation-and-qa |
 | Discord-side symptoms (emojis not rendering, command missing) | autocroissant-debugging-playbook |
@@ -640,8 +640,8 @@ grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)
 curl -sI https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/stats.pkl | head -1
 # AutoCroissant side (run in ~/Desktop/AutoCroissant)
-grep -n "^ICON_FONT_PREFIX\|^ICON_MANIFEST_PATH" commands/psd_analyzer.py      # 54, 55
-grep -n "^MAX_NAME_LEN\|^NO_SUFFIX\|^ICON_FOLDERS" commands/type_emojis.py     # 19, 21, 20
+grep -n "^ICON_FONT_PREFIX" commands/psd_parser.py; grep -n "^ICON_MANIFEST_PATH" global_config.py   # 28, 24 (split 2026-10-20)
+grep -n "^MAX_NAME_LEN\|^NO_SUFFIX\|^ICON_FOLDERS" commands/type_emojis.py     # 22, 24, 23
 # Missing-font audit inputs still present? (scratch; may be gone after reboot)
 ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps/convert_demo.jsx
 ```

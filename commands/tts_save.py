@@ -17,7 +17,7 @@ from base64 import b64encode
 from copy import deepcopy
 from datetime import datetime
 from json import dumps, load, loads
-from os import environ, replace
+from os import environ, remove, replace
 from os.path import basename, dirname, exists, expanduser, join, splitext
 from re import DOTALL, IGNORECASE, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
@@ -31,23 +31,21 @@ from urllib.parse import quote, unquote
 
 from requests import RequestException, get, request
 
-try:
-    import config
-except ImportError:                                 # standalone use without the bot's config.py
-    config = None
 import commands.repo_history as repo_history
-from commands.repo_history import REPOSITORY, raw_url, refresh
-from global_config import HISTORY_CLONE, LOCAL_DIR_LOC, SITE_URL, TTS_SAVE_PATH
+from commands.card_edits import CardAuthors
+from commands.card_models import card_name as _stem
+from commands.github_api import GIT_TOKEN
+from commands.repo_history import pinned_ref, refresh
+from global_config import (API_BASE, CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE,
+                           RULES_PATH, SITE_URL, TTS_SAVE_PATH)
 
 # ========================
 # Configuration
 # ========================
-RAW = f"https://raw.githubusercontent.com/{REPOSITORY}/"
-LINK = regex(escape(RAW) + r"(refs/heads/main|main|[0-9a-f]{7,40})/([^\s\"\\<>]+)")
-MAIN_REFS = ("main", "refs/heads/main")
+RAW = f"{RAW_BASE}{CARD_REPO}/"
+MAIN_REFS = (CARD_BRANCH, f"refs/heads/{CARD_BRANCH}")
+LINK = regex(escape(RAW) + f"({escape(MAIN_REFS[1])}|{escape(MAIN_REFS[0])}|" + r"[0-9a-f]{7,40})/([^\s\"\\<>]+)")
 URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (GitHub raw style; spaces are %20)
-RULES_PATH = "TTS/decks.json"
-EDITS_PATH = "MDW/Card Edits.json"           # website renames (they win)
 SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/")   # page and marker cards keep their Nicknames
@@ -63,14 +61,13 @@ KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "n
               "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
 GIT_TIMEOUT = 300
 HTTP_TIMEOUT = 30
-GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
-API = f"https://api.github.com/repos/{REPOSITORY}/"
+API = f"{API_BASE}{CARD_REPO}/"
 API_TIMEOUT = 120                                   # the save is 5.5 MB (7.4 MB as base64)
 COMMIT_TRIES = 3                                    # main moved meanwhile: redo the update on the new save
 CONFLICT = (409, 422)                               # ref update refused (not a fast forward)
 LAG_PAUSE = 10                                      # s before retrying a history clone behind main
 REPORT_FILE = "tts_save_report.md"
-PUSH_URL = f"git@github.com:{REPOSITORY}.git"       # git fallback: pushed with the service's SSH agent
+PUSH_URL = f"git@github.com:{CARD_REPO}.git"       # git fallback: pushed with the service's SSH agent
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissant@gmail.com",
                 "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "autocroissant@gmail.com"}  # as PICKLE commits
 IMAGES = (".png", ".jpg", ".jpeg")                  # files the save links to
@@ -80,6 +77,10 @@ IMAGES = (".png", ".jpg", ".jpeg")                  # files the save links to
 # ========================
 _lock = Lock()                                      # one run at a time
 _retry = True                                       # the next automatic run runs regardless (failed, or restarted)
+_cant_write = False                                 # POST git/blobs got a 403: commit over SSH until a restart
+_objects: dict = {}                                 # git object sha -> tree entries / blob bytes (immutable)
+_used: set = set()                                  # shas read this run; older ones are dropped
+_site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
 _watched: Optional[dict] = None                     # watched files of the last tree save_affected saw
 
 
@@ -106,16 +107,6 @@ def _ls_tree(where: str, commit: str, paths: list = ()) -> dict:
 
 def _encode(path: str) -> str:
     return quote(path, safe=URL_SAFE)
-
-
-def _stem(path: str) -> str:
-    """File stem with underscores as spaces."""
-    return splitext(basename(path))[0].replace("_", " ")
-
-
-def _card_key(name: str) -> str:
-    """Card Edits.json key: case-insensitive, _ = space, whitespace collapsed (as build_site.py)."""
-    return " ".join((name or "").replace("_", " ").lower().split())
 
 
 def _norm(text: str) -> str:
@@ -221,8 +212,8 @@ class _Repo:
         self.source = ""
         try:
             if exists(self.clone):
-                self.head = _git(self.clone, "rev-parse", "main").decode().strip()
-                self.tree, self.source = _ls_tree(self.clone, "main"), "the history clone"
+                self.head = _git(self.clone, "rev-parse", CARD_BRANCH).decode().strip()
+                self.tree, self.source = _ls_tree(self.clone, CARD_BRANCH), "the history clone"
             elif exists(join(self.checkout, ".git")):
                 self.head = _git(self.checkout, "rev-parse", "HEAD").decode().strip()
                 self.tree, self.source = _ls_tree(self.checkout, "HEAD"), "the checkout"
@@ -242,11 +233,10 @@ class _Repo:
     def sha(self, path: str):
         """Commit that last changed path, or None when history doesn't know it."""
         blob = self.tree.get(path)
-        ref = raw_url(REPOSITORY, path, blob)[len(RAW):].split("/", 1)[0] if blob else "main"
-        return None if ref == "main" else ref
+        return pinned_ref(CARD_REPO, path, blob) if blob else None
 
     def url(self, path: str) -> str:
-        return f"{RAW}{self.sha(path) or 'main'}/{_encode(path)}"
+        return f"{RAW}{self.sha(path) or CARD_BRANCH}/{_encode(path)}"
 
     def blobs_at(self, sha: str, paths: list) -> dict:
         """{path: blob} at an older commit (None: not there, or the commit is unknown)."""
@@ -277,7 +267,7 @@ class _Repo:
             return found
         try:
             left = set(paths)
-            for commit in _git(self.clone, "rev-list", "--topo-order", "main").decode().split():
+            for commit in _git(self.clone, "rev-list", "--topo-order", CARD_BRANCH).decode().split():
                 if not left:
                     break
                 for path, blob in _ls_tree(self.clone, commit, sorted(left)).items():
@@ -293,6 +283,7 @@ class _Names:
 
     def __init__(self, repo: _Repo, errors: list, edits: Optional[tuple] = None):
         """edits: (main's Card Edits.json text or None,) for bot runs: the checkout is then not read."""
+        global _site
         local = edits is None
         edits = edits[0] if edits else None
         self.repo = repo
@@ -300,9 +291,16 @@ class _Names:
         self.edits: dict = {}
         self.source = "file stems"
         try:
-            reply = get(f"{SITE_URL}/data/cards.json", timeout=HTTP_TIMEOUT)
-            reply.raise_for_status()
-            cards, self.source = reply.json()["cards"], "the card browser"
+            etag, known = _site
+            reply = get(f"{SITE_URL}/data/cards.json", timeout=HTTP_TIMEOUT,
+                        headers={"If-None-Match": etag} if etag and known is not None else {})
+            if reply.status_code == 304 and known is not None:     # unchanged since the last run
+                cards = known
+            else:
+                reply.raise_for_status()
+                cards = reply.json()["cards"]
+                _site = (reply.headers.get("ETag", ""), cards)
+            self.source = "the card browser"
         except Exception as e:
             cards = []
             try:
@@ -319,7 +317,7 @@ class _Names:
                 with open(join(repo.checkout, EDITS_PATH), encoding="utf-8") as f:
                     edits = f.read()
             if edits is not None:
-                self.edits = {_card_key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
+                self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
             pass
 
@@ -329,7 +327,7 @@ class _Names:
 
     def known(self, path: str):
         """The website's name for the image (Card Edits.json first), or None when it has none."""
-        found = self.edits.get(_card_key(self._stem(path)))
+        found = self.edits.get(CardAuthors.key(self._stem(path)))
         if found and isinstance(found.get("name"), str) and found["name"].strip():
             return found["name"]
         return self.site.get(path)
@@ -409,7 +407,7 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
         path = unquote(enc)
         if path in rename:
             new = rename[path]
-            changes[(ref, enc)] = (repo.sha(new) or "main", _encode(new))
+            changes[(ref, enc)] = (repo.sha(new) or CARD_BRANCH, _encode(new))
             if repo.sha(new) is None:
                 report.unpinned.add(new)
             report.renamed[path] = (new, report.renamed.get(path, (new, 0))[1] + n)
@@ -608,7 +606,7 @@ def _load_rules(repo: _Repo, errors: list, given: Optional[tuple] = None):
         if exists(local):
             with open(local, encoding="utf-8") as f:
                 return load(f), "the checkout"
-        reply = get(f"{RAW}main/{_encode(RULES_PATH)}", timeout=HTTP_TIMEOUT)
+        reply = get(f"{RAW}{CARD_BRANCH}/{_encode(RULES_PATH)}", timeout=HTTP_TIMEOUT)
         reply.raise_for_status()
         return reply.json(), "GitHub"
     except (OSError, ValueError) as e:
@@ -682,9 +680,13 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
         if extras:
             with open(backup, "wb") as f:
                 f.write(raw)
-        with open(f"{save_path}.tmp", "wb") as f:
-            f.write(out)
-        replace(f"{save_path}.tmp", save_path)
+        try:
+            with open(f"{save_path}.tmp", "wb") as f:
+                f.write(out)
+            replace(f"{save_path}.tmp", save_path)
+        finally:
+            if exists(f"{save_path}.tmp"):
+                remove(f"{save_path}.tmp")
     kept = f"; backup `{basename(backup)}`" if extras else ""
     head = [f"- Save: `{basename(save_path)}` ({len(raw):,} bytes): "
             + (f"updated ({len(out):,} bytes{kept})" if report.changed else "unchanged"),
@@ -746,6 +748,14 @@ def _check(reply, method: str, path: str) -> None:
         raise RuntimeError(f"{_status(reply)} (on {method} {path})")
 
 
+def _object(sha: str, fetch: Callable[[], object]):
+    """A git object by sha, fetched once (a sha's content never changes); kept while runs keep reading it."""
+    if sha not in _objects:
+        _objects[sha] = fetch()
+    _used.add(sha)
+    return _objects[sha]
+
+
 def _files_at(tree: str, paths: tuple) -> dict:
     """{path: (mode, blob sha)} of the given paths in a git tree (one small request per folder level)."""
     listed: dict = {}                                   # folder -> {name: entry}
@@ -763,7 +773,7 @@ def _files_at(tree: str, paths: tuple) -> dict:
                     entries = {}
                     break
                 if sha not in trees:
-                    trees[sha] = {e["path"]: e for e in _api("GET", f"git/trees/{sha}").json().get("tree", [])}
+                    trees[sha] = _object(sha, lambda: {e["path"]: e for e in _api("GET", f"git/trees/{sha}").json().get("tree", [])})
                 entries = trees[sha]
             listed[folder] = entries
         entry = listed[folder].get(basename(path))
@@ -818,7 +828,7 @@ def _git_commit(head: str, data: bytes, message: str) -> Optional[str]:
                    env=env).decode().strip()
     commit = _git(clone, "commit-tree", sha, "-p", head, "-m", message, env=env).decode().strip()
     # --no-thin: a thin pack would fetch the old save blob as its delta base
-    push = run(["git", "-C", clone, "push", "--porcelain", "--no-thin", PUSH_URL, f"{commit}:refs/heads/main"],
+    push = run(["git", "-C", clone, "push", "--porcelain", "--no-thin", PUSH_URL, f"{commit}:{MAIN_REFS[1]}"],
                capture_output=True, timeout=GIT_TIMEOUT, env=env)
     if push.returncode:
         out = push.stdout.decode("utf-8", "replace")
@@ -833,12 +843,8 @@ def _git_commit(head: str, data: bytes, message: str) -> Optional[str]:
 
 def _say(interaction, text: str) -> None:
     """A message to the interaction, or the terminal without one."""
-    from commands.utils import queue_message, split_long_message  # lazy: standalone use needs no Discord
-    if interaction is None:
-        print(text)
-        return
-    for chunk in split_long_message(text):
-        queue_message(interaction, chunk)
+    from commands.utils import say  # lazy: standalone use needs no Discord
+    say(interaction, text)
 
 
 def _summary(text: str) -> str:
@@ -856,7 +862,7 @@ def _post(interaction, text: str, sha: Optional[str]) -> None:
     from io import BytesIO
     from discord import File
     from commands.utils import queue_file, queue_message, split_long_message  # lazy: standalone use needs no Discord
-    link = f"{RAW}{sha or 'main'}/{_encode(TTS_SAVE_PATH)}"
+    link = f"{RAW}{sha or CARD_BRANCH}/{_encode(TTS_SAVE_PATH)}"
     if interaction is None:
         print(text)
         print(link)
@@ -886,6 +892,11 @@ def update_save(save_path: str) -> str:
     return _update(save_path)[0]
 
 
+def _blob(sha: str) -> bytes:
+    """A blob's bytes from the card repo, by sha."""
+    return _object(sha, lambda: _api("GET", f"git/blobs/{sha}", raw=True).content)
+
+
 def update_repo_save() -> tuple:
     """
     Update the save on the card repo's main and commit it through the GitHub API (blocking; one run at a time);
@@ -896,21 +907,24 @@ def update_repo_save() -> tuple:
     Returns:
         (markdown report, sha of the new commit, or None when nothing changed)
     """
+    global _cant_write
     with _lock, TemporaryDirectory(prefix="tts_save_") as tmp:
+        for sha in set(_objects) - _used:               # only the last run's objects stay cached
+            del _objects[sha]
+        _used.clear()
         save_path = join(tmp, basename(TTS_SAVE_PATH))
         why = "main kept moving"
-        via_git = False
+        via_git = _cant_write
         for attempt in range(COMMIT_TRIES):
-            head = _api("GET", "git/ref/heads/main").json()["object"]["sha"]
+            head = _api("GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"]
             base = _api("GET", f"git/commits/{head}").json()["tree"]["sha"]
             files = _files_at(base, (TTS_SAVE_PATH, RULES_PATH, EDITS_PATH))
             if TTS_SAVE_PATH not in files:
                 raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main")
             mode, old_blob = files[TTS_SAVE_PATH]
             with open(save_path, "wb") as f:
-                f.write(_api("GET", f"git/blobs/{old_blob}", raw=True).content)
-            rules, edits = (_api("GET", f"git/blobs/{files[p][1]}", raw=True).content.decode("utf-8")
-                            if p in files else None for p in (RULES_PATH, EDITS_PATH))
+                f.write(_blob(old_blob))
+            rules, edits = (_blob(files[p][1]).decode("utf-8") if p in files else None for p in (RULES_PATH, EDITS_PATH))
             text, report = _update(save_path, (rules, f"main `{head[:8]}`"), extras=False, edits=(edits,))
             if head != report.head or head != repo_history._head:   # pins from main's head, even for "no changes"
                 why = (f"the history clone is at `{report.head[:8] or 'nothing'}` (links map at "
@@ -926,6 +940,9 @@ def update_repo_save() -> tuple:
                 reply = _api("POST", "git/blobs", check=False,
                              json={"content": b64encode(data).decode("ascii"), "encoding": "base64"})
                 via_git = reply.status_code == 403      # token can't write: git over SSH
+                limited = (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
+                           or "rate limit" in reply.text.lower())   # a secondary limit may send no header
+                _cant_write = via_git and not limited   # a rate limit is only this run's
                 if not via_git:
                     _check(reply, "POST", "git/blobs")
             if not GIT_TOKEN or via_git:
@@ -944,13 +961,13 @@ def update_repo_save() -> tuple:
             commit = _api("POST", "git/commits", json={"message": _commit_message(report), "tree": tree,
                                                        "parents": [head]}).json()["sha"]
             try:
-                reply = _api("PATCH", "git/refs/heads/main", check=False, json={"sha": commit, "force": False})
+                reply = _api("PATCH", f"git/{MAIN_REFS[1]}", check=False, json={"sha": commit, "force": False})
             except RequestException:                    # no reply: the ref may have moved anyway
-                if _api("GET", "git/ref/heads/main").json()["object"]["sha"] != commit:
+                if _api("GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"] != commit:
                     raise
                 return text, commit
             if reply.status_code not in CONFLICT:
-                _check(reply, "PATCH", "git/refs/heads/main")
+                _check(reply, "PATCH", f"git/{MAIN_REFS[1]}")
                 return text, commit
             why = f"main kept moving ({_status(reply)})"
         raise RuntimeError(f"{why}: the save was not committed after {COMMIT_TRIES} tries")
@@ -973,13 +990,13 @@ def save_affected(repository: str, shas: dict) -> bool:
     After /update_stats fetched a changed tree: does the save need a run?
 
     Args:
-        repository: The repo /update_stats read (the save lives only in REPOSITORY)
+        repository: The repo /update_stats read (the save lives only in CARD_REPO)
         shas: {path: blob sha} of the new tree (compared with the last tree given here)
 
     Returns:
         True when an image, the rules, Card Edits.json or the save changed, or the run is owed (_retry)
     """
-    if repository != REPOSITORY:
+    if repository != CARD_REPO:
         return False
     global _watched
     watched = {p: s for p, s in shas.items() if p.lower().endswith(IMAGES) or p in (RULES_PATH, EDITS_PATH, TTS_SAVE_PATH)}

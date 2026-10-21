@@ -1,0 +1,17 @@
+{
+ "alt_names": null,
+ "blob": "7f54ccd25e133fdadddcb8bf92a77081ed464fab",
+ "card": {
+  "ability": "Purchase Cost: 2 Points\nDouble/upgrade all stackable/upgradable status effects on a creature.",
+  "path": "N.M.E/Jera.psd",
+  "stars": 2,
+  "timestamp": 0.0,
+  "type": "nme",
+  "types": [
+   "support",
+   "nme"
+  ]
+ },
+ "path": "N.M.E/Jera.psd",
+ "validator": []
+}

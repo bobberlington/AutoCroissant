@@ -14,7 +14,7 @@ BEFORE you run the measurement.** Every recipe below follows that bar and ends w
 that was actually executed against this repo on 2026-07-11 — the outputs shown are real, not
 illustrative.
 
-Why this matters here specifically: this repo has NO tests and NO CI, the pickles ARE the database,
+Why this matters here specifically: this repo has NO CI and only an offline pytest suite (`tests/`), the pickles ARE the database,
 and history contains commits whose messages are jokes ("am forehead") and commits whose messages
 look routine but ballooned the database ("PICKLE"). Pattern-matching on names, messages, or vibes
 has burned this project repeatedly; the recipes below are the antidote.
@@ -25,8 +25,8 @@ has burned this project repeatedly; the recipes below are the antidote.
   add/commit/checkout/reset), never run the bot (`python3 main.py`), never call `update_stats()`,
   never write any pickle in the repo. Snapshots you extract go to `/tmp` or a scratch dir.
 - `config.py` (repo root) is SECRET (tokens). Import chains read it; never print its values.
-- Anything that imports bot modules (the diagnostics scripts, the pickle one-liners) prints a
-  token-presence line on import. Append `2>&1 | grep -v "Git token"` to keep output clean.
+- Since 2026-10-20 only main.py prints the token-presence line; importing the card modules prints
+  nothing, so the `2>&1 | grep -v "Git token"` filters below are harmless leftovers.
 - The diagnostics scripts live in
   `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/` and are read-only and safe.
   **Pass card PSDs by full path** (e.g. `~/Desktop/TTSCardMaker/...`): the scripts resolve relative
@@ -76,7 +76,7 @@ need to know WHICH stage of the parse diverged — not just that it did.
    `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/Desktop/TTSCardMaker/"<path>.psd"`.
    It prints six numbered stages — [1] types collected above the midline, [2] raw ability text
    layers with bboxes, [3] joined text with `<GAP:n>` markers (gap regex `\s{3,}`,
-   psd_analyzer.py:686), [4] below-midline icons, sort order, and the prune decision
+   psd_parser.py:318), [4] below-midline icons, sort order, and the prune decision
    (`max(last_y//3, card_mid_y)`), [5] gap count vs kept types, [6] final injected text.
 3. **Localize the divergent stage**: compare each stage against what the card art shows. The first
    stage whose numbers disagree with the card is where the mechanism lives.
@@ -124,10 +124,10 @@ including a leaked `.ds_store` entry; since the 2026-10-19 dotfile fix it prints
 
 | Signature | What you see | Mechanism it points to |
 |---|---|---|
-| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_analyzer.py:772) and/or `ABILITY TEXT NOT FOUND` (validator, :1307) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
+| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:404) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:939) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
 | Icon above midline | The icon appears in `[1]`, not `[4]`; the gap in `[3]` stays unfilled | Icon y < 1200 → it's classified as a creature type, never an injection candidate. TYPE_REGION_RATIO=0.5 is deliberate — do NOT "fix" by injecting top-half icons (fenced off in autocroissant-psd-extraction-campaign) |
-| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_analyzer.py:1244-1248) — the classic "types stuck at the end of the ability" symptom |
-| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_analyzer.py:1146) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
+| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:876-880) — the classic "types stuck at the end of the ability" symptom |
+| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:778) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
 
 **Conclusive result:** you can name the stage ([1]–[6]), state the mechanism in one sentence, it
 predicts the exact stored (wrong) text AND the healthy cards' correctness, and parse_one reproduces
@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, psd_analyzer.py:1827 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:477 as of 2026-10-20; until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -283,14 +283,14 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
 - `git show 4e03190` — message: **"am forehead"** (same day, 17:43, twenty minutes later). Looks
   like a junk commit. The diff is the actual fix: every `return ..., num_updated` becomes
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
-  content-changed cards, so the gate finally does its job. (On 2026-10-20 `if num_new > 0:`
-  (psd_analyzer.py:1868) gates the prune; the save gate is `if num_new > 0 or traverser.changed:` (:1870).)
+  content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is `num_changed`: `if num_changed > 0:` gates the prune
+  and `if num_changed > 0 or traverser.changed:` the save, in `update_stats`, commands/repo_traverser.py.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
-- Bonus name-lie inside the same loop: at HEAD, `num_new` ALSO counts re-parsed existing cards
-  (the `else: num_new += 1` at psd_analyzer.py:1678, including `cards:`/`force_update` re-parses) —
-  it is "new + re-parsed", not "new" (and `_process_files_from_response` returns
-  `num_new + num_moved`, :1704). Only the increment sites tell you that.
+- Bonus name-lie inside the same loop (renamed 2026-10-20): until then `num_new` ALSO counted re-parsed existing
+  cards (the `else: num_new += 1`, including `cards:`/`force_update` re-parses) — "new + re-parsed", not "new" — and
+  `_process_files_from_response` returned `num_new + num_moved`. Only the increment sites told you that. The counter is
+  now `num_changed` (commands/repo_traverser.py).
 
 **Conclusive result:** you can name the introducing (and, if applicable, removing) commit, quote
 the exact changed line from `git show <hash>:<file>`, and your story survives reading the
@@ -317,34 +317,33 @@ autocroissant-run-and-operate.)
    find ~/Desktop/TTSCardMaker -name '*.psd' | grep -vcE '/(Markers|MDW)/'# 813 (processed — equals stats.pkl entry count)
    ```
 
-2. **Read the loop and tag every network call** (`commands/psd_analyzer.py`, verified 2026-10-20):
-   - `traverse_remote` — one `get(...git/trees/main?recursive=1)` (:1462), sent with If-None-Match
-     unless `force_update` or `cards:` is set. A 304 ends the run (:1463-1466). The ETag
-     (`_tree_etags`) and the small-file cache (`_file_cache`, :36-37) live in memory only, so the
+2. **Read the loop and tag every network call** (`commands/repo_traverser.py`, verified 2026-10-20 after the split):
+   - `traverse_remote` — one tree GET (`fetch_tree`, :164), sent with If-None-Match
+     unless `force_update` or `cards:` is set. A 304 ends the run (:165). The ETag
+     (`_tree_etags`, :42) and the small-file cache (`_file_cache`, :43) live in memory only, so the
      first sweep after a restart always gets a 200.
-   - Small files (icon manifest, authors, edits; :1517, :1528, :1553) — one git/blobs request
+   - Small files (icon manifest, authors, edits; `_repo_text`, :118-126) — one git/blobs request
      each, only when its blob sha changed or the bot restarted: **up to 3**.
    - Changed cards are found by comparing tree blob shas with `card.blob_sha` (`_psd_changed`,
-     :1379) — **no request per unchanged card**. `get_repo` is lazy (`_repo()`, :1407): 1 request,
-     only if some card changed.
-   - Per CHANGED card: the PSD blob from api.github.com git/blobs (:1412/:1432, uses quota) +
-     `get_commits(path=)` (:1719) on a `per_page=1` client, where `totalCount` and `commits[0]` are
-     a request each: **3 requests**. New or authorless cards also index the oldest commit
-     (`commits[totalCount-1]`), which walks every page: **+ about (commits − 1)**.
-   - Legacy cards with no `blob_sha` (one-time): `_committed_since_update` (:1393-1402) costs 1
+     :74) — **no request per unchanged card**. The PyGithub repo is lazy (`_repo()`, :100-107): 0 requests.
+   - Per CHANGED card: the PSD blob from api.github.com git/blobs (`_download`, :128) + one commit page
+     (`_commit_page`, :109-112; per_page=100, run in a 2-thread pool beside the downloads) that holds the
+     newest commit and, for a new or authorless card, the first: **2 requests**. A file with 100+ commits
+     adds one (`.reversed[0]`, :427). Before 2026-10-20 it was 3 requests plus (commits − 1) for a new card.
+   - Legacy cards with no `blob_sha` (one-time): `_committed_since_update` (:88-98) costs 1
      `get_repo` + the `get_commits(since=)` pages + 1 request per commit for `.files`.
-   - Before 2026-10-20 every sweep called `get_commits(path=)` for every PSD: ≈815 requests even
+   - Before 2026-10-20 (blob shas) every sweep called `get_commits(path=)` for every PSD: ≈815 requests even
      when nothing changed.
 
 3. **Do the arithmetic against the limits.** The code prints its own reminder
-   (psd_analyzer.py:543-545): 60 req/hr anonymous, 5000 req/hr with a token.
+   (github_api.py:24-27, `print_token_status`): 60 req/hr anonymous, 5000 req/hr with a token.
 
    | Sweep | Requests | Verdict |
    |---|---|---|
    | Nothing changed | 1 (a 304; free with a token) | Trivial |
    | First after a restart, nothing changed | 1 + 3 = 4 | Trivial |
-   | k changed cards | 1 + ≤3 + 1 + 3k (+ commits − 1 per new/authorless card) | Anonymous: about 18 cards per hour; with a token, no practical limit |
-   | `force_update` | ≈ 3 × 813 + 5 ≈ 2,450 | About half the hourly budget with a token; impossible without one |
+   | k changed cards | 1 + ≤3 + 2k (+1 per new/authorless card with 100+ commits) | Anonymous: about 28 cards per hour; with a token, no practical limit |
+   | `force_update` | ≈ 2 × 813 + 5 ≈ 1,630 (≈ 2,450 before 2026-10-20) | About a third of the hourly budget with a token; impossible without one |
 
 **Conclusive result:** a predicted request count derived from the loop, checked against the input
 count, BEFORE anything runs — and the prediction is falsifiable (if a sweep rate-limits earlier
@@ -359,7 +358,7 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:749-803; queue helpers commands/utils.py:26-61): three module-level
+**The mechanism** (verify at main.py:742-875; queue helpers commands/utils.py:25-60): three module-level
 deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=1)`
 coroutine. Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
@@ -370,13 +369,19 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Path | Hops | Queue-added latency |
 |---|---|---|
 | Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 1s (avg ~0.5s) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:111-114, music chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:117-121, music chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
 
 Two structural caveats, both visible in the code: (a) `process_command_queue` re-enqueues
-`check_reminder` at the top of every tick (main.py:751 as of 2026-10-20) and pops it in the same tick — reminders
+`check_reminder` at the top of every tick (main.py:840 as of 2026-10-20) and pops it in the same tick — reminders
 are checked every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:759-786 as of 2026-10-20), so one slow Discord HTTP call
+loop awaits each send SEQUENTIALLY inside the tick (main.py:852-861 as of 2026-10-20), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
+
+**Measured 2026-10-20** (Mac, sandbox; `/Users/michaelsrouji/Documents/ac-optimization/profile.md`, bench scripts in
+`.../ac-optimization/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
+the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An ability query queues one message per
+result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop. Both are open
+owner decisions (BUGS_AND_IMPROVEMENTS §2.5); idle cost of the 1 s loops is 0.33 ms CPU/s.
 
 **The diagnostic implication (the point of the recipe):** the queues can contribute at most ~2
 seconds. **Any "hang" over ~3 seconds is thread work (the worker function itself) or Discord I/O
@@ -387,7 +392,7 @@ autocroissant-debugging-playbook), never queue scheduling.** Don't investigate t
 **Conclusive result:** you state the expected latency for the exact path the command took (≤1s or
 ≤2s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:749-803.
+main.py:742-875.
 
 ---
 
@@ -396,9 +401,9 @@ main.py:749-803.
 **When to reach for it:** any question about what's IN a pickle, how it changed across history, or
 whether a snapshot is damaged — answered with standalone reads, never by running the bot.
 
-**Mechanics.** `stats.pkl` values are `CardInfo` dataclass instances defined in
-`commands/psd_analyzer.py`, so unpickling needs (a) the repo root on `sys.path` and (b) `config.py`
-present (the import chain reads it and prints the token-presence noise line — hence the grep).
+**Mechanics.** `stats.pkl` values are `CardInfo` dataclass instances pickled as
+`commands.psd_analyzer.CardInfo` (defined in `commands/card_models.py` since 2026-10-20, `__module__` pinned), so unpickling needs (a) the repo root on `sys.path` and (b) `config.py`
+present (the import chain reads it; since 2026-10-20 it prints nothing, so the grep is a harmless leftover).
 Load pattern used throughout:
 
 ```bash
@@ -440,7 +445,7 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(psd_analyzer.py:1673-1674), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(repo_traverser.py:370-371), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -489,30 +494,30 @@ unchanged cards were archived in one sweep" is.
 
 Everything above was verified on 2026-07-11 against working tree + git history (repo at 192
 commits, branch `main`). On 2026-10-20 the rows below that cite code were re-pointed to that day's
-line numbers (HEAD 9fb3093); the worked examples' OUTPUTS are still the
+line numbers (HEAD 9fb3093), and again after that day's optimization pass; the worked examples' OUTPUTS are still the
 2026-07-11 measurements. Volatile facts and their one-line re-checks:
 
 | Fact | Re-verify with |
 |---|---|
 | Scripts exist / arg handling (full paths needed) | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/` ; `grep -n 'expanduser().resolve()' .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py` |
 | Lich King golden trace ([1]-[6] numbers) | rerun the `gap_trace.py` command in Recipe 1 |
-| Gap regex `\s{3,}` :686; punctuation cleanup :1146; leftover-append :1244-1248; NO ABILITY LAYER :772 (2026-10-20) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER' commands/psd_analyzer.py` |
+| Gap regex `\s{3,}` :686; punctuation cleanup :1146; leftover-append :1244-1248; NO ABILITY LAYER :772 (2026-10-20) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER' commands/psd_parser.py` |
 | removeprefix no-op line — FIXED 2026-10-19 | `grep -c 'relpath\|removeprefix' commands/psd_analyzer.py` (0; local mode archived 2026-10-20); story in autocroissant-failure-archaeology Entry 1 |
 | stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_pickle.py` |
 | Timestamp clustering (103 distinct; 769 shared; max cluster 64 @ 2026-02-08 04:11:26Z) | the Counter one-liner in Recipe 2 (drifts with every sweep — recompute, don't reuse) |
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
-| `num_new` gates at HEAD | `grep -n 'if num_new > 0' commands/psd_analyzer.py` (2026-10-20: prune :1868, save :1870) |
+| `num_changed` gates at HEAD | `grep -n 'if num_changed > 0' commands/repo_traverser.py` (prune, then the save gate) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
-| get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits\|requests/hour' commands/psd_analyzer.py` (2026-10-20: call :1665, def :1706, `get_commits` :1400/:1719, warning :543/:545) |
-| Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:749-792 on 2026-10-20) |
+| get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/repo_traverser.py; grep -n 'requests/hour' commands/github_api.py` (repo_traverser.py / github_api.py since the 2026-10-20 split) |
+| Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:838-866 on 2026-10-20) |
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, BUGS_AND_IMPROVEMENTS B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
 | Problem card list (today: 20 Creature Types / tornado) | the `c.problems` one-liner in Recipe 6 |
 
-Line numbers drift with every edit to `commands/psd_analyzer.py` and `main.py` — trust the greps
+Line numbers drift with every edit to the card modules (`psd_parser.py`, `repo_traverser.py`, `card_models.py`, `psd_analyzer.py`) and `main.py` — trust the greps
 above over the numbers in this file. If `PSDParser._extract_from_layers` changes shape, gap_trace's
 mirror must be updated (see the MAINTENANCE NOTE in gap_trace.py itself). When a recipe's worked
 example stops reproducing, that is itself a finding: apply Recipe 3 to find out what changed, then

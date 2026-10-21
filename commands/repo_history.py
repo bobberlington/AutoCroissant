@@ -1,5 +1,5 @@
 from json import dump, load
-from os import environ, replace
+from os import environ, remove, replace
 from os.path import exists, expanduser
 from shutil import rmtree
 from subprocess import CalledProcessError, run
@@ -8,12 +8,12 @@ from time import monotonic
 from typing import Optional
 from urllib.parse import quote
 
-from global_config import HISTORY_CLONE, HISTORY_JSON
+from global_config import CARD_BRANCH, CARD_REPO, HISTORY_CLONE, HISTORY_JSON, RAW_BASE
 
 # ========================
 # Configuration
 # ========================
-REPOSITORY = "MichaelJSr/TTSCardMaker"          # the card repo the history clone mirrors
+REPOSITORY = CARD_REPO                          # the card repo the history clone mirrors
 GIT_TIMEOUT = 300                               # seconds per git call
 
 # ========================
@@ -102,9 +102,13 @@ def _load() -> None:
 def _save() -> None:
     """Write the map atomically."""
     tmp = f"{HISTORY_JSON}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        dump({"head": _head, "paths": _paths}, f)
-    replace(tmp, HISTORY_JSON)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            dump({"head": _head, "paths": _paths}, f)
+        replace(tmp, HISTORY_JSON)
+    finally:
+        if exists(tmp):
+            remove(tmp)
 
 
 # ========================
@@ -119,14 +123,14 @@ def refresh() -> bool:
                 _load()
             clone = expanduser(HISTORY_CLONE)
             if exists(clone):
-                _git("fetch", "--quiet", "origin", "+refs/heads/main:refs/heads/main")
+                _git("fetch", "--quiet", "origin", f"+refs/heads/{CARD_BRANCH}:refs/heads/{CARD_BRANCH}")
             else:                                   # clone beside it, then rename: no half clone left behind
                 rmtree(f"{clone}.tmp", ignore_errors=True)
                 run(["git", "clone", "--quiet", "--bare", "--filter=blob:none",
                      f"https://github.com/{REPOSITORY}.git", f"{clone}.tmp"], capture_output=True, encoding="utf-8",
                     check=True, timeout=GIT_TIMEOUT, env={**environ, "GIT_TERMINAL_PROMPT": "0"})
                 replace(f"{clone}.tmp", clone)
-            head = _git("rev-parse", "main").strip()
+            head = _git("rev-parse", CARD_BRANCH).strip()
             if head == _head:
                 return True
             start = monotonic()
@@ -149,17 +153,22 @@ def refresh() -> bool:
             return False
 
 
-def raw_url(repository: str, path: str, blob: Optional[str] = None) -> str:
-    """A raw link pinned to the commit that last changed path, if blob matches it; else the main link."""
+def pinned_ref(repository: str, path: str, blob: Optional[str] = None) -> Optional[str]:
+    """The commit that last changed path, when blob is the blob it has there; else None (unknown file, or newer)."""
     found = _paths.get(path) if repository == REPOSITORY else None
-    ref = found[1] if found and blob and found[0] == blob else "main"
-    return f"https://raw.githubusercontent.com/{repository}/{ref}/{quote(path, safe='/')}"
+    return found[1] if found and blob and found[0] == blob else None
+
+
+def raw_url(repository: str, path: str, blob: Optional[str] = None) -> str:
+    """A raw link pinned to the commit that last changed path, if blob matches it; else the branch link."""
+    return f"{RAW_BASE}{repository}/{pinned_ref(repository, path, blob) or CARD_BRANCH}/{quote(path, safe='/')}"
 
 
 # ========================
 # Module Exports
 # ========================
 __all__ = [
-    'refresh',
+    'pinned_ref',
     'raw_url',
+    'refresh',
 ]

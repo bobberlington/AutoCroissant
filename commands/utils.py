@@ -1,7 +1,6 @@
 from asyncio import iscoroutinefunction, get_running_loop, to_thread as asyncio_to_thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from cv2 import imdecode, imencode, IMREAD_COLOR
 from discord import File, Interaction, Object
 from functools import wraps
 from io import BytesIO
@@ -61,6 +60,20 @@ def queue_command(func: Callable[..., Any], *args, **kwargs):
     command_queue.append(((args, kwargs), func))
 
 
+def queue_long_message(interaction: Interaction, text: str, **kwargs):
+    """Queue text as one message per Discord-safe chunk."""
+    for chunk in split_long_message(text):
+        queue_message(interaction, chunk, **kwargs)
+
+
+def say(interaction: Optional[Interaction], text: str, **kwargs):
+    """A message to the interaction, or the terminal when there is none (startup, a script)."""
+    if interaction is None:
+        print(text)
+    else:
+        queue_long_message(interaction, text, **kwargs)
+
+
 # ===================================================================
 # Utility decorators
 # ===================================================================
@@ -76,7 +89,7 @@ def to_thread(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
     return wrapper
 
 
-def to_threadpool(func: Callable[..., T], executor: ThreadPoolExecutor | None = None):
+def to_threadpool(func: Callable[..., T], executor: Optional[ThreadPoolExecutor] = None):
     """Decorator to run a blocking function in a separate threadpool asynchronously."""
     if iscoroutinefunction(func):
         # No need to wrap coroutine functions — they already run asynchronously.
@@ -91,13 +104,17 @@ def to_threadpool(func: Callable[..., T], executor: ThreadPoolExecutor | None = 
 # ===================================================================
 # Image utilities
 # ===================================================================
-def url_to_cv2image(url: str, readFlag=IMREAD_COLOR) -> ndarray:
-    """Fetch an image from a URL and convert it to a cv2 image array."""
+def url_to_cv2image(url: str, readFlag: Optional[int] = None) -> ndarray:
+    """Fetch an image from a URL and convert it to a cv2 image array (readFlag defaults to IMREAD_COLOR)."""
+    from cv2 import imdecode, IMREAD_COLOR     # lazy: only /frankenstein needs cv2 (~50 ms, 25 MB)
+    if readFlag is None:
+        readFlag = IMREAD_COLOR
     return imdecode(asarray(bytearray(get(url, timeout=30).content), dtype="uint8"), readFlag)
 
 
 def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
     """Convert a cv2 image (ndarray) to a Discord File."""
+    from cv2 import imencode
     return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename=filename)
 
 
@@ -205,9 +222,9 @@ def split_long_message(msg: str, max_length: int = BREAK_LEN) -> list[str]:
             msg = ""
         else:
             idx = msg.rfind("\n", 0, max_length)
-            if idx == -1:
+            if idx <= 0:                                # 0 would give an empty chunk
                 idx = msg.rfind(" ", 0, max_length)
-            if idx == -1:
+            if idx <= 0:
                 idx = max_length
 
             chunk = msg[:idx]
@@ -246,14 +263,6 @@ def recursively_traverse(directory: str, prefix: str = "") -> str:
     return "\n".join(lines)
 
 
-def perms_check(interaction: Interaction) -> bool:
-    """
-    Check if user has admin permissions.
-
-    Args:
-        interaction: Discord interaction
-
-    Returns:
-        True if user lacks permissions, False if user is admin
-    """
+def lacks_admin(interaction: Interaction) -> bool:
+    """True when the user is not in ADMINS; every gate reads `if lacks_admin(interaction): deny`."""
     return interaction.user.id not in ADMINS

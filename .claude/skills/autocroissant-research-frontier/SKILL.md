@@ -40,10 +40,10 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 ### Why the current state falls short
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
-  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:266 —
-  literally one `str.contains` call; wrapper at query_card.py:472, registered main.py:285).
+  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:315 —
+  literally one `str.contains` call; wrapper at query_card.py:591, registered main.py:293).
   Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:194): `|` OR,
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:232): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.
@@ -54,9 +54,9 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | Asset | Where | Why it matters |
 |---|---|---|
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:1718) writes `rules.txt`; `/export_rulebook` (main.py:382) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:1623) writes `stats.csv` with an aliases column; `/export_cards` (main.py:369) | Structured stats + ability text in one table |
-| Type-annotated ability text | `_inject_type_names` (psd_analyzer.py:593) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:444) writes `rules.txt`; `/export_rulebook` (main.py:398) | 48 pages of game rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:349) writes `stats.csv` with an aliases column; `/export_cards` (main.py:385) | Structured stats + ability text in one table |
+| Type-annotated ability text | `_inject_type_names` (psd_parser.py:838) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
 
@@ -66,7 +66,7 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 `/export_rulebook` and `/export_cards` from Discord when the bot is up (files land in the repo
 root, gitignored via `*.txt`/`*.csv`, .gitignore:71-72), or build offline from the pickle.
 This exact snippet was dry-run 2026-07-11 and produced 48 pages / 765 cards (expect two
-"Git token found" import-chain print lines — that is NOT the bot starting):
+"Git token found" line only when run through main.py; the card modules print nothing since 2026-10-20):
 
 ```bash
 cd /Users/michaelsrouji/Desktop/AutoCroissant   # unpickling CardInfo needs repo cwd + config.py
@@ -138,7 +138,7 @@ that branch, and nothing here runs until it is restored or merged.
 
 ### Why the current state falls short
 
-`/ai` (main.py:495) drives stock SD 1.5 / SDXL / Flux pipelines (commands/diffusion.py).
+`/ai` (archive/ai-generation:main.py:495) drives stock SD 1.5 / SDXL / Flux pipelines (commands/diffusion.py).
 Nothing anywhere knows the game's art conventions — the frame layout, the flat-color icon
 style, the per-series looks. Every generation starts from zero style knowledge.
 
@@ -215,7 +215,7 @@ executes perfectly.
 
 ### Residue 3a — Line-position estimation for bbox-anchored injection (OPEN)
 
-**Why open:** today's type-icon injection (`_inject_type_names`, psd_analyzer.py:1206-1250 as of 2026-10-20)
+**Why open:** today's type-icon injection (`_inject_type_names`, psd_parser.py:838-882 as of 2026-10-20)
 assigns icons to `\s{3,}` text gaps by global reading order and never checks whether an
 icon's y-coordinate matches the line it lands in. The fix everyone wants — anchor each icon
 to its text LINE by (x, y) — hits a wall: **psd-tools exposes only the whole text layer's
@@ -279,7 +279,7 @@ Pickles-in-git WORKS: `/push` / `/pull` / `/update` move `stats.pkl` / `old_stat
 (autocroissant-run-and-operate owns the flow). The real pain points, for the record:
 
 1. **Schema coupling** — unpickling requires this repo on `sys.path` with config.py present,
-   because `CardInfo`/`CardStats` are dataclasses in commands/psd_analyzer.py:123/94; the
+   because `CardInfo`/`CardStats` are dataclasses in commands/card_models.py:59/94; the
    366c8d9 "Big massive refactor" already broke the pre-Oct-2025 plain-dict format once.
 2. **Commit noise** — 23 of 192 commits mention PICKLE (measured 2026-07-11).
 3. **Invisible binary regressions** — old_stats.pkl ballooned 3196→12041 bytes once
@@ -289,8 +289,8 @@ Pickles-in-git WORKS: `/push` / `/pull` / `/update` move `stats.pkl` / `old_stat
 
 ### Asset
 
-`CardInfo.to_dict`/`from_dict` (psd_analyzer.py:138/170) already exist — a schema-decoupled
-JSON snapshot is nearly free; `StatsDatabase.save` (psd_analyzer.py:210) is the single write
+`CardInfo.to_dict` (commands/card_models.py) already exists (`from_dict`, uncalled and lossy, was deleted 2026-10-20) — a
+schema-decoupled JSON snapshot is nearly free; `StatsDatabase.save` (card_models.py) is the single write
 point; `diff_stats.py` is a ready-made zero-loss checker.
 
 ### First three steps (in this repo)
@@ -361,8 +361,8 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 | PNG dimensions 1200x2400 | `find ~/Desktop/TTSCardMaker/Creatures/Kirby -name '*.png' -exec python3 -c "import sys; from PIL import Image; print(Image.open(sys.argv[1]).size)" {} \; -quit` |
 | LoRA folder & loading (branch only) | `git grep -n -e LORAS_FOLDER -e 'def set_lora' archive/ai-generation -- commands/diffusion.py` |
 | requirements.txt is core-only (11 pkgs) | `cat requirements.txt` (reorg of 2026-07-11 committed in a7a4bb3) |
-| Injection is gap-ordinal, not line-anchored | `grep -n _gap_pattern commands/psd_analyzer.py; grep -n "def _inject_type_names" commands/psd_analyzer.py` |
-| CardInfo/StatsDatabase coupling points | `grep -n "class CardInfo" commands/psd_analyzer.py; grep -n "class StatsDatabase" commands/psd_analyzer.py; grep -n "def to_dict" commands/psd_analyzer.py` |
+| Injection is gap-ordinal, not line-anchored | `grep -n _gap_pattern commands/psd_parser.py; grep -n "def _inject_type_names" commands/psd_parser.py` |
+| CardInfo/StatsDatabase coupling points | `grep -n "class CardInfo\|class StatsDatabase\|def to_dict" commands/card_models.py` |
 | PICKLE commit noise (23/192) | `git rev-list --count -i --grep=pickle HEAD` (23) and `git rev-list --count HEAD` (192) |
 | Balloon incident hashes | `git log --oneline -2 eb9aa84` (shows the revert atop cca0aaf) or see autocroissant-failure-archaeology |
 

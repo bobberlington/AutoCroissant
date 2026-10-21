@@ -1,7 +1,7 @@
 from asyncio import Lock, to_thread
 from io import BytesIO
 from json import dump, load
-from os import replace
+from os import remove, replace
 from os.path import exists
 from re import compile, sub
 from typing import Callable, Optional
@@ -9,19 +9,18 @@ from typing import Callable, Optional
 from discord import Client, Interaction
 from discord.utils import escape_markdown
 from PIL import Image, ImageDraw
-from requests import get
+from requests.exceptions import RequestException
 
-import config
-from global_config import EMOJI_JSON
-from commands.utils import queue_message, split_long_message
+from global_config import EMOJI_JSON, STARS_DIR, TYPES_DIR
+from commands.github_api import fetch_blob, fetch_tree
+from commands.utils import queue_long_message
 
 # ========================
 # Configuration
 # ========================
-GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 EMOJI_SIZE = 128                                        # Discord shows emojis at 48 px or less; 128 stays sharp when enlarged
 MAX_NAME_LEN = 32                                       # Discord emoji names: 2-32 characters of a-z, 0-9 and _
-ICON_FOLDERS = ("Types", "Types/Stars")
+ICON_FOLDERS = (TYPES_DIR, STARS_DIR)
 NO_SUFFIX = "_no"                                       # crossed-out copy of every Types/ icon: [fire:no] -> :fire_no:
 NO_RED = (224, 27, 34, 255)                             # same red as the stoogedings font's :no sign
 TOKEN_PATTERN = compile(r"\[([^\[\]\n]{1,48})\]")       # [fire], [Fragile Equip], [fire:tint]; [X] and [Status] stay text
@@ -83,7 +82,7 @@ def _icons(shas: dict) -> dict[str, tuple[str, str, bool]]:
         if folder in ICON_FOLDERS and filename.lower().endswith(".png"):
             name = emoji_name(filename.rsplit(".", 1)[0])
             icons.setdefault(name, (path, shas[path], False))
-            if folder == "Types":
+            if folder == TYPES_DIR:
                 icons.setdefault(_no_name(name), (path, shas[path], True))
     return icons
 
@@ -97,21 +96,31 @@ def _list_type_icons() -> tuple[str, dict[str, tuple[str, str, bool]]]:
     """
     from commands.query_card import card_repo  # lazy, like query_card's own late imports
 
-    headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
-    response = get(f"https://api.github.com/repos/{card_repo.repository}/git/trees/main?recursive=1",
-                   headers=headers, timeout=30)
-    response.raise_for_status()
-    shas = {item.get("path", ""): item.get("sha", "") for item in response.json().get("tree", [])}
+    with card_repo._tree_lock:                  # one tree fetch at a time: at startup, the card list's or this one
+        known, etag = card_repo._tree, card_repo._tree_etag
+        try:                                    # with the card list's ETag: 304 = its tree is current
+            response = fetch_tree(card_repo.repository, etag if isinstance(known, dict) and etag else "")
+            if response.status_code == 304 and isinstance(known, dict):
+                tree = known
+            else:
+                response.raise_for_status()
+                tree = response.json()
+            if not isinstance(tree, dict):
+                raise ValueError("not a tree")
+            if known is None and response.headers.get("ETag"):    # card list not loaded yet: its fetch can 304
+                card_repo._tree, card_repo._tree_etag = tree, response.headers["ETag"]
+        except (RequestException, ValueError) as e:
+            if not isinstance(card_repo._tree, dict):
+                raise
+            print(f"Type emojis: GitHub tree listing failed ({e}); using the last good card tree")
+            tree = card_repo._tree
+    shas = {item.get("path", ""): item.get("sha", "") for item in tree.get("tree", [])}
     return card_repo.repository, _icons(shas)
 
 
 def _icon_png(repository: str, sha: str) -> bytes:
     """An icon's exact bytes by blob sha (raw main can lag behind the tree)."""
-    headers = {'Authorization': f'token {GIT_TOKEN}'} if GIT_TOKEN else {}
-    reply = get(f"https://api.github.com/repos/{repository}/git/blobs/{sha}", timeout=30,
-                headers={**headers, "Accept": "application/vnd.github.raw"})
-    reply.raise_for_status()
-    return reply.content
+    return fetch_blob(repository, sha).content
 
 
 def _load_blobs() -> None:
@@ -130,9 +139,13 @@ def _load_blobs() -> None:
 def _save_blobs() -> None:
     """Write the emoji blob map atomically."""
     tmp = f"{EMOJI_JSON}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        dump(_blobs, f, indent=0, sort_keys=True)
-    replace(tmp, EMOJI_JSON)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            dump(_blobs, f, indent=0, sort_keys=True)
+        replace(tmp, EMOJI_JSON)
+    finally:
+        if exists(tmp):
+            remove(tmp)
 
 
 def _cross_out(canvas: Image.Image) -> Image.Image:
@@ -272,7 +285,7 @@ async def _publish(existing: dict) -> None:
         print(f"Could not save {EMOJI_JSON}: {e}")
 
 
-async def sync_type_emojis(interaction: Interaction | None, client: Client,
+async def sync_type_emojis(interaction: Optional[Interaction], client: Client,
                            refresh: bool = False, prune: bool = False, edited: bool = True) -> None:
     """
     Upload every Types/ and Types/Stars/ icon as one of the bot's application emojis, then reload type_emojis.
@@ -297,6 +310,12 @@ async def sync_type_emojis(interaction: Interaction | None, client: Client,
             existing = {emoji.name: emoji for emoji in await client.fetch_application_emojis()}
         except Exception as e:
             report = f"Emoji sync failed: {e}"
+            if not type_emojis:                 # still show the emojis the bot already has
+                try:
+                    type_emojis.update({emoji.name: str(emoji) for emoji in await client.fetch_application_emojis()})
+                    report += f" (using the {len(type_emojis)} existing emojis)"
+                except Exception:
+                    pass
         else:
             if not edited:                      # first run without a map: trust existing emojis, don't replace all
                 for name, (_, sha, _) in icons.items():
@@ -324,8 +343,7 @@ async def sync_type_emojis(interaction: Interaction | None, client: Client,
     if interaction is None:
         print(report)
         return
-    for chunk in split_long_message(report):
-        queue_message(interaction, chunk)
+    queue_long_message(interaction, report)
 
 
 async def sync_changed_emojis(interaction: Optional[Interaction], repository: str, shas: dict,
@@ -379,8 +397,7 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
     if interaction is None:
         print(report)
         return
-    for chunk in split_long_message(report):
-        queue_message(interaction, chunk)
+    queue_long_message(interaction, report)
 
 
 # ========================

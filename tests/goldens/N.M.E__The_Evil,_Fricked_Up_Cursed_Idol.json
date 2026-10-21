@@ -1,0 +1,17 @@
+{
+ "alt_names": null,
+ "blob": "d9d9a82fc5bc0047020431a3baa705ae2cf2c791",
+ "card": {
+  "ability": "Purchase Cost: 2 Points\n(BOGT) Choose a friendly creature. It loses 1.5 DEF and 2 SPD.\n(ENDGT) The selected creature gains 1.5 DEF, 2 SPD, and 3 ATK.\nIf this creature is swapped out before (ENDGT), it gains back its lost stats, and this item does not resolve.",
+  "path": "N.M.E/The_Evil,_Fricked_Up_Cursed_Idol.psd",
+  "stars": 1,
+  "timestamp": 0.0,
+  "type": "nme",
+  "types": [
+   "support",
+   "nme"
+  ]
+ },
+ "path": "N.M.E/The_Evil,_Fricked_Up_Cursed_Idol.psd",
+ "validator": []
+}

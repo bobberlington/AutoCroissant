@@ -35,13 +35,13 @@ The books balance exactly: 904 − 90 (`MDW/`, excluded) − 1 (`Auxiliary/Marke
 non-excluded PSDs, all with unique names.
 
 **Card identity**: a card's name is its PSD filename with underscores turned into spaces
-(`The_Freezer.psd` → "The Freezer"; `commands/psd_analyzer.py:361`). Names are the keys of
+(`The_Freezer.psd` → "The Freezer"; `commands/psd_parser.py:331`). Names are the keys of
 `stats.pkl` and the index of the query dataframes. Two PSDs with the same basename would silently
 share one entry — today there are none outside the excluded folders.
 
 ## 2. Folder taxonomy → card classification
 
-`CardClassifier.classify` (`commands/psd_analyzer.py:256-340`) derives a card's type and several
+`CardClassifier.classify` (`commands/psd_parser.py:224-309`) derives a card's type and several
 fields purely from its repo-relative path. Every row below was verified against the code and the
 live folder tree.
 
@@ -65,7 +65,7 @@ series (24 of them: BTD, Kirby, Souls, World Of Warcraft, ...) have star folders
 `2 Stars`..`5 Stars` range; `Auxiliary/` contains Creatures, Items, Markers, Minions, Rulebook,
 Status Effects.
 
-**The stars parse** (psd_analyzer.py:285, 290, 309, 335) is:
+**The stars parse** (psd_parser.py:254, 259, 278, 304) is:
 
 ```python
 "stars": int(folders[len(folders) - 1].split()[0])
@@ -110,8 +110,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (psd_analyzer.py:39) is checked against every path segment
-during stats traversal and duplicate-PNG detection (psd_analyzer.py:1648, 1568). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:37) is checked against every path segment
+during stats traversal and duplicate-PNG detection (repo_traverser.py:343, 275). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -124,7 +124,7 @@ minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creat
 
 This is the part newcomers lack. A card PSD is a layer TREE; the parser walks
 `psd.descendants()` and dispatches on layer kind, name, visibility, and position
-(`PSDParser._process_layer`, psd_analyzer.py:428-456). Annotated excerpt of a real dump
+(`PSDParser._process_layer`, psd_parser.py:459-486). Annotated excerpt of a real dump
 (`dump_psd_layers.py`, reproduced 2026-07-11):
 
 ```
@@ -154,7 +154,7 @@ problems NONE.
 ### 3.1 The naming trap: `layer.kind == "type"` means TEXT
 
 In psd-tools, "type" is the layer KIND for text layers (typography), and has nothing to do with
-card types. `psd_analyzer.py:434` dispatches text layers on exactly this. Card-type ICONS are
+card types. `psd_parser.py:465` dispatches text layers on exactly this. Card-type ICONS are
 pixel/smart-object layers matched by NAME (3.3). Misread this and nothing else in the parser makes
 sense.
 
@@ -162,8 +162,8 @@ sense.
 
 A text layer contributes ability text iff its name (lowercased) is `"ability"` — OR the card is a
 rulebook page (`"Rulebook" in relative_path`), in which case ALL text layers contribute
-(psd_analyzer.py:469, 407). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
-repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_analyzer.py:460-467):
+(psd_parser.py:499, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
+repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:498-519):
 
 | Raw sequence | Becomes | Why |
 |---|---|---|
@@ -176,24 +176,24 @@ repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_
 
 Multiple ability text layers (common on rulebook pages) are sorted by position (3.5's row sort) and
 joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(psd_analyzer.py:529-539). If NO ability text layer exists at all, the parse-time problem
-`NO ABILITY LAYER` is recorded (psd_analyzer.py:422).
+(psd_parser.py:769-779). If NO ability text layer exists at all, the parse-time problem
+`NO ABILITY LAYER` is recorded (psd_parser.py:404).
 
 ### 3.3 Card-type icons and the midline
 
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, psd_analyzer.py:1038) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:202) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
-Ignore the "Git token found..." lines the import chain prints. Since 2026-10-19 a second vocabulary
+Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
 aliases for icon-font tokens (§4.1).
 
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon
-(psd_analyzer.py:442-447). Position decides its meaning, using
+(psd_parser.py:473-478). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
-(psd_analyzer.py:30, 405):
+(psd_parser.py:22, 375):
 
 - bbox top `y < card_mid_y` (upper half, the corner badges) → appended to `card.types`
   (in raw traversal order, NOT sorted);
@@ -202,7 +202,7 @@ A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type
 
 ### 3.4 Stats (hp/def/atk/spd)
 
-Two-stage name matching (psd_analyzer.py:473-515):
+Two-stage name matching (psd_parser.py:627-677):
 
 1. A layer is a stat layer if any ancestor (up to 3 levels) has "dark" or "bars" in its name
    (`Stats Bars > Darks > Hp Dark` qualifies).
@@ -211,7 +211,7 @@ Two-stage name matching (psd_analyzer.py:473-515):
 
 Semantics: a digit layer FOUND under e.g. "Hp Dark" marks hp as present, whether visible or not.
 The VISIBLE digit layers are grouped by bar row (their parent group) and each row gives a value
-(`StatTracker._row_value` / `total`, psd_analyzer.py):
+(`StatTracker._row_value` / `total`, psd_parser.py):
 
 - **Darkening adjustment layers** (the template: `exposure` layers named 0-9, no pixels): the one
   visible digit; if several are visible, the lowest (it already darkens the rest of the bar; Sans had
@@ -235,7 +235,7 @@ value defaults to **10**: that is how maxed stats are encoded in the template. N
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
-`_sort_by_position` (psd_analyzer.py:556-583): sort by bbox top `y`; group into visual rows where
+`_sort_by_position` (psd_parser.py:801-828): sort by bbox top `y`; group into visual rows where
 `|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten.
 This is reading order — top-to-bottom, then left-to-right — and it determines both multi-text-layer
 join order and type-icon injection order.
@@ -245,17 +245,17 @@ join order and type-icon injection order.
 Card authors drop type ICONS inside the ability paragraph in Photoshop; the text layer just has a
 run of spaces where each icon sits. Extraction must splice `[typename]` tokens back into those
 gaps. This is the owner-stated hardest live problem; the spec below is exact
-(`_inject_type_names`, psd_analyzer.py:593-637, plus callers at 529-539).
+(`_inject_type_names`, psd_parser.py:838-882, plus callers at 529-539).
 
 Constants:
 
 | Constant | Value | Where |
 |---|---|---|
-| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_analyzer.py:30 |
-| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_analyzer.py:348 |
-| row grouping threshold | 40 px | psd_analyzer.py:557 |
-| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_analyzer.py:590 |
-| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_analyzer.py:538 |
+| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:22 |
+| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:318 |
+| row grouping threshold | 40 px | psd_parser.py:802 |
+| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:835 |
+| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:778 |
 
 Algorithm:
 
@@ -270,7 +270,7 @@ Algorithm:
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
    gaps pass through unchanged. Types are consumed strictly in sorted (reading) order.
 4. LEFTOVER types (more icons than gaps) are appended to the LAST line as ` [t1] [t2] ...`
-   (psd_analyzer.py:632-635). More gaps than icons: extra gaps stay as-is as literal spaces.
+   (psd_parser.py:877-880). More gaps than icons: extra gaps stay as-is as literal spaces.
 5. Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
@@ -397,12 +397,12 @@ The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_analyzer.py:640-733)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:885-981)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle:
-  `NO ABILITY LAYER` (psd_analyzer.py:422) and `MISSPELT TYPE: <name>` (psd_analyzer.py:455-456,
+  `NO ABILITY LAYER` (psd_parser.py:404) and `MISSPELT TYPE: <name>` (psd_parser.py:485-486,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 42).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
@@ -423,7 +423,7 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 
 **The exclusion lists are the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
-autocroissant-psd-extraction-campaign). Verbatim, psd_analyzer.py:642-668:
+autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:887-913:
 
 - `EXCESSIVE_STAT_EXCLUSIONS` (5, stats legitimately above 10): Royal Eradicator Main Cannon, Pix,
   Tainted Lazarus, Sonic, Twin Emperors.
@@ -433,13 +433,14 @@ autocroissant-psd-extraction-campaign). Verbatim, psd_analyzer.py:642-668:
 
 ## 6. Data schemas: CardInfo and the pickles
 
-`CardInfo` and `CardStats` are `@dataclass`es in `commands/psd_analyzer.py` (:443-530, :213-239).
+`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:58-125, :29-56), pickled as
+`commands.psd_analyzer.*` (`__module__` pinned since the 2026-10-20 split).
 Consequence: **unpickling stats.pkl/old_stats.pkl requires this repo on sys.path with a config.py
-present** (module import chain; it also prints token-presence noise). Pickles from before the
+present** (module import chain). Pickles from before the
 2025-10-20 "Big massive refactor" (366c8d9) were plain dicts. Loading pattern the diagnostics
 scripts use: run from the repo root with `sys.path.insert(0, '.')`.
 
-CardInfo fields → pickle/dataframe keys (`to_dict` :470-505, `from_dict` :508-530):
+CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; the lossy `from_dict` was deleted 2026-10-20):
 
 | Field | Dict key | Notes |
 |---|---|---|
@@ -459,20 +460,20 @@ CardInfo fields → pickle/dataframe keys (`to_dict` :470-505, `from_dict` :508-
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
 `problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names` and `blob_sha` live only in the pickle
-(stats.pkl stores CardInfo objects); they are not `to_dict` keys. `from_dict` ignores every field after `author`.
+(stats.pkl stores CardInfo objects); they are not `to_dict` keys.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
-cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:44-48) fixes export/display order:
+cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:58-62) fixes export/display order:
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
 subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-psd_analyzer.py:1706), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+repo_traverser.py:405), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (psd_analyzer.py:1827), the same as the slash command (main.py:361);
+is `update_stats(force_update=False)` (repo_traverser.py:477), the same as the slash command (main.py:368);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `MDW/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20), the
@@ -487,7 +488,7 @@ team's record of who made each card.
 - **The website** applies the same rules at build time.
 
 Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20) of the first
-commit touching its path (`commits[totalCount - 1]`). It is fetched only when the card has no author yet. Many
+commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
 survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` still works, but for a
 card listed in the file, the file wins at the next `/update_stats`. `/list_orphans` lists author-less cards.
@@ -503,10 +504,10 @@ autocroissant-change-control):
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(psd_analyzer.py:1673-1674; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when it disappears from the repo (`prune_clean_cards`, psd_analyzer.py:581-590 —
+(repo_traverser.py:370-371; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:169-178 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
-`_update_old_stats_paths` (psd_analyzer.py:1367-1377) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (repo_traverser.py:62-72) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
@@ -516,14 +517,14 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:27`, singleton `card_repo` at :626) maintains
+`CardRepository` (`commands/query_card.py:32`, singleton `card_repo` at :746) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
 (`populate_files` :55-79). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
 Lookup normalizes to `name.replace(' ', '_').lower() + '.png'` and fuzzy-matches with difflib
-`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:23;
+`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:28;
 runtime-settable via `/set_ratio`, resets on restart — see autocroissant-config-and-flags).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
@@ -535,7 +536,7 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
 existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:526-579). At `populate_files` time each alias key is inserted into `git_files` as
+(query_card.py:645-698). At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
 Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
 `red_bloon -> pod01red_bloon.png`.
@@ -574,14 +575,14 @@ author, path, ability, types (the list is stringified, so `types~undead` works).
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (query_card.py:257-260). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:301-313). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:244) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:266-290). 48 pages today.
+   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:315-339). 48 pages today.
 10. Results return card IMAGES (urls via `get_card_url`); `howmany:True` returns just the count;
-    `limit` caps output (main.py:268-281).
+    `limit` caps output (main.py:276-290).
 
 ## 8. When NOT to use this skill
 
@@ -602,19 +603,20 @@ author, path, ability, types (the list is stringified, so `types~undead` works).
 
 ## 9. Provenance and maintenance
 
-Every load-bearing claim above is from `commands/psd_analyzer.py`, `commands/query_card.py`,
+Every load-bearing claim above is from `commands/psd_analyzer.py` (since 2026-10-20 also `psd_parser.py`,
+`card_models.py`, `card_edits.py`, `repo_traverser.py`), `commands/query_card.py`,
 `global_config.py`, `main.py`, the TTSCardMaker clone, and live script runs on 2026-07-11.
 Line numbers drift — re-find facts with these before relying on cited lines:
 
 | Fact | Re-verify with |
 |---|---|
-| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|EXCLUDE_FOLDERS\|UPDATE_RATE\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_analyzer.py` |
-| Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_analyzer.py` |
-| Exclusion lists (5 + 18 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_analyzer.py` |
-| Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_analyzer.py` |
-| Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_analyzer.py` |
-| Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_analyzer.py` |
-| CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/psd_analyzer.py` (approx; or grep `def to_dict`) |
+| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/repo_traverser.py` |
+| Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
+| Exclusion lists (5 + 18 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
+| Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |
+| Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_parser.py` |
+| Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |
+| CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
 | DSL internals | `grep -n '_stat_pattern\|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | Clone location | `grep -n LOCAL_DIR_LOC global_config.py` |
@@ -626,8 +628,8 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | The 7 "creatures" cards | `ls ~/Desktop/TTSCardMaker/Auxiliary/Creatures/*.psd` |
 | Golden parses (Mini Doomer / Freezer / Lich King) | `parse_one.py` / `gap_trace.py` with the paths used in sections 3-4 (absolute paths into the clone; outputs include ignorable "Git token found" lines) |
 | Types vocabulary (35 remote and, since the 2026-10-19 dotfile fix, 35 local) | `git -C ~/Desktop/TTSCardMaker ls-files Types/ \| grep -vc Stars` vs the `known types` line of any `parse_one.py` run |
-| Icon-font parsing hooks (2026-10-19) | `grep -n "^ICON_\|class IconVocabulary\|def _icon_font_spans\|def _read_icon_tokens\|def _flag_misplaced_tokens" commands/psd_analyzer.py` |
-| Exact token spellings (2026-10-20) | `grep -n -A8 "def spellings" commands/psd_analyzer.py` (words joined by " ", "_", "-" or ""; `lookup` = exact lowercase match) |
+| Icon-font parsing hooks (2026-10-19) | `grep -n "^ICON_\|class IconVocabulary\|def _icon_font_spans\|def _read_icon_tokens\|def _flag_misplaced_tokens" commands/psd_parser.py` |
+| Exact token spellings (2026-10-20) | `grep -n -A8 "def spellings" commands/psd_parser.py` (words joined by " ", "_", "-" or ""; `lookup` = exact lowercase match) |
 | Manifest size / codepoint range | `python3 -c "import json;m=json.load(open('$HOME/Desktop/TTSCardMaker/MDW/Fonts/stoogedings-src/stoogedings.json'))['icons'];p=sorted(int(v['pua'],16) for v in m.values());print(len(m),hex(p[0]),hex(p[-1]))"` (91 0xe000 0xe05a) |
 | Emoji count (126) and `_no` rule | `grep -n "NO_SUFFIX\|ICON_FOLDERS" commands/type_emojis.py`; count = Types PNGs × 2 + Stars PNGs |
 | README citation | `head -3 ~/Desktop/TTSCardMaker/README.md` |

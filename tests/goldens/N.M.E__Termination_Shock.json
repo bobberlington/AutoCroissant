@@ -1,0 +1,19 @@
+{
+ "alt_names": null,
+ "blob": "3eda1299b458bc1b3c0325af3b5baa418f0c5ba2",
+ "card": {
+  "ability": "Purchase Cost: 2 Bricks & 4 Points\nWhen an enemy field card is negated, the enemy team feels the inverse of its stat boosts for that turn, and they cannot remove the field card from the field next turn. Additionally, you may now negate enemy field cards with points equal to the field card's level, and may do so on back-to-back turns.",
+  "def": 0,
+  "hp": 6,
+  "path": "N.M.E/Termination_Shock.psd",
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "nme",
+  "types": [
+   "active",
+   "nme"
+  ]
+ },
+ "path": "N.M.E/Termination_Shock.psd",
+ "validator": []
+}

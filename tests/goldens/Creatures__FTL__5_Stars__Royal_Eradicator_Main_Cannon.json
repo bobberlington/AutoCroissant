@@ -1,0 +1,22 @@
+{
+ "alt_names": null,
+ "blob": "76ad78a8f8289883b61236ea1a19d647da865f1e",
+ "card": {
+  "ability": "Has no innate actions.\nAttacks inflict 2T Blazing.\nWhen attacking, targets have x2 DEF for the attack.\n(ENDT) Mark a slot and inflict 1T Afraid to everything in that slot.\n(BOT) Clear a mark and attack everything in that slot.",
+  "atk": 12,
+  "def": 8,
+  "hp": 9,
+  "path": "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",
+  "series": "ftl",
+  "spd": 3,
+  "stars": 5,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "machine",
+   "electric"
+  ]
+ },
+ "path": "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",
+ "validator": []
+}

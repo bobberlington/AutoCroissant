@@ -10,7 +10,7 @@ from shlex import quote as shlex_quote, split as shlex_split
 from threading import Lock, RLock
 from traceback import format_exc
 from types import UnionType
-from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Optional, Union, get_args, get_origin, get_type_hints
 from uuid import uuid4
 
 from commands.utils import (
@@ -18,8 +18,8 @@ from commands.utils import (
     queue_message,
     queue_command,
     make_fake_interaction,
-    perms_check,
-    split_long_message,
+    lacks_admin,
+    queue_long_message,
 )
 from global_config import REMIND_PKL, TIMEZONE
 
@@ -67,7 +67,7 @@ _check_lock = Lock()        # single-flight: a pass is queued every second, and 
 
 
 class _ReminderUser:
-    """Stands in for the reminder's creator, so perms_check sees who scheduled the command."""
+    """Stands in for the reminder's creator, so lacks_admin sees who scheduled the command."""
     def __init__(self, user_id, name):
         self.id = user_id
         self.name = name
@@ -151,20 +151,7 @@ def _parse_when(when_str, now):
     return datetime.combine(day, clock, tzinfo=TIMEZONE), fixed_day
 
 
-def parse_time_str(when_str: str) -> datetime | None:
-    """
-    Parse a time string into a datetime in TIMEZONE (Pacific, follows daylight saving).
-
-    Args:
-        when_str: "13:00", "1PM", "1:30PM", optionally with "tomorrow", a weekday or a date in front
-
-    Returns:
-        datetime in TIMEZONE, or None if parsing fails
-    """
-    return _parse_when(when_str, datetime.now(TIMEZONE))[0]
-
-
-def parse_interval(time_str: str) -> timedelta | None:
+def parse_interval(time_str: Optional[str]) -> Optional[timedelta]:
     """
     Parse an interval like "5s", "10m", "2h", "1d", "3w" or a combination such as "1d12h".
 
@@ -638,8 +625,6 @@ def _channel_missing(channel_id):
 def _reminder_interaction(reminder, guild_id):
     """FakeInteraction for a firing reminder, acting as the reminder's creator."""
     fake = make_fake_interaction(reminder["channel_id"], guild_id)
-    fake.scheduled = True
-    fake.reminder_id = reminder["id"]
     creator_id = reminder.get("creator_id")
     if creator_id is not None:
         fake.user = _ReminderUser(creator_id, reminder.get("creator_name") or str(creator_id))
@@ -673,8 +658,7 @@ def _fire(reminder, guild_id):
 
     fake = _reminder_interaction(reminder, guild_id)
     if reminder.get("msg"):
-        for chunk in split_long_message(reminder["msg"]):
-            queue_message(fake, chunk)
+        queue_long_message(fake, reminder["msg"])
 
     command = reminder.get("command")
     if command:
@@ -900,8 +884,8 @@ def list_reminders(interaction: Interaction, all: bool = False, hidden: bool = F
         lines.append(line)
 
     output = "\n".join(lines)
-    for chunk in split_long_message(f"Reminders for {scope_text}:\n{output}"):
-        queue_message(interaction, chunk, ephemeral=hidden, allowed_mentions=AllowedMentions.none())
+    queue_long_message(interaction, f"Reminders for {scope_text}:\n{output}", ephemeral=hidden,
+                       allowed_mentions=AllowedMentions.none())
 
 
 def remove_reminder(interaction: Interaction, reminder_id: str = ""):
@@ -928,7 +912,7 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
                 break
         if target is None:
             return queue_message(interaction, f"No reminder found with ID `{wanted}`.")
-        if perms_check(interaction) and target.get("creator_id") != interaction.user.id:
+        if lacks_admin(interaction) and target.get("creator_id") != interaction.user.id:
             return queue_message(interaction, "Only an admin or the reminder's creator can remove it.")
 
         position = reminder_list.index(target)

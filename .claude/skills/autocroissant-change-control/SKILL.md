@@ -6,22 +6,22 @@ description: How changes are classified, gated, and shipped in AutoCroissant. Lo
 # AutoCroissant change control
 
 How changes get classified, gated, and shipped in this repo. AutoCroissant is a
-personal Discord bot with **no tests, no CI, no README** — the rules below are the
-entire safety system, and every one of them exists because something broke.
+personal Discord bot with **no CI, no README** and only an offline pytest suite (`tests/`) — the rules below are the
+real safety system, and every one of them exists because something broke.
 Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits); re-verified 2026-10-20
-(HEAD 9fb3093, 207 commits).
+(HEAD 9fb3093, 207 commits), and after that day's optimization pass (working tree on 167f30a).
 
 **Jargon, defined once:**
 
 - **The pickles**: `stats.pkl` (card database, 813 cards), `old_stats.pkl` (archived
   old card versions), `aliases.pkl` (name shortcuts). They ARE the database and they
   are **committed to git**. Constants `STATS_PKL` / `OLD_STATS_PKL` / `ALIAS_PKL` in
-  `global_config.py:5-8`.
+  `global_config.py:5-9`.
 - **PICKLE commit**: a commit containing only pickle files, message literally
-  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:23`).
+  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:25`).
 - **Dev machine**: where a human edits code and runs `git push`.
 - **Running host**: whichever machine currently runs the bot. Production is the Jetson
-  (systemd `autocroissant.service`, Python 3.10); the owner's Mac at other times. It
+  (systemd `autocroissant.service`, Python 3.14 venv `~/venvs/autocroissant` since 2026-10-20); the owner's Mac at other times. It
   is the only legitimate writer of pickles.
 - **TTSCardMaker**: the separate repo of ~904 card PSDs (`MichaelJSr/TTSCardMaker`,
   cloned at `~/Desktop/TTSCardMaker`). Card artwork/text lives THERE, not here. Since 2026-10-19 it also
@@ -32,8 +32,8 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `python3.10 setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale | Checklist below if it adds a command; non-negotiables table always |
-| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()` in psd_analyzer.py; `/alias` calls query_card's `save_aliases`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
+| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s, 220 tests on 2026-10-20; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the 813-card old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences). Checklist below if it adds a command; non-negotiables table always |
+| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()`, `StatsDatabase` in card_models.py; `/alias` calls query_card's `save_aliases`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker and push THERE; this repo only re-parses via `/update_stats` (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the pickle gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
@@ -42,7 +42,7 @@ and code changes in the same commit** — rationale in the next section.
 
 ## The self-update machinery (what /push, /pull, /update actually do)
 
-All in `commands/update_bot.py` (registered in `main.py:165-198`). **The canonical
+All in `commands/update_bot.py` (registered in `main.py:172-205`). **The canonical
 step-by-step anatomy — every message each command prints, the failure table, the
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
@@ -51,16 +51,15 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
   (`aliases.pkl stats.pkl old_stats.pkl`), message literally `PICKLE`, then
   `pull --rebase --autostash` onto new code (since 2026-10-20) and pushes, including a leftover
   unpushed PICKLE commit; "already up to date" only when nothing is ahead of origin.
-- **/pull** → `git_pull()` (update_bot.py:42-110): fetch + merge — NOT the "hard
-  reset" its Discord description claims (stale text; fixing descriptions is
-  autocroissant-docs-and-style territory). On merge **CONFLICT** it auto-resolves per
+- **/pull** → `git_pull()` (update_bot.py:47-115): fetch + merge, never a reset (its description
+  said "hard reset" until 2026-10-20; archaeology 10.20). On merge **CONFLICT** it auto-resolves per
   file — **pickles → `checkout --ours` (running host's data wins); everything else →
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
   `AUTO-RESOLVE: ...` merge commit.
-- **/update** → `update_bot()` (update_bot.py:131-156): stops the three send/edit
-  queue loops first (main.py:194-196), then `/push` + `/pull` + restart. With
+- **/update** → `update_bot()` (update_bot.py:136-161): stops the three send/edit
+  queue loops first (main.py:201-203), then `/push` + `/pull` + restart. With
   `force_reset:True` it instead runs `git reset --hard origin/main`
-  (update_bot.py:113-128) and restarts.
+  (update_bot.py:118-133) and restarts.
 
 ### What the merge strategy implies
 
@@ -80,7 +79,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
    ONLY when the reverted commit touches pickles alone, and only with the diff_stats.py
    gate re-run on the result before any push. Step-by-step recovery procedure:
    autocroissant-debugging-playbook §1.
-3. **`force_reset:True` is dangerous** — main.py:188 literally labels it
+3. **`force_reset:True` is dangerous** — main.py:195 literally labels it
    `(dangerous!)`. It skips the pickle push entirely and hard-resets to
    `origin/main`, discarding ALL local state: uncommitted code edits AND every
    pickle change since the last successful /push (e.g. an afternoon of
@@ -151,16 +150,17 @@ deliberate change-control decision: either force-add it or (better) amend
 
 ## Checklist: add a new slash command
 
-Worked example to imitate: the `/update_stats` block at main.py:352-364 (2026-10-20).
+Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
-   query_card.py, parsing in psd_analyzer.py, admin in management.py, etc.). Plain
+   query_card.py, parsing in psd_parser.py, the /update_stats traversal in repo_traverser.py, GitHub access in
+   github_api.py, admin in management.py, etc.). Plain
    `def` is fine — it will be thread-wrapped. The body must follow the queue rules:
    never `await` Discord or call `interaction.followup` directly from worker code;
    send via `queue_message` / `queue_file` / `queue_edit` / `queue_command`
-   (commands/utils.py:37-61). **autocroissant-architecture-contract** owns the
-   full contract (queues, 15-minute interaction-token fallback, `perms_check`
-   inversion — it returns True when the user LACKS permission, utils.py:249).
+   (commands/utils.py:36-60). **autocroissant-architecture-contract** owns the
+   full contract (queues, 15-minute interaction-token fallback, `lacks_admin`,
+   which returns True when the user is NOT an admin, utils.py).
 2. **Register it in main.py**, copying the house pattern exactly:
    ```python
    my_worker = to_thread(my_worker)                # rebind FIRST, on its own line
@@ -172,28 +172,28 @@ Worked example to imitate: the `/update_stats` block at main.py:352-364 (2026-10
        await interaction.response.defer()          # or send_message(...) for quick acks
        await my_worker(interaction, some_arg)
    ```
-   `to_thread` (utils.py:67-76) wraps blocking functions in `asyncio.to_thread` and
+   `to_thread` (utils.py:80-89) wraps blocking functions in `asyncio.to_thread` and
    passes `async def` workers through unchanged, so the rebind line is correct for
    both. Keep the `func = to_thread(func)` line immediately BEFORE the decorated
    wrapper — that is the convention every block follows; see "looks safe but isn't"
    for why you must not delete or fold it.
-   Admin-only commands start with the `if perms_check(interaction): ... return`
-   block (copy it from /push, main.py:178-180). The newest example of a whole admin
-   command block is `/sync_emojis` (main.py:659-672, added 2026-10-19).
+   Admin-only commands start with the `if lacks_admin(interaction): ... return`
+   block (copy it from /push, main.py:185-187). The newest example of a whole admin
+   command block is `/sync_emojis` (main.py:678-691, added 2026-10-19).
 3. **Add `@app_commands.describe`** for every parameter. Description wording and
    style: **autocroissant-docs-and-style**. Note Discord quirks that already shaped
    signatures here: big integers (guild/user IDs) are passed as `str` because Discord
    ints cap around 15 digits.
 4. **Add a help entry** in `commands/help.py`: pick the right dict
-   (`general_commands`:6, `text_commands`:22, `card_commands`:35,
-   `stats_commands`:70, `music_commands`:90), key format
+   (`general_commands`:6, `text_commands`:29, `card_commands`:42,
+   `stats_commands`:77, `music_commands`:103), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:114) dispatches on the category word.
+   `print_help` (help.py:127) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
-   the 7 modules listed in `INCLUDE_FILES` (setup.py:21-29); new files are uncompiled
-   by default (the newest example: `commands/type_emojis.py`, 2026-10-19, deliberately
-   left out). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
-   (setup.py:35) applies: **no negative indexing anywhere in the file** — use
+   the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
+   by default (`type_emojis`, `repo_history`, `tts_save` and `github_api` were deliberately left out; the four
+   modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
+   (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
    that is already declared (declare it once; the management.py incident,
    autocroissant-failure-archaeology Entry 10.5). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
@@ -201,10 +201,10 @@ Worked example to imitate: the `/update_stats` block at main.py:352-364 (2026-10
    setup.py:9-18).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
-   `on_ready` (main.py:100-119) records every command in `slash_registry` (which is
+   `on_ready` (main.py:106-126) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
-   (`sync_guild_commands`, main.py:92-96). If the command does not appear after
-   restart, run `/sync_global` (main.py:651). Client-side, Discord may need a
+   (`sync_guild_commands`, main.py:98-102). If the command does not appear after
+   restart, run `/sync_global` (main.py:670). Client-side, Discord may need a
    reload before new commands show up.
 7. **Verify** by invoking the command in Discord; do not run `python3 main.py`
    casually to test — starting the bot connects it to the live guilds
@@ -226,8 +226,9 @@ ignored — read the story before you decide the rule doesn't apply to you.
 
 ## Changes that look safe but aren't
 
-- **Renaming or moving `CardInfo`/`CardStats` (psd_analyzer.py:444, :214), or renaming
-  `commands/psd_analyzer.py`.** Pickle stores the class's import path; the committed
+- **Renaming `CardInfo`/`CardStats` (in commands/card_models.py since the 2026-10-20 split, with `__module__`
+  pinned to `commands.psd_analyzer`), dropping that pin, or renaming `commands/psd_analyzer.py`.** Pickle stores the
+  class's import path (the pin is why the split left stats.pkl byte-identical); the committed
   stats.pkl/old_stats.pkl would fail to unpickle on every machine after the next
   pull. Schema/location changes require a data migration shipped in lockstep —
   precedent: the "Big massive refactor" (366c8d9, 2025-10-20) changed the schema and
@@ -236,12 +237,18 @@ ignored — read the story before you decide the rule doesn't apply to you.
   is deliberate (non-negotiable #1; dd800bc). Same for adding `.removeprefix()`-style
   "modernizations" without checking what the original expression did — that exact
   move created the local-path bug that lived from 2025-12-02 to 2026-10-19.
-- **Deleting a "duplicate" function definition in main.py.** `slash_set_ratio` is
-  defined twice (the second is /set_repo's handler) and `slash_delete_song` twice
-  (find them with the provenance grep; line numbers drift). Both commands work because each decorator
-  registered its function at def time; Python then silently rebinds the name.
-  Renaming/merging/reordering these blocks changes what is registered. Wart detail:
-  **autocroissant-architecture-contract**.
+- **Adding or "fixing" a type hint in an INCLUDE_FILES module.** Cython enforces builtin annotations: `x: list`
+  rejects a tuple, `x: dict` rejects a defaultdict (old_stats is one), `x: str` rejects None unless the default is None,
+  `x: float` turns 1 into 1.0, `x: bool` turns None into False, `-> dict` rejects a defaultdict return. Measured with
+  Cython 3.3 on 2026-10-20 (code-health audit §3.1); live example: compiled `analytics.parse_interval(None)` raises
+  where the .py returns None. Only ABCs, unions, `Optional[...]` with a None default and dataclass fields are inert.
+  Gate any hint change with a compiled run (autocroissant-build-and-env §5).
+- **Deleting or merging a slash handler block in main.py, or changing its `name=`.** Each
+  `@tree.command` registers its function at def time and `slash_registry` keys on `cmd.name`, so the
+  Python def name is decorative: the two duplicate names (C5) were renamed on 2026-10-20 to
+  `slash_set_repo` and `slash_delete_all_music` with no registration change (`tests/test_robustness.py`
+  checks names are unique and map to the right commands). Deleting a block, or editing `name=`,
+  does change what is registered and breaks stored reminders. Detail: **autocroissant-architecture-contract**.
 - **Removing or moving the `func = to_thread(func)` rebind lines** because they look
   redundant next to the decorator. The rebind is what makes a blocking worker
   awaitable; break it and the command fails (or blocks the event loop) only when
@@ -254,9 +261,13 @@ ignored — read the story before you decide the rule doesn't apply to you.
 - **Hand-committing pickles from a dev machine**, or `git add -A` after a run that
   touched them. Your data loses to `--ours` on the running host, and you have broken
   the PICKLE-only revert property (see merge-strategy implications).
-- **Trusting /pull's own description.** It says "hard reset" but performs a merge;
-  the actual reset is `/update force_reset:True` — and that one really does discard
-  everything local (see force_reset danger above).
+- **Importing card classes or `stats_db` from `commands.card_models` (or the other split modules) in
+  query_card or new code.** Import them from the `commands.psd_analyzer` facade until every host has rebuilt:
+  a stale monolithic psd_analyzer `.so` next to the new `.py` files would otherwise give two `stats_db`
+  objects (autocroissant-architecture-contract, lazy-import cycle breaks).
+- **Letting a test or script write the live pickles.** `tests/conftest.py`'s `pickles_untouched` fixture
+  hashes stats.pkl, old_stats.pkl, aliases.pkl and reminder.pkl around the run and fails it on any change;
+  keep new tests behind it (sandbox copies only).
 - **Editing card text or stats in this repo.** Ability text and stats live in
   TTSCardMaker PSDs (class (d)); anything you "fix" in stats.pkl by hand is
   overwritten by the next `/update_stats` and was never legitimate to begin with.
@@ -264,7 +275,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
   font tokens, emoji names and website icons all key off the file stem; the font manifest
   keeps the old entry, so old tokens keep parsing while the card shows letters. Add an alias
   instead (ttscardmaker-companion §1.7).
-- **Changing `ICON_MANIFEST_PATH` / `ICON_FONT_PREFIX` in psd_analyzer.py or `emoji_name` rules
+- **Changing `ICON_MANIFEST_PATH` (global_config.py) / `ICON_FONT_PREFIX` (psd_parser.py) or `emoji_name` rules
   in type_emojis.py** without the matching TTSCardMaker change. These are cross-repo contracts
   (values: autocroissant-config-and-flags).
 
@@ -307,9 +318,10 @@ and update this file.
 | /update_stats is remote-only; local mode archived (since 2026-10-20) | `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | Rule 6 history: local-path fix lives on in the archive branch | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `git grep -c "removeprefix(" archive/local-update-stats -- archive/local_update_stats.py` (no output: the word only appears in the header's history note) |
 | Stored reminders drop retired options | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py` |
-| Duplicate handler names still present | `grep -n "def slash_set_ratio\|def slash_delete_song" main.py` |
+| Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
-| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` |
+| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 77, 103; 127) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (220 passed on 2026-10-20) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |

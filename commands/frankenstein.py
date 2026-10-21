@@ -1,4 +1,3 @@
-from cv2 import resize, INTER_AREA
 from discord import Interaction
 from numpy import ndarray, mean
 from typing import Optional
@@ -63,6 +62,7 @@ class CardMerger:
         height, width = base_image.shape[:2]
 
         # Resize all images to match base dimensions
+        from cv2 import resize, INTER_AREA          # lazy: cv2 costs ~50 ms and 25 MB at startup
         resized_images = [
             resize(img, (width, height), interpolation=INTER_AREA)
             for img in images

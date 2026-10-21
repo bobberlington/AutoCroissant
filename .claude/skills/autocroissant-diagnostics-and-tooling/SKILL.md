@@ -5,7 +5,7 @@ description: Load this skill whenever you need to MEASURE something in AutoCrois
 
 # AutoCroissant diagnostics and tooling
 
-Measure, don't eyeball. This repo has no tests and no CI; the pickles ARE the database and the
+Measure, don't eyeball. This repo has no CI and only an offline pytest suite (`tests/`); the pickles ARE the database and the
 costliest historical failures were corrupted pickle commits and silent parse regressions. The five
 scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/` turn "it looks fine"
 into numbers you can compare, diff, and re-run. All five are read-only: they never write a pickle,
@@ -18,10 +18,10 @@ does NOT chdir: relative `.pkl` arguments resolve against your SHELL's cwd, so r
 from the repo root (or pass absolute pickle paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
 
-**Noise lines**: every script that imports bot code prints one to three
-`Git token found, API limited to 5000 requests/hour.` lines from the config import chain
-(plus `Trying to open stats.pkl` / `Loaded existing stats...` progress lines where the DB is
-loaded). Ignore them or filter with `| grep -v "Git token"`. `dump_psd_layers.py` imports no
+**Noise lines**: scripts that load the DB print `Trying to open stats.pkl` / `Loaded existing stats...`
+progress lines. Since 2026-10-20 the `Git token found, API limited to 5000 requests/hour.` line is
+printed only by main.py (`print_token_status`), so scripts print none; the `| grep -v "Git token"`
+filters below are harmless leftovers. `dump_psd_layers.py` imports no
 bot code and prints no noise. WARNING: do not pipe `diff_stats.py` through grep when you need
 its exit code — the pipeline exit is grep's, not the script's (see the push gate below).
 
@@ -190,7 +190,7 @@ validator problems: NONE
   `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
   Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
   GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
-  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived, for these scripts. gap_trace.py calls `_process_layer`, whose signature did
+  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived (RepositoryTraverser in repo_traverser.py since the split, re-exported), for these scripts. gap_trace.py calls `_process_layer`, whose signature did
   not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
@@ -203,7 +203,7 @@ validator problems: NONE
 - `validator problems` — exactly what `/update_stats` would record in `card.problems`.
 
 **`--with-db` vs fresh** (verified 2026-07-11): `PSDParser.parse` preserves `author` and
-`series` from an existing DB entry when they are non-empty (psd_analyzer.py, the
+`series` from an existing DB entry when they are non-empty (psd_parser.py, the
 "Preserve author and series" block in `parse()` — grep below). Default (fresh) parses against an
 empty DB: no preservation, so Mini Doomer fresh shows neither field, while
 `--with-db` adds `series: Kirby` and `author: Chestnut` and prints
@@ -547,7 +547,7 @@ Conventions (match the existing five — read one before writing):
    sys.path.insert(0, str(REPO_ROOT))
    os.chdir(REPO_ROOT)  # pickle paths in global_config are repo-relative
    ```
-   and expect the `Git token found...` noise lines.
+   (no token line: `print_token_status` runs only in main.py since 2026-10-20).
 3. READ-ONLY, always: never call `save()`, `update_stats()`, anything network-mutating, and never
    write a pickle. If a script needs scratch output, write to `/tmp` or a scratchpad, never the repo.
 4. Prefer re-driving REAL parser methods over copying their logic; where orchestration must be
@@ -556,6 +556,17 @@ Conventions (match the existing five — read one before writing):
 6. THEN update this SKILL.md: add a routing-table row, a per-tool section (purpose, invocation,
    annotated output, failure modes, questions answered), and a provenance re-run line. A script
    without a section here does not exist as far as the skill library is concerned.
+
+## Measurement tools outside this folder (2026-10-20)
+
+Not part of the five, and not read-only in the same sense (they need a sandbox copy), but kept:
+
+| Tool | Where | What it measures |
+|---|---|---|
+| Offline test suite | `tests/` (`~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests`) | Behaviour contracts, parser goldens; owner: autocroissant-validation-and-qa row 1c |
+| Whole-corpus parser gate | `/Users/michaelsrouji/Documents/ac-optimization/scripts/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
+| Profiling and benches | `/Users/michaelsrouji/Documents/ac-optimization/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and the pickles) and `scripts/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS, /update_stats requests; results in `profile.md` and `network-speed-results.md` there |
+| Skill line-ref refresh | `/Users/michaelsrouji/Documents/ac-optimization/docs_refaudit/refs6.py` + `apply6.py`; `grepcheck.py` runs every quoted grep | Stale `file:line` references after code moves (follows code across files) |
 
 ## When NOT to use this skill
 
@@ -587,7 +598,8 @@ local-path fix and the new red-flag row; 2026-10-20: the scripts' icon-vocabular
 (autocroissant-build-and-env §1). On 2026-10-20 parse_one.py and gap_trace.py gained the icon
 vocabulary and parse_one.py's note on the removeprefix bug was rewritten; diff_stats.py's docstring
 (line 21) still names "the removeprefix local-path bug" as the meaning of mass path changes, which
-reads as history.
+reads as history. After that day's psd_analyzer split, parse_one.py, gap_trace.py and inspect_pickle.py were
+re-run on Mini Doomer and the live pickles (imports through the `commands.psd_analyzer` facade): same output.
 
 Re-verification one-liners (from repo root):
 
@@ -621,14 +633,14 @@ python3 $S/dump_psd_layers.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of War
 Cited code locations (line numbers drift; re-find with these):
 
 ```bash
-grep -n "TYPE_REGION_RATIO = " commands/psd_analyzer.py            # 0.5 (line 33 as of 2026-10-19)
-grep -n "_extract_from_layers" commands/psd_analyzer.py            # gap_trace's mirrored method (def at 463, 2026-10-20)
-grep -n "def _process_layer" commands/psd_analyzer.py              # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
-grep -n "Preserve author and series" commands/psd_analyzer.py      # parse_one --with-db semantics
-grep -n "relpath(full_path" commands/psd_analyzer.py                # the 2026-10-19 local-path fix (line 1226); removeprefix gone
+grep -n "TYPE_REGION_RATIO = " commands/psd_parser.py               # 0.5 (psd_parser.py since the 2026-10-20 split)
+grep -n "_extract_from_layers" commands/psd_parser.py               # gap_trace's mirrored method
+grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
+grep -n "Preserve author and series" commands/psd_parser.py         # parse_one --with-db semantics
+git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # the 2026-10-19 local-path fix; local mode archived 2026-10-20
 grep -n "_icons_from_local" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-10-20)
 grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/TTSCardMaker" (line 4)
-grep -rn "def to_dict" commands/psd_analyzer.py                    # field-omission behavior in output
+grep -n "def to_dict" commands/card_models.py                      # field-omission behavior in output
 ```
 
 If `_extract_from_layers` changes shape, update gap_trace.py (its docstring says so). If

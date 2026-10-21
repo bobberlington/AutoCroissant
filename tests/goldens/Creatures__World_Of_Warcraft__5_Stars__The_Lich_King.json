@@ -1,0 +1,22 @@
+{
+ "alt_names": null,
+ "blob": "1732d9bfad6157f4755cf5c923958575be4e43e3",
+ "card": {
+  "ability": "(OFS) Equip Frostmourne.\n(1PG)(OYT) Summon up to 3 different dead prime creatures as non-protective minions with -2 bars in all of their base stats (reductions apply to summoned minions).\nMay summon each minion to a creature of choice.\nThese minions die at the end of their turn.\nMinions inherit [undead].",
+  "atk": 7,
+  "def": 6,
+  "hp": 7,
+  "path": "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",
+  "series": "world of warcraft",
+  "spd": 5,
+  "stars": 5,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "ice",
+   "undead"
+  ]
+ },
+ "path": "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",
+ "validator": []
+}

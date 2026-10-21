@@ -1,0 +1,25 @@
+{
+ "alt_names": null,
+ "blob": "8ca3d785c7c2f28d7f1a7861579b5add3a80a67c",
+ "card": {
+  "ability": "",
+  "atk": 4,
+  "def": 4,
+  "hp": 3,
+  "path": "Auxiliary/Minions/God_Tamer.psd",
+  "problem": [
+   "NO STARS FOUND (put the star layers in a group named \"Stars\")"
+  ],
+  "spd": 6,
+  "stars": 0,
+  "timestamp": 0.0,
+  "type": "minion",
+  "types": [
+   "offensive_minion"
+  ]
+ },
+ "path": "Auxiliary/Minions/God_Tamer.psd",
+ "validator": [
+  "NO STARS FOUND (put the star layers in a group named \"Stars\")"
+ ]
+}

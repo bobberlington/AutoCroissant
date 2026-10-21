@@ -9,7 +9,6 @@ from pathlib import Path
 from random import shuffle
 from shutil import rmtree
 from typing import Optional
-from yt_dlp import YoutubeDL
 
 import config
 from commands.utils import (
@@ -39,8 +38,8 @@ cookies_from_browser: bool = bool(getattr(config, "browser_cookies", getattr(con
 
 @dataclass
 class MusicState:
-    vc: VoiceClient | None = None
-    last_channel_id: int | None = None
+    vc: Optional[VoiceClient] = None
+    last_channel_id: Optional[int] = None
     loop_song: bool = False
 state = MusicState()
 
@@ -66,7 +65,21 @@ if getattr(config, "POSTPROCESS", False):
         "preferredquality": "320",
     }
     ydl_opts["postprocessors"] = [post_proc]
-dl_pre = YoutubeDL(ydl_preprocess_opts, auto_init="no_verbose_header")
+_dl_pre = None                                          # made on first use (yt_dlp + this cost ~90 ms at startup)
+
+
+def _ydl(opts: dict):
+    """A YoutubeDL (yt_dlp loads on first use)."""
+    from yt_dlp import YoutubeDL
+    return YoutubeDL(opts, auto_init="no_verbose_header")
+
+
+def _preprocessor():
+    """The shared URL inspector."""
+    global _dl_pre
+    if _dl_pre is None:
+        _dl_pre = _ydl(ydl_preprocess_opts)
+    return _dl_pre
 
 
 # ========================
@@ -172,14 +185,15 @@ def queue_folder_songs(interaction: Interaction, folder: str, play_next: bool = 
 # ========================
 # Music Functions
 # ========================
-async def init_vc(interaction: Interaction) -> None:
-    """Join user's voice channel if not already connected."""
+async def init_vc(interaction: Interaction) -> bool:
+    """Join user's voice channel if not already connected. False (after a reply) when they aren't in one."""
     if not interaction.user.voice:
-        await queue_message(interaction, "You are not in a voice channel.")
-        return
+        queue_message(interaction, "You are not in a voice channel.")
+        return False
     if state.vc is None or not state.vc.is_connected():
         state.vc = await interaction.user.voice.channel.connect()
     state.last_channel_id = interaction.channel_id
+    return True
 
 
 def list_all_music(interaction: Interaction) -> None:
@@ -229,7 +243,7 @@ def play_music(interaction: Interaction, song: str, play_next: bool = False) -> 
     # --- Handle URL ---
     if song.startswith("http"):
         if "&list=" not in song:
-            pre_info = dl_pre.extract_info(song, download=False)
+            pre_info = _preprocessor().extract_info(song, download=False)
 
             # --- Playlist or Mix ---
             if pre_info.get("entries"):
@@ -242,10 +256,9 @@ def play_music(interaction: Interaction, song: str, play_next: bool = False) -> 
                         queue_local_song(None, Path(d.get("filename")), play_next)
 
                 def _download_playlist() -> None:
-                    YoutubeDL({**ydl_opts,
-                               "progress_hooks": [_playlist_download_hook],
-                               "outtmpl": str(folder / Path(ydl_opts.get("outtmpl")).name)},
-                               auto_init="no_verbose_header").extract_info(url=song, download=True)
+                    _ydl({**ydl_opts,
+                          "progress_hooks": [_playlist_download_hook],
+                          "outtmpl": str(folder / Path(ydl_opts.get("outtmpl")).name)}).extract_info(url=song, download=True)
 
                 queue_message(interaction, f"Starting playlist download: {playlist_title}")
                 queue_command(_download_playlist, executor=executor)
@@ -257,10 +270,9 @@ def play_music(interaction: Interaction, song: str, play_next: bool = False) -> 
                 queue_local_song(None, Path(d.get("filename")), play_next)
 
         def _download_song() -> None:
-            YoutubeDL({**ydl_opts,
-                       "noplaylist": True,
-                       "progress_hooks": [_single_download_hook]},
-                       auto_init="no_verbose_header").extract_info(url=song, download=True)
+            _ydl({**ydl_opts,
+                  "noplaylist": True,
+                  "progress_hooks": [_single_download_hook]}).extract_info(url=song, download=True)
 
         queue_command(_download_song, executor=executor)
         queue_message(interaction, f"Downloading: {song}")

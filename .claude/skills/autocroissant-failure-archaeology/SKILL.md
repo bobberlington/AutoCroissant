@@ -5,7 +5,7 @@ description: The chronicle of every major AutoCroissant investigation, dead end,
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added) and **2026-10-20** (Entries 10.10-10.16). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no tests, no CI. Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added) and **2026-10-20** (Entries 10.10-10.28). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -129,7 +129,7 @@ Windows host ever runs local mode.
 
 ## Entry 2 — The Feb 8 2026 whitespace saga
 
-**Settled lesson: whitespace in ability text is load-bearing. NEVER collapse runs of spaces.** Gaps of 3+ spaces (`\s{3,}`, `_gap_pattern`, psd_analyzer.py:686 as of 2026-10-20) are where type icons visually sit — they are the *input signal* for type injection, and leftover gaps in stored text are *evidence* of undetected icons.
+**Settled lesson: whitespace in ability text is load-bearing. NEVER collapse runs of spaces.** Gaps of 3+ spaces (`\s{3,}`, `_gap_pattern`, psd_parser.py:318 as of 2026-10-20) are where type icons visually sit — they are the *input signal* for type injection, and leftover gaps in stored text are *evidence* of undetected icons.
 
 ### Symptom
 
@@ -153,7 +153,7 @@ The Freezer and Mini Doomer parsed with junk spacing/quotes around injected `[ty
 Pre-saga and post-saga, the **only** whitespace transformation applied to ability text is punctuation tightening, applied AFTER injection:
 
 ```python
-ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_analyzer.py:1146 as of 2026-10-20
+ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_parser.py:778 as of 2026-10-20
 ```
 
 The rejected transformations (do not reintroduce): `sub(r'\s{2,}', ' ', ...)` (1c26747, also ate newlines) and `sub(r'[ \t]{2,}', ' ', ...)` (d6d1278, still destroyed gap evidence and legitimate spacing).
@@ -230,7 +230,7 @@ Six days in January 2026, the validator emitted `TYPE / WHITESPACE MISMATCH (N t
 
 1. **Legitimate mismatches exist.** A type at the start or end of a line consumes a type icon without any mid-text `\s{3,}` gap — the *exact* case 0490195 had just added support for. Whole-text gap counting therefore under-counts on healthy cards, so count inequality is not a reliable error signal.
 2. **The concurrent placement bug polluted the data.** With 0490195's index-shift bug live, gap/type accounting was wrong on the very cards used to judge the check.
-3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_analyzer.py:1244-1248 (2026-10-20):
+3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_parser.py:876-880 (2026-10-20):
 
 ```python
         # Append remaining types to the last line
@@ -253,7 +253,7 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 - **Symptom/motive**: the pre-refactor bot was dict-pickles + ad-hoc modules (`metadata.pkl`, `descriptions.pkl`-era remnants, `channel_text.py`).
 - **What the diff shows** (`git show 366c8d9 --stat`): 4,223 insertions / 1,752 deletions across 16 files; `channel_text.py` renamed → `analytics.py`; `management.py` born; and **stats.pkl, old_stats.pkl, metadata.pkl were DELETED from the repo** (`Bin → 0`) — a deliberate schema reset. Pickles were re-seeded fresh by the next PICKLE (793abf1, 2025-10-26, a 66-byte old_stats).
 - **Consequences that still bind today**:
-  - `stats.pkl` values are `CardInfo`/`CardStats` **@dataclasses defined in commands/psd_analyzer.py** → unpickling requires this repo on `sys.path` with `config.py` present (the import chain runs at load). Renaming/moving CardInfo, CardStats, or `commands/psd_analyzer.py` breaks every existing pickle — autocroissant-change-control class rules apply.
+  - `stats.pkl` values are `CardInfo`/`CardStats` **@dataclasses pickled as `commands.psd_analyzer.*`** (defined in commands/card_models.py since the 2026-10-20 split, `__module__` pinned) → unpickling requires this repo on `sys.path` with `config.py` present (the import chain runs at load). Renaming/moving CardInfo, CardStats, or `commands/psd_analyzer.py` breaks every existing pickle — autocroissant-change-control class rules apply.
   - Any pickle from a checkout ≤ `366c8d9~1` is **legacy plain-dict format** and will not load through current code paths.
   - `metadata.pkl` never returned (its role folded into stats.pkl); `descriptions.pkl` was already dead (Entry 7).
 - **Status**: settled architecture. Schema details are owned by impossibility-cards-reference; the pickles-in-git decision rationale by autocroissant-architecture-contract.
@@ -262,8 +262,8 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 
 ## Entry 6 — The cythonization wave (Dec 2025) and its long tail
 
-- **f7c915c** (2025-12-02 20:18, "cythonized the code"): `setup.py` born (181 lines) — compiles command modules with `wraparound=False`, `boundscheck=False`, `cdivision=True` (setup.py:32-44 on 2026-10-20); `cython` added to requirements.txt; `.gitignore` +73/−14 (87 changed lines) of build-artifact patterns; and a mechanical sweep converting every `x[-1]` to `x[len(x) - 1]` across frankenstein/psd_analyzer/query_card (negative indexing is banned under `wraparound=False`). **Cost of the sweep**: the removeprefix bug (Entry 1, fixed 2026-10-19) and the `dirname` classify bug (fixed fb47b5d) — both born in this one commit.
-- **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive as ironic annotations on the INCLUDE list (setup.py:27-28 on main; the diffusion line left with the AI code, Entry 10.16). Also converted music_player's remaining `[-1]`s.
+- **f7c915c** (2025-12-02 20:18, "cythonized the code"): `setup.py` born (181 lines) — compiles command modules with `wraparound=False`, `boundscheck=False`, `cdivision=True` (setup.py:36-48 on 2026-10-20); `cython` added to requirements.txt; `.gitignore` +73/−14 (87 changed lines) of build-artifact patterns; and a mechanical sweep converting every `x[-1]` to `x[len(x) - 1]` across frankenstein/psd_analyzer/query_card (negative indexing is banned under `wraparound=False`). **Cost of the sweep**: the removeprefix bug (Entry 1, fixed 2026-10-19) and the `dirname` classify bug (fixed fb47b5d) — both born in this one commit.
+- **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive as ironic annotations on the INCLUDE list (setup.py:31-32 on main; the diffusion line left with the AI code, Entry 10.16). Also converted music_player's remaining `[-1]`s.
 - **Excluded from compilation, with reasons** (setup.py:9-18 comments, current): `main.py` (entry point), `config.py`/`global_config.py` (configuration), `commands/update_bot.py` (uses execv/execl for restart), `commands/utils.py` (core utilities, decorators, dynamic behavior), `__init__` files, setup.py itself. Net: **8 of 10 command modules compiled** as of 2026-07-11; **7 of 10** since 2026-10-20 (`commands/type_emojis.py` arrived uncompiled on 2026-10-19; `diffusion.py` left main, Entry 10.16).
 - **dd800bc** (2026-01-30 23:15): a `bboxes[-1]` had crept back into psd_analyzer (`max_height = max(bboxes[-1][1].y // 3, card_mid_y)`); converted to `bboxes[len(bboxes) - 1]`. Nothing enforces the idiom automatically — it is maintained by hand, and this commit is proof stragglers happen. Do NOT "clean up" `x[len(x) - 1]` back to `x[-1]` in the 7 compiled modules.
 - **bf9478e** (2026-01-26 17:02, "lazily import torch and diffusers"): closed the era — `import torch` at module top replaced by `get_torch()` / `torch_available()`, so the compiled+core bot runs with zero AI overhead. Doctrine and mechanics owned by autocroissant-ai-boundary (branch `archive/ai-generation`).
@@ -298,13 +298,13 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 
 - **Symptom**: long messages with multiple ``` code blocks split mid-fence, breaking Discord rendering; then splitting crashed outright.
 - **Root cause & fixes**: old `split_long_message` only handled a message that both started AND ended with a single fence. **e21b986** (2026-01-18) rewrote it with an `in_code` fence-tracking loop — but also removed the `max_length` default, breaking callers that passed no argument. **d699b3f** (2026-01-26) restored `max_length: int = BREAK_LEN`.
-- **Status**: fixed; current `split_long_message` at utils.py:195, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_analyzer.py:1262 as of 2026-10-20.)
+- **Status**: fixed; current `split_long_message` at utils.py:212, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_parser.py:894 as of 2026-10-20.)
 
 ### 8.2 Deploy items / card.types clobber + force_update born
 
 - **Symptom**: item cards (the "deploy items") showed wrong types.
-- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_analyzer.py:841-844 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
-- **Fix**: **f94d95f** (2026-01-18) deleted the overwrite. Same commit: added `MISSPELT_CARD_TYPES = ['undread', 'tornado']` validator (now `+ 'error'`, psd_analyzer.py:50 as of 2026-10-20 — today's single problem card "20 Creature Types" trips `tornado`), and threaded the `force_update` parameter end-to-end (slash param born here; its interaction with archiving is Entry 3).
+- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_parser.py:473-476 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
+- **Fix**: **f94d95f** (2026-01-18) deleted the overwrite. Same commit: added `MISSPELT_CARD_TYPES = ['undread', 'tornado']` validator (now `+ 'error'`, psd_parser.py:23 as of 2026-10-20 — today's single problem card "20 Creature Types" trips `tornado`), and threaded the `force_update` parameter end-to-end (slash param born here; its interaction with archiving is Entry 3).
 - **Status**: fixed in f94d95f.
 
 ### 8.3 Don't overwrite stats with empty stats
@@ -360,7 +360,9 @@ Earlier internal notes/briefs contain these errors. The diffs win. Do not propag
 
 These fixes landed together on 2026-10-19 alongside the stoogedings icon-font parsing (impossibility-cards-reference
 §4.1), `commands/type_emojis.py` and the reminder rewrite. "Working tree" below means uncommitted when written; 10.1-10.13 were
-committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbers are 2026-10-19 readings.
+committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e, 10.17-10.19 in e13d754, bad0496, ce94585 and
+c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optimization pass. Line numbers are
+2026-10-19 readings unless an entry says otherwise.
 
 ### 10.1 Scheduled `/update_stats` inherited the dangerous default (was B2)
 
@@ -382,27 +384,27 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:361-365 after the split).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:209 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; 1829 on 2026-10-20), matching main.py:361.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:479 after the 2026-10-20 split), matching main.py:368.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
 
 - **Symptom**: `python3 setup.py build_ext --inplace` failed with
-  `commands/management.py:246:12: 'target_message' redeclared`. `cythonize()` raises `CompileError` before
+  `commands/management.py:210:12: 'target_message' redeclared`. `cythonize()` raises `CompileError` before
   `setup()` runs, and `clean_artifacts()` has already deleted old artifacts, so a host that tried to compile got NO
   compiled modules and ran plain Python without anyone noticing.
 - **Root cause**: in `add_reactions`, the `else` branch re-declared the variable with an annotation
@@ -419,7 +421,7 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
 - **Symptom**: after a stall while running, the old `check_reminder` advanced a repeating reminder by one
   `frequency` per pass (`when += frequency`), so it fired once a second until it caught up. The startup path
   (Entry 8.6) used a `while when <= now` loop.
-- **Fix**: `_next_run(when, frequency, now)` jumps to the first slot after now in one step (analytics.py:216),
+- **Fix**: `_next_run(when, frequency, now)` jumps to the first slot after now in one step (analytics.py:203),
   used at startup and in the scheduler.
 
 ### 10.7 The old reminder command parser turned True into False
@@ -444,7 +446,7 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
   Also, a stored command that failed to parse hit `continue` before the reschedule step, so it re-fired its error
   message every second.
 - **Fix**: reminders store `creator_id`/`creator_name` and fire as a `_ReminderUser` stand-in, so the slash
-  callback's own `perms_check` runs again at fire time. Legacy reminders with no creator still run as the bot
+  callback's own `lacks_admin` runs again at fire time. Legacy reminders with no creator still run as the bot
   (`LEGACY_RUNS_AS_BOT = True`, analytics.py:37) and `/list_reminders` labels them. `/remove_reminder` is limited
   to admins or the creator. Each reminder is isolated (a crash disables only that one), and a bad command reports
   once per due slot.
@@ -508,7 +510,7 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
   `update_stats_local()` for sandbox sweeps (never imported by the bot, not in INCLUDE_FILES). The same day,
   at the owner's request, that file left main for its own local branch, `archive/local-update-stats`
   (commit e2835a7 on a7a4bb3); main has no `archive/` folder. The offline
-  helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py for parse_one.py and
+  helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py (repo_traverser.py since the split) for parse_one.py and
   gap_trace.py. In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:41):
   stored reminders drop the two options at load (`REMINDER_VERSION` 2 → 3) and at fire time, pre-v2
   positional values are mapped by the old option order first, and a new reminder naming one gets a
@@ -547,7 +549,7 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
   `RETIRED_OPTIONS` and the reminder migration, `_populate_types_from_local`/`_icons_from_local` (diagnostics
   scripts), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features (AI later moved off main, 10.16).
   `analytics.parse_time_str` (a one-line public wrapper of `_parse_when`, written in the rewrite and uncalled) was
-  left in place as a candidate.
+  left in place as a candidate, and deleted in the 2026-10-20 code-health pass.
 
 ### 10.14 History rewritten to drop an attribution trailer (2026-10-20)
 
@@ -575,6 +577,166 @@ committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e. Line numbe
   `commands/diffusion.py`, the six AI commands, `init_pipeline`, the "ai" help category, `pildiscordfile`,
   `requirements2.txt`, `models/` and its .gitignore lines are gone; setup.py builds 7 modules. S1 fixed:
   `config.browser_cookies` (old configs keep `vram_usage == "mps"`). C4 fixed. Bug B3 lives on with the branch.
+
+### 10.17 Card image links pinned to commit shas (was C14, 2026-10-20)
+
+- **Symptom**: `/query` and ability-search images linked `raw.githubusercontent.com/<repo>/main/<path>`, so an old
+  Discord message showed whatever the PNG looks like today.
+- **Root cause**: `get_card_url` built the URL from `main`, not from the commit that last changed that PNG.
+- **Evidence**: e13d754, query_card.py: `-return f"https://raw.githubusercontent.com/{self.repository}/main/{quote(...)}"`
+  → `+return raw_url(self.repository, path, self.blobs.get(path))`; new commands/repo_history.py walks the history
+  clone (`~/Documents/TTSCardMaker-history.git`) for {path: (blob, commit)} into repo_history.json; refreshed at
+  startup and on /update_stats with a changed tree; falls back to `main` when a path is unknown.
+- **Status**: fixed in e13d754.
+
+### 10.18 Emoji sync moved inside /update_stats; weekly reminder retired (was Task 1b, 2026-10-20)
+
+- **Symptom**: the startup sync only uploaded MISSING emojis, so an edited icon kept its old emoji. A weekly
+  reminder (`f590a57e`, `/sync_emojis`, Sun 3 AM) covered new icons between restarts.
+- **Root cause**: no record of which icon blob each emoji was made from.
+- **Evidence**: e13d754, type_emojis.py `sync_changed_emojis` (+ `_load_blobs`/`_save_blobs`, type_emojis.json):
+  on a changed tree, upload or replace emojis whose blob changed (with `_no` variants) and delete the ones whose icon
+  is gone; `update_stats` queues it when `traverser.tree is not None`. Then the reminder was removed with
+  `/remove_reminder reminder_id:f590a57e`.
+- **Status**: fixed in e13d754. `/sync_emojis refresh:True` is still the manual full re-upload (V1).
+
+### 10.19 TTS save kept current by the bot (was Task 2, 2026-10-20)
+
+- **Symptom**: the Tabletop Simulator save drifted from the repo (new cards missing from decks, unpinned links,
+  old names), and it was fixed by hand.
+- **Root cause**: nothing tied the save to card changes.
+- **Evidence**: bad0496 (`python -m commands.tts_save`), ce94585 (`/update_tts_save`; `update_after_stats` after a
+  /update_stats whose tree touched images, TTS/decks.json, MDW/Card Edits.json or the save), c4caaf9 (when
+  `GIT_TOKEN` can't write: commit through the history clone and push over SSH, no force).
+- **Status**: shipped; operations in autocroissant-run-and-operate §TTS save.
+
+### 10.20 help.py and describe strings matched to the code (was C1, C2, C3, 2026-10-20)
+
+- **Symptom**: /help and the /pull description said /pull "does a hard reset" (main.py also said "than"); 4 of 51
+  commands had no /help entry; /export_cards said only_ability defaults to True.
+- **Root cause**: help.py and the describe strings were edited separately from the code (docs-and-style §2.4's
+  checklist was skipped), and the only_ability describe string stated no default.
+- **Evidence**: help.py /pull, /export_cards and 3 new entries (`/list_guild_channels`, `/get_channel_messages`,
+  `/view_old_metadata`; the fourth, /list_guild_members, was removed: 10.23); main.py /pull description and the
+  /export_cards describe strings with `Default = ...`. `tests/test_robustness.py::test_help_covers_every_command`
+  (50 registered = 50 documented) and `::test_help_and_describe_match_the_code`.
+- **Status**: fixed 2026-10-20 (robustness pass; uncommitted when written).
+
+### 10.21 /play outside a voice channel raised TypeError (was B4, 2026-10-20)
+
+- **Symptom**: `/play` with the caller not in voice logged `TypeError: object NoneType can't be used in 'await'
+  expression`; the reply "You are not in a voice channel." still arrived because it was queued first.
+- **Root cause**: `init_vc` did `await queue_message(...)`; queue_message is sync and returns None. The exception
+  also stopped `slash_play` before `play_music`, so nothing was downloaded: just dropping the `await` would have
+  started downloads with no voice client.
+- **Evidence**: `init_vc` now returns False after queueing the reply and True when connected; `/play` and
+  `/play_all` return on False. `test_init_vc_outside_voice_replies`: reply queued, no exception, `play_music`/`play_all`
+  never called.
+- **Status**: fixed 2026-10-20 (robustness pass).
+
+### 10.22 Dispatch/edit loops no longer die on one bad message (was B5, 2026-10-20)
+
+- **Symptom**: one poisoned send stopped `process_dispatch_queue`/`process_edit_queue` for good and the bot went
+  silent until a restart. Vectors: a deleted or invisible channel (`client.get_channel()` None, AttributeError inside
+  the fallback), content over 2,000 characters (a 2,001+-char /query_ability, /play or /query_rulebook option echoed
+  back, a long /queue), Forbidden in a channel without Send Messages, or any non-HTTP error (ValueError, TypeError).
+  The fallback also re-sent attachments as 0-byte files (the failed send had read them to the end).
+- **Root cause**: a `tasks.loop` stops on an uncaught exception, the except caught only HTTPException/AttributeError,
+  and the fallback ran inside the except with no guard.
+- **Evidence**: main.py `_dispatch`/`_edit`/`_fallback_send`/`_split_content`; each drained item is in its own try
+  that logs `Dispatch: dropped a message for channel N: <error>`; the fallback calls `File.reset()` and skips a None
+  channel; long content is split with `split_long_message` (edits: first chunk edited, the rest sent). The command loop
+  guards each item too and keeps a reference to each task; `run_command` logs a failed function with its name and
+  traceback. 9 tests in `tests/test_robustness.py` (all fail on 7f6bd05): missing channel, Forbidden/400/ValueError/
+  TypeError in the fallback, a 6,000+-char /queue-like message (4+ chunks, each <= 2,000, file on the last),
+  1,000-byte file re-sent whole, edit loop, command loop.
+- **Status**: fixed 2026-10-20 (robustness pass). The 2026-10-19 `_channel_missing` reminder guard stays.
+
+### 10.23 /list_guild_members removed: it needed the members intent (was C6, 2026-10-20)
+
+- **Symptom**: `/list_guild_members` always answered "Intents.members must be enabled to use this."
+- **Root cause**: main.py builds `Intents.default()` + `message_content`; `guild.chunk()` needs the privileged
+  members intent. Setting `intents.members = True` in code without turning on Server Members Intent in the Developer
+  Portal makes login fail (PrivilegedIntentsRequired), so the bot would not start.
+- **Evidence**: the command, its import, `management.list_guild_members` (and its `__all__` entry, plus the now
+  unused `ClientException` import) were deleted; it never had a help entry. 50 commands registered.
+- **Status**: removed 2026-10-20. To bring it back: enable the intent in the portal first, then in code (with
+  `Client(chunk_guilds_at_startup=False)`), then restore the function from 7f6bd05.
+
+### 10.24 Startup survives a GitHub 5xx (was B7, 2026-10-20)
+
+- **Symptom**: after a restart during a GitHub outage, /query found nothing until the next /update_stats and the
+  emoji sync failed, so [fire]-style tokens stayed text (seen on the jetson 2026-10-20). A `/set_repo` typo had the
+  same effect mid-session, and blocked the event loop while it fetched.
+- **Root cause**: `populate_files` called `response.json()` on whatever came back and cleared `git_files` first (a
+  JSON 401/403/404 body emptied the list; an HTML 5xx page raised JSONDecodeError in `run_command`). The emoji
+  listing raised on the 5xx and published nothing.
+- **Evidence**: `github_api.get_with_retry` (in utils.py until the 2026-10-20 code-health pass; 3 tries, 1 s then 2 s apart, on a connection error, 429 or 5xx);
+  `populate_files` keeps the last good tree, list and ETag on any non-200/304 or bad body and prints
+  "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)"; `set_repository`
+  defers, fetches in a thread and restores the old repository on failure; `_list_type_icons` retries and falls back to
+  `card_repo._tree` ("using the last good card tree"); `sync_type_emojis` still loads the bot's existing emojis
+  when the listing fails ("using the N existing emojis"). Tests: 503 x3, HTML 200, 401, connection errors, non-dict
+  JSON, retry-then-success, /set_repo 404, emoji fallback.
+- **Status**: fixed 2026-10-20 (robustness pass). /update_stats' own tree fetch is unchanged (B9).
+
+### 10.25 Duplicate slash function names renamed (was C5, 2026-10-20)
+
+- **Symptom**: main.py defined `slash_set_ratio` twice (the second was /set_repo's handler) and `slash_delete_song`
+  twice (the second was /delete_all_music's).
+- **Root cause**: copy-paste; harmless because `@tree.command` registers the function object at def time and
+  `slash_registry` keys on `cmd.name`.
+- **Evidence**: the second defs are now `slash_set_repo` and `slash_delete_all_music`; no `name=` changed.
+  `test_handler_names_are_unique` checks every top-level def in main.py is unique and that set_ratio, set_repo,
+  delete_song and delete_all_music map to the right callbacks.
+- **Status**: fixed 2026-10-20 (robustness pass).
+
+### 10.26 Pillow and PyNaCl declared (was C12, 2026-10-20)
+
+- **Symptom**: requirements.txt listed neither, yet type_emojis.py imports PIL at module level and voice needs PyNaCl;
+  both arrived only as transitive dependencies (psd-tools, PyGithub).
+- **Root cause**: requirements written from direct imports of the original code; type_emojis.py (2026-10-19) added PIL.
+- **Evidence**: df01761, requirements.txt `+Pillow`, `+PyNaCl` (autocroissant-build-and-env §3).
+- **Status**: fixed in df01761.
+
+### 10.27 psd_analyzer.py split behind a facade; shallow-path crash fixed (code-health pass, 2026-10-20)
+
+- **Symptom**: psd_analyzer.py was 2,347 lines mixing models, edits, parser, traversal and commands. Compiled,
+  `CardClassifier.classify("Card.psd")` segfaulted (exit 139) and `"Items/Card.psd"` died with SIGBUS (138): with
+  `boundscheck=False` the folder indexing read out of bounds (the .py raised IndexError/ValueError). No such PSD
+  existed, but one stray commit would have killed the jetson bot during /update_stats.
+- **Root cause**: growth by accretion; the classifier assumed every path had its folder rule's depth.
+- **Evidence**: commands/card_models.py, card_edits.py, psd_parser.py, repo_traverser.py hold the code;
+  psd_analyzer.py re-exports it and keeps the metadata/export commands and init_psd. `CardInfo.__module__ =
+  CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:124): re-dumped stats.pkl and old_stats.pkl were
+  byte-identical in all four .py/.so combinations. The four modules joined INCLUDE_FILES (11 compiled) so the moved
+  code keeps its compiled semantics; query_card imports through the facade so a stale monolithic .so cannot leave
+  two `stats_db` objects. `classify` returns UNKNOWN for a path too shallow for its rule (psd_parser.py:237-247).
+  Gates: parse_all/compare over 813 cards, 0 differences on .py and compiled; `tests/test_split_contract.py`.
+  Also deleted as dead: `analytics.parse_time_str`, `get_old_stats_as_dict`, `CardInfo.from_dict`, two unread
+  FakeInteraction attributes; GitHub access moved to commands/github_api.py (uncompiled); renames `perms_check` ->
+  `lacks_admin`, `num_new` -> `num_changed`, `dirty_files` -> `seen_cards`.
+- **Status**: done 2026-10-20 (uncommitted when written). Deploys must rebuild: a stale analytics .so imports
+  `perms_check` and stops the bot at startup (autocroissant-run-and-operate §3).
+
+### 10.28 Network and speed pass (2026-10-20)
+
+- **Symptom**: /query_ability plain queries took ~17 ms of fuzzy matching each; /update_stats waited ~0.9 s per
+  changed PSD on 2 serial commit lookups; startup fetched the 598 KB tree twice; `import main` took ~1.1 s / 185 MB.
+- **Root cause**: no upper-bound prefilter before `SequenceMatcher.ratio()`; `totalCount` + `commits[0]` on a
+  per_page=1 client; each tree user kept its own fetch; cv2, yt_dlp and PyGithub imported at module level.
+- **Evidence**: query_card `_fuzzy_labels` (skip when `2*min(la,lb)/(la+lb) <= match_ratio`: 60 short queries
+  1138 → 63 ms, results identical) and the exact-key fast path in `_find_closest_match` (100 exact names 424 → 0 ms);
+  repo_traverser `_commit_page` (per_page=100, 2-thread pool: 6 PSDs 16-18 s → 6.5-8.7 s, commit requests 25 → 6;
+  forced sweep 2,714 → 1,810 requests by the audit's count, which took all 904 tracked PSDs; the 813 outside
+  Markers/MDW give ≈ 2,450 → 1,630, analysis-toolkit Recipe 4) with one PyGithub client per thread (a shared one
+  returned another PSD's commits 5-6 times in 500 under load); the tree ETag handed to the card list and shared with
+  the emoji listing (startup 200 + 200 → 200 + 304); lazy imports (`import main` 1059-1278 → 646-720 ms, 185 →
+  122.5 MB RSS); TTS save objects cached by sha (repeat no-change run 9 requests / 6.4 MB → 3 / 0 MB). Tests:
+  `tests/test_network_speed.py`. Parser gate: 813 cards, 0 differences (.py and compiled).
+- **Status**: done 2026-10-20 (uncommitted when written). Not done: the 1 s tick latency and one message per
+  search result (owner decisions), lazy GitPython, per-thread `requests.Session` for blobs; details in
+  `/Users/michaelsrouji/Documents/ac-optimization/network-speed-results.md`.
 
 ## How to add an entry
 
@@ -605,21 +767,21 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 
 | Fact | Re-verify with |
 |---|---|
-| New history since this file | `git log --oneline -5` (anything above 9fb3093 → review entries) |
+| New history since this file | `git log --oneline -5` (anything above 167f30a, or the commits of the 2026-10-20 optimization pass, → review entries) |
 | Entry 1 fixed | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115 on the archive branch; was psd_analyzer.py:1226 before the archive) and `grep -rn removeprefix commands/` (expect empty); `git log -S removeprefix --oneline -- commands/psd_analyzer.py` shows the fix 53db8ee above f7c915c |
 | Entry 1 origin diff | `git show f7c915c -- commands/psd_analyzer.py \| grep -B5 -A5 removeprefix`; old code: `git show 366c8d9:commands/psd_analyzer.py \| grep -n 'relative_path ='` |
 | Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
 | Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
-| Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_analyzer.py` |
-| Entry 10 fixes present | `grep -n 'remove(local_file)\|startswith(.\.)\|force_update: bool = False' commands/psd_analyzer.py` (1668, 1502, 1446/1829); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 221); `grep -n 'target_message: Message' commands/management.py` (one hit, before the `try`) |
+| Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
+| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/repo_traverser.py` (365, 209, 150/479); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 208); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |
-| Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_analyzer.py` (:1146 on 2026-10-20) |
-| MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_analyzer.py` (:1244 on 2026-10-20) |
-| Archive guard | `git show e7befd5`; current: `grep -n 'history only when' commands/psd_analyzer.py` |
+| Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_parser.py` (:778 on 2026-10-20) |
+| MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_parser.py` (:876 on 2026-10-20) |
+| Archive guard | `git show e7befd5`; current: `grep -n 'history only when' commands/repo_traverser.py` |
 | Save gate ("am forehead") | `git show 4e03190 \| grep 'num_new > 0'`; `git show fb47b5d \| grep 'num_updated > 0'` |
 | Deleted artifacts list | `git log --diff-filter=D --name-only --format='DELETED-IN %h %ad %s' --date=short \| head -40` |
-| Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/psd_analyzer.py commands/query_card.py commands/frankenstein.py commands/music_player.py` |
-| Line numbers cited (drift-prone) | psd_analyzer.py: `grep -n 'def update_stats\|_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS' commands/psd_analyzer.py` → 1827 / 686 / 50 / 1262 as of 2026-10-20 (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
+| Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
+| Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 477; `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |

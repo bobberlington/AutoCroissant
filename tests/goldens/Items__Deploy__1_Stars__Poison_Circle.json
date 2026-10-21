@@ -1,0 +1,17 @@
+{
+ "alt_names": null,
+ "blob": "4c48fd49f5afdfbb6e6300cecba68e8a2d0aaa8e",
+ "card": {
+  "ability": "Persists for 3 turns.\n(BOT) All creatures in this slot are inflicted with 5T1 Poison.",
+  "path": "Items/Deploy/1 Stars/Poison_Circle.psd",
+  "stars": 1,
+  "subtype": "deploy",
+  "timestamp": 0.0,
+  "type": "item",
+  "types": [
+   "deploy"
+  ]
+ },
+ "path": "Items/Deploy/1 Stars/Poison_Circle.psd",
+ "validator": []
+}

@@ -1,0 +1,17 @@
+{
+ "alt_names": null,
+ "blob": "1231872ac49da0bae3192d4d9ff0f80f7bbd5203",
+ "card": {
+  "ability": "Costs 7 SP to use.\nDeal 3 Piercing damage to everything on the PF.\nAfter resolving the item (even if negated), gain 5 SP.",
+  "path": "Items/Attack/3 Stars/Shooting_Star.psd",
+  "stars": 3,
+  "subtype": "attack",
+  "timestamp": 0.0,
+  "type": "item",
+  "types": [
+   "attack"
+  ]
+ },
+ "path": "Items/Attack/3 Stars/Shooting_Star.psd",
+ "validator": []
+}

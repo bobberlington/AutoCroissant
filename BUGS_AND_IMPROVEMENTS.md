@@ -17,6 +17,12 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-20 operations: `/update_stats` re-parses only PSDs whose blob changed and saves after edits-only runs
   (10.15); old_stats history is appended only when a PSD's blob changed or the card moved (forced re-parses no longer
   archive); `/push` rebases onto new code first; history rewritten to drop an attribution trailer (10.14).
+- 2026-10-20 (later): C14 sha-pinned image links (10.17); emoji sync inside /update_stats, weekly /sync_emojis reminder
+  removed (10.18); TTS save updater and /update_tts_save (10.19); C12 Pillow and PyNaCl declared (10.26); V3 (Cython
+  built on the jetson; a verification row, so no story: autocroissant-build-and-env §5).
+- 2026-10-20 optimization pass: C1, C2, C3 (10.20); B4 (10.21); B5 (10.22); C6, by removing `/list_guild_members`
+  (10.23); B7 (10.24); C5 (10.25); psd_analyzer split and the compiled shallow-path crash (10.27); network and speed
+  (10.28).
 
 ---
 
@@ -26,9 +32,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
 |---|-----|-------|--------|---------------------------|--------------|
-| B4 | **`init_vc` crashes when the caller is not in a voice channel.** `await queue_message(...)` awaits a plain function's `None` return → `TypeError` instead of the intended "You are not in a voice channel." message. | `commands/music_player.py` (~line 177) | `/play` from outside a voice channel errors instead of replying | Candidate fix: drop the `await` (queue_message is sync) | `autocroissant-debugging-playbook` §music |
-| B5 | **The dispatch loop can die permanently.** Exceptions outside the caught set stop a `tasks.loop` for good: (a) deleted/unavailable channel → `client.get_channel()` returns `None` → `AttributeError` **inside the fallback**; (b) >2000-char content that fails in the fallback path too. After that, the whole bot goes silent (all sends flow through this loop). **Partly mitigated 2026-10-19:** reminders now skip channels the bot can't see (`_channel_missing` in analytics.py), so the scheduler no longer feeds the loop a dead channel; every other sender still can, and `process_dispatch_queue`/`process_edit_queue` in main.py are unchanged. | `main.py` (`process_dispatch_queue`, fallback `client.get_channel(...).send(...)`) | One poisoned message silences the entire bot until restart | Candidate fix: wrap each drain iteration in `try/except` + log; guard `get_channel()` None | `autocroissant-architecture-contract` §known-weak points |
-| B7 | **A GitHub 5xx at startup leaves the bot without its card list.** `populate_files` calls `response.json()` on the error page (JSONDecodeError in `run_command`) and the emoji sync fails; /query finds nothing until the next /update_stats. Seen 2026-10-20 on the jetson; a restart fixed it. | `commands/query_card.py` `populate_files`, `commands/type_emojis.py` | Cards missing from /query after an unlucky restart | Check the status, retry with backoff, keep the last good tree | `autocroissant-debugging-playbook` |
+| B8 | **A deleted PSD stays in stats.pkl.** `update_stats` calls `prune_clean_cards()` only when `num_changed > 0`, so a deletion alone leaves the card listed until some other card changes. Pinned by `tests/test_update_stats.py::test_deleted_card_alone_is_kept` (update it with the fix). | `commands/repo_traverser.py` `update_stats` | Removed cards still answer /query | Also prune when the tree lost a path | `autocroissant-architecture-contract` |
+| B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/repo_traverser.py` `traverse_remote` | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
+| B10 | **Card pickle saves are not atomic and not locked.** `StatsDatabase.save` and `save_aliases` write in place (reminder.pkl uses tmp + fsync + replace); a kill (`/restart_bot`, `/update`) or a concurrent `/push` mid-write can leave a truncated stats.pkl or old_stats.pkl, and the load only catches EOFError. | `commands/card_models.py` `save`, `commands/query_card.py` `save_aliases` | A truncated pickle can be pushed to the other host and the website | tmp + fsync + `os.replace`, one lock for update_stats and every save (network-robustness audit item 2) | `autocroissant-architecture-contract` weak point 11 |
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
 
@@ -43,14 +49,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 ### 1.3 OPEN — docs and cosmetics
 
-| # | Issue | Where |
-|---|-------|-------|
-| C1 | `/pull` help + description claim "hard reset, then a git pull" — the code does fetch+merge (pickles-ours/code-theirs); the hard reset only exists behind `/update force_reset:True`. The main.py description also says "than" (help.py already says "then"). | `commands/help.py:10`, `main.py:166` |
-| C2 | Four commands missing from help.py: `/view_old_metadata`, `/list_guild_members`, `/list_guild_channels`, `/get_channel_messages` (50 registered, 46 documented as of 2026-10-20). | `commands/help.py` |
-| C3 | `/export_cards only_ability` — help says default True, code default is False. | `commands/help.py:76` vs `main.py:374` |
-| C5 | Duplicate function names in main.py (`slash_set_ratio` ×2, `slash_delete_song` ×2). Harmless today (decorators registered at def time) but fragile — rename carefully, never "clean up" casually. | `main.py` |
-| C6 | `/list_guild_members` requires the members intent, which `main.py` never enables — the command always fails with the ClientException message. Enable the intent (and in the Discord dev portal) or remove the command. | `main.py` intents block, `commands/management.py` |
-| C14 | `/query` and ability-search images use `raw.githubusercontent.com/.../main/...` links, so old Discord messages show the newest image. Use the latest commit sha of the card's PNG instead (planned: NEXT_SESSION_PLAN.md). | `commands/query_card.py` `get_card_url` |
+None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 
 ### 1.5 Pending live verification (as of 2026-10-19)
 
@@ -58,7 +57,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 |---|------|-------------------|-----------------------|--------------|
 | V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
 | V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19 | Not known to have fired against live Discord yet. Watch the first startup's `migrated command` log lines and the first firing | `autocroissant-run-and-operate` §9 |
-| V3 | Cython build on a host | Done on the jetson 2026-10-20 (Cython 3.3.0; 8 modules then, 7 since the AI move) | Nothing | `autocroissant-build-and-env` §5 |
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
@@ -102,39 +100,58 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 
 ### 2.3 Operational hardening (small, high-value)
 
-1. A defensive dispatch loop (B5): the single point of silence.
-2. Fix B4's `await` and C6's intent mismatch.
-3. Sync help.py with reality (C1–C3) in one docs pass — checklist in `.claude/skills/autocroissant-docs-and-style/SKILL.md`.
-4. ~~C12 (declare Pillow)~~ done 2026-10-20: Pillow and PyNaCl are declared.
+Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26). Open: B8, B9, B10.
 
 ### 2.4 Planned next (NEXT_SESSION_PLAN.md; Task 3 first)
 
 1. PSD edits from website edits with the psd-tools fork, no Photoshop or browser (Task 3, the main effort; plan
    decision D4). Photopea is the reference renderer and emergency fallback until the fork meets its targets. Runs
-   on GitHub Actions, else on the jetson once it has Python 3.11+ (Task 0, in parallel).
-2. Commit-sha image links for `/query` (C14; Task 1).
-3. Emoji sync inside `/update_stats`: upload or replace only icons whose blob changed, then drop the weekly
-   `/sync_emojis` reminder (Task 1b).
-4. TTS save automation (Task 2): audit the save against the repo, then a script (and a command) that adds new cards
-   to their decks, fills in names, pins image links to commit shas only when a card changed, and updates the global
-   Lua's large-card list.
-5. A website "Table" tab to view and edit the save (Task 2b).
+   on GitHub Actions, else on the jetson (Python 3.14 venv since 2026-10-20; 3.10 removed the same day, Task 0).
+   The profile measured `PSDImage.open` at 99% of a parse (4.84 of 4.88 s for 50 PSDs); lazy Txt2 and layer
+   effects would cut about 40% (profile.md item 4).
+
+Done 2026-10-20: commit-sha image links (Task 1, e13d754), emoji sync inside /update_stats with the weekly
+reminder removed (Task 1b, e13d754), TTS save automation and /update_tts_save (Task 2: bad0496, ce94585, c4caaf9),
+the website Table tab (Task 2b, TTSCardMaker 0d49893).
 
 ### 2.5 Deep optimization and refinement pass (all code)
 
 One pass over every module, measured before and after, with no behavior change unless listed:
-- **Network and I/O:** count requests per command; conditional requests and caches everywhere (done for
-  /update_stats); no repeated downloads; streaming for large files.
-- **Speed:** profile startup, /update_stats, searches and reminders; cache parsed data; avoid pandas copies in
-  `ability_search_engine`; check Cython-friendliness of hot loops.
-- **Robustness:** B4, B5 and C6; every `tasks.loop` survives exceptions; timeouts on all HTTP calls; temp files
-  always cleaned.
-- **Code health:** dead code and duplicate helpers (vulture, grep); consistent naming and types; split
-  `psd_analyzer.py` (2,000+ lines) into parser / traverser / edits / models; one place for repo-path constants.
-- **Concurrency:** confirm every blocking call runs off the event loop; one lock per pickle.
-- **Tests:** a small offline suite (parser goldens on ~30 PSDs, CardEdits, duplicates, creature split,
-  update_stats with a fake tree) run before every push.
-- **Docs:** help.py matches the commands (C1-C3); skills' line numbers refreshed.
+- **Network and I/O:** done 2026-10-20 (10.28). One commit page per changed card (2 requests -> 1; a forced sweep
+  2,714 -> 1,810 over all 904 tracked PSDs, about 2,450 -> 1,630 over the 813 it parses), lookups beside the
+  downloads (6 PSDs 16-18 s -> 6.5-8.7 s), the tree ETag shared by /update_stats, the card list and the emoji
+  listing (startup 200 + 200 -> 200 + 304), TTS save objects cached by sha (repeat run 9 requests / 6.4 MB -> 3 / 0 MB).
+- **Speed:** done 2026-10-20 (10.28). Fuzzy step x18 on short ability queries (1138 -> 63 ms for 60), exact names
+  skip difflib, lazy cv2/yt_dlp/PyGithub (`import main` ~1.1 s / 185 MB -> ~0.7 s / 123 MB). Measured and left alone:
+  pandas copies (prep_dataframes never runs per query), idle cost (0.33 ms CPU/s), Cythonising the parser (its own
+  logic is 1% of a parse).
+- **Robustness:** done 2026-10-20: B4, B5, B7, C6; every `tasks.loop` survives exceptions (per-item try + log);
+  every requests call had a timeout already, git fetch/pull/push now get 120 s; temp files removed in `finally`
+  (partial PSD downloads, the emoji/history/TTS-save `.tmp` files). Tests: `tests/test_robustness.py`.
+- **Code health:** done 2026-10-20. Dead code deleted (`analytics.parse_time_str`, `get_old_stats_as_dict`,
+  `CardInfo.from_dict`, two unread FakeInteraction attributes); GitHub access in `commands/github_api.py` (token, headers,
+  tree/blob fetches, retries); repo paths in `global_config.py`; `utils.say`/`queue_long_message`, `card_name`,
+  `repo_history.pinned_ref`; `perms_check` -> `lacks_admin`, `dirty_files` -> `seen_cards`, `num_new` -> `num_changed`;
+  `psd_analyzer.py` (2,347 lines) split into `card_models` / `card_edits` / `psd_parser` / `repo_traverser` behind the
+  `psd_analyzer` facade (CardInfo/CardStats `__module__` pinned, so the pickles are unchanged; 11 compiled modules);
+  `CardClassifier.classify` no longer reads out of bounds on a shallow path (compiled: SIGSEGV). Gates: 813 cards,
+  0 differences on .py and compiled; pickle re-dump byte-identical; `tests/test_split_contract.py`.
+- **Concurrency:** open. GitPython calls on the event loop now time out after 120 s; one lock per pickle is B10.
+- **Tests:** done 2026-10-20: `tests/` (220 tests, about 13 s, offline; 38 parser goldens), run before every push
+  (autocroissant-change-control).
+- **Docs:** done 2026-10-20: help.py and the describe strings match all 50 commands (10.20); skill line references
+  re-mapped after the split (`docs_refaudit/refs6.py`).
+
+Not done in this pass (owner decisions or later; audits in `/Users/michaelsrouji/Documents/ac-optimization/`):
+- The 1 s queue tick is ~99% of a reply's bot-side time (502 ms mean), and a search sends one message per result
+  (85 per /query_ability on average): both change the execution model or the output (profile.md items 1-2).
+- B10 atomic pickle saves; a repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;
+  `GIT_TERMINAL_PROMPT=0` / SSH BatchMode for the git calls; a failed blob still records the tree ETag (B9)
+  (network-robustness.md items 2, 8, 4, 5).
+- Lazy GitPython in update_bot; a `requests.Session` per download thread (network-speed-results.md).
+- `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and `/delete_all_music` have
+  no admin gate; with `/purge` any member can delete another user's messages if the bot has Manage Messages
+  (docs.md §1.6).
 
 ### 2.6 Explicitly parked
 
@@ -146,6 +163,8 @@ One pass over every module, measured before and after, with no behavior change u
 
 - Re-verify the OPEN bugs before working on them (one-liners in each owning skill's
   "Provenance and maintenance" section); line numbers drift.
-- Library note: eight skill frontmatter descriptions contain unquoted `word: word` constructs —
-  fine for the current lenient loader, need quoting if a strict YAML parser is ever adopted.
+- Library note: eight skill frontmatter descriptions contain unquoted `word: word` constructs (2026-10-20: analysis-toolkit,
+  change-control, debugging-playbook, diagnostics-and-tooling, failure-archaeology, research-frontier, validation-and-qa,
+  ttscardmaker-companion) — fine for the current lenient loader, need quoting if a strict YAML parser is ever adopted.
+  Descriptions over about 1,500 characters are cut off in the skill listing; four were trimmed on 2026-10-20.
 - This file is an index, not a second home for the stories. Keep entries to a few lines; link the owner skill.

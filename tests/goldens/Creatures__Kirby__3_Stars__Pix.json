@@ -1,0 +1,47 @@
+{
+ "alt_names": null,
+ "blob": "d9a4b87e90110a75f14014f23a3b7486d9e945a1",
+ "card": {
+  "ability": "(OS)/(BOGT) Assume a form. \n(This is not an ability)\nGreen: Attacks cannot be negated or intercepted.\nBlue: (1PGT) Inflict a friendly creature with 1 Marked For Life until (ENDGT).\nRed: Attacks inflict 2T2 Pessimism.",
+  "atk": 6,
+  "creatures": [
+   {
+    "atk": 6,
+    "def": 4,
+    "hp": 6,
+    "spd": 8
+   },
+   {
+    "atk": 5,
+    "def": 8,
+    "hp": 6,
+    "spd": 5
+   },
+   {
+    "atk": 8,
+    "def": 2,
+    "hp": 6,
+    "spd": 5
+   }
+  ],
+  "def": 4,
+  "hp": 6,
+  "path": "Creatures/Kirby/3 Stars/Pix.psd",
+  "problem": [
+   "SEVERAL CREATURES: check each one's stats on the website"
+  ],
+  "series": "kirby",
+  "spd": 8,
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "darkmatter",
+   "machine"
+  ]
+ },
+ "path": "Creatures/Kirby/3 Stars/Pix.psd",
+ "validator": [
+  "SEVERAL CREATURES: check each one's stats on the website"
+ ]
+}

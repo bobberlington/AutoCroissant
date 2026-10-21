@@ -5,6 +5,8 @@ from os import execl, execv
 from sys import argv, executable
 from global_config import ALIAS_PKL, STATS_PKL, OLD_STATS_PKL
 
+NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
+
 
 def restart_bot():
     try:
@@ -25,14 +27,17 @@ async def git_push(interaction: Interaction):
             if "nothing to commit" not in str(e):
                 raise
         try:
-            git.pull('--rebase', '--autostash', 'origin', 'main')    # code pushed since the last pull
-        except GitCommandError:
-            git.rebase('--abort')
-            raise
+            git.pull('--rebase', '--autostash', 'origin', 'main', kill_after_timeout=NET_TIMEOUT)    # code pushed since the last pull
+        except GitCommandError as e:
+            try:
+                git.rebase('--abort')
+            except GitCommandError:
+                pass                                    # failed before the rebase began (fetch, timeout)
+            raise e
         if git.rev_list('--count', 'origin/main..HEAD').strip() == "0":
             await interaction.followup.send("Pickles are already up to date.")
             return
-        git.push()
+        git.push(kill_after_timeout=NET_TIMEOUT)
         await interaction.followup.send("Successfully pushed!")
     except GitCommandError as e:
         await interaction.followup.send(f"Push failed: {str(e)}")
@@ -46,7 +51,7 @@ async def git_pull(interaction: Interaction):
 
         # First, fetch to see the remote state
         await interaction.followup.send("Fetching from remote...")
-        git.fetch()
+        git.fetch(kill_after_timeout=NET_TIMEOUT)
 
         # Check if there are divergent branches
         local_commit = repo.head.commit.hexsha
@@ -62,7 +67,7 @@ async def git_pull(interaction: Interaction):
                 # Strategy: Keep our pickle files, accept everything else from remote
                 try:
                     # Pull with merge strategy
-                    git.pull('origin', 'main', '--no-edit')
+                    git.pull('origin', 'main', '--no-edit', kill_after_timeout=NET_TIMEOUT)
                     await interaction.followup.send("Merge successful!")
                 except GitCommandError as merge_error:
                     if "CONFLICT" in str(merge_error) or repo.index.unmerged_blobs():
@@ -90,7 +95,7 @@ async def git_pull(interaction: Interaction):
                         raise
 
         # Now do the actual pull (or it's already done from the merge above)
-        result = git.pull('origin', 'main')
+        result = git.pull('origin', 'main', kill_after_timeout=NET_TIMEOUT)
         await interaction.followup.send(f"Pull complete:\n```{result}```")
 
     except GitCommandError as e:
@@ -102,7 +107,7 @@ async def git_pull(interaction: Interaction):
             await interaction.followup.send("Attempting to reconcile divergent branches...")
             try:
                 # Rebase strategy as backup
-                git.pull('origin', 'main', '--rebase')
+                git.pull('origin', 'main', '--rebase', kill_after_timeout=NET_TIMEOUT)
                 await interaction.followup.send("Rebase successful!")
             except GitCommandError as rebase_error:
                 await interaction.followup.send(f"Rebase also failed: {str(rebase_error)}")
@@ -116,7 +121,7 @@ async def git_reset_hard(interaction: Interaction):
         git = Git('.')
 
         # Fetch latest
-        git.fetch()
+        git.fetch(kill_after_timeout=NET_TIMEOUT)
 
         # Reset to remote
         result = git.reset('--hard', 'origin/main')

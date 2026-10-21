@@ -1,0 +1,22 @@
+{
+ "alt_names": null,
+ "blob": "e226e3f10dd78ca52262e55f4d5fa81113862d2b",
+ "card": {
+  "ability": "(1PT) May lose 1 ATK to grant 1 ATK to any creature on the field.\n(E2T) Gain 1 ATK.",
+  "atk": 7,
+  "def": 6,
+  "hp": 5,
+  "path": "Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_A.psd",
+  "series": "pandas",
+  "spd": 3,
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "panda",
+   "machine"
+  ]
+ },
+ "path": "Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_A.psd",
+ "validator": []
+}

@@ -70,6 +70,7 @@ music/
 logs/
 *.csv
 *.txt
+!requirements-dev.txt
 
 # ===================================
 # Virtual Environments

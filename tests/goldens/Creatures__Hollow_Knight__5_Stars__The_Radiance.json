@@ -1,0 +1,21 @@
+{
+ "alt_names": null,
+ "blob": "6c06523d7fdf493b40f14ecdf02753251e6822a3",
+ "card": {
+  "ability": "(BOGT)/(OFS) Inflict a creature with Infected until (ENDGT).\nGains the abilities of creatures negated by Infected.\nThis ability cannot be copied.",
+  "atk": 8,
+  "def": 3,
+  "hp": 9,
+  "path": "Creatures/Hollow Knight/5 Stars/The_Radiance.psd",
+  "series": "hollow knight",
+  "spd": 5,
+  "stars": 5,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "light"
+  ]
+ },
+ "path": "Creatures/Hollow Knight/5 Stars/The_Radiance.psd",
+ "validator": []
+}

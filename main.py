@@ -1,11 +1,12 @@
 from asyncio import create_task
 from sys import exit
-from discord import ButtonStyle, Client, Intents, Interaction, Member, app_commands
+from discord import ButtonStyle, Client, File, Intents, Interaction, Member, app_commands
 from discord.ui import Button, View
 from global_config import SITE_URL
 from discord.app_commands import Choice, CommandTree
 from discord.errors import HTTPException
 from discord.ext import tasks
+from traceback import format_exc
 from typing import Optional
 
 from config import TOKEN
@@ -18,12 +19,12 @@ from commands.analytics import (
     set_reminder,
 )
 from commands.frankenstein import frankenstein
+from commands.github_api import print_token_status
 from commands.help import print_help
 from commands.management import (
     get_channel_messages,
     leave_guild,
     list_guild_channels,
-    list_guild_members,
     list_guilds,
     purge,
     sync_commands_global,
@@ -81,8 +82,11 @@ from commands.utils import (
     queue_command,
     to_thread,
     to_threadpool,
-    perms_check,
+    lacks_admin,
+    split_long_message,
 )
+
+print_token_status()
 
 # Intents permissions
 intents = Intents.default()
@@ -152,9 +156,9 @@ async def slash_restart_bot(interaction: Interaction):
     restart_bot()
 
 
-@tree.command(name="stop_bot", description="Stop the bot.")
+@tree.command(name="stop_bot", description="Stop the bot (admin only).")
 async def slash_stop_bot(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     process_command_queue.stop()
@@ -166,9 +170,9 @@ async def slash_stop_bot(interaction: Interaction):
 
 
 git_pull = to_thread(git_pull)
-@tree.command(name="pull", description="Does a hard reset, than a git pull, and reports status.")
+@tree.command(name="pull", description="Fetches and merges the latest code (keeps local pickles), and reports status (admin only).")
 async def slash_pull(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await interaction.response.send_message("Doing a git pull!")
@@ -176,28 +180,28 @@ async def slash_pull(interaction: Interaction):
 
 
 git_push = to_thread(git_push)
-@tree.command(name="push", description="Does a git push, and reports status.")
+@tree.command(name="push", description="Commits the pickles, rebases onto new code, pushes, and reports status (admin only).")
 async def slash_push(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
-    await interaction.response.send_message(f"Doing a git push!")
+    await interaction.response.send_message("Doing a git push!")
     await git_push(interaction)
 
 
 update_bot = to_thread(update_bot)
-@tree.command(name="update", description="Push pickles, pull latest code, and restart the bot.")
+@tree.command(name="update", description="Push pickles, pull latest code, and restart the bot (admin only).")
 @app_commands.describe(
-    force_reset="If True, discard all local changes and reset to remote (dangerous!)"
+    force_reset="Skip the push and pull: hard reset to remote, losing local pickles (dangerous!). Default = False."
 )
 async def slash_update(interaction: Interaction, force_reset: Optional[bool] = False):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     process_command_queue.stop()
     process_dispatch_queue.stop()
     process_edit_queue.stop()
-    await interaction.response.send_message(f"Doing a complete update of the bot!")
+    await interaction.response.send_message("Doing a complete update of the bot!")
     await update_bot(interaction, force_reset)
 
 
@@ -220,7 +224,7 @@ async def slash_set_reminder(interaction: Interaction,
                              offset: Optional[str] = "",
                              frequency: Optional[str] = "",
                              command: Optional[str] = ""):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await set_reminder(interaction, msg, when, offset, frequency, command)
@@ -229,7 +233,7 @@ async def slash_set_reminder(interaction: Interaction,
 list_reminders = to_thread(list_reminders)
 @tree.command(name="list_reminders", description="List all reminders in this channel/server.")
 @app_commands.describe(
-    all="List all reminders in the server instead of just this channel.",
+    all="List all reminders in the server instead of just this channel. Default is false.",
     hidden="Should the list only be sent to you? Default is false.",
 )
 async def slash_list_reminders(interaction: Interaction,
@@ -272,8 +276,8 @@ query_ability = to_thread(query_ability)
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
     query='The ability text you want to search for.',
-    limit='The number of cards to output before stopping.',
-    howmany='Instead of returning card images, return the number of matches.',
+    limit='The number of cards to output before stopping. Default = all.',
+    howmany='Instead of returning card images, return the number of matches. Default = False.',
 )
 async def slash_query_ability(interaction: Interaction,
                               query: str,
@@ -314,8 +318,8 @@ set_repository = to_thread(set_repository)
 @app_commands.describe(
     new_repo='If empty, posts the current repository. Otherwise sets it to this.',
 )
-async def slash_set_ratio(interaction: Interaction,
-                          new_repo: Optional[str]):
+async def slash_set_repo(interaction: Interaction,
+                         new_repo: Optional[str]):
     await set_repository(interaction, new_repo)
 
 
@@ -353,10 +357,10 @@ async def slash_frankenstein(
 #   STAT COMMANDS  #
 ####################
 update_stats = to_thread(update_stats)
-@tree.command(name="update_stats", description="Manual call to update card stats.")
+@tree.command(name="update_stats", description="Updates the card database from GitHub (re-parses changed PSDs).")
 @app_commands.describe(
-    output_problematic_cards='Should we output cards with consistency errors?',
-    force_update='Re-parse every card, even unchanged ones (downloads every PSD).',
+    output_problematic_cards='Should we output cards with consistency errors? Default = True.',
+    force_update='Re-parse every card, even unchanged ones (downloads every PSD). Default = False.',
     cards='Card names to re-parse anyway, comma separated (e.g. after a parser fix).',
 )
 async def slash_update_stats(interaction: Interaction,
@@ -370,7 +374,7 @@ async def slash_update_stats(interaction: Interaction,
 update_tts_save = to_thread(update_tts_save)
 @tree.command(name="update_tts_save", description="Updates the Tabletop Simulator save on the card repo and posts its download link (admin only).")
 async def slash_update_tts_save(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await interaction.response.defer()
@@ -380,8 +384,8 @@ async def slash_update_tts_save(interaction: Interaction):
 export_stats_to_file = to_thread(export_stats_to_file)
 @tree.command(name="export_cards", description="Exports all cards as a csv/txt.")
 @app_commands.describe(
-    only_ability='Should we only output the ability of cards?',
-    as_csv='Should we output the file as a csv?',
+    only_ability='Text export only: just names, aliases and ability text. Default = False.',
+    as_csv='Should we output the file as a csv? Default = True.',
 )
 async def slash_export_cards(interaction: Interaction,
                              only_ability: Optional[bool] = False,
@@ -401,7 +405,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
 @tree.command(name="update_metadata", description="Edit metadata for a card.")
 @app_commands.describe(
     query='The card to edit the metadata for.',
-    del_entry='Delete the entire metadata entry for this card.',
+    del_entry='Delete the entire metadata entry for this card. Default = False.',
     author='The creator of the card.',
     ability='Card ability text.',
     stars='Star count (e.g., 1-7).',
@@ -452,7 +456,7 @@ view_old_metadata = to_thread(view_old_metadata)
 @tree.command(name="view_old_metadata", description="View old metadata versions for a card.")
 @app_commands.describe(
     query='The card to view old metadata for.',
-    version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions.'
+    version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions. Default = 0.'
 )
 async def slash_view_old_metadata(
     interaction: Interaction,
@@ -504,7 +508,8 @@ async def slash_play(interaction: Interaction,
                      song: str,
                      play_next: Optional[bool] = False):
     await interaction.response.defer()
-    await init_vc(interaction)
+    if not await init_vc(interaction):                  # not in a voice channel: replied, nothing queued
+        return
     await play_music(interaction, song, play_next)
 
 
@@ -512,7 +517,8 @@ play_all = to_thread(play_all)
 @tree.command(name="play_all", description="Play all the songs in the local music directory.")
 async def slash_play_all(interaction: Interaction):
     await interaction.response.defer()
-    await init_vc(interaction)
+    if not await init_vc(interaction):                  # not in a voice channel: replied, nothing queued
+        return
     await play_all(interaction)
 
 
@@ -614,7 +620,7 @@ async def slash_delete_song(interaction: Interaction,
 
 delete_all_music = to_thread(delete_all_music)
 @tree.command(name="delete_all_music", description="Delete all music under the music directory.")
-async def slash_delete_song(interaction: Interaction):
+async def slash_delete_all_music(interaction: Interaction):
     await delete_all_music(interaction)
 
 
@@ -625,7 +631,7 @@ purge = to_thread(purge)
 @tree.command(name="purge", description="Deletes messages.")
 @app_commands.describe(
     user='The user whose messages to delete. Default is the bot\'s own messages.',
-    num='The number of messages to delete. Default = 100.',
+    num='How many recent messages to search (-1 = all). Default = 100.',
     bulk='Enable bulk delete. Deletes faster but needs Manage Messages permission. Default = false.',
 )
 async def slash_purge(interaction: Interaction,
@@ -639,7 +645,7 @@ async def slash_purge(interaction: Interaction,
 list_guilds = to_thread(list_guilds)
 @tree.command(name="list_guilds", description="Lists all guilds the bot is currently a member of (admin only).")
 async def slash_list_guilds(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await list_guilds(interaction)
@@ -654,7 +660,7 @@ async def slash_leave_guild(interaction: Interaction, guild_id: str):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await leave_guild(interaction, guild_id)
@@ -663,7 +669,7 @@ async def slash_leave_guild(interaction: Interaction, guild_id: str):
 sync_commands_global = to_thread(sync_commands_global)
 @tree.command(name="sync_global", description="Sync all slash commands globally (admin only).")
 async def slash_sync_global(interaction: Interaction):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await sync_commands_global(interaction, tree, client)
@@ -678,26 +684,11 @@ sync_type_emojis = to_thread(sync_type_emojis)
 async def slash_sync_emojis(interaction: Interaction,
                             refresh: Optional[bool] = False,
                             prune: Optional[bool] = False):
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await interaction.response.send_message("Syncing type emojis...")
     await sync_type_emojis(interaction, client, refresh, prune)
-
-
-list_guild_members = to_thread(list_guild_members)
-@tree.command(name="list_guild_members", description="Lists all members in a guild by its ID (admin only).")
-@app_commands.describe(
-    guild_id="The ID of the guild (server) whose members you want to list.",
-)
-async def slash_list_guild_members(interaction: Interaction, guild_id: str):
-    if not guild_id.isdigit():
-        await interaction.response.send_message("Invalid guild ID (must be a number).")
-        return
-    if perms_check(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await list_guild_members(interaction, guild_id)
 
 
 list_guild_channels = to_thread(list_guild_channels)
@@ -709,7 +700,7 @@ async def slash_list_guild_channels(interaction: Interaction, guild_id: str):
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await list_guild_channels(interaction, guild_id)
@@ -729,7 +720,7 @@ async def slash_get_channel_messages(interaction: Interaction,
     if not guild_id.isdigit():
         await interaction.response.send_message("Invalid guild ID (must be a number).")
         return
-    if perms_check(interaction):
+    if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
     await get_channel_messages(interaction, guild_id, channel_id, limit)
@@ -750,12 +741,97 @@ async def slash_react(interaction: Interaction,
 ########################
 # Queue Handling Loops #
 ########################
+MAX_CONTENT = 2000                                      # Discord's message length limit
+_running: set = set()                                   # queued commands in flight
+
+
 async def run_command(func, args, kwargs):
-    """Execute a command."""
-    if kwargs.get("executor"):
-        await to_threadpool(func, kwargs.pop("executor"))(*args, **kwargs)
-    else:
-        await to_thread(func)(*args, **kwargs)
+    """Execute a command; a failure is logged with the function's name."""
+    try:
+        if kwargs.get("executor"):
+            await to_threadpool(func, kwargs.pop("executor"))(*args, **kwargs)
+        else:
+            await to_thread(func)(*args, **kwargs)
+    except Exception:
+        print(f"Queued command {getattr(func, '__name__', func)} failed:\n{format_exc()}")
+
+
+def _split_content(queue, interaction, kwargs: dict) -> bool:
+    """Over-long content: put it back at the queue's front as Discord-sized messages. True if split."""
+    content = kwargs.get("content")
+    if not isinstance(content, str) or len(content) <= MAX_CONTENT:
+        return False
+    chunks = split_long_message(content)
+    extra = {"ephemeral": kwargs["ephemeral"]} if "ephemeral" in kwargs else {}
+    items = [(interaction, {**extra, "content": c}) for c in chunks[:len(chunks) - 1]]
+    items.append((interaction, {**kwargs, "content": chunks[len(chunks) - 1]}))   # files/embeds ride on the last
+    for item in reversed(items):
+        queue.appendleft(item)
+    return True
+
+
+def _attachments_to_files(kwargs: dict) -> None:
+    """A new message takes files, not edit-style attachments."""
+    if "attachments" in kwargs:
+        if "files" not in kwargs:
+            kwargs["files"] = kwargs.pop("attachments")
+        else:
+            kwargs["files"].extend(kwargs.pop("attachments"))
+
+
+async def _fallback_send(interaction, kwargs: dict) -> bool:
+    """Send as a plain channel message (the interaction failed or expired). False if the channel is gone."""
+    kwargs.pop("ephemeral", None)
+    _attachments_to_files(kwargs)
+    for f in [kwargs.get("file")] + list(kwargs.get("files") or []):
+        if isinstance(f, File):
+            f.reset()                                   # the failed send read it to the end
+    channel = client.get_channel(interaction.channel_id)
+    if channel is None:
+        print(f"Dropped a message: channel {interaction.channel_id} not found")
+        return False
+    await channel.send(**kwargs)
+    return True
+
+
+async def _dispatch(interaction, send_kwargs: dict) -> None:
+    links = send_kwargs.pop("links", None)              # [(label, url)] -> link buttons (a View needs the event loop)
+    if links:
+        view = View()
+        for label, url in links:
+            view.add_item(Button(label=label, url=url, style=ButtonStyle.link))
+        send_kwargs["view"] = view
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(**send_kwargs)
+        else:
+            _attachments_to_files(send_kwargs)
+            await interaction.followup.send(**send_kwargs)
+    except (HTTPException, AttributeError):
+        await _fallback_send(interaction, send_kwargs)  # fallback to sending as a new message
+
+
+async def _edit(interaction, edit_kwargs: dict) -> None:
+    content = edit_kwargs.get("content")
+    rest = []
+    if isinstance(content, str) and len(content) > MAX_CONTENT:
+        chunks = split_long_message(content)
+        edit_kwargs["content"] = chunks[0]
+        rest = chunks[1:]
+    extra = {}
+    try:
+        msg = await interaction.edit_original_response(**edit_kwargs)
+        if getattr(getattr(msg, "flags", None), "ephemeral", False):
+            extra["ephemeral"] = True                   # the rest stays as private as the original
+    except (HTTPException, AttributeError):
+        if not await _fallback_send(interaction, edit_kwargs):  # fallback to sending as a new message
+            return                                      # no start, so no rest
+    for c in rest:                                      # after the first chunk, to keep the order
+        dispatch_queue.append((interaction, {**extra, "content": c}))
+
+
+def _log_drop(kind: str, interaction, e: Exception) -> None:
+    print(f"{kind}: dropped a message for channel {getattr(interaction, 'channel_id', '?')}: {type(e).__name__}: {e}")
 
 
 # --- COMMAND QUEUE ---
@@ -763,8 +839,13 @@ async def run_command(func, args, kwargs):
 async def process_command_queue():
     queue_command(check_reminder)
     while command_queue:
-        (args, kwargs), func = command_queue.popleft()
-        create_task(run_command(func, args, kwargs))
+        try:
+            (args, kwargs), func = command_queue.popleft()
+            task = create_task(run_command(func, args, kwargs))
+            _running.add(task)                          # a strong reference until it finishes
+            task.add_done_callback(_running.discard)
+        except Exception as e:
+            print(f"Command queue: dropped an item: {type(e).__name__}: {e}")
 
 
 # --- DISPATCH QUEUE (messages + files + embeds) ---
@@ -772,31 +853,11 @@ async def process_command_queue():
 async def process_dispatch_queue():
     while dispatch_queue:
         interaction, send_kwargs = dispatch_queue.popleft()
-        links = send_kwargs.pop("links", None)          # [(label, url)] -> link buttons (a View needs the event loop)
-        if links:
-            view = View()
-            for label, url in links:
-                view.add_item(Button(label=label, url=url, style=ButtonStyle.link))
-            send_kwargs["view"] = view
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(**send_kwargs)
-            else:
-                if "attachments" in send_kwargs:
-                    if "files" not in send_kwargs:
-                        send_kwargs["files"] = send_kwargs.pop("attachments")
-                    else:
-                        send_kwargs["files"].extend(send_kwargs.pop("attachments"))
-                await interaction.followup.send(**send_kwargs)
-        except (HTTPException, AttributeError):
-            send_kwargs.pop("ephemeral", None)
-            if "attachments" in send_kwargs:
-                if "files" not in send_kwargs:
-                    send_kwargs["files"] = send_kwargs.pop("attachments")
-                else:
-                    send_kwargs["files"].extend(send_kwargs.pop("attachments"))
-            # fallback to sending as a new message
-            await client.get_channel(interaction.channel_id).send(**send_kwargs)
+        try:                                            # one bad message must not stop the loop (B5)
+            if not _split_content(dispatch_queue, interaction, send_kwargs):
+                await _dispatch(interaction, send_kwargs)
+        except Exception as e:
+            _log_drop("Dispatch", interaction, e)
 
 
 # --- EDIT MESSAGES ---
@@ -805,15 +866,9 @@ async def process_edit_queue():
     while edit_queue:
         interaction, edit_kwargs = edit_queue.popleft()
         try:
-            await interaction.edit_original_response(**edit_kwargs)
-        except (HTTPException, AttributeError):
-            if "attachments" in edit_kwargs:
-                if "files" not in edit_kwargs:
-                    edit_kwargs["files"] = edit_kwargs.pop("attachments")
-                else:
-                    edit_kwargs["files"].extend(edit_kwargs.pop("attachments"))
-            # fallback to sending as a new message
-            await client.get_channel(interaction.channel_id).send(**edit_kwargs)
+            await _edit(interaction, edit_kwargs)
+        except Exception as e:
+            _log_drop("Edit", interaction, e)
 
 
 # ========================

@@ -1,21 +1,28 @@
 from discord import Interaction
 
-from commands.utils import queue_message, split_long_message
+from commands.utils import queue_long_message
 
 
 general_commands = {
     "/help <text/card/music/stats/general>:"    : "Prints the help message pertaining to the specified command category.",
     "/restart_bot:"                             : "Restarts the bot.",
     "/stop_bot:"                                : "Stops the bot (admin only).",
-    "/pull:"                                    : "Does a hard reset, then a git pull, and reports status (admin only).",
+    "/pull:"                                    : "Fetches and merges the latest code, keeping the local pickles on a conflict, and reports status (admin only).",
     "/push:"                                    : "Commits the card pickles, rebases onto new code, pushes and reports status (admin only).",
-    "/update [force_reset]:"                    : "Does a push, then pull, then restarts (admin only). force_reset: hard reset to origin first (dangerous!).",
-    "/purge [user] [num] [bulk]:"               : "Deletes messages. Can specify user, number of messages (default 100), and bulk mode.",
+    "/update [force_reset]:"                    : "Pushes the pickles, pulls, then restarts (admin only).\n"
+                                                  "- force_reset: Skip the push and pull; hard reset to origin/main instead, discarding local pickles (dangerous! default: False)",
+    "/purge [user] [num] [bulk]:"               : "Deletes one user's messages among the most recent ones in this channel.\n"
+                                                  "- user: Whose messages (default: the bot's own)\n"
+                                                  "- num: How many recent messages to search (default 100, -1 = all)\n"
+                                                  "- bulk: Bulk delete; faster, needs Manage Messages (default: False)",
     "/list_guilds:"                             : "Lists all guilds the bot is currently a member of (admin only).",
     "/leave_guild <guild_id>:"                  : "Forces the bot to leave a specified guild (admin only). Provide the guild ID.",
     "/sync_global:"                             : "Syncs all slash commands globally and per guild (admin only).",
-    "/react <emojis> [message_id]:"             : "Adds reactions to a message.\n"
-                                                  "- emojis: Space-separated emojis (👍 👎 or <:custom:123456>)\n"
+    "/list_guild_channels <guild_id>:"          : "Lists the channels of a guild by its ID (admin only).",
+    "/get_channel_messages <guild_id> <channel_id> [limit]:" : "Lists a text channel's most recent messages, oldest first (admin only).\n"
+                                                  "- limit: How many messages (default 50, -1 = all)",
+    "/react <reactions> [message_id]:"          : "Adds reactions to a message.\n"
+                                                  "- reactions: Space-separated emojis (👍 👎 or <:custom:123456>)\n"
                                                   "- message_id: Optional. If omitted, reacts to the most recent message in the channel.",
 }
 
@@ -38,7 +45,7 @@ card_commands = {
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
-                                                   "- howmany: If True, only returns the count instead of images\n",
+                                                   "- howmany: If True, only returns the count instead of images (default: False)",
     "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook entries for text matching <search_text>. "
                                                   "Optional limit for max results (default: all).",
     "Query Syntax:"                             : "Flexible query syntax for /query_ability:\n"
@@ -68,7 +75,7 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and re-uploads edited type emojis. "
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones). "
                                                                "When card images, TTS/decks.json, MDW/Card Edits.json or the TTS save changed, it also updates the TTS save (as /update_tts_save; posts only when the save changed or the update failed).\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
                                                                "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
@@ -77,8 +84,8 @@ stats_commands = {
                                                   "pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
                                                   "Posts a summary, the full report as a file, and the save's download link.",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
-                                                   "- only_ability: Export only ability text (default: True)\n"
-                                                   "- as_csv: Export as CSV instead of text (default: True)",
+                                                   "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
+                                                   "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
     "/update_metadata <query> [del_entry] [author] [ability] [stars] [subtype] [series] [hp] [defense] [attack] [speed] [card_type] [types]:" :
                                                   "Edit metadata for a card. Provide query to find card, then any fields to update.\n"
@@ -87,7 +94,9 @@ stats_commands = {
                                                   "- author: cards listed in TTSCardMaker's MDW/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
                                                   "- fields fixed on the website (MDW/Card Edits.json) are set from that file again on the next /update_stats\n"
                                                   "- No parameters (except query) shows current metadata",
-    "/mass_replace <field> <old> <new>:"        : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
+    "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
+                                                  "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
+    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 
@@ -133,9 +142,7 @@ def print_help(interaction: Interaction, help_wanted: str):
         help_msg += f"{cmd}\n{desc}\n\n"
     help_msg += "```"
 
-    # Send each part after splitting
-    for part in split_long_message(help_msg):
-        queue_message(interaction, part)
+    queue_long_message(interaction, help_msg)
 
 
 # ========================

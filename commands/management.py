@@ -1,4 +1,5 @@
-from discord import Interaction, TextChannel, Message, Forbidden, ClientException, HTTPException
+from discord import Interaction, TextChannel, Message, Forbidden, HTTPException
+from typing import Optional
 
 from commands.utils import queue_message, split_long_message
 
@@ -99,43 +100,6 @@ async def sync_commands_global(interaction: Interaction, tree, client) -> None:
 # ========================
 # Guild Inspection
 # ========================
-async def list_guild_members(interaction: Interaction, guild_id: str) -> None:
-    """
-    List all members in a guild by its ID.
-
-    Args:
-        interaction: Discord interaction
-        guild_id: ID of the guild
-    """
-    guild = interaction.client.get_guild(int(guild_id))
-    if guild is None:
-        await interaction.response.send_message(f"Guild with ID `{guild_id}` not found or bot is not a member.")
-        return
-
-    # Defer response as this might take time
-    await interaction.response.defer(ephemeral=True, thinking=False)
-
-    try:
-        # Force member cache fill if not loaded
-        await guild.chunk()
-
-        # Build member list
-        member_list = [
-            f"• {member.name}#{member.discriminator} (ID: {member.id})"
-            for member in guild.members
-        ]
-
-        message_chunks = split_long_message(
-            f"**Members in {guild.name} ({len(member_list)} total):**\n"
-            + "\n".join(member_list)
-        )
-
-        for chunk in message_chunks:
-            await interaction.followup.send(chunk)
-    except ClientException:
-        queue_message(interaction, "Intents.members must be enabled to use this.")
-
-
 async def list_guild_channels(interaction: Interaction, guild_id: str) -> None:
     """
     List all channels in a guild by its ID.
@@ -229,14 +193,14 @@ async def get_channel_messages(interaction: Interaction,
 
 async def add_reactions(interaction: Interaction,
                         reactions: str,
-                        message_id: str | None = None):
+                        message_id: Optional[str] = None):
     channel = interaction.channel
     if not channel:
         queue_message(interaction, "Invalid channel.", ephemeral=True)
         return
 
     # Resolve target message (declared once: Cython rejects re-annotating a variable)
-    target_message: Message | None = None
+    target_message: Optional[Message] = None
     try:
         if message_id:
             if not message_id.isdigit():
@@ -279,7 +243,6 @@ __all__ = [
     'list_guilds',
     'leave_guild',
     'sync_commands_global',
-    'list_guild_members',
     'list_guild_channels',
     'get_channel_messages',
     'purge',

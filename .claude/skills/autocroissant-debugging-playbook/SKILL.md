@@ -22,29 +22,31 @@ Ground rules while debugging:
 Jargon used throughout: the bot drains three module-level deques once per second from `tasks.loop`
 coroutines in `main.py` - `command_queue` (deferred function calls), `dispatch_queue` (message/file
 sends), `edit_queue` (edits of a command's original response). Workers run in threads and only ever
-call `queue_message` / `queue_file` / `queue_edit` / `queue_command` (commands/utils.py:37-61).
+call `queue_message` / `queue_file` / `queue_edit` / `queue_command` (commands/utils.py:36-60).
 Design rationale lives in **autocroissant-architecture-contract**. A "PICKLE commit" is a commit
-containing only pickle-file changes, created by the bot's own `/push` (commands/update_bot.py:23).
+containing only pickle-file changes, created by the bot's own `/push` (commands/update_bot.py:25).
 
 ---
 
 ## 1. "Stats/cards look wrong after an update" (pickle corruption - costliest failure class)
 
 The database is `stats.pkl` (dict name -> CardInfo) plus `old_stats.pkl` (archive of prior versions)
-and `aliases.pkl`. `update_stats` (commands/psd_analyzer.py:1827) traverses the TTSCardMaker card
+and `aliases.pkl`. `update_stats` (commands/repo_traverser.py:477) traverses the TTSCardMaker card
 repo through the GitHub trees API (the only mode since local mode was archived on 2026-10-20), re-parses
 new, moved or changed PSDs (by blob sha), archives the old version into old_stats only when the PSD changed or moved, and saves. Corruption here silently propagates to the other machine via
 `/push`/`/pull`, so triage BEFORE pushing.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
-| Many/all cards suddenly "unknown" type, queries return nothing | `inspect_pickle.py` summary: "entries with suspicious (non repo-relative) paths" line | A path regression. The historical cause, the removeprefix bug in local traversal, was fixed 2026-10-19 (`relpath`) and local mode was archived 2026-10-20, so seeing this now means new code (or pickles from the archived traversal on branch `archive/local-update-stats`) broke it again | Suspicious-paths count > 0 AND paths start with `Users/...` instead of `Creatures/...` etc. Also: the run's summary said hundreds of "cards changed location" | Do NOT `/push`. Recover via git revert (procedure below). `grep -n "path = item" commands/psd_analyzer.py` (archived copy: the `git grep` under Provenance) to see what changed; story: **autocroissant-failure-archaeology** Entry 1 |
+| Many/all cards suddenly "unknown" type, queries return nothing | `inspect_pickle.py` summary: "entries with suspicious (non repo-relative) paths" line | A path regression. The historical cause, the removeprefix bug in local traversal, was fixed 2026-10-19 (`relpath`) and local mode was archived 2026-10-20, so seeing this now means new code (or pickles from the archived traversal on branch `archive/local-update-stats`) broke it again | Suspicious-paths count > 0 AND paths start with `Users/...` instead of `Creatures/...` etc. Also: the run's summary said hundreds of "cards changed location" | Do NOT `/push`. Recover via git revert (procedure below). `grep -n "path = item" commands/repo_traverser.py` (archived copy: the `git grep` under Provenance) to see what changed; story: **autocroissant-failure-archaeology** Entry 1 |
 | Hundreds of cards "updated" after a run, old_stats.pkl jumped | `diff_stats.py --verbose` HEAD vs working: is `timestamp` the only changed field on most rows? | Pickles from a local-timestamp sweep reached the live checkout: `/update_stats` can't do this since 2026-10-20 (local mode archived), but `update_stats_local()` from branch `archive/local-update-stats`, copied out and run outside a sandbox, can. Local mtimes are newer than the stored GitHub commit dates (813/813 on 2026-10-19), so every card was re-parsed and archived (BUGS_AND_IMPROVEMENTS B6) | Field counts dominated by `timestamp`; `git cat-file -s HEAD:old_stats.pkl` vs `wc -c old_stats.pkl` shows a big jump | Do NOT `/push`. Restore with `git checkout -- stats.pkl old_stats.pkl` (nothing pushed yet) or the revert procedure below if pushed; rerun `/update_stats` (**autocroissant-run-and-operate** §7) |
 | One card's stats/ability wrong | `inspect_pickle.py "Card Name"` - is the DB record itself wrong? | Parser issue (gaps/type injection) vs query-layer issue | DB record correct but `/query` output wrong -> query layer (alias shadowing, fuzzy match at match_ratio 0.6, stale dataframes). DB record wrong -> parser | Parser root-causing recipes: **autocroissant-analysis-toolkit**; improving the parser: **autocroissant-psd-extraction-campaign** |
-| old_stats.pkl ballooned | `git log --oneline --stat -- old_stats.pkl \| head -30` - look for byte jumps | Duplicate archiving: re-parsed cards archived even when their PSD did not change | Compare versions count in `inspect_pickle.py` summary (223 versions / 218 names as of 2026-07-11) against last known good | Since 2026-10-20 history is appended only when the PSD blob changed or the card moved (psd_analyzer.py:1673), so `cards:`/`force_update` re-parses of unchanged PSDs don't archive. Earlier guard: e7befd5 (2026-01-31). Regression precedent: cca0aaf ballooned old_stats 3196 -> 12041 bytes, reverted same-day by eb9aa84 (2025-11-10) |
-| Cards vanished from stats after an update | `diff_stats.py` HEAD vs working (command below) - "removed" section | Traversal missed files (wrong path/mode), so `prune_clean_cards` (psd_analyzer.py:581 as of 2026-10-20) archived everything it didn't see | Removed cards you did not delete = traversal problem, not deletions | Revert procedure below; check the GitHub tree listing (token, rate limit) before rerunning |
-| Update ran but nothing saved / stats stale | Bot stdout: "N cards changed or new, M unchanged, K moved" or "Nothing changed in the card repo since the last update." | Since 2026-10-20 a card is re-parsed only when its PSD blob sha differs from `card.blob_sha`; the save runs when `num_new > 0` or `traverser.changed` (authors, edits, duplicates, sha adoption) | Nothing changed -> working as designed; a parser fix needs `/update_stats cards:<names>` | This gate IS the fix for empty-stats overwrites (fb47b5d + 4e03190 "am forehead", both 2026-01-15 — the second commit switched the gate to the counter that actually works); don't "fix" it away |
-| Query results stale right after update | Did `populate_files`/`prep_dataframes` run? They are queued at the END of update_stats (psd_analyzer.py:1888-1889) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
+| old_stats.pkl ballooned | `git log --oneline --stat -- old_stats.pkl \| head -30` - look for byte jumps | Duplicate archiving: re-parsed cards archived even when their PSD did not change | Compare versions count in `inspect_pickle.py` summary (223 versions / 218 names as of 2026-07-11) against last known good | Since 2026-10-20 history is appended only when the PSD blob changed or the card moved (repo_traverser.py:370), so `cards:`/`force_update` re-parses of unchanged PSDs don't archive. Earlier guard: e7befd5 (2026-01-31). Regression precedent: cca0aaf ballooned old_stats 3196 -> 12041 bytes, reverted same-day by eb9aa84 (2025-11-10) |
+| Cards vanished from stats after an update | `diff_stats.py` HEAD vs working (command below) - "removed" section | Traversal missed files (wrong path/mode), so `prune_clean_cards` (card_models.py:169 as of 2026-10-20) archived everything it didn't see | Removed cards you did not delete = traversal problem, not deletions | Revert procedure below; check the GitHub tree listing (token, rate limit) before rerunning |
+| Update ran but nothing saved / stats stale | Bot stdout: "N cards changed or new, M unchanged, K moved" or "Nothing changed in the card repo since the last update." | Since 2026-10-20 a card is re-parsed only when its PSD blob sha differs from `card.blob_sha`; the save runs when `num_changed > 0` or `traverser.changed` (authors, edits, duplicates, sha adoption) | Nothing changed -> working as designed; a parser fix needs `/update_stats cards:<names>` | This gate IS the fix for empty-stats overwrites (fb47b5d + 4e03190 "am forehead", both 2026-01-15 — the second commit switched the gate to the counter that actually works); don't "fix" it away |
+| Query results stale right after update | Did `populate_files`/`prep_dataframes` run? They are queued at the END of update_stats (repo_traverser.py:531-532) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
+| /query finds no card at all after a restart | stdout: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" | GitHub was down or rate-limited at startup (3 tries, 1 s and 2 s apart). Since 2026-10-20 (B7, archaeology 10.24) a bad reply keeps the last good list, but right after a start that list is empty | The line names the HTTP status or error | Wait for GitHub, then `/update_stats` (it refreshes the card list) or restart |
+| A card stays stale after `/update_stats` | stdout: "download failed" for that PSD in an earlier run | A blob 5xx skipped the card but the tree ETag was recorded, so later runs get a 304 (B9, open) | `/update_stats` says "Nothing changed" while the PSD differs from stats.pkl | `/update_stats cards:<name>` |
 
 ### The traversal-mode discriminating experiment (run this first, always)
 
@@ -97,19 +99,25 @@ This is why `diff_stats.py` before every pickle push is the standing gate.
 
 ## 2. "Message never arrived / bot said nothing" (Discord API quirks - second costliest class)
 
-The dispatch chain (main.py:758-786), drained once per second:
+The dispatch chain (main.py:782-861), drained once per second:
 
 ```
 worker thread --queue_message/queue_file--> dispatch_queue --loop-->
+  0. content over 2,000 chars: split (split_long_message) and requeued at the front, files on the last chunk
   1. interaction.response.send_message(...)      if response not yet done
   2. else interaction.followup.send(...)         (attachments converted to files)
-  3. on HTTPException/AttributeError:
-       drop the 'ephemeral' flag (main.py:779)
+  3. on HTTPException/AttributeError: _fallback_send
+       drop the 'ephemeral' flag, rewind files
        client.get_channel(interaction.channel_id).send(...)   <- plain channel message
+       (channel None -> "Dropped a message: channel N not found")
+  any other error, or one raised in 3 -> "Dispatch: dropped a message for channel N: <error>"; the loop goes on
 ```
 
-The edit chain (main.py:790-803) tries `interaction.edit_original_response(...)`; on the same
-exceptions it falls back to `channel.send(...)` - i.e. a NEW message instead of an edit.
+The edit chain (`process_edit_queue`/`_edit`) tries `interaction.edit_original_response(...)` (over-long
+content: first chunk edited, the rest queued as new messages after it, ephemeral if the original is); on the
+same exceptions it falls back to `_fallback_send` - i.e. a NEW message instead of an edit; if that finds no
+channel, the rest is dropped too. Failures log "Edit: dropped a message ...".
+Since 2026-10-20 (B5 fixed) one bad message can no longer stop either loop.
 
 Two Discord facts drive most of this: interaction tokens expire after 15 minutes (Discord-documented),
 after which responses/followups/edits raise HTTPException; and fallback channel sends are ordinary
@@ -117,18 +125,18 @@ messages with no reply linkage, no ephemeral support.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
-| Bot says nothing, no error visible anywhere | Is the process alive? Then stdout for `Unhandled exception in internal background task` | Dispatch loop crashed, or all loops were deliberately stopped | Run a trivial command like `/help`: reply -> dispatch alive, your problem is worker-side; no reply -> loops dead | `/restart_bot` (works with dead loops: it replies via `interaction.response` directly and exec-restarts, main.py:143-149; note it has NO permission check) |
-| Bot mute right after a failed `/update` | Discord for "Update failed:" + "Bot was NOT restarted due to errors." | `/update` stops all three loops BEFORE doing git work (main.py:194-196); on failure nothing restarts them | Those two messages arrive (sent via direct followup, not the queues) but nothing queued afterwards does | `/restart_bot`. Anything queued while loops were stopped is lost on restart (in-memory deques) |
+| Bot says nothing, no error visible anywhere | Is the process alive? Then stdout for `Unhandled exception in internal background task` | Dispatch loop crashed, or all loops were deliberately stopped | Run a trivial command like `/help`: reply -> dispatch alive, your problem is worker-side; no reply -> loops dead | `/restart_bot` (works with dead loops: it replies via `interaction.response` directly and exec-restarts, main.py:150-156; note it has NO permission check) |
+| Bot mute right after a failed `/update` | Discord for "Update failed:" + "Bot was NOT restarted due to errors." | `/update` stops all three loops BEFORE doing git work (main.py:201-203); on failure nothing restarts them | Those two messages arrive (sent via direct followup, not the queues) but nothing queued afterwards does | `/restart_bot`. Anything queued while loops were stopped is lost on restart (in-memory deques) |
 | Reply arrived as a plain message; the slash command shows "The application did not respond" | How long did the worker run? | Work exceeded 15 min -> token expired -> fallback path 3 | Expected: reply content still arrives, unattached; the "did not respond" banner is cosmetic | Working as designed. Long jobs (`force_update` update_stats, big exports) always end like this |
-| An ephemeral ("only you") reply became public or seems lost | Was the interaction old/expired? | Fallback pops `ephemeral` (main.py:779) - ephemeral cannot survive the channel.send fallback | Same reply within 15 min is ephemeral; after, it is public | Known weak point (listed in **autocroissant-architecture-contract**); don't rely on ephemeral for slow commands |
-| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (main.py:796-803). Progress user: update_stats "N cards updated." every 25 re-parsed cards (`_send_progress`, psd_analyzer.py:1731, UPDATE_RATE psd_analyzer.py:34) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
-| Nothing sent AND stdout shows a Python traceback | Read the traceback (often logged late as "Task exception was never retrieved") | The worker crashed before queueing; `queue_*` never raise (they just append, utils.py:37-61), so anything queued BEFORE the crash still arrives | Partial output followed by silence = mid-worker crash | Fix the worker bug; file the story in **autocroissant-failure-archaeology** |
-| Everything mute after one specific message | stdout: `Unhandled exception in internal background task 'process_dispatch_queue'` | A send raised INSIDE the fallback handler, killing the loop. discord.py 2.7.1 stops a tasks.loop permanently on any exception outside its retry set (OSError/ConnectionClosed/etc.) | Verified crash vectors (code reading): channel deleted or not in cache -> `get_channel()` returns None -> AttributeError on `.send`; or content > 2000 chars -> HTTPException in the fallback too | `/restart_bot`. Prevention for new code: always route long text through `split_long_message` (BREAK_LEN=1950, utils.py:19,195) and never queue to channels the bot cannot see |
-| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:107-189) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for the background-task crash line (other senders can still kill the loop) | Remove the stale reminder (`/list_reminders`, `/remove_reminder`) |
+| An ephemeral ("only you") reply became public or seems lost | Was the interaction old/expired? | Fallback pops `ephemeral` (main.py:784) - ephemeral cannot survive the channel.send fallback | Same reply within 15 min is ephemeral; after, it is public | Known weak point (listed in **autocroissant-architecture-contract**); don't rely on ephemeral for slow commands |
+| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (main.py:814-832). Progress user: update_stats "N cards updated." every 25 re-parsed cards (`_send_progress`, repo_traverser.py:433, UPDATE_RATE repo_traverser.py:33) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
+| Nothing sent AND stdout shows a Python traceback | Read the traceback (often logged late as "Task exception was never retrieved") | The worker crashed before queueing; `queue_*` never raise (they just append, utils.py:36-60), so anything queued BEFORE the crash still arrives | Partial output followed by silence = mid-worker crash | Fix the worker bug; file the story in **autocroissant-failure-archaeology** |
+| One message missing, the rest fine | stdout: `Dispatch: dropped a message for channel N: ...` or `Dropped a message: channel N not found` | That send failed twice (e.g. Forbidden: no Send Messages; deleted channel; bad kwargs). Before 2026-10-20 this killed the loop (B5, archaeology 10.22) | The log line names the channel and error | Fix permissions or the sender; nothing to restart |
+| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:124-191) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for a `Dispatch: dropped a message` line | Remove the stale reminder (`/list_reminders`, `/remove_reminder`) |
 
 Silent-loss modes, summarized: (1) `queue_*` functions never raise to callers - a full deque with no
 drainer is indistinguishable from success at the call site; (2) the three loops are stopped by
-`/restart_bot`, `/stop_bot`, and `/update` (main.py:145-147, 157-159, 194-196 as of 2026-10-20) - a failed update
+`/restart_bot`, `/stop_bot`, and `/update` (main.py:152-154, 164-166, 201-203 as of 2026-10-20) - a failed update
 leaves them stopped; (3) a crashed loop stays crashed until process restart; (4) ephemeral flags are
 dropped in fallback. The discriminating experiment is always the same: compare bot stdout (worker
 prints, tracebacks, loop-crash lines) against what reached Discord.
@@ -138,18 +146,18 @@ prints, tracebacks, loop-crash lines) against what reached Discord.
 ## 3. "Slash command missing / stale / duplicated in Discord"
 
 Sync model: `on_ready` copies global commands to each guild and syncs per guild
-(main.py:92-109) and prints `Synced commands to guild: <name> (<id>)` per guild plus
-`Registered N slash commands for reminder system.` (51 as of 2026-10-20, built from `tree.get_commands()` at main.py:104-106, including
+(main.py:98-115) and prints `Synced commands to guild: <name> (<id>)` per guild plus
+`Registered N slash commands for reminder system.` (50 since /list_guild_members was removed on 2026-10-20, built from `tree.get_commands()` at main.py:110-112, including
 `/sync_emojis` - a quick sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroissant-run-and-operate**.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | New/changed command not in Discord after deploying code | Did the bot process restart since the code change? | Registration happens at import time; sync at on_ready | stdout has the "Synced commands to guild" lines with a fresh timestamp? | Restart the bot; per-guild sync applies within seconds |
-| Command missing in ONE server only | Was the bot added to that guild after the last restart? | No on_guild_join -> new guilds get no sync until restart | Works in old guilds, missing in the new one | Restart, or `/sync_global` (admin) which also re-syncs every guild (commands/management.py:83-96) |
-| Every command listed TWICE | Client shows two entries per name | Commands registered in both global and guild scope | `/sync_global` clears the global set then re-syncs guilds (management.py:86-93) | Run `/sync_global`; expect "Commands synced globally and to N guilds." |
+| Command missing in ONE server only | Was the bot added to that guild after the last restart? | No on_guild_join -> new guilds get no sync until restart | Works in old guilds, missing in the new one | Restart, or `/sync_global` (admin) which also re-syncs every guild (commands/management.py:84-97) |
+| Every command listed TWICE | Client shows two entries per name | Commands registered in both global and guild scope | `/sync_global` clears the global set then re-syncs guilds (management.py:87-94) | Run `/sync_global`; expect "Commands synced globally and to N guilds." |
 | Stale parameter list / description in the client | Try in a different client (mobile vs desktop) | Discord client-side cache | Fresh client shows the new schema | Ctrl+R (desktop client reload); guild syncs are near-immediate, global scope can take up to ~1 hour (Discord-documented) |
 | `CommandAlreadyRegistered` on startup | The failing command NAME in the traceback | Two `@tree.command` decorators with the same `name=` | - | Rename one; add-a-command checklist: **autocroissant-change-control** |
-| "Duplicate functions in main.py - is that the bug?" | No. | `slash_set_ratio` is defined twice (main.py:304 and 314 - the second is `/set_repo`'s handler) and `slash_delete_song` twice (main.py:597 and 604 - the second is `/delete_all_music`'s) | Both commands work: the decorator registers the function object at def time under distinct command names; Python's silent rebinding of the module-level name only affects later by-name references | A wart, not a fault. Do not "fix" casually - **autocroissant-architecture-contract** documents it |
+| "Were the duplicate functions in main.py the bug?" | No, and they are gone | C5: the second `slash_set_ratio` (/set_repo) and `slash_delete_song` (/delete_all_music) were renamed `slash_set_repo` / `slash_delete_all_music` on 2026-10-20; registration never depended on the def names | - | - |
 
 ---
 
@@ -164,7 +172,7 @@ things:
 | `/update_stats` "hung" | Progress messages: "N cards updated." should tick every 25 re-parsed cards | It is just slow - a `force_update` re-parse of ~900 PSDs (download + one commit lookup each) takes minutes | Progress still ticking = alive. stdout heartbeat warnings ("heartbeat blocked for more than N seconds") during heavy parsing are GIL contention noise, not a deadlock by themselves | Wait. If progress stopped AND no traceback: check section 2 (dispatch dead ≠ worker dead) |
 | Every command mute | `/help` test from section 2 | Queue loops stopped/crashed - all dispatch shares them | See section 2 | `/restart_bot` |
 | (branch `archive/ai-generation` only; main has no /ai) `/ai` says "Request queued. You'll be notified when generation starts." forever | `/ai_queue` - is the queue only ever growing? | The `in_progress` flag (diffusion.py:127) is wedged True. `diffusion()` sets it at diffusion.py:683 and clears it at :782 with NO try/finally - any exception mid-generation (OOM, bad image URL, NoneType pipeline) wedges it permanently. (`init_pipeline` DOES clear it in a finally, diffusion.py:255) | stdout has a generation traceback from the first failed request; every later `/ai` only queues | `/restart_bot`. Only one generation runs at a time by design; a try/finally is an open candidate fix - route via **autocroissant-change-control** |
-| Music download "hung" | stdout for a yt-dlp traceback | Downloads run on a dedicated 2-worker pool (music_player.py:36); two stuck downloads block the third | "Downloading: url" arrived but no "Queued song:" - the completion hook only fires on finish (music_player.py:255-256) | Section 6; update yt-dlp first |
+| Music download "hung" | stdout for a yt-dlp traceback | Downloads run on a dedicated 2-worker pool (music_player.py:35); two stuck downloads block the third | "Downloading: url" arrived but no "Queued song:" - the completion hook only fires on finish (music_player.py:268-269) | Section 6; update yt-dlp first |
 
 ---
 
@@ -176,10 +184,10 @@ unhealthy starts:
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | `ModuleNotFoundError: No module named 'config'` | `ls config.py` | config.py missing (it is secret and never committed) | - | Recreate it; field names (values are secret): **autocroissant-config-and-flags** |
-| `Fatal error: ...` then exit 1 | The wrapped exception text (main.py:810-816 catches everything around `client.run`) | `Improper token has been passed.` = TOKEN wrong/rotated | - | Fix TOKEN in config.py |
-| `PrivilegedIntentsRequired` | Discord developer portal | `intents.message_content = True` (main.py:87) requires the Message Content intent enabled for the app | - | Enable the intent in the portal |
+| `Fatal error: ...` then exit 1 | The wrapped exception text (main.py:878-884 catches everything around `client.run`) | `Improper token has been passed.` = TOKEN wrong/rotated | - | Fix TOKEN in config.py |
+| `PrivilegedIntentsRequired` | Discord developer portal | `intents.message_content = True` (main.py:93) requires the Message Content intent enabled for the app | - | Enable the intent in the portal |
 | Your code edits "don't take effect", or behavior is bizarrely old | `ls commands/*.so` | Stale compiled Cython artifacts shadow the edited .py at import time | Remove artifacts and rerun: behavior changes -> it was shadowing | `python3 setup.py clean` (custom CleanAll command). Build system detail: **autocroissant-build-and-env** |
-| Startup traceback unpickling stats.pkl (`ModuleNotFoundError`/`AttributeError` naming `commands.psd_analyzer` or `CardInfo`) | Did anything rename/move CardInfo, CardStats, or psd_analyzer.py? | Pickles store class paths; `stats_db.load` only catches EOFError/FileNotFoundError (psd_analyzer.py:554-579), so schema breakage propagates. If the rename also broke main.py's imports the process dies instantly; otherwise the bot runs with broken stats (init_psd is queued, its crash is just a task traceback) | `git log --oneline -- commands/psd_analyzer.py` for recent renames | Restore the original names. Renames are a gated change class: **autocroissant-change-control** |
+| Startup traceback unpickling stats.pkl (`ModuleNotFoundError`/`AttributeError` naming `commands.psd_analyzer` or `CardInfo`) | Did anything rename/move CardInfo, CardStats, or psd_analyzer.py? | Pickles store class paths; `stats_db.load` only catches EOFError/FileNotFoundError (card_models.py:142-167), so schema breakage propagates. If the rename also broke main.py's imports the process dies instantly; otherwise the bot runs with broken stats (init_psd is queued, its crash is just a task traceback) | `git log --oneline -- commands/psd_analyzer.py` for recent renames | Restore the original names. Renames are a gated change class: **autocroissant-change-control** |
 | `ImportError`/`ModuleNotFoundError` for cv2, psd_tools, discord, git, ... | `which python3`; is the right env active? | Wrong interpreter or missing requirements | - | **autocroissant-build-and-env** (requirements.txt; the AI requirements2.txt is only on branch `archive/ai-generation`) |
 
 ---
@@ -189,12 +197,12 @@ unhealthy starts:
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | "Downloading: url" then nothing | stdout for a yt-dlp traceback | YouTube churn breaking yt-dlp (the perennial cause) | Run the same URL with the standalone `yt-dlp` CLI | `pip install -U yt-dlp` FIRST, before debugging anything else (it is unpinned in requirements.txt on purpose). Then retry |
-| Download errors mentioning cookies / Safari | Is `browser_cookies` set in config.py? | yt-dlp uses Safari's cookies when `config.browser_cookies` is True; only old configs without that key fall back to `vram_usage == "mps"` (`cookies_from_browser`, music_player.py:37-38, applied at :56) | Toggle `browser_cookies` and retry the same URL (age-gated videos NEED cookies) | Terminal needs macOS disk access to read Safari cookies. Flag catalog: **autocroissant-config-and-flags** |
-| "Now playing: **song**" but silence | stdout for `ClientException` ("ffmpeg was not found") or a voice error | ffmpeg missing, or voice deps (PyNaCl/opus) missing | The "Now playing" message is queued BEFORE the actual `vc.play` runs (music_player.py:127-137), so it proves nothing about playback | Install ffmpeg; env checklist: **autocroissant-build-and-env** |
-| `/volume` refuses | The exact reply | "Volume control not available with FFmpegOpusAudio. Switch to FFmpegPCMAudio to adjust volume." (music_player.py:314-315) - all playback uses FFmpegOpusAudio (music_player.py:119,134) | - | By design; not a bug |
-| Bot thinks it is/isn't in voice ("stuck") | `/disconnect` reply | `state.vc` (music_player.py:42) out of sync with reality | Reply "Not currently in a voice channel. If stuck, use `/play` then `/disconnect`." (music_player.py:415) is the built-in escape hatch | Do exactly that: `/play` (reconnects), then `/disconnect` (resets state) |
-| stdout: `TypeError: object NoneType can't be used in 'await' expression` in init_vc | Was the user outside a voice channel? | Known wart: `await queue_message(...)` on a sync function (music_player.py:178). The message is queued before the await explodes, so the user still sees "You are not in a voice channel." | - | Harmless stdout noise; don't chase it. Fix is a candidate via **autocroissant-change-control** |
-| Song skipped with "File not found: path" | Was music/ cleaned between queueing and playing? | Queue holds paths, not files (music_player.py:128-129); it auto-advances | - | Re-queue |
+| Download errors mentioning cookies / Safari | Is `browser_cookies` set in config.py? | yt-dlp uses Safari's cookies when `config.browser_cookies` is True; only old configs without that key fall back to `vram_usage == "mps"` (`cookies_from_browser`, music_player.py:36-37, applied at :55) | Toggle `browser_cookies` and retry the same URL (age-gated videos NEED cookies) | Terminal needs macOS disk access to read Safari cookies. Flag catalog: **autocroissant-config-and-flags** |
+| "Now playing: **song**" but silence | stdout for `ClientException` ("ffmpeg was not found") or a voice error | ffmpeg missing, or voice deps (PyNaCl/opus) missing | The "Now playing" message is queued BEFORE the actual `vc.play` runs (music_player.py:145-150), so it proves nothing about playback | Install ffmpeg; env checklist: **autocroissant-build-and-env** |
+| `/volume` refuses | The exact reply | "Volume control not available with FFmpegOpusAudio. Switch to FFmpegPCMAudio to adjust volume." (music_player.py:326-327) - all playback uses FFmpegOpusAudio (music_player.py:132,147) | - | By design; not a bug |
+| Bot thinks it is/isn't in voice ("stuck") | `/disconnect` reply | `state.vc` (music_player.py:41) out of sync with reality | Reply "Not currently in a voice channel. If stuck, use `/play` then `/disconnect`." (music_player.py:427) is the built-in escape hatch | Do exactly that: `/play` (reconnects), then `/disconnect` (resets state) |
+| `/play` replied "You are not in a voice channel." | Was the user in voice? | `init_vc` returns False and `/play`/`/play_all` stop there (nothing downloaded). Before 2026-10-20 it raised `TypeError` after queueing the reply (B4, archaeology 10.21) | - | Join a voice channel first |
+| Song skipped with "File not found: path" | Was music/ cleaned between queueing and playing? | Queue holds paths, not files (music_player.py:141-142); it auto-advances | - | Re-queue |
 
 ---
 
@@ -226,12 +234,12 @@ commands/update_bot.py:
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | "Pickles are already up to date." | - | Nothing ahead of origin after the PICKLE commit and `pull --rebase --autostash` (update_bot.py:32-34) | - | Benign |
-| "Push failed: ..." then "Update failed: ..." and "Bot was NOT restarted due to errors." | The git error text | Push or its pre-push `pull --rebase --autostash` failed (auth, rebase conflict - the rebase is aborted; a `rebase --abort` "No rebase in progress?" error means the pull itself failed). `/update` had ALREADY stopped the queue loops (main.py:194-196) | Bot is now half-dead: direct followups worked, queued sends won't | `/restart_bot`, then fix the git issue manually on the box |
-| "Merge conflict detected. Resolving automatically..." | Following messages list per-file decisions | Divergent histories (both machines committed) | Expected resolution: "Keeping local version of <pickle>" and "Accepting remote version of <code>" - pickles ours, code theirs (update_bot.py:74-87), committed as "AUTO-RESOLVE: ..." | Verify pickles afterwards with `diff_stats.py`; the local pickles won - if the REMOTE ones were the good ones, you just kept bad data |
+| "Push failed: ..." then "Update failed: ..." and "Bot was NOT restarted due to errors." | The git error text | Push or its pre-push `pull --rebase --autostash` failed (auth, rebase conflict - the rebase is aborted; a fetch failure or timeout shows the pull's own error). `/update` had ALREADY stopped the queue loops (main.py:201-203) | Bot is now half-dead: direct followups worked, queued sends won't | `/restart_bot`, then fix the git issue manually on the box |
+| "Merge conflict detected. Resolving automatically..." | Following messages list per-file decisions | Divergent histories (both machines committed) | Expected resolution: "Keeping local version of <pickle>" and "Accepting remote version of <code>" - pickles ours, code theirs (update_bot.py:79-92), committed as "AUTO-RESOLVE: ..." | Verify pickles afterwards with `diff_stats.py`; the local pickles won - if the REMOTE ones were the good ones, you just kept bad data |
 | "Git pull failed: ... divergent branches" then "Attempting to reconcile divergent branches..." | Next message | Fallback `git pull --rebase` (update_bot.py:101-110) | "Rebase successful!" = recovered; "Manual intervention may be required." = it is | SSH to the machine and resolve by hand |
-| Update said "Restarting bot!" but the bot never came back | `systemctl status autocroissant` on the jetson | `restart_bot` execs `./startup.sh` if present, else re-execs main.py with the same interpreter (update_bot.py:9-13); the jetson has no startup.sh. If the pull brought NEW dependencies or changed a compiled module (stale .so), the boot dies on ImportError | The service journal shows the traceback | Install deps (**autocroissant-build-and-env**), `python3.10 setup.py build_ext --inplace`, `sudo systemctl restart autocroissant` |
-| "Warning: All local changes have been discarded!" | Did someone pass `force_reset:True`? | `git_reset_hard` ran (update_bot.py:113-128) - local pickles are GONE, replaced by remote | `diff_stats.py` remote-vs-backup if you have one | Damage control via **autocroissant-change-control**; the pickles on the remote are now the only truth |
-| "/pull did a hard reset?!" | It did not | `/pull`'s description string says "Does a hard reset, than a git pull" (main.py:166) but `git_pull` contains no reset - fetch + merge/rebase only | Read update_bot.py:42-110 | Stale description; doc-of-record fixes belong to **autocroissant-docs-and-style** |
+| Update said "Restarting bot!" but the bot never came back | `systemctl status autocroissant` on the jetson | `restart_bot` execs `./startup.sh` if present, else re-execs main.py with the same interpreter (update_bot.py:11-15); the jetson has no startup.sh. If the pull brought NEW dependencies or changed a compiled module (stale .so), the boot dies on ImportError | The service journal shows the traceback | Install deps (`~/venvs/autocroissant/bin/python -m pip install -r requirements.txt`; **autocroissant-build-and-env**), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant` |
+| "Warning: All local changes have been discarded!" | Did someone pass `force_reset:True`? | `git_reset_hard` ran (update_bot.py:118-133) - local pickles are GONE, replaced by remote | `diff_stats.py` remote-vs-backup if you have one | Damage control via **autocroissant-change-control**; the pickles on the remote are now the only truth |
+| "/pull did a hard reset?!" | It did not | `git_pull` contains no reset - fetch + merge/rebase only (the description said "hard reset" until 2026-10-20, C1) | Read update_bot.py `git_pull` | Only `/update force_reset:True` resets |
 
 ---
 
@@ -239,7 +247,7 @@ commands/update_bot.py:
 
 Reminders live in `reminder.pkl` (gitignored - NOT synced across machines by `/push`; they die with
 the machine, see **autocroissant-run-and-operate** §6 and §9). `check_reminder` is queued every
-second by the command loop (main.py:751), so reminders only fire while the loops run. The scheduler
+second by the command loop (main.py:840), so reminders only fire while the loops run. The scheduler
 logs to stdout; most reminder problems are visible there first.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
@@ -263,7 +271,7 @@ Untested against live Discord as of 2026-10-19 (BUGS_AND_IMPROVEMENTS V1). Opera
 
 | Symptom | First check | Likely cause | Fix / pointer |
 |---|---|---|---|
-| `/query_rulebook` shows `[fire]` as text instead of an icon | stdout at startup: "Type emojis: ... ready." or "Emoji sync failed: ..." | The startup sync failed or has not finished, so the token map is empty | Run `/sync_emojis`; read its report |
+| `/query_rulebook` shows `[fire]` as text instead of an icon | stdout at startup: "Type emojis: ... ready." or "Emoji sync failed: ..." | The startup sync failed or has not finished, so the token map is empty. Since 2026-10-20 a failed GitHub listing falls back to the card list's last tree, and if that is missing too the sync still loads the existing emojis ("using the N existing emojis") | Run `/sync_emojis`; read its report |
 | "Emoji sync failed: ... has no attribute 'fetch_application_emojis'" | `python3 -c "import discord; print(discord.__version__)"` | discord.py older than 2.5 | `pip install -U "discord.py>=2.5"` (**autocroissant-build-and-env** §2) |
 | "Emoji sync failed: 403/404 ..." on the GitHub listing | Is GIT_TOKEN set; is `/set_repo` pointing at the card repo? | Rate limit without a token, or a wrong repo | Fix the token or `/set_repo`, then `/sync_emojis` |
 | Report lists "Failed: <name> (...)" | The error text per emoji | Discord rejected an upload (name, size, or the application's emoji limit) | Fix the icon or name; rerun |
@@ -314,24 +322,24 @@ drift; before trusting one, re-find it:
 # Section 1 - pickle corruption
 git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # :115, 2026-10-19 local-path fix, archived with local mode 2026-10-20
 grep -rn "use_local" main.py commands/                                   # gone since 2026-10-20 except RETIRED_OPTIONS (analytics.py ~41)
-grep -n "history only when" commands/psd_analyzer.py                     # archive only if blob changed/moved (~1674)
-grep -n "num_new > 0" commands/psd_analyzer.py                           # prune + save gates (~1868, ~1870)
-grep -n "def prune_clean_cards" commands/psd_analyzer.py                 # deletion handling (~581)
+grep -n "history only when" commands/repo_traverser.py                   # archive only if blob changed/moved
+grep -n "num_changed > 0" commands/repo_traverser.py                     # prune + save gates (in update_stats)
+grep -n "def prune_clean_cards" commands/card_models.py                  # deletion handling
 git log --format='%h %ad %s' --date=short -1 eb9aa84                     # revert precedent 2025-11-10
 git show --stat cca0aaf | tail -4                                        # old_stats 3196 -> 12041
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py | tail -6
 #   expected as of 2026-07-11: 813 cards, 223 versions/218 names, 0 suspicious paths
 
 # Section 2 - dispatch/edit chains
-grep -n "except (HTTPException, AttributeError)" main.py                 # both fallbacks (~778, ~796)
-grep -n 'send_kwargs.pop("ephemeral"' main.py                            # ephemeral dropped (~779)
+grep -n "except (HTTPException, AttributeError)" main.py                 # both fallbacks (_dispatch, _edit)
+grep -n 'kwargs.pop("ephemeral"\|dropped a message' main.py              # ephemeral dropped; per-item logs
 grep -n "process_command_queue.stop()" main.py                           # 3 stop sites (~145, ~157, ~194)
 grep -n "def queue_message\|def queue_command" commands/utils.py         # append-only, never raise (~42, ~59)
 grep -n "BREAK_LEN = " commands/utils.py                                 # 1950 (~19)
 
 # Section 3 - slash sync
-grep -c "@tree.command" main.py                                          # 51 as of 2026-10-20
-grep -n "async def slash_set_ratio\|async def slash_delete_song" main.py # duplicate names (2 hits each)
+grep -c "@tree.command" main.py                                          # 50 as of 2026-10-20 (/list_guild_members removed)
+grep -n "async def slash_set_r\|async def slash_delete_" main.py        # 4 distinct names (C5 fixed)
 grep -n "clear_commands" commands/management.py                          # /sync_global mechanics (~86)
 grep -c "on_guild_join" main.py                                          # 0 - no join-time sync
 
@@ -339,7 +347,7 @@ grep -c "on_guild_join" main.py                                          # 0 - n
 git grep -n "in_progress = " archive/ai-generation -- commands/diffusion.py    # 127, 208, 255, 683, 782; no try/finally in diffusion()
 git grep -n "Request queued" archive/ai-generation -- commands/diffusion.py    # ~670
 git grep -n "No model configured" archive/ai-generation -- commands/diffusion.py   # ~203
-grep -n "UPDATE_RATE" commands/psd_analyzer.py                           # progress every 25 cards (~34)
+grep -n "UPDATE_RATE" commands/repo_traverser.py                         # progress every 25 cards
 
 # Section 6 - music
 grep -n 'browser_cookies\|cookiesfrombrowser' commands/music_player.py   # ~37, ~38, ~56
@@ -369,5 +377,5 @@ python3 -c "import discord; print(discord.__version__)"                  # 2.7.1
 Volatile facts to re-check when they matter: all line numbers above; the 813/223/50 counts; the
 local-timestamp re-archive hazard (BUGS_AND_IMPROVEMENTS B6 - retired with local mode on 2026-10-20; the
 section 1 row stays for pickles produced by the archive);
-whether the dispatch loop gained a guard (B5). If a cited hash stops matching the described diff, re-run `git show <hash>` and fix
+the dispatch loop's per-item guard (B5, fixed 2026-10-20). If a cited hash stops matching the described diff, re-run `git show <hash>` and fix
 the story here rather than deleting it.

@@ -152,7 +152,7 @@ write pickles when something changed". Predict-then-check question: *what value 
 `num_updated` take on a no-change run?* Answer, from the code: it increments once per traversed
 PSD (psd_analyzer.py:1046 on 2026-07-11 — it is the progress counter), so the gate is always true — a no-op.
 The owner caught it within 20 minutes: **4e03190** (17:43, message "am forehead") switched the
-gate to `num_new` (now `if num_new > 0 or traverser.changed:`, psd_analyzer.py:1870 on 2026-10-20). Two morals: (a) before shipping any
+gate to `num_new` (now `if num_changed > 0 or traverser.changed:` in commands/repo_traverser.py; the counter was renamed on 2026-10-20). Two morals: (a) before shipping any
 gate/threshold, state the value you expect the variable to hold in the boring case — if you
 can't, you don't know what it counts; (b) commit messages here are sometimes jokes ("am
 forehead") — verify diffs, not messages.
@@ -182,7 +182,7 @@ then turned into goldens — see section 5.)
 
 ### The standard counter-case list for parser changes
 
-Run every row before promoting any change to commands/psd_analyzer.py parsing/injection.
+Run every row before promoting any change to parsing/injection (commands/psd_parser.py since the 2026-10-20 split).
 Expected values and byte-comparison procedure: autocroissant-validation-and-qa. All commands are
 safe/read-only and run from the repo root; `$S` = `.claude/skills/autocroissant-diagnostics-and-tooling/scripts`.
 
@@ -193,7 +193,7 @@ safe/read-only and run from the repo root; `$S` = `.claude/skills/autocroissant-
 | 3 | The Lich King (golden) | Single small gap + bbox prune threshold | `python3 $S/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"` |
 | 4 | The 23 exclusion-list cards (18 ABILITY_EXCLUSIONS + 5 EXCESSIVE_STAT_EXCLUSIONS, psd_analyzer.py:642-668, counts as of 2026-07-11) | Each is a documented rule-breaker; "cleaner" mechanisms reliably re-break one | Sandbox sweep; problem output must not grow (procedure: validation-and-qa) |
 | 5 | One rulebook page | Rulebook takes ANY text layer as ability (no layer named "ability"); also "20 Creature Types" (MISSPELT TYPE: tornado) must remain the ONLY *pickled* (parse-time) problem — the full-validation baseline is 5, per autocroissant-validation-and-qa §2's two-surface distinction | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` — expect type rulebook, ability starting "TABLE OF CONTENTS" |
-| 6 | One MDW card | MDW ability must stay `None` (psd_analyzer.py:282) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, psd_analyzer.py:31), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
+| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:251) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, repo_traverser.py:37), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
 
 If a proposed mechanism survives all six rows AND a sandbox sweep whose diff_stats output
 matches a written prediction (section 2), it has met the bar. Promotion itself (commit/push)
@@ -228,8 +228,8 @@ retirement                          — dated entry in autocroissant-failure-arc
 
 **Honesty note:** this repo has NO feature-flag system, no experiment framework, no A/B
 anything. The entire experiment mechanism is (a) a `getattr(config, "field", default)` read —
-the live pattern in commands/ (2026-10-20: music_player.py:38/55/62, psd_analyzer.py:42,
-utils.py:20, query_card.py:25, type_emojis.py:17; re-find with `git grep -n 'getattr(config' -- '*.py'`)
+the live pattern in commands/ (2026-10-20: music_player.py:37/54/61,
+utils.py:19, github_api.py:15; re-find with `git grep -n 'getattr(config' -- '*.py'`)
 — plus (b) runtime `/set_*` commands that do NOT persist across
 restart (autocroissant-config-and-flags). That is enough for a hobby project. Do not add
 ceremony beyond it.
@@ -264,7 +264,7 @@ Verified provenance — useful because it tells you where to LOOK for the next o
    this?" — that question is where the feature came from.
 2. **Friend-group requests.** `/react` arrived in d699b3f (2026-01-26, "added a new command for
    reacting to messages"); reminders that execute bot commands on schedule (the
-   `slash_registry.get(cmd_name)` dispatch, analytics.py:209; hardened by 105198f, 2025-12-02,
+   `slash_registry.get(cmd_name)` dispatch, analytics.py:413; hardened by 105198f, 2025-12-02,
    "reschedules reminders if they're past due"). The bot serves a friend group; their asks are a
    proven idea source.
 3. **Operational pain.** Lazy torch/diffusers imports bf9478e (2026-01-26) — born from the bot
@@ -315,7 +315,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | f7c915c introduced BOTH the dirname-classify and removeprefix bugs (2025-12-02) | `git show f7c915c -- commands/psd_analyzer.py` — read the hunks touching `dirname` and `removeprefix` |
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |
-| `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_new > 0 or traverser.changed` (:1870 on 2026-10-20) | `grep -n -e 'num_updated += 1' -e 'num_new > 0' commands/psd_analyzer.py` |
+| `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_changed > 0 or traverser.changed` (repo_traverser.py since the 2026-10-20 split; counter renamed from num_new) | `grep -n -e 'num_updated += 1' -e 'num_changed > 0' commands/repo_traverser.py` |
 | stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 | Timestamp clustering confirms remote-mode attribution | the Counter one-liner and its expected numbers live in autocroissant-analysis-toolkit Recipe 2 |
 | Balloon 1: cca0aaf old_stats 3196→12041; reverted same day by eb9aa84 | `git show --stat cca0aaf` then `git show -s --format='%ci %s' eb9aa84` |
@@ -323,8 +323,8 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | Feb-8 saga: 7 code commits 04:34:51→19:12:52, collapsing added 1c26747, removed 3bbaa2b | `git log --format='%h %ad %s' --date=iso 532b34f..4bcee6b` (exactly the Feb-8 commits) and `git show 3bbaa2b` |
 | First collapsing exception (`\s{2,}`→`[ \t]{2,}`) in d6d1278 | `git show d6d1278 -- commands/psd_analyzer.py` |
 | MISMATCH validator added fed8a83, removed 081b1fd | `git log -S 'WHITESPACE MISMATCH' --format='%h %ad %s' --date=short` (returns exactly those two commits) |
-| Exclusion-list sizes (5 + 18 = 23 as of 2026-07-11) | `grep -n -A30 'EXCESSIVE_STAT_EXCLUSIONS' commands/psd_analyzer.py` (count the quoted names in each set) |
-| MDW classify branch (`ability: None`, was :282) and EXCLUDE_FOLDERS (was :31) | `grep -n -e '"MDW"' -e 'EXCLUDE_FOLDERS =' commands/psd_analyzer.py` |
+| Exclusion-list sizes (5 + 18 = 23 as of 2026-07-11) | `grep -n -A30 'EXCESSIVE_STAT_EXCLUSIONS' commands/psd_parser.py` (count the quoted names in each set) |
+| MDW classify branch (`ability: None`, was :282) and EXCLUDE_FOLDERS (was :31) | `grep -n -e '"MDW"' commands/psd_parser.py; grep -n 'EXCLUDE_FOLDERS =' commands/repo_traverser.py` |
 | getattr(config, ..., default) is the only flag mechanism | `grep -rn 'getattr(config' commands/ main.py` |
 | Retirements: Text_Export.jsx (7fc6f63), descriptions.pkl (bb58387), requirements-linux* (3f9a96d) | `git log --all --diff-filter=D --format='%h %ad %s' --date=short -- '*Text_Export.jsx' descriptions.pkl 'requirements-linux*'` |
 | Idea provenance commits: 0490195, d699b3f, bf9478e, 105198f | `git show -s --format='%h %ad %s' 0490195 d699b3f bf9478e 105198f` |
