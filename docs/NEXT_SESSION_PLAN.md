@@ -12,6 +12,33 @@ Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardma
 - PSD research (report, Photopea harness, psd-tools patch, survey data): `~/Documents/Tools/psd-research/`. TTS survey
   scripts are in `/private/tmp/fontexplore/scripts/tts_survey*.py` (gone after a reboot; easy to redo).
 
+## Session checklist (2026-10-21, unattended; the user asks no questions be asked)
+
+Every task still wanted this session, in order; a line is struck through here when it lands and the docs it closes move to
+`docs/Finished/`. PSD and PNG writes stay on hold until the user lifts it.
+
+1. [ ] Rendering round 2 (fork): wait for the workflow (6 branches on `cards`, harness ICC fix, integrate as cards_v2 + the
+   text engine, critic incl. the stat-toggle check); review; then merge the user's seven reviewed branches
+   (drop-shadow, gradient-overlay, outer-glow, text-engine, adjustments, bevel-satin, inner-shadow-glow) into `cards`,
+   suite + harness, push `cards`, tag `cards-20261020` (S0 of the edit pipeline), refresh RENDER_STATUS.md / PR_BODIES.md.
+2. [ ] S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
+3. [ ] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
+   badges and build): profile, dedupe the API/SSH commit code with tts_save, fix the single-result-no-image hole in
+   /query_ability and the /fonts lazy-import shadowing, speed the font check, review tests; report to
+   `docs/Finished/optimization-pass-2-2026-10-21/`.
+4. [ ] Decision Q1: the parser reads `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22
+   redundant name edits drop by the redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
+5. [ ] Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
+6. [ ] S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
+   bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.
+7. [ ] Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, 20 (inline editing),
+   23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
+8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
+
+Waiting on the user (not blocking): lifting the PSD hold (then S8, the standardization batch, the six title reprints,
+Sonic, star moves); the remaining fork reviews (round-2 branches, then `cards`); opening the upstream PRs from
+`~/Documents/Tools/psd-research/PR_BODIES.md`; BabaUI; the timing-system update (then stoogedings + the rules skill).
+
 ## Orchestration (ultracode, Fable 5.1 as orchestrator)
 
 The main session (Fable 5.1) plans, decides, reviews diffs and does every production action itself (pushes,
