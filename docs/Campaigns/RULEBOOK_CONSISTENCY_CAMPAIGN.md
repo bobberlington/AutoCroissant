@@ -1,6 +1,6 @@
 # Rulebook consistency campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 19 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-22"). User request of
+**Status:** designed 2026-10-20, not scheduled; plan item 19 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). User request of
 2026-10-20: "one last campaign to find rulebook inconsistencies".
 The user is the rules owner and makes every ruling; this campaign finds, classifies, logs and guards, it never decides.
 Page citations are the PSD stems of `~/Desktop/TTSCardMaker/Auxiliary/Rulebook/` (48 PSD + PNG pairs) as

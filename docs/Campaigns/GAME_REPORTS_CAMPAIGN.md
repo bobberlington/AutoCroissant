@@ -1,6 +1,6 @@
 # Game reports campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 17 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-22"). Rule citations are rulebook pages as
+**Status:** designed 2026-10-20, not scheduled; plan item 17 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; where the rulebook is silent this document says so. Save facts
 come from a scan of `~/Desktop/TTSCardMaker/TTS/Impossibility Simulator.json` (TTS v14.2.2, 5.9 MB, 228 top-level objects, Hands
 enabled) and its Lua on 2026-10-20. TTS Lua API names not seen in that Lua are marked "to confirm" (against the TTS API docs).
