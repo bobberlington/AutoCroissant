@@ -233,14 +233,11 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   post-/update_stats run (`save_affected`, `update_after_stats`) is deleted, `/update_tts_save` stays; global_config
   reads `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE` so the Action needs no symlink (its sparse
   checkout now lists every module the updater imports).
-- **Move the website data files out of MDW/ — bot side done, TTSCardMaker commit prepared (2026-10-20):**
-  `Card Authors.txt`, `Card Edits.json`, `Website Admins.txt`, `Constructed Ban List.txt` go to `site/` (directly
-  under it). Bot: `AUTHORS_PATHS` / `EDITS_PATHS` in global_config.py (`site/` first, `MDW/` fallback), read by
-  repo_traverser, query_card and tts_save; help text, skills and tests updated (one test keeps the old path alive).
-  TTSCardMaker: `git mv` of the four files + build_site.py constants + edit.js file map + deck.js comment +
-  site.yml / tts-save.yml sparse checkouts and triggers + site/README staged, not committed (the orchestrator
-  commits it right after this stage). **Left:** once that commit is on main and the site has rebuilt, drop the
-  `MDW/` fallback (second element of each `_PATHS` tuple, `test_old_mdw_paths_still_read`, the doc notes).
+- **Move the website data files out of MDW/ — done (2026-10-20):** `Card Authors.txt`, `Card Edits.json`,
+  `Website Admins.txt`, `Constructed Ban List.txt` live in TTSCardMaker `site/` (13ac680 on main, with build_site.py,
+  edit.js, deck.js, site.yml / tts-save.yml and site/README). Bot: `AUTHORS_PATHS` / `EDITS_PATHS` in
+  global_config.py point at `site/` only (read by repo_traverser, query_card and tts_save); the `MDW/` fallback,
+  its tests and the doc notes are dropped.
 - **Two kinds of card edits.** The pipeline (Task 3 step 4), `CardEdits` and the editor must distinguish edits that
   change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
   problems_ok, allow_high_stats, dup_of, series, subseries, creatures); only the first kind is baked and removed.

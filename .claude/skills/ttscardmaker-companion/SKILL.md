@@ -12,7 +12,9 @@ were added on the TTSCardMaker side that the bot now depends on or feeds: the **
 **missing-fonts audit**. Photoshop scripting recipes were worked out along the way. This skill is their operational
 home. Committed and pushed to TTSCardMaker `main`: 54278c1 (stoogedings font + `stoogedings-src/`, Effect Layers
 scripts, missing card fonts), c3e9f66 (effect layers), 3ef3776 (`site/`, `.github/workflows/site.yml`,
-`MDW/Card Authors.txt`), then 81ca0ea..027fd0d (site features). The site is live (§2).
+`MDW/Card Authors.txt`), 81ca0ea..027fd0d (site features), 9fbe683..81dfc2a (site README; TTS save, `TTS/decks.json`
+and tts-save.yml; printed card names; the Table tab 0d49893 was reverted by 75692fb), 15a16be (subseries), 13ac680
+(website files `MDW/` -> `site/`, Action env overrides; head on 2026-10-20). The site is live (§2).
 
 The parser side of tokens (how `psd_parser.py` reads a layer set in the font, plus the four new problems) is owned
 by **impossibility-cards-reference §4.1**. This skill only summarizes it.
@@ -36,7 +38,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | TTS save workflow | `.github/workflows/tts-save.yml` (keeps `TTS/Impossibility Simulator.json` current with the bot's updater; rules `TTS/decks.json`; §2.6) | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
-| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; the bot reads `site/` first and falls back to `MDW/` until the move lands): `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
+| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
 | Scratch work: audit outputs, Photoshop test JSX, migration prototype | `/private/tmp/fontexplore/` (**volatile: macOS wipes /tmp on reboot; nothing there is committed**) | Scratch |
@@ -641,7 +643,7 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 ## Provenance and maintenance
 
 All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.6 matching rules updated
-2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d; §2.6 (tts-save.yml,
+2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d (commit list above extended to 13ac680 the same day from the GitHub API); §2.6 (tts-save.yml,
 env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 

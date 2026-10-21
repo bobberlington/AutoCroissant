@@ -249,23 +249,7 @@ def test_deleted_card_alone_is_kept(github):
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
 
 
-def test_old_mdw_paths_still_read(github):
-    """Until the card repo moves them, the authors and edits files are read from MDW/ (the second of the two paths)."""
-    old_authors, old_edits = pa.AUTHORS_PATHS[1], pa.EDITS_PATHS[1]
-    assert (old_authors, old_edits) == ("MDW/Card Authors.txt", "MDW/Card Edits.json")
-    github.files[old_authors] = github.files.pop(pa.AUTHORS_PATH)
-    github.files[old_edits] = github.files.pop(pa.EDITS_PATH)
-    assert _run()[0] == []
-    stats, _ = _saved()
-    assert (stats["Mini Doomer"].author, stats["The Freezer"].note) == ("Bob", "checked")
-    assert {old_authors, old_edits} <= set(github.blobs()) and not {pa.AUTHORS_PATH, pa.EDITS_PATH} & set(github.blobs())
-
-
-def test_site_paths_win_over_mdw(github):
-    """Both layouts present (mid-move): site/ is read, MDW/ is not even downloaded."""
-    github.files[pa.AUTHORS_PATHS[1]] = b"[people]\nbobgit = Old Bob\n[cards]\nmini_doomer = bobgit\n"
-    github.files[pa.EDITS_PATHS[1]] = json.dumps({"cards": {"The Freezer": {"note": "old"}}}).encode()
-    assert _run()[0] == []
-    stats, _ = _saved()
-    assert (stats["Mini Doomer"].author, stats["The Freezer"].note) == ("Bob", "checked")
-    assert not {pa.AUTHORS_PATHS[1], pa.EDITS_PATHS[1]} & set(github.blobs())
+def test_website_files_live_in_site():
+    """The authors and edits files are read from the card repo's site/ only (moved from MDW/ on 2026-10-20)."""
+    assert (pa.AUTHORS_PATHS, pa.EDITS_PATHS) == (("site/Card Authors.txt",), ("site/Card Edits.json",))
+    assert (pa.AUTHORS_PATH, pa.EDITS_PATH) == ("site/Card Authors.txt", "site/Card Edits.json")

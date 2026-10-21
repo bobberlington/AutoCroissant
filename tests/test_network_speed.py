@@ -182,7 +182,7 @@ def test_emoji_listing_reuses_and_seeds_the_card_tree(monkeypatch):
 # ========================
 # Card Edits.json names
 # ========================
-EDITS_TEXT = {"e-new": '{"cards": {"Foo": {"name": "New Foo"}}}', "e-old": '{"cards": {"Foo": {"name": "Old Foo"}}}'}
+EDITS_TEXT = {"e": '{"cards": {"Foo": {"name": "Web Foo"}}}'}
 
 
 def _edit_names(monkeypatch, fetched, *entries):
@@ -194,27 +194,21 @@ def _edit_names(monkeypatch, fetched, *entries):
     return repo
 
 
-def test_edit_names_read_from_either_folder(monkeypatch):
-    """Card Edits.json is read from site/ or, until the move lands, MDW/; site/ wins and MDW/ is not downloaded."""
-    new, old = qc.EDITS_PATHS
-    assert (new, old) == ("site/Card Edits.json", "MDW/Card Edits.json")
+def test_edit_names_read_from_site(monkeypatch):
+    """Card Edits.json is read from site/ (EDITS_PATHS), once per blob sha; no file, no download."""
+    (path,) = qc.EDITS_PATHS
+    assert path == "site/Card Edits.json"
     fetched = []
-    repo = _edit_names(monkeypatch, fetched, (new, "e-new"))
-    assert repo.git_files["new_foo.png"] == "Items/Foo.png" and fetched == ["e-new"]
-    fetched.clear()
-    repo = _edit_names(monkeypatch, fetched, (old, "e-old"), (new, "e-new"))
-    assert "new_foo.png" in repo.git_files and "old_foo.png" not in repo.git_files and fetched == ["e-new"]
-    fetched.clear()
-    repo = _edit_names(monkeypatch, fetched, (old, "e-old"))
-    assert repo.git_files["old_foo.png"] == "Items/Foo.png" and fetched == ["e-old"]
+    repo = _edit_names(monkeypatch, fetched, (path, "e"))
+    assert repo.git_files["web_foo.png"] == "Items/Foo.png" and fetched == ["e"]
     fetched.clear()
     repo = _edit_names(monkeypatch, fetched, ("Items/Foo.png", "x"))
     assert repo.git_files == {"foo.png": "Items/Foo.png"} and fetched == []
-    repo._tree = _tree((old, "e-old"))                                               # same sha: no second download
+    repo._tree = _tree((path, "e"))                                                  # same sha: no second download
     repo._populate_edit_names()
-    assert fetched == ["e-old"] and "old_foo.png" in repo.git_files
+    assert fetched == ["e"] and "web_foo.png" in repo.git_files
     repo._populate_edit_names()
-    assert fetched == ["e-old"]
+    assert fetched == ["e"]
 
 
 # ========================

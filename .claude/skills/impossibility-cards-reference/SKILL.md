@@ -490,7 +490,7 @@ if committed since the newest stored timestamp; otherwise they just get their sh
 is `update_stats(force_update=False)` (repo_traverser.py:476), the same as the slash command (main.py:368);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
-the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; `MDW/` until the move lands), the
+the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
 team's record of who made each card.
 - **Format:** two sections of `left = right` lines.
   - `[people]`: git/GitHub name = display name.

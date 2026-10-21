@@ -23,9 +23,9 @@ TYPES_DIR       = "Types"                      # type icons (PNG stems are the t
 STARS_DIR       = "Types/Stars"                # star icons
 RULEBOOK_DIR    = "Rulebook"                   # rule pages: any card path containing it
 ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json"   # icon aliases + codepoints, written by the font build
-# The website's hand-kept files: site/ since 2026-10-20; the old MDW/ path is read until the move lands in the card repo.
-AUTHORS_PATHS   = ("site/Card Authors.txt", "MDW/Card Authors.txt")   # who made each card; wins over the database
-EDITS_PATHS     = ("site/Card Edits.json", "MDW/Card Edits.json")     # website fixes; win over the PSD
+# The website's hand-kept files live in the card repo's site/ (moved from MDW/ on 2026-10-20); readers take the first path present.
+AUTHORS_PATHS   = ("site/Card Authors.txt",)   # who made each card; wins over the database
+EDITS_PATHS     = ("site/Card Edits.json",)    # website fixes; win over the PSD
 AUTHORS_PATH    = AUTHORS_PATHS[0]
 EDITS_PATH      = EDITS_PATHS[0]
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save

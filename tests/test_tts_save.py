@@ -145,7 +145,7 @@ def test_env_overrides_for_the_action():
 
 
 # ========================
-# Card Edits.json: site/ first, MDW/ until the move lands
+# Card Edits.json: read from site/
 # ========================
 def _checkout(tmp_path, **layouts):
     root = tmp_path / "checkout"
@@ -155,31 +155,29 @@ def _checkout(tmp_path, **layouts):
     return str(root)
 
 
-def test_names_read_card_edits_from_either_folder(repo, tmp_path):
-    assert tts.EDITS_PATHS == ("site/Card Edits.json", "MDW/Card Edits.json")
-    for folder in ("site", "MDW"):
-        repo.checkout = _checkout(tmp_path / folder, **{folder: f"Alpha in {folder}"})
-        names = tts._Names(repo, [])                                  # offline: the website is unreachable
-        assert names.known(A) == f"Alpha in {folder}" and names.of(B) == "B"
-    repo.checkout = _checkout(tmp_path / "both", site="New", MDW="Old")
-    assert tts._Names(repo, []).known(A) == "New"
+def test_names_read_card_edits_from_site(repo, tmp_path):
+    assert tts.EDITS_PATHS == ("site/Card Edits.json",)
+    repo.checkout = _checkout(tmp_path, site="Alpha on the site")
+    names = tts._Names(repo, [])                                      # offline: the website is unreachable
+    assert names.known(A) == "Alpha on the site" and names.of(B) == "B"
     repo.checkout = str(tmp_path / "empty")
     assert tts._Names(repo, []).known(A) is None
 
 
-def test_files_at_lists_both_edits_paths(monkeypatch):
-    """update_repo_save asks main's tree for every EDITS_PATHS entry and reads the first one found."""
+def test_files_at_lists_the_edits_path(monkeypatch):
+    """update_repo_save asks main's tree for every EDITS_PATHS entry and reads the first one found (none without site/)."""
     blob = lambda name, sha: {"path": name, "type": "blob", "mode": "100644", "sha": sha}
     sub = lambda name, sha: {"path": name, "type": "tree", "mode": "040000", "sha": sha}
-    trees = {"r1": [sub("TTS", "t1"), sub("site", "s1"), sub("MDW", "m1")], "r2": [sub("TTS", "t1"), sub("MDW", "m1")],
+    trees = {"r1": [sub("TTS", "t1"), sub("site", "s1")], "r2": [sub("TTS", "t1")],
              "t1": [blob("decks.json", "d"), blob("Impossibility Simulator.json", "v")],
-             "s1": [blob("Card Edits.json", "e-new"), blob("index.html", "h")], "m1": [blob("Card Edits.json", "e-old"), blob("cardback.png", "k")]}
+             "s1": [blob("Card Edits.json", "e"), blob("index.html", "h")]}
     monkeypatch.setattr(tts, "_api", lambda method, path, **kw: SimpleNamespace(json=lambda: {"tree": trees[path.rsplit("/", 1)[1]]}))
     monkeypatch.setattr(tts, "_objects", {})
     monkeypatch.setattr(tts, "_used", set())
     wanted = (tts.TTS_SAVE_PATH, tts.RULES_PATH) + tts.EDITS_PATHS
     files = tts._files_at("r1", wanted)
-    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d", "site/Card Edits.json": "e-new", "MDW/Card Edits.json": "e-old"}
+    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d", "site/Card Edits.json": "e"}
     assert next(p for p in tts.EDITS_PATHS if p in files) == "site/Card Edits.json"
     files = tts._files_at("r2", wanted)
-    assert next(p for p in tts.EDITS_PATHS if p in files) == "MDW/Card Edits.json" and "site/Card Edits.json" not in files
+    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d"}
+    assert next((p for p in tts.EDITS_PATHS if p in files), None) is None

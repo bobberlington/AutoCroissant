@@ -61,7 +61,7 @@ None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
 Owned by `ttscardmaker-companion`:
-- The website and editor are live (pushed 2026-10-20); the bot reads `site/Card Authors.txt` and `site/Card Edits.json` (`MDW/` fallback until the card repo's move lands; drop it afterwards).
+- The website and editor are live (pushed 2026-10-20); the bot reads `site/Card Authors.txt` and `site/Card Edits.json` (moved there from `MDW/` the same day, TTSCardMaker 13ac680; the `MDW/` fallback is dropped).
 - The website unpickles the bot's pickles with stub classes for `commands.*`: anyone who can push AutoCroissant
   `main` can run code in the TTSCardMaker Actions job, and renaming CardInfo attributes blanks website fields.
 - 7 fonts are still missing from `MDW/Fonts` (Windows/Office ones, BabaUI).

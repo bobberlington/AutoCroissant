@@ -331,7 +331,7 @@ or first-ever run cannot finish; check for the "Git token found" startup line.
 
 PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:113-140) into a temp file deleted
 right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
-files (`site/Card Authors.txt`, `site/Card Edits.json`; `MDW/` until the move lands) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
+files (`site/Card Authors.txt`, `site/Card Edits.json`; in `MDW/` before 2026-10-20) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
 
 ### TTS save (/update_tts_save, added 2026-10-20; the automatic path is a TTSCardMaker Action since the same day)
@@ -357,7 +357,7 @@ Two ways to run it:
   the temp dir is deleted. One run at a time.
 - **`/update_stats` does not run it.** Until 2026-10-20 a changed-tree /update_stats queued a run
   (`save_affected` / `update_after_stats`); the Action replaced that and the code was deleted.
-- **Inputs (bot run):** the rules, the save and `site/Card Edits.json` (else `MDW/Card Edits.json`: `EDITS_PATHS`) come from main; names from the website (when it is
+- **Inputs (bot run):** the rules, the save and `site/Card Edits.json` (`EDITS_PATHS`) come from main; names from the website (when it is
   unreachable, Nicknames are left as they are); never from a local checkout. The history clone (and its links map) must
   be at main's head, else the run is retried 10 s later, then fails after 3 tries (also when nothing would
   change).
@@ -371,7 +371,7 @@ Two ways to run it:
   picks it up. A rule that matches no PNG leaves its deck alone and is listed under Errors.
 - **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a
   local file in place and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it. `TTS/decks.json` and
-  `site/Card Edits.json` (else `MDW/Card Edits.json`) come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
+  `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
 - Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
 
 ## 8. Artifact conventions — where files land

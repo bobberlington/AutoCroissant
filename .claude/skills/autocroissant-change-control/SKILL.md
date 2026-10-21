@@ -321,7 +321,7 @@ and update this file.
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
 | Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 77, 103; 127) |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (220 passed on 2026-10-20) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (238 passed on 2026-10-20) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
