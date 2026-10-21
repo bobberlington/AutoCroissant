@@ -82,15 +82,15 @@ kinds are appended to it (line numbers as of 2026-10-19):
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1011) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
-card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:452)
-and out to Discord/console (called at repo_traverser.py:405; the archived local traversal on branch
+card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:465)
+and out to Discord/console (called at repo_traverser.py:409; the archived local traversal on branch
 `archive/local-update-stats` has its own copy of this flow).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
 `NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1003-1005).
 And `validate()` only runs during a sweep when `output_problematic=True`
-(repo_traverser.py:384-385). Consequence: a sweep run with `output_problematic=False`
+(repo_traverser.py:388-389). Consequence: a sweep run with `output_problematic=False`
 would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
 inflating the Channel-A count by up to 18 with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
@@ -154,7 +154,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 
 **Equality rules.** A fresh `parse_one.py` run has `timestamp: 0.0` and no `author` —
 those two fields come from traversal metadata (git commit dates / DB preservation,
-psd_parser.py:355-361, which also keeps `series` and `subseries`; repo_traverser.py:383), not from the PSD. So:
+psd_parser.py:355-361, which also keeps `series` and `subseries`; repo_traverser.py:387), not from the PSD. So:
 
 - *Golden vs stats.pkl*: all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
@@ -233,7 +233,7 @@ stop, you changed more than you think.
 
 **Step 2 — Full sweep IN THE SANDBOX (the expensive gate).**
 
-Exact signature, verified 2026-10-20 at repo_traverser.py:473 (`cards` is a comma-separated list of
+Exact signature, verified 2026-10-20 at repo_traverser.py:486 (`cards` is a comma-separated list of
 names to re-parse anyway):
 
 ```python
@@ -260,18 +260,18 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   local mtime and every card is archived into old_stats, so compare fields other than `timestamp`, and
   ignore old_stats growth. Never promote its pickles to the live repo (docs/BUGS_AND_IMPROVEMENTS.md B6).
 - **API budget warning:** change detection compares each PSD's blob sha in the tree with
-  `card.blob_sha` (`_psd_changed`, repo_traverser.py:74); an unchanged PSD costs no requests. Each
+  `card.blob_sha` (`_psd_changed`, repo_traverser.py:77); an unchanged PSD costs no requests. Each
   re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus one commit
-  page (`_commit_page`, repo_traverser.py:109-112; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
+  page (`_commit_page`, repo_traverser.py:112-115; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
   that gives both the newest commit and, for a new or authorless card, the first author (a file with
-  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:405-431). So
+  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:409-444). So
   `force_update=True` costs ≈ 2 × 813 ≈ **1,630+ calls** (3 × 813 before 2026-10-20; about a third of the 5000/hr
   GIT_TOKEN limit; impossible at 60/hr without a token), plus the tree
   request and the small-file blobs; a default run costs only the changed PSDs. A forced run, or
   the first after a restart (the tree ETag is in memory), always gets the full tree. Minutes of
   wall time. Run it once per promotion, never in a loop.
 - Headless quirk (harmless): at the end `update_stats` queues `card_repo.populate_files` /
-  `prep_dataframes` onto the bot's command queue (repo_traverser.py:539-540); with no bot
+  `prep_dataframes` onto the bot's command queue (repo_traverser.py:558-559); with no bot
   running nothing drains it and the process just exits.
 - With `verbose=True` (default) the sweep prints progress, a summary
   (`N cards changed or new, N unchanged, N moved.`), and the full problem output (Channel A+B).
@@ -482,7 +482,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | `update_stats` signature & line (477; force_update=False; cards=""; no local options since 2026-10-20) (2026-10-20) | `grep -n -A4 "def update_stats" commands/repo_traverser.py` |
 | Exclusion-list size (18; no stat list) | `python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (18 False) |
 | Exclusion-list definition & line (950) (2026-10-21) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
-| `PARSER_VERSION` (2) and its stamp, re-parse and ETag bypass (psd_parser.py:22, :352; repo_traverser.py:77, :163) (2026-10-21) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/repo_traverser.py commands/card_models.py` |
+| `PARSER_VERSION` (2) and its stamp, re-parse and ETag bypass (psd_parser.py:22, :352; repo_traverser.py:80, :166) (2026-10-21) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/repo_traverser.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |
 | validate() mutation of card.problems (947-949) (2026-10-20) | `grep -n "NO ABILITY LAYER" commands/psd_parser.py` |
@@ -518,3 +518,5 @@ explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).
 2026-10-21 (later): PARSER_VERSION 2 reads the printed title into `display_name` (157 cards) and `EXCESSIVE_STAT_EXCLUSIONS` is gone (rows 1b, 1c, 4; §4 rule; §6, §7, §9); 8 goldens re-pinned (display_name; Royal Eradicator's validator now lists STATS TOO HIGH); suite 352 passed, 18 skipped; psd_parser.py and repo_traverser.py line numbers re-pointed.
 
 2026-10-21 (review): the gate is 157 `display_name` + 2 `STATS TOO HIGH` (159): WX-78's title "wx-" beside an image layer named "78" now reads as the file name (new golden `Creatures/DST/3 Stars/WX-78.psd`; suite 356 passed, 18 skipped); psd_parser.py citations re-pointed; repo_traverser.py `_format_problems` :451 (called :404), `update_stats` :472, the end-of-run queue_commands :526-527. Gate re-run: the re-verify row for `ABILITY_EXCLUSIONS` now says :950.
+
+2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

@@ -57,6 +57,9 @@ class RepositoryTraverser:
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
         self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
+        self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
+        self.details_changed = 0                 # records gathered this run
+        self.font_index = None                   # the /fonts cache's faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
 
     def _update_old_stats_paths(self) -> None:
@@ -364,6 +367,7 @@ class RepositoryTraverser:
                 try:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
                     card = self.parser.parse(local_file, path)
+                    self._gather_details(local_file, path, name, sha)
                 finally:
                     remove(local_file)
                 old = self.db.stats.get(name)
@@ -404,6 +408,15 @@ class RepositoryTraverser:
 
         self._send_summary(interaction, num_changed, num_old, num_moved)
         return (self._format_problems(problematic_cards), num_changed + num_moved)
+
+    def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
+        """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
+        try:
+            from commands import psd_details                # lazy: fontTools (through font_check) loads with the first parse
+            self.details[sha] = psd_details.gather(local_file, path, name, self.font_index, self.db.all_types)
+            self.details_changed += 1
+        except Exception as e:
+            print(f"{path}: details not gathered ({e})")
 
     def _get_remote_timestamp(self,
                               repo,
@@ -510,6 +523,9 @@ def _update_stats(interaction: Optional[Interaction],
     stats_db.seen_cards.clear()
     traverser = RepositoryTraverser(stats_db)
     traverser.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
+    from commands import psd_details                # lazy: fontTools loads here, not at startup
+    traverser.details = psd_details.load()
+    traverser.font_index = psd_details.font_index()
 
     problem_cards, num_changed = traverser.traverse_remote(
         card_repo.repository,
@@ -521,6 +537,9 @@ def _update_stats(interaction: Optional[Interaction],
         stats_db.prune_clean_cards()
     if num_changed > 0 or traverser.changed:
         stats_db.save()
+    if traverser.tree is not None:                  # the records follow the tree: new blobs in, gone blobs out
+        if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed:
+            psd_details.save(traverser.details)
 
     if verbose:
         say(interaction, "Card statistics update complete!")

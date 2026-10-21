@@ -221,7 +221,7 @@ Triple-quoted. One-liners for simple functions
 (`"""Send a message to the last active channel."""`, music_player.py:89).
 Args/Returns sections for anything with non-obvious parameters — real shapes:
 `populate_files` has `Args:` and `Returns:` blocks (query_card.py:67-73); `update_bot`
-has an `Args:` block (update_bot.py:140-142). No Sphinx/Google tooling
+has an `Args:` block (update_bot.py:143-145). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
 ### 5.4 The `x[len(x) - 1]` idiom (REQUIRED in cythonized modules)
@@ -504,3 +504,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-21 (titles): card_models.py citation re-pointed (`CardInfo.parser_version` added).
 
 2026-10-21 (S7): `/bake_cards` added to stats_commands (help.py 162 lines, 53 keys / 52 commands; `tests/test_card_runner.py` asserts the help entry and describe strings state the same defaults and the admin marker); section 4 names the 100-character cap; help.py and main.py line numbers re-pointed.
+
+2026-10-21 (details): help.py's /pull, /push and /update entries and main.py's three describe strings (:177, :187, :197) name psd_details.json / the PSD details beside the pickles (same line count; the pull describe is 97 characters, under the 100 cap); no new command (52). repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

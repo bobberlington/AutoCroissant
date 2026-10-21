@@ -39,6 +39,8 @@ config.py
 reminder.pkl
 # pickles are saved by writing a temp file and renaming it; one can be left behind after a crash
 *.pkl.tmp
+# the PSD details file (commands/psd_details.py, committed) is written the same way
+psd_details.json.tmp
 # image link commits, rebuilt from the card repo's history (commands/repo_history.py)
 repo_history.json
 repo_history.json.tmp

@@ -16,9 +16,11 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 - **The pickles**: `stats.pkl` (card database, 813 cards), `old_stats.pkl` (archived
   old card versions), `aliases.pkl` (name shortcuts). They ARE the database and they
   are **committed to git**. Constants `STATS_PKL` / `OLD_STATS_PKL` / `ALIAS_PKL` in
-  `global_config.py:6-10`.
+  `global_config.py:6-10`. Since 2026-10-21 `psd_details.json` (`DETAILS_JSON`, global_config.py:11; the
+  website's per-card PSD facts, commands/psd_details.py) is treated like a pickle: committed, pushed in the
+  PICKLE commit, kept local on a /pull conflict.
 - **PICKLE commit**: a commit containing only pickle files, message literally
-  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:25`).
+  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:28`).
 - **Dev machine**: where a human edits code and runs `git push`.
 - **Running host**: whichever machine currently runs the bot. Production is the Jetson
   (systemd `autocroissant.service`, Python 3.14 venv `~/venvs/autocroissant` since 2026-10-20); the owner's Mac at other times. It
@@ -47,19 +49,19 @@ step-by-step anatomy — every message each command prints, the failure table, t
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
 
-- **/push** → `git_push()` (update_bot.py): commits ONLY the three card pickles
-  (`aliases.pkl stats.pkl old_stats.pkl`), message literally `PICKLE`, then
+- **/push** → `git_push()` (update_bot.py): commits ONLY the three card pickles and the details file
+  (`aliases.pkl stats.pkl old_stats.pkl psd_details.json`), message literally `PICKLE`, then
   `pull --rebase --autostash` onto new code (since 2026-10-20) and pushes, including a leftover
   unpushed PICKLE commit; "already up to date" only when nothing is ahead of origin.
-- **/pull** → `git_pull()` (update_bot.py:47-115): fetch + merge, never a reset (its description
+- **/pull** → `git_pull()` (update_bot.py:50-118): fetch + merge, never a reset (its description
   said "hard reset" until 2026-10-20; archaeology 10.20). On merge **CONFLICT** it auto-resolves per
   file — **pickles → `checkout --ours` (running host's data wins); everything else →
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
   `AUTO-RESOLVE: ...` merge commit.
-- **/update** → `update_bot()` (update_bot.py:136-161): stops the three send/edit
+- **/update** → `update_bot()` (update_bot.py:139-164): stops the three send/edit
   queue loops first (main.py:206-208), then `/push` + `/pull` + restart. With
   `force_reset:True` it instead runs `git reset --hard origin/main`
-  (update_bot.py:118-133) and restarts.
+  (update_bot.py:121-136) and restarts.
 
 ### What the merge strategy implies
 
@@ -121,7 +123,7 @@ the shared card database that must stay consistent across the two hosting machin
 syncing them is the whole point of /push//update. reminder.pkl is volatile runtime
 scheduling state that mutates whenever reminders fire or reschedule; committing it
 would generate a conflict on every handoff. Accordingly, `git_push` adds only the
-three card pickles and never reminder.pkl.
+three card pickles and `psd_details.json`, never reminder.pkl.
 
 **Saves are atomic and locked (since 2026-10-21, B10).** `card_models.save_pickle` writes `<pickle>.tmp` beside the
 target, fsyncs and `os.replace`s it, under one module-level `threading.Lock` per pickle (`_stats_lock`,
@@ -198,7 +200,7 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
@@ -340,3 +342,5 @@ and update this file.
 
 2026-10-21 (S7): `/bake_cards` is the newest admin command block (checklist step 2; help dict lines re-pointed, `card_runner` named among the uncompiled modules in step 5); tests/test_robustness.py counts 52 commands; main.py, repo_traverser.py and help.py citations re-pointed.
 2026-10-21 (review): the offline-suite row reads 380 passed, 24 skipped (the S6/S7 working tree after the review fixes).
+
+2026-10-21 (details): `psd_details.json` joins the pickle discipline (jargon bullet, the /push bullet, the reminder.pkl paragraph; `psd_details` named among the uncompiled modules in step 5). The never-commit list is unchanged: the file is a derived, committed artifact like the pickles, its `.tmp` gitignored. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

@@ -385,21 +385,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:361-365 after the split).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:364-368 after the split).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:209 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:212 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:473 after the 2026-10-20 split), matching main.py:383.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:486 after the 2026-10-20 split), matching main.py:383.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -835,3 +835,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-21 (review): psd_parser.py citations re-pointed (+7 after `_printed_title`) after the WX-78 title fix.
 
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
+
+2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

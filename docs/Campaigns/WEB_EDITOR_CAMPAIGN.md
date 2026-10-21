@@ -56,7 +56,7 @@ its own build state), and the file is deleted. `pending` = data blob != `renders
 **The bot's database.** `stats.pkl` is a `CardInfo` per card (`commands/card_models.py:59-84`: name, card_type, path, timestamp, ability,
 stars, subtype, series, types, stats, problems, author, display_name, note, hidden, problems_ok, allow_high_stats, parsed_values, creatures,
 duplicate_of, alt_names, blob_sha, subseries): every field has a data-file home. Two ways to fill it. (a) Derived: `/update_stats` reads
-`<Stem>.json` by blob sha the way it reads `Card Edits.json` now (`repo_traverser.py:255-257` through the `_repo_text` cache, :117-125),
+`<Stem>.json` by blob sha the way it reads `Card Edits.json` now (`repo_traverser.py:258-260` through the `_repo_text` cache, :120-128),
 parses PSDs only for tier C; the pickle is a cache of the data files; `parsed_values` retires; no PSD download for tier A cards (813 PSDs,
 16.4 GB). API cost: the first sweep is one blob request per data file (813), later sweeps only the changed blobs. The site build cannot read
 files beside the PSDs for free: `site.yml`'s sparse checkout is `/site/`, `/Types/` and the manifest, no card folders, so it reads them from

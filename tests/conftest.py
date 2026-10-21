@@ -14,10 +14,10 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from global_config import ALIAS_PKL, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_PKL, STATS_PKL  # noqa: E402
+from global_config import ALIAS_PKL, DETAILS_JSON, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_PKL, STATS_PKL  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it
-PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL)
+PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL, DETAILS_JSON)   # the details file counts as one
 
 try:                                                    # the real config.py when present (never printed)
     import config  # noqa: F401

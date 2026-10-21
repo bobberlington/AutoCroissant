@@ -73,7 +73,7 @@ the workflow facts were re-checked.
   :563-567). `edit.js`: `FROM` marks name, stars, types, hp, def, atk, spd, ability, creatures "PSD" (:22); `editsFile` keeps
   keys outside `FIELDS` (:40); `commitFiles` retries 422 (:81-95); the unset rule (:308) drops an edit set back to the PSD.
 - **Bot flow.** `traverse_remote` fetches the tree with an ETag, re-parses PSDs whose blob sha changed (`_psd_changed`,
-  `commands/repo_traverser.py:73`), skips `Markers`/`MDW` (:36), reads Card Edits.json by blob sha (:117-125, :254), archives
+  `commands/repo_traverser.py:77`), skips `Markers`/`MDW` (:36), reads Card Edits.json by blob sha (:120-128, :257), archives
   the old card when the blob changed (:372), then authors, edits, duplicates, edits again (:177-180). `update_stats` is
   `to_thread` with no lock (`main.py:359`); pickles are committed only by `/push` (`commands/update_bot.py` `git_push`, "PICKLE").
 - **Commits today.** `commands/git_commit.py` (2026-10-21, shared by `tts_save` and `card_bake`): Git Data API blobs/tree/commit/

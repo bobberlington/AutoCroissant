@@ -166,6 +166,7 @@ its checkout without a symlink. No other configuration comes from the environmen
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
 | `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
+| `DETAILS_JSON` (2026-10-21) | `"psd_details.json"` | the website's per-card PSD facts by blob sha (commands/psd_details.py); committed and pushed with the pickles by /push, kept local on a /pull conflict; its `.tmp` gitignored |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). Only rev-list/ls-tree/merge-base/fetch run there (diff/log would download blobs) |
@@ -194,7 +195,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:392) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:397) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
 | `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:398, 405) — gitignored via `*.csv` / `*.txt` |
@@ -210,7 +211,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:77, :163). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
+| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:80, :166). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
 | `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:950-969) | cards allowed to have no ability layer |
 
 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
@@ -268,7 +269,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 | `RAW_MEDIA` | `"application/vnd.github.raw"` | Accept header for a blob's bytes |
 | `RETRY_WAITS` | `(1, 2)` | seconds between the 3 tries of `get_with_retry` (connection error, 429 or 5xx) |
 
-Also new 2026-10-20: `NET_TIMEOUT = 120` (commands/update_bot.py:8, seconds per git fetch/pull/push) and
+Also new 2026-10-20: `NET_TIMEOUT = 120` (commands/update_bot.py:9, seconds per git fetch/pull/push) and
 `MAX_CONTENT = 2000` (main.py:779, Discord's message limit; longer content is split before sending).
 
 ### commands/type_emojis.py (lines 18-29, added 2026-10-19; not compiled)
@@ -334,6 +335,18 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 | `POOL_MIN`, `POOL_CHUNK` | `8`, `4` | `--all` parses this many PSDs or more in a process pool of half the cores, this many per task (813 PSDs: 98 s -> 9.8 s on the Mac, 2026-10-21); `/fonts` and `--repo` read blobs one by one |
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
+
+### commands/psd_details.py (Configuration block, added 2026-10-21; not compiled)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `VERSION` | `1` | the details file's `"version"` |
+| `TEXT_CHARS` | `200` | characters of text kept per type layer |
+| `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
+| `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |
+
+The CLI's `--fonts` defaults to the clone's `MDW/Fonts`; `--out` to `DETAILS_JSON`. The pool size and chunking are font_check's `POOL_MIN` / `POOL_CHUNK`.
+In `/update_stats` the `supplied` flags come from `font_check.cached_index(CACHE_JSON)` (the /fonts cache), None without it.
 
 ### commands/card_runner.py (added 2026-10-21; not compiled; the bake inside the bot by hand, design section 8 "Jetson"; the live runner is the Action)
 
@@ -414,7 +427,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:473, main.py:383). Code that wants a forced re-parse must pass
+   (repo_traverser.py:486, main.py:383). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -529,3 +542,5 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (S7): commands/card_runner.py catalogued (bake_lock, _last_edits_sha, REPORT_FILE, the dry-run hold line, /bake_cards defaults); the lacks_admin table re-derived (13 gates); main.py, repo_traverser.py and help.py citations re-pointed. No flag added: the hold is a literal in the code.
 
 2026-10-21 (hook removed): `_last_edits_sha` and the dry-run hold line are gone from card_runner.py (the user: the Action is the one live runner; /bake_cards is the manual fallback and nothing in the bot queues a bake); the card_runner table and its re-verification row updated. No cited line moved.
+
+2026-10-21 (details): `DETAILS_JSON` row; commands/psd_details.py's constants catalogued; no flag or default changed. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

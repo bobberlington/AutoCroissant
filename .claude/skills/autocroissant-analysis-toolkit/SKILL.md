@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:473 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:486 as of 2026-10-20; until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -448,7 +448,7 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(repo_traverser.py:372-373), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(repo_traverser.py:376-377), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -536,3 +536,5 @@ update this file.
 2026-10-21 (titles): psd_parser.py and repo_traverser.py citations re-pointed (the parser reads the printed title into `display_name`; PARSER_VERSION 2).
 
 2026-10-21 (review): psd_parser.py citations re-pointed after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.
+
+2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

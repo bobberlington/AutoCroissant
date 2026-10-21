@@ -34,7 +34,7 @@ from psd_tools import PSDImage
 
 import commands.github_api as github_api
 from commands.github_api import api_url, fetch_tree, fetch_verified, get_with_retry, token_from_env
-from global_config import CARD_REPO, FONT_ALIASES
+from global_config import CARD_REPO, DETAILS_JSON, FONT_ALIASES
 
 # ========================
 # Configuration
@@ -555,6 +555,15 @@ def _load_cache(path: str) -> dict:
     return {"fonts": {}, "psds": {}}
 
 
+def cached_index(path: str = CACHE_JSON) -> Optional[FontIndex]:
+    """The faces the cache holds (what /fonts downloaded from MDW/Fonts), or None when it lists no font: the bot has no checkout."""
+    index = FontIndex()
+    for faces in _load_cache(path)["fonts"].values():
+        if isinstance(faces, list):
+            index.add(faces)
+    return index if index.files else None
+
+
 def _save_cache(path: str, cache: dict) -> None:
     """card_models.save_pickle's write (tmp, fsync, replace), copied: the Action's closure has no card_models."""
     temp_path = path + ".tmp"
@@ -572,12 +581,24 @@ def _save_cache(path: str, cache: dict) -> None:
         raise
 
 
-def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch: int = BATCH) -> Report:
+def _details_fonts(path: str) -> dict:
+    """{blob sha: {font: [layer names]}} from the details file /update_stats gathers (its layers are paths); {} without it."""
+    from commands.psd_details import load as load_details          # lazy: psd_details imports this module
+    out: dict = {}
+    for sha, record in load_details(path).items():
+        fonts = record.get("fonts") if isinstance(record, dict) else None
+        if isinstance(fonts, dict) and all(isinstance(entry, dict) for entry in fonts.values()):
+            out[sha] = {font: [basename(layer) for layer in entry.get("layers", [])] for font, entry in fonts.items()}
+    return out
+
+
+def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch: int = BATCH, details_path: str = DETAILS_JSON) -> Report:
     """
     Every card PSD on the card repo's branch against its MDW/Fonts, through the API with a per-blob cache.
 
     The first run downloads the fonts (270 files, 215 MB) and up to batch PSDs (the whole repo is ~813 PSDs, 15.6 GB:
-    about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs no
+    about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs the
+    details file already describes (psd_details.json, gathered by /update_stats) are not downloaded either. Blobs no
     longer in the tree leave the cache. When a font file fails to download, any card could be asking for one of its
     faces: the PSDs are still read and cached, but no card is reported (fonts_unread).
 
@@ -585,11 +606,14 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
         repository: owner/name
         cache_path: The cache file (CACHE_JSON), written whatever happens
         batch: PSD downloads per call
+        details_path: The details file whose fonts seed the cache
 
     Returns:
         Report, with remaining = the PSDs not read yet
     """
     cache = _load_cache(cache_path)
+    for sha, fonts in _details_fonts(details_path).items():
+        cache["psds"].setdefault(sha, fonts)
     blobs = tree_blobs(repository)
     index = FontIndex()
     fonts = {p: s for p, s in blobs.items() if p.startswith(FONTS_DIR + "/") and p.count("/") == 2 and p.lower().endswith(FONT_EXTENSIONS)}
@@ -712,6 +736,7 @@ __all__ = [
     'POOL_MIN',
     'ROLE_ID',
     'Report',
+    'cached_index',
     'check_blobs',
     'check_checkout',
     'check_files',

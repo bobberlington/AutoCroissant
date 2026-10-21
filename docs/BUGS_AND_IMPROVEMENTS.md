@@ -29,6 +29,10 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   which Discord dropped; it posts the name now) and the /fonts lazy-import shadowing; one commit path for the bake and
   the TTS save (`commands/git_commit.py`); the font check parses in a process pool (813 PSDs 98 s -> 9.8 s). Report:
   `docs/Finished/optimization-pass-2-2026-10-21/`.
+- 2026-10-21 (plan item 23, bot side): `psd_details.json` (commands/psd_details.py, uncompiled) holds one record per card PSD by
+  blob sha (fonts, text layers, effects, smart objects, canvas, icon style, stat-row encoding, FX/overlay layers, template
+  deviations, a compact layer tree) for the website's Details dropdown; gathered in /update_stats, pushed with the pickles,
+  backfilled by `python -m commands.psd_details --clone`; /fonts reads it first. Owner: autocroissant-run-and-operate §7.
 
 ---
 

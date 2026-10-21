@@ -481,6 +481,28 @@ def test_repo_fonts_cache_and_batches(fonts_dir, fake_psds, monkeypatch, tmp_pat
     assert not (tmp_path / "font_names.json.tmp").exists()
 
 
+def test_repo_fonts_reads_the_details_file_first(fonts_dir, fake_psds, monkeypatch, tmp_path):
+    """A blob psd_details.json describes (gathered by /update_stats) is not downloaded; its fonts seed the cache."""
+    import commands.psd_details as pd
+    font, a, b = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes(), b"psd-a", b"psd-b"
+    fake_psds[b] = {"PsdToolsFixture-TT": ["Ability"]}
+    tree = {"tree": [{"path": "MDW/Fonts/TT.ttf", "type": "blob", "sha": _sha(font)},
+                     {"path": "Creatures/A.psd", "type": "blob", "sha": _sha(a)}, {"path": "Items/B.psd", "type": "blob", "sha": _sha(b)}]}
+    fake = FakeGitHub({_sha(font): font, _sha(b): b}, {}, {}, tree)              # A's blob would 404: it must not be asked for
+    monkeypatch.setattr(ga, "get", fake.get)
+    details = tmp_path / "psd_details.json"
+    pd.save({_sha(a): {"path": "Creatures/A.psd", "fonts": {"JavaneseText": {"layers": ["Text/Name", "Text/Sub/Name"], "supplied": False}}},
+             _sha(b"gone"): {"path": "Items/Old.psd", "fonts": "error: unreadable"}}, str(details))
+    cache = tmp_path / "font_names.json"
+    report = fc.repo_fonts("o/r", str(cache), details_path=str(details))
+    assert (report.checked, report.errors) == (2, []) and [c.path for c in report.cards] == ["Creatures/A.psd"]
+    assert report.cards[0].missing == {"JavaneseText": ["Name", "Name"]}
+    saved = json.loads(cache.read_text(encoding="utf-8"))
+    assert saved["psds"] == {_sha(a): {"JavaneseText": ["Name", "Name"]}, _sha(b): {"PsdToolsFixture-TT": ["Ability"]}}
+    assert fake.blob_calls() == 2                                                # the font and B only
+    assert fc.repo_fonts("o/r", str(cache), details_path=str(tmp_path / "none.json")).checked == 2
+
+
 def test_repo_fonts_font_download_failure_reports_no_card(fonts_dir, fake_psds, monkeypatch, tmp_path):
     """A font that failed to download may be the one a card asks for: no card is reported, the PSDs still land in the cache."""
     font, ttc, a = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes(), (fonts_dir / "Pair.ttc").read_bytes(), b"psd-a"

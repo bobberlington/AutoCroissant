@@ -333,6 +333,43 @@ def test_bake_lock_serialises_update_stats(github, capsys):
     assert "Waiting for the running card bake or update to finish" in capsys.readouterr().out
 
 
+def _details():
+    import commands.psd_details as pd
+    return pd.load("psd_details.json")                                 # cwd-relative, like the pickles
+
+
+def test_details_follow_the_parsed_cards(github, psds):
+    """Every parsed card's PSD facts land in psd_details.json by blob sha, saved with the pickles; a blob that left
+    the tree takes its record with it, and a 304 writes nothing."""
+    import commands.psd_details as pd
+    _run()
+    details = _details()
+    assert set(details) == {_file_sha(github, DOOMER), _file_sha(github, FREEZER)}
+    doomer = details[_file_sha(github, DOOMER)]
+    assert (doomer["path"], doomer["name"], doomer["parser"]) == (DOOMER, "Mini Doomer", pa.PARSER_VERSION)
+    assert doomer["stats"]["hp"] == "template" and doomer["icons"] == "images" and doomer["template"]["name_layer"] == "Text/Name"
+    assert {e["supplied"] for e in doomer["fonts"].values()} == {None}            # no /fonts cache on this machine
+    mtime = os.stat("psd_details.json").st_mtime_ns
+    _run()                                                                      # 304
+    assert os.stat("psd_details.json").st_mtime_ns == mtime
+    github.files[DOOMER] = psds[OTHER]
+    del github.files[FREEZER]
+    _run()
+    details = _details()
+    assert set(details) == {_sha(psds[OTHER])} and details[_sha(psds[OTHER])]["path"] == DOOMER
+    assert not os.path.exists("psd_details.json.tmp")
+    assert pd.load("psd_details.json") == details
+
+
+def test_details_gather_error_never_fails_the_update(github, monkeypatch, capsys):
+    import commands.psd_details as pd
+    monkeypatch.setattr(pd, "gather", lambda *a, **kw: (_ for _ in ()).throw(ValueError("odd effects block")))
+    problems, _ = _run()
+    assert problems == [] and set(_saved()[0]) == {"Mini Doomer", "The Freezer"}
+    out = capsys.readouterr().out
+    assert f"{DOOMER}: details not gathered (odd effects block)" in out and not os.path.exists("psd_details.json")
+
+
 def test_website_files_live_in_site():
     """The authors and edits files are read from the card repo's site/ only (moved from MDW/ on 2026-10-20)."""
     assert (pa.AUTHORS_PATHS, pa.EDITS_PATHS) == (("site/Card Authors.txt",), ("site/Card Edits.json",))

@@ -174,7 +174,7 @@ async def slash_stop_bot(interaction: Interaction):
 
 
 git_pull = to_thread(git_pull)
-@tree.command(name="pull", description="Fetches and merges the latest code (keeps local pickles), and reports status (admin only).")
+@tree.command(name="pull", description="Fetches and merges the latest code, keeps local pickles and details, reports status (admin only).")
 async def slash_pull(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
@@ -184,7 +184,7 @@ async def slash_pull(interaction: Interaction):
 
 
 git_push = to_thread(git_push)
-@tree.command(name="push", description="Commits the pickles, rebases onto new code, pushes, and reports status (admin only).")
+@tree.command(name="push", description="Commits the pickles and PSD details, rebases onto new code, pushes, reports status (admin only).")
 async def slash_push(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
@@ -194,7 +194,7 @@ async def slash_push(interaction: Interaction):
 
 
 update_bot = to_thread(update_bot)
-@tree.command(name="update", description="Push pickles, pull latest code, and restart the bot (admin only).")
+@tree.command(name="update", description="Push the pickles and PSD details, pull latest code, and restart the bot (admin only).")
 @app_commands.describe(
     force_reset="Skip the push and pull: hard reset to remote, losing local pickles (dangerous!). Default = False."
 )

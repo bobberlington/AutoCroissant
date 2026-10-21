@@ -8,6 +8,7 @@ STATS_PKL       = "stats.pkl"
 SITE_URL        = "https://michaeljsr.github.io/TTSCardMaker"   # card browser website
 OLD_STATS_PKL   = "old_stats.pkl"
 REMIND_PKL      = "reminder.pkl"
+DETAILS_JSON    = "psd_details.json"          # PSD facts per card blob for the website's Details dropdown (committed, pushed with the pickles)
 HISTORY_JSON    = "repo_history.json"          # repo path -> commit that last changed it (derived, gitignored)
 HISTORY_CLONE   = environ.get("AUTOCROISSANT_HISTORY_CLONE", "~/Documents/TTSCardMaker-history.git")   # bare blobless clone of the card repo (env: the Action)
 EMOJI_JSON      = "type_emojis.json"           # bot application id -> {type emoji name: icon blob} (gitignored)

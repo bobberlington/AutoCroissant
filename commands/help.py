@@ -7,9 +7,9 @@ general_commands = {
     "/help <text/card/music/stats/general>:"    : "Prints the help message pertaining to the specified command category.",
     "/restart_bot:"                             : "Restarts the bot.",
     "/stop_bot:"                                : "Stops the bot (admin only).",
-    "/pull:"                                    : "Fetches and merges the latest code, keeping the local pickles on a conflict, and reports status (admin only).",
-    "/push:"                                    : "Commits the card pickles, rebases onto new code, pushes and reports status (admin only).",
-    "/update [force_reset]:"                    : "Pushes the pickles, pulls, then restarts (admin only).\n"
+    "/pull:"                                    : "Fetches and merges the latest code, keeping the local pickles and psd_details.json on a conflict, and reports status (admin only).",
+    "/push:"                                    : "Commits the card pickles and psd_details.json (the website's PSD details), rebases onto new code, pushes and reports status (admin only).",
+    "/update [force_reset]:"                    : "Pushes the pickles and psd_details.json, pulls, then restarts (admin only).\n"
                                                   "- force_reset: Skip the push and pull; hard reset to origin/main instead, discarding local pickles (dangerous! default: False)",
     "/purge [user] [num] [bulk]:"               : "Deletes one user's messages among the most recent ones in this channel.\n"
                                                   "- user: Whose messages (default: the bot's own)\n"

@@ -2,8 +2,9 @@ from discord import Interaction
 from git import GitCommandError, Repo
 from git.cmd import Git
 from os import execl, execv
+from os.path import isfile
 from sys import argv, executable
-from global_config import ALIAS_PKL, STATS_PKL, OLD_STATS_PKL
+from global_config import ALIAS_PKL, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
 
 NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
 
@@ -21,6 +22,8 @@ async def git_push(interaction: Interaction):
         git.add(ALIAS_PKL)
         git.add(STATS_PKL)
         git.add(OLD_STATS_PKL)
+        if isfile(DETAILS_JSON):                        # the website's PSD details travel with the pickles
+            git.add(DETAILS_JSON)                       # (a never-tracked missing path would abort the push)
         try:
             git.commit('-m', 'PICKLE')
         except GitCommandError as e:
@@ -78,7 +81,7 @@ async def git_pull(interaction: Interaction):
 
                         for file_path in conflicted:
                             # Keep ours for pickle files, keep theirs for everything else
-                            if file_path in [ALIAS_PKL, STATS_PKL, OLD_STATS_PKL]:
+                            if file_path in [ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, DETAILS_JSON]:
                                 await interaction.followup.send(f"Keeping local version of {file_path}")
                                 git.checkout('--ours', file_path)
                             else:
@@ -146,7 +149,7 @@ async def update_bot(interaction: Interaction, force_reset: bool = False):
             await interaction.followup.send("Force reset mode: Local changes will be discarded!")
             await git_reset_hard(interaction)
         else:
-            await interaction.followup.send(f"Pushing {ALIAS_PKL}, {STATS_PKL}, and {OLD_STATS_PKL}.")
+            await interaction.followup.send(f"Pushing {ALIAS_PKL}, {STATS_PKL}, {OLD_STATS_PKL} and {DETAILS_JSON}.")
             await git_push(interaction)
 
             await interaction.followup.send("Pulling latest changes from remote!")

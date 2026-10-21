@@ -230,6 +230,7 @@ spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old 
 | Card text, stats, authors, timestamps, problems | `stats.pkl` from `https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/` (`BOT_REPO` env) | `load_bot_pickle` |
 | Text history | `old_stats.pkl` (optional) | `main` |
 | Aliases | `aliases.pkl` (alias → PNG file name) | `main` |
+| **PSD details** (2026-10-21) | `psd_details.json` from the same bot repo URL (`{"version": 1, "cards": {blob sha: record}}`, written by `commands/psd_details.py` on `/update_stats` and the backfill CLI, pushed with the pickles). Joined to a card by its PSD's blob at HEAD, else the blob the bot parsed, else the newest record for the path; `details: true` on the card and one `data/details/<id>.json` per card (the record plus the card's id and name). A missing or odd file logs "no PSD details" and the build goes on without the dropdown | `load_bot_json`, `psd_records`, `join_details` |
 | **Authors** | `site/Card Authors.txt`. `[people]` git name = shown name; `[cards]` Card Name = person. Card names match case-insensitively, `_` = space, whitespace collapsed; `[people]` lookups are case-insensitive. Listed card: `people.get(cards[name], cards[name])`; else `people.get(bot_author, bot_author)`. Same rule as AutoCroissant. A missing file or malformed line only warns | `parse_authors`, `card_key`, `person` |
 | File list + blob hashes | `git ls-tree -r -z HEAD` (works in a sparse, blobless checkout) | `repo_tree` |
 | **Card images** | Each card PNG becomes 3 WebP files named `<blob16>-240/-360/-720.webp`. 240 and 360 are the grid at 1x/2x, 720 is the card view. Cached in `site/.cache/img` by git blob hash, unused files pruned; settings in `IMAGE_SIZES`. PNG bytes come from the local file, else `raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/` | `make_images` |
@@ -251,6 +252,8 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Data files:**
   - `data/cards.json` (everything the first screen needs; ~84 KB gzipped). History counts `hv`/`iv` instead of the
     data; `parsed` only when false.
+  - `data/details/<id>.json` (one per card with a PSD record, 0.9-16.7 KB; fetched when the card page's Details
+    dropdown is first opened, rendered by `site/assets/details.js`; the build version counts them, it does not hash them).
   - `data/rules.json`, `data/history.json`, `data/versions.json` (loaded only when the rulebook, a card or the
     changes feed needs them). `versions.json` holds a commits table plus per-card `[[commit index, path then if
     different], …]`, newest first; ~27 KB gzipped, 3,211 versions of 725 cards from 356 commits since 2023-11-05.
@@ -716,3 +719,4 @@ Maintenance rules:
 - If the migration prototype is moved into the repo, replace every `/private/tmp/fontexplore` path.
 - When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 70 / 126 /
   U+E05A).
+2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").

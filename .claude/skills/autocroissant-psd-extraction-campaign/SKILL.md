@@ -534,7 +534,7 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
 change — state no more than this): `manual_metadata_entry` creates a missing card as
 `CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:221) with `timestamp` 0.0 and no
-`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:74) re-parses a card that
+`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:77) re-parses a card that
 is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
 since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
 existing entry survive until the PSD's blob changes, `cards:` names the card, or `force_update:True`; a
@@ -605,7 +605,7 @@ documented in autocroissant-failure-archaeology).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
 - Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:87, `_psd_changed`
-  repo_traverser.py:74, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
+  repo_traverser.py:77, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
   psd_analyzer.py:221; /update_metadata at main.py:436):
   `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
@@ -620,3 +620,5 @@ documented in autocroissant-failure-archaeology).
 2026-10-21 (review): goal paragraph says 18 hardcoded names; psd_analyzer.py citations +2 (`manual_metadata_entry` :169, its CardInfo :221); psd_parser.py citations re-pointed after the WX-78 title fix (a title that is part of the file name beside an image layer printing the rest reads as the file name); the gate shows 157 + 2.
 
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
+
+2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.

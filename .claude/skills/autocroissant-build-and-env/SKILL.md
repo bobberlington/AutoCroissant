@@ -54,7 +54,7 @@ committed (53db8ee).
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
-| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:104`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
+| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:107`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
 | requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:17`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
@@ -299,3 +299,5 @@ to requirements-dev.txt. The 11 compiled modules still build with Cython 3.3.0 (
 result without a PNG posts the name). Review: the uncompiled list names the five 2026-10-21 modules.
 
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
+
+2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
