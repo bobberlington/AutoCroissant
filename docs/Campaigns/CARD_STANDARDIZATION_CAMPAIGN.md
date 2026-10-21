@@ -237,18 +237,28 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ## 5. The future guard: an Action on push that reports (then fixes)
 
-The font check is the guard's first rule and its pattern (written 2026-10-21 against the uncommitted tree; live once both repos are committed
-and the `DISCORD_FONT_WEBHOOK` secret is set): TTSCardMaker `.github/workflows/font-check.yml` runs the bot's
-`commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/` (the changed PSDs by blob sha), writes the job summary, comments on
-the commit and pings the card makers' role on Discord per author and missing font, and never reverts or rejects (L13's six faces are what it
-reports today).
+Each rule is one TTSCardMaker Action on push that runs a bot module on the pushed PSDs by blob sha, writes the job summary, comments on the
+commit and pings the card makers' role on Discord (the shared secret `DISCORD_FONT_WEBHOOK`), and never reverts or rejects.
 
-- `site/build/check_cards.py` (proposed; beside the rulebook campaign's `check_rules.py`, same job shape): for each PSD whose blob changed on
-  the push (fetched by blob sha like the pipeline; the `site.yml` checkout has no card folders), report every deviation by class, the
-  classes being this ledger's (the scratch `corpus_scan.py` + `aggregate.py` + `classify.py` ported into the bot next to `psd_edit.classify`
-  and `psd_regions`, plus L10's composer and L2's bar-name checks), against a baseline that starts as today's inventory and shrinks to
-  empty. Plain script by hand first, then one step in its own job or `continue-on-error: true` (`deploy` needs `build`; a red check must
-  not stop the site). Report-only for a month, posted to Discord like `tts_save._post`.
+- **Rule 1, the font check** (written 2026-10-21 against the uncommitted tree; live once both repos are committed and the secret is set):
+  `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
+  for that `MDW/Fonts` lacks, per author and font (L13's six faces are what it reports today).
+- **Rule 2, the card check** (written 2026-10-21; staged in `/tmp/card-check/card-check.yml`, lands when the orchestrator commits the yml):
+  `.github/workflows/card-check.yml` runs `commands/card_check.py` (uncompiled; `python -m commands.card_check --help`) on every push that
+  touches a PSD, `Types/` or `site/Card Edits.json`: for each pushed PSD the notes `/update_stats` would print (`NO STARS FOUND`,
+  `MISSPELT TYPE`, `SEVERAL CREATURES`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the
+  parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser notes, the validator's are printed only), after the
+  card's edits-file entry (`problems_ok`, `allow_high_stats`, `creatures` ...) and `ABILITY_EXCLUSIONS`; `Types/`, the icon manifest and
+  the edits file come from the tree at the pushed commit. Report-only, exit 0 always (an unreadable PSD or a failed API call is one error
+  line, never a red push); one Discord line per card, "<login> has pushed <card> with: <note>; <note>."; a dispatch with `all` reads every
+  card into the job summary. Today's notes (the clone at e4e0a58): Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types
+  `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`;
+  `tests/test_card_check.py` pins them. Operations: autocroissant-run-and-operate §7.
+- **Later rules, deviations by class** (`site/build/check_cards.py` proposed beside the rulebook campaign's `check_rules.py`, or a bot
+  module in the card check's shape): for each PSD whose blob changed on the push, report every deviation by class, the classes being this
+  ledger's (the scratch `corpus_scan.py` + `aggregate.py` + `classify.py` ported into the bot next to `psd_edit.classify` and
+  `psd_regions`, plus L10's composer and L2's bar-name checks), against a baseline that starts as today's inventory and shrinks to empty.
+  Plain script by hand first, then its own Action (a red check must not stop the site). Report-only for a month.
 - Fixing on push comes later and only for 0-pixel classes proven on every card of the batch (renames, effect copies), only when the PSD
   has been quiet about 30 min (Task 3c's rule), skipping its own commits, never a rulebook page, never while a hold stands. Pixel-changing
   classes stay report-only: PSDs cannot be merged and an author may still be editing.

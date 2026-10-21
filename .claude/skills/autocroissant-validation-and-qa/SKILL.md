@@ -78,19 +78,22 @@ kinds are appended to it (line numbers as of 2026-10-19):
 `inspect_pickle.py --problems` counts exactly this channel.
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never pickled.**
-`CardValidator.validate(card)` (psd_parser.py:972-1008 on 2026-10-20) builds a fresh local list from
+`CardValidator.validate(card)` (psd_parser.py:975-1011 on 2026-10-21) builds a fresh local list from
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
-`STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1011) — then extends it with
+`STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1014) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
-card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:465)
-and out to Discord/console (called at repo_traverser.py:409; the archived local traversal on branch
-`archive/local-update-stats` has its own copy of this flow).
+card**: during a sweep it flows into `_format_problems` (repo_traverser.py:466, called :410)
+and out to Discord/console (the archived local traversal on branch `archive/local-update-stats` has its
+own copy of this flow). Since 2026-10-21 the same `validate()` runs in a second place, `commands/card_check.py`
+(the push guard's card check, TTSCardMaker card-check.yml): per pushed PSD, after `CardEdits.apply` as in the sweep
+(repo_traverser.py:387-388), into a report, a commit comment and a Discord line; `tests/test_card_check.py` pins the clone's
+cards to the sweep's output, so a validator change shows there first (autocroissant-run-and-operate §7).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
-`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1003-1005).
+`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1005-1008).
 And `validate()` only runs during a sweep when `output_problematic=True`
-(repo_traverser.py:388-389). Consequence: a sweep run with `output_problematic=False`
+(repo_traverser.py:391-392). Consequence: a sweep run with `output_problematic=False`
 would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
 inflating the Channel-A count by up to 18 with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
@@ -394,8 +397,8 @@ python3 $SCRIPTS/diff_stats.py /tmp/stats_head.pkl stats.pkl   # every line must
 
 ## 6. How to add a CardValidator check
 
-**Where.** Computed checks go in `CardValidator.validate` (psd_parser.py:972) or, for
-creature/minion stat rules, `CardValidator._validate_stats` (psd_parser.py:1011). This is
+**Where.** Computed checks go in `CardValidator.validate` (psd_parser.py:975) or, for
+creature/minion stat rules, `CardValidator._validate_stats` (psd_parser.py:1014). This is
 the DEFAULT home for new checks: return-value-only, visible in sweeps and `parse_one.py`,
 zero database footprint, trivially removable. Parse-time checks
 (`card.problems.append(...)` inside `PSDParser`, like MISSPELT TYPE at
@@ -500,7 +503,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | MISMATCH check history | `git show -s --oneline fed8a83 081b1fd` and `git show fed8a83 -- commands/psd_analyzer.py` |
 | eb9aa84 revert exists | `git show -s --oneline eb9aa84` |
 | Remote-sweep API cost (blob + one commit page per re-parsed PSD, post-gate) | `grep -n "_get_remote_timestamp\|_commit_page\|COMMITS_PAGE =\|_blob\|_psd_changed" commands/repo_traverser.py` |
-| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (310 passed, 17 skipped, about 22 s, 2026-10-21) |
+| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (417 passed, 24 skipped, about 60-85 s, 2026-10-21) |
 | Method A scripts kept | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/compare.py` |
 | PSD count (~904) | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` |
 
@@ -520,3 +523,5 @@ explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).
 2026-10-21 (review): the gate is 157 `display_name` + 2 `STATS TOO HIGH` (159): WX-78's title "wx-" beside an image layer named "78" now reads as the file name (new golden `Creatures/DST/3 Stars/WX-78.psd`; suite 356 passed, 18 skipped); psd_parser.py citations re-pointed; repo_traverser.py `_format_problems` :451 (called :404), `update_stats` :472, the end-of-run queue_commands :526-527. Gate re-run: the re-verify row for `ABILITY_EXCLUSIONS` now says :950.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-21 (card check): §2 names `commands/card_check.py` as the second place `validate()` runs (per pushed PSD, after the edits, into TTSCardMaker's card-check.yml report); validate :975-1011, `_validate_stats` :1014, the mutation :1005-1008, the sweep's gate :391-392 and `_format_problems` :466 (called :410) re-pointed; suite row 417 passed, 24 skipped (tests/test_card_check.py: 22, among them an API-failure exit-0 test and a readers-parity test against repo_traverser).

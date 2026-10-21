@@ -336,6 +336,18 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
 
+### commands/card_check.py (Configuration block, added 2026-10-21; not compiled; CLI only)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `SPARSE_FILES` | `("commands/card_check.py", "commands/font_check.py", "commands/github_api.py", "commands/psd_parser.py", "commands/card_models.py", "commands/card_edits.py", "global_config.py")` | the import closure; TTSCardMaker's card-check.yml sparse-checks out exactly this list (`tests/test_card_check.py` asserts the closure equals it) |
+| `LINE` | `"{name} has pushed {card} with: {notes}."` | the Discord line per card (card = `card_name(path)`, notes joined by "; ") |
+| `CLOSING` | `"The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the website as Parser notes."` | the Discord message's last line (the validator's notes never reach the website) |
+| `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
+
+Shared with font_check (imported): `ROLE_ID`, `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
+through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR`, `STARS_DIR`, `ICON_MANIFEST_PATH`, `EDITS_PATHS`.
+
 ### commands/psd_details.py (Configuration block, added 2026-10-21; not compiled)
 
 | Constant | Value | Meaning |
@@ -508,6 +520,7 @@ table with its command before quoting it in the future.
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
 | git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
 | font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
+| card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
 | card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
 | global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
@@ -544,3 +557,5 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (hook removed): `_last_edits_sha` and the dry-run hold line are gone from card_runner.py (the user: the Action is the one live runner; /bake_cards is the manual fallback and nothing in the bot queues a bake); the card_runner table and its re-verification row updated. No cited line moved.
 
 2026-10-21 (details): `DETAILS_JSON` row; commands/psd_details.py's constants catalogued; no flag or default changed. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-21 (card check): commands/card_check.py's constants catalogued (`SPARSE_FILES`, `LINE`, `CLOSING`, `UNREADABLE`; the rest imported from font_check); no flag or default changed. Same day: `CLOSING` reworded (the validator's notes never reach the website's Parser notes).

@@ -401,16 +401,18 @@ The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_parser.py:948-1035)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:948-1038)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
-- **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle:
-  `NO ABILITY LAYER` (psd_parser.py:414) and `MISSPELT TYPE: <name>` (psd_parser.py:548-549,
+- **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle (the website's Parser notes):
+  `NO ABILITY LAYER` (psd_parser.py:414), `NO STARS FOUND` (:420), `MISSPELT TYPE: <name>` (:548-549,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
-  line 42).
+  line 24), the effect-layer and icon-token ones through `_add_problem` (:626; callers :488-501, :656-688) and `SEVERAL CREATURES` (:862).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
-  REPORTED to Discord, and NOT written back to the card.
+  REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
+  `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check
+  (TTSCardMaker card-check.yml; autocroissant-run-and-operate §7); of its output only the parse-time problems above reach the website.
 
 So the `problem` field in stats.pkl only ever holds parse-time strings. As of 2026-07-11 exactly
 one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado`.
@@ -676,3 +678,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-21 (card check): §5 names `commands/card_check.py` as the second place the validator runs; the `CardValidator` range is :948-1038. Same day: the parse-time list gained `NO STARS FOUND` (:420), the effect layer's (:626) and `SEVERAL CREATURES` (:862), `MISSPELT_CARD_TYPES` re-pointed to line 24, and the card-check line says only those reach the website. Gate: the :626 entry names `_add_problem` and its effect-layer and icon-token callers.

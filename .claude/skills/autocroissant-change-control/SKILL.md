@@ -200,8 +200,12 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
-   modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
+   modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
+   sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: the last one's list is
+   `card_check.SPARSE_FILES`), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
+   have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py; tts-save.yml's has
+   none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
    that is already declared (declare it once; the management.py incident,
@@ -330,7 +334,7 @@ and update this file.
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
 | Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 79, 112; 136) |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (380 passed, 24 fork-only skips on 2026-10-21 after the S6/S7 review fixes) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (417 passed, 24 fork-only skips on 2026-10-21 with tests/test_card_check.py) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
@@ -344,3 +348,5 @@ and update this file.
 2026-10-21 (review): the offline-suite row reads 380 passed, 24 skipped (the S6/S7 working tree after the review fixes).
 
 2026-10-21 (details): `psd_details.json` joins the pickle discipline (jargon bullet, the /push bullet, the reminder.pkl paragraph; `psd_details` named among the uncompiled modules in step 5). The never-commit list is unchanged: the file is a derived, committed artifact like the pickles, its `.tmp` gitignored. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-21 (card check): `card_check` named among the uncompiled modules in step 5, with the four TTSCardMaker Actions whose sparse lists pin bot file paths; the offline-suite row reads 417 passed, 24 skipped; the sparse-list test clause names the three Actions that have one (tts-save.yml has none).

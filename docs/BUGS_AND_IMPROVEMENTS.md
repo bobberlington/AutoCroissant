@@ -33,6 +33,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   blob sha (fonts, text layers, effects, smart objects, canvas, icon style, stat-row encoding, FX/overlay layers, template
   deviations, a compact layer tree) for the website's Details dropdown; gathered in /update_stats, pushed with the pickles,
   backfilled by `python -m commands.psd_details --clone`; /fonts reads it first. Owner: autocroissant-run-and-operate §7.
+- 2026-10-21 (push guard, rule 2): `commands/card_check.py` (uncompiled, CLI only) reports a pushed card's parser and validator notes
+  (what /update_stats prints; the parser's own notes among them are also the website's Parser notes) from TTSCardMaker's `card-check.yml` (staged in `/tmp/card-check` until the
+  orchestrator commits it; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
 
 ---
 

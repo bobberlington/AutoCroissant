@@ -412,6 +412,37 @@ present. It reports and never rejects: a missing font is a message to a person, 
   ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
+### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is TTSCardMaker's card-check.yml Action, staged in /tmp/card-check until the orchestrator commits it)
+
+commands/card_check.py (uncompiled; imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
+Discord or config; `SPARSE_FILES` is that closure and the Action's sparse list) tells what the bot's parser and validator note about a card
+PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `SEVERAL CREATURES`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO
+HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser
+notes, the validator's are printed only), after the card's `site/Card Edits.json` entry (`problems_ok`, `allow_high_stats`, `creatures` ...)
+and `ABILITY_EXCLUSIONS`. The second push-guard rule (docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5). It reports and never
+rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
+network, a truncated tree) is one error line.
+
+- **Automatic: TTSCardMaker's `.github/workflows/card-check.yml`.** On a push to main that changes a PSD, `Types/` or `site/Card Edits.json`
+  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
+  requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+  the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
+  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font check's secret; unset: a warning) and comments on the commit. The
+  message pings role 546427268751294475 once, then one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
+  "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the
+  website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
+  lists no PSD, so it reports nothing.
+- **Dispatch:** Actions > Card check > Run workflow with `all` reads every card PSD of the tree (~813 blob downloads, 16 GB, 25-30 min) into
+  the job summary only (no Discord message or comment on a dispatch); without `all`, the head commit's PSDs.
+- **By hand:** `python -m commands.card_check --psd <files>` (each file in the checkout of its nearest ancestor holding `Types/`: its path
+  from there classifies it and that checkout's `Types/` and edits file apply; a file outside any checkout is `UNKNOWN TYPE`),
+  `--all <checkout>` (every card PSD, a process pool of half the cores from 8 PSDs up, like the font check; 0.1-0.4 s a PSD sequential,
+  the 813 PSDs of the clone in 14.6 s wall on the Mac on 2026-10-21, 0 errors, exactly the seven cards below),
+  `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree]`, `--json <out>`, `--discord <out>`. On the clone at e4e0a58 the notes
+  are Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors
+  `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`; Anubisath Guardian, Qiraji Soldier, Silithid, Mini Doomer and Royal
+  Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these).
+
 ### PSD details (psd_details.json, added 2026-10-21; the data behind the website's card Details dropdown, plan item 23)
 
 commands/psd_details.py (uncompiled; stock psd-tools; no Discord or config imports, like font_check) gathers one record per card PSD:
@@ -684,6 +715,7 @@ re-find volatile facts with these before trusting them:
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
+| Card check (CLI only; no main.py or help.py wiring; the Action is TTSCardMaker's card-check.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^SPARSE_FILES\|^LINE\|^CLOSING" commands/card_check.py` |
 | Card bake wiring (/bake_cards; the Lock; no notice since 2026-10-21) | `grep -n "bake_cards\|name=\"bake_cards\"" main.py`; `grep -n "bake_lock" commands/repo_traverser.py commands/card_runner.py`; `grep -c "notice_edits" commands/repo_traverser.py commands/card_runner.py` (0 and 0) |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
@@ -717,3 +749,5 @@ module, not a shadowing name.
 2026-10-21 (hook removed): the edits-file notice is gone, decided by the user: the Action is the one live runner, the jetson a manual fallback (/bake_cards only; nothing in the bot queues a bake). Section 7's Card bake subsection, section 8's work-dir row and the wiring row rewritten; repo_traverser.py lost its last two update_stats lines (:541-542), so no cited line in this file moved.
 
 2026-10-21 (details): section 5 (/push adds psd_details.json; /pull keeps it; the /update message), section 7's PSD details subsection, section 8's `psd_details.json` row; repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-21 (card check): section 7's Card check subsection (commands/card_check.py, CLI only; TTSCardMaker's card-check.yml staged in /tmp/card-check until the orchestrator commits it) and its wiring row; nothing in main.py or help.py changed, so no cited line moved. Same day: the subsection no longer says the website shows the validator's notes (only the parser's own reach the site's Parser notes); the error-line sentence names MDW/Markers PSDs and failed API calls (exit 0 kept).
