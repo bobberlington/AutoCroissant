@@ -112,6 +112,11 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 ### 2.3 Operational hardening (small, high-value)
 
 Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29). Open: B8, B9.
+- **B11 (open, 2026-10-21): fonts on the jetson.** The jetson has no TTSCardMaker checkout, so `card_bake._fonts_dir` falls back
+  to `LOCAL_DIR_LOC/MDW/Fonts` (absent) and `/bake_cards` refuses every text edit there with `font`; new `psd_details.json` records
+  gathered on the jetson carry `supplied: null` until `/fonts` has filled `font_names.json`. Fix: a font cache keyed by the
+  MDW/Fonts tree sha (downloaded once by `/fonts`, reused by the bake and the details gather). Not urgent: the GitHub Action is
+  the live bake runner and the Mac backfill carries the supplied flags for all 813 current blobs.
 
 ### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md; Task 3 first)
 
