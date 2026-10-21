@@ -1,58 +1,298 @@
-# Next session plan (2026-10-20)
+# Next session plan (2026-10-22, Opus 5.5)
 
-Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardmaker-integration` first.
+Start in `~/Desktop/AutoCroissant`. Read memories `next-session-plan`, `jetson-server`, `ttscardmaker-integration`,
+`agent-model-preference` and `psd-edits-hold` first. Agents run on Opus or lower (never above the session's model).
+The 2026-10-21 session report is `docs/Finished/session-2026-10-21/README.md`; the full pending-task inventory it was
+checked against is reproduced below.
 
-**State at the end of 2026-10-20**
-- Bot on the jetson runs main `05c643e` (AI generation moved to branch `archive/ai-generation`); pickles `7d0e29f`;
-  50 slash commands; jetson and GitHub in sync.
-- TTSCardMaker main is pushed: website + editor live at https://michaeljsr.github.io/TTSCardMaker/.
-- History-only clone on the jetson: `~/Documents/TTSCardMaker-history.git` (about 27 MB). Git there is 2.25: never run a
-  diff in it (`log --name-only`/`--raw` download blobs); walk `rev-list --parents` + `ls-tree -r` (~10 s, verified
-  against GitHub on 4 cards).
-- PSD research (report, Photopea harness, psd-tools patch, survey data): `~/Documents/Tools/psd-research/`. TTS survey
-  scripts are in `/private/tmp/fontexplore/scripts/tts_survey*.py` (gone after a reboot; easy to redo).
+**State at the end of 2026-10-21**
+- Jetson runs main 1048324 (52 slash commands; parser version 2; psd_details.json; the fork is NOT installed there, stock psd-tools
+  1.25). Its stats.pkl from the version-2 re-parse (819 entries, all stamped) is UNPUSHED until the user's /push or the 05:30 reminder;
+  until then the website shows the old titles.
+- TTSCardMaker main a3451c8: website with profiles, People, inline editing, Details dropdown, published decks; Actions site.yml,
+  tts-save.yml, card-edits.yml (dispatch only, pinned to fork tag `cards-20261020`), font-check.yml and card-check.yml (push guard
+  rules 1-2, report only).
+- Fork: `cards` a6363a04 = tag `cards-20261020` (pushed). Local, unpushed: `review/round2-consolidated` 31e1a294 (/tmp/wt-review-r2),
+  the nine round-3 branches (fix/clipped-overlay-group, fix/drop-shadow-spread, fix/inside-stroke-offcanvas, fix/outer-glow-coverage,
+  fix/pattern-overlay-origin, fix/text-stroke-perc, fix/vibrance-fit, perf/save-with-preview, perf/viewport-effects; worktrees
+  /tmp/wt-*), the round-4 scratch branches r4/*-scratch (/tmp/wt-r4-bevel, -gradshade, -blur). Round 3's integration result: see
+  the workflow journal `~/.claude/projects/-Users-michaelsrouji-Desktop-AutoCroissant/5c6ede3c-b4cb-4791-926e-2af4b5a959fa/subagents/workflows/wf_059e8902-7ff/journal.jsonl`
+  (integrate + critic results) and the status line in memory `next-session-plan`.
+- PSD hold still on: no PSD/PNG write in TTSCardMaker; dry runs on /tmp copies only.
+- /tmp holds things the tests and the fork work need (29 worktrees, /private/tmp/fontexplore JSX trial copies and std.jsx,
+  /tmp/r4* diagnostics, the website node harnesses): a reboot loses them; item 4 below rescues what matters.
 
-## Session checklist (2026-10-21, unattended; the user asks no questions be asked)
+## Session checklist (2026-10-22, unattended unless a line says [user])
 
-Every task still wanted this session, in order; a line is struck through here when it lands and the docs it closes move to
-`docs/Finished/`. PSD and PNG writes stay on hold until the user lifts it.
+In order. A line is struck when it lands; the docs it closes move to `docs/Finished/`.
 
-1. [x] (landed 2026-10-21 ~06:30: round 2 integrated as cards_v2, the user's seven review branches merged as cards_v3, `cards` a6363a04 pushed, tag `cards-20261020` cut, RENDER_STATUS.md + PR_BODIES.md refreshed) Rendering round 2 (fork): wait for the workflow (6 branches on `cards`, harness ICC fix, integrate as cards_v2 + the
-   text engine, critic incl. the stat-toggle check); review; then merge the user's seven reviewed branches
-   (drop-shadow, gradient-overlay, outer-glow, text-engine, adjustments, bevel-satin, inner-shadow-glow) into `cards`,
-   suite + harness, push `cards`, tag `cards-20261020` (S0 of the edit pipeline), refresh RENDER_STATUS.md / PR_BODIES.md.
-2. [x] (done 2026-10-21: run 39605156043, dry run on Clot White: the Action installed the fork at tag cards-20261020, cached the fonts, baked the title 'White CLot' -> 'White Clot' in 33 s within the parity bar, uploaded before/after/diff crops and the new PSD/PNG as artifacts, committed nothing) S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
-3. [x] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
-   badges and build): profile, dedupe the API/SSH commit code with tts_save, fix the single-result-no-image hole in
-   /query_ability and the /fonts lazy-import shadowing, speed the font check, review tests; report to
-   `docs/Finished/optimization-pass-2-2026-10-21/`. Landed 2026-10-21: `commands/git_commit.py` (one commit path),
-   font check 98 s -> 9.8 s, both holes fixed, 350 tests; the fork-side bake speedups (preview write, viewport effects)
-   wait for the worktrees.
-4. [x] (done 2026-10-21, deployed to the jetson 07:49 as 5835139, site 1c13eaa; the next `/update_stats` re-parses every card once: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, shown as printed, letter case included (user, 2026-10-21); `/query` also finds printed titles; `CardInfo.parser_version`
-   makes the next /update_stats re-parse every card once; 8 goldens re-pinned; build_site shows the title with the stem as
-   alias; `EXCESSIVE_STAT_EXCLUSIONS` deleted, Sonic and the Cannon `allow_high_stats` in Card Edits.json; Thunderfury aligned;
-   20 name edits redundant now, 21 with Thunderfury, Sans and Papyrus have no `Name` layer) Decision Q1: the parser reads
-   `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22 redundant name edits drop by the
-   redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
-5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
-6. [x] (landed 2026-10-21 as 6710a5b; deployed to the jetson the same hour; decided by the user 2026-10-21: the parity bar stays, the jetson hook is removed; the fonts cache is still open) S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
-   bottom-row N-10 writing (idea 13); S7 jetson runner (/bake_cards by hand; the Action is the one live runner). No PSD lands.
-   S7 code landed 2026-10-21: `commands/card_runner.py` (`bake_lock` shared with update_stats, `/bake_cards [card] [dry_run]`
-   admin command, report posted like the TTS save's; 52 commands; 377 passed, 24 skipped). The `notice_edits` hook (one dry-run bake queued
-   at the end of update_stats per edits-file change) was removed the same day: the user chose the Action as the ONE live runner,
-   the jetson is a manual fallback. Only if the fallback is ever needed: the fork tag in `~/venvs/autocroissant`, a fonts dir on
-   the jetson (no checkout there), one live bake with Actions disabled, the CPU/RAM peak.
-   S6 code landed 2026-10-21 (design §7): idea 12 and 13 in `psd_edit.set_stat`/`template_rows`; idea 14 in `psd_edit.set_text_layer`
-   (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
-   against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
-   stock psd-tools). All of it lands nothing under the hold.
-7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards panel + idea 24 full-page editor with the visual picker site/assets/pick.js as 812cb89; 20 inline editing landed as the next TTSCardMaker commit (site/assets/inline.js: in-place stat cells, ability, name, chips; Ctrl/Shift-select + drag onto Series/Author; one batch bar; All fields fallback); 23 landed 2026-10-21 as AutoCroissant ad90c62 + TTSCardMaker 9bdbc6f (771 of 773 cards have a record; jetson 13:38); 5 (decks) landed 2026-10-21 as TTSCardMaker 305812c: public decks `site/decks/<owner>/<slug>.json`, private decks encrypted in the browser (PBKDF2 300000 + AES-GCM, nothing in clear but owner, slug and date), #/decks browser under the Deck builder tab (public only), deck pages, publishing through the edit batch, a Decks panel on person pages; private decks show only on the owner's page and by link (user, 14:30)) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
-   card picking), 20 (inline editing), 23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
-8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
+1. [ ] **Fork integration.** Collect round 3's result (journal above; worktrees /tmp/wt-*). Merge `review/round2-consolidated`
+   (31e1a294) and the round-3 branches into `cards` (conflicts expected in effects.py / paint.py / composite.py's import list);
+   suite (ruff, mypy, pytest ~5300); full 813-card harness run vs `cards_v3` (`score_cards.py <name> ` then `compare_scores.py
+   cards_v3 <name>`; NEVER `--help`); push `cards`, the nine branches and the consolidated branch; tag `cards-2026102x`; re-pin
+   TTSCardMaker `.github/workflows/card-edits.yml` to the tag; install the tag in the jetson venv once `tests/test_parser_goldens.py`
+   passes under it (`~/venvs/autocroissant/bin/pip install "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>"`,
+   then a restart off-hours, never during /update_stats); switch `card_bake` to `save(preview=)` (perf/save-with-preview). Refresh
+   `~/Documents/Tools/psd-research/RENDER_STATUS.md` (cards_v4 section; drop the stale "Nothing pushed" lines; rewrite the class B
+   text per RENDER_ROUND4_PLAN.md) and `PR_BODIES.md` (13 bodies: the user's review commits, the GradientInterpolation ->
+   GradientMethod rename, round-3 bodies, the user's note that the round-2 branches stay as they are). Prune the /tmp worktrees of
+   merged branches afterwards (keep wt-cards, wt-review-r2 until pushed, r4).
+2. [ ] **Rendering round 4 implementation** (Opus agents; `RENDER_ROUND4_PLAN.md` is the brief): baseline `r4_base` on the integrated
+   `cards`; `fix/smart-filter-mask`, `fix/composite-byte-rounding`, `fix/bevel-texture` in that order from the scratch worktrees;
+   each reviewed and measured on its list; merge; `r4_integrated` vs `r4_base`; re-check the overlap table (bevel x
+   perf/viewport-effects import line; fix/clipped-overlay-group's Difference satins on the Cannon's name). Bot follow-ups: rewrite
+   `tests/test_psd_edit.py::test_cannon_rows_refuse_parity_at_the_baseline` (atk passes, hp refuses on the mean) and flip
+   `test_moved_effect_paints_the_new_digit`; copy nothing more from /tmp (the bot-metric scripts are in psd-research/score/round4/).
+   [user] Parity question: lit cells above mean 1.0 at 0% bad (Cannon 1.579, Glaive_Main_Cannon 1.649) and the 28 raw-export cards
+   refused by ICC in `render_region`. [user] Photoshop-authored fixtures (a bevel texture, a smart object with a painted filter mask).
+3. [ ] **Jetson and data.** After the user's /push: V4 live checks (`/query Raw Kawk`, `/query Black Clot`), the site shows the
+   printed titles. Run `/fonts` once (fills the `supplied` flags of jetson-gathered psd_details records; B11). Design B11 (a fonts
+   cache keyed by the MDW/Fonts tree sha for the bake and the details gather). Record every deploy in memory `jetson-server`.
+4. [ ] **Rescue from /tmp and make the tests self-sufficient.** `tests/test_psd_edit.py` and `tests/test_card_bake.py` cite
+   /tmp/wt-pipeline-dev and /tmp/wt-cards and the JSX trial copies under /private/tmp/fontexplore; make them find the fork through
+   an env var (default `~/Documents/Tools/psd-tools`) and vendor or regenerate the small fixtures they need; copy `std.jsx` and the
+   tts_survey scripts into `~/Documents/Tools/psd-research/` (MDW/Scripts/ only when the hold lifts); install pyyaml in the test venv
+   so the two workflow-shape tests run; make `tests/test_card_bake.py` collect under the fork venv (requests).
+5. [ ] **Allowed under the hold, not started:** the standardization rehearsal on /tmp copies of the ~110 PSDs with the three gates
+   and the expected per-card diff list (CARD_STANDARDIZATION §4.1); the L2 template-row script and the L5/L6 rename/move scripts
+   on the fork (layer-move API to confirm); D7 Twin Emperors second creature's DEF on the website (per-creature edit, then tick
+   problems checked); D3 Shadow Duelist out of ABILITY_EXCLUSIONS after a golden-checked re-parse; idea 14's orphaned-FX validator
+   check (does EFFECT LAYER OUT OF DATE cover it?); the companion skill §5 L1 questions (`[fire]/ [machine]` spacing, token order).
+6. [ ] **Bot small items:** B8 (a deleted PSD stays in stats.pkl: prune when the tree lost it, not only when num_changed > 0);
+   B9 (a blob 5xx must not record the tree ETag); GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls; lazy GitPython in update_bot;
+   a requests.Session per download thread; on_ready re-running inits after a failed RESUME; [user] admin gates on /purge,
+   /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music; the parser skipping hidden text layers on
+   rule pages (after the page fixes); OJWikibot unit copies still saying python3.10 (cosmetic).
+7. [ ] **Website follow-ups** when asked (site/NOTES.md §7-12 "not done" lists): profile avatars and GitHub link, per-person chart,
+   bake credit to the requesting editor, the deck-builder picker inside the profile editor, Details for rulebook pages and a
+   "has details" filter, deck search from Cards and "decks using this card", the accent-colour cache (-2.9 s builds), the
+   "PSD pending" hole for a baked name (EDIT_PIPELINE §9), the pickle-unpickling risk note (BUGS 1.6). Inline editing extras
+   (stars, token picker, tag completion, type palette, rulebook text; more drag facets) stay proposed, not agreed [user].
+8. [ ] **Docs, skills, memory upkeep:** quote the `word: word` frontmatter in 8 skills; refresh impossibility-cards-reference §4-5
+   after parser changes; retire research-frontier Item 3 / extraction Option 1 residue or schedule them; keep this checklist and
+   the memory current after every landing; finished docs to `docs/Finished/` with a dated README.
 
-Waiting on the user (not blocking): lifting the PSD hold (then S8, the standardization batch, the six title reprints,
-Sonic, star moves); the remaining fork reviews (round-2 branches, then `cards`); opening the upstream PRs from
-`~/Documents/Tools/psd-research/PR_BODIES.md`; BabaUI; the timing-system update (then stoogedings + the rules skill).
+Waiting on the user (not blocking): lifting the PSD hold (then S5 live runs, S8's ten acceptance edits, the standardization batch
+L1-L15 incl. the six reprints L8, Sonic L3, star moves S9, the rulebook pages L11 with `tornado` -> `wind`, God Tamer and Bubble's
+star groups L14, Computer Virus's stat content D1; the six case-typo titles asked card by card first; the team re-exports the eight
+stale PNGs (Skullord, Restrained, Blood_Bomb, Dark_Mind_Eye, Asteroid_Field, PoD04Zebra_Bloon, The_Collector, Holy_Blade); the two
+PNG-only cards Stubborn_Queen and Gust_of_Trees need PSDs from their author); the user's review of the round-3 branches and of
+`cards`; opening the 13 upstream PRs from `PR_BODIES.md`; BabaUI (Baba.psd); the team's timing-system update (then the stoogedings
+badges and the rules skill, then idea 15 text-first rulebook); the AI sandbox repo (campaign 18, D1-D3 to revise); the campaigns'
+open questions (16 simulator Q1-7, 17 game reports Q1/2/5/6, 19 rulebook P0 frame, 22 web editor Q2-9); pushing
+`archive/local-update-stats`; a Contents: write token for the bot on the card repo; confirming a TTS player with mod caching sees a
+refreshed card (Task 2 step 7).
+
+### Pending-task inventory (2026-10-21 evening, verified against every doc and memory file)
+
+The checklist above is the order; this is the complete list it was drawn from, grouped by area, each item with its source.
+Items marked [user] need the user; [blocked: X] wait for X.
+
+#### Pending tasks
+
+##### B1. Fork and rendering
+- Round 3 workflow wf_059e8902-7ff (task wki5k4vvc), nine branches, integrates as cards_v4 [in progress] (PLAN checklist 5; M:next-session-plan)
+- Round 3 branches: fix/clipped-overlay-group, fix/drop-shadow-spread, fix/inside-stroke-offcanvas, fix/outer-glow-coverage, fix/pattern-overlay-origin, fix/text-stroke-perc, fix/vibrance-fit, perf/save-with-preview, perf/viewport-effects; none pushed [in progress] (GIT)
+- Merge review/round2-consolidated 31e1a294 into cards with round 3 (effects.py conflicts likely) [blocked: round 3] (M:next-session-plan; R4 §5)
+- Then harness vs cards_v3, push branches + cards, cut a new pin tag [blocked: round 3] (M:next-session-plan)
+- Re-pin WF/card-edits.yml from cards-20261020 to the new tag [blocked: new tag] (M:next-session-plan; WF/card-edits.yml)
+- Install the new tag in the jetson venv ~/venvs/autocroissant once tests/test_parser_goldens.py passes under it [blocked: new tag] (PIPE §8; M:website-and-pipeline-ideas)
+- RS: add cards_v4 (round 3) section; fix stale "Nothing pushed" lines [blocked: round 3] (RS cards_v3; M:next-session-plan)
+- PRB: refresh for the user's 13 review commits, GradientInterpolation -> GradientMethod rename, round 3 bodies; add the note the user asked for [blocked: round 3] (PRB; M:next-session-plan; M:website-and-pipeline-ideas)
+- Round 4 step 1-2: after round 3 integrates, full baseline r4_base on the integrated cards [blocked: round 3] (R4 §3)
+- Round 4 fix/smart-filter-mask (class B, 13 active painted-mask cards; >2% 21 -> 11 projected); prototype r4/blur-scratch f64f9cbe [blocked: r4_base] (R4 §2.1, §3)
+- Round 4 fix/composite-byte-rounding (Mettaton EX pixel-bar shade; hp toggle mean 1.033 -> 0.556); prototype r4/gradshade-scratch 9109fc3c [blocked: r4_base] (R4 §2.2)
+- Round 4 fix/bevel-texture (Cannon digits; atk/spd pass, hp/def still refuse); prototype r4/bevel-scratch 72716234; needs fix/pattern-overlay-origin merged first [blocked: r4_base] (R4 §2.3)
+- Round 4 merge order 1-2-3, r4_integrated run, re-check the §5 overlap table (bevel vs perf/viewport-effects import, pattern origin, consolidated ff6f03cd) [blocked: round 4 branches] (R4 §3, §5)
+- RS round 4 section must rewrite the wrong "class B unfixable" text [blocked: round 3 releasing RS] (R4 §3 step 5)
+- Harness note: score_cards.py has no --help (a --help call starts a run named "--help") [open] (R4 §6)
+- Round 4 parked: Cannon name region (Satin), stat_labels PIN_LIGHT, stars residual; Mettaton.psd co-located stops; Jevil spd Perc bias; PoD02Black_Bloon; Hive_Knight glow; textured outer bevel [open] (R4 §4)
+- Photoshop-authored fixtures needed: bevel-texture.psd, smart object with blur + half-black mask [user] (R4 §4)
+- RS follow-up fixture: group stroke over a child blurred drop shadow (Keelhaul Key, Dark_Sword) [open] (RS cards_v3 "Review follow-up")
+- RS open: Pure_Vessel stroked type layer in a styled group (text gamma); Little_Guy stat_labels straight composite [open] (RS cards_v2 Regressions)
+- RS open classes after round 2: large drop shadows/glows, type layers with own stroke (Skullord 3.0, Marx, Jevil...), adj:gradientmap, class C Perc fills, class D, class G (Shadow_Miner, Heavy_Mole) [open] (RS "What is still missing")
+- Text engine limits: warp unwarped, platform AA as Strong, colour emoji silhouettes [open] (WEB §3.4)
+- Fork template-fill API: add a face to FontSet, move/rename layers, lfx2 copy, replace smart-object content [open] (WEB §3.4; STD L1, L5)
+- Task 3 done-when: no card > 2% (21 today) and S8's 10 edits identical in Photoshop; then retire Photopea to an archive branch [blocked: round 4 + PSD hold] (PLAN Task 3 step 6; PIPE §1, §13 S8)
+- Upstream PRs: 13 bodies drafted (6 round-1, 7 round-2), none opened; round-2 bodies are based on `cards`, not upstream main; replace (#679) placeholders [user] (PRB; PLAN "Waiting on the user")
+- Upstream context: drop shadow #679 open, outer glow #680 closed [user] (PLAN Task 3)
+- User review of `cards` (round-2 branch reviews already done ~08:20); round 3 branches presumably next [user] (PLAN "Waiting on the user"; M:next-session-plan)
+- Cleanup candidates (do not remove yet): 29 worktrees under /private/tmp/wt-* incl. /tmp/wt-r4-{bevel,blur,gradshade}, /tmp/wt-review-r2, /tmp/wt-pipeline-dev; local branches pipeline-dev 25fcf2e1 (not in cards) and pr-679 [open] (GIT)
+
+##### B2. Bot (AutoCroissant)
+- B8 a deleted PSD stays in stats.pkl (prune only when num_changed > 0) [open] (BUGS 1.1)
+- B9 blob 5xx records the tree ETag; card stays stale [open] (BUGS 1.1, 2.5)
+- B11 fonts on the jetson: font cache keyed by MDW/Fonts tree sha for bake + details gather [open] (BUGS 2.3; PLAN checklist 6)
+- Repeat on_ready after a failed RESUME re-runs inits [open] (BUGS 2.5 "Not done")
+- GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls [open] (BUGS 2.5)
+- Lazy GitPython in update_bot; requests.Session per download thread [open] (BUGS 2.5)
+- No admin gate on /purge, /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music [user] (BUGS 2.5)
+- card_bake: pass the merged PNG as the PSD preview once fork save(preview=) lands (card_bake still calls update_preview=True) [blocked: new tag] (PIPE §14 Q2; BUGS pass 2)
+- tests/test_card_bake.py cannot collect under the fork venv (no requests); pyyaml not installed, two workflow-shape tests skip [open] (BUGS pass 2)
+- /fonts cache from the local clone [open] (M:next-session-plan)
+- Round 4 bot follow-ups: flip test_moved_effect_paints_the_new_digit and test_cannon_rows_refuse_parity_at_the_baseline [blocked: round 4 tag] (R4 §3)
+- Parity decision for lit cells above mean 1.0 at 0% bad: Cannon 1.579, Glaive_Main_Cannon 1.649; 28 raw-export cards refused by ICC in render_region [user] (R4 §3)
+- D3 remove stale Shadow Duelist from ABILITY_EXCLUSIONS after a golden-checked reparse [open] (BUGS 1.2; SK:autocroissant-psd-extraction-campaign)
+- D4 old_stats balloon 637698b cleanup (optional, diff_stats-gated) [open] (BUGS 1.2)
+- Extraction: scripted regression harness (old vs new parser; sandboxed local sweep) [open] (BUGS 2.1; SK:autocroissant-psd-extraction-campaign Option 1)
+- Extraction: gap/type mismatch validator (high precision); bbox-anchored injection (research); exclusion burn-down 21 -> certified list [open] (BUGS 2.1; SK:autocroissant-research-frontier Item 3)
+- Parser: skip hidden text layers on rule pages (4 rulebook entries change) [open, ordered after page fixes] (RULE P3; PLAN Queued)
+- Idea 14 validator: orphaned FX layers whose words left the ability; check whether EFFECT LAYER OUT OF DATE covers it [open] (PLAN idea 14)
+- Task 3c: effect layers on pushes (Action; PSD quiet ~30 min; skip own commits; MDW skip list; Discord) [blocked: PSD hold for live runs] (PLAN Task 3c)
+- S9: star edits move PSD + PNG to the new N Stars folder (aliases, old_stats, authors, TTS save follow) [blocked: pipeline round 1] (PIPE §14 Q4; STD L14)
+- Push guard later rules: deviations by class (check_cards.py or a bot module), report-only, by hand first [open] (STD §5)
+- Fix-on-push for 0-pixel classes only (later; never during a hold) [blocked: PSD hold + proven batch] (STD §5; M:website-and-pipeline-ideas)
+- Deploy state of df4a439 / 1048324 (font_check exit-0 used by /fonts) on the jetson: not recorded [open] (M:jetson-server last deploy 13:38)
+
+##### B3. Website (TTSCardMaker)
+- Printed titles go live only after the jetson's pickles are pushed and site.yml runs [blocked: /push] (M:ttscardmaker-integration; BUGS V3)
+- card-edits.yml push trigger on site/Card Edits.json goes live when the hold lifts; header comment still cites S5/Thunderfury [blocked: PSD hold] (WF/card-edits.yml; PIPE §8)
+- site/README.md has a Font check section but no Card check section [open] (SREADME; WF/card-check.yml)
+- Profiles not done: avatar, GitHub link, per-profile share dialog, People tab counter [open] (NOTES §7)
+- People not done: per-person chart, edit commits in recent, bake credit to the requesting editor, overall title [open] (NOTES §8)
+- Profile editor not done: deck builder picker still its own dialog; Enter on a chosen tile; rerender() closes an open picker [open] (NOTES §9)
+- Details not done: rulebook pages, Changes tab/table view, "has details" filter, per-font state memory [open] (NOTES §11)
+- Decks not done: deck search from Cards, "decks using this card", deck count on People, OG montage; data/decks.json empty until a first publish [open] (NOTES §12; M:next-session-plan)
+- Inline editing proposed, not agreed: stars, token picker on `[`, tag completion on `(`, type-row palette, rulebook title/text; Subseries/Hidden/ban drag facets [user] (PLAN idea 20)
+- Build speed: accent colour cache by blob hash (-2.9 s), hardlink dist copies [open] (BUGS pass 2)
+- Known hole: a `name` the pipeline will bake never shows "PSD pending" [open] (PIPE §9)
+- Risk: build unpickles bot pickles with stub classes (code execution via AutoCroissant main; renames blank fields) [open] (BUGS 1.6)
+- Task 2b TTS "Table" tab reverted, not rescheduled; the Play tab must not reuse "Table" [open] (PLAN Task 2b)
+
+##### B4. Standardization and the PSD hold (all writes wait for the user's go)
+- Lift the PSD hold [user] (M:psd-edits-hold; PLAN "Waiting on the user")
+- Before the day (allowed now): rehearsal on /tmp/rehearsal copies of ~110 PSDs, three gates, expected per-card diff list [open] (STD §4.1)
+- Before the day: new fork script for L2 template rows; L5/L6 rename/move scripts (fork layer-move API to confirm) [open] (STD L2, L5)
+- Before the day: 15 chart styles loaded in Photoshop from MDW/Debuff And Attributes Layer Effects.asl [user] (STD §4.1, L7)
+- L1 inline icons -> stoogedings tokens: 42 cards / 71 layers (12 cards / 23 layers within the 651); header badges stay images [blocked: hold] (STD L1; M:website-and-pipeline-ideas)
+- L1 open before batch: `[fire]/ [machine]` spacing; token order vs gap order on every card [open] (SK:ttscardmaker-companion §5; STD L1)
+- L1 tool std.jsx lives only in /private/tmp/fontexplore/std/ (copy into MDW/Scripts/ before a reboot) [open] (STD L1)
+- L2 stat rows: 45 deviating cards; 37 pixel/drawn-bar cards rebuilt as template rows (7 Isaac tainted, Dark_Esau, Skeleton_Mate, Grimora, Puzzled_Cat, Baba, 5 Clots, False_Knight, Minecraft_Panda, Bulborb Larva, Tainted_Lazarus, Tainted_Eve, Empress Bulblax, Dirty_Bed, Blank_Card...); odd paths Uumuu, Whispy_Woods, Spinni, Little_Guy; 16 atk/def swaps, 26 odd bar names [blocked: hold] (STD L2; M:website-and-pipeline-ideas)
+- L3 Sonic: two rows under Spd Dark with a marker in each; Cannon's Top 10 marker stays [blocked: hold] (STD L3; PIPE §7 idea 13)
+- L4 digit effects: no PSD change needed (move on toggle); Mettaton lit-cell toggles wait for round 4 [blocked: round 4] (STD L4)
+- L5 Ability layers: 34 out-of-Text moved under Text; 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax, Apex_Predator); 20 blank filled or certified; 5 several-Ability cards stay refused [blocked: hold] (STD L5; M:website-and-pipeline-ideas)
+- L6 titles retyped as text: Sonic (Layer 0 copy), ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card; hidden Name: Baba, Man_Serpent_Shield, E._Gadd's_Garage [blocked: hold] (STD L6; M:website-and-pipeline-ideas)
+- L6 six case-typo titles (SPringtrap, Dark MAtter, MEtal General, MAsked Dedede, StaR DREAM, Zero OVerride): ask card by card before any reprint [user] (STD L6)
+- L7 Effect Layers - All Cards.jsx on the 40 overlay cards; 16 overlays on 10 cards stay refused [blocked: hold] (STD L7)
+- L8 six reprints: Clot_White "White CLot" -> "White Clot"; PoD08-PoD12 M.O.A.B., D.D.T., B.F.B., Z.O.M.G., B.A.D. (pipeline live run) [blocked: hold] (STD L8; PIPE §12)
+- L9 Text outline: not forced (decision); only per-card owner calls [user] (STD L9; M:website-and-pipeline-ideas)
+- L11 rulebook pages: delete 6 hidden layers (09_TakingYourTurn x2, 11_Abilities x2, 12_Reactions2, 22_Negation); overflow/off-canvas (11_Abilities6, 12, 14, 20); V1 16_The_Field box; X2 icons after page numbers on 6 pages; 20_Creature_Types `tornado` -> `wind` (D2) [blocked: hold] (STD L11; RULE §3; BUGS D2)
+- L12 two PNGs without PSDs (Stubborn_Queen, Gust_of_Trees): ask the author [user] (STD L12)
+- L13 fonts: only BabaUI (Baba.psd) missing, deferred by the user [user] (M:ttscardmaker-integration; STD L13 stale)
+- L14 stars: God Tamer, Bubble stars need grouping (NO STARS FOUND) [blocked: hold] (STD L14; STD §5)
+- L15 class D (9 cards: Jevil, Massive_Moss_Charger, Moss_Charger, Marx, Wham_Bam_Jewel, Necrodeus, Sans, Morpho_Knight): renderer first [open] (STD L15)
+- Class H stale exports to re-export: Skullord, Restrained, Blood_Bomb, Dark_Mind_Eye, Asteroid_Field, PoD04, The_Collector, Holy_Blade [blocked: hold] (RS cards_v2; R4 §4; M:next-session-plan)
+- D1 Computer Virus (all stats missing) PSD content [blocked: hold] (BUGS 1.2; STD §5)
+- S5 live runs and S8 the user's 10 acceptance edits (Mini_Doomer hp 5 -> 8 ... Mettaton_EX) [blocked: hold] (PIPE §12, §13)
+- After the batch: /update_stats, diff_stats.py, /push, site.yml + tts-save.yml, then ABILITY_EXCLUSIONS to the certified list, refusals narrowed, ledger shas [blocked: batch] (STD §4.4)
+
+##### B5. Rulebook and game data
+- The team's timing-system update; then stoogedings badges + rules skill refresh; do not define tags before [user] (M:website-and-pipeline-ideas; PLAN "Waiting on the user")
+- RULE P0 frame confirmation (classes, decision log at docs/Campaigns/rulebook-decisions.md, Photoshop fixes, checker by hand) [user] (RULE P0)
+- RULE P1 checker site/build/check_rules.py (reproduce §3 numbers: 59 undefined tags on 44 cards) [blocked: P0] (RULE P1)
+- RULE P2 decision log (not created) [blocked: P0] (RULE P2)
+- RULE C1-C6 contradictions; U1 tags (1GCD, 2CD, 1CD, 2U, 2GCD, 3U, 4U, (1/2CD)); U2 undefined terms [user] (RULE §3)
+- RULE M1 Smouldering vs Smoldering, Regeneration vs Regen; M2 pages define no status effect; M3 10 unused status effects [user] (RULE §3)
+- RULE T1 Suffocation "Can't Effect"; T2 page typos; G1 (OFS) on Pandora's Gym, White Palace, (WOF) on Earth Totem [user] (RULE §3)
+- RULE X1-X3 parser slips (14_Item_Types machine icon, icons after page numbers, 08 star glyphs, 15 swallowed gaps) [open] (RULE §3)
+- RULE S1 silences (lane ties, combo rounding, hand limits, starting BRICKS...) [user] (RULE §3)
+- RULE P4 guard step in site.yml (own job / continue-on-error); P5 one Claude API semantic pass; P6 via simulator [blocked: P1-P3] (RULE §4)
+- Idea 15 text-first rulebook (text per page, fork-rendered, pagination) never started [blocked: hold + timing update] (PLAN idea 15)
+- D7 Twin Emperors 2nd DEF reads 4, card shows 10: fix per creature on the website, tick "parser notes checked" [open] (BUGS 1.2)
+- D6 0 of 813 PSDs on stoogedings (see L1) [blocked: hold] (BUGS 1.2)
+- Rulebook gaps list in the rules skill: "~22" status count stale (19) [open] (RULE M2)
+
+##### B6. Campaigns not started
+- 16 Simulator (Play tab): designed, not scheduled; its precondition (deck browser) landed; questions 1-7 open [user] (SIM; PLAN idea 16)
+- 17 Game reports: designed; P1 zones in the save (tts_save.py) need nothing blocked; questions 1, 2, 5, 6 open [user] (GR; M:website-and-pipeline-ideas)
+- 18 AI cards: becomes a separate AI sandbox repo + own website and bot; first target 3-star Kirby; venues Claude Opus API or a custom model; doc D1/D2/D3 to revise [user] (M:website-and-pipeline-ideas; AI)
+- AI Q3 monthly API budget, Q4 how the bot runs it [user] (AI §5)
+- 19 Rulebook consistency: see B5 [user] (RULE)
+- 22 Web editor (card as data): after S8, the standardization batch and parity; data files under site/cards/ (decided); questions 2-9 open [blocked: hold + parity] (WEB §3, §10)
+- WEB preview option (c) needs a `values` input on card-edits.yml; (a) Pyodide spike [blocked: pipeline live] (WEB §5)
+- 2.2 AI items (/ask Q&A, art LoRA, round-trip verification): parked with the AI sandbox [user] (BUGS 2.2)
+
+##### B7. Jetson and operations
+- Jetson stats.pkl from today's version-2 re-parse is unpushed: the user's /push or the 05:30 reminder 054b5933 [user] (given; M:jetson-server)
+- Gulka and Po not stamped v2 (blob streams broke mid-file); next /update_stats re-fetches; tree ETag shortcut off until then [open] (M:next-session-plan)
+- Fork not installed in the jetson venv (stock psd-tools 1.25.0) [blocked: new tag] (given; PIPE §8)
+- /fonts never run on the jetson: jetson-gathered psd_details records carry supplied: null [open] (given; BUGS B11)
+- S7 fallback only if ever needed: fork tag in venv, fonts dir, one live bake with Actions disabled, CPU/RAM peak [blocked: need] (PLAN checklist 6; PIPE §8)
+- V1 /sync_emojis refresh:True not run live [open] (BUGS 1.5)
+- V2 reminder rewrite: watch a live firing (56b43b9 at 05:30 suggests the /push reminder fired) [open] (BUGS 1.5)
+- V4 live /query Raw Kawk and /query Black Clot after the push [open] (BUGS 1.5)
+- OJWikibot unit copies in scripts/services/msrouji/ still say python3.10 [open] (PLAN Task 0)
+- Bot's fine-grained token read-only on the card repo (commits via SSH); Contents: write would enable the API path [user] (PLAN Task 2)
+- TTS: confirm a player with mod caching sees an updated card refresh (Task 2 step 7 never recorded) [user] (PLAN Task 2)
+- Reminders: d2664752 /update_stats 5AM, 054b5933 /push 5:30AM, 134e3b24 weekly; edit reminder.pkl only with the service stopped [open] (M:jetson-server)
+- History clone on jetson (git 2.25): never diff or log --name-only [open] (M:jetson-server)
+- archive/local-update-stats is local and unpushed; ask before pushing [user] (M:archive-on-branches; GIT)
+- /tmp at reboot risk: /tmp/wt-* worktrees (bot tests cite /tmp/wt-pipeline-dev and /tmp/wt-cards), /private/tmp/fontexplore (std.jsx, JSX trial copies tests use, tts_survey scripts), /tmp/r4* diagnostics, /tmp/i2_census.py, /tmp/scout, /tmp/review_tests_*.log, /tmp/deck_fixture, /tmp/verify_*, /tmp/heat, /tmp/*_cards.txt [open] (R4 §6; PIPE §7; PLAN header; M:next-session-plan)
+- /tmp/card-check staged copy is now committed (a3451c8): cleanup candidate [open] (BUGS retired; GIT)
+- Workflow journals for resumption: ~/.claude/projects/-Users-michaelsrouji-Desktop-AutoCroissant/5c6ede3c-.../subagents/workflows/ [open] (M:next-session-plan)
+
+##### B8. Docs, skills and memory upkeep
+- Session wrap-up: fresh dated checklist in PLAN; move today's checklist to docs/Finished/<dated>/README.md (not there yet); refresh memory; Opus completeness check [open] (M:agent-model-preference; PLAN checklist 8)
+- PLAN: item 7 still [~] though every sub-idea landed; heading "Ideas 5-23" (24 exists); Order section and "Waiting on the user" stale [open] (PLAN)
+- STD §6 questions 1-9 answered 2026-10-21: record the answers; §5 rule 1/2 status lines ("staged") stale; L13 fonts and L15 class B stale; header "companion skill does not yet" point here [open] (STD; M:website-and-pipeline-ideas; R4)
+- WEB: Q1 answered (site/cards/); §3.3 class B and branch-merge state stale [open] (WEB; M:website-and-pipeline-ideas)
+- AI: revise D1/D2/D3 for the sandbox repo; Phase 2 dependency (text engine now in cards) stale; docs/README row cites branch ai/cards [open] (AI; M:website-and-pipeline-ideas)
+- GR: Q3, Q4, Q7 answered; D5 "folders do not exist" and "no private games until encrypted decks" stale [open] (GR; M:website-and-pipeline-ideas)
+- SIM: status says profiles not created and starts after the deck browser (both done) [open] (SIM)
+- RULE: duplicate id T1 (Suffocation; tornado); Q1 now waits for the timing update [open] (RULE §3, §8)
+- BUGS: 1.6 "7 fonts missing" -> BabaUI only; retired card_check row says "staged in /tmp"; V3 row (re-parse ran 10:18-10:40); two "V3" ids; D1 now one card [open] (BUGS)
+- PIPE: S9 cited in Q4 but missing from the §13 table; memory's doc-drift list (card_edits.py citations, creatures row, step 9 parity wording, §8 trigger) maybe fixed by f1379cb: verify [open] (PIPE; M:next-session-plan)
+- WF/card-edits.yml header comment (S5/Thunderfury) stale [open] (WF/card-edits.yml)
+- Memory: MEMORY.md next-session-plan line, next-session-plan.md description, ttscardmaker-integration description + "Pending" + "Printed titles" (fold reverted), jetson-server Python paragraph and last-deploy line all stale [open] (M:*)
+- Skills: unquoted `word: word` frontmatter in 8 skills; impossibility-cards-reference §4-5 refresh rule after parser changes [open] (BUGS Maintenance; SK:impossibility-cards-reference)
+- Skills: research-frontier Item 3 residue OPEN; extraction-campaign Option 1 harness open [open] (SK:autocroissant-research-frontier; SK:autocroissant-psd-extraction-campaign)
+
+---
+
+#### Contradictions found and fixed on 2026-10-21 evening (kept so the next reader knows what was reconciled)
+
+- Gulka and Po not stamped parser v2; tree ETag shortcut off until re-fetched: only M:next-session-plan.
+- review/round2-consolidated 31e1a294 (unpushed) must merge into cards: only M:next-session-plan and R4 §5; absent from PLAN and RS.
+- Class H stale-export list (Skullord, Restrained, Blood_Bomb, Dark_Mind_Eye, Asteroid_Field, PoD04, The_Collector, Holy_Blade): RS cards_v2 + R4 §4 + M:next-session-plan; not in STD ledger.
+- Class B: STD L15 and WEB §3.3 say "not reconstructible, rasterize in Photoshop"; R4 §2.1 says fixable from FEid/FMsk (13 cards). Contradiction.
+- STD §6 lists 9 open questions; M:website-and-pipeline-ideas answers 1-9 (inline only, rebuild 37 bars, no forced outline, move 34 abilities, retype titles, deviations refused, fonts are the user's, report-first guard, old_stats archive accepted).
+- WEB Q1 open (beside the PSD) vs M:website-and-pipeline-ideas "data files under site/cards/".
+- AI D2/D3 (ai/cards branch, TTSCardMaker ai-drafts) vs M:website-and-pipeline-ideas "separate AI sandbox repo, out of TTSCardMaker".
+- GR Q3/Q4/Q7 open and D5 "none of the three folders exists" vs M:website-and-pipeline-ideas answers and landed profiles/decks/People.
+- GR §5 "no private games until encrypted decks exist" vs encrypted decks landed (TTSCardMaker 305812c).
+- SIM status "starts after the deck browser; profiles not yet created" vs both landed (PLAN idea 5, 7).
+- RULE §8 Q1 (define or rewrite U1 tags) vs M:website-and-pipeline-ideas "wait for the team's timing update".
+- BUGS 1.6 "7 fonts missing" and STD L13 "6 faces missing" vs M:ttscardmaker-integration "only BabaUI" (a88b232).
+- BUGS retired row and STD §5 say card check "staged in /tmp/card-check"; it landed (df4a439, a3451c8). STD §5 rule 1 "live once committed" vs PLAN idea 21 "LIVE".
+- PLAN checklist 7 [~] vs every sub-item landed; M:next-session-plan still says item 7 '[ ]'.
+- PLAN "Waiting on the user: round-2 branch reviews" vs M:next-session-plan (user committed all six review fixes ~08:20).
+- Idea 15 (text-first rulebook) sat between 13 and 6 in the agreed order; skipped, not marked blocked anywhere (PLAN Order; M:website-and-pipeline-ideas).
+- M:next-session-plan "Still open: B8/B9/B10, the 1 s queue tick" vs BUGS (B10 and tick retired 2026-10-21).
+- M:ttscardmaker-integration "Printed titles" describes the case fold (squash/printed_title) the user reverted (ba500bd; M:website-and-pipeline-ideas "literal").
+- M:jetson-server "next: sudo make altinstall ... remove 3.10" vs PLAN Task 0 done; its last deploy (13:38) vs e4e0a58 deployed ~14:52 (M:next-session-plan).
+- RS cards_v3 "Nothing pushed" and PRB round 2 "Nothing pushed but feat/text-engine" vs GIT (origin/cards, origin/fix/*); PRB predates the 13 user review commits.
+- PIPE Q4 cites step S9; the §13 step table stops at S8.
+- WF/card-edits.yml header: push trigger "comes with S5 once Thunderfury is aligned" vs PIPE Q7 aligned; now gated only by the hold (M:psd-edits-hold).
+- BUGS V3 "first live re-parse pending" vs M:next-session-plan (ran 10:18-10:40, 817 stamped).
+- BUGS V2 "not known to have fired" vs GIT 56b43b9 PICKLE at 05:30 (the /push reminder).
+- RULE §3 uses id T1 twice.
+- D7 Twin Emperors fix is a website edit doable now: only BUGS 1.2.
+- OJWikibot unit copies still python3.10: only PLAN Task 0.
+- Stubborn_Queen / Gust_of_Trees PNGs without PSDs: only STD L12.
+- Glaive_Main_Cannon parity 1.649 and the 28 raw-export ICC refusals: only R4 §3.
+- Standardization rehearsal on /tmp copies (allowed now, not started): only STD §4.
+- std.jsx and the JSX trial copies (tests/test_psd_edit.py skips without them) live only in /private/tmp/fontexplore: STD L1, PIPE §7.
+- Bot fork tests cite /tmp/wt-pipeline-dev and /tmp/wt-cards (tests/test_card_bake.py, tests/test_psd_edit.py docstrings); pipeline-dev is not in cards: GIT only.
+- card_bake still uses update_preview=True; PIPE Q2 says fork save(preview=) "not done" but round 3 perf/save-with-preview implements it.
+- PSD-pending hole for baked names: only PIPE §9.
+- Pickle-unpickling code-execution risk in TTSCardMaker Actions: only BUGS 1.6.
+- Bot token read-only on the card repo (SSH commits): only PLAN Task 2.
+- Task 2 step 7 (mod-caching refresh) never confirmed: only PLAN Task 2.
+- Companion §5 open items (slash spacing, token order) before L1: SK:ttscardmaker-companion and STD L1.
+
+---
+
+---
 
 ## Orchestration (ultracode, Fable 5.1 as orchestrator)
 
@@ -307,7 +547,7 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   `/update_metadata` and `/mass_replace` fields, a PSD re-parse keeps it like author and series, `/export_cards`
   column, help text, skills; tests in `tests/test_subseries.py`.
 
-## Ideas 5-23 (2026-10-20, user)
+## Ideas 5-24 (2026-10-20, user; 24 added 2026-10-21)
 
 Items 5-15 were pasted by the user on 2026-10-20 (1-4 were not in the paste) and refined and ordered the same day (memory
 `website-and-pipeline-ideas`); 16-19 and 21 have campaign docs (21 a stub), 20 is a smaller design. All of it is queued after Task 3 steps
@@ -413,6 +653,7 @@ Discord. First prove it on all cards against the JSX batch's output.
 
 ## Order
 
-**Task 3 first and foremost** (the user wants the next session spent on it); Task 3c follows Task 3. After Task 3: the
-ideas list 5-15 in its agreed order, then items 16-23 (campaign docs, inline editing and the details dropdown; "Ideas 5-23" above; 21 waits for the user to lift the PSD hold). Tasks 0, 1,
-1b, 2 and 4 are done and Task 2b was reverted, not rescheduled (status lines above); nothing else is scheduled.
+The 2026-10-22 checklist at the top is the order: fork integration, round 4, jetson/data, the /tmp rescue, hold-safe
+standardization work, bot small items, website follow-ups, upkeep. Of the ideas, 5-14 and 20-24 landed (12-14 as code only under
+the hold); 15 waits for the hold and the timing update; 16-19 and 22 are campaign docs; 21 waits for the user to lift the hold.
+Tasks 0, 1, 1b, 2 and 4 are done, Task 3's remaining steps are the checklist's items 1-2, Task 2b was reverted, not rescheduled.
