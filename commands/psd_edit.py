@@ -44,6 +44,7 @@ PARITY_MEAN_MAX = 1.0       # mean |diff| over the region (Mini_Doomer hp row: 0
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 FILL_TOLERANCE = 2 / 255    # a status word's fill is the swatch within this per channel
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
+FONT_ALIASES = {"Papyrus-Regular": "Papyrus", "Kung-Fu-Panda": "KungFuPanda"}   # Windows names of two faces in MDW/Fonts
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
@@ -597,7 +598,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     for span_start, span_end, colour in spans:
         layer.set_span_style(span_start, span_end, fill=colour.fill)
     try:
-        report = layer.rasterize(fonts=FontMap(dirs=[fonts_dir]))
+        report = layer.rasterize(fonts=FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES))
     except MissingFontError as error:
         raise Refused("font", str(error))
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)

@@ -97,7 +97,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `name` | PSD + database **when the value differs from the `Text/Name` text**, else database-only | `set_text` + `rasterize` on `Text/Name`; refuse the 153 card-named, 4 hidden, 5 rasterized layers | **field stays** (the bot reads the stem; idempotent because value == layer text) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | refused ("not yet") | - |
 | `types` | PSD (icon layers or font tokens) | refused ("not yet") | - |
-| `creatures` | database-only (plan Queued item); PSD-backed only where per-creature rows exist (Pix, Tainted Lazarus, Twin Emperors) | refused unless the PSD has that many rows | stays |
+| `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched | stays |
 | `type` `subtype` `series` | folder | never touched | stay |
 | `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
 
@@ -182,7 +182,7 @@ code, never exceptions; one bad card never blocks another.
    `FIXED_BY[field]`; no `EFFECT LAYER *`, no `STATS TOO HIGH`.
    Name: `Text/Name` read-back == the edit and the stem unchanged (the parser never reads the title).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
-   region render equals the merged PNG.
+   region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels).
 10. **Commit.** Re-fetch head H' and the file at H'. Gate `edit-changed`: the card's PSD-kind values at H' equal what was
     baked, else bake nothing for it (never remove a value you did not render). Tree on `base_tree` H': PSD, PNG (existing
     path and case), `site/Card Edits.json` with the baked fields removed and `_psd` written (section 9), re-serialised by the
@@ -226,6 +226,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
 ```yaml
 name: Card edits
 on:
+  # push trigger deferred (section 14, question 7): dispatch only until Thunderfury's entry matches the print (S5)
   push: {branches: [main], paths: ["site/Card Edits.json"]}
   workflow_dispatch: {inputs: {card: {type: string}, dry_run: {type: boolean}}}
 permissions: {contents: write, actions: write}
@@ -277,7 +278,7 @@ Prerequisite: a `threading.Lock` shared by `update_stats` and the bake (both `to
   names of section 2 show only "Edited". Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
   `reparsePending = tree PSD blob sha != card.blob_sha` covers the gap between the bake commit and the next PICKLE push.
 - `_psd` lives in Card Edits.json, written only by the pipeline: `{"state": "baked" | "refused", "for": {field: value},
-  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:104`, `build_site.py:387`),
+  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
   `editsFile` keeps them (`edit.js:40`): no new file. Rewritten every run; ignored when `for` or `psd` no longer match.
 - `app.js:347`: "PSD pending: SPD, Ability" beside "Edited" (tip: the card image is being regenerated); "Image update refused:
   ability does not fit"; "Re-parse pending"; `pending` in `FLAGS` (:25); the Edited panel (:588) lists them. `edit.js`:
