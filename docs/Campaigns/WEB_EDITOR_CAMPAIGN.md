@@ -24,6 +24,8 @@ A_Snack.json`), found by the stem rule `png_for` already uses (build_site.py:586
 (aliases, authors, edits, `old_stats`, the TTS save all key on the stem: ledger L12); the AI campaign's `<card>.gen.json` sidecar is the
 precedent (`AI_CARDS_CAMPAIGN.md` §2). Alternative `site/cards/<stem>.json` (folder does not exist; `site/decks/`, `profiles/`, `games/` are
 proposed siblings): one checkout for the site build, but a star edit then changes a folder the file does not live in. Question 1.
+**2026-10-21 (question 1 answered, the user):** the data files live under `site/cards/` (`site/decks/` and `site/profiles/` exist since
+that day), so `site.yml`'s sparse `/site/` checkout reads them with no blob fetches.
 Fields, from three sources: cards.json today (34 keys over 801 rows: `name type subtype series subseries stars types ability author aliases
 creatures dup dups problems`, the stats, and build fields such as `img png psd parsed edited`; `hidden note problems_ok allow_high_stats`
 are not keys: hidden cards are dropped at build_site.py:869 and `note` is not emitted), `EDIT_FIELDS` (the 19 of build_site.py:71 =
@@ -72,7 +74,8 @@ card once it is tier A; no new pickle (autocroissant-failure-archaeology Entry 7
    10 edits of design §12 land.
 2. **The standardization batch** (ledger §3-4, on hold): tier A needs template structure. Of 651 bar-eligible cards today: 371 template stat
    rows (L2), 605 single `Text/Ability` (L5), 552 visible `Name` (L6), 0 cards on the stoogedings font and 0 `Ability FX:` layers (L1, L7),
-   6 faces missing everywhere plus 2 near-misses (L13; the 10 platform-only faces are done, 136 of 144 names resolve from the repo). Plus
+   6 faces missing everywhere plus 2 near-misses (L13; the 10 platform-only faces are done, 136 of 144 names resolve from the repo; 2026-10-21:
+   only BabaUI is missing now). Plus
    the guard `check_cards.py` (ledger §5), which is how a card gets its tier automatically.
 3. **Rendering parity** ("extend psd-tools more", concretely). `cards_v1_icc`: median 0.186% bad pixels, 115 cards > 2%, 243 > 0.5%;
    target "no card > 2%" not met. Remaining classes (RENDER_STATUS "What is still missing" and the critic pass): **A** effects on empty-bbox
@@ -83,11 +86,17 @@ card once it is tier A; no new pickle (autocroissant-failure-archaeology Entry 7
    (37 cards) and adjustments inside styled groups over semi-transparent content (8 cards); big shadow and glow shapes; the LINE half-pixel
    offset under `force`. Fork branches exist for most (`fix/adjustment-layer-effects`, `fix/effect-instance-order`,
    `fix/gradient-fill-interpolation`, `fix/group-overlay-box`, `fix/shape-raster-offset`, `fix/text-blend-gamma`; merge state to confirm).
+   **2026-10-21.** Class B is fixable in the fork, not Photoshop-only: the document's `FEid`/`FMsk` blocks hold each smart filter's
+   pre-filter source and painted mask, and blending them fixes the 13 cards with active painted masks (branch `fix/smart-filter-mask`,
+   planned; `~/Documents/Tools/psd-research/RENDER_ROUND4_PLAN.md` §2.1). Merge state: `cards` (tag cards-20261020, a6363a04) holds
+   rounds 1 and 2 and the text engine; the user's round-2 review fixes sit on the six branches and `review/round2-consolidated`
+   (31e1a294), not yet in `cards`; round 3 is integrating; round 4 (class B, pixel-bar rounding, the Cannon's bevel) is planned.
 4. **Fork API for template fill**, beyond editing: add a face to a layer's `FontSet` (stoogedings runs, `text_edit.py:109-150`), move and
    rename layers, copy `lfx2` blocks, replace a smart object's content (art), `save(update_preview=True)`; the text engine's limits (warp
    unwarped, platform anti-aliasing as Strong, colour emoji as silhouettes: `text.rst` "What is rendered") must not touch any template layer.
 5. **Items 12-15**: stats above 10 as two rows, FX layers from the text, text-first rulebook; the digit effects (12) are open: copy the
-   block to all ten digits or let the pipeline move it on toggle is ledger question 5 (design §7 proposes the move).
+   block to all ten digits or let the pipeline move it on toggle is ledger question 5 (design §7 proposes the move). 2026-10-21: answered,
+   the pipeline moves it (in code, ledger L4).
 
 ## 4. Migration in tiers, with gates
 
@@ -108,6 +117,8 @@ variant from the layer tree, art from the clip layer) -> data file; then regener
   parsed values (`source: "psd"`), written by the extractor when the guard classifies a pushed PSD as tier C (the pipeline, never the
   editor: one writer); the editor offers only database-only fields and says "edit in Photoshop" for the rest, until the owner
   redoes the card on a template (question 4). Field cards (50) have no template in `MDW/Templates/`: tier C until one exists (question 7).
+  2026-10-21: ledger questions 3 and 6 are answered (drawn bars rebuilt as template rows, the six raster titles retyped), so those cards
+  can reach tier A after the batch.
 - **Order.** The goldens first (Mini Doomer, The Freezer, The Lich King; `tests/goldens/`), then one series, then a class at a time; every
   batch re-scores against `cards_v1_icc` (no region worse) and records its share of byte-identical regions (section 8, M5).
 - **Harness bar.** The pipeline's parity bar (bad <= 0.5%, mae <= 1.0) admits an *edit*; A1 admits a *source change* and is stricter on
@@ -133,7 +144,7 @@ how big is the download"; go or no-go on the answer.
 | Stats | number inputs 0-99; "Split into creatures" table | click a bar cell | two-row encoding above 10 (L3); per-creature rows; digit effects follow the toggle (12) |
 | Ability | textarea, token bar inserting `[type]`, live HTML preview `#ef-preview` | inline; `[` token picker, `(` tag completion | chart colours and FX in the preview; "does not fit" from the engine's `overflow` before publish (via 5c); FX layers regenerated (14) |
 | Stars | number | proposed inline | star style picker; the pipeline moves the folder (design Q4) |
-| Types | icon toggles | type-row palette | header badges as font tokens or smart objects (L1 scope) |
+| Types | icon toggles | type-row palette | header badges stay images (L1 scope, the user 2026-10-21); inline icons as font tokens |
 | Art | none | none | upload to the asset group; placement and crop in the clip layer; ability background variant |
 | Template | none | none | pick among the templates; a switch is a rebuild |
 | Status words | none (colour is derived) | none | styling shown from the chart; never typed by hand |
@@ -188,13 +199,14 @@ before it reaches the pipeline.
 
 S = a session, M = a few, L = many. Everything after 1 waits for the hold to lift.
 1. Edit pipeline, Task 3 steps 4-7 (running): M. 2. Standardization batch (ledger §4): L. 3. Parity rounds (classes A, C, D, text gamma,
-groups; B by PSD re-save): L, as fork PRs. 4. Fork template-fill API (section 3.4): M. 5. Schema, extractor, tiering in `check_cards.py`: M.
+groups; B by PSD re-save, 2026-10-21: B in the fork instead, round 4): L, as fork PRs. 4. Fork template-fill API (section 3.4): M. 5. Schema, extractor, tiering in `check_cards.py`: M.
 6. Card-as-data migration, tier A batches (M4, M5): L. 7. Preview (c), then (b), the (a) spike: S + M + S. 8. Extended editor (item 20 first,
 then art, template, history): L. 9. `Card Edits.json` retirement (after item 9 moves to the history walk) and the derived `stats.pkl`: M.
 
 ## 10. Open questions for the user
 
 1. Data file beside the PSD (`<Stem>.json`) or under `site/cards/`?
+   2026-10-21: under `site/cards/` (the user).
 2. Tier A art: a flat asset cut from the official render (A1 identical by construction; the committed PSD loses its art layers) or the
    original smart object kept (A1 then holds only outside the art region; Photoshop art editing survives in the PSD)?
 3. Authors and the constructed ban list: into the data files, or the two text files stay?

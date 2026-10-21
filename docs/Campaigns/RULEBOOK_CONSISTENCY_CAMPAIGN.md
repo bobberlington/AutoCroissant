@@ -47,7 +47,7 @@ M, H, X, T, G, V, S.
 | C4 | C | (19_Status_Effects) vs (09_TakingYourTurn) | status DMG/heal "procs at (ENDT)" vs phase 4 "Status Effects deal damage/heal, duration ticks down by 1", after phase 3's (ENDT) |
 | C5 | C+H | (12_Reactions2) hidden vs (12_Reactions3) | hidden older draft resolves 4>2>1>3 ("Attacks also resolve forward"); the visible rule is 4>2>3>1 |
 | C6 | C+H | (22_Negation) hidden | older ITEMS block: "returns to the hand", "Equip and active items" (no Deploy), "are still expended" |
-| U1 | U | 44 cards | tags defined nowhere: (1GCD) 22, (2CD) 14, (1CD) 13, (2U) 6, (2GCD) 2, (3U) 1, (4U) 1 = 59 occurrences on 44 distinct cards; plus "(1/2CD)" on Chris & Jordi. (02_Abbreviations) defines 16 patterns; all 16 are used on cards; the website renders the 7 as plain text |
+| U1 | U | 44 cards | tags defined nowhere: (1GCD) 22, (2CD) 14, (1CD) 13, (2U) 6, (2GCD) 2, (3U) 1, (4U) 1 = 59 occurrences on 44 distinct cards; plus "(1/2CD)" on Chris & Jordi. (02_Abbreviations) defines 16 patterns; all 16 are used on cards; the website renders the 7 as plain text. 2026-10-21: waits for the team's timing-system update (§8 question 1) |
 | U2 | U | pages | "prime creature" (15_Minions, 16_The_Field2, 18_Field_Cards), "tier" (11_Abilities), "proc"/"instance" (19_Status_Effects), "on-hit" (10_Attacking, 22_Negation; "on hit" 12_Reactions4), "innate actions" (11_Abilities7), "cleanse" (Hexed card), "N.M.E." (05_Shops), the "Don't be stupid" rule (01_Getting_Started) |
 | M1 | M | (19_Status_Effects), (19_Status_Effects2) vs cards | "Smouldering" 5 times on pages (+1 lowercase on 19) vs the card "Smoldering" (20_Creature_Types spells it the card's way); "Regeneration" (19) vs the card "Regen" |
 | M2 | M | pages vs 64 status effect cards | the pages name 19 of 64 status effects (case-sensitive whole word; SKILL.md Known gaps says "~22", stale, P1 refreshes it) and define none; the cards are the only definitions |
@@ -61,7 +61,7 @@ M, H, X, T, G, V, S.
 | X1 | X | (14_Item_Types) | "May not be used on [support]": the page shows the machine icon (icon above the midline went to the page's types; the gap took the next icon) |
 | X2 | X | (14_Item_Types) "[infliction]", (14_Item_Types2) "[fragile equip] [active] [deploy]", (15_Minions), (16_The_Field) "[defensive_minion]", (19_Status_Effects2) "[debuff]", (20_Creature_Types) 6 types | leftover icons appended after the page number |
 | X3 | X | (08_Global_Turn), (15_Minions) | 08's six example creatures A-F read "SPD: 5  : 3": the star icons are smart-object layers (Text/L1-L3/Top, Bottom), never text, and are not injected into the gap (rulebook.md restores "[icon: ★]"); 15's two minion-icon gaps were swallowed ("TYPES:Offensive") |
-| T1 | T | (20_Creature_Types) | the type layer named `tornado` is supposed to be `wind` (user, 2026-10-21): the parser flags it MISSPELT TYPE every run (BUGS D2); the rename is a PSD edit, in the standardization ledger L11 for the batch |
+| T3 | T | (20_Creature_Types) | (numbered T1 until 2026-10-21; T1 is Suffocation) the type layer named `tornado` is supposed to be `wind` (user, 2026-10-21): the parser flags it MISSPELT TYPE every run (BUGS D2); the rename is a PSD edit, in the standardization ledger L11 for the batch |
 | S1 | S | see SKILL.md Known gaps "Silent" | lane tie by star level (08); combo damage on sneak attacks and ability DMG, "25% +1" rounding (10); "one ACTION" (09) vs "2 innate actions" (11_Abilities7) and Inspired; creatures in hand and winning (01, 15); hand limits, summoning beyond refilling a slot (16); starting BRICKS; unspent star points; "5+ star" vs decks ending at 5★ (22); COUNTER item type (14) vs damage type (21); the Auxiliary/Creatures cards. Outside that list: reacting to (OFS)/(OS)/(OD) abilities ("nothing is stated", SKILL.md §3); Constructed's shop pool (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` Layer 1) |
 
 **Numbers measured today** (commands in §9): 604 tag occurrences of 35 distinct tags in 351 of 767 cards; 7 distinct
@@ -118,7 +118,8 @@ page; S rows may stay open (the simulator leaves them "by hand", `docs/Campaigns
 - **Cards:** U1 is one decision with two outcomes: define (XCD), (XGCD), (XU) on (02_Abbreviations) and add them to
   `badge_tags()`/`tagInfo()` (the Old Rules' "(CD)" meant counter damage, now CDMG: say so on the page), or rewrite the
   44 cards onto existing tags. Card text edits go through the edit pipeline (PSD + database edit in `site/Card
-  Edits.json`, `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise.
+  Edits.json`, `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise. 2026-10-21: U1 waits
+  for the team's timing-system update (§8 question 1).
 - **Parser:** skip hidden text layers on rule pages (`psd_parser.py:560-584`; change-control, goldens, a sandboxed
   sweep). Predicted effect: the texts of 09, 11, 12.2 and 22 shrink, 4 rulebook entries change in stats.pkl, 0 cards.
   Not a substitute for deleting the layers. X1-X3 slips are the extraction campaign's (gap vs icon order, star glyphs).
@@ -185,6 +186,8 @@ text a player can see.
 ## 8. Open questions for the user
 
 1. U1: define the three tags or rewrite the 44 cards? If defined, is CD "turns of this creature" and GCD "global turns"?
+   2026-10-21 (the user): neither yet. The team is preparing a large timing-system update away from the old tags; U1 waits for it, and
+   nothing defines or rewrites a tag before it ships (then the stoogedings badges and the rules skill follow).
 2. V1: delete the stray text box on (16_The_Field), or is it a deliberate joke the printed page keeps?
 3. M1: "Smouldering" or "Smoldering"? The card file name follows the choice (rename = card edit).
 4. C4: do status effects tick in phase 3 with (ENDT) effects or in phase 4? 09 and 19 need one answer.

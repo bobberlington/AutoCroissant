@@ -3,7 +3,7 @@
 **Status:** on hold until the user lifts it (2026-10-20): other developers are editing the PSDs, so nothing writes a PSD or PNG in
 TTSCardMaker until the user says so. Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). This file is the single ledger of every PSD
 change we intend (section 3); `docs/EDIT_PIPELINE_DESIGN.md`, the rulebook campaign and `docs/NEXT_SESSION_PLAN.md` (item 21) point here;
-the companion skill does not yet. Numbers measured 2026-10-20 over the 813 card PSDs of `~/Desktop/TTSCardMaker` (every PSD outside `MDW/`
+so does the companion skill's push-guard paragraph (rules 1 and 2, 2026-10-21). Numbers measured 2026-10-20 over the 813 card PSDs of `~/Desktop/TTSCardMaker` (every PSD outside `MDW/`
 and `Auxiliary/Markers/`); 651 are creatures, minions, items, auxiliary items and N.M.E. items, the cards a template with stat bars or a
 `Name` layer applies to; the other 162 are 48 rulebook pages, 64 status effects, 50 field cards. Evidence in section 8 (`/tmp` scans vanish
 on reboot: copy `/tmp/psdmap` and `/tmp/stdcamp` into `~/Documents/Tools/psd-research/` first).
@@ -52,6 +52,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   region; Photoshop with ligatures on. **Risk.** Font icons are narrower than the gaps: lines re-break and strand overlay words (Gasoline's
   "Blazing"), so L7 runs first; `[fire]/ [machine]` spacing and token order vs gap order are open (companion §5); bar layers named
   `Dark`/`Light`/`Machine` are not icons (L2). **Depends.** L7; question 1; the fork's font-run API unless Photoshop.
+- **2026-10-21 (question 1 answered; std.jsx).** Inline icons only: the header badges stay images, permanently, so Scope 2 and its 688
+  cards leave the batch. `std.jsx` still lives only in `/private/tmp/fontexplore/std/` (gone on a reboot): copy it before one, into
+  `MDW/Scripts/` only if the user agrees (a script file, under the hold only with their yes), otherwise under `~/Documents/Tools/psd-research/`.
+  The fork's text engine is in cards since a6363a04 (tag cards-20261020), so the `/tmp/wt-cards` caveat above is past.
 
 ### L2. Stat rows to the template layout (45 deviating cards)
 - **What.** `Stats Bars/Darks/<Stat> Dark/0..9` exposure digits with masks, one row per stat; `Bars` leaves named `hp`/`def`/`atk`/`spd`.
@@ -71,6 +75,9 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   art (Grimora, Skeleton_Mate) or drawn as pixel cells: Photoshop per card. **Check.** Parser gate (hp/def/atk/spd unchanged); harness stat
   rows; goldens; Photoshop on the pixel-bar cards. **Risk, depends.** A value silently changed by a rewrite; a look change where drawn bars
   differ (question 3); multi-creature cards (question 2); until then the pipeline refuses them (`unsupported-card`).
+- **2026-10-21 (questions 2 and 3 answered).** The 37 drawn or pixel-bar cards are rebuilt as template digit rows (the look change is
+  accepted). Multi-creature cards (Pix, Tainted Lazarus, Twin Emperors) and raid bosses get no templates of their own: they stay
+  deviations the pipeline refuses (`unsupported-card`).
 
 ### L3. Stats above 10 -> top row 10 + bottom row N-10 (design section 14, question 3: answered)
 - **What.** Royal Eradicator's layout is canonical: `Stats Bars/Darks/atk dark/Top/0..9` all hidden (= 10), `Bottom/<N-10>` visible. Sonic
@@ -119,6 +126,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - **Check.** Parser gate (ability text identical); 0 `NO ABILITY LAYER`; PNG byte-equal for a rename. **Risk.** Moving a layer under
   `Text` adds the group's Stroke and DropShadow: pixels change (that is why 50 of 63 overlays sit outside `Text`, cards-reference §4.2);
   per card, template look or rename only (question 4). **Depends.** Question 2 for the 5 several-Ability cards.
+- **2026-10-21 (questions 2 and 4 answered).** The 34 out-of-`Text` Ability layers move under `Text` (where the group carries effects the
+  ability takes them: pixels change, the PNG is re-exported). The 5 several-Ability cards stay deviations the pipeline refuses.
 
 ### L6. Name layer
 - **What.** A visible `Text/Name` text layer holding the printed title; the parser reads it into `display_name` since 2026-10-21 (design question 1; `psd_parser._printed_title`).
@@ -136,6 +145,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - **Tool.** Fork: `layer.name` set, 0 pixels; rasterized titles: Photoshop retype (pixels change; question 6) or leave them to
   `display_name` from `Card Edits.json`. **Check.** Parser reads `Text/Name` == the printed title (after the question-1 code); PNG
   byte-equal. **Depends.** `Effect Layers.jsx` keys FX layers on the text layer's name (`<layer> FX:`): rename before L7 or rerun Update all.
+- **2026-10-21 (question 6 answered).** The six rasterized or pixel titles (Sonic, ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card) are
+  retyped as text in the batch (pixels change). The in-joke titles above stay as printed; the six case-typo titles wait for the user, card by card.
 
 ### L7. Status words: off-chart colours and the 52 overlay word layers -> chart-styled FX layers (plan item 14; question 6: answered)
 - **What.** Each status word in `Text/Ability` takes the chart's fill (`MDW/Croissant's Special Folder/Satus Effect Colors.psd`: `Buffs` 12
@@ -178,6 +189,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   The_Master, Mari), 12 DropShadow only, 25 none, 11 no top-level `Text` group (lists in section 8). **Tool.**
   Fork `lfx2` copy from the template (design S0) or Photoshop paste style. **Check.** Parse unchanged; the PNG changes by design (an
   outline): per-card owner review. **Risk.** A card whose look depends on no outline (Flame_Trap, the food items): question 4.
+- **2026-10-21 (question 4 answered).** Not forced: the 85 holdouts (37 + 12 + 25 + 11) keep their look and L9 leaves the batch.
 
 ### L10. Composer: Single-line everywhere (an invariant, not a change)
 - 769 of 769 visible `Ability` and 622 of 622 visible `Name` layers have `EveryLineComposer` false (`/tmp/stdcamp/scan2.jsonl`, all 813
@@ -203,6 +215,9 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   Papyrus.ttc (TTSCardMaker fb37995 + ec3a6f1, 12 files, 5.4 MB; the engine resolves 136 of 144 names from the repo alone). 6 faces missing everywhere (30 layers: JavaneseText, MyriadArabic-Regular, BabaUI, OCRAExtended, Pristina-Regular,
   Elephant-Regular) and 2 near-misses (Papyrus-Regular, Kung-Fu-Panda): find the files (an Office PC) or re-set those runs to an available
   face, a PSD edit (question 7); until then text edits on those layers refuse `font` (TRIAGE.md, section 8).
+- **2026-10-21 (question 7 answered).** The missing fonts are the user's. They added Elephant, OCR A Extended, Pristina, Javanese Text and
+  the Windows Papyrus (TTSCardMaker a88b232); Papyrus-Regular and Kung-Fu-Panda resolve through `FONT_ALIASES`; MyriadArabic-Regular sits
+  only on a leading byte-order-mark run (ignored). Only BabaUI (`Baba.psd`) is missing now, and the user defers it.
 
 ### L14. Stars
 - Creatures, items, field cards: stars are the `N Stars` folder, so a stars edit moves PSD + PNG (aliases, `old_stats`, authors and the
@@ -215,6 +230,17 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   reconstructible from the file, so rasterize the filtered art in Photoshop (look unchanged) or exclude them from the 2% target. Class D:
   several instances of one effect kind on a layer (9 cards / 34 layers: Jevil, Massive_Moss_Charger, Moss_Charger, Marx, Wham_Bam_Jewel,
   Necrodeus, Sans, Morpho_Knight): renderer fix first; dropping the duplicates is optional. Check: harness per card.
+- **2026-10-21 (round 4 research): the class B statement above is withdrawn.** The mask is in the file: the document's `FEid`/`FMsk`
+  blocks hold each smart filter's pre-filter source and its painted mask, so the fork can blend the two (branch `fix/smart-filter-mask`,
+  planned; `~/Documents/Tools/psd-research/RENDER_ROUND4_PLAN.md` §2.1). 13 cards carry an active painted mask (Yin_Yarn, Toriel,
+  Dragon_Mount, Vivian, Hive_Knight, Knight_Lost_A_Lot, Lorian, HR-D3, Defcon_Panda, Magnet-shroom, Flame_Bomb, Lothric, Indoctrination);
+  48 other class B cards have white masks (no change). Class B becomes a renderer fix: once the branch lands, neither the Photoshop
+  rasterizing nor the exclusion above is needed. The_Collector and Holy_Blade are stale exports (L16).
+
+### L16. Stale official exports (RENDER_STATUS.md class H; 2026-10-21)
+- The team re-exports Skullord, Restrained, Blood_Bomb, Dark_Mind_Eye, Asteroid_Field, PoD04Zebra_Bloon, The_Collector, Holy_Blade: their
+  PNGs predate the PSD edits (Restrained's PNG reads "-1 Action", its PSD "(BOT) -1 Action"), so no renderer change can match them.
+  A PNG write: on hold. Check: harness per card after the re-export (`RENDER_ROUND4_PLAN.md` §4).
 
 ## 4. Order and batching (one batch when the hold lifts)
 
@@ -240,10 +266,11 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 Each rule is one TTSCardMaker Action on push that runs a bot module on the pushed PSDs by blob sha, writes the job summary, comments on the
 commit and pings the card makers' role on Discord (the shared secret `DISCORD_FONT_WEBHOOK`), and never reverts or rejects.
 
-- **Rule 1, the font check** (written 2026-10-21 against the uncommitted tree; live once both repos are committed and the secret is set):
+- **Rule 1, the font check** (LIVE since 2026-10-21: TTSCardMaker f5a0e50, AutoCroissant ae1d2c5, secret set):
   `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
-  for that `MDW/Fonts` lacks, per author and font (L13's six faces are what it reports today).
-- **Rule 2, the card check** (written 2026-10-21; staged in `/tmp/card-check/card-check.yml`, lands when the orchestrator commits the yml):
+  for that `MDW/Fonts` lacks, per author and font (today only BabaUI, L13).
+- **Rule 2, the card check** (LANDED 2026-10-21: AutoCroissant df4a439 `commands/card_check.py`, TTSCardMaker a3451c8; the first
+  whole-repo dispatch, run 39690899334, succeeded, job summary only):
   `.github/workflows/card-check.yml` runs `commands/card_check.py` (uncompiled; `python -m commands.card_check --help`) on every push that
   touches a PSD, `Types/` or `site/Card Edits.json`: for each pushed PSD the notes `/update_stats` would print (`NO STARS FOUND`,
   `MISSPELT TYPE`, `SEVERAL CREATURES`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the
@@ -263,17 +290,28 @@ commit and pings the card makers' role on Discord (the shared secret `DISCORD_FO
   has been quiet about 30 min (Task 3c's rule), skipping its own commits, never a rulebook page, never while a hold stands. Pixel-changing
   classes stay report-only: PSDs cannot be merged and an author may still be editing.
 
-## 6. Open questions for the user
+## 6. Questions for the user (all nine answered 2026-10-21)
 
 1. L1 scope: inline icons only, or the header type badges (688 cards) in the font as well?
+   2026-10-21: inline icons only go to the font; the header type badges stay images, permanently (L1).
 2. Multi-creature cards (Pix, Tainted Lazarus, Twin Emperors; the 5 several-Ability cards) and raid bosses: their own templates or deviations?
+   2026-10-21: deviations, no extra templates; the pipeline keeps refusing them (`unsupported-card`).
 3. The 37 drawn or pixel-bar cards (L2): rebuild as exposure rows (small look change) or allow as a variant the parser already reads?
+   2026-10-21: rebuilt as template digit rows (L2).
 4. The 85 `Text` outline holdouts (L9) and the 34 out-of-`Text` abilities (L5): apply the template outline (pixels change) or allow?
+   2026-10-21: no forced `Text` outline (L9); the 34 out-of-`Text` Ability layers move under `Text` (L5).
 5. Digit effects (L4): copy the block to all ten digits, or let the pipeline move it on toggle?
+   2026-10-21: the pipeline moves it on toggle (L4; design §7 idea 12, in code).
 6. Rasterized or pixel titles (Sonic and 5 more): retype as text (pixels change) or keep, with `display_name` from the website?
+   2026-10-21: retyped as text, part of the batch (L6). The odd in-joke titles are never standardized; the six case-typo titles are
+   asked card by card before any reprint.
 7. The 6 fonts missing everywhere (30 layers): hunt the files, or re-set those runs to a face in `MDW/Fonts`?
+   2026-10-21: the fonts are the user's; since TTSCardMaker a88b232 only BabaUI (`Baba.psd`) is missing, and the user defers it (L13).
 8. The guard: report-only for how long, and may it ever fix on push?
+   2026-10-21: it reports first (no fixed term) and may later fix 0-pixel deviations (layer names, grouping) on push, under section 5's
+   conditions.
 9. One batch archives every touched card once in `old_stats.pkl` (about 110 cards, about 800 with the header scope): acceptable?
+   2026-10-21: accepted (about 110 cards: the header scope is out).
 
 ## 7. Known wrong paths (fenced off)
 

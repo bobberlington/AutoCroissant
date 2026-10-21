@@ -34,8 +34,8 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   deviations, a compact layer tree) for the website's Details dropdown; gathered in /update_stats, pushed with the pickles,
   backfilled by `python -m commands.psd_details --clone`; /fonts reads it first. Owner: autocroissant-run-and-operate §7.
 - 2026-10-21 (push guard, rule 2): `commands/card_check.py` (uncompiled, CLI only) reports a pushed card's parser and validator notes
-  (what /update_stats prints; the parser's own notes among them are also the website's Parser notes) from TTSCardMaker's `card-check.yml` (staged in `/tmp/card-check` until the
-  orchestrator commits it; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
+  (what /update_stats prints; the parser's own notes among them are also the website's Parser notes) from TTSCardMaker's `card-check.yml` (landed 2026-10-21: AutoCroissant df4a439,
+  TTSCardMaker a3451c8; the first whole-repo dispatch, run 39690899334, succeeded, job summary only; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
 
 ---
 
@@ -52,11 +52,11 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Issue | Evidence | Suggested action | Detail owner |
 |---|-------|----------|------------------|--------------|
-| D1 | **4 latent problem cards invisible in the pickled count.** stats.pkl stores only parse-time problems (count: 1); full re-validation reports 5: Computer Virus (all stats missing), Anubisath Guardian, Qiraji Soldier, Silithid (blank ability layers, June 2026 WoW batch). | Re-validation sweep, `autocroissant-validation-and-qa` baselines | Fix the four PSDs in TTSCardMaker (card content, not bot code) or certify as intentional | `autocroissant-validation-and-qa` §baselines |
+| D1 | **4 latent problem cards invisible in the pickled count.** stats.pkl stores only parse-time problems (count: 1); full re-validation reports 5: Computer Virus (all stats missing), Anubisath Guardian, Qiraji Soldier, Silithid (blank ability layers, June 2026 WoW batch). 2026-10-21: one card now: the user put Anubisath Guardian, Qiraji Soldier and Silithid into `ABILITY_EXCLUSIONS` (e4e0a58, 21 names); Computer Virus (a creature with no stat rows) remains. | Re-validation sweep, `autocroissant-validation-and-qa` baselines | Fix the four PSDs in TTSCardMaker (card content, not bot code) or certify as intentional | `autocroissant-validation-and-qa` §baselines |
 | D2 | **"20 Creature Types" rulebook page has a `tornado` misspelling** (layer name in `MISSPELT_CARD_TYPES`; the user, 2026-10-21: it is supposed to be `wind`). The single pickled problem card; waits for the PSD hold. | `inspect_pickle.py --problems` | Fix the PSD layer name in TTSCardMaker | `impossibility-cards-reference` §validation |
 | D3 | **Stale exclusion: Shadow Duelist** sits in `ABILITY_EXCLUSIONS` but now has ability text. | Campaign burn-down census | Remove from the exclusion set after a golden-checked reparse | `autocroissant-psd-extraction-campaign` Phase 3.4 |
 | D4 | **A second, never-reverted old_stats balloon** (`637698b`, 2025-11-25): ~26 unchanged cards breadth-archived in one sweep still pollute old_stats.pkl history. | Byte trace in archaeology; snapshot forensics | Optional cleanup; low value, only with a diff_stats-gated PICKLE commit | `autocroissant-failure-archaeology` Entry 3 |
-| D7 | **Multi-creature stats are a parser guess.** Pix, Twin Emperors and Tainted Lazarus carry `SEVERAL CREATURES`; Twin Emperors' 2nd DEF reads 4 but the card shows 10 (an empty row next to a shared one is ambiguous). | `StatTrackers.creatures` | Fix per creature on the website, then tick "parser notes checked" | `impossibility-cards-reference` §3.4 |
+| D7 | **Multi-creature stats are a parser guess.** Pix, Twin Emperors and Tainted Lazarus carry `SEVERAL CREATURES`; Twin Emperors' 2nd DEF reads 4 but the card shows 10 (an empty row next to a shared one is ambiguous). | `StatTrackers.creatures` | Fix per creature on the website, then tick "parser notes checked". 2026-10-21: doable now under the PSD hold: `creatures` is a database-only website edit (`site/Card Edits.json`), not a PSD write | `impossibility-cards-reference` §3.4 |
 | D6 | **No card uses the stoogedings font yet (0 of 813 PSDs).** About 45 PSDs (81 smart-object icon layers below the midline) still use image-layer icons, so they still depend on gap injection. Counting any layer kind gives 61 PSDs / 148 layers, some of them decoration rather than inline icons. | TTSCardMaker migration audit (2026-10-19) | Migrate them in TTSCardMaker (card content). The JSX prototype and its overlay-layer caveat are in the companion skill | `ttscardmaker-companion` |
 
 ### 1.3 OPEN — docs and cosmetics
@@ -68,9 +68,9 @@ None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 | # | Item | What was verified | What is still missing | Detail owner |
 |---|------|-------------------|-----------------------|--------------|
 | V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
-| V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19 | Not known to have fired against live Discord yet. Watch the first startup's `migrated command` log lines and the first firing | `autocroissant-run-and-operate` §9 |
+| V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19; live 2026-10-21: the /push reminder fired at 05:30 (PICKLE 56b43b9) | Nothing: the rewrite is verified live (was: not known to have fired against live Discord yet; watch the first startup's `migrated command` log lines and the first firing) | `autocroissant-run-and-operate` §9 |
 | V4 | `/query` name lookup: Card Edits.json names and aliases never joined the registry (the lookup used a mixed-case key against lowercase keys, since f2013eb); fixed 2026-10-21 in `query_card._add_lookup`, which now also adds printed titles (`_populate_titles`) | Tests `test_website_names_join_the_name_lookup`, `test_titles_join_the_name_lookup` | `/query Raw Kawk`, `/query Black Clot` (after the re-parse) on the live bot | `autocroissant-run-and-operate` §7 |
-| V3 | `PARSER_VERSION` 2: the printed title read into `display_name`; `EXCESSIVE_STAT_EXCLUSIONS` gone (2026-10-21) | Parser gate: 813 cards, 159 intended differences (157 titles, 2 STATS TOO HIGH allowed by `allow_high_stats`); suite 356; site built locally from patched pickles | The first live `/update_stats` after the deploy must re-parse all ~813 cards once ("813 cards changed or new", minutes, no old_stats growth), then go quiet; the website and the `/query` embed title then show printed titles (94 differ from the file name only by letter case or spacing, CABBAGE, A P E X: shown as printed, the user's call of 2026-10-21; `/query` finds a card by its printed title) | `autocroissant-run-and-operate` §7 |
+| V5 | `PARSER_VERSION` 2: the printed title read into `display_name`; `EXCESSIVE_STAT_EXCLUSIONS` gone (2026-10-21; numbered V3 until the same day, an id the retired Cython row already used) | Parser gate: 813 cards, 159 intended differences (157 titles, 2 STATS TOO HIGH allowed by `allow_high_stats`); suite 356; site built locally from patched pickles; live 2026-10-21: the first re-parse ran 10:18-10:40 and again at 12:16, all 819 entries stamped v2 | Re-parse done 2026-10-21 (see What was verified). Was: the first live `/update_stats` after the deploy must re-parse all ~813 cards once ("813 cards changed or new", minutes, no old_stats growth), then go quiet; the website and the `/query` embed title then show printed titles (94 differ from the file name only by letter case or spacing, CABBAGE, A P E X: shown as printed, the user's call of 2026-10-21; `/query` finds a card by its printed title) | `autocroissant-run-and-operate` §7 |
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
@@ -78,7 +78,8 @@ Owned by `ttscardmaker-companion`:
 - The website and editor are live (pushed 2026-10-20); the bot reads `site/Card Authors.txt` and `site/Card Edits.json` (moved there from `MDW/` the same day, TTSCardMaker 13ac680; the `MDW/` fallback is dropped).
 - The website unpickles the bot's pickles with stub classes for `commands.*`: anyone who can push AutoCroissant
   `main` can run code in the TTSCardMaker Actions job, and renaming CardInfo attributes blanks website fields.
-- 7 fonts are still missing from `MDW/Fonts` (Windows/Office ones, BabaUI).
+- Only BabaUI (`Baba.psd`) is still missing from `MDW/Fonts` (2026-10-21: the user added the Windows/Office faces in TTSCardMaker a88b232
+  and defers BabaUI; was 7).
 - Scratch scripts from 2026-10-19/20 live in `/private/tmp/fontexplore/`, which macOS clears on reboot.
 
 ---

@@ -419,6 +419,7 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 | S6 bot + fork | idea 14: FX regeneration (glyph boxes, pixel cut, chart effect block) **code done 2026-10-21**, no fork change (section 7: Gasoline IoU 0.966 / Cannon 0.937 with the JSX cuts, coverage 1.0, Mini_Doomer ability edits with FX pass every gate); idea 12 and idea 13 **code done 2026-10-21** (section 7: Mettaton_EX hp 5 -> 8 passes every gate; the Cannon writes and re-parses but its bevelled digits refuse `parity`) | Gasoline and Royal Eradicator FX layers within the validator's 0.95 coverage and the region bar; Mettaton_EX rows pass parity; goldens refreshed | L |
 | S7 jetson | a manual fallback: fork in the bot venv, Lock, SSH commit, Discord report. **Code done 2026-10-21** (`commands/card_runner.py`, `/bake_cards`, `bake_lock`; the edits-sha notice landed and was removed the same day: the user chose ONE live runner, the Action, and no notice on the jetson); the venv install only if the fallback is ever needed | only if ever needed: one bake with Actions disabled; CPU/RAM peak recorded | M |
 | S8 user | the 10 edits of section 12 | 10/10; results in `docs/Finished/`; Photopea retired to an archive branch | S |
+| S9 bot + TTSCardMaker | star edits on folder-starred cards (creatures, items, field cards): move PSD + PNG to the new `N Stars` folder; aliases, `old_stats`, authors and the TTS save follow (question 4; ledger L14). **Planned**, after round 1 (row added 2026-10-21); a move is a PSD/PNG write, so it waits for the hold | proposed: a `/tmp` dry run moves one card: PSD + PNG at the new path, the old path gone, the parser reads the new stars, `diff_stats` lists only that card, the TTS save pins the new path | M |
 
 ## 14. Open questions for the user — answered 2026-10-20
 
@@ -429,6 +430,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`). 2026-10-21 audit: the regeneration is 9.4 s of a
    23 s bake (a full-canvas composite); the merged PNG the driver already holds is that flattened image, so a fork
    `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).
+   2026-10-21: round 3's fork branch `perf/save-with-preview` (98804ede, head 6f91981e) implements `save(preview=)`; `card_bake` still
+   calls `apply_jobs(..., update_preview=True)` and switches to passing the merged PNG once the new pin tag is installed.
 3. **Top row 10 + bottom row N-10** (Royal Eradicator's layout; the parser already sums it). Sonic is converted once to that
    layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes. **Done 2026-10-21**: the list is
    deleted; Sonic and Royal Eradicator Main Cannon carry `allow_high_stats` in the edits file (the only two cards above 10).

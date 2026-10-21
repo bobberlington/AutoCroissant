@@ -15,7 +15,7 @@ keeps no copy, and both name the bot command `/report_game`. Its naming proposal
 | D2 | One JSON file per game under TTSCardMaker `site/games/`, committed by the bot. No new pickle (the costliest pickle incident family, the old_stats.pkl balloons and the reverted PICKLE: autocroissant-failure-archaeology Entry 3). |
 | D3 | The winner is suggested by the script from the death rule and confirmed by the host; never inferred silently. |
 | D4 | One schema for Tabletop Simulator and the browser Play tab. |
-| D5 | Related, not here: opt-in profiles `site/profiles/<login>.json`, a leaderboard, public decks under `site/decks/` (none of the three folders exists yet). |
+| D5 | Related, not here: opt-in profiles `site/profiles/<login>.json`, a leaderboard, public decks under `site/decks/` (none of the three folders exists yet). **2026-10-21:** all three landed: opt-in profiles `site/profiles/` (TTSCardMaker 4473dd1), the People tab with its leaderboard (41b929b), decks under `site/decks/` with private ones encrypted and shown only on the owner's person page (305812c). |
 
 ## 1. Goal and non-goals
 
@@ -130,6 +130,8 @@ no section for zones or scripted objects. `_sync_decks` only ever adds cards ins
    players, winner, flagged cards, the raw link. `site.yml` checks out `/site/` sparsely, so that push rebuilds the website.
 - **Gate:** P2 done (one real report in a Notebook tab); open question 3 (who may run it) answered.
 - **You have a result when** the same report pasted twice yields one file and one "already reported <id>"; a misspelt name is listed.
+- **2026-10-21 (questions 3 and 4 answered):** `/report_game` is open to anyone in the guild; a report naming an unknown card is stored
+  with that card unresolved (`card: null`) and flagged, never refused, so `allow_unknown` is not needed.
 
 ### P4. Statistics
 1. `site/build/build_site.py` reads `site/games/*.json` -> `dist/data/games.json`; per card `games`, `wins` (in a winning team's
@@ -137,6 +139,8 @@ no section for zones or scripted objects. `_sync_decks` only ever adds cards ins
    `site/decks/` (D5) -> that deck's W/L. Card pages and Stats show them; nothing shown under 3 games.
 2. Bot: `/game_stats [card] [player]` reads `SITE_URL/data/games.json` with an ETag like `_populate_site_ids`; no pickle.
 - **Gate:** P3 done and at least 3 reports under `site/games/` on main.
+- **2026-10-21 (question 7 answered):** no floor: statistics show from the first game. Per-deck stats can only match public decks (a
+  private deck file is encrypted).
 - **You have a result when** the website's numbers for one card equal a hand count over the files.
 
 ### P5. Event log and the host-typed webhook (optional)
@@ -196,13 +200,18 @@ counts twice; 17_Death gives points rules, not counts), `used` counts discards; 
   deduped by id, `reported_by` recorded; an admin retracts a report by deleting its file in the repo.
 - The save never holds a URL or a report (it is a public file rebuilt by the Action); `onSave` state is id, start, hand sets and typed names.
 - Reports are public repo files: no private games until encrypted decks exist (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` open question 3).
+  2026-10-21: encrypted private decks exist (TTSCardMaker 305812c: AES-GCM, key from a passphrase via PBKDF2); a private game would
+  reuse that scheme, which is not designed yet, so reports stay public files until it is.
 
 ## 6. Open questions for the user
 1. Zones per team (the save is two sides of up to 3 colours each) rather than per seat: right?
 2. Reporter as a new tile, or inside the Flex Table Control (stock script, already host-gated)?
 3. `/report_game` for anyone in the guild, or admins only at first?
+   2026-10-21: anyone in the guild (the user).
 4. Unknown card names: refuse, or store with `card: null` and flag?
+   2026-10-21: store with the card unresolved (`card: null`) and flag (the user).
 5. Minions and `Auxiliary/Creatures` cards: their own `cards[]` rows (they go to the graveyard, 15_Minions) or folded into the parent?
 6. The simulator's naming proposals (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` §4): `teams[].field_card` for `teams[].field`,
    `cards[].end: primary` for `end: field`, report-level `result` for `end`, `team` for `seat`: accept any?
 7. Fewest games before a number shows (3?); per-deck stats for public decks only?
+   2026-10-21: no floor, numbers show from the first game (the user); per-deck stats match public decks only (private ones are encrypted).

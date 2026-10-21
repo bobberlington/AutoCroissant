@@ -4,16 +4,19 @@
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; card numbers are `~/Desktop/TTSCardMaker/site/dist/data/cards.json`
 of 2026-10-20 (801 rows; dup rows dropped). Anything not checked on disk or in git is marked "to confirm". Playtest hooks are the
 Play tab (`docs/Campaigns/SIMULATOR_CAMPAIGN.md`) and `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`; both unscheduled.
+**2026-10-21:** the user revised D1-D3 (a separate AI sandbox repo with its own website and bot) and will iron the campaign out later;
+until then, read the phases' `ai/cards` and `ai-drafts` branches as that sandbox repo.
 
 **Decided (user, 2026-10-20)**
 
 | # | Decision |
 |---|---|
-| D1 | Generated cards are completely separate from real cards: never in card statistics, never in the real card folders, always visibly labelled GENERATED (image watermark, embed title, website badge, TTS Nickname if one is ever spawned by hand as a custom object; the save `TTS/Impossibility Simulator.json` never carries one). |
-| D2 | Code on a fresh AutoCroissant branch `ai/cards`; main stays AI-free. The retired diffusion feature stays on `archive/ai-generation` (ed21cd2 = faebfc7 plus a two-line header comment in `commands/diffusion.py`; main dropped it in 05c643e): `/ai`, `/ai_queue`, `/set_model|lora|scheduler|device`, `commands/diffusion.py` (SD 1.5 / SDXL / Flux, LoRA from `models/loras/`), `requirements2.txt` (torch stack); `commands/convert_nf4_flux.py` only in history (1efe116 -> deleted f40152e). |
-| D3 | Generated PSDs/PNGs go to a TTSCardMaker branch `ai-drafts` (does not exist yet; only `main` does). Promotion to main is a human act into a dedicated folder/series, name open (Q1). |
+| D1 | Generated cards are completely separate from real cards: never in card statistics, never in the real card folders, always visibly labelled GENERATED (image watermark, embed title, website badge, TTS Nickname if one is ever spawned by hand as a custom object; the save `TTS/Impossibility Simulator.json` never carries one). **2026-10-21 revision:** separate by repo: generated cards live in a SEPARATE AI sandbox repo with its own website and bot, never in TTSCardMaker (no folder, no branch) and never in the real card statistics. |
+| D2 | Code on a fresh AutoCroissant branch `ai/cards`; main stays AI-free. The retired diffusion feature stays on `archive/ai-generation` (ed21cd2 = faebfc7 plus a two-line header comment in `commands/diffusion.py`; main dropped it in 05c643e): `/ai`, `/ai_queue`, `/set_model|lora|scheduler|device`, `commands/diffusion.py` (SD 1.5 / SDXL / Flux, LoRA from `models/loras/`), `requirements2.txt` (torch stack); `commands/convert_nf4_flux.py` only in history (1efe116 -> deleted f40152e). **2026-10-21 revision:** no `ai/cards` branch: the code lives in the AI sandbox repo beside its own bot; AutoCroissant main stays AI-free and the archive line above stands. Text and stats come from one of two toggleable venues: Claude Opus via the API, or a custom trained model. |
+| D3 | Generated PSDs/PNGs go to a TTSCardMaker branch `ai-drafts` (does not exist yet; only `main` does). Promotion to main is a human act into a dedicated folder/series, name open (Q1). **2026-10-21 revision:** no `ai-drafts` branch and no promotion into TTSCardMaker: drafts and kept cards stay in the AI sandbox repo and show on its own website. |
 | D4 | Image generation runs on the Mac (Apple M2 Ultra, 24 cores, 192 GB), never on the jetson (4 cores, 6 GB, `docs/NEXT_SESSION_PLAN.md` Task 0). |
 | D5 | A generated card is an edit of a blank template: Task 3's edit pipeline fills the template, so every generated PSD must round-trip through the bot's parser with zero problems. |
+| D6 | 2026-10-21: the first target is 3★ Kirby creatures (Q2 answered). |
 
 ## 1. Goal and non-goals
 
@@ -28,6 +31,8 @@ No AI code on main, not even an HTTP client for the API (D2).
 
 ## 2. Isolation by construction
 
+- **2026-10-21:** with the sandbox repo (D1-D3 revised) nothing generated reaches the bot's sweep, the card website or the TTS save at
+  all; the fences below stay as a second line.
 - **Bot:** the sweep skips any path containing a folder in `EXCLUDE_FOLDERS = ["Markers", "MDW"]` (`commands/repo_traverser.py:36`).
   **Website:** only `CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")` and not `SKIP_PARTS = ("MDW", "Markers")`
   (`site/build/build_site.py:64, 82`). **TTS save:** decks are filled by folder rules in `TTS/decks.json` (to confirm no rule globs a new
@@ -119,7 +124,7 @@ vocabulary block, check `stop_reason` (`refusal` is possible) before reading con
 first try at a rate fixed before the run (propose 80%), every stat lands inside 1 SD, and a reader of the 20 finds no word
 outside the rulebook's vocabulary.
 
-### Phase 2. Fill the template and round-trip (needs Task 3 steps 3-4; text engine on the fork's `feat/text-engine`)
+### Phase 2. Fill the template and round-trip (needs Task 3 step 4; the text engine is in the fork's `cards` since a6363a04)
 
 **Template assets** (`~/Desktop/TTSCardMaker/MDW/Templates/`): `Creature_Template.psd` (1200x2400), `2_Creature_Template.psd`,
 `3_Creature_Template.psd` (several-creature cards), `Item_Template.psd` (1200x1800), `ActiveItem_Template.psd`,
@@ -193,16 +198,20 @@ a separate table, never the real card statistics.
 
 - **Q1** Folder and series name for promoted cards (top-level, outside `CARD_FOLDERS`; e.g. `Generated/`), and whether the
   website shows them in a labelled tab at all.
+  2026-10-21: nothing is promoted into TTSCardMaker; the sandbox repo's own website shows them; names there wait for the iron-out.
 - **Q2** First target: 3★ Kirby creatures only (proposed), or items too (same template work, different validator rows).
+  2026-10-21: 3★ Kirby creatures first (D6).
 - **Q3** API budget per month, which decides opus vs sonnet (table above). A hard cap goes in the script, not in prose.
+  2026-10-21: two toggleable venues, Claude Opus via the API or a custom trained model (D2); the budget waits for the iron-out.
 - **Q4** How the jetson runs `ai/cards` for Phase 5: a second checkout and service beside the main bot, or switching the one
   bot to that branch while drafting.
+  2026-10-21: neither: the sandbox repo has its own bot (D1).
 
 ## 6. Order
 
-Phase 0 and 1 need nothing from Task 3 and can run now on the Mac. Phase 2 waits for the fork's text engine to land in Task 3
-step 3 (`docs/text.rst` on branch `feat/text-engine` of `~/Documents/Tools/psd-tools`, 647e19c6, describes `set_text`,
-`set_span_style`, `rasterize`, `verify`). Phase 3 v1 after Phase 2; Phases 4-7 follow; v2 art and Phase 6 only if Phase 3's vote clears its bar.
+Phase 0 and 1 need nothing from Task 3 and can run now on the Mac. Phase 2 no longer waits for the fork's text engine: it is in
+`cards` since a6363a04 (tag cards-20261020; `docs/text.rst` describes `set_text`, `set_span_style`, `rasterize`, `verify`;
+2026-10-21). Phase 3 v1 after Phase 2; Phases 4-7 follow; v2 art and Phase 6 only if Phase 3's vote clears its bar.
 
 ## 7. Re-verify
 

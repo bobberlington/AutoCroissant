@@ -26,7 +26,10 @@ checked against is reproduced below.
 
 In order. A line is struck when it lands; the docs it closes move to `docs/Finished/`.
 
-1. [ ] **Fork integration.** Collect round 3's result (journal above; worktrees /tmp/wt-*). Merge `review/round2-consolidated`
+1. [ ] **Fork integration.** Collect round 3's result (journal above; worktrees /tmp/wt-*). Verified 2026-10-21 evening with
+   `git merge-base --is-ancestor`: the user's seven round-1 review commits (5d92a0e7, ddf64e52, fc75012a, 2c691bc2, 409aa349, 2db839da,
+   c294d094) ARE in `cards` a6363a04; the six round-2 ones (1d363b1d, c2797ede, c48ee268, ad07098e, 3d8b4f22, d33e0bda) are NOT: they
+   live on their fix/* branches and, hand-ported, in `review/round2-consolidated`. Merge `review/round2-consolidated`
    (31e1a294) and the round-3 branches into `cards` (conflicts expected in effects.py / paint.py / composite.py's import list);
    suite (ruff, mypy, pytest ~5300); full 813-card harness run vs `cards_v3` (`score_cards.py <name> ` then `compare_scores.py
    cards_v3 <name>`; NEVER `--help`); push `cards`, the nine branches and the consolidated branch; tag `cards-2026102x`; re-pin
@@ -48,7 +51,10 @@ In order. A line is struck when it lands; the docs it closes move to `docs/Finis
 3. [ ] **Jetson and data.** After the user's /push: V4 live checks (`/query Raw Kawk`, `/query Black Clot`), the site shows the
    printed titles. Run `/fonts` once (fills the `supplied` flags of jetson-gathered psd_details records; B11). Design B11 (a fonts
    cache keyed by the MDW/Fonts tree sha for the bake and the details gather). Record every deploy in memory `jetson-server`.
-4. [ ] **Rescue from /tmp and make the tests self-sufficient.** `tests/test_psd_edit.py` and `tests/test_card_bake.py` cite
+4. [ ] **Rescue from /tmp and make the tests self-sufficient.** (Done 2026-10-21 evening: the scripts under /private/tmp/fontexplore
+   (std/std.jsx, fx/*.jsx + *.py, scripts/*.py incl. tts_survey1-5, asl, spec, scale, regress) are copied to
+   `~/Documents/Tools/psd-research/rescued-2026-10-21/fontexplore/` (108 files, 712 KB); the JSX trial-copy PSDs and the worktrees
+   were not copied.) `tests/test_psd_edit.py` and `tests/test_card_bake.py` cite
    /tmp/wt-pipeline-dev and /tmp/wt-cards and the JSX trial copies under /private/tmp/fontexplore; make them find the fork through
    an env var (default `~/Documents/Tools/psd-tools`) and vendor or regenerate the small fixtures they need; copy `std.jsx` and the
    tts_survey scripts into `~/Documents/Tools/psd-research/` (MDW/Scripts/ only when the hold lifts); install pyyaml in the test venv
@@ -145,7 +151,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - Deploy state of df4a439 / 1048324 (font_check exit-0 used by /fonts) on the jetson: not recorded [open] (M:jetson-server last deploy 13:38)
 
 ##### B3. Website (TTSCardMaker)
-- Printed titles go live only after the jetson's pickles are pushed and site.yml runs [blocked: /push] (M:ttscardmaker-integration; BUGS V3)
+- Printed titles go live only after the jetson's pickles are pushed and site.yml runs [blocked: /push] (M:ttscardmaker-integration; BUGS V5, renumbered from V3 on 2026-10-21 evening)
 - card-edits.yml push trigger on site/Card Edits.json goes live when the hold lifts; header comment still cites S5/Thunderfury [blocked: PSD hold] (WF/card-edits.yml; PIPE §8)
 - site/README.md has a Font check section but no Card check section [open] (SREADME; WF/card-check.yml)
 - Profiles not done: avatar, GitHub link, per-profile share dialog, People tab counter [open] (NOTES §7)

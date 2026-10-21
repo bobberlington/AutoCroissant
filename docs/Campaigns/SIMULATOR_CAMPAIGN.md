@@ -4,7 +4,9 @@
 "card game win and loss stats" (pasted 2026-10-20 as item 1 of a second list; item 17 is
 `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`, the home of the shared game report schema); starts after the deck browser
 (public decks as repo files, private decks encrypted in the repo; sign-in top right; opt-in profiles
-`site/profiles/<login>.json`, not yet created; contributions and a leaderboard). The tab is **Play** ("Table" was the
+`site/profiles/<login>.json`, not yet created; contributions and a leaderboard). 2026-10-21: both prerequisites landed (the deck
+browser with public and encrypted private decks, TTSCardMaker 305812c; sign-in, profiles and the People tab with contributions and the
+leaderboard, 4473dd1 / 41b929b); the campaign stays designed, not scheduled. The tab is **Play** ("Table" was the
 reverted TTS-save viewer, TTSCardMaker `75692fb`). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; card counts are
 `~/Desktop/TTSCardMaker/site/dist/data/cards.json` of 2026-10-20, over the 767 distinct cards unless a count says rows.
