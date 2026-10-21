@@ -1,6 +1,7 @@
 """/query_ability output: one match posts its image; more are listed as name and link, 10 per message, in order."""
 import pytest
 from pandas import DataFrame
+from types import SimpleNamespace
 
 import commands.query_card as qc
 import commands.utils as utils
@@ -88,3 +89,41 @@ def test_single_result_without_an_image_posts_its_name(repo):
     repo.get_card_url = lambda name: None
     out, _ = _search(repo, 1)
     assert out == ["Found 1 results for 'Fire'!", "Card 0", "Displayed 1 of 1 results for 'Fire'."]
+
+
+# ========================
+# Printed titles
+# ========================
+def _card(name, title=None, edit=False):
+    return SimpleNamespace(name=name, display_name=title, parsed_values={"name": None} if edit else None)
+
+
+def test_printed_title_folds_case_and_spacing():
+    """A title differing from the name by letter case or spacing alone shows as the name; a website name as written."""
+    assert qc.printed_title(_card("Apex Predator", "A P E X P R E D A T O R")) is None
+    assert qc.printed_title(_card("Poorly Drawn Cabbage", "POORLY DRAWN CABBAGE")) is None
+    assert qc.printed_title(_card("Clot Black", "Black Clot")) == "Black Clot"
+    assert qc.printed_title(_card("Mr Krabs", "Mr. Krabs")) == "Mr. Krabs"
+    assert qc.printed_title(_card("Sans", "snas.", edit=True)) == "snas."
+    assert qc.printed_title(_card("Fawful", "FAWFUL", edit=True)) == "FAWFUL"
+    assert qc.printed_title(_card("Mini Doomer")) is None
+
+
+def test_titles_join_the_name_lookup(repo, monkeypatch):
+    """/query finds a card by its printed title; names already taken and cards without a PNG are left alone."""
+    repo.git_files = {"clot_black.png": "Auxiliary/Minions/Clot_Black.png", "cabbage.png": "Auxiliary/Items/Cabbage.png"}
+    monkeypatch.setattr(qc, "stats_db", SimpleNamespace(stats={
+        "Clot Black": _card("Clot Black", "Black Clot"), "Cabbage": _card("Cabbage", "CABBAGE"), "Gone": _card("Gone", "Not Here")}))
+    repo._populate_titles()
+    assert repo.git_files == {"clot_black.png": "Auxiliary/Minions/Clot_Black.png", "cabbage.png": "Auxiliary/Items/Cabbage.png",
+                              "black_clot.png": "Auxiliary/Minions/Clot_Black.png"}
+
+
+def test_website_names_join_the_name_lookup(repo):
+    """Card Edits.json names and aliases find the PNG (registry keys are lowercase; broken until 2026-10-21)."""
+    repo.git_files = {"raw_cock.png": "Creatures/Mario/3 Stars/Raw_Cock.png", "creatures/sans.png": "Creatures/Sans.png"}
+    repo._tree = {"tree": [{"path": qc.EDITS_PATHS[0], "sha": "sha"}]}
+    repo._edit_names = ("sha", {"Raw Cock": ["Raw Kawk"], "Sans": ["snas.", "Skeleton"]})       # already downloaded
+    repo._populate_edit_names()
+    assert repo.git_files["raw_kawk.png"] == "Creatures/Mario/3 Stars/Raw_Cock.png"
+    assert repo.git_files["snas..png"] == repo.git_files["skeleton.png"] == "Creatures/Sans.png"

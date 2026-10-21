@@ -1,6 +1,6 @@
 ---
 name: impossibility-cards-reference
-description: Domain reference for the Impossibility Simulator card game AS ENCODED in AutoCroissant and the TTSCardMaker repo. Load whenever a task mentions cards, PSDs, PSD layers, ability text, type injection or [type] tokens, stats extraction (hp/def/atk/spd), stars/Warpstars, folder structure or card classification, CardInfo/CardStats, the stats.pkl / old_stats.pkl / aliases.pkl schemas, query syntax or the query DSL (/query, /query_ability, /query_rulebook; the | & ! "exact" hp>5 type==creature type~x operators), rulebook pages, aliases or ambiguous card names, validation problems (UNKNOWN TYPE, ABILITY TEXT NOT FOUND, STATS TOO HIGH, MISSPELT TYPE), the exclusion lists, or the creatures-vs-creature anomaly. Contains the folder-to-classification table, PSD layer semantics with an annotated real layer dump, the precise type-injection algorithm with constants and a worked trace, validation rules with both exclusion lists spelled out, pickle schemas with measured counts, and the full query DSL with gotchas. This is the "what the data means" pack — not an operating runbook (run-and-operate), not a bug-fixing campaign (psd-extraction-campaign), not script usage docs (diagnostics-and-tooling).
+description: Domain reference for the Impossibility Simulator card game AS ENCODED in AutoCroissant and the TTSCardMaker repo. Load whenever a task mentions cards, PSDs, PSD layers, ability text, type injection or [type] tokens, stats extraction (hp/def/atk/spd), stars/Warpstars, folder structure or card classification, CardInfo/CardStats, the stats.pkl / old_stats.pkl / aliases.pkl schemas, query syntax or the query DSL (/query, /query_ability, /query_rulebook; the | & ! "exact" hp>5 type==creature type~x operators), rulebook pages, aliases or ambiguous card names, validation problems (UNKNOWN TYPE, ABILITY TEXT NOT FOUND, STATS TOO HIGH, MISSPELT TYPE), the exclusion lists, or the creatures-vs-creature anomaly. Contains the folder-to-classification table, PSD layer semantics with an annotated real layer dump, the precise type-injection algorithm with constants and a worked trace, validation rules with the ability exclusion list spelled out (the stat list is gone since 2026-10-21; `allow_high_stats` in Card Edits.json replaces it), pickle schemas with measured counts, and the full query DSL with gotchas. This is the "what the data means" pack — not an operating runbook (run-and-operate), not a bug-fixing campaign (psd-extraction-campaign), not script usage docs (diagnostics-and-tooling).
 ---
 
 # Impossibility Simulator: the card data model, as encoded here
@@ -35,13 +35,13 @@ The books balance exactly: 904 − 90 (`MDW/`, excluded) − 1 (`Auxiliary/Marke
 non-excluded PSDs, all with unique names.
 
 **Card identity**: a card's name is its PSD filename with underscores turned into spaces
-(`The_Freezer.psd` → "The Freezer"; `commands/psd_parser.py:331`). Names are the keys of
+(`The_Freezer.psd` → "The Freezer"; `commands/psd_parser.py:337`). Names are the keys of
 `stats.pkl` and the index of the query dataframes. Two PSDs with the same basename would silently
 share one entry — today there are none outside the excluded folders.
 
 ## 2. Folder taxonomy → card classification
 
-`CardClassifier.classify` (`commands/psd_parser.py:224-309`) derives a card's type and several
+`CardClassifier.classify` (`commands/psd_parser.py:230-315`) derives a card's type and several
 fields purely from its repo-relative path. Every row below was verified against the code and the
 live folder tree.
 
@@ -68,7 +68,7 @@ series (24 of them: BTD, Kirby, Souls, World Of Warcraft, ...) have star folders
 `2 Stars`..`5 Stars` range; `Auxiliary/` contains Creatures, Items, Markers, Minions, Rulebook,
 Status Effects.
 
-**The stars parse** (psd_parser.py:254, 259, 278, 304) is:
+**The stars parse** (psd_parser.py:260, 259, 278, 304) is:
 
 ```python
 "stars": int(folders[len(folders) - 1].split()[0])
@@ -114,7 +114,7 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 ### Excluded folders
 
 `EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:36) is checked against every path segment
-during stats traversal and duplicate-PNG detection (repo_traverser.py:341, 275). `MDW/` (90 PSDs) is
+during stats traversal and duplicate-PNG detection (repo_traverser.py:342, 275). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -127,7 +127,7 @@ minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creat
 
 This is the part newcomers lack. A card PSD is a layer TREE; the parser walks
 `psd.descendants()` and dispatches on layer kind, name, visibility, and position
-(`PSDParser._process_layer`, psd_parser.py:461-488). Annotated excerpt of a real dump
+(`PSDParser._process_layer`, psd_parser.py:522-549). Annotated excerpt of a real dump
 (`dump_psd_layers.py`, reproduced 2026-07-11):
 
 ```
@@ -157,7 +157,7 @@ problems NONE.
 ### 3.1 The naming trap: `layer.kind == "type"` means TEXT
 
 In psd-tools, "type" is the layer KIND for text layers (typography), and has nothing to do with
-card types. `psd_parser.py:467` dispatches text layers on exactly this. Card-type ICONS are
+card types. `psd_parser.py:528` dispatches text layers on exactly this. Card-type ICONS are
 pixel/smart-object layers matched by NAME (3.3). Misread this and nothing else in the parser makes
 sense.
 
@@ -165,8 +165,8 @@ sense.
 
 A text layer contributes ability text iff its name (lowercased) is `"ability"` — OR the card is a
 rulebook page (`"Rulebook" in relative_path`), in which case ALL text layers contribute
-(psd_parser.py:501, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
-repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:500-521):
+(psd_parser.py:562, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
+repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:561-582):
 
 | Raw sequence | Becomes | Why |
 |---|---|---|
@@ -179,24 +179,24 @@ repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_
 
 Multiple ability text layers (common on rulebook pages) are sorted by position (3.5's row sort) and
 joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(psd_parser.py:771-781). If NO ability text layer exists at all, the parse-time problem
-`NO ABILITY LAYER` is recorded (psd_parser.py:406).
+(psd_parser.py:832-842). If NO ability text layer exists at all, the parse-time problem
+`NO ABILITY LAYER` is recorded (psd_parser.py:414).
 
 ### 3.3 Card-type icons and the midline
 
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:200) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:201) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
 aliases for icon-font tokens (§4.1).
 
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon
-(psd_parser.py:475-480). Position decides its meaning, using
+(psd_parser.py:536-541). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
-(psd_parser.py:22, 375):
+(psd_parser.py:23, 375):
 
 - bbox top `y < card_mid_y` (upper half, the corner badges) → appended to `card.types`
   (in raw traversal order, NOT sorted);
@@ -205,7 +205,7 @@ A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type
 
 ### 3.4 Stats (hp/def/atk/spd)
 
-Two-stage name matching (psd_parser.py:629-679):
+Two-stage name matching (psd_parser.py:690-740):
 
 1. A layer is a stat layer if any ancestor (up to 3 levels) has "dark" or "bars" in its name
    (`Stats Bars > Darks > Hp Dark` qualifies).
@@ -229,8 +229,9 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
 `card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES" (a guess:
-Twin Emperors' 2nd DEF reads 4, the card shows 10). Fix them with the website's per-creature edit. `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` lists the cards allowed past 10; any other
-card over 10 gets the problem "STATS TOO HIGH". A digit-named group that holds digit layers is a row,
+Twin Emperors' 2nd DEF reads 4, the card shows 10). Fix them with the website's per-creature edit. A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
+bottom row N-10) is the problem "STATS TOO HIGH" unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20,
+Royal Eradicator Main Cannon atk 12; `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21). A digit-named group that holds digit layers is a row,
 not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin
 Emperors' empty "1" in "shared health"). If a stat was found but every digit layer is hidden, the
 value defaults to **10**: that is how maxed stats are encoded in the template. Never found → stays
@@ -238,7 +239,7 @@ value defaults to **10**: that is how maxed stats are encoded in the template. N
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
-`_sort_by_position` (psd_parser.py:803-830): sort by bbox top `y`; group into visual rows where
+`_sort_by_position` (psd_parser.py:864-891): sort by bbox top `y`; group into visual rows where
 `|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten.
 This is reading order — top-to-bottom, then left-to-right — and it determines both multi-text-layer
 join order and type-icon injection order.
@@ -248,17 +249,17 @@ join order and type-icon injection order.
 Card authors drop type ICONS inside the ability paragraph in Photoshop; the text layer just has a
 run of spaces where each icon sits. Extraction must splice `[typename]` tokens back into those
 gaps. This is the owner-stated hardest live problem; the spec below is exact
-(`_inject_type_names`, psd_parser.py:840-884, plus callers at 529-539).
+(`_inject_type_names`, psd_parser.py:901-945, plus callers at 529-539).
 
 Constants:
 
 | Constant | Value | Where |
 |---|---|---|
-| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:22 |
-| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:318 |
-| row grouping threshold | 40 px | psd_parser.py:804 |
-| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:837 |
-| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:780 |
+| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:23 |
+| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:324 |
+| row grouping threshold | 40 px | psd_parser.py:865 |
+| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:898 |
+| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:841 |
 
 Algorithm:
 
@@ -273,7 +274,7 @@ Algorithm:
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
    gaps pass through unchanged. Types are consumed strictly in sorted (reading) order.
 4. LEFTOVER types (more icons than gaps) are appended to the LAST line as ` [t1] [t2] ...`
-   (psd_parser.py:879-882). More gaps than icons: extra gaps stay as-is as literal spaces.
+   (psd_parser.py:940-943). More gaps than icons: extra gaps stay as-is as literal spaces.
 5. Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
@@ -400,12 +401,12 @@ The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_parser.py:887-983)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:948-1035)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle:
-  `NO ABILITY LAYER` (psd_parser.py:406) and `MISSPELT TYPE: <name>` (psd_parser.py:487-488,
+  `NO ABILITY LAYER` (psd_parser.py:414) and `MISSPELT TYPE: <name>` (psd_parser.py:548-549,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 42).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
@@ -420,16 +421,15 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 | `ABILITY TEXT NOT FOUND` | type is not unknown/MDW, ability empty, name not in ABILITY_EXCLUSIONS | :687-692 |
 | `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :713-717 |
 | `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :719-726 |
-| `STATS TOO HIGH` | any found stat > 10 and name not in EXCESSIVE_STAT_EXCLUSIONS | :728-731 |
+| `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1031-1033 |
 | `NO ABILITY LAYER` | no ability text layer found at parse time; validate() DELETES it again for names in ABILITY_EXCLUSIONS | :422, :700-702 |
 | `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :455-456 |
 
-**The exclusion lists are the "perfect extraction" debt register** — per-card allowances the owner
+**The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
-autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:889-915:
+autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: stats above 10
+are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_parser.py:950-969:
 
-- `EXCESSIVE_STAT_EXCLUSIONS` (5, stats legitimately above 10): Royal Eradicator Main Cannon, Pix,
-  Tainted Lazarus, Sonic, Twin Emperors.
 - `ABILITY_EXCLUSIONS` (18, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
   Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher.
@@ -459,18 +459,20 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
 | `author` | `author` | omitted when falsy |
-| `display_name` / `note` / `hidden` | same | from Card Edits.json (duplicates also get a `display_name`); omitted when falsy |
+| `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card; byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards; the 94 differing only in letter case or spacing are shown as the file name by the website and `/query`, `query_card.printed_title`, and `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
+| `note` / `hidden` | same | from Card Edits.json; omitted when falsy |
 | `duplicate_of` | same | the original card, for another PNG of the same PSD; omitted when falsy |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
-`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names` and `blob_sha` live only in the pickle
-(stats.pkl stores CardInfo objects); they are not `to_dict` keys.
+`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha` and `parser_version` (the `PARSER_VERSION`
+that parsed the card, 2026-10-21; None in older pickles, which makes `/update_stats` re-parse them once) live only in the
+pickle (stats.pkl stores CardInfo objects); they are not `to_dict` keys.
 
 **Two kinds of Card Edits.json edits, PSD-backed or not** (`CardEdits.KIND`, card_edits.py, 2026-10-20, splits the second into folder and database; the same table is `PSD_FIELDS`
 in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`def`/`atk`/`spd`, `ability` are printed
 on the card image, so the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md §3) bakes them into the PSD and PNG and the
-website shows "PSD pending" until then (`name` only when it differs from the `Text/Name` layer, which the parser never
-reads). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
+website shows "PSD pending" until then (`name` only when it differs from the printed title the parser reads into
+`display_name`; since 2026-10-21 a baked or already-printed name is dropped from the file like any other field). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
 `dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures` live in the file alone (`creatures` overrides the
 parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
@@ -479,21 +481,21 @@ database-only ones (unless `/update_metadata` had set them). The pipeline's verd
 website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
-a PSD re-parse keeps it with author and series (psd_parser.py:348-354) and a Card Edits.json value wins again at the
+a PSD re-parse keeps it with author and series (psd_parser.py:355-361) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
-cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:58-62) fixes export/display order:
+cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:60-64) fixes export/display order:
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
 subseries, subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-repo_traverser.py:403), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+repo_traverser.py:404), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:469), the same as the slash command (main.py:382);
+is `update_stats(force_update=False)` (repo_traverser.py:472), the same as the slash command (main.py:382);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -524,8 +526,8 @@ autocroissant-change-control):
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(repo_traverser.py:368-369; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:193-202 —
+(repo_traverser.py:371-372; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:194-203 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:61-71) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
@@ -665,3 +667,7 @@ basenames) plus the date stamps. If `TYPE_REGION_RATIO`, the gap regex, or the e
 change, sections 4-5 are stale until rewritten.
 
 2026-10-21: §7.2 gotcha 10 describes the grouped /query_ability output; query_card.py, card_models.py and main.py line numbers re-pointed (review: CardRepository, card_repo, populate_files, manage_alias).
+
+2026-10-21 (later): the parser reads the printed title into `display_name` (PARSER_VERSION 2; §6 table and the pickle-only list, `parser_version`); `EXCESSIVE_STAT_EXCLUSIONS` deleted (§3.4, §5); psd_parser.py line numbers re-pointed.
+
+2026-10-21 (review): frontmatter and the `display_name` row (157 cards; WX-78's "wx-" + image layer "78" reads as the file name; case/spacing-only titles shown as the file name); `commands/psd_parser.py` citations with the folder prefix re-pointed (`card_name` :337, `CardClassifier` :230-315) and the rest after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.

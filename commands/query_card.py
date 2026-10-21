@@ -14,7 +14,7 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL
-from commands.card_models import save_pickle
+from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
 from commands.type_emojis import render_type_tokens
@@ -98,6 +98,7 @@ class CardRepository:
         # Add aliases to registry
         self._populate_aliases()
         self._populate_edit_names()
+        self._populate_titles()
         self._populate_site_ids()
 
         return status
@@ -414,13 +415,27 @@ class CardRepository:
             except Exception as e:
                 print(f"Could not read {path}: {e}")
                 return
-        names = self._edit_names[1]
-        for card, extra in names.items():
-            target = f"{card.replace(' ', '_')}.png"
-            path = self.git_files.get(target) or next((v for k, v in self.git_files.items() if k.endswith("/" + target)), None)
-            if path:
-                for name in extra:
-                    self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", path)
+        for card, extra in self._edit_names[1].items():
+            self._add_lookup(card, extra)
+
+    def _populate_titles(self) -> None:
+        """Printed titles the parser read (display_name), so /query finds "Black Clot" as well as Clot_Black."""
+        try:
+            cards = list(stats_db.stats.items())
+        except RuntimeError:                                     # /update_stats writing meanwhile: after it, again
+            return
+        for name, card in cards:
+            title = getattr(card, "display_name", None)
+            if title and title != name:
+                self._add_lookup(name, [title])
+
+    def _add_lookup(self, card: str, extra: list) -> None:
+        """More names that find card's PNG (first come, first kept). Registry keys are lowercase."""
+        target = f"{card.replace(' ', '_')}.png".lower()
+        path = self.git_files.get(target) or next((v for k, v in self.git_files.items() if k.endswith("/" + target)), None)
+        if path:
+            for name in extra:
+                self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", path)
 
     def _populate_site_ids(self) -> None:
         """Website card ids, for "Card page" links."""
@@ -537,6 +552,25 @@ def _stats_card(filename: str):
     return stats_db.stats.get(card_name(path)) if path else None
 
 
+def printed_title(card) -> Optional[str]:
+    """
+    The title to show for a card instead of its name: a website name as written, else the printed title when it differs
+    from the name beyond letter case and spacing ("Black Clot" for Clot_Black; not "CABBAGE" or "A P E X").
+
+    Args:
+        card: A CardInfo
+
+    Returns:
+        The title, or None to show the card's name
+    """
+    title = getattr(card, "display_name", None)
+    if not title:
+        return None
+    if "name" in (getattr(card, "parsed_values", None) or {}):       # a Card Edits.json name
+        return title
+    return title if "".join(title.lower().split()) != "".join(card.name.lower().split()) else None
+
+
 def query_name(interaction: Interaction, query: str) -> None:
     """
     Query and display a card by name.
@@ -554,7 +588,7 @@ def query_name(interaction: Interaction, query: str) -> None:
     url, page = card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
-    shown = getattr(card, "display_name", None) if card else None
+    shown = printed_title(card) if card else None
     subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
@@ -812,6 +846,7 @@ __all__ = [
     'init_query',
     'query_ability',
     'query_ability_num_occur',
+    'printed_title',
     'query_name',
     'query_rulebook',
     'set_match_ratio',

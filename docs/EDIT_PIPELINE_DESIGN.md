@@ -26,22 +26,25 @@ the workflow facts were re-checked.
 
 - **Stat value = the visible digit.** `Stats Bars/Darks/<Stat> Dark/0-9` are exposure adjustment layers (bbox 0x0) whose mask
   covers cells N+1..10; layer N visible = value N, none visible = 10. The parser agrees (`StatTracker._row_value`,
-  `commands/psd_parser.py:61-78`; rows add up in `total()` :80-97). Census of 651 cards: 371 have pure template bars, 234
+  `commands/psd_parser.py:67-84`; rows add up in `total()` :86-103). Census of 651 cards: 371 have pure template bars, 234
   have no bars (items, N.M.E.), 46 deviate (4 multi-row, 4 odd paths, 24 value-named drawn layers, 7 "0" decorations, 6
   per-cell drawn, 1 none). A saved toggle differs in exactly 2 flag bytes (Mini_Doomer hp 5->8).
 - **Effects on digits (idea 12).** 107 cards carry an enabled effect (GradientOverlay 379 layers, InnerShadow 45, ...) on one
   digit per row, the one visible when styled (Mettaton_EX `Atk Dark/6` styled, `7` visible). The `cards` tree skips effects on
   adjustment layers (`composite.py` `Compositor.apply` L1474; psd-research `RENDER_STATUS.md` class A, 87 cards 33-84% bad).
 - **Above 10 (idea 13).** Sonic spd 20 = half-height `spd top`/`spd bottom` bars with all digits hidden plus a renamed `20`
-  that changes 0 pixels; Royal Eradicator Main Cannon atk 12 = `atk dark/Top/10` at opacity 0 + `Bottom/2`. No canonical
-  encoding; `EXCESSIVE_STAT_EXCLUSIONS` (`commands/psd_parser.py:887-893`) silences STATS TOO HIGH (:976-979).
-- **Name.** The bot names a card from its file stem (`commands/card_models.py:187-189`) and never reads the printed title;
-  `display_name` exists only through Card Edits.json. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
+  that changes 0 pixels; Royal Eradicator Main Cannon atk 12 = `atk dark/Top/10` at opacity 0 + `Bottom/2`. Canonical
+  encoding since 2026-10-21 (question 3): top row 10 + bottom row N-10. `EXCESSIVE_STAT_EXCLUSIONS` is gone; `allow_high_stats`
+  in the edits file silences STATS TOO HIGH for Sonic and the Cannon (`commands/psd_parser.py:1031-1033`).
+- **Name.** The bot names a card from its file stem (`commands/card_models.py:209-211`) and, since 2026-10-21 (question 1,
+  `PARSER_VERSION` 2), reads the printed title into `display_name` when it differs (`psd_parser._printed_title`: the visible
+  `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card; 157 of 813 cards; the 94 differing only by letter case or spacing show as the file name on the site and in `/query`,
+  `query_card.printed_title`); a Card Edits.json `name` still wins, with the title kept in `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
   after the card, 4 hide it (Sonic's title is a pixel layer), 5 are rasterized.
 - **Ability.** 605 cards have exactly one visible `Ability` directly under top-level `Text` (box text, Single-line composer);
   34 elsewhere, 7 hidden and re-laid out, 5 several visible, 19 empty (the categories overlap, 670 > 651: to confirm). The
   parser reads the layer text
-  (`commands/psd_parser.py:498-523`). 0 `Ability FX:` layers exist; 52 old-style overlay word layers do (Gasoline, Royal
+  (`commands/psd_parser.py:559-584`). 0 `Ability FX:` layers exist; 52 old-style overlay word layers do (Gasoline, Royal
   Eradicator `Blazing`); 0 abilities use the stoogedings font yet.
 - **Status chart.** `~/Desktop/TTSCardMaker/MDW/Croissant's Special Folder/Satus Effect Colors.psd` (1174x4000, 18.7 MB):
   `Buffs` (12 text layers, none styled) and `Debuffs` (54, 15 styled: OuterGlow on Blazing, Frozen, Hexed, Glued, Infected,
@@ -59,6 +62,8 @@ the workflow facts were re-checked.
   merged preview when the document changed (`psd_image.py:295-327`; 20-45 s under load).
 - **The edits file today.** `{"about": ..., "cards": {...}}`, 56 cards: `name` 29, `series` 28, `subseries` 28, `_by`/`_at` 56.
   22 of the 29 names equal the printed title already (Sans "snas.", Kyle, Clot_Black "Black Clot"); 7 differ, read back from
+  (2026-10-21, parser read: 20 are redundant, 21 with Thunderfury aligned; Sans and Papyrus stay: their title layers are named
+  after the print, not `Name`, so the parser reads no title for them)
   `Text/Name` with the fork: Clot_White "White CLot" (typo), PoD08-12 "M.O.A.B" / "D.D.T" / "B.F.B" / "Z.O.M.G" / "B.A.D" (the
   edit adds the trailing dot), Thunderfury "[Thunderfury: Blessed Blade of the Windseeker]" (the edit drops the brackets).
   **By section 3's rule those 7 are name jobs today**; no stat or ability job exists. Whether the 7 titles are to be reprinted
@@ -95,7 +100,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
 | `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; one visible `Text/Ability` only | field removed |
-| `name` | PSD + database **when the value differs from the `Text/Name` text**, else database-only | `set_text` + `rasterize` on `Text/Name`; refuse the 153 card-named, 4 hidden, 5 rasterized layers | **field stays** (the bot reads the stem; idempotent because value == layer text) |
+| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on `Text/Name`; refuse the card-named, hidden and rasterized layers (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | refused ("not yet") | - |
 | `types` | PSD (icon layers or font tokens) | refused ("not yet") | - |
 | `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched | stays |
@@ -105,10 +110,10 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 Classification is value-aware: PSD-kind only when the value differs from a fresh offline parse of the PSD (the goldens' route,
 `tests/golden_cards.py:62-76`: `PSDParser` on an empty `StatsDatabase` + `IconVocabulary.build` from the committing tree's
 `Types/`, stars and manifest), so it runs after the blob is fetched (section 5 step 2). Import from `commands.psd_parser`
-(`IconVocabulary` :168, `PSDParser` :312, `CardValidator` :885) and `commands.card_models` (`StatsDatabase` :130), not from
+(`IconVocabulary` :174, `PSDParser` :318, `CardValidator` :948) and `commands.card_models` (`StatsDatabase` :154), not from
 `commands.psd_analyzer` as the goldens do: that module imports `discord` (:9), `pandas` (:13), `GIT_TOKEN` (:18),
 `repo_traverser` (:40), `query_card` (:49) and `utils` (:50), none of which the runner has. An equal value is **redundant**:
-dropped from the file with no pixels (except `name`).
+dropped from the file with no pixels.
 
 ## 4. Architecture
 
@@ -159,7 +164,7 @@ code, never exceptions; one bad card never blocks another.
    (PSD committed < 30 min ago: don't race its author; one `commits?path=&since=` call per card, the tree has no dates).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
    `unsupported-card` (non-template rows, not one visible `Text/Ability`, name layer not `Text/Name`, overlay word or
-   ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (also `EXCESSIVE_STAT_EXCLUSIONS`).
+   ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; bar to calibrate from `score/results/cards_v1.json`). A row the
@@ -182,9 +187,9 @@ code, never exceptions; one bad card never blocks another.
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
    replaced (ability compared after the parser's own whitespace rule on both sides); `alt_names` unchanged;
-   `CardValidator.validate` (`commands/psd_parser.py:885`, imported from there) is a subset of the old problems minus
+   `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *`, no `STATS TOO HIGH`.
-   Name: `Text/Name` read-back == the edit and the stem unchanged (the parser never reads the title).
+   Name: `Text/Name` read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels).
 10. **Commit.** Re-fetch head H' and the file at H'. Gate `edit-changed`: the card's PSD-kind values at H' equal what was
@@ -212,15 +217,15 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the previously visible digit to the new one and clear it on the old (the effect belongs to the visible digit). Gate: the
   parity bar on Mettaton_EX's rows before and after; this also settles whether Photoshop and the fork agree that the effect's
   shape is the mask (to confirm). Until then `parity` refuses those rows (87-107 cards).
-- **13. Stats above 10.** Refuse > 10 and the exclusion-list cards. Owner decision on the encoding (two half-height rows per
-  `MDW/Templates/2_Creature_Template.psd`, both digit sets hidden, as Sonic; or a second row 0-10); then re-encode Sonic and
-  Royal Eradicator by hand (their `20` and opacity-0 `10` change 0 pixels and can go), drop `EXCESSIVE_STAT_EXCLUSIONS` with
-  a golden refresh (`tests/make_goldens.py`).
+- **13. Stats above 10.** Done 2026-10-21: the pipeline refuses > 10 on the value alone; `EXCESSIVE_STAT_EXCLUSIONS` is
+  deleted (STATS TOO HIGH unless the edits file says `allow_high_stats`: Sonic, Royal Eradicator Main Cannon; goldens
+  refreshed). Still open: the canonical encoding (top row 10 + bottom row N-10, question 3) and re-encoding Sonic and the
+  Cannon by hand (their `20` and opacity-0 `10` change 0 pixels and can go).
 - **14. FX layers from the text** (shared with Task 3c). Derived state: on every ability edit delete all `Ability FX: ...`
   layers and regenerate one per chart word present (`word#n` for repeats): glyph boxes from the engine's layout
   (`Layout.glyphs`, `composite/text/layout.py:70`; exposure through the render result to confirm), pixels cut from the
   render, the chart layer's effect block as a tagged block, placed above the `Text` group, named as `MDW/Scripts/Effect
-  Layers.jsx` does. Gate: `_check_effect_layer` (`commands/psd_parser.py:412-439`, coverage >= 0.95). Prove it against the JSX
+  Layers.jsx` does. Gate: `_check_effect_layer` (`commands/psd_parser.py:475-501`, coverage >= 0.95). Prove it against the JSX
   output on Gasoline and Royal Eradicator first; the 52 old overlay word layers are hidden when an FX layer replaces them
   (owner decision). Round 1 ships fill-only colouring and refuses styled words.
 
@@ -277,9 +282,10 @@ Prerequisite: a `threading.Lock` shared by `update_stats` and the bake (both `to
 - `build_site.py`: `PSD_FIELDS = {name, stars, types, hp, def, atk, spd, ability}` (no `creatures`: database-only, section 3;
   `edit.js FROM` :22 marks it "PSD" today and S1 changes that to no entry, so the editor stops calling it a PSD field); per
   entry `pending = [f for f in edited if f in PSD_FIELDS and f != "name" and entry[f] != orig.get(f)]`; duplicates inherit
-  the original's. Known hole: a `name` the pipeline will bake (value != printed title) never shows "PSD pending", because
-  `stats.pkl` has no title to compare against (the parser never reads `Text/Name`); question 1 closes it, until then the 7
-  names of section 2 show only "Edited". Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
+  the original's. Known hole: a `name` the pipeline will bake (value != printed title) never shows "PSD pending": since 2026-10-21
+  `stats.pkl` holds the title (`display_name`, in `parsed_values` under an edit), but a title the bot can't read and one equal
+  to the file name both arrive as no `display_name`, so the site keeps `name` out of `pending`; the 7 names of section 2 show
+  only "Edited". The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
   `reparsePending = tree PSD blob sha != card.blob_sha` covers the gap between the bake commit and the next PICKLE push.
 - `_psd` lives in Card Edits.json, written only by the pipeline: `{"state": "baked" | "refused", "for": {field: value},
   "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
@@ -342,25 +348,30 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 ## 14. Open questions for the user — answered 2026-10-20
 
 1. **Yes**: the parser reads `Text/Name` into `display_name` (edits still override); the 22 name edits that equal the print
-   become redundant and are dropped by the bake's redundancy rule; a baked rename leaves the file.
+   become redundant and are dropped by the bake's redundancy rule; a baked rename leaves the file. **Done 2026-10-21**
+   (`PARSER_VERSION` 2: 157 cards gain a `display_name`; 20 edits redundant now, 21 with Thunderfury; Sans and Papyrus have no
+   readable `Name` layer; the next `/update_stats` re-parses every card once).
 2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`). 2026-10-21 audit: the regeneration is 9.4 s of a
    23 s bake (a full-canvas composite); the merged PNG the driver already holds is that flattened image, so a fork
    `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).
 3. **Top row 10 + bottom row N-10** (Royal Eradicator's layout; the parser already sums it). Sonic is converted once to that
-   layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes.
+   layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes. **Done 2026-10-21**: the list is
+   deleted; Sonic and Royal Eradicator Main Cannon carry `allow_high_stats` in the edits file (the only two cards above 10).
 4. **Pipeline moves the files** for folder-starred cards (PSD + PNG to the new `N Stars` folder with aliases, old_stats,
    authors and the TTS save following) — after round 1 (step S9).
 5. **Commit the Mac-only font files to `MDW/Fonts`** (the user's call; licence risk noted), so every runner renders every card.
 6. **Restyle to the chart and hide the overlays**: an ability edit normalizes off-chart status words to the chart's colour
    and effect and hides the hand-made overlay word layers it replaces (part of S6).
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
-   aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5).
+   aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
+   ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`).
 
 ## 15. Known wrong paths (fenced off)
 
 - `force=True` for a baseline render: redraws vectors, `LINE` rows differ by up to 106. Use `ignore_preview=True`.
 - `layer.composite()` for the delta: no backdrop, no parent-group effects (the `Text` group's Stroke and DropShadow).
-- Removing a `name` field after a bake: the site shows the file stem again (the bot never parses the title). Renaming the
+- (Until 2026-10-21) removing a `name` field after a bake: the site showed the file stem again because the bot never parsed
+  the title; now it does, and a baked or printed name is dropped like any field. Renaming the
   PSD/PNG instead: breaks `aliases.pkl` targets, Card Authors/Edits keys, `old_stats`, the TTS save.
 - A separate status file or a `_`-key filter in `build_site.apply_edits`: both readers already drop `_`-keys and `editsFile`
   keeps unknown keys; `_psd` in the edits file is enough.

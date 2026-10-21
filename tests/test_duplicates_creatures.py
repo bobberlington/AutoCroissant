@@ -111,6 +111,6 @@ def test_real_creature_split(real_stats, clone):
         assert [c.to_dict() for c in card.creatures] == [c.to_dict() for c in stored.creatures], name
         assert card.stats.to_dict() == card.creatures[0].to_dict()
         assert any(x.startswith("SEVERAL CREATURES") for x in card.problems)
-        assert pa.CardValidator.validate(card) == card.problems   # their high stats are excluded
+        assert pa.CardValidator.validate(card) == card.problems   # creature 1 stays within 10: no STATS TOO HIGH
     if stale:
         pytest.skip(f"clone and stats.pkl out of step: {', '.join(stale)}")

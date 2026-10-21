@@ -193,12 +193,12 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:388) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:391) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
-| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:396, 403) — gitignored via `*.csv` / `*.txt` |
-| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:457) |
-| `COLUMN_ORDER` | 16 field names, `'aliases'`…`'subtype'` (`'subseries'` after `'series'` since 2026-10-20) | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:108-109, 387) |
+| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:398, 405) — gitignored via `*.csv` / `*.txt` |
+| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:459) |
+| `COLUMN_ORDER` | 16 field names, `'aliases'`…`'subtype'` (`'subseries'` after `'series'` since 2026-10-20) | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:110-111, 389) |
 | `MISSPELT_CARD_TYPES` | `['undread', 'tornado', 'error']` | layer names that trigger the MISSPELT TYPE validation problem (as of 2026-07-11 exactly one live card trips it: the "20 Creature Types" rulebook page, per inspect_pickle.py) |
 | `ICON_FONT_PREFIX` (2026-10-19) | `"stoogedings"` | a text-layer style run whose font PostScript name starts with this (case-insensitive) is read as icon tokens; the font's full name is `stoogedings-Regular`. Changing it without renaming the font in TTSCardMaker silently turns token parsing off |
 | `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read by `_repo_text`: fetched by blob sha through the GitHub API and cached in `_file_cache` (only the offline diagnostics helper `_icons_from_local` reads a local clone). Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
@@ -209,10 +209,11 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` | 5 card names (psd_parser.py:889-895) | cards exempt from the stats>10 check |
-| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:896-915) | cards allowed to have no ability layer |
+| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:76, :162). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
+| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:950-969) | cards allowed to have no ability layer |
 
-The two exclusion sets are per-card whitelists the owner wants to eventually eliminate ("perfect
+`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
+The exclusion set is a per-card whitelist the owner wants to eventually eliminate ("perfect
 extraction" goal). Their semantics and the validation rules live in
 **impossibility-cards-reference**; the elimination campaign in
 **autocroissant-psd-extraction-campaign**.
@@ -399,7 +400,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:471, main.py:382). Code that wants a forced re-parse must pass
+   (repo_traverser.py:472, main.py:382). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -468,7 +469,7 @@ table with its command before quoting it in the future.
 | lacks_admin gate list + the ungated /restart_bot | `grep -n "lacks_admin" main.py` then read each hit's enclosing `@tree.command`; `grep -n -A2 'name="restart_bot"' main.py` |
 | lacks_admin polarity | `grep -n -A2 "def lacks_admin" commands/utils.py` |
 | card-module constants (psd_analyzer split 2026-10-20) | `grep -n "UPDATE_RATE\|EXCLUDE_FOLDERS\|COMMITS_PAGE\|_WORKERS" commands/repo_traverser.py`; `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
-| Exclusion set sizes/locations | `grep -n "EXCESSIVE_STAT_EXCLUSIONS\|ABILITY_EXCLUSIONS" commands/psd_parser.py` |
+| Exclusion set size/location; PARSER_VERSION | `grep -n "ABILITY_EXCLUSIONS\|^PARSER_VERSION" commands/psd_parser.py` |
 | UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/repo_traverser.py` |
 | query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | BREAK_LEN | `grep -n "BREAK_LEN = " commands/utils.py` |
@@ -505,3 +506,7 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 `github_api.token_from_env()`. No flag or default changed.
 
 2026-10-21 (review): git_commit gained `limited` (a rate limit keeps one tts_save run on SSH, as the old `via_git` did); its table row and grep.
+
+2026-10-21 (titles): `PARSER_VERSION` row added (2); `EXCESSIVE_STAT_EXCLUSIONS` row removed (deleted; `allow_high_stats` in Card Edits.json replaces it); psd_parser.py and repo_traverser.py citations re-pointed.
+
+2026-10-21 (review): psd_analyzer.py citations re-pointed (+2 for the PARSER_VERSION/title_text imports; `EXPORTED_*`, `COLUMN_ORDER`), repo_traverser.py `UPDATE_RATE` check :391, psd_parser.py `ABILITY_EXCLUSIONS` :950-969 after the WX-78 title fix. Gate re-run: `EXPORTED_STATS_NAME` uses are :398, :405.

@@ -3,6 +3,7 @@
  "blob": "189da056795b5f62d1255cece8d42bb72b943c6b",
  "card": {
   "ability": "This creature has three forms that it switches between on death.\n1st: Slime can attack twice per action, and attacks inflict 5T1 Poison and deal 2 piercing CDMG to itself.\n2nd: Puppet (Action)(3 points) Deal 7 piercing DMG to itself and another creature on the PF.\n3rd: Magician attacks inflict either 2T Frostbite, 2T Burning, or heal any creature by 4 HP.",
+  "display_name": "Computer Virus appears!",
   "path": "Creatures/Kirby/3 Stars/Computer_Virus.psd",
   "series": "kirby",
   "stars": 3,

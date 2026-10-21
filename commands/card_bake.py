@@ -42,7 +42,6 @@ from commands.card_models import card_name
 from commands.git_commit import API_TIMEOUT, AUTHOR, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from commands.psd_parser import CardValidator
 from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
 
 # ========================
@@ -492,8 +491,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         fetch_verified(snapshot.repository, card.png_sha, old_png)
 
         parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd),
-                                       card.name in CardValidator.EXCESSIVE_STAT_EXCLUSIONS)
+        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd))
         card.jobs, card.redundant = dict(classified.jobs), list(classified.redundant)
         if classified.refusals:                 # per card all-or-nothing (section 10)
             first, *rest = classified.refusals
@@ -527,16 +525,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"]}, indent=1, ensure_ascii=False))
             verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
                        "at": _now()}
-        card.dropped = [f for f in list(card.jobs) + card.redundant if f != "name"]
+        card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
 
         def rewrite(text: str) -> Optional[str]:
             entry = _entry_at(text, card.name)
             if psd_fields(entry or {}) != card.fields:
                 raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-            if not files and not card.dropped:  # a name already printed: the entry stays as it is (idempotent reruns)
-                meta = CardEdits.parse(text).meta.get(card.key, {}).get("_psd")
-                if (meta or {}).get("state") != "refused":
-                    return None
             new_text = rewrite_edits(text, card.name, card.dropped, verdict)
             return new_text if new_text is not None or not files else text
 
@@ -607,7 +601,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         parity = "; ".join("%s %.2f%% bad, mean %.2f" % (f, m["bad_pct"], m["mean"]) for f, m in card.baked.parity.items())
         line += f"; parity {parity}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
     if card.redundant:
-        line += f"; already on the card: {', '.join(card.redundant)}" + (" (name stays)" if "name" in card.redundant else "")
+        line += f"; already on the card: {', '.join(card.redundant)}"
     if card.commit:
         line += f"; committed `{card.commit[:8]}`"
     elif not card.refusal and (card.dropped or card.baked):

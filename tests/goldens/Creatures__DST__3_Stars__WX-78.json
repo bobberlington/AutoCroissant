@@ -1,0 +1,21 @@
+{
+ "alt_names": null,
+ "blob": "4b1e7560956a9319594a93d504db078f18c454fd",
+ "card": {
+  "ability": "(1CD)(2U)(1.5 points) Increase any stat by one bar. Each stat can only be increased up to 3 times this way.\nMay eat food.",
+  "atk": 6,
+  "def": 5,
+  "hp": 6,
+  "path": "Creatures/DST/3 Stars/WX-78.psd",
+  "series": "dst",
+  "spd": 5,
+  "stars": 3,
+  "timestamp": 0.0,
+  "type": "creature",
+  "types": [
+   "machine"
+  ]
+ },
+ "path": "Creatures/DST/3 Stars/WX-78.psd",
+ "validator": []
+}

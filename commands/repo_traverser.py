@@ -20,7 +20,7 @@ from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, 
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
-from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
+from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 from commands.query_card import DEFAULT_REPOSITORY, card_repo
 from commands.repo_history import refresh as refresh_history
 from commands.type_emojis import sync_changed_emojis
@@ -71,10 +71,10 @@ class RepositoryTraverser:
                     old_card.path = current_path
 
     def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
-        """Changed = new, moved or a different blob. Cards saved before blob shas: committed since the last update."""
+        """Changed = new, moved, an older parser or a different blob. Cards saved before blob shas: committed since the last update."""
         card = self.db.stats.get(name)
-        if card is None or card.path != path:
-            return True
+        if card is None or card.path != path or getattr(card, "parser_version", None) != PARSER_VERSION:
+            return True                           # an older parser's card is read again once (no history: same blob)
         if getattr(card, "blob_sha", None):
             return card.blob_sha != sha
         recent = self._committed_since_update()
@@ -159,7 +159,8 @@ class RepositoryTraverser:
             List of formatted problem card messages
         """
         self.repository = repository
-        etag = _tree_etags.get(repository) if not force_update and not self.only else None
+        stale = any(getattr(c, "parser_version", None) != PARSER_VERSION for c in self.db.stats.values())
+        etag = _tree_etags.get(repository) if not force_update and not self.only and not stale else None
         resp = fetch_tree(repository, etag or "", retry=False)      # 304 when nothing changed (free)
         if resp.status_code == 304:
             say(interaction, "Nothing changed in the card repo since the last update.")

@@ -19,6 +19,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 # Configuration
 # ========================
+PARSER_VERSION = 2                # bump when every stored card must be re-parsed (repo_traverser re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
@@ -26,12 +27,17 @@ DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every
 # stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
 # so the text itself says which icon sits where. Cards with image-layer icons keep using gap injection.
 ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
-TITLE_REGION_RATIO = 0.12                                         # hidden text above this = a duplicate's title
+TITLE_REGION_RATIO = 0.12                                         # text above this: the title (hidden = a duplicate's)
 ICON_VARIANTS = ("", "tint", "sticker", "no")
 ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
 EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
+
+
+def title_text(text: Optional[str]) -> str:
+    """A title as printed: no byte-order mark, control characters and runs of whitespace as one space, ends trimmed."""
+    return sub(r"[\s\x00-\x1f]+", " ", (text or "").replace("\ufeff", "")).strip()
 
 
 @dataclass
@@ -343,6 +349,7 @@ class PSDParser:
             stars=card_dict.get("stars"),
             subtype=card_dict.get("subtype"),
             series=card_dict.get("series"),
+            parser_version=PARSER_VERSION,
         )
 
         # Preserve author and series (and subseries) from existing card, as they were before website edits
@@ -399,6 +406,7 @@ class PSDParser:
         titles = [" ".join((layer.text or "").split()) for layer in text_layers
                   if not layer.is_visible() and layer.bbox[1] < psd.height * TITLE_REGION_RATIO]
         card.alt_names = [t for t in titles if t and len(t) <= 40 and t.lower() != card.name.lower()] or None
+        card.display_name = self._printed_title(psd, text_layers, card.name)
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
@@ -410,6 +418,59 @@ class PSDParser:
             card.stars = num_stars.value + self._count_stars(psd)    # icon-font stars in the header + drawn stars
             if not card.stars:
                 card.problems.append('NO STARS FOUND (put the star layers in a group named "Stars")')
+
+    def _printed_title(self, psd: PSDImage, text_layers: list, name: str) -> Optional[str]:
+        """
+        The title as the card prints it, when it differs from the file name.
+
+        The title is the visible Text/Name layer (several in the title region: joined in reading order), else the
+        visible Name text layers in the title region, else a visible layer under Text named after the card. A Name
+        layer holding part of the name beside layers holding the rest (Royal Eradicator Main Cannon: "Main Cannon",
+        "Royal", "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or rasterized titles
+        read as nothing.
+
+        Args:
+            psd: The open card
+            text_layers: Its text layers
+            name: The card's name (file stem)
+
+        Returns:
+            The printed title, or None when it equals the name or can't be read
+        """
+        top = psd.height * TITLE_REGION_RATIO
+        text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
+        shown = [layer for layer in text_group if layer.is_visible()] if text_group is not None else []
+        under_text = [layer for layer in shown if layer.kind == "type"]
+        key = " ".join(name.lower().split())
+        found = [layer for layer in under_text if layer.name.strip() == "Name"]
+        if not found:
+            found = [layer for layer in text_layers if layer.name.strip() == "Name" and layer.is_visible() and layer.bbox[1] < top]
+        if not found:
+            found = [layer for layer in under_text if " ".join(layer.name.lower().split()) == key]
+        if len(found) > 1:
+            found = [layer for layer in found if layer.bbox[1] < top]
+        texts = []
+        for text, _ in self._sort_by_position([(title_text(layer.text), BoundingBox.from_tuple(layer.bbox[:2])) for layer in found]):
+            if text and text not in texts:              # a layer copied for an effect prints its words once
+                texts.append(text)
+        title = " ".join(texts)
+        if not title or title == name:
+            return None
+        words, stem = title.lower().split(), name.lower().split()
+        if len(texts) > 1 and sorted(words) == sorted(stem):
+            return None                                 # the pieces' order is a guess
+        joined, whole = "".join(words), "".join(stem)
+        if joined != whole and joined in whole:         # part of the name: do the layers beside it print the rest?
+            found_ids = {id(layer) for layer in found}
+            pieces = ["".join(title_text(layer.text if layer.kind == "type" else layer.name).lower().split())
+                      for layer in shown if id(layer) not in found_ids and layer.bbox[1] < top]
+            rest = whole.replace(joined, "", 1)
+            for piece in sorted(pieces, key=len, reverse=True):
+                if piece and piece in rest:
+                    rest = rest.replace(piece, "", 1)
+            if not rest:
+                return None                             # the other layers print the rest of the name
+        return title
 
     def _check_effect_layer(self, layer, text_layers: list, card: CardInfo) -> None:
         """
@@ -886,13 +947,6 @@ class PSDParser:
 
 class CardValidator:
     """Validates card information for problems."""
-    EXCESSIVE_STAT_EXCLUSIONS: set[str] = {
-        "Royal Eradicator Main Cannon",
-        "Pix",
-        "Tainted Lazarus",
-        "Sonic",
-        "Twin Emperors",
-    }
     ABILITY_EXCLUSIONS: set[str] = {
         "Crystal Bits",
         "Bugzzy",
@@ -974,10 +1028,8 @@ class CardValidator:
             if stats.speed == -1:
                 problems.append("SPD NOT FOUND")
 
-        # Check for excessive stats — but skip excluded cards
-        if (stats.has_excessive_stats() and
-            card.name not in CardValidator.EXCESSIVE_STAT_EXCLUSIONS and
-            not getattr(card, "allow_high_stats", False)):
+        # Above 10 (two bar rows: Royal Eradicator Main Cannon's 10 + 2) unless the website allows it for the card
+        if stats.has_excessive_stats() and not getattr(card, "allow_high_stats", False):
             problems.append("STATS TOO HIGH")
 
         return problems
@@ -987,6 +1039,7 @@ class CardValidator:
 # Module Exports
 # ========================
 __all__ = [
+    'PARSER_VERSION',
     'BarRow',
     'BoundingBox',
     'CardClassifier',
@@ -996,4 +1049,5 @@ __all__ = [
     'PSDParser',
     'StatTracker',
     'StatTrackers',
+    'title_text',
 ]

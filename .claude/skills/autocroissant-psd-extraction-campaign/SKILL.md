@@ -9,8 +9,9 @@ This is the executable campaign for the project's hardest live problem (owner-st
 extracting ability text, type icons, and stats from the ~904 card PSDs in `~/Desktop/TTSCardMaker`.
 
 **The goal ("perfect extraction")**: 100% correct ability/type/stat extraction, with **zero
-per-card exclusion lists**. Today the parser is good but propped up by 23 hardcoded card names
-(18 `ABILITY_EXCLUSIONS` + 5 `EXCESSIVE_STAT_EXCLUSIONS`). The traversal bug that made local-mode
+per-card exclusion lists**. Today the parser is good but propped up by 18 hardcoded card names
+(`ABILITY_EXCLUSIONS`; the 5 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21, replaced by the website's per-card
+`allow_high_stats`). The traversal bug that made local-mode
 `/update_stats` dangerous was fixed on 2026-10-19 (Phase 0). The campaign removes the remaining
 props without breaking the 813 cards that parse correctly today.
 
@@ -39,12 +40,12 @@ Glossary (used throughout):
 
 | Term | Meaning |
 |---|---|
-| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:318 as of 2026-10-20) where a type icon visually sits |
-| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:475; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
+| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:324 as of 2026-10-20) where a type icon visually sits |
+| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:536; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
-| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:22,375). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
-| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:840) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:878-882) |
+| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:23,375). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
+| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:901) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:939-943) |
 | sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
@@ -194,11 +195,10 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pic
 
 ```bash
 awk '/ABILITY_EXCLUSIONS: set/{f=1;next} f&&/}/{exit} f&&/",/{n++} END{print "ABILITY_EXCLUSIONS:", n}' commands/psd_parser.py
-awk '/EXCESSIVE_STAT_EXCLUSIONS: set/{f=1;next} f&&/}/{exit} f&&/",/{n++} END{print "EXCESSIVE_STAT_EXCLUSIONS:", n}' commands/psd_parser.py
 ```
 
-**EXPECTED (2026-07-11):** 18 and 5. (Cross-check that imports agree with source:
-`python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), len(V.EXCESSIVE_STAT_EXCLUSIONS))"`
+**EXPECTED (2026-10-21):** 18 (the stat list no longer exists). (Cross-check that imports agree with source:
+`python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS))"`
 → `18 5`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
 autocroissant-build-and-env, run `python3 setup.py clean`.)
 
@@ -301,7 +301,7 @@ It re-drives the real `PSDParser` methods and prints 6 numbered steps. What each
 | [3] joined text with `<GAP:n>` markers | every 3+ space run the injector will target | a gap that is really table formatting; a missing gap where an icon sits (author used ≤2 spaces) |
 | [4] below-midline icons, sorted + prune decision | injection candidates, row grouping (40px), `max(last_y//3, card_mid_y)` threshold | a legitimate icon in `dropped:` (prune too aggressive); row grouping merging two visual rows |
 | [5] gap count vs kept types | the ordinal balance | MISMATCH → leftovers appended to last line, or gaps left unfilled |
-| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:780 on 2026-10-20) having eaten a legitimate gap before punctuation |
+| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:841 on 2026-10-20) having eaten a legitimate gap before punctuation |
 
 ### Worked example — The Lich King (verified 2026-07-11)
 
@@ -405,7 +405,7 @@ check. It thrashed because the equality is false for legitimate layouts:
   were missed or icons misrouted. The threshold must be tuned by a corpus census, not intuition.
 - C2 (gaps side): fire only when kept_types > 0 AND at least one gap on an icon-bearing card
   remains unfilled after injection — and measure this BEFORE the punctuation cleanup at
-  psd_parser.py:780 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
+  psd_parser.py:841 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
   would vanish from the final text).
 - C3 (guard): kept_types == 0 → never fire (exempts Warcraftian Hunter and the 4 rulebook tables).
 
@@ -477,10 +477,10 @@ cannot currently say "blank on purpose" without a hardcoded name.
 | Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Re-certify individually, or take the structural candidate below |
 | Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid), NOT in the list → they fire `ABILITY TEXT NOT FOUND` in every force-sweep report | The exclusion treadmill live: adding 3 names is the anti-goal. Take the structural candidate |
 | Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fires 4 NOT FOUND problems per force sweep | Unclassified — run the recipe (step 3 on its `Darks`/`Bars` groups) before theorizing |
-| The 5 EXCESSIVE_STAT_EXCLUSIONS | Cards whose summed stat digits exceed 10 | Verify each with parse_one against the visible bars; if the sum is faithful, the >10 rule (not the card) is what needs redesign — the list encodes game content in code. CANDIDATE: data-driven expected-max instead of a name list |
+| The 5 EXCESSIVE_STAT_EXCLUSIONS (DONE 2026-10-21) | Cards whose summed stat digits exceed 10 | The list is gone: a stat above 10 is STATS TOO HIGH unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20, Royal Eradicator Main Cannon atk 12: data, not code); the canonical encoding above 10 is a top row 10 plus a bottom row N-10 |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
-`ability == ""` with `ability is None` (`not card.ability`, psd_parser.py:939 as of 2026-10-20). The parser
+`ability == ""` with `ability is None` (`not card.ability`, psd_parser.py:993 as of 2026-10-20). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
 `None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
 card; only `None` (or absence of the layer) is a problem. **Predicted effect:**
@@ -528,12 +528,12 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | Treat above-midline icons as inline types (or lower/remove the midline) | `d0bb28c` (2026-01-30) replaced a top-400px rule with `TYPE_REGION_RATIO=0.5` because creature-type tags live in the top region | The Lich King carries `undead` twice: a tag at y=21 and an inline icon at y=2239. Erase the midline and every tag becomes a bogus injection candidate |
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
-| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:419 → `manual_metadata_entry`, psd_analyzer.py:167; 2026-10-20 lines). And know its verified semantics, below |
+| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:419 → `manual_metadata_entry`, psd_analyzer.py:169; 2026-10-20 lines). And know its verified semantics, below |
 | Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
 change — state no more than this): `manual_metadata_entry` creates a missing card as
-`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:219) with `timestamp` 0.0 and no
+`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:221) with `timestamp` 0.0 and no
 `blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:73) re-parses a card that
 is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
 since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
@@ -579,9 +579,9 @@ documented in autocroissant-failure-archaeology).
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:382):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:471 on 2026-10-20):
+- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:472 on 2026-10-20):
   `grep -n "force_update: bool = " commands/repo_traverser.py`
-- `_populate_types_from_local` (repo_traverser.py:200 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+- `_populate_types_from_local` (repo_traverser.py:201 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
   `grep -n -A9 "def _populate_types_from_local" commands/repo_traverser.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
@@ -605,8 +605,8 @@ documented in autocroissant-failure-archaeology).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
 - Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:87, `_psd_changed`
-  repo_traverser.py:73, `manual_metadata_entry` psd_analyzer.py:167, its CardInfo creation
-  psd_analyzer.py:219; /update_metadata at main.py:419):
+  repo_traverser.py:73, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
+  psd_analyzer.py:221; /update_metadata at main.py:419):
   `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.
@@ -614,3 +614,7 @@ documented in autocroissant-failure-archaeology).
   smart-object icon layers): ttscardmaker-companion §5.
 
 2026-10-21: main.py and card_models.py line numbers re-pointed (atomic pickle saves, 0.1 s queue tick); no parser change, gate 813 cards / 0 differences.
+
+2026-10-21 (titles): `EXCESSIVE_STAT_EXCLUSIONS` deleted (goal paragraph, the count commands, the suspect table); the parser now also reads the printed title into `display_name` (PARSER_VERSION 2; the gate showed 157 + 2 intended differences).
+
+2026-10-21 (review): goal paragraph says 18 hardcoded names; psd_analyzer.py citations +2 (`manual_metadata_entry` :169, its CardInfo :221); psd_parser.py citations re-pointed after the WX-78 title fix (a title that is part of the file name beside an image layer printing the rest reads as the file name); the gate shows 157 + 2.

@@ -93,8 +93,8 @@ class CardInfo:
     stats: CardStats = field(default_factory=CardStats)
     problems: list[str] = field(default_factory=list)
     author: Optional[str] = None
+    display_name: Optional[str] = None        # the printed title when it differs from name; a Card Edits.json name wins
     # set from Card Edits.json
-    display_name: Optional[str] = None
     note: Optional[str] = None
     hidden: bool = False
     problems_ok: bool = False
@@ -105,6 +105,7 @@ class CardInfo:
     alt_names: Optional[list] = None          # hidden title layers: names of the duplicates
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
     subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
+    parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""

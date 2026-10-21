@@ -5,6 +5,7 @@
   "ability": "Attacks are piercing.\n(2PGT) May perform an attack.\nOnly gains 50% ATK from outside sources.\nThis ability cannot be copied.",
   "atk": 1,
   "def": 2,
+  "display_name": "Little guy",
   "hp": 4,
   "path": "Creatures/Other/2 Stars/Little_Guy.psd",
   "series": "other",

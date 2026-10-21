@@ -14,8 +14,9 @@ CARDS = CERTIFIED + (
     "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd",                      # 2 creatures
     "Creatures/Kirby/3 Stars/Pix.psd",                                  # 3 creatures
     "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd",
-    "Creatures/Kirby/3 Stars/Computer_Virus.psd",                       # stats not found
-    "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # stats over 10 (excluded)
+    "Creatures/Kirby/3 Stars/Computer_Virus.psd",                       # stats not found; display_name from a root Name layer
+    "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # atk 10 + 2 (STATS TOO HIGH); title in 3 layers
+    "Creatures/DST/3 Stars/WX-78.psd",                                  # title "wx-" + an image layer "78": no display_name
     "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd",
     "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd",
     "Creatures/Other/2 Stars/Little_Guy.psd",

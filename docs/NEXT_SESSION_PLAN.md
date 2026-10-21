@@ -28,8 +28,12 @@ Every task still wanted this session, in order; a line is struck through here wh
    `docs/Finished/optimization-pass-2-2026-10-21/`. Landed 2026-10-21: `commands/git_commit.py` (one commit path),
    font check 98 s -> 9.8 s, both holes fixed, 350 tests; the fork-side bake speedups (preview write, viewport effects)
    wait for the worktrees.
-4. [ ] Decision Q1: the parser reads `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22
-   redundant name edits drop by the redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
+4. [x] (done 2026-10-21: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, the 94 case/spacing-only ones shown as the file name by the site and `/query`, which also finds printed titles; `CardInfo.parser_version`
+   makes the next /update_stats re-parse every card once; 8 goldens re-pinned; build_site shows the title with the stem as
+   alias; `EXCESSIVE_STAT_EXCLUSIONS` deleted, Sonic and the Cannon `allow_high_stats` in Card Edits.json; Thunderfury aligned;
+   20 name edits redundant now, 21 with Thunderfury, Sans and Papyrus have no `Name` layer) Decision Q1: the parser reads
+   `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22 redundant name edits drop by the
+   redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
 5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
 6. [ ] S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
    bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.

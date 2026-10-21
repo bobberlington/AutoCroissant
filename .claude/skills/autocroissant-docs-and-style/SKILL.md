@@ -181,7 +181,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    (banner named "Public API Functions", "Discord Command Functions", "Music
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
-   (`stats_db = StatsDatabase()` at card_models.py:227 and `init_psd` at the end of psd_analyzer.py;
+   (`stats_db = StatsDatabase()` at card_models.py:228 and `init_psd` at the end of psd_analyzer.py;
    `card_repo = CardRepository()` + `init_query` at query_card.py:796-797).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
@@ -499,3 +499,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-21: help.py's /query_ability entry describes the grouped output (155 lines; 157 with the /fonts entry); help.py and main.py line numbers re-pointed (review: admin-gate examples, guild_id/channel_id, pickle import).
 
 2026-10-21 (review): github_api.py citations re-pointed (:17; the module gained two imports above it).
+
+2026-10-21 (titles): card_models.py citation re-pointed (`CardInfo.parser_version` added).

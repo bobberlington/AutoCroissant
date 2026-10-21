@@ -390,23 +390,24 @@ def test_psd_changed_meanwhile_is_head_moved(github):
     assert commits == [] and f"head-moved: {DOOMER} changed on main" in text
 
 
-def test_redundant_name_is_idempotent(github):
-    """A baked name stays in the file (section 3) and equals the print: a rerun writes nothing, not even to drop _psd."""
+def test_redundant_name_is_dropped(github):
+    """A name the card prints is redundant like any field (the bot reads the title): dropped with its verdict, once."""
     baked = {"state": "baked", "for": {"name": "Mini Doomer"}, "psd": "01234567", "reason": "name 'x' -> 'Mini Doomer'", "at": AT}
     files = github.files_at(github.head)
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": "Mini Doomer", "note": "n", "_psd": baked, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: something else")
     text, commits = cb.run()
-    assert commits == [] and "already on the card: name (name stays)" in text
-    assert _edits_at(github)["cards"]["Mini Doomer"]["_psd"] == baked
-    # a stale refused verdict on a name that now matches the print goes, once
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer name 'Mini Doomer' already on the card"
+    assert "already on the card: name" in text
+    assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "n", "_by": "web", "_at": AT}
+    github.commit(github.files_at(github.head), "web", "Website edit: more")
+    assert cb.run()[1] == []
+    # a name alone: the entry goes whole
+    files = github.files_at(github.head)
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": "Mini Doomer", "_psd": {**baked, "state": "refused"}, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: again")
     text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer name 'Mini Doomer' already on the card"
-    assert _edits_at(github)["cards"]["Mini Doomer"] == {"name": "Mini Doomer", "_by": "web", "_at": AT}
-    github.commit(github.files_at(github.head), "web", "Website edit: more")
-    assert cb.run()[1] == []
+    assert len(commits) == 1 and "Mini Doomer" not in _edits_at(github)["cards"]
 
 
 def test_verdicts_commit_failure_keeps_the_bake_commits(github, tmp_path):

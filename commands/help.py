@@ -41,7 +41,7 @@ text_commands = {
 
 card_commands = {
     "/query <query>:"                           : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
-                                                  "The Card page button opens it on the website; website names and notes show too.",
+                                                  "The Card page button opens it on the website; the printed title, website names and notes show too.",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions. One match posts its image; "
                                                    "more are listed as name and image link, 10 per message.\n"

@@ -54,9 +54,9 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | Asset | Where | Why it matters |
 |---|---|---|
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:450) writes `rules.txt`; `/export_rulebook` (main.py:412) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:355) writes `stats.csv` with an aliases column; `/export_cards` (main.py:399) | Structured stats + ability text in one table |
-| Type-annotated ability text | `_inject_type_names` (psd_parser.py:840) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:452) writes `rules.txt`; `/export_rulebook` (main.py:412) | 48 pages of game rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:357) writes `stats.csv` with an aliases column; `/export_cards` (main.py:399) | Structured stats + ability text in one table |
+| Type-annotated ability text | `_inject_type_names` (psd_parser.py:901) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
 
@@ -215,7 +215,7 @@ executes perfectly.
 
 ### Residue 3a — Line-position estimation for bbox-anchored injection (OPEN)
 
-**Why open:** today's type-icon injection (`_inject_type_names`, psd_parser.py:840-884 as of 2026-10-20)
+**Why open:** today's type-icon injection (`_inject_type_names`, psd_parser.py:901-945 as of 2026-10-20)
 assigns icons to `\s{3,}` text gaps by global reading order and never checks whether an
 icon's y-coordinate matches the line it lands in. The fix everyone wants — anchor each icon
 to its text LINE by (x, y) — hits a wall: **psd-tools exposes only the whole text layer's
@@ -372,3 +372,7 @@ touch anything. Keep the eval file (`eval/rules_qa_v1.md`, once it exists) appen
 changing old questions invalidates every historical score.
 
 2026-10-21: main.py, query_card.py and card_models.py line numbers re-pointed (0.1 s queue tick, atomic saves); no frontier item changed. Review: the archive-branch `/ai` and `/set_lora` numbers kept (that main.py did not move).
+
+2026-10-21 (titles): psd_parser.py citations re-pointed (PARSER_VERSION 2 reads the printed title into `display_name`).
+
+2026-10-21 (review): psd_analyzer.py citations +2 (`export_rulebook_to_file` :452, `export_stats_to_file` :357); psd_parser.py citations re-pointed after the WX-78 title fix.

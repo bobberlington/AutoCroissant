@@ -122,8 +122,8 @@ def test_classify_table():
     assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("stat>10", "atk 11"), ("unsupported-card", "stars"),
                                                                      ("unsupported-card", "types"), ("unsupported-card", "no readable Text/Name layer")]
     assert out.other == ["spd", "note", "series", "creatures", "hidden"]
-    assert pe.classify(parsed, {"hp": 8}, excluded=True).refusals[0].code == "stat>10"
     assert pe.classify(parsed, {"ability": "Die.\n(BOT) Die."}).jobs == {"ability": "Die.\n(BOT) Die."}
+    assert pe.shown_name(parsed) == "" and pe.shown_name({"card": {"display_name": "Y"}}) == "Y"
     with pytest.raises(ValueError):                                 # not a stat: the card's "error", not stat>10
         pe.classify(parsed, {"hp": -1})
 
@@ -214,20 +214,36 @@ def test_non_template_rows_and_titles_refuse(clone):
         pe.name_layer(bone)
 
 
+def test_name_redundancy_uses_the_printed_title(clone, parser):
+    """A name edit is redundant when the bot already shows it (the parser's display_name, else the file name)."""
+    path = _card(clone, MINI_DOOMER)[0]
+    parsed = pe.parse_card(parser, path, MINI_DOOMER)
+    psd = PSDImage.open(path)
+    assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Mini Doomer"   # prints its file name
+    assert pe.classify(parsed, {"name": "Mini  Doomer\r"}, psd).redundant == ["name"]
+    assert pe.classify(parsed, {"name": "Mini Doomer II"}, psd).jobs == {"name": "Mini Doomer II"}
+    rel = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                     # Name at the root: read, not editable
+    path = _card(clone, rel)[0]
+    parsed = pe.parse_card(parser, path, rel)
+    assert parsed["card"]["display_name"] == pe.shown_name(parsed) == "Computer Virus appears!"
+    assert pe.classify(parsed, {"name": "Computer Virus appears!"}, PSDImage.open(path)).redundant == ["name"]
+    assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).refusals[0].why == "no readable Text/Name layer"
+
+
 def test_royal_eradicator_two_row_atk(clone, parser):
-    """The one real 10+ card: classify refuses 11 (stat>10) and lets 7 through unless the card is excluded, which it is
-    (EXCESSIVE_STAT_EXCLUSIONS protects it, not set_stat); set_stat refuses either value as unsupported-card because
-    template_row runs before its own stat>10 check."""
+    """The one 10+ card by two rows (Top 10 + Bottom 2): the validator flags it until the website allows it; classify
+    refuses 11 (stat>10) and lets 7 through; set_stat refuses either value as unsupported-card because template_row
+    runs before its own stat>10 check. Its title is three layers ("Royal", "Eradicator", Name "Main Cannon"): no display_name."""
     path = _card(clone, CANNON)[0]
     psd = PSDImage.open(path)
     parsed = pe.parse_card(parser, path, CANNON)
-    assert parsed["card"]["atk"] == 12
+    assert parsed["card"]["atk"] == 12 and parsed["validator"] == ["STATS TOO HIGH"]
+    assert parsed["card"].get("display_name") is None and pe.read_name(psd) == "Main Cannon"
+    assert not hasattr(pe.CardValidator, "EXCESSIVE_STAT_EXCLUSIONS")
     assert sorted((group.name.strip(), digits) for group, digits, _ in stat_rows(psd)["atk"]) == [("Bottom", [2]), ("Top", [10])]
     assert [(r.code, r.why) for r in pe.classify(parsed, {"atk": 11}).refusals] == [("stat>10", "atk 11: not yet")]
     assert pe.classify(parsed, {"atk": 7}).jobs == {"atk": 7}
-    assert [(r.code, r.why) for r in pe.classify(parsed, {"hp": 11, "atk": 7}, excluded=True).refusals] == [
-        ("stat>10", "hp 11: not yet"), ("stat>10", "atk: the card is on EXCESSIVE_STAT_EXCLUSIONS")]
-    assert "Royal Eradicator Main Cannon" in pe.CardValidator.EXCESSIVE_STAT_EXCLUSIONS
+    assert [(r.code, r.why) for r in pe.classify(parsed, {"hp": 11, "atk": 7}).refusals] == [("stat>10", "hp 11: not yet")]
     for value in (7, 11):
         with pytest.raises(pe.Refused) as refused:
             pe.set_stat(psd, parsed, "atk", value)
@@ -306,7 +322,8 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     new = _typo_fix(title)
     parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
     assert [(name, fields) for _, name, fields in baked.records] == [("Name", TEXT_RECORD)] and baked.flag_bytes == 0
-    assert baked.reparse["card"] == parsed["card"]                        # the parser never reads the title
+    without = {k: v for k, v in parsed["card"].items() if k != "display_name"}
+    assert baked.reparse["card"] == {**without, "display_name": new}      # the parser reads the new title
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved) == new
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]

@@ -55,7 +55,7 @@ M, H, X, T, G, V, S.
 | T1 | T | cards | Suffocation "Can't Effect [water]"; "imprisoned" and "smeckeldorfed" lowercased once each on other cards |
 | T2 | T | pages | "occours" (12_Reactions), "abbrviations" (11_Abilities), "Abilites" (02_Abbreviations), "inflcited" (19_Status_Effects), "seperate" (10_Attacking2); the checker's spell pass lists the rest |
 | G1 | G | cards | (OFS) abilities "activate when a creature first comes out of the hand onto the field" (11_Abilities5), yet (OFS) is on field cards Pandora's Gym and White Palace, which are bought and played, not summoned; (WOF) on the auxiliary item Earth Totem. Misuse or an intended reading: to confirm |
-| H1 | H | (09_TakingYourTurn) x2, (11_Abilities) x2, (12_Reactions2), (22_Negation) | 6 hidden text layers on 4 pages (layers.py, 2026-10-20): ATTACK and DEFENSE MODE duplicates; PASSIVES heading + paragraph; the two drafts of C5/C6. All are in rules.json, stats.pkl and /query_rulebook because the parser treats every text layer of a rule page as ability text (`commands/psd_parser.py:499`, no visibility check before `:523`) |
+| H1 | H | (09_TakingYourTurn) x2, (11_Abilities) x2, (12_Reactions2), (22_Negation) | 6 hidden text layers on 4 pages (layers.py, 2026-10-20): ATTACK and DEFENSE MODE duplicates; PASSIVES heading + paragraph; the two drafts of C5/C6. All are in rules.json, stats.pkl and /query_rulebook because the parser treats every text layer of a rule page as ability text (`commands/psd_parser.py:560`, no visibility check before `:523`) |
 | H2 | H | (11_Abilities6); (12_Reactions), (14_Item_Types), (20_Creature_Types) | off-canvas "ABILITIES 7"; overflow text not drawn: "of 5.", "if you find this text dont delete it", the GIRL sentence "This may only be an innate type in special cases ..." |
 | V1 | V | (16_The_Field) | layer "Secondary Field/Phase 1 copy 2" reads "He pissed on my fucking wife" in a visible lavender box (PNG cropped at bbox 672-1013 x 1611-1665, 2026-10-20); not hidden text but page content the user keeps or deletes |
 | X1 | X | (14_Item_Types) | "May not be used on [support]": the page shows the machine icon (icon above the midline went to the page's types; the gap took the next icon) |
@@ -118,7 +118,7 @@ page; S rows may stay open (the simulator leaves them "by hand", `docs/Campaigns
   `badge_tags()`/`tagInfo()` (the Old Rules' "(CD)" meant counter damage, now CDMG: say so on the page), or rewrite the
   44 cards onto existing tags. Card text edits go through the edit pipeline (PSD + database edit in `site/Card
   Edits.json`, `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise.
-- **Parser:** skip hidden text layers on rule pages (`psd_parser.py:499-523`; change-control, goldens, a sandboxed
+- **Parser:** skip hidden text layers on rule pages (`psd_parser.py:560-584`; change-control, goldens, a sandboxed
   sweep). Predicted effect: the texts of 09, 11, 12.2 and 22 shrink, 4 rulebook entries change in stats.pkl, 0 cards.
   Not a substitute for deleting the layers. X1-X3 slips are the extraction campaign's (gap vs icon order, star glyphs).
 **You have a result when** the checker's C, U, M, H and X sections are empty and `rulebook.md` carries no markers.
@@ -170,7 +170,7 @@ text a player can see.
 - Settling a contradiction in `engine.js`, in the rules skill or in this document: the page is the authority.
 - Editing rules.json, stats.pkl or any pickle by hand: `/update_stats` rebuilds the pickles from the PSDs and
   `site.yml` rebuilds rules.json from stats.pkl.
-- Hiding a layer instead of deleting it: hidden text is parsed today (`psd_parser.py:499`); H1 exists because of this.
+- Hiding a layer instead of deleting it: hidden text is parsed today (`psd_parser.py:560`); H1 exists because of this.
 - Case-insensitive status matching: "empty slot" (16_The_Field) is not the debuff Empty; 20 vs 19 names.
 - Giving (XCD)/(XGCD)/(XU) meanings in `badge_tags()` or the skill before (02_Abbreviations) defines them.
 - Reading effects out of ability text with regexes as if text were a schema (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` Known wrong paths;

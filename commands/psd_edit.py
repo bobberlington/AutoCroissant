@@ -21,7 +21,7 @@ from psd_tools import PSDImage
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import DRAWN_LAYER_KINDS, CardValidator, IconVocabulary, PSDParser
+from commands.psd_parser import DRAWN_LAYER_KINDS, CardValidator, IconVocabulary, PSDParser, title_text
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import FONT_ALIASES
 
@@ -202,8 +202,8 @@ def _is_text_layer(layer) -> bool:
 
 
 def collapse(text: Optional[str]) -> str:
-    """Whitespace collapsed to single spaces (how the parser reads titles)."""
-    return " ".join((text or "").split())
+    """Whitespace collapsed to single spaces (how the parser reads titles: psd_parser.title_text)."""
+    return title_text(text)
 
 
 def normalize_ability(text: Optional[str]) -> str:
@@ -447,15 +447,20 @@ def _off_swatch(layer, chart: dict) -> Optional[str]:
 # ========================
 # Classify (section 3)
 # ========================
-def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, excluded: bool = False) -> Classification:
+def shown_name(parsed: dict) -> str:
+    """The name the bot shows for a parse: the printed title (display_name), else the card's name (file stem)."""
+    info = parsed.get("info")
+    return parsed["card"].get("display_name") or (info.name if info is not None else "")
+
+
+def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
 
     Args:
         parsed: parse_card() of the card's PSD
         edits: The card's fields from CardEdits.parse (no _keys)
-        psd: The open PSD, needed to read Text/Name for a name edit
-        excluded: The card is on CardValidator.EXCESSIVE_STAT_EXCLUSIONS (stats refuse as stat>10)
+        psd: The open PSD, needed to check Text/Name is editable for a name edit
 
     Returns:
         Classification
@@ -472,8 +477,6 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, excluded
                 raise ValueError(f"{name} {value!r}: not a stat")     # CardEdits.valid never lets one through
             if value > STAT_MAX:
                 out.refusals.append(Refusal("stat>10", f"{name} {value}: not yet"))
-            elif excluded:
-                out.refusals.append(Refusal("stat>10", f"{name}: the card is on EXCESSIVE_STAT_EXCLUSIONS"))
             elif card.get(name) == value:
                 out.redundant.append(name)
             else:
@@ -483,12 +486,11 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, excluded
                 out.redundant.append(name)
             else:
                 out.jobs[name] = value
-        elif name == "name":
-            title = read_name(psd) if psd is not None else None
-            if title is None:
-                out.refusals.append(Refusal("unsupported-card", "no readable Text/Name layer"))
-            elif title == collapse(value):
+        elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
+            if shown_name(parsed) == collapse(value):
                 out.redundant.append(name)
+            elif psd is None or read_name(psd) is None:
+                out.refusals.append(Refusal("unsupported-card", "no readable Text/Name layer"))
             else:
                 out.jobs[name] = value
     return out
@@ -838,6 +840,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             expected[name] = value
         elif name == "ability":
             expected["ability"], got["ability"] = normalize_ability(value), normalize_ability(got.get("ability"))
+        elif name == "name":                    # the new title is read back below
+            expected.pop("display_name", None)
+            got.pop("display_name", None)
     expected.pop("problem", None)
     got.pop("problem", None)
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
@@ -1045,6 +1050,7 @@ __all__ = [
     'offline_parser',
     'parse_card',
     'read_name',
+    'shown_name',
     'render_region',
     'run_fills',
     'save_png',

@@ -211,6 +211,25 @@ def test_force_update_reparses_without_history(github):
     assert _saved()[1] == {}                                          # same blobs: nothing archived
 
 
+def test_older_parser_version_reparsed_once(github):
+    """Every parse is stamped PARSER_VERSION; a card stamped by an older parser (or none: old pickles) is read again
+    once, with the full tree, and without history (same blob)."""
+    _run()
+    stats, _ = _saved()
+    assert {c.parser_version for c in stats.values()} == {pa.PARSER_VERSION}
+    del stats["Mini Doomer"].__dict__["parser_version"]
+    with open("stats.pkl", "wb") as f:
+        pickle.dump(stats, f)
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None) and github.blobs() == [DOOMER]
+    stats, old = _saved()
+    assert stats["Mini Doomer"].parser_version == pa.PARSER_VERSION and old == {}
+    github.calls.clear()
+    _run()
+    assert github.blobs() == [] and github.calls[0][1]                       # 304 again
+
+
 def test_only_cards_reparsed(github):
     _run()
     github.calls.clear()

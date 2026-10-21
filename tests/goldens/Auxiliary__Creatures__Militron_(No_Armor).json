@@ -5,6 +5,7 @@
   "ability": "This creature may switch for free. If this creature goes into the hand, it dies instantly, but the enemy team gets no points for its death.",
   "atk": 0,
   "def": 0,
+  "display_name": "Militron (no Armor)",
   "hp": 1,
   "path": "Auxiliary/Creatures/Militron_(No_Armor).psd",
   "spd": 8,

@@ -66,7 +66,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   (Uumuu, Whispy_Woods, Spinni, Little_Guy). Also 16 PSDs swap the `atk`/`def` bar names and 26 use
   `Healthbar`/`DefemseBar`/`Attackbar`/`Speedbar` (card-structure.md §3). Hazard: bar layers named `Dark`/`Light`/`Machine` (the Isaac
   cards, Sans, Minecraft_Panda, Alex_YIIK, Pandevourer) are `Types/` names; harmless since `_is_stat_layer` runs first
-  (`psd_parser.py:465-476`; no stray token in `site/dist/data/cards.json`), but scanners must skip them and the rewrite renames them.
+  (`psd_parser.py:526-537`; no stray token in `site/dist/data/cards.json`), but scanners must skip them and the rewrite renames them.
 - **Tool.** A fork script (new) adding the template's `Darks` rows from `Creature_Template.psd` and setting the digit; bars painted into the
   art (Grimora, Skeleton_Mate) or drawn as pixel cells: Photoshop per card. **Check.** Parser gate (hp/def/atk/spd unchanged); harness stat
   rows; goldens; Photoshop on the pixel-bar cards. **Risk, depends.** A value silently changed by a rewrite; a look change where drawn bars
@@ -77,7 +77,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   (`Creatures/Other/4 Stars/Sonic.psd`, spd 20) is converted once: today `Stats Bars/spd` holds half-height bars `spd top` (y 1569-1620)
   and `spd bottom` (1620-1668) with `spd dark/1` and `/2` all hidden, plus the template `Spd Dark` whose `9` is renamed `20` (visible,
   0 pixels). Clean-ups: Royal Eradicator's `atk dark/Top/10` (visible at opacity 0; hidden digits already read 10) deleted; Sonic's `20`
-  renamed `9` and hidden. **Why.** `EXCESSIVE_STAT_EXCLUSIONS` (5 names, `psd_parser.py:887-893`) goes; `stat>10` becomes a two-row toggle.
+  renamed `9` and hidden. **Why.** `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21 (Sonic and the Cannon carry `allow_high_stats` in Card Edits.json
+  meanwhile); `stat>10` becomes a two-row toggle.
 - **How many.** 2 cards (`/tmp/psdmap/card_Sonic.txt`, `card_Royal_Eradicator_Main_Cannon.txt`). **Tool.** Fork script or Photoshop,
   one-off; then drop the list and refresh `tests/make_goldens.py`. **Check.** `parse_one.py`: Sonic spd 20, Royal Eradicator atk 12, problems
   NONE before and after; clean-ups PNG byte-equal; Sonic within the stat-row bar (its pixel-art bars stay; only the `Darks` groups move).
@@ -97,12 +98,12 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ### L5. Ability layer naming, visibility and blank content
 - **What.** Exactly one visible text layer named `Ability` directly under top-level `Text`, with text. **Why.** The parser reads every
-  layer named `ability` (`psd_parser.py:498-523`); the pipeline accepts only this shape (`psd_edit.ability_layer`).
+  layer named `ability` (`psd_parser.py:559-584`); the pipeline accepts only this shape (`psd_edit.ability_layer`).
 - **How many.** Of 651: 605 template; 34 one visible `Ability` elsewhere (top-level `Ability` on 16, `Types/Text/Ability` on 8, nested
   groups; paths in `lists.py`); 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax,
   Apex_Predator; 4 re-laid out in separately styled layers); 5 several visible (Lit_Bob-omb 2, Tainted_Lazarus 2, Miracle_Matter 5,
   Twin_Emperors 5, Warcraftian_Druid 2); 20 blank: 17 visible with no text (`lists.py`), Galacta_Warrior's visible two spaces and 2 hidden
-  (Abyss_Watcher, Warrior_Dee; `corpus.jsonl` `text_len`); 17 of the 20 are in `ABILITY_EXCLUSIONS` (18 names, `psd_parser.py:894-913`), the
+  (Abyss_Watcher, Warrior_Dee; `corpus.jsonl` `text_len`); 17 of the 20 are in `ABILITY_EXCLUSIONS` (18 names, `psd_parser.py:950-969`), the
   3 not: Anubisath_Guardian, Qiraji_Soldier, Silithid (D1).
 - **Tool.** Fork script: rename and move the layer under `Text` (layer move API on the fork: to confirm), else Photoshop. Blank content:
   the owner fills it or certifies it (then an empty layer is the standard for ability-less minions and `ABILITY_EXCLUSIONS` shrinks to the
@@ -112,12 +113,18 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   per card, template look or rename only (question 4). **Depends.** Question 2 for the 5 several-Ability cards.
 
 ### L6. Name layer
-- **What.** A visible `Text/Name` text layer holding the printed title; the parser will read it into `display_name` (design question 1).
+- **What.** A visible `Text/Name` text layer holding the printed title; the parser reads it into `display_name` since 2026-10-21 (design question 1; `psd_parser._printed_title`).
   **Why.** Pipeline name edits need `Text/Name`; 22 of the 29 live name edits become redundant.
 - **How many.** Of 651: 552 visible `Name` (506 under `Text`, 46 elsewhere; paths in `lists.py`); 91 titled by a layer named after the
   card (153 over all 813, status effects included); 3 hidden (Sonic, whose title is the pixel layer `Layer 0 copy`; Baba; Man_Serpent_Shield;
   plus the field card E._Gadd's_Garage); 5 none or rasterized (ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card); 16 with two or more
   visible `Name` layers (17 over all 813 with the field card The_Gates_of_Ahn'Qiraj; `aggregate.txt`, `corpus.jsonl`).
+- **Titles vs file names (2026-10-21 parse).** 157 of 813 differ: 94 by letter case or spacing only (shown as the file name; 6 look
+  like typos: SPringtrap, Dark MAtter, MEtal General, MAsked Dedede, StaR DREAM, Zero OVerride), 63 otherwise (shown as printed; to
+  decide: Kyle "hdckighfkvhvgmk", The Bagel "The Bagel Or... is it" (a subtitle layer on the title row), Blockade "The Wall By Ech",
+  Leeroy Jenkins "LEEEEEEEEEROY" (JENKINS is its own layer), Sir Grodus "Grodus", The Chicken "Chicken", Rasta Beast "Pasta Beast",
+  Indoctrination "Indoctrinati0n", NME Stock "NME Stock™"); Sans and Papyrus title their layers after the print, not `Name`. Retitle
+  the card (a name edit reprints it through the pipeline) or rename the file in the batch.
 - **Tool.** Fork: `layer.name` set, 0 pixels; rasterized titles: Photoshop retype (pixels change; question 6) or leave them to
   `display_name` from `Card Edits.json`. **Check.** Parser reads `Text/Name` == the printed title (after the question-1 code); PNG
   byte-equal. **Depends.** `Effect Layers.jsx` keys FX layers on the text layer's name (`<layer> FX:`): rename before L7 or rerun Update all.

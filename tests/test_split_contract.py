@@ -14,7 +14,7 @@ from conftest import REPO
 
 # what main.py, query_card, the diagnostics scripts, the tests and the archive branch import from the facade
 FACADE_NAMES = ("CardInfo CardStats CardType StatsDatabase stats_db get_stats_as_dict card_name CardAuthors CardEdits "
-                "PSDParser CardClassifier CardValidator IconVocabulary MutableValue StatTrackers TYPE_REGION_RATIO "
+                "PSDParser CardClassifier CardValidator IconVocabulary MutableValue StatTrackers TYPE_REGION_RATIO PARSER_VERSION "
                 "RepositoryTraverser update_stats UPDATE_RATE EXCLUDE_FOLDERS COMMITS_PAGE LOOKUP_WORKERS GIT_TOKEN "
                 "ICON_MANIFEST_PATH AUTHORS_PATH AUTHORS_PATHS EDITS_PATH EDITS_PATHS card_repo init_psd list_orphans export_stats_to_file").split()
 

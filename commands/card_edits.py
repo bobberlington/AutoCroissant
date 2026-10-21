@@ -76,7 +76,7 @@ class CardEdits:
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
                 "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",),
                 "creatures": ("SEVERAL CREATURES",)}
-    # where the value lives: the card image (name: only when it differs from Text/Name), the card's folder, or this file alone
+    # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "aliases": "database", "dup_of": "database", "hidden": "database",

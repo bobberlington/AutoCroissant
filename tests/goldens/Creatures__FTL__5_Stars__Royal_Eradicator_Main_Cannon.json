@@ -18,5 +18,7 @@
   ]
  },
  "path": "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",
- "validator": []
+ "validator": [
+  "STATS TOO HIGH"
+ ]
 }

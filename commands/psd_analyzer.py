@@ -24,6 +24,7 @@ from commands.psd_parser import (
     ICON_SCAN_PATTERN,
     ICON_VARIANTS,
     MISSPELT_CARD_TYPES,
+    PARSER_VERSION,
     STAR_CORE_ALPHA,
     TITLE_REGION_RATIO,
     TYPE_REGION_RATIO,
@@ -36,6 +37,7 @@ from commands.psd_parser import (
     PSDParser,
     StatTracker,
     StatTrackers,
+    title_text,
 )
 from commands.repo_traverser import (
     COMMITS_PAGE,

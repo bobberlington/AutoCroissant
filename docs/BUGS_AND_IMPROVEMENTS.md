@@ -62,6 +62,8 @@ None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 |---|------|-------------------|-----------------------|--------------|
 | V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
 | V2 | Reminder rewrite (run-as-creator, name:value commands, migration of reminder.pkl) | Code read 2026-10-19 | Not known to have fired against live Discord yet. Watch the first startup's `migrated command` log lines and the first firing | `autocroissant-run-and-operate` §9 |
+| V4 | `/query` name lookup: Card Edits.json names and aliases never joined the registry (the lookup used a mixed-case key against lowercase keys, since f2013eb); fixed 2026-10-21 in `query_card._add_lookup`, which now also adds printed titles (`_populate_titles`) | Tests `test_website_names_join_the_name_lookup`, `test_titles_join_the_name_lookup` | `/query Raw Kawk`, `/query Black Clot` (after the re-parse) on the live bot | `autocroissant-run-and-operate` §7 |
+| V3 | `PARSER_VERSION` 2: the printed title read into `display_name`; `EXCESSIVE_STAT_EXCLUSIONS` gone (2026-10-21) | Parser gate: 813 cards, 159 intended differences (157 titles, 2 STATS TOO HIGH allowed by `allow_high_stats`); suite 356; site built locally from patched pickles | The first live `/update_stats` after the deploy must re-parse all ~813 cards once ("813 cards changed or new", minutes, no old_stats growth), then go quiet; the website and the `/query` embed title then show printed titles (the 94 differing from the file name only by letter case or spacing, CABBAGE, A P E X, keep showing the file name on the site and in `/query`, the title kept in `display_name`: `query_card.printed_title`; `/query` finds a card by its printed title) | `autocroissant-run-and-operate` §7 |
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
@@ -92,7 +94,7 @@ Ranked menu:
    TTSCardMaker (`ttscardmaker-companion`).
 3. **Restore gap/type mismatch detection as a high-precision validator check** — it existed (`fed8a83`) and thrashed (`081b1fd`); the precision conditions are derived in the campaign.
 4. **Bbox-anchored type injection** — place `[type]` by icon coordinates instead of gap ordinals; the line-position estimation sub-problem is genuinely open. Matters only for cards not migrated by item 2.
-5. **Exclusion-list burn-down** — 23 cards (18 ability + 5 stats); per-card recipe in the campaign; D3 above is the first easy win. Result when: both lists reach zero with problem count stable.
+5. **Exclusion-list burn-down** — 18 cards (ability; the 5-card stat list went on 2026-10-21: `allow_high_stats` in Card Edits.json per card); per-card recipe in the campaign; D3 above is the first easy win. Result when: the list reaches zero with problem count stable.
 
 ### 2.2 AI that knows the game (on branch `archive/ai-generation`)
 

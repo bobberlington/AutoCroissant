@@ -73,7 +73,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
-| `init_psd` (psd_analyzer.py:476) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
+| `init_psd` (psd_analyzer.py:478) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
 | `init_query` (query_card.py:797) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:130) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
 | `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
@@ -264,8 +264,17 @@ first time. Measured 2026-10-20 (live, 6 PSDs): 16-18 s before the commit lookup
 beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-results.md on
 `docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
+**One-time re-parse after a parser bump (2026-10-21):** every parse is stamped `PARSER_VERSION` (psd_parser.py:22, now 2:
+the printed title read into `display_name`), and `_psd_changed` re-parses a card whose stamp differs (repo_traverser.py:76;
+the tree ETag is skipped while any card is stale, :162). So the first `/update_stats` after deploying a bump downloads every
+PSD once (~813 blobs plus their commit pages, minutes; "813 cards changed or new"; no history grows: the blobs are unchanged)
+and later runs are cheap again. Expect it after the 2026-10-21 deploy; no `force_update` needed. Once re-parsed, `/query` titles its
+embed with the printed title (`query_card.printed_title`; an embed instead of a bare image URL): 157 cards, of which the 94 differing
+from the file name only by letter case or spacing (POORLY DRAWN CABBAGE, A P E X) keep showing the file name; the website shows
+the same name, and `/query` finds a card by its printed title (`_populate_titles`, refreshed after every `/update_stats`).
+
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:469; slash wrapper main.py:373-385.
+repo_traverser.py:472; slash wrapper main.py:373-385.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -302,14 +311,14 @@ The three options (slash defaults in parentheses, main.py:381-383). (`use_local_
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-RE-PARSED cards; repo_traverser.py:32,390) -> the summary (repo_traverser.py:445):
+RE-PARSED cards; repo_traverser.py:32,391) -> the summary (repo_traverser.py:443):
 
 ```
 N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (repo_traverser.py:503-506): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
+- Saving (repo_traverser.py:504-507): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
   not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
   stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
   not prune (docs/BUGS_AND_IMPROVEMENTS.md B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
@@ -416,7 +425,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:363; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:364; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `font_names.json` | /fonts (commands/font_check.py) | repo root (+ `font_names.json.tmp` while saving): blob sha -> the fonts a card PSD asks for or a font file supplies; pruned to the current tree on every run | NO (gitignored) — per-machine; if deleted, the next /fonts downloads every PSD again in batches |
@@ -637,3 +646,7 @@ this file re-pointed by grep the same day (review). The Action sends the Discord
 2026-10-21 (audit fixes): `--all` parses in a process pool (section 7's standalone line re-measured); the TTS save commit path is
 commands/git_commit.py (section 7's by-hand paragraph). main.py's /fonts block (:278-285) unchanged in size: the lazy import now binds the
 module, not a shadowing name.
+
+2026-10-21 (titles): section 7 gained the one-time re-parse paragraph (PARSER_VERSION 2 reads the printed title; ~813 downloads on the next /update_stats).
+
+2026-10-21 (review): section 7 notes that `/query` titles its embed with the printed title (`query_card.printed_title`; 157 cards, the 94 case/spacing-only shown as the file name; printed titles join the name lookup); psd_analyzer.py `init_psd` :478; repo_traverser.py `update_stats` :472, `_send_summary` :443, the `UPDATE_RATE` check :391.

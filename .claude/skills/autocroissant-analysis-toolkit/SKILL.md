@@ -76,7 +76,7 @@ need to know WHICH stage of the parse diverged — not just that it did.
    `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/Desktop/TTSCardMaker/"<path>.psd"`.
    It prints six numbered stages — [1] types collected above the midline, [2] raw ability text
    layers with bboxes, [3] joined text with `<GAP:n>` markers (gap regex `\s{3,}`,
-   psd_parser.py:318), [4] below-midline icons, sort order, and the prune decision
+   psd_parser.py:324), [4] below-midline icons, sort order, and the prune decision
    (`max(last_y//3, card_mid_y)`), [5] gap count vs kept types, [6] final injected text.
 3. **Localize the divergent stage**: compare each stage against what the card art shows. The first
    stage whose numbers disagree with the card is where the mechanism lives.
@@ -124,10 +124,10 @@ including a leaked `.ds_store` entry; since the 2026-10-19 dotfile fix it prints
 
 | Signature | What you see | Mechanism it points to |
 |---|---|---|
-| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:406) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:941) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
+| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:414) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:995) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
 | Icon above midline | The icon appears in `[1]`, not `[4]`; the gap in `[3]` stays unfilled | Icon y < 1200 → it's classified as a creature type, never an injection candidate. TYPE_REGION_RATIO=0.5 is deliberate — do NOT "fix" by injecting top-half icons (fenced off in autocroissant-psd-extraction-campaign) |
-| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:878-882) — the classic "types stuck at the end of the ability" symptom |
-| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:780) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
+| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:939-943) — the classic "types stuck at the end of the ability" symptom |
+| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:841) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
 
 **Conclusive result:** you can name the stage ([1]–[6]), state the mechanism in one sentence, it
 predicts the exact stored (wrong) text AND the healthy cards' correctness, and parse_one reproduces
@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:469 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:472 as of 2026-10-20; until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -448,7 +448,7 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(repo_traverser.py:368-369), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(repo_traverser.py:371-372), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -532,3 +532,7 @@ update this file.
 2026-10-21: Recipe 5 re-derived for the 0.1 s tick (≤0.2 s bound) and the separate 1 s reminder loop; main.py line numbers re-pointed. Review: bench path spelled out.
 
 2026-10-21 (review): github_api.py citation re-pointed (:26-29; the module gained two imports above it).
+
+2026-10-21 (titles): psd_parser.py and repo_traverser.py citations re-pointed (the parser reads the printed title into `display_name`; PARSER_VERSION 2).
+
+2026-10-21 (review): psd_parser.py citations re-pointed after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.
