@@ -528,7 +528,7 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | Treat above-midline icons as inline types (or lower/remove the midline) | `d0bb28c` (2026-01-30) replaced a top-400px rule with `TYPE_REGION_RATIO=0.5` because creature-type tags live in the top region | The Lich King carries `undead` twice: a tag at y=21 and an inline icon at y=2239. Erase the midline and every tag becomes a bogus injection candidate |
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
-| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:405 → `manual_metadata_entry`, psd_analyzer.py:167; 2026-10-20 lines). And know its verified semantics, below |
+| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:419 → `manual_metadata_entry`, psd_analyzer.py:167; 2026-10-20 lines). And know its verified semantics, below |
 | Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
@@ -577,7 +577,7 @@ documented in autocroissant-failure-archaeology).
   `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py; grep -c removeprefix commands/psd_analyzer.py` (0)
 - Bug introduction in f7c915c (history):
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
-- Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:368):
+- Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:382):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
 - Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:471 on 2026-10-20):
   `grep -n "force_update: bool = " commands/repo_traverser.py`
@@ -604,11 +604,13 @@ documented in autocroissant-failure-archaeology).
   `git show 081b1fd -- commands/psd_analyzer.py | grep -B2 -A8 MISMATCH` (removed).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
-- Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:64, `_psd_changed`
+- Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:87, `_psd_changed`
   repo_traverser.py:73, `manual_metadata_entry` psd_analyzer.py:167, its CardInfo creation
-  psd_analyzer.py:219; /update_metadata at main.py:405):
+  psd_analyzer.py:219; /update_metadata at main.py:419):
   `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.
 - Font adoption count (0 of 813 PSDs on 2026-10-19) and the migration backlog (45 PSDs / 81
   smart-object icon layers): ttscardmaker-companion §5.
+
+2026-10-21: main.py and card_models.py line numbers re-pointed (atomic pickle saves, 0.1 s queue tick); no parser change, gate 813 cards / 0 differences.

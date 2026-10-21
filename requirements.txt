@@ -1,6 +1,7 @@
 cython
 davey
 discord.py>=2.5
+fonttools
 GitPython
 numpy
 opencv-python

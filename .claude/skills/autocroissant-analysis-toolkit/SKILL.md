@@ -1,6 +1,6 @@
 ---
 name: autocroissant-analysis-toolkit
-description: First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: "root cause" a mis-parsed card or wrong [type] injection; "prove" / "which code path produced this data" / forensic attribution of pickle contents; "bisect" / "when did X change" / "which commit introduced" (git log -S, git show time-travel); "measure before running" an API budget for /update_stats vs GitHub rate limits; "why is the bot slow to reply" queue-timing reasoning; "pickle forensics" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any "analysis method" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on The Lich King, the path-style experiment that root-caused the removeprefix bug, the "am forehead" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed), the ≤2s queue-latency derivation, and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison.
+description: First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: "root cause" a mis-parsed card or wrong [type] injection; "prove" / "which code path produced this data" / forensic attribution of pickle contents; "bisect" / "when did X change" / "which commit introduced" (git log -S, git show time-travel); "measure before running" an API budget for /update_stats vs GitHub rate limits; "why is the bot slow to reply" queue-timing reasoning; "pickle forensics" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any "analysis method" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on The Lich King, the path-style experiment that root-caused the removeprefix bug, the "am forehead" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed), the ≤0.2 s queue-latency derivation, and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison.
 ---
 
 # AutoCroissant analysis toolkit
@@ -358,9 +358,9 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:742-876; queue helpers commands/utils.py:25-60): three module-level
-deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=1)`
-coroutine. Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
+**The mechanism** (verify at main.py:762-895; queue helpers commands/utils.py:25-60): three module-level
+deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=0.1)`
+coroutine (1 s until 2026-10-21). Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
 `queue_message`/`queue_file`/`queue_edit`/`queue_command`.
 
@@ -368,31 +368,34 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 
 | Path | Hops | Queue-added latency |
 |---|---|---|
-| Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 1s (avg ~0.5s) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:117-121, music chaining) | enqueue → ≤1s command tick → `create_task` + thread runs → worker enqueues send → ≤1s dispatch tick | ≤ 2s (avg ~1s) |
+| Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 0.1 s (avg ~50 ms) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:117-121, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
 
-Two structural caveats, both visible in the code: (a) `process_command_queue` re-enqueues
-`check_reminder` at the top of every tick (main.py:841 as of 2026-10-20) and pops it in the same tick — reminders
-are checked every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:853-862 as of 2026-10-20), so one slow Discord HTTP call
+Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:857-859 as of
+2026-10-21), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked
+every second, then their commands take the queued-command path above; (b) the dispatch
+loop awaits each send SEQUENTIALLY inside the tick (main.py:876-884 as of 2026-10-21), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
 **Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
 `docs/Finished/optimization-pass-2026-10-20/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
 the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An ability query queues one message per
-result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop. Both are open
-owner decisions (docs/BUGS_AND_IMPROVEMENTS.md §2.5); idle cost of the 1 s loops is 0.33 ms CPU/s.
+result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop; idle cost of the
+1 s loops was 0.33 ms CPU/s. **Changed 2026-10-21** (owner decisions, archaeology 10.30): the drains tick every 0.1 s, so
+the queue bound is ≤ ~100 ms per hop and ≤ ~200 ms for a reminder's two hops, and /query_ability lists cards 10 per
+message. Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
+reminders, 1.53 with 200; 2 threads alive.
 
-**The diagnostic implication (the point of the recipe):** the queues can contribute at most ~2
-seconds. **Any "hang" over ~3 seconds is thread work (the worker function itself) or Discord I/O
+**The diagnostic implication (the point of the recipe):** the queues can contribute at most ~0.2 s.
+**Any "hang" over ~1 second is thread work (the worker function itself) or Discord I/O
 (send/edit HTTP, or the fallback chain after a 15-minute interaction-token expiry — see
 autocroissant-debugging-playbook), never queue scheduling.** Don't investigate the deques for a
 30-second stall; time the worker.
 
-**Conclusive result:** you state the expected latency for the exact path the command took (≤1s or
-≤2s of queue overhead), compare with the observed delay, and the difference tells you which
+**Conclusive result:** you state the expected latency for the exact path the command took (≤0.1 s or
+≤0.2 s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:742-876.
+main.py:762-895.
 
 ---
 
@@ -511,7 +514,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | `num_changed` gates at HEAD | `grep -n 'if num_changed > 0' commands/repo_traverser.py` (prune, then the save gate) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/repo_traverser.py; grep -n 'requests/hour' commands/github_api.py` (repo_traverser.py / github_api.py since the 2026-10-20 split) |
-| Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:838-866 on 2026-10-20) |
+| Queue loops drain the whole deque each 0.1 s tick; reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:847-880 on 2026-10-21: 847 at 1 s, 853/866/878 at 0.1 s) |
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
@@ -525,3 +528,5 @@ update this file.
 
 2026-10-20 (later): the profile and bench scripts cited in Recipe 5 moved from `~/Documents/ac-optimization/` to branch
 `docs/Finished/optimization-pass-2026-10-20/`.
+
+2026-10-21: Recipe 5 re-derived for the 0.1 s tick (≤0.2 s bound) and the separate 1 s reminder loop; main.py line numbers re-pointed. Review: bench path spelled out.

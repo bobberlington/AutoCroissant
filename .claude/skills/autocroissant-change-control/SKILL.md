@@ -32,8 +32,8 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s, 220 tests on 2026-10-20; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the 813-card old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences). Checklist below if it adds a command; non-negotiables table always |
-| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()`, `StatsDatabase` in card_models.py; `/alias` calls query_card's `save_aliases`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
+| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 22 s, 310 tests on 2026-10-21; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the 813-card old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences). Checklist below if it adds a command; non-negotiables table always |
+| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()`, `StatsDatabase` in card_models.py; `/alias` calls query_card's `save_aliases`; every save is atomic under its pickle's lock since 2026-10-21, `card_models.save_pickle`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker and push THERE; this repo only re-parses via `/update_stats` (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the pickle gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
@@ -42,7 +42,7 @@ and code changes in the same commit** — rationale in the next section.
 
 ## The self-update machinery (what /push, /pull, /update actually do)
 
-All in `commands/update_bot.py` (registered in `main.py:172-205`). **The canonical
+All in `commands/update_bot.py` (registered in `main.py:175-209`). **The canonical
 step-by-step anatomy — every message each command prints, the failure table, the
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
@@ -57,7 +57,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
   `AUTO-RESOLVE: ...` merge commit.
 - **/update** → `update_bot()` (update_bot.py:136-161): stops the three send/edit
-  queue loops first (main.py:201-203), then `/push` + `/pull` + restart. With
+  queue loops first (main.py:205-207), then `/push` + `/pull` + restart. With
   `force_reset:True` it instead runs `git reset --hard origin/main`
   (update_bot.py:118-133) and restarts.
 
@@ -79,7 +79,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
    ONLY when the reverted commit touches pickles alone, and only with the diff_stats.py
    gate re-run on the result before any push. Step-by-step recovery procedure:
    autocroissant-debugging-playbook §1.
-3. **`force_reset:True` is dangerous** — main.py:195 literally labels it
+3. **`force_reset:True` is dangerous** — main.py:198 literally labels it
    `(dangerous!)`. It skips the pickle push entirely and hard-resets to
    `origin/main`, discarding ALL local state: uncommitted code edits AND every
    pickle change since the last successful /push (e.g. an afternoon of
@@ -123,6 +123,12 @@ scheduling state that mutates whenever reminders fire or reschedule; committing 
 would generate a conflict on every handoff. Accordingly, `git_push` adds only the
 three card pickles and never reminder.pkl.
 
+**Saves are atomic and locked (since 2026-10-21, B10).** `card_models.save_pickle` writes `<pickle>.tmp` beside the
+target, fsyncs and `os.replace`s it, under one module-level `threading.Lock` per pickle (`_stats_lock`,
+`_old_stats_lock`, query_card's `_alias_lock`); reminder.pkl has had the same shape since 2026-10-19. Keep it: a new
+writer goes through `save_pickle` (a plain `open(..., 'wb')` brings B10 back), loads stay unlocked, and a `*.pkl.tmp`
+left by a hard kill is gitignored and safe to delete. Story: autocroissant-failure-archaeology 10.29.
+
 ## What must NEVER be committed
 
 Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-20 (53db8ee
@@ -134,7 +140,7 @@ added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`
 | `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
 | `.ssh/` | 37 | Credentials, same reasoning |
 | `reminder.pkl` | 39 | Volatile per-host scheduling state (see above) |
-| `reminder.pkl.tmp` | 41 (added 2026-10-19) | Transient file from the atomic reminder save (2026-10-19 rewrite). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
+| `*.pkl.tmp` | 41 (`reminder.pkl.tmp` since 2026-10-19; widened 2026-10-21) | Transient file of an atomic pickle save (reminder.pkl; stats, old_stats and aliases since 2026-10-21). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
 | `repo_history.json`, `.tmp` | 43-44 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
 | `type_emojis.json`, `.tmp` | 46-47 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
 | `.claude/settings.local.json` | 54 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
@@ -150,7 +156,7 @@ deliberate change-control decision: either force-add it or (better) amend
 
 ## Checklist: add a new slash command
 
-Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10-20).
+Worked example to imitate: the `/update_stats` block at main.py:373-385 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
    query_card.py, parsing in psd_parser.py, the /update_stats traversal in repo_traverser.py, GitHub access in
@@ -178,8 +184,8 @@ Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10
    wrapper — that is the convention every block follows; see "looks safe but isn't"
    for why you must not delete or fold it.
    Admin-only commands start with the `if lacks_admin(interaction): ... return`
-   block (copy it from /push, main.py:185-187). The newest example of a whole admin
-   command block is `/sync_emojis` (main.py:678-691, added 2026-10-19).
+   block (copy it from /push, main.py:188-190). The newest example of a whole admin
+   command block is `/sync_emojis` (main.py:696-709, added 2026-10-19).
 3. **Add `@app_commands.describe`** for every parameter. Description wording and
    style: **autocroissant-docs-and-style**. Note Discord quirks that already shaped
    signatures here: big integers (guild/user IDs) are passed as `str` because Discord
@@ -188,7 +194,7 @@ Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10
    (`general_commands`:6, `text_commands`:29, `card_commands`:42,
    `stats_commands`:77, `music_commands`:103), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:129) dispatches on the category word.
+   `print_help` (help.py:131) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
    by default (`type_emojis`, `repo_history`, `tts_save` and `github_api` were deliberately left out; the four
@@ -201,10 +207,10 @@ Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10
    setup.py:9-18).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
-   `on_ready` (main.py:106-126) records every command in `slash_registry` (which is
+   `on_ready` (main.py:106-127) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
    (`sync_guild_commands`, main.py:98-102). If the command does not appear after
-   restart, run `/sync_global` (main.py:670). Client-side, Discord may need a
+   restart, run `/sync_global` (main.py:688). Client-side, Discord may need a
    reload before new commands show up.
 7. **Verify** by invoking the command in Discord; do not run `python3 main.py`
    casually to test — starting the bot connects it to the live guilds
@@ -320,8 +326,11 @@ and update this file.
 | Stored reminders drop retired options | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py` |
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
-| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 77, 103; 127) |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (238 passed on 2026-10-20) |
+| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 79, 107; 131) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (310 passed, 17 fork-only skips on 2026-10-21) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
+| Atomic locked saves (B10) | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock\|save_pickle(" commands/query_card.py`; `git check-ignore -v stats.pkl.tmp` (.gitignore:41 `*.pkl.tmp`) |
+
+2026-10-21: atomic locked pickle saves (B10) added to class (b) and the pickle discipline; `*.pkl.tmp` row; line numbers re-pointed.

@@ -436,7 +436,7 @@ autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:889-915:
 
 ## 6. Data schemas: CardInfo and the pickles
 
-`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:58-128, :29-56), pickled as
+`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:81-151, :52-79), pickled as
 `commands.psd_analyzer.*` (`__module__` pinned since the 2026-10-20 split).
 Consequence: **unpickling stats.pkl/old_stats.pkl requires this repo on sys.path with a config.py
 present** (module import chain). Pickles from before the
@@ -493,7 +493,7 @@ blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if 
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:469), the same as the slash command (main.py:368);
+is `update_stats(force_update=False)` (repo_traverser.py:469), the same as the slash command (main.py:382);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -525,7 +525,7 @@ autocroissant-change-control):
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
 (repo_traverser.py:368-369; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:172-181 —
+archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:193-202 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:61-71) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
@@ -537,14 +537,14 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:32`, singleton `card_repo` at :750) maintains
+`CardRepository` (`commands/query_card.py:35`, singleton `card_repo` at :796) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :55-79). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :62-103). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
 Lookup normalizes to `name.replace(' ', '_').lower() + '.png'` and fuzzy-matches with difflib
-`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:28;
+`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:29;
 runtime-settable via `/set_ratio`, resets on restart — see autocroissant-config-and-flags).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
@@ -556,12 +556,12 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
 existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:686-739). At `populate_files` time each alias key is inserted into `git_files` as
+(query_card.py:695-748). At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
 Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
 `red_bloon -> pod01red_bloon.png`.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:215-301)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:218-304)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
 :315-334): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
@@ -597,14 +597,15 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:338-350). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:341-353). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:244) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:352-376). 48 pages today.
-10. Results return card IMAGES (urls via `get_card_url`); `howmany:True` returns just the count;
-    `limit` caps output (main.py:276-290).
+   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:355-379). 48 pages today.
+10. One result posts its image URL (a preview, via `get_card_url`); several are listed as `<name> — <url>` lines,
+    10 per message (`RESULTS_PER_MESSAGE`, query_card.py:30; since 2026-10-21, one message per result before);
+    `howmany:True` returns just the count; `limit` caps output (main.py:290-303).
 
 ## 8. When NOT to use this skill
 
@@ -662,3 +663,5 @@ Maintenance: after any parser or repo change, re-run `inspect_pickle.py` and the
 parses and update the numbers here (counts, distribution, exclusion-list sizes, duplicated
 basenames) plus the date stamps. If `TYPE_REGION_RATIO`, the gap regex, or the exclusion lists
 change, sections 4-5 are stale until rewritten.
+
+2026-10-21: §7.2 gotcha 10 describes the grouped /query_ability output; query_card.py, card_models.py and main.py line numbers re-pointed (review: CardRepository, card_repo, populate_files, manage_alias).

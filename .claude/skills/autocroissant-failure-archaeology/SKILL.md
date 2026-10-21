@@ -5,7 +5,7 @@ description: The chronicle of every major AutoCroissant investigation, dead end,
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added) and **2026-10-20** (Entries 10.10-10.28). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28) and **2026-10-21** (10.29-10.30). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -361,7 +361,8 @@ Earlier internal notes/briefs contain these errors. The diffs win. Do not propag
 These fixes landed together on 2026-10-19 alongside the stoogedings icon-font parsing (impossibility-cards-reference
 §4.1), `commands/type_emojis.py` and the reminder rewrite. "Working tree" below means uncommitted when written; 10.1-10.13 were
 committed in 53db8ee, 10.15 in bacab06 and 9fb3093, 10.16 in 05c643e, 10.17-10.19 in e13d754, bad0496, ce94585 and
-c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optimization pass. Line numbers are
+c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optimization pass; 10.29-10.30 the
+2026-10-21 owner decisions. Line numbers are
 2026-10-19 readings unless an entry says otherwise.
 
 ### 10.1 Scheduled `/update_stats` inherited the dangerous default (was B2)
@@ -398,7 +399,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:471 after the 2026-10-20 split), matching main.py:368.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:471 after the 2026-10-20 split), matching main.py:382.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -714,7 +715,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Root cause**: growth by accretion; the classifier assumed every path had its folder rule's depth.
 - **Evidence**: commands/card_models.py, card_edits.py, psd_parser.py, repo_traverser.py hold the code;
   psd_analyzer.py re-exports it and keeps the metadata/export commands and init_psd. `CardInfo.__module__ =
-  CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:127): re-dumped stats.pkl and old_stats.pkl were
+  CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:150): re-dumped stats.pkl and old_stats.pkl were
   byte-identical in all four .py/.so combinations. The four modules joined INCLUDE_FILES (11 compiled) so the moved
   code keeps its compiled semantics; query_card imports through the facade so a stale monolithic .so cannot leave
   two `stats_db` objects. `classify` returns UNKNOWN for a path too shallow for its rule (psd_parser.py:237-247).
@@ -740,9 +741,37 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   the emoji listing (startup 200 + 200 → 200 + 304); lazy imports (`import main` 1059-1278 → 646-720 ms, 185 →
   122.5 MB RSS); TTS save objects cached by sha (repeat no-change run 9 requests / 6.4 MB → 3 / 0 MB). Tests:
   `tests/test_network_speed.py`. Parser gate: 813 cards, 0 differences (.py and compiled).
-- **Status**: done 2026-10-20 (uncommitted when written). Not done: the 1 s tick latency and one message per
-  search result (owner decisions), lazy GitPython, per-thread `requests.Session` for blobs; details in
+- **Status**: done 2026-10-20 (uncommitted when written). Not done: lazy GitPython, per-thread `requests.Session`
+  for blobs (the tick latency and the one message per result: 10.30); details in
   (`docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
+
+### 10.29 Card pickle saves made atomic and locked (was B10, 2026-10-21)
+
+- **Symptom**: `StatsDatabase.save` and `save_aliases` wrote stats.pkl, old_stats.pkl and aliases.pkl in place with
+  no lock, so a kill mid-write (`/restart_bot`, `/update`) or two writers (`/update_stats` beside `/mass_replace`, a
+  reminder's `/update_stats` beside `/push`) could leave a truncated pickle that the load only catches as EOFError.
+- **Root cause**: the plain `open(path, 'wb'); dump(...)` path. reminder.pkl got the safe pattern on 2026-10-19; the
+  card pickles never did.
+- **Evidence**: `card_models.save_pickle` (card_models.py:20-34: temp file beside the target, flush + fsync,
+  `os.replace`, temp removed on any failure) under one module-level `threading.Lock` per pickle (`_stats_lock`,
+  `_old_stats_lock`, query_card's `_alias_lock`); loads unchanged and unlocked. Bytes identical to the old path
+  (`pickle.dumps` equality in `tests/test_pickle_saves.py`, which also kills a write after partial bytes and runs
+  two saving threads). `.gitignore` ignores `*.pkl.tmp`. Parser gate: 813 cards, 0 differences.
+- **Status**: done 2026-10-21 (uncommitted when written).
+
+### 10.30 Queue tick 0.1 s; /query_ability lists cards 10 per message (owner decisions, 2026-10-21)
+
+- **Symptom**: a reply waited for the next 1 s drain (502 ms mean, ~99% of /query's bot-side time, 10.28), and
+  /query_ability sent one message per matching card (85 on average, max 763) through the one dispatch loop.
+- **Root cause**: `@tasks.loop(seconds=1)` on the three drains; one `queue_message` per result in `query_ability`.
+- **Evidence**: the three drains tick every 0.1 s (main.py:863-895; ordering, per-item try, `_running`, the fallback
+  and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:857-859), started
+  and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s,
+  no Discord): 1.29 ms CPU/s with 0 reminders, 1.53 with 200 (0.33 / 0.40 at 1 s), 2 threads alive.
+  `query_ability` (query_card.py:577-622) posts one match as before (its image URL, a preview); more as
+  `<name> — <url>` lines, `RESULTS_PER_MESSAGE` = 10 per message through `queue_long_message`.
+  Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image).
+- **Status**: done 2026-10-21 (uncommitted when written).
 
 ## How to add an entry
 
@@ -791,6 +820,9 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
 | Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 477; `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
+| Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock\|^RESULTS_PER_MESSAGE" commands/query_card.py` (31, 30); `grep -n "tasks.loop" main.py` (847 at 1 s; 853, 866, 878 at 0.1 s) |
 
 2026-10-20 (later): the optimization-pass reports moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`
 (`docs/Finished/optimization-pass-2026-10-20/`); its scripts to `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`.
+
+2026-10-21: Entries 10.29-10.30 added; main.py, card_models.py, query_card.py and help.py line numbers re-pointed. Review: archive-branch and "at the time" main.py numbers kept as they were; bench path spelled out.

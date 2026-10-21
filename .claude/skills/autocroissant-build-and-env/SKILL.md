@@ -65,7 +65,7 @@ they ride in as dependencies of other packages. Verified via pip metadata 2026-0
 
 | Hidden dep | Arrives via | Who needs it | Evidence |
 |---|---|---|---|
-| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:12` (emoji images), the only PIL import on main; `main.py:75` and `query_card.py:19` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Declared explicitly since 2026-10-20. |
+| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:12` (emoji images), the only PIL import on main; `main.py:75` and `query_card.py:20` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Declared explicitly since 2026-10-20. |
 | PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it) | discord.py itself only requires aiohttp (and audioop-lts on 3.13+); it does not pull PyNaCl. Declared explicitly since 2026-10-20. |
 
 **The rule**: if psd-tools or PyGithub is ever removed from `requirements.txt`, add
@@ -189,7 +189,7 @@ Then:
    `TOKEN` (the Discord bot token). Field names and what each does:
    **autocroissant-config-and-flags**. Never commit this file.
 2. Smoke test (section c). Music playback also needs ffmpeg (section 1).
-3. Offline suite: `python -m pytest -q tests` (about 13 s, 220 tests on 2026-10-20; needs no config.py,
+3. Offline suite: `python -m pytest -q tests` (about 22 s, 310 tests on 2026-10-21; needs no config.py,
    network or Discord, never writes the pickles; PSD tests skip without `~/Desktop/TTSCardMaker`).
    Owner: **autocroissant-validation-and-qa** §1 row 1c.
 
@@ -289,3 +289,5 @@ Line numbers drift; re-verify volatile facts with:
 | client.run under __main__ guard | `tail -8 main.py` |
 | Python version | `python3 --version` (3.14.8 on the Mac venv and the jetson, 2026-10-20) |
 | Dev requirements | `cat requirements-dev.txt` (pytest); `.gitignore` re-includes it (`!requirements-dev.txt`) |
+
+2026-10-21: main.py line numbers re-pointed (0.1 s queue tick, reminder loop); suite count refreshed. The 11 compiled modules still build with Cython 3.3.0 (0 errors).

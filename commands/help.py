@@ -43,9 +43,10 @@ card_commands = {
     "/query <query>:"                           : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
                                                   "The Card page button opens it on the website; website names and notes show too.",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
-    "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images.\n"
+    "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions. One match posts its image; "
+                                                   "more are listed as name and image link, 10 per message.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
-                                                   "- howmany: If True, only returns the count instead of images (default: False)",
+                                                   "- howmany: If True, only returns the count instead of the cards (default: False)",
     "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook entries for text matching <search_text>. "
                                                   "Optional limit for max results (default: all).",
     "Query Syntax:"                             : "Flexible query syntax for /query_ability:\n"
@@ -83,6 +84,8 @@ stats_commands = {
     "/update_tts_save:"                         : "Updates the Tabletop Simulator save on the card repo (TTS/Impossibility Simulator.json) and commits it (admin only): "
                                                   "pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
                                                   "Posts a summary, the full report as a file, and the save's download link.",
+    "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "
+                                                  "and the fonts folder's count. Reads every card PSD once (cached by blob; a first run warms the cache over several calls).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
                                                    "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",

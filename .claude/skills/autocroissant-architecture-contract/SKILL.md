@@ -1,6 +1,6 @@
 ---
 name: autocroissant-architecture-contract
-description: Load this when you need to understand or safely modify HOW AutoCroissant works as a system — "how does the bot work", "start here", "orient me", "overview of this repo", "which skill do I need" (newcomer routing map at the top), "where do I put new code", "why is this function sync", "design", "invariants" — or any task touching threading, the async event loop, the command/dispatch/edit queues, tasks.loop, to_thread, queue_message/queue_file/queue_edit/queue_command, slash-command registration, slash_registry, reminder command execution, reminders running as their creator / lacks_admin at fire time, FakeInteraction, _ReminderUser, async workers that await Discord (type_emojis), module import order/cycles, module-level singletons, or the pickles-in-git database decision. Contains the execution model (discord.py event loop + three module-level deques drained by 1-second loops + sync workers in threads) and WHY it exists; an invariants table where each row says what breaks if you violate it; the module dependency map including the deliberate lazy-import cycle break; ASCII data flows for a slash command, the /update_stats pipeline, and a reminder firing; and the known-weak points stated plainly (ephemeral-dropping fallback, local-mode timestamp mismatch, pickle trade-offs, cross-repo icon contracts; duplicate names and the dying dispatch loop fixed 2026-10-20). Live-symptom triage belongs to autocroissant-debugging-playbook.
+description: Load this when you need to understand or safely modify HOW AutoCroissant works as a system — "how does the bot work", "start here", "orient me", "overview of this repo", "which skill do I need" (newcomer routing map at the top), "where do I put new code", "why is this function sync", "design", "invariants" — or any task touching threading, the async event loop, the command/dispatch/edit queues, tasks.loop, to_thread, queue_message/queue_file/queue_edit/queue_command, slash-command registration, slash_registry, reminder command execution, reminders running as their creator / lacks_admin at fire time, FakeInteraction, _ReminderUser, async workers that await Discord (type_emojis), module import order/cycles, module-level singletons, or the pickles-in-git database decision. Contains the execution model (discord.py event loop + three module-level deques drained by 0.1 s loops + sync workers in threads) and WHY it exists; an invariants table where each row says what breaks if you violate it; the module dependency map including the deliberate lazy-import cycle break; ASCII data flows for a slash command, the /update_stats pipeline, and a reminder firing; and the known-weak points stated plainly (ephemeral-dropping fallback, local-mode timestamp mismatch, pickle trade-offs, cross-repo icon contracts; duplicate names and the dying dispatch loop fixed 2026-10-20; the 1 s tick and in-place pickle saves 2026-10-21). Live-symptom triage belongs to autocroissant-debugging-playbook.
 ---
 
 # AutoCroissant Architecture Contract
@@ -35,28 +35,29 @@ write or move code in this repo, read "The execution model" and "Invariants" bef
 plain **sync** function in `commands/*.py`, pushed off the loop into a worker thread via
 `asyncio.to_thread`. Worker threads are forbidden from touching Discord directly; instead they append
 their output to three module-level deques in `commands/utils.py` (`command_queue`, `dispatch_queue`,
-`edit_queue`, utils.py:25-27). Three `@tasks.loop(seconds=1)` coroutines in `main.py`
-(`process_command_queue` main.py:840, `process_dispatch_queue` main.py:854, `process_edit_queue`
-main.py:866) drain those deques once per second **on the event loop** and perform the actual Discord
-I/O, with a built-in fallback chain. That is the whole model: loop owns Discord, threads own work,
-deques are the only bridge.
+`edit_queue`, utils.py:25-27). Three `@tasks.loop(seconds=0.1)` coroutines in `main.py`
+(`process_command_queue` main.py:864, `process_dispatch_queue` main.py:877, `process_edit_queue`
+main.py:889) drain those deques ten times a second **on the event loop** (once a second until
+2026-10-21) and perform the actual Discord I/O, with a built-in fallback chain; a fourth loop,
+`process_reminders` (main.py:858), keeps the reminder heartbeat at 1 s. That is the whole model: loop owns
+Discord, threads own work, deques are the only bridge.
 
 ## The queue trio (this skill owns this detail)
 
 | Queue (utils.py:25-27) | Entry shape | Filled by | Drained by | What draining does |
 |---|---|---|---|---|
-| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:839-850) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
-| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:853-862) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
-| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:865-876; `_edit` 814-832) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
+| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:863-872) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
+| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:876-884) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
+| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:888-895; `_edit` 833-849) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
 
 Mechanics you must know:
 
 - **`to_thread(func)`** (utils.py:80-89) wraps a sync function so awaiting it runs it in a thread via
   `asyncio.to_thread`. Critical subtlety: if `func` is already a coroutine function it is returned
-  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:748-757) execute
+  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:767-775) execute
   both sync workers and the async slash callbacks stored in `slash_registry` with one code path.
 - **`to_threadpool(func, executor)`** (utils.py:92-101) is the bounded variant. `run_command` routes to
-  it when the queued kwargs contain `executor` (main.py:752-753) — so **`executor` is a reserved kwarg
+  it when the queued kwargs contain `executor` (main.py:770-771) — so **`executor` is a reserved kwarg
   name** for anything sent through `queue_command`; a worker function with its own `executor` parameter
   would have it silently popped. Sole current user: music downloads, capped at a 2-worker
   `ThreadPoolExecutor` (music_player.py:35, used at music_player.py:264 and 277) so a playlist can't
@@ -83,18 +84,18 @@ Mechanics you must know:
 2. **Centralized fallbacks survive interaction-token expiry.** Discord interaction tokens die after
    15 minutes. Long jobs (full `/update_stats` sweep, playlist download) outlive them.
    The dispatch loop's chain — `response.send_message` if not yet responded, else `followup.send`, and
-   on `HTTPException`/`AttributeError` a raw `channel.send` (main.py:783-795) — means a late result
+   on `HTTPException`/`AttributeError` a raw `channel.send` (main.py:801-813) — means a late result
    degrades to a plain channel message instead of vanishing. Every send written as `queue_*` gets this
    for free; every send written by hand does not.
-3. **Serialization + self-throttling.** One drain point per second batches sends and naturally stays
-   under Discord rate limits without any explicit rate-limit code. Cost: up to ~1s latency per hop,
-   and a reply that traverses two queue hops (see the reminder diagram) takes ~2s. That is the
-   accepted trade at hobby scale.
-4. **Deferred init without blocking login.** `on_ready` (main.py:106-126) queues `init_reminder`,
+3. **Serialization + self-throttling.** One drain point (every 0.1 s since 2026-10-21, 1 s before)
+   batches sends; discord.py's own rate-limit handling covers the rest without explicit rate-limit code.
+   Cost: up to ~100 ms latency per hop, and a reply that traverses two queue hops (see the reminder
+   diagram) up to ~200 ms. That is the accepted trade at hobby scale.
+4. **Deferred init without blocking login.** `on_ready` (main.py:106-127) queues `init_reminder`,
    `init_psd`, `init_query`, `refresh_history`, `init_type_emojis(client)` as commands (main.py:117-121)
    instead of running them — pickle loads and the GitHub tree fetch happen in worker threads after the
    bot is already up. `init_type_emojis` is async: it runs on the loop and threads its own downloads.
-   main.py also calls `bind_reminder_client(client)` at import time (main.py:211) so the scheduler can
+   main.py also calls `bind_reminder_client(client)` at import time (main.py:215) so the scheduler can
    tell when a reminder's channel is gone.
 
 ## Invariants — violate this and X happens
@@ -103,12 +104,12 @@ Mechanics you must know:
 |---|---|---|
 | 1 | **No awaits inside queued sync functions.** Workers are plain `def`; there is no event loop in their thread. | `await` in a `def` is a SyntaxError — so the tempting "fix" is making the worker `async def`. Do that and `to_thread` passes it through unchanged (utils.py:82-84): your "worker" now runs ON the event loop, and its blocking calls (PSD parse, yt-dlp, GitPython) freeze the entire bot — heartbeats, all three queue loops, everything — until it finishes. |
 | 2 | **All Discord output from worker code goes through `queue_message`/`queue_file`/`queue_edit`/`queue_any`/`queue_command`** (utils.py:36-60). | Direct calls from a thread produce never-awaited coroutines (message silently lost) or thread-unsafe loop access. You also forfeit the fallback chain: your send dies permanently at the 15-minute token expiry instead of degrading to `channel.send`, and reminders (which run your command with a FakeInteraction) break because FakeInteraction only implements the queue-facing surface. |
-| 3 | **The three queue loops must be running for ANYTHING to send.** Started in `on_ready` (main.py:123-125); deliberately STOPPED by `/restart_bot` (main.py:152-154), `/stop_bot` (main.py:164-166), `/update` (main.py:201-203) so no queued output races process replacement. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (update_bot.py:18, 47, 136), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
-| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (48 occurrences as of 2026-10-20; e.g. main.py:258, 359). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:110-111), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
-| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:206, re-exported by psd_analyzer), `card_repo` (query_card.py:787), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
+| 3 | **The three queue loops must be running for ANYTHING to send.** Started in `on_ready` (main.py:124-126); deliberately STOPPED by `/restart_bot` (main.py:154-156), `/stop_bot` (main.py:167-169), `/update` (main.py:205-207) so no queued output races process replacement. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (update_bot.py:18, 47, 136), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
+| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (48 occurrences as of 2026-10-20; e.g. main.py:262, 373). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:110-111), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
+| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:227, re-exported by psd_analyzer), `card_repo` (query_card.py:796), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); every card module reaches utils: psd_analyzer → repo_traverser → query_card → type_emojis → utils (since the 2026-10-20 split). | Any tool that unpickles `stats.pkl` must have this repo on `sys.path` AND a config.py present — `CardInfo`/`CardStats` are dataclasses defined in `commands.card_models` with `__module__` pinned to `commands.psd_analyzer` (the facade re-exports them), so unpickling imports the facade and the chain reaches `config`. This is why the diagnostics scripts run from the repo root; code outside this repo must stub the classes, as TTSCardMaker's website build does (`_Unpickler` in site/build/build_site.py). config.py is SECRET — never print or read its values. |
-| 7 | **`check_reminder` is re-queued every tick — reminder-path work must stay cheap, and stay single-flight.** The first statement of `process_command_queue` is `queue_command(check_reminder)` (main.py:841); the entry drains on the next tick, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
-| 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:161-163). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
+| 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:857-859, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
+| 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:163-165). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
 
 ## Data-flow diagrams
@@ -119,8 +120,8 @@ Mechanics you must know:
 Discord user runs /query
       |
       v  (event loop, discord.py)
-tree dispatch -> async wrapper slash_query_name (main.py:263-265)
-      |   await query_name(...)        # query_name was rebound: to_thread(query_name), main.py:258
+tree dispatch -> async wrapper slash_query_name (main.py:267-269)
+      |   await query_name(...)        # query_name was rebound: to_thread(query_name), main.py:262
       v
 asyncio.to_thread -> WORKER THREAD runs sync query_name()
       |   does the work; never awaits; never sends
@@ -128,8 +129,8 @@ asyncio.to_thread -> WORKER THREAD runs sync query_name()
       v
 dispatch_queue (deque, utils.py:25)
       |
-      v  (next 1-second tick, back on the event loop)
-process_dispatch_queue (main.py:854)
+      v  (next 0.1 s tick, back on the event loop)
+process_dispatch_queue (main.py:877)
       |- interaction.response.send_message(**kw)     if response not yet done
       |- interaction.followup.send(**kw)             if already responded/deferred
       '- client.get_channel(channel_id).send(**kw)   on HTTPException/AttributeError
@@ -141,7 +142,7 @@ Discord
 ### (b) `/update_stats` pipeline (PSDs -> parser -> pickles -> dataframes)
 
 ```
-/update_stats  (wrapper defers, main.py:370)
+/update_stats  (wrapper defers, main.py:384)
       v
 WORKER THREAD: update_stats() (repo_traverser.py:469)
       |  GitHub trees API with If-None-Match: 304 -> "Nothing changed in the card repo since the
@@ -157,7 +158,7 @@ WORKER THREAD: update_stats() (repo_traverser.py:469)
 per picked PSD: one commit lookup (_get_remote_timestamp); PSDParser.parse; remove temp file;
   old CardInfo -> old_stats only if its blob changed or it moved; CardValidator
       v
-stats_db singleton (card_models.py:206) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
+stats_db singleton (card_models.py:227) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
       |  (save only when num_changed > 0 or traverser.changed)
       v
 changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a TTS save run when images, the
@@ -176,8 +177,8 @@ them from this repo's main (ttscardmaker-companion §2).
 ### (c) A reminder firing (slash_registry + FakeInteraction), as of 2026-10-19
 
 ```
-process_command_queue tick (main.py:841)
-      v
+process_reminders 1 s tick (main.py:857-859) -> queue_command(check_reminder)
+      v  next command-drain tick (main.py:863)
 check_reminder() in a worker thread (analytics.py:819)
       |  _check_lock non-blocking acquire (overlapping pass -> return) ; then under _lock:
       |  for each due, enabled reminder -> _process_due -> _fire (analytics.py:647):
@@ -190,7 +191,7 @@ check_reminder() in a worker thread (analytics.py:819)
                   bind name:value options against the callback's signature and convert them
                   -> queue_command(_run_reminder_command, callback, fake, values, id, name)
                         |
-                        v  next tick: run_command (main.py:748) -> coroutine passthrough
+                        v  next tick: run_command (main.py:767) -> coroutine passthrough
                   _run_reminder_command awaits callback(fake, **values) on the event loop;
                   the callback runs lacks_admin(fake) as the CREATOR (invariant 9), then awaits
                   its to_thread'd worker exactly like a real invocation. Exceptions are reported
@@ -304,7 +305,7 @@ optimization pass.
    music_player.py:32). `random.shuffle` does indexed swaps and deque middle-indexing is O(n), so the
    shuffle is O(n²)-ish. Correct, and fine at hobby-scale queue lengths; would hurt at tens of
    thousands of entries. Not worth fixing until it is.
-3. **The dispatch fallback drops `ephemeral`** (main.py:785, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
+3. **The dispatch fallback drops `ephemeral`** (main.py:803, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
    before `channel.send`). A reply the user expected to be private — e.g. `/list_reminders`
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
@@ -327,7 +328,7 @@ optimization pass.
 7. **`/pull` blocks the event loop.** `git_pull` is `async def` running blocking GitPython network
    calls directly on the loop (update_bot.py:47; `to_thread` passes coroutine functions through,
    utils.py:82-84). For `/update` and `/restart_bot` that's fine — the queues are stopped and the
-   process is about to be replaced — but `/pull` (main.py:172-179) does NOT stop the queues, so all
+   process is about to be replaced — but `/pull` (main.py:175-182) does NOT stop the queues, so all
    sends and heartbeats stall for the duration of the fetch/merge. Deliberate simplicity; know it's
    why the bot "freezes" briefly during a pull. Since 2026-10-20 each git network call has
    `kill_after_timeout=NET_TIMEOUT` (120 s, update_bot.py:8), so a stalled fetch or push ends; an SSH
@@ -344,16 +345,20 @@ optimization pass.
    exactly the font's spellings; emoji names and the website still normalize differently. Renaming or
    deleting an icon PNG breaks things on both sides without an error, because the manifest keeps the old
    entry (ttscardmaker-companion §1.6-1.7; docs/BUGS_AND_IMPROVEMENTS.md C13).
-10. **The 1 s tick is most of a reply's latency** (measured 2026-10-20, Mac: `queue_message` to send
-   502 ms mean, p95 966 ms, against 3.9 ms of /query work; a reminder takes two hops, ~1 s), and a search
-   sends one message per result (85 per /query_ability on average, max 763) through the single dispatch
-   loop, delaying everyone else's replies. Waking the drain on enqueue, or batching up to 10 embeds per
-   message, changes the execution model or the output, so both wait for the owner
-   (docs/BUGS_AND_IMPROVEMENTS.md §2.5; `docs/Finished/optimization-pass-2026-10-20/profile.md`).
-11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:138-143) and
-   `save_aliases` (query_card.py:396-399) write in place, unlike reminder.pkl's tmp + fsync + replace, and
-   nothing locks them against a concurrent `/push` or `/restart_bot`; a kill mid-write leaves a truncated
-   pickle (network-robustness audit item 2; open).
+10. **The queue tick was most of a reply's latency** until 2026-10-21 (measured 2026-10-20, Mac:
+   `queue_message` to send 502 ms mean, p95 966 ms, against 3.9 ms of /query work), and a search sent one
+   message per result (85 per /query_ability on average, max 763) through the single dispatch loop. Both
+   were owner decisions and are done: the drains tick every 0.1 s (reminders keep a 1 s heartbeat; idle
+   1.3 ms CPU/s) and /query_ability lists name and image link 10 per message, one match keeping its preview
+   (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2). What remains:
+   the dispatch loop awaits sends one after another, so a long list still queues behind one slow send.
+11. **Pickle saves are atomic and locked, but not transactional across pickles.** Since 2026-10-21
+   `StatsDatabase.save` (card_models.py:161-164) and `save_aliases` (query_card.py:399-401) go through
+   `save_pickle` (card_models.py:20-34: temp file beside the target, flush + fsync, `os.replace`) under one
+   `threading.Lock` per pickle, like reminder.pkl; a kill mid-write leaves the old file whole. Still true:
+   stats.pkl and old_stats.pkl are saved one after the other, so a kill between them leaves a stats.pkl
+   newer than its old_stats.pkl, and a `/push` during a save commits whichever complete file is there
+   (archaeology 10.29).
 
 ## Where do I put new code (quick answers)
 
@@ -371,7 +376,7 @@ optimization pass.
 - **Work that must await Discord APIs other than sending messages** (emoji, guild management): an
   `async def` worker in the style of `sync_type_emojis` — await the Discord calls, thread every blocking
   step with `asyncio.to_thread`, report through `queue_message`.
-- **Bounded parallelism**: pass `executor=<ThreadPoolExecutor>` through `queue_command` (main.py:752-753)
+- **Bounded parallelism**: pass `executor=<ThreadPoolExecutor>` through `queue_command` (main.py:770-771)
   as the music downloader does; remember `executor` is a reserved kwarg name.
 - **Retiring a feature (owner's rule, 2026-10-20: archives go on branches)**: delete the code from main and
   commit it to its own branch `archive/<topic>`, made from main in a separate worktree so uncommitted work on
@@ -410,14 +415,14 @@ Re-find before citing:
 
 | Fact | Re-verify with (cwd = repo root) |
 |---|---|
-| Three 1s loops + drain functions | `grep -n -e "tasks.loop" -e "async def process_" main.py` (838-839 / 852-853 / 864-865) |
-| check_reminder re-queued every tick | `grep -n "queue_command(check_reminder)" main.py` (840) |
-| Loops started in on_ready / stopped in restart/stop/update | `grep -n "process_.*_queue.st" main.py` (123-125 / 152-154 / 164-166 / 201-203) |
-| Five queued inits incl. refresh_history and type emojis; reminder client binding | `grep -n "queue_command(init\|queue_command(refresh_history\|bind_reminder_client(client)" main.py` (117-121, 211) |
+| Three 0.1 s drains + the 1 s reminder loop | `grep -n -e "tasks.loop" -e "async def process_" main.py` (847-848 reminders at 1 s; 853-854 / 866-867 / 878-879 at 0.1 s) |
+| check_reminder queued by its own 1 s loop | `grep -n "queue_command(check_reminder)" main.py` (849, inside `process_reminders`) |
+| Loops started in on_ready / stopped in restart/stop/update | `grep -n "process_.*\.st" main.py` (123-126 / 153-156 / 166-169 / 204-207) |
+| Five queued inits incl. refresh_history and type emojis; reminder client binding | `grep -n "queue_command(init\|queue_command(refresh_history\|bind_reminder_client(client)" main.py` (117-121, 215) |
 | The three deques | `grep -n "= deque()" commands/utils.py` (25-27) |
 | queue_* helpers | `grep -n "^def queue_" commands/utils.py` (36/41/47/53/58/63) |
 | to_thread coroutine passthrough | `grep -n -e "def to_thread" -e "iscoroutinefunction" commands/utils.py` (80, passthrough 82-84) |
-| run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (748); `grep -rn "executor=executor" commands/music_player.py` |
+| run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (757); `grep -rn "executor=executor" commands/music_player.py` |
 | Registration rebind count | `grep -c "= to_thread(" main.py` (48) |
 | slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (111) |
 | Reminder resolve/bind/queue | `grep -n "slash_registry.get\|queue_command(_run_reminder_command" commands/analytics.py` |
@@ -430,7 +435,7 @@ Re-find before citing:
 | Temp files removed after parse (weak point 4 fixed) | `grep -n "mkstemp(\|remove(local_file)" commands/repo_traverser.py` |
 | Local mode archived 2026-10-20 (weak point 5) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44) |
 | Module-level cycles + lazy breaks | `grep -n "from commands.query_card import card_repo" commands/repo_traverser.py commands/psd_analyzer.py commands/type_emojis.py` (module level in the first two; inside a function in type_emojis); `grep -n "from commands.psd_analyzer import" commands/query_card.py` (all inside functions) |
-| Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (203); `grep -n "card_repo = CardRepository()" commands/query_card.py` (746); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
+| Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (227); `grep -n "card_repo = CardRepository()" commands/query_card.py` (796); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
 | config import chain | `grep -ln "^import config" commands/*.py` (music_player, utils); `grep -n "import config" commands/github_api.py` (try/except) |
 | type_emojis uncompiled | `grep -c "type_emojis" setup.py` (0) |
 | update_bot bypasses queues | `grep -n "followup.send" commands/update_bot.py`; `grep -n "from commands" commands/update_bot.py` (empty) |
@@ -439,3 +444,7 @@ Maintenance rule: if any grep above stops matching, the architecture moved — u
 the same change, and check whether the corresponding invariant row still holds before assuming it does.
 
 2026-10-20 (later): profile.md, cited in weak point 10, moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`.
+
+2026-10-21: the drains tick every 0.1 s and `process_reminders` keeps the 1 s reminder heartbeat (weak point 10 done, invariant 7; reminder data flow (c) starts at that loop; review re-pointed run_command, executor, _fallback_send, invariant 4
+reworded); card pickle saves atomic and locked through `card_models.save_pickle` (weak point 11 rewritten); main.py, card_models.py,
+query_card.py and help.py line numbers re-pointed.

@@ -120,6 +120,7 @@ async def on_ready():
     queue_command(refresh_history)                      # commit-pinned card image links
     queue_command(init_type_emojis, client)
 
+    process_reminders.start()
     process_command_queue.start()
     process_dispatch_queue.start()
     process_edit_queue.start()
@@ -149,6 +150,7 @@ async def slash_print_help(interaction: Interaction,
 
 @tree.command(name="restart_bot", description="Restart the bot.")
 async def slash_restart_bot(interaction: Interaction):
+    process_reminders.stop()
     process_command_queue.stop()
     process_dispatch_queue.stop()
     process_edit_queue.stop()
@@ -161,6 +163,7 @@ async def slash_stop_bot(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
+    process_reminders.stop()
     process_command_queue.stop()
     process_dispatch_queue.stop()
     process_edit_queue.stop()
@@ -198,6 +201,7 @@ async def slash_update(interaction: Interaction, force_reset: Optional[bool] = F
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
+    process_reminders.stop()
     process_command_queue.stop()
     process_dispatch_queue.stop()
     process_edit_queue.stop()
@@ -271,13 +275,23 @@ async def slash_website(interaction: Interaction):
                                             "Editors fix card data there; the bot picks it up on /update_stats.")
 
 
+def _check_repo_fonts(interaction: Interaction):
+    from commands.font_check import check_repo_fonts    # lazy: fontTools loads only when /fonts runs
+    check_repo_fonts(interaction)
+check_repo_fonts = to_thread(_check_repo_fonts)
+@tree.command(name="fonts", description="Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply.")
+async def slash_fonts(interaction: Interaction):
+    await interaction.response.defer()
+    await check_repo_fonts(interaction)
+
+
 query_ability_num_occur = to_thread(query_ability_num_occur)
 query_ability = to_thread(query_ability)
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
     query='The ability text you want to search for.',
     limit='The number of cards to output before stopping. Default = all.',
-    howmany='Instead of returning card images, return the number of matches. Default = False.',
+    howmany='Instead of returning the cards, return the number of matches. Default = False.',
 )
 async def slash_query_ability(interaction: Interaction,
                               query: str,
@@ -839,10 +853,15 @@ def _log_drop(kind: str, interaction, e: Exception) -> None:
     print(f"{kind}: dropped a message for channel {getattr(interaction, 'channel_id', '?')}: {type(e).__name__}: {e}")
 
 
-# --- COMMAND QUEUE ---
+# --- REMINDERS (1 s heartbeat; the drains below tick every 0.1 s) ---
 @tasks.loop(seconds=1)
-async def process_command_queue():
+async def process_reminders():
     queue_command(check_reminder)
+
+
+# --- COMMAND QUEUE ---
+@tasks.loop(seconds=0.1)
+async def process_command_queue():
     while command_queue:
         try:
             (args, kwargs), func = command_queue.popleft()
@@ -854,7 +873,7 @@ async def process_command_queue():
 
 
 # --- DISPATCH QUEUE (messages + files + embeds) ---
-@tasks.loop(seconds=1)
+@tasks.loop(seconds=0.1)
 async def process_dispatch_queue():
     while dispatch_queue:
         interaction, send_kwargs = dispatch_queue.popleft()
@@ -866,7 +885,7 @@ async def process_dispatch_queue():
 
 
 # --- EDIT MESSAGES ---
-@tasks.loop(seconds=1)
+@tasks.loop(seconds=0.1)
 async def process_edit_queue():
     while edit_queue:
         interaction, edit_kwargs = edit_queue.popleft()

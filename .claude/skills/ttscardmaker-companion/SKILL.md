@@ -36,6 +36,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | TTS save workflow | `.github/workflows/tts-save.yml` (keeps `TTS/Impossibility Simulator.json` current with the bot's updater; rules `TTS/decks.json`; §2.6) | Source |
+| Font check workflow | `.github/workflows/font-check.yml` (on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping; never reverts; §3) | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
 | Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
@@ -450,6 +451,25 @@ Recommendations:
 - (c) The audit only reads text layers, so the parser is unaffected by missing fonts. psd-tools reads stored text,
   not rendered glyphs.
 
+**Push guard (2026-10-21).** `.github/workflows/font-check.yml` runs AutoCroissant's `commands/font_check.py` on every
+push to main that changes a PSD or `MDW/Fonts/` (and by hand; `all` scans every card by blob, ~813 downloads): the PSDs
+the push changed come by blob sha through the API, the fonts folder is a sparse checkout cached by its tree sha, the bot
+files come from `bobberlington/AutoCroissant` (`font_check.py`, `github_api.py`, `global_config.py`; pip `psd-tools
+fonttools requests`). It reads the visible type layers' StyleRun fonts (plus the Normal sheet's default when no run covers
+the text; an empty layer asks for nothing; hidden layers are ignored) and resolves them against the PostScript names (name
+ID 6, else 4, else 1, as FreeType reports them: `Kung Fu Panda` -> KungFuPanda) of every top-level font file, exact or loose (casefolded alphanumerics, `-Regular` stripped), with `FONT_ALIASES` (AutoCroissant
+global_config.py: Papyrus-Regular -> Papyrus, Kung-Fu-Panda -> KungFuPanda). Findings exit 0 and go to the job summary, then,
+when the repo secret `DISCORD_FONT_WEBHOOK` is set (the URL is in no file), one Discord message, then a comment on the
+commit (`permissions: contents: write`). The message: `<@&546427268751294475>` once, then per (author, font) "<login> has pushed a card
+without adding the <font> font to MDW/Fonts, bite this user." with the cards and layers indented below; `allowed_mentions`
+is that role only. It never reverts or rejects; a failed webhook call only warns; a force push whose old head is gone checks the head commit's files. No developer-to-Discord mapping: the
+author is the commit's GitHub login, else the pusher. The bot's `/fonts` runs the same check over the whole repo
+(autocroissant-run-and-operate §7). State on 2026-10-21 (`--all` over the checkout, 133 s, 813 PSDs): six faces (BabaUI,
+Elephant-Regular, JavaneseText, MyriadArabic-Regular, OCRAExtended, Pristina-Regular) on 15 cards, 29 visible layers (30
+with Baba's hidden `Name`); the ten Mac-only faces are in `MDW/Fonts` since fb37995 + ec3a6f1 and Papyrus-Regular /
+Kung-Fu-Panda resolve through the aliases, so they no longer appear. Later standardization rules (AutoCroissant
+docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5) take this Action's shape.
+
 ## 4. Photoshop automation (macOS, Photoshop 2023)
 
 | Recipe or pitfall | Detail |
@@ -653,7 +673,8 @@ All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.
 2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d (commit list above extended to 13ac680 the same day from the GitHub API); §2.6 (tts-save.yml,
 env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be; the website-edits
 bullet's kinds and badge keys (`PSD_FIELDS`, `pending`/`refused`/`reparsePending`) written 2026-10-20 against the uncommitted
-working tree on d7c6c15 (`grep -n "PSD_FIELDS\|valid_verdict\|reparsePending" site/build/build_site.py`); `norm()` re-cited at :102 the same day. Run the commands from
+working tree on d7c6c15 (`grep -n "PSD_FIELDS\|valid_verdict\|reparsePending" site/build/build_site.py`); `norm()` re-cited at :102 the same day; §0's font-check row and §3's push-guard paragraph written 2026-10-21 against the
+uncommitted font-check.yml on 8393b3b (that day's `--all` numbers; step order, FreeType-style names and the force-push fallback re-checked the same day, review). Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash
@@ -673,12 +694,14 @@ git check-ignore -v MDW/Fonts/stoogedings-src/.venv site/dist site/.cache       
 grep -n "cron\|workflow_dispatch\|branches\|sparse-checkout:\|filter:" .github/workflows/site.yml
 # TTS save workflow: triggers, the six bot files, the two env overrides, no symlink (expect no "ln -s")
 grep -n "cron\|paths:\|/commands/\|/global_config.py\|AUTOCROISSANT_\|ln -s" .github/workflows/tts-save.yml
+# Font check workflow: triggers, the three bot files, the secret by name only, the comment permission (expect no "discord.com" hit)
+grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_FONT_WEBHOOK\|contents: write\|discord.com" .github/workflows/font-check.yml
 # Site data source and deck rules
 grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_MAX_STARS =" site/assets/deck.js
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)
 curl -sI https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/stats.pkl | head -1
 # AutoCroissant side (run in ~/Desktop/AutoCroissant)
-grep -n "^ICON_FONT_PREFIX" commands/psd_parser.py; grep -n "^ICON_MANIFEST_PATH" global_config.py   # 28, 24 (split 2026-10-20)
+grep -n "^ICON_FONT_PREFIX" commands/psd_parser.py; grep -n "^ICON_MANIFEST_PATH" global_config.py   # 28, 25 (split 2026-10-20; 25 re-checked 2026-10-21)
 grep -n "^MAX_NAME_LEN\|^NO_SUFFIX\|^ICON_FOLDERS" commands/type_emojis.py     # 22, 24, 23
 # Missing-font audit inputs still present? (scratch; may be gone after reboot)
 ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps/convert_demo.jsx

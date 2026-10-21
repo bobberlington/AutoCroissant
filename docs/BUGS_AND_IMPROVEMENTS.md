@@ -1,6 +1,6 @@
 # AutoCroissant — Known Bugs and Future Improvements
 
-Compiled 2026-07-11 from a full repo audit; revised 2026-10-19 and 2026-10-20. Detail, evidence and procedures
+Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20 and 2026-10-21. Detail, evidence and procedures
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
@@ -23,6 +23,8 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-20 optimization pass: C1, C2, C3 (10.20); B4 (10.21); B5 (10.22); C6, by removing `/list_guild_members`
   (10.23); B7 (10.24); C5 (10.25); psd_analyzer split and the compiled shallow-path crash (10.27); network and speed
   (10.28).
+- 2026-10-21: B10, atomic and locked card pickle saves (10.29); the 0.1 s queue tick and /query_ability's grouped
+  output (10.30).
 
 ---
 
@@ -34,7 +36,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 |---|-----|-------|--------|---------------------------|--------------|
 | B8 | **A deleted PSD stays in stats.pkl.** `update_stats` calls `prune_clean_cards()` only when `num_changed > 0`, so a deletion alone leaves the card listed until some other card changes. Pinned by `tests/test_update_stats.py::test_deleted_card_alone_is_kept` (update it with the fix). | `commands/repo_traverser.py` `update_stats` | Removed cards still answer /query | Also prune when the tree lost a path | `autocroissant-architecture-contract` |
 | B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/repo_traverser.py` `traverse_remote` | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
-| B10 | **Card pickle saves are not atomic and not locked.** `StatsDatabase.save` and `save_aliases` write in place (reminder.pkl uses tmp + fsync + replace); a kill (`/restart_bot`, `/update`) or a concurrent `/push` mid-write can leave a truncated stats.pkl or old_stats.pkl, and the load only catches EOFError. | `commands/card_models.py` `save`, `commands/query_card.py` `save_aliases` | A truncated pickle can be pushed to the other host and the website | tmp + fsync + `os.replace`, one lock for update_stats and every save (network-robustness audit item 2) | `autocroissant-architecture-contract` weak point 11 |
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
 
@@ -100,7 +101,7 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 
 ### 2.3 Operational hardening (small, high-value)
 
-Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26). Open: B8, B9, B10.
+Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29). Open: B8, B9.
 
 ### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md; Task 3 first)
 
@@ -136,18 +137,20 @@ One pass over every module, measured before and after, with no behavior change u
   `psd_analyzer` facade (CardInfo/CardStats `__module__` pinned, so the pickles are unchanged; 11 compiled modules);
   `CardClassifier.classify` no longer reads out of bounds on a shallow path (compiled: SIGSEGV). Gates: 813 cards,
   0 differences on .py and compiled; pickle re-dump byte-identical; `tests/test_split_contract.py`.
-- **Concurrency:** open. GitPython calls on the event loop now time out after 120 s; one lock per pickle is B10.
-- **Tests:** done 2026-10-20: `tests/` (220 tests, about 13 s, offline; 38 parser goldens), run before every push
+- **Concurrency:** done 2026-10-21 (10.29): one lock per pickle and atomic saves (B10); GitPython calls on the event
+  loop time out after 120 s.
+- **Tests:** done 2026-10-20: `tests/` (310 tests on 2026-10-21, about 22 s, offline; 38 parser goldens), run before every push
   (autocroissant-change-control).
 - **Docs:** done 2026-10-20: help.py and the describe strings match all 50 commands (10.20); skill line references
   re-mapped after the split (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py`).
+- **Owner decisions, done 2026-10-21 (10.30):** the queue tick is 0.1 s (reply latency up to ~100 ms per hop instead
+  of ~1 s; reminders keep their 1 s heartbeat; idle 1.3 ms CPU/s), and /query_ability lists name and image link 10 per
+  message instead of one message per result (one match keeps its image preview). Tests: `tests/test_query_output.py`.
 
-Not done in this pass (owner decisions or later; audits on `docs/Finished/optimization-pass-2026-10-20/`):
-- The 1 s queue tick is ~99% of a reply's bot-side time (502 ms mean), and a search sends one message per result
-  (85 per /query_ability on average): both change the execution model or the output (profile.md items 1-2).
-- B10 atomic pickle saves; a repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;
+Not done in this pass (later; audits on `docs/Finished/optimization-pass-2026-10-20/`):
+- A repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;
   `GIT_TERMINAL_PROMPT=0` / SSH BatchMode for the git calls; a failed blob still records the tree ETag (B9)
-  (network-robustness.md items 2, 8, 4, 5).
+  (network-robustness.md items 8, 4, 5).
 - Lazy GitPython in update_bot; a `requests.Session` per download thread (network-speed-results.md).
 - `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and `/delete_all_music` have
   no admin gate; with `/purge` any member can delete another user's messages if the bot has Manage Messages

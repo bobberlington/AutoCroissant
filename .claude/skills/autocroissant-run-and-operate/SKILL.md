@@ -45,8 +45,8 @@ python3 main.py
 ```
 Git token found, API limited to 5000 requests/hour.    <- import time: main.py:89 print_token_status() (github_api.py); "No git token in config..." if GIT_TOKEN unset
 We have logged in as AutoCroissant#....                <- on_ready (main.py:107-108)
-Registered 50 slash commands for reminder system.      <- slash_registry populated (main.py:110-112); 50 since 2026-10-20 (/list_guild_members removed)
-Bot initialization complete                            <- loops started (main.py:123-126)
+Registered 51 slash commands for reminder system.      <- slash_registry populated (main.py:110-112); 51 since 2026-10-21 (/fonts added; 50 on 2026-10-20 after /list_guild_members was removed)
+Bot initialization complete                            <- the four loops started (main.py:123-126)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:102)
 Trying to open reminder.pkl.                           <- init_reminder
 reminder.pkl is empty or missing.                      <- or "Existing dict found in reminder.pkl, updating entries..." plus "Rescheduled reminder <id> from <t1> to <t2>" and (2026-10-19, first start after the rewrite) "Reminder <id>: migrated command `...` -> `...`" lines
@@ -54,7 +54,7 @@ Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
 Loaded existing old stats from old_stats.pkl
-Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:468); counts as of 2026-07-11
+Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:472); counts as of 2026-07-11
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N = 0 once synced
@@ -63,27 +63,27 @@ Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N up
 Lines after "Bot initialization complete" come from queued async work and can interleave.
 The token-presence line prints ONCE, from main.py (`print_token_status`; since the 2026-10-20 split the card modules print nothing at import, so scripts show no token line).
 
-### on_ready init order (main.py:106-126)
+### on_ready init order (main.py:107-127)
 
 `on_ready` populates `slash_registry` (command name -> callback; this is what lets reminders run
 bot commands), spawns a per-guild command sync task, then QUEUES five init functions and finally
-starts the three queue-drain loops (main.py:123-125). Queued work only executes once the loops
+starts the reminder heartbeat and the three queue-drain loops (main.py:123-126). Queued work only executes once the loops
 start draining — so the loops effectively start first, and nothing is sent to Discord before they run.
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
 | `init_psd` (psd_analyzer.py:476) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
-| `init_query` (query_card.py:788) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
+| `init_query` (query_card.py:797) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:130) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
 | `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 
 AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
 
-The three loops (main.py:839-876) each tick once per second: `process_command_queue` (also enqueues
-`check_reminder` every tick — that is the reminder heartbeat), `process_dispatch_queue` (message/file
-sends), `process_edit_queue` (edits). All bot output rides these queues, so replies have up to ~1 s of
-latency by design. Depth on the queue model: autocroissant-architecture-contract.
+The three drains (main.py:863-895) each tick every 0.1 s (once a second until 2026-10-21): `process_command_queue`,
+`process_dispatch_queue` (message/file sends), `process_edit_queue` (edits). A fourth loop, `process_reminders`
+(main.py:857-859), enqueues `check_reminder` once a second — that is the reminder heartbeat. All bot output rides
+these queues, so replies have up to ~0.1 s of queue latency by design. Depth: autocroissant-architecture-contract.
 
 ## 2. Command anatomy (30-second version)
 
@@ -99,9 +99,9 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 
 | Way | Gate | What happens |
 |---|---|---|
-| `/stop_bot` | admin | Stops the three loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:159-169) |
-| `/restart_bot` | NONE (verified main.py:150-156 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
-| Ctrl-C in the terminal | local | discord.py shuts down; main.py:881-882 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
+| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:161-172) |
+| `/restart_bot` | NONE (verified main.py:151-158 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
+| Ctrl-C in the terminal | local | discord.py shuts down; main.py:904-905 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
 
 `restart_bot()` (commands/update_bot.py:11-15) does `execv('./startup.sh', argv)`; on
 `FileNotFoundError` it falls back to `execl(python, python, main.py ...)` — i.e. re-exec the same
@@ -132,7 +132,7 @@ exec python3 main.py`), but its contents are per-machine and UNVERIFIED (the jet
   then `tree.sync(guild=guild)`. Guild-scoped syncs take effect essentially immediately, so after a
   restart the commands are current in every guild the bot is in (a stale Discord client may need a
   restart/reload to show them — client-side cache, not the bot).
-- `/sync_global` (admin; main.py:670-675 -> management.py:75-97) clears the tree's global command set,
+- `/sync_global` (admin; main.py:687-693 -> management.py:75-97) clears the tree's global command set,
   syncs that (now-empty) global set, then re-copies and re-syncs each guild, finishing with
   "Commands synced globally and to N guilds." Use it to clean up duplicated/stale command entries
   (e.g. commands appearing twice because a global copy lingers). Discord platform note (not
@@ -192,9 +192,9 @@ Consequence of "local pickles win": if machine B pulls while holding OLDER pickl
 (because machine A pushed newer ones and B never pulled before diverging), the auto-merge would keep
 B's stale pickles. The handoff runbook below exists to prevent ever being in that state.
 
-### /update — push, pull, restart (main.py:193-206 -> update_bot.py:136-161)
+### /update — push, pull, restart (main.py:196-209 -> update_bot.py:136-161)
 
-Sequence: stop all three queue loops -> "Doing a complete update of the bot!" ->
+Sequence: stop all four loops -> "Doing a complete update of the bot!" ->
 "Pushing aliases.pkl, stats.pkl, and old_stats.pkl." -> git_push -> "Pulling latest changes from
 remote!" -> git_pull -> "Restarting bot!" -> `restart_bot()` (process replaced; per-guild sync runs
 on the way back up).
@@ -216,7 +216,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 | "Push failed: <err>" | Rebase conflict (aborted), fetch/auth failure, or push error (ssh key, a race). A remote that is merely ahead is handled by the rebase. If inside /update, the update aborts. |
 | "Git pull failed: <err>" | Merge machinery failed; read the git error. Rebase fallback may follow. |
 | "Rebase also failed: ..." + "Manual intervention may be required." | Bot cannot self-heal the clone. SSH in, `git status`, resolve, restart. |
-| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:201-203) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
+| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:204-207) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
 | "Restarting bot!" then nothing | Process replaced by execv/execl. Watch the terminal/host for the fresh startup lines. |
 
 ## 6. Multi-machine handoff runbook
@@ -265,7 +265,7 @@ beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-r
 `docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:469; slash wrapper main.py:359-371.
+repo_traverser.py:469; slash wrapper main.py:373-385.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -291,7 +291,7 @@ repo_traverser.py:469; slash wrapper main.py:359-371.
 >   (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl`). Post-update checks are owned by
 >   autocroissant-validation-and-qa.
 
-The three options (slash defaults in parentheses, main.py:367-369). (`use_local_repo` and
+The three options (slash defaults in parentheses, main.py:381-383). (`use_local_repo` and
 `use_local_timestamp` existed until 2026-10-20; see the rule.)
 
 | Option (default) | What it actually does |
@@ -375,6 +375,32 @@ Two ways to run it:
   `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
 - Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
 
+### Font check (/fonts, added 2026-10-21; the automatic path is TTSCardMaker's font-check.yml Action, written the same day against the uncommitted tree)
+
+commands/font_check.py (uncompiled; stock psd-tools + fontTools, no Discord or config imports; fontTools is in requirements.txt since
+2026-10-21 and main.py imports the module lazily inside /fonts, so the bot starts without it) lists the PostScript names
+a card's visible type layers ask for and which of them `MDW/Fonts` in the card repo does not supply. Hidden layers are
+ignored; `FONT_ALIASES` (global_config.py) and a loose match (casefolded alphanumerics, `-Regular` stripped) count as
+present. It reports and never rejects: a missing font is a message to a person, not a revert.
+
+- **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
+  changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
+  `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
+  (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
+  missing, posts to the Discord webhook in the repo secret `DISCORD_FONT_WEBHOOK` (the URL is in no file) and then comments on
+  the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
+  adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
+  card PSD by blob (~813 downloads).
+- **By hand: `/fonts`** (anyone). Runs in a thread against the card repo's current tree through the API with the per-blob
+  cache `font_names.json` (blob sha -> the fonts a PSD asks for / the faces a font file supplies; gitignored). The first run
+  downloads the fonts (270 files, 215 MB) and at most `BATCH` = 200 PSDs (a 15 MB blob took 1.4 s on the dev Mac; the whole
+  repo is ~813 PSDs, 15.6 GB, about 25 min), says "Warming the cache", reports partial results and how many PSDs remain;
+  later runs download only new blobs, and blobs that left the tree leave the cache. Reply: `**font**: card (layers)` per
+  missing font, the fonts folder count, errors. One run at a time ("A font check is already running").
+- **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (91-145 s over the 813 PSDs on 2026-10-21:
+  the six faces of ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
+  `--discord <payload out>`; `--help` lists the --repo options the Action uses.
+
 ## 8. Artifact conventions — where files land
 
 All paths relative to the CWD the bot was started from (= repo root, always).
@@ -391,6 +417,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:363; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
+| `font_names.json` | /fonts (commands/font_check.py) | repo root (+ `font_names.json.tmp` while saving): blob sha -> the fonts a card PSD asks for or a font file supplies; pruned to the current tree on every run | NO (gitignored) — per-machine; if deleted, the next /fonts downloads every PSD again in batches |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the pickles |
 | 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
@@ -399,11 +426,11 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 
 Rewritten 2026-10-19 (commands/analytics.py, 957 lines; uncommitted as of that date). Times are
 Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:15), so they follow daylight
-saving. `check_reminder` is queued once per second by the command loop (main.py:841). History of
+saving. `check_reminder` is queued once per second by its own loop, `process_reminders` (main.py:857-859). History of
 what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
 invariants: autocroissant-architecture-contract.
 
-### /set_reminder (admin only, main.py:213)
+### /set_reminder (admin only, main.py:217)
 
 | Option | Accepts | Notes |
 |---|---|---|
@@ -483,7 +510,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 
 | Command | Gate | Notes |
 |---|---|---|
-| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:631-642) |
+| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:648-660) |
 | `/list_guilds` | admin | Name, ID, member count per guild |
 | `/leave_guild guild_id` | admin | Numeric ID required |
 | `/list_guild_channels guild_id` | admin | Works with default intents |
@@ -566,7 +593,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(init\|process_.*_queue.start\|Bot initialization complete" main.py` |
-| Slash-command count (50 on 2026-10-20: /update_tts_save added, /list_guild_members removed) | `grep -c "@tree.command" main.py` |
+| Slash-command count (51 on 2026-10-21: /fonts added; 50 on 2026-10-20: /update_tts_save added, /list_guild_members removed) | `grep -c "@tree.command" main.py` |
 | Members intent off, so no /list_guild_members (removed 2026-10-20, C6) | `grep -n "Intents\|list_guild_members" main.py` (Intents lines only) |
 | /restart_bot still ungated | `grep -n -A4 'name="restart_bot"' main.py` |
 | /update stops loops first | `grep -n -B2 -A6 'name="update"' main.py` |
@@ -585,6 +612,7 @@ re-find volatile facts with these before trusting them:
 | reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
+| Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
@@ -597,3 +625,9 @@ section 9, keeping the pointer to autocroissant-failure-archaeology for the hist
 
 2026-10-20 (later): the optimization-pass pointers above moved from `~/Documents/ac-optimization/` to
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (scripts) and `docs/Finished/optimization-pass-2026-10-20/` (reports, bench).
+
+2026-10-21: the queue drains tick every 0.1 s and `process_reminders` is the 1 s reminder heartbeat (section 1); main.py line numbers re-pointed (review: on_ready start range, /update range). Review: the "Loaded N cards" print is query_card.py:472.
+
+2026-10-21 (later): `/fonts` added (section 7's Font check subsection, section 8's `font_names.json` row, 51 commands). main.py grew by eight
+lines at :278-285 (the /fonts block; its font_check import is lazy, so fontTools loads only when /fonts runs): every main.py citation in
+this file re-pointed by grep the same day (review). The Action sends the Discord message before the commit comment (review).

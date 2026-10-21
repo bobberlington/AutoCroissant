@@ -5,11 +5,34 @@ stats_db. Pure data, so anything may import it (no Discord, network, pandas or p
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
+from os import fsync, remove, replace
 from os.path import basename, splitext
 from pickle import load, dump
+from threading import Lock
 from typing import Optional
 
 from global_config import STATS_PKL, OLD_STATS_PKL
+
+_stats_lock = Lock()                                     # one writer per pickle: /update_stats, /mass_replace...
+_old_stats_lock = Lock()
+
+
+def save_pickle(obj, path: str, lock: Lock) -> None:
+    """Pickle to <path>.tmp beside the target, fsync, then replace: a kill mid-write leaves the old file whole."""
+    with lock:
+        temp_path = f"{path}.tmp"
+        try:
+            with open(temp_path, 'wb') as f:
+                dump(obj, f)
+                f.flush()
+                fsync(f.fileno())
+            replace(temp_path, path)
+        except BaseException:
+            try:
+                remove(temp_path)
+            except OSError:
+                pass
+            raise
 
 
 class CardType(Enum):
@@ -136,11 +159,9 @@ class StatsDatabase:
         self.seen_cards: list[str] = []            # names in the last tree; the rest are pruned
 
     def save(self) -> None:
-        """Save all databases to pickle files."""
-        with open(STATS_PKL, 'wb') as f:
-            dump(self.stats, f)
-        with open(OLD_STATS_PKL, 'wb') as f:
-            dump(self.old_stats, f)
+        """Save all databases to pickle files (atomically, one lock per pickle)."""
+        save_pickle(self.stats, STATS_PKL, _stats_lock)
+        save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
 
     def load(self) -> None:
         """Load all databases from pickle files."""
@@ -216,5 +237,6 @@ __all__ = [
     'StatsDatabase',
     'card_name',
     'get_stats_as_dict',
+    'save_pickle',
     'stats_db',
 ]

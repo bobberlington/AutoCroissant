@@ -40,10 +40,10 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 ### Why the current state falls short
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
-  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:352 —
-  literally one `str.contains` call; wrapper at query_card.py:632, registered main.py:293).
+  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:355 —
+  literally one `str.contains` call; wrapper at query_card.py:641, registered main.py:307).
   Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:268): `|` OR,
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:271): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.
@@ -54,8 +54,8 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | Asset | Where | Why it matters |
 |---|---|---|
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:450) writes `rules.txt`; `/export_rulebook` (main.py:398) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:355) writes `stats.csv` with an aliases column; `/export_cards` (main.py:385) | Structured stats + ability text in one table |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:450) writes `rules.txt`; `/export_rulebook` (main.py:412) | 48 pages of game rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:355) writes `stats.csv` with an aliases column; `/export_cards` (main.py:399) | Structured stats + ability text in one table |
 | Type-annotated ability text | `_inject_type_names` (psd_parser.py:840) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
@@ -160,7 +160,7 @@ style, the per-series looks. Every generation starts from zero style knowledge.
   is too thin to train alone.
 - **The LoRA plumbing exists on the branch.** `LORAS_FOLDER = f"{MODELS_FOLDER}loras/"`
   (diffusion.py:24-25, i.e. `./models/loras/`); pipeline init calls `load_lora_weights` when a
-  LoRA is set (diffusion.py:232-234); `/set_lora` (main.py:571; `set_lora` diffusion.py:490)
+  LoRA is set (diffusion.py:232-234); `/set_lora` (archive/ai-generation:main.py:571; `set_lora` diffusion.py:490)
   lists every `*.safetensors` in the folder, swaps the global, and clears pipelines for lazy
   re-init. Once the branch is restored or merged, dropping a file into `models/loras/` and
   running `/set_lora` is the ENTIRE integration — zero new code. (Runtime `/set_lora` does not
@@ -279,7 +279,7 @@ Pickles-in-git WORKS: `/push` / `/pull` / `/update` move `stats.pkl` / `old_stat
 (autocroissant-run-and-operate owns the flow). The real pain points, for the record:
 
 1. **Schema coupling** — unpickling requires this repo on `sys.path` with config.py present,
-   because `CardInfo`/`CardStats` are dataclasses in commands/card_models.py:59/94; the
+   because `CardInfo`/`CardStats` are dataclasses in commands/card_models.py:82/53; the
    366c8d9 "Big massive refactor" already broke the pre-Oct-2025 plain-dict format once.
 2. **Commit noise** — 23 of 192 commits mention PICKLE (measured 2026-07-11).
 3. **Invisible binary regressions** — old_stats.pkl ballooned 3196→12041 bytes once
@@ -370,3 +370,5 @@ Maintenance: when a step is executed, update its item in place (CANDIDATE → tr
 measured number) or move it out per "How to add a frontier item". Re-date the header when you
 touch anything. Keep the eval file (`eval/rules_qa_v1.md`, once it exists) append-only —
 changing old questions invalidates every historical score.
+
+2026-10-21: main.py, query_card.py and card_models.py line numbers re-pointed (0.1 s queue tick, atomic saves); no frontier item changed. Review: the archive-branch `/ai` and `/set_lora` numbers kept (that main.py did not move).

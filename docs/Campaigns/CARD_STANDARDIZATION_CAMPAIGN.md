@@ -211,6 +211,12 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ## 5. The future guard: an Action on push that reports (then fixes)
 
+The font check is the guard's first rule and its pattern (written 2026-10-21 against the uncommitted tree; live once both repos are committed
+and the `DISCORD_FONT_WEBHOOK` secret is set): TTSCardMaker `.github/workflows/font-check.yml` runs the bot's
+`commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/` (the changed PSDs by blob sha), writes the job summary, comments on
+the commit and pings the card makers' role on Discord per author and missing font, and never reverts or rejects (L13's six faces are what it
+reports today).
+
 - `site/build/check_cards.py` (proposed; beside the rulebook campaign's `check_rules.py`, same job shape): for each PSD whose blob changed on
   the push (fetched by blob sha like the pipeline; the `site.yml` checkout has no card folders), report every deviation by class, the
   classes being this ledger's (the scratch `corpus_scan.py` + `aggregate.py` + `classify.py` ported into the bot next to `psd_edit.classify`

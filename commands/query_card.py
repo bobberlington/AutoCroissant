@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from difflib import get_close_matches, SequenceMatcher
 from discord import Embed, Interaction
 from os.path import basename, splitext
-from pickle import load, dump
+from pickle import load
 from asyncio import to_thread
 from threading import Lock
 from requests import get
@@ -14,10 +14,11 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL
+from commands.card_models import save_pickle
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
 from commands.type_emojis import render_type_tokens
-from commands.utils import queue_message, split_long_message
+from commands.utils import queue_long_message, queue_message, split_long_message
 
 filterwarnings('ignore')
 
@@ -26,6 +27,8 @@ filterwarnings('ignore')
 # ========================
 DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
+RESULTS_PER_MESSAGE = 10                                 # /query_ability lines per message
+_alias_lock = Lock()                                     # one writer for aliases.pkl
 
 
 @dataclass
@@ -394,9 +397,8 @@ class CardRepository:
             self.save_aliases()
 
     def save_aliases(self) -> None:
-        """Save card aliases to pickle file."""
-        with open(ALIAS_PKL, 'wb') as f:
-            dump(self.git_file_alias, f)
+        """Save card aliases to pickle file (atomically, under the alias lock)."""
+        save_pickle(self.git_file_alias, ALIAS_PKL, _alias_lock)
 
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json (the first of EDITS_PATHS in the tree)."""
@@ -605,11 +607,16 @@ def query_ability(interaction: Interaction,
 
     queue_message(interaction, f"Found {total_results} results for '{ability}'!")
 
-    for idx, (index, _) in enumerate(results.iterrows()):
-        if idx >= results_to_show:
-            break
-        # Index is the full path without .png extension
-        queue_message(interaction, card_repo.get_card_url(basename(index)))
+    names = [basename(index) for index in results.index[:results_to_show]]   # index: the path without .png
+    if len(names) == 1:                                  # one card: its image preview
+        queue_message(interaction, card_repo.get_card_url(names[0]))
+    else:                                                # more: name and image link, RESULTS_PER_MESSAGE per message
+        for start in range(0, len(names), RESULTS_PER_MESSAGE):
+            lines = []
+            for name in names[start:start + RESULTS_PER_MESSAGE]:
+                url = card_repo.get_card_url(name)
+                lines.append(f"{name} — {url}" if url else name)
+            queue_long_message(interaction, "\n".join(lines))
 
     queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.",
                   links=[("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")])
