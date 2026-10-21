@@ -1,6 +1,6 @@
 # Edit pipeline design (2026-10-20)
 
-**Status:** designed 2026-10-20; Task 3 steps 4-7 (`docs/NEXT_SESSION_PLAN.md`); implementation next. Synthesis of three
+**Status:** designed 2026-10-20, questions answered the same day; Task 3 steps 4-7 (`docs/NEXT_SESSION_PLAN.md`); implementation running. **PSD writes on hold (user, 2026-10-20): other developers are editing the PSDs, so S5 live runs, S8, the title reprints, Sonic's conversion and star folder moves wait for the user's go; code and dry runs on /tmp copies continue; the intended PSD changes are tracked in `docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`.** Synthesis of three
 independent designs and two judge rounds: the "runner" contract (one CLI for both runners, `_psd` status in the edits file),
 the "robust" gates (parity bar, record diff, outside-region equality, job key), the "mvp" scope (template cards only, fill-only
 status words first, refuse the rest). Numbers measured 2026-10-20 unless marked "to confirm". `/tmp/` research files vanish on
@@ -334,18 +334,20 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 | S7 jetson | fork in the bot venv, Lock, edits-sha watch, SSH commit, Discord report | one bake with Actions disabled; CPU/RAM peak recorded | M |
 | S8 user | the 10 edits of section 12 | 10/10; results in `docs/Finished/`; Photopea retired to an archive branch | S |
 
-## 14. Open questions for the user
+## 14. Open questions for the user — answered 2026-10-20
 
-1. Parser reads `Text/Name` into `display_name`? Then 22 of 29 live name edits are redundant and a baked name can leave the file.
-2. `save(update_preview=False)` for committed PSDs: a stale flattened preview (no consumer reads it) against 20-45 s per card.
-3. Idea 13's encoding: two half-height rows (Sonic style) or a second 0-10 row.
-4. `stars` on folder-starred cards: a folder move by the pipeline later, or database-only for good.
-5. Fonts for a Linux runner: commit the 10 Mac-only faces under `MDW/Fonts` (licence), or route those cards to the jetson.
-6. Status words whose colour deliberately differs from the swatch (~5%), and the 52 overlay word layers: recolour and hide
-   when an FX layer replaces them, or leave those cards refused.
-7. The 7 live name edits that differ from the printed title (section 2): reprint the titles (PoD08-12 gain a trailing dot,
-   Thunderfury loses its brackets, Clot White loses the typo), or change those 6 entries to match the PSD / leave Clot White
-   as the only name job. Until answered the push trigger stays off (S5).
+1. **Yes**: the parser reads `Text/Name` into `display_name` (edits still override); the 22 name edits that equal the print
+   become redundant and are dropped by the bake's redundancy rule; a baked rename leaves the file.
+2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`).
+3. **Top row 10 + bottom row N-10** (Royal Eradicator's layout; the parser already sums it). Sonic is converted once to that
+   layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes.
+4. **Pipeline moves the files** for folder-starred cards (PSD + PNG to the new `N Stars` folder with aliases, old_stats,
+   authors and the TTS save following) — after round 1 (step S9).
+5. **Commit the Mac-only font files to `MDW/Fonts`** (the user's call; licence risk noted), so every runner renders every card.
+6. **Restyle to the chart and hide the overlays**: an ability edit normalizes off-chart status words to the chart's colour
+   and effect and hides the hand-made overlay word layers it replaces (part of S6).
+7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
+   aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5).
 
 ## 15. Known wrong paths (fenced off)
 
