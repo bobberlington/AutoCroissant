@@ -377,8 +377,8 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Triggers:** push to `main` touching `**/*.png`, `TTS/decks.json` or `site/Card Edits.json`; cron `41 11 * * *`;
   `workflow_dispatch`. The save's own commit matches none of them, so a run never triggers the next.
 - **Checkout:** this repo, non-cone sparse `/TTS/` + `/site/Card Edits.json`; the bot (`bobberlington/AutoCroissant`
-  main) into `bot/`, sparse `commands/tts_save.py`, `repo_history.py`, `card_models.py`, `card_edits.py`,
-  `github_api.py` and `global_config.py` (everything the updater imports; `commands/` is a namespace package, no
+  main) into `bot/`, sparse `commands/tts_save.py`, `git_commit.py` (the shared commit path, 2026-10-21), `repo_history.py`,
+  `card_models.py`, `card_edits.py`, `github_api.py` and `global_config.py` (everything the updater imports; `commands/` is a namespace package, no
   `__init__.py`; no config.py: github_api reads it in a try/except).
 - **Run:** `setup-python@v7` (3.12), `pip install requests`, then in `bot/`
   `python -m commands.tts_save "$GITHUB_WORKSPACE/TTS/Impossibility Simulator.json" | tee tts-save-report.md` with
@@ -674,7 +674,8 @@ All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.
 env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be; the website-edits
 bullet's kinds and badge keys (`PSD_FIELDS`, `pending`/`refused`/`reparsePending`) written 2026-10-20 against the uncommitted
 working tree on d7c6c15 (`grep -n "PSD_FIELDS\|valid_verdict\|reparsePending" site/build/build_site.py`); `norm()` re-cited at :102 the same day; §0's font-check row and §3's push-guard paragraph written 2026-10-21 against the
-uncommitted font-check.yml on 8393b3b (that day's `--all` numbers; step order, FreeType-style names and the force-push fallback re-checked the same day, review). Run the commands from
+uncommitted font-check.yml on 8393b3b (that day's `--all` numbers; step order, FreeType-style names and the force-push fallback re-checked the same day, review); §2.6's bot checkout list gained
+`commands/git_commit.py` 2026-10-21 against the uncommitted tts-save.yml on f5a0e50 (review: tts_save.py:33,37 import it). Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash

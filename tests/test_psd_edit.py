@@ -15,6 +15,7 @@ from psd_tools import PSDImage
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
+from conftest import text_engine as _text_engine
 
 # ========================
 # Configuration
@@ -26,8 +27,9 @@ METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOv
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
 ASTR = "Auxiliary/Minions/Astr_Mionion.psd"                       # "Attacks inflict 1T3 Empowered." with Empowered in red
-NAMED = (MINI_DOOMER, "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
+NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
          "Items/Support/2 Stars/Volt_Shroom.psd")                  # Text/Name + one visible Text/Ability, fonts in MDW/Fonts
+CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as two bar rows (Top 10 + Bottom 2)
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
 
 
@@ -38,14 +40,6 @@ def _typo_fix(title: str) -> str:
 
 def _fills(layer) -> list:
     return [(layer.text[s:e], tuple(round(v, 3) for v in f)) for s, e, f in pe.run_fills(layer)]
-
-
-def _text_engine() -> bool:
-    try:
-        import psd_tools.composite.text  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 text_engine = pytest.mark.skipif(not _text_engine(), reason="no text engine: run under the fork (psd-tools[text])")
@@ -93,11 +87,11 @@ def test_codes_are_the_closed_list():
     assert PAINT_ORDER[-1] == "ability_fx" and clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
 
 
-def test_normalise_ability_matches_the_parser():
+def test_normalize_ability_matches_the_parser():
     layer = "Has stats -2 .\x03(BOT) Die .  \r"
     site = "Has stats -2.\n(BOT) Die."
-    assert pe.normalise_ability(layer) == pe.normalise_ability(site) == "Has stats -2.\n(BOT) Die."
-    assert pe.normalise_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalise_ability("") == ""
+    assert pe.normalize_ability(layer) == pe.normalize_ability(site) == "Has stats -2.\n(BOT) Die."
+    assert pe.normalize_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalize_ability("") == ""
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
@@ -110,9 +104,9 @@ def test_changed_range_is_the_engines():
 
 
 def test_status_spans_longest_first_whole_words():
-    chart = {"frozen": pe.StatusColour("Frozen", (0.6, 1.0, 0.95), True),
-             "frozen in time": pe.StatusColour("Frozen In Time", (0.75, 0.76, 0.95), True),
-             "poison": pe.StatusColour("Poison", (0.4, 0.95, 0.3), False)}
+    chart = {"frozen": pe.StatusColor("Frozen", (0.6, 1.0, 0.95), True),
+             "frozen in time": pe.StatusColor("Frozen In Time", (0.75, 0.76, 0.95), True),
+             "poison": pe.StatusColor("Poison", (0.4, 0.95, 0.3), False)}
     text = "Apply POISON and Frozen in Time, not Frozen. Poisoned ends."
     spans = [(s, e, c.name) for s, e, c in pe.status_spans(text, chart)]
     assert spans == [(6, 12, "Poison"), (17, 31, "Frozen In Time"), (37, 43, "Frozen")]
@@ -203,9 +197,8 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
 
 
 def test_non_template_rows_and_titles_refuse(clone):
-    cannon = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"
     with pytest.raises(pe.Refused) as refused:
-        pe.template_row(PSDImage.open(_card(clone, cannon)[0]), "atk")
+        pe.template_row(PSDImage.open(_card(clone, CANNON)[0]), "atk")
     assert refused.value.code == "unsupported-card"
     twins = PSDImage.open(_card(clone, "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")[0])
     for read in (pe.name_layer, pe.ability_layer):
@@ -219,6 +212,26 @@ def test_non_template_rows_and_titles_refuse(clone):
     bone = PSDImage.open(_card(clone, "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd")[0])      # title named after the card
     with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone'"):
         pe.name_layer(bone)
+
+
+def test_royal_eradicator_two_row_atk(clone, parser):
+    """The one real 10+ card: classify refuses 11 (stat>10) and lets 7 through unless the card is excluded, which it is
+    (EXCESSIVE_STAT_EXCLUSIONS protects it, not set_stat); set_stat refuses either value as unsupported-card because
+    template_row runs before its own stat>10 check."""
+    path = _card(clone, CANNON)[0]
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, CANNON)
+    assert parsed["card"]["atk"] == 12
+    assert sorted((group.name.strip(), digits) for group, digits, _ in stat_rows(psd)["atk"]) == [("Bottom", [2]), ("Top", [10])]
+    assert [(r.code, r.why) for r in pe.classify(parsed, {"atk": 11}).refusals] == [("stat>10", "atk 11: not yet")]
+    assert pe.classify(parsed, {"atk": 7}).jobs == {"atk": 7}
+    assert [(r.code, r.why) for r in pe.classify(parsed, {"hp": 11, "atk": 7}, excluded=True).refusals] == [
+        ("stat>10", "hp 11: not yet"), ("stat>10", "atk: the card is on EXCESSIVE_STAT_EXCLUSIONS")]
+    assert "Royal Eradicator Main Cannon" in pe.CardValidator.EXCESSIVE_STAT_EXCLUSIONS
+    for value in (7, 11):
+        with pytest.raises(pe.Refused) as refused:
+            pe.set_stat(psd, parsed, "atk", value)
+        assert (refused.value.code, refused.value.why) == ("unsupported-card", "atk: 2 bar rows")
 
 
 def test_layer_records_fingerprint(clone):
@@ -324,7 +337,7 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
     parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart)
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD)]
-    assert pe.normalise_ability(baked.reparse["card"]["ability"]) == pe.normalise_ability(old + " Inflict Poison.")
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(old + " Inflict Poison.")
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
     text = layer.text
     start = text.index("Poison")
@@ -380,7 +393,7 @@ def test_untouched_styled_word_is_left_alone(clone, chart):
 @text_engine
 def test_too_long_ability_refuses_overflow(clone, chart):
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
-    text = pe.normalise_ability(pe.ability_layer(psd).text)
+    text = pe.normalize_ability(pe.ability_layer(psd).text)
     with pytest.raises(pe.Refused) as refused:
         pe.set_text_layer(psd, "ability", " ".join([text] * 4), str(clone / pe.FONTS_DIR), chart)
     assert refused.value.code == "overflow"
@@ -398,16 +411,22 @@ def test_styled_status_word_refuses(clone, chart):
 
 
 @text_engine
-def test_missing_font_refuses(clone, parser, tmp_path):
-    """Termination Shock's title is set in OCR A Extended, which neither MDW/Fonts nor this machine carries (Q5)."""
+def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
+    """Both `font` refusals, whatever this machine has installed: the fork's lookup is made to miss Termination Shock's
+    OCR A Extended (Q5), then to find Anubisath's title face only loosely."""
     from psd_tools.composite.text import FontMap
+    lookup = FontMap._lookup
+    monkeypatch.setattr(FontMap, "_lookup", lambda self, name: None if name == "OCRAExtended" else lookup(self, name))
     rel = "N.M.E/Termination_Shock.psd"
     psd_path = _card(clone, rel)[0]
-    if FontMap(dirs=[str(clone / pe.FONTS_DIR)]).find("OCRAExtended") is not None:
-        pytest.skip("OCR A Extended is installed here")
     with pytest.raises(pe.Refused) as refused:
         _bake(clone, parser, rel, {"name": pe.read_name(PSDImage.open(psd_path)) + " II"}, tmp_path)
     assert refused.value.code == "font" and "OCRAExtended" in refused.value.why
+    monkeypatch.setattr(FontMap, "_lookup", lambda self, name: (lambda hit: None if hit is None else (hit[0], "loose"))(lookup(self, name)))
+    psd_path = _card(clone, ANUBISATH)[0]
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, ANUBISATH, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
+    assert refused.value.code == "font" and refused.value.why.startswith("not resolved exactly: ")
 
 
 @text_engine

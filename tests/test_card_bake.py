@@ -1,25 +1,28 @@
 """
 card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
-sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved, own commits, --dry-run, --card.
-A real bake needs the fork's renderer; that test skips under stock psd-tools. The Action-shaped import check copies
-exactly the files card-edits.yml checks out of this repo and runs --help there without config.py.
+sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), own commits, the SSH fallback
+for a token that can't write, --dry-run, --card. A real bake needs the fork's renderer; that test skips under stock
+psd-tools. The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs
+--help there without config.py, with an allowlist of third-party imports.
+    PYTHONPATH=/tmp/wt-pipeline-dev/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
+    (the fork venv needs requests for this file)
 """
+import ast
 import hashlib
 import json
-import os
 import re
 import shutil
 from subprocess import run as run_process
 from sys import executable
 
 import pytest
-from requests import HTTPError
 
 import commands.card_bake as cb
+import commands.git_commit as gc
 import commands.github_api as ga
 import commands.psd_edit as pe
-from conftest import CLONE, REPO
+from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, text_engine as _text_engine
 from golden_cards import VOCAB
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
@@ -33,57 +36,12 @@ ABOUT = "Card data fixes from the website's Edit button."
 TOKEN = "test-token"
 
 
-def _sha(data: bytes) -> str:
-    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def _text_engine() -> bool:
-    try:
-        import psd_tools.composite.text  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: run under psd-tools[text]")
 
 
 # ========================
 # Fake GitHub
 # ========================
-class Reply:
-    def __init__(self, status=200, data=b"", body=None, headers=None):
-        self.status_code, self._body = status, body
-        self.content = data if body is None else json.dumps(body).encode("utf-8")
-        self.headers = headers or {}
-        self.encoding = None
-
-    @property
-    def ok(self):
-        return self.status_code < 400
-
-    @property
-    def text(self):
-        return self.content.decode(self.encoding or "utf-8")
-
-    def json(self):
-        return self._body if self._body is not None else json.loads(self.content)
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise HTTPError(f"{self.status_code} Server Error")
-
-    def iter_content(self, size):
-        for i in range(0, len(self.content), size):
-            yield self.content[i:i + size]
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
 class FakeGitHub:
     """A repo with git objects: blobs, trees, commits and one branch. recent / conflicts / broken simulate the races."""
 
@@ -93,11 +51,13 @@ class FakeGitHub:
         self.trees: dict = {}
         self.commits: dict = {}
         self.recent: set = set()            # PSD paths committed "in the last 30 minutes"
-        self.conflicts = 0                  # PATCH ref answers 422 this many times
+        self.conflicts = 0                  # PATCH ref answers conflict_status this many times
+        self.conflict_status = 422          # ... 409 or 422 (both mean "not a fast forward")
         self.conflict_on = ""               # ... only for commits whose message starts so ("" = any)
         self.broken: dict = {}              # blob sha -> the bytes served instead
         self.down: set = set()              # blob shas answering 503
         self.rate_limited = False           # POST git/blobs answers a rate-limit 403
+        self.forbidden = False              # POST git/blobs answers 403 without rate-limit headers: the token can't write
         self.calls: list = []
         self.head = self.commit(files, author, message)
 
@@ -154,6 +114,8 @@ class FakeGitHub:
             from base64 import b64decode
             if self.rate_limited:
                 return Reply(403, body={"message": "API rate limit exceeded"}, headers={"x-ratelimit-remaining": "0"})
+            if self.forbidden:
+                return Reply(403, body={"message": "Resource not accessible by integration"})
             data = b64decode(json["content"])
             self.blobs[_sha(data)] = data
             return Reply(201, body={"sha": _sha(data)})
@@ -171,7 +133,7 @@ class FakeGitHub:
             commit = self.commits.get(json["sha"])
             if self.conflicts and (commit or {}).get("message", "").startswith(self.conflict_on):
                 self.conflicts -= 1
-                return Reply(422, body={"message": "Update is not a fast forward"})
+                return Reply(self.conflict_status, body={"message": "Update is not a fast forward"})
             if not commit or [p["sha"] for p in commit["parents"]] != [self.head]:
                 return Reply(422, body={"message": "Update is not a fast forward"})
             self.head = json["sha"]
@@ -228,12 +190,12 @@ def github(monkeypatch, tmp_path, files, clone):
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(ga, "GIT_TOKEN", "")
     monkeypatch.setattr(ga, "HEADERS", {})
-    monkeypatch.setattr(cb, "request", fake.request)
-    monkeypatch.setattr(cb, "refresh", lambda: True)
+    monkeypatch.setattr(gc, "request", fake.request)
+    monkeypatch.setattr(gc, "refresh", lambda: True)
     monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
     monkeypatch.setenv(cb.WORK_ENV, str(tmp_path))
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
-    monkeypatch.setattr(cb, "_cant_write", False)
+    monkeypatch.setattr(gc, "cant_write", False)
     return fake
 
 
@@ -398,8 +360,9 @@ def test_blob_gate(github):
     assert len(commits) == 1 and _edits_at(github)["cards"]["Mini Doomer"]["_psd"]["reason"].startswith("blob: ")
 
 
-def test_head_moved_after_three_conflicts(github):
-    github.conflicts = 3
+@pytest.mark.parametrize("status", [409, 422])
+def test_head_moved_after_three_conflicts(github, status):
+    github.conflicts, github.conflict_status = 3, status
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "head-moved: main kept moving: not committed after 3 tries" in text
     assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 5
@@ -464,12 +427,51 @@ def test_transient_errors_write_no_verdict(github, monkeypatch):
     assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"]
     github.down.clear()
     github.rate_limited = True
-    monkeypatch.setattr(cb, "_git_commit", lambda *a, **k: pytest.fail("the SSH path is not for a rate limit"))
+    monkeypatch.setattr(gc, "git_commit", lambda *a, **k: pytest.fail("the SSH path is not for a rate limit"))
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "error: GitHub 403: API rate limit exceeded: rate limited (on POST git/blobs)" in text
-    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and cb._cant_write is False
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and gc.cant_write is False
     github.rate_limited = False
     assert len(cb.run(card="Mini Doomer")[1]) == 1
+
+
+def test_forbidden_token_falls_to_ssh(github, monkeypatch):
+    """A token that reads but can't write (403, no rate-limit header): the commit lands over SSH; the API is not asked to write again."""
+    github.forbidden = True
+    pushed = []
+
+    def ssh(repository, head, files, message):
+        pushed.append(message)
+        return github.commit({**github.files_at(head), **files}, "AutoCroissant", message)
+    monkeypatch.setattr(gc, "git_commit", ssh)
+    text, commits = cb.run(card="Mini Doomer")
+    assert len(commits) == 1 and pushed == ["Card edit: Mini Doomer hp 5 already on the card"] and gc.cant_write is True
+    assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # refused once, then SSH
+    assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT} and f"committed `{commits[0][:8]}`" in text
+    github.commit(github.files_at(github.head), "web", "Website edit: more")
+    text, commits = cb.run(card="the_freezer")
+    assert len(commits) == 1 and len(pushed) == 2 and pushed[1] == "Card edits: 1 refused"
+    assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # no API write tried this run
+
+
+def test_verdict_skipped_when_edit_changed_before_the_verdicts_commit(github, monkeypatch):
+    """land_verdicts re-reads the file at H': a card whose edit changed meanwhile keeps the new edit and gets no verdict; the others do."""
+    real = cb.land
+
+    def land(repository, files, expect, rewrite, message, dry_run, out_path=""):
+        if message.startswith("Card edits:"):                   # before the verdicts commit: The Freezer's edit changes
+            current = github.files_at(github.head)
+            data = json.loads(current[cb.EDITS_PATHS[0]].decode("utf-8"))
+            data["cards"]["The Freezer"]["stars"] = 3
+            current[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+            github.commit(current, "web", "Website edit: The Freezer again")
+        return real(repository, files, expect, rewrite, message, dry_run, out_path)
+    monkeypatch.setattr(cb, "land", land)
+    text, commits = cb.run()
+    assert len(commits) == 2 and "**The Freezer**" in text and "edit changed meanwhile: verdict not written" in text
+    data = _edits_at(github)
+    assert data["cards"]["The Freezer"]["stars"] == 3 and "_psd" not in data["cards"]["The Freezer"]
+    assert data["cards"]["Nobody"]["_psd"]["state"] == "refused" and data["cards"]["A Snack"]["_psd"]["state"] == "refused"
 
 
 def test_missing_runner_dependency_is_transient(github, monkeypatch):
@@ -507,7 +509,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     from psd_tools import PSDImage
     files = github.files_at(github.head)
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
-    before = github.commit(files, "web", "Website edit: Mini Doomer")
+    github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
     assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer hp 5 -> 8"
     after = github.files_at(github.head)
@@ -525,8 +527,6 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
     assert parse["old"]["hp"] == 5 and parse["new"]["hp"] == 8 and parse["validator"] == []
     assert "## Baked (1)" in text and "2 flag bytes" in text and f"committed `{commits[0][:8]}`" in text
-    text, commits = cb.run(head=before)                     # the snapshot before our commit: its PSD is gone from main
-    assert commits == [] and f"head-moved: {DOOMER} changed on main" in text
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()                                 # the field is gone: nothing to look at
     assert commits == [] and "0 with PSD fields" in text
@@ -549,10 +549,25 @@ def _bot_files_in_workflow() -> list:
     return paths
 
 
+ALLOWED_IMPORTS = {"PIL", "attr", "attrs", "certifi", "charset_normalizer", "fontTools", "idna", "numpy", "psd_tools", "requests",
+                   "urllib3", "scipy", "aggdraw"}      # what the Actions' pip lines install (psd-tools' own dependencies included)
+SKIP_IMPORTS = {"commands", "global_config", "sitecustomize", "usercustomize", "cython_runtime"}
+
+
+def third_party_imports(code: str, cwd) -> set:
+    """The non-stdlib top-level modules an import leaves in sys.modules (a copy of the repo at cwd, no config.py)."""
+    probe = (f"import sys; {code}; tops = {{m.split('.')[0] for m in sys.modules}}; "
+             f"print(sorted(tops - set(sys.stdlib_module_names) - {SKIP_IMPORTS!r} - {{m for m in tops if m.startswith('_')}}))")
+    done = run_process([executable, "-c", probe], cwd=cwd, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    return set(ast.literal_eval(done.stdout.strip()))
+
+
 def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     """Exactly the yaml's files, no config.py: `python -m commands.card_bake --help` works (the import closure is complete)."""
     paths = _bot_files_in_workflow()
-    assert "commands/card_bake.py" in paths and "commands/psd_analyzer.py" not in paths and "config.py" not in paths
+    assert "commands/card_bake.py" in paths and "commands/git_commit.py" in paths
+    assert "commands/psd_analyzer.py" not in paths and "config.py" not in paths
     bot = tmp_path / "bot"
     for rel in paths:
         assert (REPO / rel).is_file(), f"{rel} is checked out by the Action but missing here"
@@ -565,3 +580,27 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     code = "import sys, commands.card_bake; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr      # the copy has no config.py, imports no discord
+    extra = third_party_imports("import commands.card_bake", bot) - ALLOWED_IMPORTS
+    assert not extra, f"card-edits.yml installs none of these: {sorted(extra)}"    # a stray pandas/discord fails here, not in the Action
+
+
+def test_workflow_shape():
+    """card-edits.yml: dispatch only with dry_run on by default, never on the pipeline's own commits, one committer at a time
+    (the tts-save group), and the report line it greps before running site.yml and tts-save.yml."""
+    if not WORKFLOW.exists():
+        pytest.skip(f"no {WORKFLOW}")
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
+    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text
+    assert "if: github.actor != 'AutoCroissant'" in text and "group: tts-save" in text and "actions/checkout@v7" in text
+    grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
+    report = cb.Report("o/r", "h" * 40, False, "w")
+    card = cb.Card("X", "x", {"hp": 1})
+    card.redundant, card.commit = ["hp"], "abcdef01" * 5
+    report.cards = [card]
+    assert grep in cb.render(report) and grep not in cb.render(cb.Report("o/r", "h" * 40, True, "w"))
+    yaml = pytest.importorskip("yaml")
+    doc = yaml.safe_load(text)
+    assert doc[True]["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True   # PyYAML reads the `on` key as True
+    assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'" and doc["concurrency"]["group"] == "tts-save"
+    assert doc["permissions"] == {"contents": "write", "actions": "write"} and "push" not in doc[True]

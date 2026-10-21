@@ -3,7 +3,6 @@ commands/font_check.py offline: fixture fonts built with fontTools, type layers 
 for --repo mode and the bot's cache, the Action's sparse copy (--help without config.py), one real card PSD when the
 clone is there.
 """
-import hashlib
 import json
 import re
 import shutil
@@ -19,7 +18,7 @@ from requests import HTTPError
 import commands.font_check as fc
 import commands.github_api as ga
 import global_config
-from conftest import CLONE, REPO, blob_sha
+from conftest import CLONE, REPO, Reply, blob_sha, blob_sha_bytes as _sha
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
@@ -227,7 +226,7 @@ def test_markdown_report():
     empty = fc.markdown(fc.Report(checked=1, fonts_files=2, fonts_faces=2, errors=["x.psd: boom"]))
     assert "1 card PSD read" in empty and "Every font the cards ask for is in MDW/Fonts." in empty and "- x.psd: boom" in empty
     assert "Fonts added" not in empty
-    assert report().to_json()["missing"] == {"BabaUI": {"Creatures/Other/5 Stars/Baba.psd": ["6", "6", "6", "6"],
+    assert report().as_dict()["missing"] == {"BabaUI": {"Creatures/Other/5 Stars/Baba.psd": ["6", "6", "6", "6"],
                                                         "Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd": ["Ability"]},
                                              "OCRAExtended": {"N.M.E/Termination_Shock.psd": ["Ability", "Name"]},
                                              "Pristina-Regular": {"Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd": ["Name"]}}
@@ -324,37 +323,17 @@ def test_token_from_env(monkeypatch):
     monkeypatch.setattr(ga, "GIT_TOKEN", "")
     monkeypatch.setattr(ga, "HEADERS", {})
     monkeypatch.setenv("GITHUB_TOKEN", "ghs_x")
-    fc._token_from_env()
+    ga.token_from_env()
     assert ga.HEADERS == {"Authorization": "token ghs_x"}
     monkeypatch.setattr(ga, "GIT_TOKEN", "mine")
     monkeypatch.setattr(ga, "HEADERS", {"Authorization": "token mine"})
-    fc._token_from_env()
+    ga.token_from_env()
     assert ga.HEADERS == {"Authorization": "token mine"}                        # the bot's own token wins
 
 
 # ========================
 # --repo mode and the bot's cache against a fake GitHub
 # ========================
-def _sha(data: bytes) -> str:
-    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-class Reply:
-    def __init__(self, status=200, data=b"", body=None):
-        self.status_code, self.content, self._body, self.headers = status, data, body, {}
-
-    @property
-    def ok(self):
-        return self.status_code < 400
-
-    def json(self):
-        return self._body
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise HTTPError(f"{self.status_code} Client Error")
-
-
 class FakeGitHub:
     """blobs: sha -> bytes; compare: the compare API's body; commits: sha -> the commit API's body; tree: a trees body."""
     def __init__(self, blobs: dict, compare: dict, commits: dict, tree: dict = None):
@@ -452,6 +431,22 @@ def test_pushed_files_notes_the_file_cap(monkeypatch):
     assert fc.pushed_files("o/r", "a" * 40, "h") == ({}, [], ["the push changed 300 files or more; only the first 300 were checked"])
 
 
+def test_pushed_files_notes_the_commit_caps(monkeypatch):
+    """A commit listing 300 files or more, or a push of 250 commits or more: later files may carry the wrong author, so a note says so."""
+    files = [{"filename": f"Items/{i}.psd", "status": "modified", "sha": "0" * 40} for i in range(300)]
+    c1 = {"sha": "c1", "author": {"login": "alice"}, "files": files[:1]}
+    c2 = {"sha": "c2", "author": {"login": "bob"}, "files": files}
+    fake = FakeGitHub({}, {"commits": [c1, c2], "files": files[:2]}, {"c1": c1, "c2": c2})
+    monkeypatch.setattr(ga, "get", fake.get)
+    psds, fonts, notes = fc.pushed_files("o/r", "a" * 40, "c2")
+    assert notes == ["commit c2 lists 300 files or more; later files may be credited to the wrong author"]
+    assert psds == {"Items/0.psd": ("0" * 40, "bob"), "Items/1.psd": ("0" * 40, "bob")} and fonts == []
+    many = [{"sha": f"c{i}", "author": {"login": "alice"}} for i in range(250)]
+    fake = FakeGitHub({}, {"commits": many, "files": files[:1]}, {c["sha"]: {**c, "files": []} for c in many})
+    monkeypatch.setattr(ga, "get", fake.get)
+    assert fc.pushed_files("o/r", "a" * 40, "c249")[2] == ["the push has 250 commits or more; later files may be credited to the wrong author"]
+
+
 def test_repo_fonts_cache_and_batches(fonts_dir, fake_psds, monkeypatch, tmp_path):
     font, ttc = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes(), (fonts_dir / "Pair.ttc").read_bytes()
     a, b = b"psd-a", b"psd-b"
@@ -525,6 +520,24 @@ def test_real_card_psd(clone):
     assert index.resolve("Papyrus-Regular") == "alias" == index.resolve("Kung-Fu-Panda")   # both FONT_ALIASES targets are exact faces
 
 
+def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
+    """--all from POOL_MIN PSDs parses in a process pool: the same report as the sequential path, in path order."""
+    n = fc.POOL_MIN
+    psds = sorted(clone.joinpath("Creatures", "Other").rglob("*.psd"), key=lambda p: p.stat().st_size)[:n]   # the smallest: a fast parse
+    if len(psds) < n:
+        pytest.skip("not enough card PSDs in the clone")
+    root = tmp_path / "repo"
+    for path in psds:
+        link = root / path.relative_to(clone)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(path)
+    index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
+    pooled = fc.check_checkout(str(root), index)
+    monkeypatch.setattr(fc, "POOL_MIN", n + 1)
+    sequential = fc.check_checkout(str(root), index)
+    assert pooled.as_dict() == sequential.as_dict() and pooled.checked + len(pooled.errors) - len(index.errors) == n
+
+
 def _bot_files_in_workflow() -> list:
     """The AutoCroissant paths font-check.yml checks out (its second checkout step)."""
     if not WORKFLOW.exists():
@@ -557,6 +570,9 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
             "print(sorted(m for m in ('config', 'discord', 'commands.query_card', 'commands.utils') if m in sys.modules))")
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
+    from test_card_bake import ALLOWED_IMPORTS, third_party_imports
+    extra = third_party_imports("import commands.font_check", bot) - ALLOWED_IMPORTS
+    assert not extra, f"font-check.yml installs none of these: {sorted(extra)}"
 
 
 def test_workflow_shape():

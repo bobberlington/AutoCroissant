@@ -54,7 +54,6 @@ def test_results_are_grouped_ten_per_message(repo, n, messages):
 
 
 def test_limit_caps_the_list(repo):
-    out, _ = _search(repo, 0)
     repo.ability_search_engine = lambda ability: DataFrame({"ability": ["fire"] * 25}, index=[f"Items/Card {i}" for i in range(25)])
     utils.dispatch_queue.clear()
     qc.query_ability(utils.make_simple_fake_interaction(1), "Fire", limit=3)
@@ -82,3 +81,10 @@ def test_a_card_without_an_image_keeps_its_name(repo):
     repo.get_card_url = lambda name: None if name == "Card 1" else urls(name)
     out, _ = _search(repo, 3)
     assert out[1] == f"{_line(0)}\nCard 1\n{_line(2)}"
+
+
+def test_single_result_without_an_image_posts_its_name(repo):
+    """One match whose PNG is not in the tree: its name, never a content=None message Discord drops."""
+    repo.get_card_url = lambda name: None
+    out, _ = _search(repo, 1)
+    assert out == ["Found 1 results for 'Fire'!", "Card 0", "Displayed 1 of 1 results for 'Fire'."]

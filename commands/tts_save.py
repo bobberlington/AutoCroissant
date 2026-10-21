@@ -10,18 +10,17 @@ their rules (TTS/decks.json: missing repo cards added, cards outside the rule re
 its deck alone), sets card Nicknames to the
 card browser's names, clears role tags, regenerates the Lua resizeTargets table. When something changed it writes
 <stem>.<time>.bak.json and <stem>.report.md next to the save. The shas in the links are the only state.
-The bot updates a temp copy of main's save and commits it through the GitHub API (when the token can't write: git
-objects in the history clone, pushed over SSH); it never writes a checkout.
+The bot updates a temp copy of main's save and commits it with git_commit (the GitHub API; when the token can't write:
+git objects in the history clone, pushed over SSH); it never writes a checkout.
 """
-from base64 import b64encode
 from copy import deepcopy
 from datetime import datetime
 from json import dumps, load, loads
-from os import environ, remove, replace
+from os import remove, replace
 from os.path import basename, dirname, exists, expanduser, join, splitext
 from re import DOTALL, IGNORECASE, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
-from subprocess import CalledProcessError, run
+from subprocess import CalledProcessError
 from sys import argv, exit
 from tempfile import TemporaryDirectory
 from threading import Lock
@@ -29,15 +28,16 @@ from time import sleep
 from typing import Callable, Optional
 from urllib.parse import quote, unquote
 
-from requests import RequestException, get, request
+from requests import get
 
+import commands.git_commit as git_commit
 import commands.repo_history as repo_history
 from commands.card_edits import CardAuthors
 from commands.card_models import card_name as _stem
-from commands.github_api import GIT_TOKEN
+from commands.git_commit import COMMIT_TRIES, commit_files, commit_info, git as _git, plural as _plural, ref_head
 from commands.repo_history import pinned_ref, refresh
-from global_config import (API_BASE, CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE,
-                           RULES_PATH, SITE_URL, TTS_SAVE_PATH)
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
+                           SITE_URL, TTS_SAVE_PATH)
 
 # ========================
 # Configuration
@@ -59,24 +59,14 @@ CARD_EXTRAS = ("States", "AttachedDecals", "ChildObjects", "Tags")       # not c
 CARD_SCRIPTS = ("LuaScript", "LuaScriptState", "XmlUI", "GMNotes")
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
               "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
-GIT_TIMEOUT = 300
 HTTP_TIMEOUT = 30
-API = f"{API_BASE}{CARD_REPO}/"
-API_TIMEOUT = 120                                   # the save is 5.5 MB (7.4 MB as base64)
-COMMIT_TRIES = 3                                    # main moved meanwhile: redo the update on the new save
-CONFLICT = (409, 422)                               # ref update refused (not a fast forward)
-NO_WRITE = (401, 403, 404)                          # blob upload refused: the token can't write (classic PATs get 404)
 LAG_PAUSE = 10                                      # s before retrying a history clone behind main
 REPORT_FILE = "tts_save_report.md"
-PUSH_URL = f"git@github.com:{CARD_REPO}.git"       # git fallback: pushed with the service's SSH agent
-GIT_IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissant@gmail.com",
-                "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "autocroissant@gmail.com"}  # as PICKLE commits
 
 # ========================
 # Global State
 # ========================
 _lock = Lock()                                      # one run at a time
-_cant_write = False                                 # POST git/blobs got a NO_WRITE status: commit over SSH until a restart
 _objects: dict = {}                                 # git object sha -> tree entries / blob bytes (immutable)
 _used: set = set()                                  # shas read this run; older ones are dropped
 _site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
@@ -85,12 +75,6 @@ _site: tuple = ("", None)                           # (ETag, cards) of the websi
 # ========================
 # Helper Functions
 # ========================
-def _git(where: str, *args: str, stdin: Optional[bytes] = None, env: Optional[dict] = None) -> bytes:
-    """git in a repo dir. In the blobless clone only refs and trees (rev-parse, rev-list, ls-tree): never blobs."""
-    return run(["git", "-C", where, *args], input=stdin, capture_output=True, check=True, timeout=GIT_TIMEOUT,
-               env=env).stdout
-
-
 def _ls_tree(where: str, commit: str, paths: list = ()) -> dict:
     """{path: blob} at commit: the whole tree, or only paths (absent ones are left out)."""
     out = _git(where, "ls-tree", "-r", "-z", commit, "--", *paths).decode("utf-8")
@@ -718,10 +702,6 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
 # ========================
 # Bot Flow
 # ========================
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
-
-
 def _commit_message(report: _Report) -> str:
     """'TTS save: 812 links pinned, 3 cards added', from the report."""
     links = sum(n for _, _, n in report.pinned.values()) + sum(n for _, _, n in report.repinned.values())
@@ -736,31 +716,9 @@ def _commit_message(report: _Report) -> str:
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
-def _api(method: str, path: str, raw: bool = False, check: bool = True, **kwargs):
-    """A GitHub API call on the card repo; check: raise on an error status, with GitHub's message."""
-    headers = {"Accept": "application/vnd.github.raw" if raw else "application/vnd.github+json",
-               "X-GitHub-Api-Version": "2022-11-28"}
-    if GIT_TOKEN:
-        headers["Authorization"] = f"token {GIT_TOKEN}"
-    reply = request(method, API + path, headers=headers, timeout=API_TIMEOUT, **kwargs)
-    if check:
-        _check(reply, method, path)
-    return reply
-
-
-def _status(reply) -> str:
-    """'GitHub 422: <its message>'."""
-    try:
-        msg = reply.json().get("message", "")
-    except (ValueError, AttributeError):
-        msg = ""
-    return f"GitHub {reply.status_code}" + (f": {msg}" if msg else "")
-
-
-def _check(reply, method: str, path: str) -> None:
-    """Raise on an error status, with GitHub's message."""
-    if not reply.ok:
-        raise RuntimeError(f"{_status(reply)} (on {method} {path})")
+def _api(method: str, path: str, **kwargs):
+    """git_commit.api on the card repo (raw: a blob's bytes; check: raise on an error status)."""
+    return git_commit.api(CARD_REPO, method, path, **kwargs)
 
 
 def _object(sha: str, fetch: Callable[[], object]):
@@ -795,65 +753,6 @@ def _files_at(tree: str, paths: tuple) -> dict:
         if entry and entry.get("type") == "blob":
             found[path] = (entry["mode"], entry["sha"])
     return found
-
-
-def _git_env() -> dict:
-    """No prompts (SSH_AUTH_SOCK comes from the service), the bot's identity."""
-    env = {**environ, "GIT_TERMINAL_PROMPT": "0", **GIT_IDENTITY}
-    if "GIT_SSH" not in env and "GIT_SSH_COMMAND" not in env:
-        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
-    return env
-
-
-def _git_commit(head: str, data: bytes, message: str) -> Optional[str]:
-    """
-    Commit data as TTS_SAVE_PATH on head in the history clone and push it to main over SSH (no force).
-
-    Returns:
-        The new commit's sha, or None when the push was rejected (main moved)
-    """
-    clone, env = expanduser(HISTORY_CLONE), _git_env()
-    blob = _git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
-    *folders, name = TTS_SAVE_PATH.split("/")
-    trees = [_git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip()]
-    for part in folders:                                # the tree of each folder on the path
-        entries = _git(clone, "ls-tree", "-z", trees[len(trees) - 1], env=env).decode("utf-8").split("\0")
-        found = [e for e in entries if e.partition("\t")[2] == part and e.split(" ")[1:2] == ["tree"]]
-        if not found:
-            raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main `{head[:8]}`")
-        trees.append(found[0].partition("\t")[0].split(" ")[2])
-    sha, mode = blob, None
-    for level in range(len(trees) - 1, -1, -1):         # deepest first: swap the entry, write the tree
-        entries = [e for e in _git(clone, "ls-tree", "-z", trees[level], env=env).decode("utf-8").split("\0") if e]
-        target = name if level == len(trees) - 1 else folders[level]
-        out, hit = [], False
-        for e in entries:
-            meta, _, entry = e.partition("\t")
-            if entry == target:
-                kind = meta.split(" ")[1]
-                if (kind == "blob") != (mode is None):
-                    raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main `{head[:8]}`")
-                e, hit = f"{meta.split(' ')[0]} {kind} {sha}\t{entry}", True
-            out.append(e)
-        if not hit:
-            raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main `{head[:8]}`")
-        mode = "tree"
-        # --missing: siblings' blobs aren't in the blobless clone
-        sha = _git(clone, "mktree", "-z", "--missing", stdin="".join(e + "\0" for e in out).encode("utf-8"),
-                   env=env).decode().strip()
-    commit = _git(clone, "commit-tree", sha, "-p", head, "-m", message, env=env).decode().strip()
-    # --no-thin: a thin pack would fetch the old save blob as its delta base
-    push = run(["git", "-C", clone, "push", "--porcelain", "--no-thin", PUSH_URL, f"{commit}:{MAIN_REFS[1]}"],
-               capture_output=True, timeout=GIT_TIMEOUT, env=env)
-    if push.returncode:
-        out = push.stdout.decode("utf-8", "replace")
-        if any(line.startswith("!") and "[rejected]" in line for line in out.splitlines()):
-            return None                                 # not a fast forward: main moved
-        err = [line for line in (push.stderr.decode("utf-8", "replace") or out).splitlines() if line.strip()]
-        raise RuntimeError(f"git push to {PUSH_URL} failed: {' / '.join(err[len(err) - 3:])}"
-                           + ("" if environ.get("SSH_AUTH_SOCK") else " (no SSH_AUTH_SOCK: no SSH agent)"))
-    refresh()                                           # the clone's main advances to the new commit
-    return commit
 
 
 def _say(interaction, text: str) -> None:
@@ -914,25 +813,24 @@ def _blob(sha: str) -> bytes:
 
 def update_repo_save() -> tuple:
     """
-    Update the save on the card repo's main and commit it through the GitHub API (blocking; one run at a time);
-    when the token can't write (401/403/404, or no token), through git objects in the history clone pushed over SSH.
+    Update the save on the card repo's main and commit it with git_commit.commit_files (blocking; one run at a time):
+    the GitHub API, or when the token can't write (401/403/404, or no token) git objects in the history clone pushed over SSH.
     Rules and Card Edits.json come from main too. Only a temp dir is written. When main moves meanwhile (or the
     history clone lags it), the update is redone on the new save, up to COMMIT_TRIES times.
 
     Returns:
         (markdown report, sha of the new commit, or None when nothing changed)
     """
-    global _cant_write
     with _lock, TemporaryDirectory(prefix="tts_save_") as tmp:
         for sha in set(_objects) - _used:               # only the last run's objects stay cached
             del _objects[sha]
         _used.clear()
         save_path = join(tmp, basename(TTS_SAVE_PATH))
+        git_commit.limited = False                      # a rate limit is one run's
         why = "main kept moving"
-        via_git = _cant_write
         for attempt in range(COMMIT_TRIES):
-            head = _api("GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"]
-            base = _api("GET", f"git/commits/{head}").json()["tree"]["sha"]
+            head = ref_head(CARD_REPO)
+            base = commit_info(CARD_REPO, head)["tree"]["sha"]
             files = _files_at(base, (TTS_SAVE_PATH, RULES_PATH) + EDITS_PATHS)
             if TTS_SAVE_PATH not in files:
                 raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main")
@@ -953,40 +851,11 @@ def update_repo_save() -> tuple:
                 return text, None
             with open(save_path, "rb") as f:
                 data = f.read()
-            if GIT_TOKEN and not via_git:
-                reply = _api("POST", "git/blobs", check=False,
-                             json={"content": b64encode(data).decode("ascii"), "encoding": "base64"})
-                via_git = reply.status_code in NO_WRITE     # token can't write: git over SSH
-                limited = (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
-                           or "rate limit" in reply.text.lower())   # a secondary limit may send no header
-                _cant_write = via_git and not limited   # a rate limit is only this run's
-                if not via_git:
-                    _check(reply, "POST", "git/blobs")
-            if not GIT_TOKEN or via_git:
-                try:
-                    commit = _git_commit(head, data, _commit_message(report))
-                except CalledProcessError as e:
-                    raise RuntimeError(f"git {e.cmd[3]} in the history clone failed: "
-                                       f"{(e.stderr or b'').decode('utf-8', 'replace').strip()}") from e
-                if commit:
-                    return text, commit
-                why = "main kept moving (push rejected)"
-                continue
-            blob = reply.json()["sha"]
-            tree = _api("POST", "git/trees", json={"base_tree": base, "tree": [
-                {"path": TTS_SAVE_PATH, "mode": mode, "type": "blob", "sha": blob}]}).json()["sha"]
-            commit = _api("POST", "git/commits", json={"message": _commit_message(report), "tree": tree,
-                                                       "parents": [head]}).json()["sha"]
-            try:
-                reply = _api("PATCH", f"git/{MAIN_REFS[1]}", check=False, json={"sha": commit, "force": False})
-            except RequestException:                    # no reply: the ref may have moved anyway
-                if _api("GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"] != commit:
-                    raise
+            commit = commit_files(CARD_REPO, head, base, {TTS_SAVE_PATH: mode}, {TTS_SAVE_PATH: data}, _commit_message(report),
+                                  ssh_on_limit=True)    # a throttled API is this run's: the bot's SSH agent pushes now
+            if commit:
                 return text, commit
-            if reply.status_code not in CONFLICT:
-                _check(reply, "PATCH", f"git/{MAIN_REFS[1]}")
-                return text, commit
-            why = f"main kept moving ({_status(reply)})"
+            why = "main kept moving (the commit was not a fast forward)"
         raise RuntimeError(f"{why}: the save was not committed after {COMMIT_TRIES} tries")
 
 

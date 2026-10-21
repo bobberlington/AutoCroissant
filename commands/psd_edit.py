@@ -1,7 +1,7 @@
 """
 Edits to a card PSD for the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md sections 3, 5, 6 and 10): classify a card's
 website edits against a fresh offline parse, toggle a stat digit, set the name or ability text through the fork's
-text engine with status words coloured from the chart, render only the changed region, delta-merge it onto the
+text engine with status words colored from the chart, render only the changed region, delta-merge it onto the
 official PNG and gate the result. Pure functions over an open PSDImage; a refusal is a Refused exception carrying
 one of CODES, which the per-card driver turns into data. No Discord, network or config; the text extra
 (psd_tools.composite.text) is imported only where text is rendered, so the module loads under stock psd-tools.
@@ -22,21 +22,20 @@ from psd_tools import PSDImage
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
 from commands.psd_parser import DRAWN_LAYER_KINDS, CardValidator, IconVocabulary, PSDParser
-from commands.psd_regions import _fx_pad, badge_layers, clip, overlay_words, stat_rows
+from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import FONT_ALIASES
 
 # ========================
 # Configuration
 # ========================
-STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"   # one text layer per status; its fill is the colour
+STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"   # one text layer per status; its fill is the color
 FONTS_DIR = "MDW/Fonts"
 CODES = ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font", "overflow",
          "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "error")
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 NOT_YET = ("stars", "types")                    # PSD-kind, refused in round 1 (section 3)
-KIND = getattr(CardEdits, "KIND", {**{f: "psd" for f in STAT_FIELDS + TEXT_FIELDS + NOT_YET},
-                                   "type": "folder", "subtype": "folder", "series": "folder"})
+KIND = CardEdits.KIND
 STAT_MAX = 10                                   # above it there is no canonical encoding (idea 13)
 DIGITS = tuple(str(n) for n in range(10))
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
@@ -83,8 +82,8 @@ class Classification:
 
 
 @dataclass
-class StatusColour:
-    """A status effect's colour from the chart."""
+class StatusColor:
+    """A status effect's color from the chart."""
     name: str
     fill: tuple             # RGB, 0..1
     styled: bool            # an enabled effect on the chart layer (glow, gradient, shadow): refused in round 1
@@ -99,7 +98,6 @@ class Edit:
     layers: list            # layers whose records change: the toggled digits, or the text layer
     records: list           # their layer record indices (gate bytes)
     region: Optional[tuple]  # padded canvas bbox the edit can reach
-    report: object = None   # the text engine's RenderReport (text edits)
 
 
 @dataclass
@@ -121,13 +119,6 @@ class Baked:
 # ========================
 # Helper Functions
 # ========================
-def _union(boxes):
-    boxes = [b for b in boxes if b]
-    if not boxes:
-        return None
-    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
-
-
 def _pad(box, reach: int, psd: PSDImage) -> tuple:
     return clip((box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach), psd.width, psd.height)
 
@@ -172,16 +163,33 @@ def _within_bar(measured: dict) -> bool:
     return measured["bad_pct"] <= PARITY_BAD_MAX and measured["mean"] <= PARITY_MEAN_MAX
 
 
+def text_engine() -> bool:
+    """Is the fork's text engine (psd-tools[text]) importable: the renders and text edits need it."""
+    try:
+        import psd_tools.composite.text  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def _record_index(layer) -> int:
     records = layer._psd._record.layer_and_mask_information.layer_info.layer_records
     return next(i for i, record in enumerate(records) if record is layer._record)
 
 
-def _enabled_effects(layer) -> list:
-    """Names of the layer's effects whose own enabled flag is set (the block flag alone is not enough, section 5)."""
+def _enabled_effects(layer, strict: bool = False) -> list:
+    """
+    Names of the layer's effects whose own enabled flag is set (the block flag alone is not enough, section 5).
+
+    Args:
+        layer: Any layer
+        strict: An unreadable effect stack refuses (parity) instead of counting as none
+    """
     try:
         return [type(e).__name__ for e in layer.effects if e.enabled]
-    except Exception:
+    except Exception as error:                  # no effects block, or one psd-tools can't read
+        if strict:
+            raise Refused("parity", f"{layer.name}: effects unreadable: {error}") from error
         return []
 
 
@@ -198,7 +206,7 @@ def collapse(text: Optional[str]) -> str:
     return " ".join((text or "").split())
 
 
-def normalise_ability(text: Optional[str]) -> str:
+def normalize_ability(text: Optional[str]) -> str:
     """
     The parser's own whitespace rule, so an edit and a re-parse compare alike.
 
@@ -331,13 +339,13 @@ def run_fills(layer) -> list:
 # ========================
 def status_fills(chart: PSDImage) -> dict:
     """
-    The status colours: one text layer per status in the chart's Buffs and Debuffs groups.
+    The status colors: one text layer per status in the chart's Buffs and Debuffs groups.
 
     Args:
         chart: The open STATUS_CHART
 
     Returns:
-        {status name lowercased: StatusColour}; fills are the engine's 0..1 values
+        {status name lowercased: StatusColor}; fills are the engine's 0..1 values
     """
     out = {}
     for group in chart:
@@ -349,7 +357,7 @@ def status_fills(chart: PSDImage) -> dict:
             name = collapse(layer.text)
             fills = [fill for _, _, fill in run_fills(layer) if fill]
             if name and fills:
-                out[name.lower()] = StatusColour(name, fills[0], bool(_enabled_effects(layer)))
+                out[name.lower()] = StatusColor(name, fills[0], bool(_enabled_effects(layer)))
     return out
 
 
@@ -362,7 +370,7 @@ def status_spans(text: str, chart: dict) -> list:
         chart: status_fills()
 
     Returns:
-        [(start, end, StatusColour)] sorted by start, non-overlapping
+        [(start, end, StatusColor)] sorted by start, non-overlapping
     """
     taken = []
     for key in sorted(chart, key=len, reverse=True):
@@ -376,7 +384,7 @@ def status_spans(text: str, chart: dict) -> list:
 
 def body_fill(layer, chart: dict) -> Optional[tuple]:
     """
-    The text's own colour: the fill covering most characters outside the status words.
+    The text's own color: the fill covering most characters outside the status words.
 
     Args:
         layer: A text layer
@@ -426,13 +434,13 @@ def _word_bounds(text: str, start: int, end: int) -> tuple:
 
 
 def _off_swatch(layer, chart: dict) -> Optional[str]:
-    """A status word in the layer's text whose fill is not its swatch (a deliberate colour), else None."""
+    """A status word in the layer's text whose fill is not its swatch (a deliberate color), else None."""
     fills = run_fills(layer)
-    for start, end, colour in status_spans(layer.text, chart):
+    for start, end, color in status_spans(layer.text, chart):
         for run_start, run_end, fill in fills:
             if run_start <= start < run_end and fill is not None:
-                if any(abs(a - b) > FILL_TOLERANCE for a, b in zip(fill, colour.fill)):
-                    return colour.name
+                if any(abs(a - b) > FILL_TOLERANCE for a, b in zip(fill, color.fill)):
+                    return color.name
     return None
 
 
@@ -471,7 +479,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, excluded
             else:
                 out.jobs[name] = value
         elif name == "ability":
-            if normalise_ability(card.get("ability")) == normalise_ability(value):
+            if normalize_ability(card.get("ability")) == normalize_ability(value):
                 out.redundant.append(name)
             else:
                 out.jobs[name] = value
@@ -492,6 +500,10 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, excluded
 def template_row(psd: PSDImage, stat: str):
     """
     The template bar row of a stat: one "<Stat> Dark" group holding the ten masked exposure digits 0-9.
+
+    Args:
+        psd: An open card
+        stat: hp, def, atk or spd
 
     Returns:
         (group, {digit: layer}, visible digits); raises Refused("unsupported-card") for any other row shape
@@ -534,7 +546,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     show = digits[str(value)] if value < STAT_MAX else None
     hide = [digits[d] for d in DIGITS if digits[d].visible and digits[d] is not show]
     for layer in ([show] if show is not None else []) + hide:
-        effects = _enabled_effects(layer)
+        effects = _enabled_effects(layer, strict=True)
         if effects:
             raise Refused("parity", f"{stat}: digit {layer.name} carries an enabled {', '.join(effects)}")
     changed = []
@@ -544,9 +556,9 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     for layer in hide:
         layer.visible = False
         changed.append(layer)
-    region = _union([tuple(layer.mask.bbox) for layer in changed])
+    region = union_box([tuple(layer.mask.bbox) for layer in changed])
     return Edit(stat, old, value, changed, [_record_index(layer) for layer in changed],
-                _pad(region, _fx_pad(group), psd) if region else None)
+                _pad(region, fx_pad(group), psd) if region else None)
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> Edit:
@@ -563,8 +575,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font, overflow
 
-    The engine gives replaced or inserted text the style of the run before it, so an edit after a coloured status
-    word would inherit its colour: the edited words are reset to the body fill, then the status words among them
+    The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
+    word would inherit its color: the edited words are reset to the body fill, then the status words among them
     take their swatch. Status words the edit leaves alone keep their runs.
     """
     from psd_tools.composite.text import FontMap, MissingFontError
@@ -585,18 +597,18 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         if chart:
             word = _off_swatch(layer, chart)
             if word:
-                raise Refused("styled-word", f"{word}: off-swatch colour on the card")
+                raise Refused("styled-word", f"{word}: off-swatch color on the card")
             body = body_fill(layer, chart)
             start, end = _word_bounds(text, start, end)
             spans = [span for span in status_spans(text, chart) if span[0] < end and start < span[1]]
-            styled = [colour.name for _, _, colour in spans if colour.styled]
+            styled = [color.name for _, _, color in spans if color.styled]
             if styled:
                 raise Refused("styled-word", f"{', '.join(sorted(set(styled)))}: styled on the chart")
     layer.set_text(text, keep="runs")
     if body is not None and start < end:
         layer.set_span_style(start, end, fill=body)
-    for span_start, span_end, colour in spans:
-        layer.set_span_style(span_start, span_end, fill=colour.fill)
+    for span_start, span_end, color in spans:
+        layer.set_span_style(span_start, span_end, fill=color.fill)
     try:
         report = layer.rasterize(fonts=FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES))
     except MissingFontError as error:
@@ -611,29 +623,52 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         raise Refused("overflow", f"{which} runs off the canvas")
     if any(_touches(layer, badge) for badge in badges):
         raise Refused("overflow", "name reaches the stars or type icons")
-    region = _pad(_union([old_bbox, bbox]), _fx_pad(layer), psd)
-    return Edit(which, old_text, text, [layer], [_record_index(layer)], region, report)
+    region = _pad(union_box([old_bbox, bbox]), fx_pad(layer), psd)
+    return Edit(which, old_text, text, [layer], [_record_index(layer)], region)
 
 
 # ========================
 # Render and merge (section 6)
 # ========================
 def changed_region(edits: list, psd: PSDImage) -> tuple:
-    """The union of the edits' padded regions, clipped to the canvas (the artifacts' crop; gates run per edit)."""
-    region = _union([edit.region for edit in edits])
+    """
+    The union of the edits' padded regions, clipped to the canvas (the artifacts' crop; gates run per edit).
+
+    Args:
+        edits: The applied Edits
+        psd: The card (its canvas size)
+
+    Returns:
+        The bbox; raises Refused("idempotence") when no edit changed a layer
+    """
+    region = union_box([edit.region for edit in edits])
     if region is None:
         raise Refused("idempotence", "no layer changed")
     return clip(region, psd.width, psd.height)
 
 
 def render_region(psd: PSDImage, region: tuple) -> Image.Image:
-    """psd.composite over a viewport, never from the stored preview and never forced (section 15)."""
+    """
+    psd.composite over a viewport, never from the stored preview and never forced (section 15).
+
+    Args:
+        psd: The card
+        region: Canvas bbox to render
+
+    Returns:
+        The render, region-sized
+    """
     return psd.composite(viewport=region, ignore_preview=True)
 
 
 def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
     """
     Render the unedited region and measure it against the official PNG (gate parity).
+
+    Args:
+        psd: The card before the edit
+        png: Its official PNG
+        region: The edit's padded region
 
     Returns:
         (render, measurement); raises Refused("parity") when the fork already renders the region wrong
@@ -649,6 +684,12 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
     """
     Delta-merge: inside the region, the official PNG takes the new render's pixels where it differs from the
     baseline render; every other pixel is left as Photoshop exported it.
+
+    Args:
+        png: The official PNG (or the merge so far)
+        base: baseline()'s render of the region
+        render: The region rendered from the edited PSD
+        region: The edit's padded region
 
     Returns:
         (merged image in the PNG's mode, pixels replaced)
@@ -666,7 +707,17 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
 
 
 def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
-    """Before, after and an amplified diff crop of the region (the --dry-run artifacts)."""
+    """
+    Before, after and an amplified diff crop of the region (the --dry-run artifacts).
+
+    Args:
+        png: The official PNG
+        merged: The merged PNG
+        region: The crop
+
+    Returns:
+        {"before", "after", "diff": image}
+    """
     before, after = png.crop(region), merged.crop(region)
     diff = np.abs(_flat(before).astype(np.int16) - _flat(after).astype(np.int16))[..., :3].max(axis=2)
     return {"before": before, "after": after, "diff": Image.fromarray(np.clip(diff * 8, 0, 255).astype(np.uint8))}
@@ -676,6 +727,7 @@ def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
 # Gates (sections 5 and 10)
 # ========================
 def gate_shape(png: Image.Image, merged: Image.Image, psd: PSDImage) -> None:
+    """The PNG is the PSD's canvas and the merge kept its size and mode; else Refused("shape")."""
     if png.size != (psd.width, psd.height):
         raise Refused("shape", f"PNG {png.size} is not the PSD canvas {(psd.width, psd.height)}")
     if merged.size != png.size or merged.mode != png.mode:
@@ -683,7 +735,17 @@ def gate_shape(png: Image.Image, merged: Image.Image, psd: PSDImage) -> None:
 
 
 def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
-    """Pixels differing between the old and new PNG lie inside the region. Returns how many differ."""
+    """
+    Every pixel differing between the old and new PNG lies inside the region.
+
+    Args:
+        png: The official PNG
+        merged: The merged PNG
+        region: The union of the edits' regions
+
+    Returns:
+        How many pixels differ; raises Refused("region") for any outside
+    """
     diff = (np.asarray(png.convert("RGBA")) != np.asarray(merged.convert("RGBA"))).any(axis=2)
     inside = np.zeros_like(diff)
     inside[region[1]:region[3], region[0]:region[2]] = True
@@ -694,6 +756,7 @@ def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
 
 
 def gate_size(old_path: str, new_path: str) -> None:
+    """The saved PSD stays within SIZE_TOLERANCE of the old one; else Refused("size")."""
     old, new = getsize(old_path), getsize(new_path)
     if abs(new - old) > SIZE_TOLERANCE * old:
         raise Refused("size", f"PSD {old} -> {new} bytes")
@@ -752,6 +815,14 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     Re-parse the new PSD: the old parse with exactly the edited fields replaced, no new problems, one digit per
     edited row and the title read back for a name edit.
 
+    Args:
+        parser: offline_parser()
+        parsed: parse_card() of the old PSD
+        new_path: The saved PSD
+        rel: The card's repo path
+        jobs: The applied jobs
+        psd: The saved PSD, reopened
+
     Returns:
         parse_card() of the new PSD
     """
@@ -766,7 +837,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         if name in STAT_FIELDS:
             expected[name] = value
         elif name == "ability":
-            expected["ability"], got["ability"] = normalise_ability(value), normalise_ability(got.get("ability"))
+            expected["ability"], got["ability"] = normalize_ability(value), normalize_ability(got.get("ability"))
     expected.pop("problem", None)
     got.pop("problem", None)
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
@@ -791,6 +862,13 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it matches the merged PNG within
     the parity bar (not byte-equal: the delta merge keeps Photoshop's pixels where the render matched the baseline).
 
+    Args:
+        new_parsed: gate_reparse()'s parse of the saved PSD
+        jobs: The applied jobs
+        psd: The saved PSD, reopened
+        merged: The merged PNG
+        edits: The applied Edits
+
     Returns:
         {field: region measurement}
     """
@@ -811,14 +889,19 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
 # ========================
 def save_psd(psd: PSDImage, path: str, update_preview: bool = True) -> None:
     """
-    Write the PSD. With update_preview the fork regenerates the flattened preview of an edited document (20-45 s);
-    without it the stale preview is kept (0.2 s; the jetson later, question 2).
+    Write the PSD.
+
+    Args:
+        psd: The edited card
+        path: Where it goes
+        update_preview: The fork regenerates the flattened preview (decision 2: always, from the driver; 20-45 s);
+            False keeps the stale preview (0.2 s: the fork-only tests)
     """
     if update_preview:
         psd.save(path)
     elif "update_preview" in signature(psd.save).parameters:
         psd.save(path, update_preview=False)
-    else:                                       # older fork: the private flag is what save() checks
+    else:                                       # the fork's save(): its private flag is what triggers the preview
         updated = psd._updated
         psd._updated = False
         try:
@@ -829,7 +912,7 @@ def save_psd(psd: PSDImage, path: str, update_preview: bool = True) -> None:
 
 def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
     """
-    Write the merged PNG with the official PNG's colour chunks (iCCP, gAMA, cHRM, pHYs): only pixels change.
+    Write the merged PNG with the official PNG's color chunks (iCCP, gAMA, cHRM, pHYs): only pixels change.
 
     Args:
         image: The merged image
@@ -930,10 +1013,16 @@ __all__ = [
     'Classification',
     'Edit',
     'FONTS_DIR',
+    'KIND',
+    'NOT_YET',
+    'OK_FONTS',
     'Refusal',
     'Refused',
     'STATUS_CHART',
-    'StatusColour',
+    'STAT_FIELDS',
+    'STAT_MAX',
+    'StatusColor',
+    'TEXT_FIELDS',
     'ability_layer',
     'apply_jobs',
     'artifacts',
@@ -952,16 +1041,19 @@ __all__ = [
     'layer_records',
     'merge_png',
     'name_layer',
-    'normalise_ability',
+    'normalize_ability',
     'offline_parser',
     'parse_card',
     'read_name',
     'render_region',
+    'run_fills',
     'save_png',
     'save_psd',
     'set_stat',
+    'text_engine',
     'set_text_layer',
     'status_fills',
     'status_spans',
     'template_row',
+    'uses_icon_font',
 ]

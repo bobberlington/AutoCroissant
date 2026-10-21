@@ -55,7 +55,7 @@ committed (53db8ee).
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
 | PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:103`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
-| requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:2`, `commands/tts_save.py:32`. |
+| requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:17`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
 ## 3. Transitive-dependency traps (load-bearing)
@@ -105,7 +105,9 @@ Notes verified from `setup.py` (2026-07-11):
   (card_models, card_edits, psd_parser, repo_traverser: same directives, so the moved code keeps its compiled
   semantics), query_card, management, music_player.
 - **Not compiled because they are in neither list:** `commands/type_emojis.py` (added 2026-10-19),
-  `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20). New modules are uncompiled by default; all were deliberately left out. Note that compiled
+  `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
+  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python).
+  New modules are uncompiled by default; all were deliberately left out. Note that compiled
   `query_card` imports it at module level, which is fine (compiled code can import plain modules).
 - Never compiled (`EXCLUDE_FILES`, setup.py:9-18), with the reasons stated in the
   file's comments: `main.py` (entry point — keep as Python), `commands/update_bot.py`
@@ -288,6 +290,10 @@ Line numbers drift; re-verify volatile facts with:
 | LOCAL_DIR_LOC card-repo path | `grep -n "LOCAL_DIR_LOC" global_config.py` |
 | client.run under __main__ guard | `tail -8 main.py` |
 | Python version | `python3 --version` (3.14.8 on the Mac venv and the jetson, 2026-10-20) |
-| Dev requirements | `cat requirements-dev.txt` (pytest); `.gitignore` re-includes it (`!requirements-dev.txt`) |
+| Dev requirements | `cat requirements-dev.txt` (pytest, pyyaml: the workflow-shape tests' yaml half skips without it); `.gitignore` re-includes it (`!requirements-dev.txt`) |
 
 2026-10-21: main.py line numbers re-pointed (0.1 s queue tick, reminder loop); suite count refreshed. The 11 compiled modules still build with Cython 3.3.0 (0 errors).
+
+2026-10-21 (audit fixes): requests import citations re-pointed (github_api.py:4, tts_save.py:31, the new git_commit.py:17); pyyaml added
+to requirements-dev.txt. The 11 compiled modules still build with Cython 3.3.0 (query_card.py changed one line: /query_ability's single
+result without a PNG posts the name). Review: the uncompiled list names the five 2026-10-21 modules.

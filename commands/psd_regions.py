@@ -1,11 +1,11 @@
 """
 Where things sit on a card PSD: the stat rows, name, ability, stars, type icons, art and frame as canvas bboxes
-(x0, y0, x1, y1; x1/y1 exclusive) and as exclusive pixel masks. Port of psd-research score/regions.py; the edit
-pipeline uses stat_rows, badge_layers and _fx_pad to find the pixels an edit can reach. No Discord, network or config.
+(x0, y0, x1, y1; x1/y1 exclusive). Port of psd-research score/regions.py (its owner masks stayed there); the edit
+pipeline uses stat_rows, badge_layers, fx_pad and union_box to find the pixels an edit can reach. No Discord, network
+or config.
 """
 from re import IGNORECASE, fullmatch, search, sub
 
-import numpy as np
 from psd_tools import PSDImage
 
 # ========================
@@ -23,7 +23,7 @@ BAR_HALF_HEIGHT = 42         # template rows are 84 px tall, centred on the stat
 STAR_CORNER = (0.6, 0.2)     # loose stars: drawn in the top-right corner (x0 >= 60% W, y1 <= 20% H)
 OVERLAY_INSIDE = 0.8         # an overlay word layer has 80% of its bbox inside the ability box
 OVERLAY_MAX_CHARS = 40       # and is a short text (the longest status name is 17)
-# later keys win when regions overlap (region_masks)
+# regions() keys, back to front (the research masks' paint order)
 PAINT_ORDER = ["art", "ability_bg", "frame", "stat_labels", "stat_hp", "stat_def", "stat_atk", "stat_spd",
                "stars", "types", "inline_icons", "name", "ability", "ability_fx"]
 
@@ -39,7 +39,7 @@ def _ancestors(layer):
         parent = parent.parent
 
 
-def _fx_pad(layer) -> int:
+def fx_pad(layer) -> int:
     """
     Pixels an effect stack (the layer's and its groups') can reach beyond the layer bbox.
 
@@ -53,7 +53,7 @@ def _fx_pad(layer) -> int:
     for owner in (layer, *_ancestors(layer)):
         try:
             effects = list(owner.effects)
-        except Exception:
+        except Exception:                       # no effects block, or one psd-tools can't read
             effects = []
         for effect in effects:
             if not effect.enabled:
@@ -73,12 +73,13 @@ def _fx_pad(layer) -> int:
 def _box(layer, width: int, height: int, pad: bool = True, bbox=None):
     """A layer's bbox (or `bbox`) padded by its effects and clipped to the canvas; None when empty."""
     x0, y0, x1, y1 = bbox or layer.bbox
-    reach = _fx_pad(layer) if pad else 0
+    reach = fx_pad(layer) if pad else 0
     box = (max(0, x0 - reach), max(0, y0 - reach), min(width, x1 + reach), min(height, y1 + reach))
     return box if box[2] > box[0] and box[3] > box[1] else None
 
 
-def _union(boxes):
+def union_box(boxes):
+    """The bbox enclosing the given ones (None entries skipped); None when there is none."""
     boxes = [b for b in boxes if b]
     if not boxes:
         return None
@@ -92,7 +93,17 @@ def _leaves(group):
 
 
 def clip(box, width: int, height: int) -> tuple:
-    """A bbox clipped to the canvas."""
+    """
+    A bbox clipped to the canvas.
+
+    Args:
+        box: (x0, y0, x1, y1)
+        width: Canvas width
+        height: Canvas height
+
+    Returns:
+        The clipped bbox
+    """
     return (max(0, box[0]), max(0, box[1]), min(width, box[2]), min(height, box[3]))
 
 
@@ -129,7 +140,7 @@ def stat_rows(psd: PSDImage) -> dict:
             continue
         masks = [tuple(c.mask.bbox) for c in digits if c.has_mask() and c.mask.bbox[2] > c.mask.bbox[0]]
         pixels = [tuple(c.bbox) for c in digits if c.bbox[2] > c.bbox[0]]
-        out[key].append((group, sorted(int(c.name) for c in digits if c.is_visible()), _union(masks or pixels)))
+        out[key].append((group, sorted(int(c.name) for c in digits if c.is_visible()), union_box(masks or pixels)))
     return out
 
 
@@ -188,7 +199,7 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
             for group in psd.descendants():
                 if (group.is_group() and fullmatch(rf"\s*({pattern})\s*(bars?)?\s*", group.name, IGNORECASE)
                         and any(search(r"bar|stat", owner.name, IGNORECASE) for owner in _ancestors(group))):
-                    boxes.append(_union([_box(layer, width, height) for layer in _leaves(group)]))
+                    boxes.append(union_box([_box(layer, width, height) for layer in _leaves(group)]))
         if not boxes:
             for layer in psd.descendants():
                 parent = layer.parent
@@ -211,7 +222,7 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
     # art / frame: the LINE separator splits the art (above) from the ability panel (below) on 1200x2400 cards
     images = [layer for layer in psd if layer.is_group() and layer.name.strip().lower() == "images" and layer.is_visible()]
     line = next((layer for group in images for layer in _leaves(group) if layer.name.strip().lower() == "line"), None)
-    art = _union([_box(layer, width, height, pad=False) for group in images for layer in _leaves(group)
+    art = union_box([_box(layer, width, height, pad=False) for group in images for layer in _leaves(group)
                   if layer is not line])
     if line is not None:
         y0, y1 = max(0, line.bbox[1]), min(height, line.bbox[3])
@@ -312,29 +323,6 @@ def overlay_words(psd: PSDImage, abilities=None, texts=None) -> list:
     return out
 
 
-def region_masks(psd: PSDImage, found=None, vocab=(), rulebook=None) -> dict:
-    """
-    Exclusive bool masks (H, W): each pixel goes to the last region in PAINT_ORDER covering it.
-
-    Args:
-        psd: An open card
-        found: regions(psd) when already computed
-        vocab: As regions()
-        rulebook: As regions()
-
-    Returns:
-        {region key: mask} plus "other" for the pixels no region claims
-    """
-    found = found or regions(psd, vocab, rulebook)
-    owner = np.full((psd.height, psd.width), -1, np.int16)
-    for i, key in enumerate(PAINT_ORDER):
-        for x0, y0, x1, y1 in found.get(key, []):
-            owner[y0:y1, x0:x1] = i
-    out = {key: owner == i for i, key in enumerate(PAINT_ORDER)}
-    out["other"] = owner == -1
-    return out
-
-
 # ========================
 # Module Exports
 # ========================
@@ -343,8 +331,9 @@ __all__ = [
     'STATS',
     'badge_layers',
     'clip',
+    'fx_pad',
     'overlay_words',
-    'region_masks',
     'regions',
     'stat_rows',
+    'union_box',
 ]

@@ -22,10 +22,12 @@ Every task still wanted this session, in order; a line is struck through here wh
    (drop-shadow, gradient-overlay, outer-glow, text-engine, adjustments, bevel-satin, inner-shadow-glow) into `cards`,
    suite + harness, push `cards`, tag `cards-20261020` (S0 of the edit pipeline), refresh RENDER_STATUS.md / PR_BODIES.md.
 2. [ ] S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
-3. [ ] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
+3. [x] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
    badges and build): profile, dedupe the API/SSH commit code with tts_save, fix the single-result-no-image hole in
    /query_ability and the /fonts lazy-import shadowing, speed the font check, review tests; report to
-   `docs/Finished/optimization-pass-2-2026-10-21/`.
+   `docs/Finished/optimization-pass-2-2026-10-21/`. Landed 2026-10-21: `commands/git_commit.py` (one commit path),
+   font check 98 s -> 9.8 s, both holes fixed, 350 tests; the fork-side bake speedups (preview write, viewport effects)
+   wait for the worktrees.
 4. [ ] Decision Q1: the parser reads `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22
    redundant name edits drop by the redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
 5. [ ] Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).

@@ -59,7 +59,7 @@ Ground rules:
 |---|---|---|---|---|---|
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:903) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
-| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, repo_traverser, type_emojis and tts_save import it from there) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
+| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, repo_traverser and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
@@ -290,12 +290,26 @@ ttscardmaker-companion §1.6.
 | Constant | Value | Meaning |
 |---|---|---|
 | `RULES_PATH` | `"TTS/decks.json"` (global_config.py since 2026-10-20) | deck rules (which repo PNGs each complete deck holds). The bot reads main's copy; standalone runs read the checkout's, else raw main |
-| `GIT_TOKEN` | imported from commands.github_api since 2026-10-20 (where the config import is optional, so the standalone run needs no config.py) | API auth and the commit |
-| `COMMIT_TRIES` | `3` | when main moved before the ref update (409/422; GitHub's message ends up in the error) or the history clone (or its links map) is not at main's head, the whole update is redone on the new save, this many times in all |
 | `LAG_PAUSE` | `10` s | wait before redoing a run whose history clone lagged main |
-| `API_TIMEOUT` | `120` s | per GitHub API call (the save blob is 5.5 MB, 7.4 MB as base64) |
+| `HTTP_TIMEOUT` | `30` s | the website's cards.json and raw rules reads |
 | `REPORT_FILE` | `"tts_save_report.md"` | name of the report attached in Discord |
-| `_cant_write` | in-memory, starts `False` | POST git/blobs answered 403 (token can't write): commits go through the history clone over SSH until a restart |
+
+The commit path (token, `COMMIT_TRIES`, `API_TIMEOUT`, the SSH fallback and its `_cant_write` memory) moved to commands/git_commit.py on
+2026-10-21 (below); `update_repo_save` passes `ssh_on_limit=True` (a rate-limited API falls to SSH for that run, as before).
+
+### commands/git_commit.py (Configuration block, added 2026-10-21; not compiled; shared by tts_save and card_bake)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `AUTHOR`, `GIT_IDENTITY` | AutoCroissant / autocroissant@gmail.com | the commit author and committer (API and SSH paths alike; as the PICKLE commits) |
+| `COMMIT_TRIES` | `3` | how many times a caller redoes its step when the branch moved (409/422, or a rejected push) |
+| `CONFLICT` | `(409, 422)` | ref update refused: not a fast forward |
+| `NO_WRITE` | `(401, 403, 404)` | POST git/blobs refused: the token can't write (classic PATs get 404); `cant_write` remembers it until a restart |
+| `GIT_TIMEOUT`, `API_TIMEOUT` | `300` s each | per git call in the history clone / per API call (a PSD blob is up to 85 MB, 113 MB as base64) |
+| `cant_write` | in-memory, starts `False` | set on a NO_WRITE reply that is not a rate limit; every later commit goes over SSH |
+| `limited` | in-memory, starts `False` | set on a rate-limited 403 with `ssh_on_limit`; the run stays on SSH until the caller resets it (tts_save does at each run's start) |
+| `token()` | `github_api.GIT_TOKEN`, else env `GITHUB_TOKEN` | the Actions have no config.py; `github_api.token_from_env()` patches the fetch headers the same way |
+| `commit_files(..., ssh_on_limit=False)` | | a rate-limited 403 raises `Transient` (card_bake: the Action reports it) unless the caller asks for SSH for the run (tts_save: the bot's agent pushes; `limited`) |
 
 Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml Action owns the automatic path):
 `IMAGES`, `_retry`, `_watched`, `save_affected`, `update_after_stats`.
@@ -313,9 +327,11 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 | `CACHE_JSON` | `"font_names.json"` | the bot's per-blob cache (gitignored with its `.tmp`) |
 | `BATCH` | `200` | PSDs `/fonts` downloads per run (a 15 MB blob took 1.4 s on 2026-10-21: about 6 min a batch, inside Discord's 15-minute window) |
 | `API_TIMEOUT` | `60` s | per GitHub API call |
-| `FILES_PAGE` | `300` | the compare and commit APIs list at most this many files; a bigger push is noted in the report |
+| `FILES_PAGE` | `300` | the compare and commit APIs list at most this many files; a bigger push, or a commit listing that many, is noted in the report |
+| `COMMITS_PAGE` | `250` | the compare API lists at most this many commits; a bigger push is noted (later files may carry the wrong author) |
+| `POOL_MIN`, `POOL_CHUNK` | `8`, `4` | `--all` parses this many PSDs or more in a process pool of half the cores, this many per task (813 PSDs: 98 s -> 9.8 s on the Mac, 2026-10-21); `/fonts` and `--repo` read blobs one by one |
 
-The Action's token: `GITHUB_TOKEN` from the environment when config.py supplied none (`_token_from_env`, as card_bake does).
+The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
 
 ### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
 
@@ -461,7 +477,8 @@ table with its command before quoting it in the future.
 | Branch only: diffusion folders/schedulers | `git grep -n "MODELS_FOLDER\|LORAS_FOLDER\|POSSIBLE_SCHEDULERS" archive/ai-generation -- commands/diffusion.py` |
 | Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
 | GIT_TOKEN consumers/rate-limit prints | `grep -rn "GIT_TOKEN" commands/ main.py` (defined once in github_api.py) |
-| tts_save constants | `grep -n "^[A-Z_]* = \|^GIT_TOKEN" commands/tts_save.py` |
+| tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
+| git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
 | font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
 | global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
@@ -482,3 +499,9 @@ When any command's output disagrees with this file, the repo wins: update the ta
 2026-10-21 (later): `FONT_ALIASES` moved from commands/psd_edit.py:47 to global_config.py:26 (32 lines now) and commands/font_check.py's
 constants catalogued; no flag or default changed. Review the same day: main.py citations re-pointed after the /fonts block (:278-285, lazy
 font_check import; `fonttools` added to requirements.txt).
+
+2026-10-21 (audit fixes): the commit path of tts_save.py and card_bake.py folded into commands/git_commit.py (its table above; `GIT_TOKEN`
+row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_MIN`, `POOL_CHUNK` and takes the Action token through
+`github_api.token_from_env()`. No flag or default changed.
+
+2026-10-21 (review): git_commit gained `limited` (a rate limit keeps one tts_save run on SSH, as the old `via_git` did); its table row and grep.

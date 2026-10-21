@@ -768,9 +768,10 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:857-859), started
   and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s,
   no Discord): 1.29 ms CPU/s with 0 reminders, 1.53 with 200 (0.33 / 0.40 at 1 s), 2 threads alive.
-  `query_ability` (query_card.py:577-622) posts one match as before (its image URL, a preview); more as
+  `query_ability` (query_card.py:577-623) posts one match as before (its image URL, a preview; since 2026-10-21 its name when
+  the PNG is not in the tree: `get_card_url` returned None and the content=None message was dropped by Discord); more as
   `<name> — <url>` lines, `RESULTS_PER_MESSAGE` = 10 per message through `queue_long_message`.
-  Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image).
+  Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image, alone or listed).
 - **Status**: done 2026-10-21 (uncommitted when written).
 
 ## How to add an entry
@@ -826,3 +827,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 (`docs/Finished/optimization-pass-2026-10-20/`); its scripts to `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`.
 
 2026-10-21: Entries 10.29-10.30 added; main.py, card_models.py, query_card.py and help.py line numbers re-pointed. Review: archive-branch and "at the time" main.py numbers kept as they were; bench path spelled out.
+
+2026-10-21 (audit fixes): entry 10.30's query_ability citation re-pointed (:577-623) and its one-result-without-a-PNG hole noted as fixed.

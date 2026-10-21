@@ -72,16 +72,17 @@ the workflow facts were re-checked.
   `commands/repo_traverser.py:73`), skips `Markers`/`MDW` (:36), reads Card Edits.json by blob sha (:117-125, :254), archives
   the old card when the blob changed (:372), then authors, edits, duplicates, edits again (:177-180). `update_stats` is
   `to_thread` with no lock (`main.py:359`); pickles are committed only by `/push` (`commands/update_bot.py` `git_push`, "PICKLE").
-- **Commits today.** `commands/tts_save.py`: Git Data API tree/commit/non-force ref update, `COMMIT_TRIES` 3 on 409/422
-  (:66-67, :899), SSH fallback `_git_commit` into the blobless history clone (:792, `PUSH_URL` :70), `_lock` (:77), Discord
-  `_post` (:859). TTSCardMaker `tts-save.yml`: push on `**/*.png`, `TTS/decks.json`, `site/Card Edits.json`; `contents: write`;
+- **Commits today.** `commands/git_commit.py` (2026-10-21, shared by `tts_save` and `card_bake`): Git Data API blobs/tree/commit/
+  non-force ref update, `COMMIT_TRIES` 3 on 409/422 (`CONFLICT`), SSH fallback `git_commit` into the blobless history clone when
+  `POST git/blobs` answers `NO_WRITE` (401/403/404; `cant_write` remembers it), a rate-limited 403 raises `Transient` unless the
+  caller asks for SSH for the run (`ssh_on_limit`: tts_save does, the Action does not; `limited` keeps the retries off the API); `tts_save._lock`, Discord `_post`. TTSCardMaker `tts-save.yml`: push on `**/*.png`, `TTS/decks.json`, `site/Card Edits.json`; `contents: write`;
   group `tts-save`; plain `git push`. `site.yml`: `paths-ignore: TTS/**`, cron every 6 h. Main's protection rule requires
   nothing (`branches/main/protection`: force pushes allowed, no required checks or reviews); no Actions secrets, no deploy
   keys. GitHub: pushes made with `GITHUB_TOKEN` trigger no workflows.
 - **Sizes and limits.** 814 PSDs, 16.4 GB, median 19 MB, max 84.5 MB (11 over the 50 MiB warning, 0 over the 100 MiB block);
   `MDW/Fonts` 259 top-level font files, 220 MB (plus `stoogedings-src/`, 3,600 files, 423 MB in all: the runner caches the
   top level only). `git/blobs/{sha}` with the raw media type serves any of them (verified on the 84.5 MB file;
-  `github_api.fetch_blob`, `commands/github_api.py:69`). Public repo: `ubuntu-latest` 4 vCPU / 16 GB, 6 h per job, 10 GB cache,
+  `github_api.fetch_blob`, `commands/github_api.py:77`). Public repo: `ubuntu-latest` 4 vCPU / 16 GB, 6 h per job, 10 GB cache,
   1,000 API requests/h for `GITHUB_TOKEN`. PNGs: 5 case-only stem mismatches; 6 numbered duplicates over 5 PSDs (A_Snack2/3,
   All_Purpose_Medical_Kit2, Regeneration_Potion2, Watermelon2, NME_Stock2).
 
@@ -120,15 +121,18 @@ runner supplies credentials, the fonts dir, a cache dir, how to push, where the 
 `config.py`, never touches the pickles, never writes outside its work dir.
 
 New modules in AutoCroissant `commands/` (not cythonized; the `tts_save.py` pattern: no discord or config imports). Their
-import closure is `psd_parser`, `card_models`, `card_edits`, `github_api` (requests; `config` in try/except :6-8),
-`repo_history`, `global_config` (stdlib only) and psd-tools; `psd_analyzer` is never imported (section 3).
+import closure is `psd_parser`, `card_models`, `card_edits`, `github_api` (requests; `config` in try/except; since 2026-10-21
+also `token_from_env`, `blob_sha`, `fetch_verified`), `git_commit` (2026-10-21), `repo_history`, `global_config` (stdlib only)
+and psd-tools; `psd_analyzer` is never imported (section 3).
 - `commands/psd_edit.py` (new): `classify`, `baseline`, `set_stat`, `set_text_layer`, `status_fills` (chart reader),
   `changed_region`, `render_region`, `merge_png`, the gates. Pure functions over an open `PSDImage`.
 - `commands/psd_regions.py` (new): port of `~/Documents/Tools/psd-research/score/regions.py` (`_fx_pad` :26, `stat_rows` :68,
-  `regions` :94, `region_masks` :210); the Action cannot check out psd-research.
-- `commands/card_bake.py` (new): tree fetch, blobs (`fetch_blob`, sha1 `blob N\0` check), per-card loop, Card Edits.json
-  rewrite (Python port of `editsFile`: keys sorted, `ORDER`, one line per card), commit (API path generalized from
-  `tts_save.update_repo_save`; SSH path from `_git_commit`, made to take several files), report.
+  `regions` :94; its `region_masks` :210 stayed there, dropped here 2026-10-21 with no caller); the Action cannot check out
+  psd-research. Exports `fx_pad` and `union_box` (renamed from the private names 2026-10-21).
+- `commands/card_bake.py` (new): tree fetch, blobs (`github_api.fetch_verified`, sha1 `blob N\0` check), per-card loop, Card
+  Edits.json rewrite (Python port of `editsFile`: keys sorted, `ORDER`, one line per card), commit through
+  `git_commit.commit_files` (2026-10-21: the API path generalized from `tts_save.update_repo_save` and the SSH path made to take
+  several files live there, used by both), report.
 - `tests/test_card_bake.py` (new) on a small fixture built from `MDW/Templates/Creature_Template.psd` (size to confirm).
 
 Fork `MichaelJSr/psd-tools` (both branches leave main b1b454ba; only the fork's `docs/changelog.rst` overlaps; only upstream's
@@ -196,7 +200,7 @@ code, never exceptions; one bad card never blocks another.
 ## 6. Delta-merge rule
 
 Region = union(old layer bbox, new layer bbox, `layer.mask.bbox` of every toggled digit; the digits' own bbox is 0x0) +
-`_fx_pad` (outside strokes on the layer and its ancestors + max(shadow distance + size, glow size)), clipped to the canvas.
+`psd_regions.fx_pad` (outside strokes on the layer and its ancestors + max(shadow distance + size, glow size)), clipped to the canvas.
 Measured: a toggle's diff stays inside the digits' mask union ((360,1200,1173,1284) for Mini_Doomer's hp row); a name edit's
 diff is the bbox union padded by exactly the `Text` group's 7 px Stroke. Render that viewport with `psd.composite(viewport=...)`
 (baseline `ignore_preview=True`; after an edit `is_updated()` bypasses the preview), paste it over the official PNG, leave every
@@ -238,7 +242,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7      # sparse, non-cone: /site/, /Types/, /MDW/Fonts/ (top level), "/MDW/Croissant's Special Folder/Satus Effect Colors.psd"
-      - uses: actions/checkout@v7      # bobberlington/AutoCroissant -> bot/: commands/{card_bake,psd_edit,psd_regions,psd_parser,card_models,card_edits,github_api,repo_history}.py global_config.py (never psd_analyzer: discord, pandas)
+      - uses: actions/checkout@v7      # bobberlington/AutoCroissant -> bot/: commands/{card_bake,psd_edit,psd_regions,psd_parser,card_models,card_edits,github_api,git_commit,repo_history}.py global_config.py (never psd_analyzer: discord, pandas)
       - uses: actions/setup-python@v7  # 3.12, cache: pip
       - uses: actions/cache@v6         # MDW/Fonts + the chart, keyed on `git ls-tree HEAD` of those paths (site.yml does this for PNGs)
       - run: pip install requests "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261020"
@@ -263,7 +267,7 @@ ComicSansMS, ...; 112 layers) resolve only from the Mac's platform directories a
 **Jetson (fallback, same module).** Install the fork tag into `~/venvs/autocroissant` (aarch64 wheels resolve; `_rle` builds
 with gcc 10.5) once `tests/test_parser_goldens.py` passes under it. How the bot notices: at the end of `traverse_remote`
 compare `self.shas[EDITS_PATH]` with the last seen sha and `queue_command(card_bake.run, ...)`; fonts and chart kept in
-`~/Documents/card-bake/` by sha. Push through `_git_commit` over SSH (`SSH_AUTH_SOCK` from the unit); never `log --name-only`
+`~/Documents/card-bake/` by sha. Push through `git_commit.git_commit` over SSH (`SSH_AUTH_SOCK` from the unit); never `log --name-only`
 or `diff` in the history clone (git 2.25 downloads every blob; it grew to 4 GB once). Report through `queue_file` like `_post`.
 Prerequisite: a `threading.Lock` shared by `update_stats` and the bake (both `to_thread`; queued commands run concurrently,
 `main.py:843-858`). Costs: 4 shared cores, 6 GB (peak to confirm), 20-85 MB uploads, the reminder's cadence (to confirm).
@@ -339,7 +343,9 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 
 1. **Yes**: the parser reads `Text/Name` into `display_name` (edits still override); the 22 name edits that equal the print
    become redundant and are dropped by the bake's redundancy rule; a baked rename leaves the file.
-2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`).
+2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`). 2026-10-21 audit: the regeneration is 9.4 s of a
+   23 s bake (a full-canvas composite); the merged PNG the driver already holds is that flattened image, so a fork
+   `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).
 3. **Top row 10 + bottom row N-10** (Royal Eradicator's layout; the parser already sums it). Sonic is converted once to that
    layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes.
 4. **Pipeline moves the files** for folder-starred cards (PSD + PNG to the new `N Stars` folder with aliases, old_stats,

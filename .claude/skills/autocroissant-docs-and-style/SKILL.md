@@ -174,7 +174,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
 2. Logger/warnings silencing if needed (psd_parser.py:17, music_player.py:24).
 3. **`# Configuration` banner + CONSTANTS** — UPPER_SNAKE constants; config.py
    fields read via `getattr(config, "field", default)` so a sparse config.py
-   never crashes an import (github_api.py:15, utils.py:19).
+   never crashes an import (github_api.py:17, utils.py:19).
 4. **Dataclasses / classes** (`@dataclass` heavily used; Enum where apt).
 5. **Helper functions** (private-ish; `_underscore` names inside classes).
 6. **Public API functions** — the sync functions main.py wraps as commands
@@ -259,7 +259,7 @@ why violating it deadlocks or drops messages: `autocroissant-architecture-contra
 Modern built-in generics and unions: `dict[str, str]`, `deque[str]`,
 `Optional[VoiceClient]` (music_player.py:41; the code-health pass replaced `X | None` with
 `Optional[X]` on 2026-10-20), `Optional[...]` in slash signatures. Annotate public API signatures; module constants get annotations
-when non-obvious (`GIT_TOKEN: str = getattr(...)`, github_api.py:15).
+when non-obvious (`GIT_TOKEN: str = getattr(...)`, github_api.py:17).
 
 ## 6. Templates
 
@@ -497,3 +497,5 @@ update the counts (51/51) and dict-entry table; when an 18th skill appears, add
 its ownership row in §7.3. Refresh the date stamps whenever you touch this file.
 
 2026-10-21: help.py's /query_ability entry describes the grouped output (155 lines; 157 with the /fonts entry); help.py and main.py line numbers re-pointed (review: admin-gate examples, guild_id/channel_id, pickle import).
+
+2026-10-21 (review): github_api.py citations re-pointed (:17; the module gained two imports above it).

@@ -1,5 +1,6 @@
 # Run: ~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the pickles)
 import hashlib
+import json
 import socket
 import sys
 import types
@@ -33,10 +34,55 @@ def pytest_configure(config):
 # ========================
 # Helpers
 # ========================
+def blob_sha_bytes(data: bytes) -> str:
+    """git's blob sha of some bytes (independent of the code under test's own helper)."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
 def blob_sha(path) -> str:
     """git's blob sha of a file (what the GitHub tree lists)."""
-    data = Path(path).read_bytes()
-    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    return blob_sha_bytes(Path(path).read_bytes())
+
+
+def text_engine() -> bool:
+    """psd_edit's probe (not card_bake's: the fork venv has no requests)."""
+    from commands.psd_edit import text_engine as probe
+    return probe()
+
+
+class Reply:
+    """A requests.Response stand-in for the fake GitHubs: a status, raw bytes or a JSON body, headers."""
+    def __init__(self, status=200, data=b"", body=None, headers=None):
+        self.status_code, self._body = status, body
+        self.content = data if body is None else json.dumps(body).encode("utf-8")
+        self.headers = headers or {}
+        self.encoding = None
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    @property
+    def text(self):
+        return self.content.decode(self.encoding or "utf-8")
+
+    def json(self):
+        return self._body if self._body is not None else json.loads(self.content)
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            from requests import HTTPError
+            raise HTTPError(f"{self.status_code} Error")
+
+    def iter_content(self, size):
+        for i in range(0, len(self.content), size):
+            yield self.content[i:i + size]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 def _digests() -> dict:

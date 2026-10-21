@@ -12,25 +12,27 @@ comment, a Discord message pinging the card makers' role); the bot's /fonts runs
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
-blob's sha1 verified. No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); stock
-psd-tools reads the engine data, fontTools the font names (psd-tools' text engine fork: composite/text/fonts.py).
+blob's sha1 verified. --all parses the checkout's PSDs in a process pool (the parse is the whole cost: 0.1 s a PSD).
+No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); stock psd-tools reads the
+engine data, fontTools the font names (psd-tools' text engine fork: composite/text/fonts.py).
 """
 from argparse import ArgumentParser
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
-from hashlib import sha1
 from io import BytesIO
 from json import dump, load
-from os import environ, replace, walk
+from os import cpu_count, replace, walk
 from os.path import basename, exists, join, relpath, splitext
 from re import sub
 from threading import Lock
+from traceback import format_exc
 from typing import Optional
 
 from fontTools.ttLib import TTCollection, TTFont
 from psd_tools import PSDImage
 
 import commands.github_api as github_api
-from commands.github_api import api_url, fetch_blob, fetch_tree, get_with_retry
+from commands.github_api import api_url, fetch_tree, fetch_verified, get_with_retry, token_from_env
 from global_config import CARD_REPO, FONT_ALIASES
 
 # ========================
@@ -48,6 +50,9 @@ BATCH = 200                                 # PSDs the bot downloads per /fonts 
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop keeps in a run but never draws
 API_TIMEOUT = 60
 FILES_PAGE = 300                            # the compare and commit APIs list at most this many files
+COMMITS_PAGE = 250                          # the compare API lists at most this many commits
+POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
+POOL_CHUNK = 4                              # PSDs per pool task
 _lock = Lock()                              # one /fonts at a time
 
 
@@ -88,7 +93,7 @@ def face_names(data: bytes) -> list:
     return out
 
 
-def font_files(directory: str) -> list:
+def _font_files(directory: str) -> list:
     """The font files at the top level of directory, sorted."""
     _, _, files = next(walk(directory), (directory, [], []))
     return [join(directory, f) for f in sorted(files) if f.lower().endswith(FONT_EXTENSIONS)]
@@ -104,7 +109,7 @@ class FontIndex:
         self.faces = 0
         self.errors: list = []                  # "file: why" for fonts fontTools can't read
         if directory:
-            for path in font_files(directory):
+            for path in _font_files(directory):
                 try:
                     with open(path, "rb") as fh:
                         self.add(face_names(fh.read()))
@@ -202,7 +207,16 @@ def psd_fonts(psd) -> dict:
 
 
 def check_psd(psd, index: FontIndex) -> dict:
-    """{missing font: [layer names]} of one PSD: the names no face of the index resolves."""
+    """
+    The fonts one PSD asks for that the index lacks.
+
+    Args:
+        psd: A PSDImage, PSD bytes or a path
+        index: The fonts folder's faces
+
+    Returns:
+        {missing font: [layer names]}
+    """
     return {font: layers for font, layers in psd_fonts(psd).items() if index.resolve(font) is None}
 
 
@@ -219,6 +233,7 @@ class Card:
 
 @dataclass
 class Report:
+    """One check's findings: what was read, which cards ask for a font the index lacks, and the errors."""
     checked: int = 0                            # PSDs read
     cards: list = field(default_factory=list)   # Card, in path order
     fonts_added: list = field(default_factory=list)   # files MDW/Fonts gained in the push
@@ -235,14 +250,16 @@ class Report:
                 out.setdefault(font, {})[card.path] = layers
         return {font: out[font] for font in sorted(out)}
 
-    def to_json(self) -> dict:
+    def as_dict(self) -> dict:
+        """The --json report."""
         return {"checked": self.checked, "remaining": self.remaining, "fonts": {"files": self.fonts_files, "faces": self.fonts_faces},
                 "fonts_added": self.fonts_added, "missing": self.by_font(),
                 "cards": [{"path": c.path, "author": c.author, "missing": c.missing} for c in self.cards], "errors": self.errors}
 
 
-def card_name(path: str) -> str:
-    """The card's name from its PSD path (stem, underscores as spaces)."""
+def _card_name(path: str) -> str:
+    """The card's name from its PSD path (stem, underscores as spaces): card_models.card_name, copied so the font-check
+    Action's closure stays free of pickle and StatsDatabase."""
     return splitext(basename(path))[0].replace("_", " ")
 
 
@@ -275,7 +292,7 @@ def discord_payload(report: Report) -> dict:
     pairs: dict = {}
     for card in report.cards:
         for font, layers in card.missing.items():
-            pairs.setdefault((card.author, font), []).append(f"    {card_name(card.path)} ({', '.join(layers)})")
+            pairs.setdefault((card.author, font), []).append(f"    {_card_name(card.path)} ({', '.join(layers)})")
     if not pairs:
         return {}
     lines = [f"<@&{ROLE_ID}>"]
@@ -298,7 +315,7 @@ def discord_text(report: Report) -> str:
     missing = report.by_font()
     if missing:
         for font, cards in missing.items():
-            out.append(f"**{font}**: " + "; ".join(f"{card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
+            out.append(f"**{font}**: " + "; ".join(f"{_card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
     else:
         out.append("Every font the cards ask for is in MDW/Fonts.")
     if report.errors:
@@ -314,44 +331,84 @@ def is_card_psd(path: str) -> bool:
     return path.lower().endswith(".psd") and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/"))
 
 
-def _check(report: Report, index: FontIndex, path: str, author: str, psd) -> None:
-    try:
-        missing = check_psd(psd, index)
-    except Exception as e:                      # one bad PSD never stops the check
-        report.errors.append(f"{path}: {e}")
-        return
+def _record(report: Report, index: FontIndex, path: str, author: str, fonts: dict) -> None:
+    """Count one read PSD and list it when a font it asks for is not in the index."""
     report.checked += 1
+    missing = {font: layers for font, layers in fonts.items() if index.resolve(font) is None}
     if missing:
         report.cards.append(Card(path, author, missing))
 
 
+def _check_one(report: Report, index: FontIndex, path: str, author: str, psd) -> None:
+    """Read one PSD into the report; an unreadable one is an error line, never a stop."""
+    try:
+        fonts = psd_fonts(psd)
+    except Exception as e:                      # one bad PSD never stops the check
+        report.errors.append(f"{path}: {e}")
+        return
+    _record(report, index, path, author, fonts)
+
+
+def _fonts_of(path: str) -> tuple:
+    """psd_fonts(path) in a pool worker: (fonts, None), or (None, the error text)."""
+    try:
+        return psd_fonts(path), None
+    except Exception as e:                      # one bad PSD never stops the check
+        return None, str(e)
+
+
 def check_files(paths: list, index: FontIndex, author: str = NOBODY) -> Report:
-    """PSD files given on the command line."""
+    """
+    PSD files given on the command line.
+
+    Args:
+        paths: The files
+        index: The fonts folder's faces
+        author: Who to name for them
+
+    Returns:
+        Report
+    """
     report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
     for path in paths:
-        _check(report, index, path, author, path)
+        _check_one(report, index, path, author, path)
     return report
 
 
 def check_checkout(root: str, index: FontIndex) -> Report:
-    """Every card PSD under a checkout."""
+    """
+    Every card PSD under a checkout (MDW/ and Markers/ excluded), in path order.
+
+    Args:
+        root: The checkout
+        index: The fonts folder's faces
+
+    Returns:
+        Report; from POOL_MIN PSDs the parses run in a process pool (half the cores), merged in path order
+    """
     report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
+    found = []
     for folder, subdirs, files in walk(root):
         subdirs[:] = sorted(d for d in subdirs if d not in EXCLUDE_FOLDERS and d != ".git")
         for name in sorted(files):
             rel = relpath(join(folder, name), root).replace("\\", "/")
             if is_card_psd(rel):
-                _check(report, index, rel, NOBODY, join(folder, name))
+                found.append((rel, join(folder, name)))
+    if len(found) < POOL_MIN:
+        for rel, path in found:
+            _check_one(report, index, rel, NOBODY, path)
+        return report
+    workers = max(1, min((cpu_count() or 2) // 2, -(-len(found) // POOL_CHUNK)))
+    with ProcessPoolExecutor(workers) as pool:
+        for (rel, _), (fonts, error) in zip(found, pool.map(_fonts_of, [path for _, path in found], chunksize=POOL_CHUNK)):
+            if error is not None:
+                report.errors.append(f"{rel}: {error}")
+            else:
+                _record(report, index, rel, NOBODY, fonts)
     return report
 
 
-def _token_from_env() -> None:
-    """The Action's GITHUB_TOKEN when config.py supplied none (the bot's own token wins)."""
-    if not github_api.GIT_TOKEN and environ.get("GITHUB_TOKEN"):
-        github_api.HEADERS["Authorization"] = f"token {environ['GITHUB_TOKEN']}"
-
-
-def _api(repository: str, path: str, missing_ok: bool = False):
+def _get_json(repository: str, path: str, missing_ok: bool = False):
     """One GET of the repo API as JSON; None on a 404 when missing_ok."""
     reply = get_with_retry(api_url(repository, path), headers=github_api.HEADERS, timeout=API_TIMEOUT)
     if missing_ok and reply.status_code == 404:
@@ -360,45 +417,46 @@ def _api(repository: str, path: str, missing_ok: bool = False):
     return reply.json()
 
 
-def blob_sha(data: bytes) -> str:
-    """git's blob sha: sha1("blob N\\0" + data)."""
-    return sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def fetch_verified(repository: str, sha: str) -> bytes:
-    """A blob's bytes by sha, checked against it."""
-    data = fetch_blob(repository, sha, timeout=API_TIMEOUT).content
-    if blob_sha(data) != sha:
-        raise ValueError(f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
-    return data
-
-
 def _login(commit: dict, fallback: str) -> str:
     return (commit.get("author") or {}).get("login") or fallback      # null when the commit email is not a GitHub account's
 
 
 def pushed_files(repository: str, before: str, after: str, author: str = NOBODY) -> tuple:
     """
-    What a push changed: ({card PSD path: (blob sha at after, author login)}, [fonts MDW/Fonts gained], [notes]).
+    What a push changed.
 
     before..after through the compare API; the files of after alone when before is empty or all zeros (a dispatch, a new
-    branch) or no longer exists (a force push). With several commits each is read for who touched which file last.
+    branch) or no longer exists (a force push). With several commits each is read for who touched which file last. The
+    APIs page at FILES_PAGE files and COMMITS_PAGE commits: past them a note says files may be credited to the wrong author.
+
+    Args:
+        repository: owner/name
+        before: The push's previous head (github.event.before)
+        after: The push's head
+        author: Who to name when a commit's author has no login (github.actor)
+
+    Returns:
+        ({card PSD path: (blob sha at after, author login)}, [fonts MDW/Fonts gained], [notes])
     """
     notes = []
-    data = _api(repository, f"compare/{before}...{after}", missing_ok=True) if before and set(before) != {"0"} else None
+    data = _get_json(repository, f"compare/{before}...{after}", missing_ok=True) if before and set(before) != {"0"} else None
     if data is None:
         if before and set(before) != {"0"}:
             notes.append(f"the previous head {before[:8]} is gone (a force push?); only the head commit's files were checked")
-        head = _api(repository, f"commits/{after}")
+        head = _get_json(repository, f"commits/{after}")
         commits, files = [head], head.get("files", [])
     else:
         commits, files = data.get("commits", []), data.get("files", [])
     if len(files) >= FILES_PAGE:
         notes.append(f"the push changed {FILES_PAGE} files or more; only the first {FILES_PAGE} were checked")
+    if len(commits) >= COMMITS_PAGE:
+        notes.append(f"the push has {COMMITS_PAGE} commits or more; later files may be credited to the wrong author")
     who: dict = {}
     if len(commits) > 1:
         for commit in commits:                  # oldest first: the last writer wins
-            info = _api(repository, f"commits/{commit['sha']}")
+            info = _get_json(repository, f"commits/{commit['sha']}")
+            if len(info.get("files", [])) >= FILES_PAGE:
+                notes.append(f"commit {commit['sha'][:8]} lists {FILES_PAGE} files or more; later files may be credited to the wrong author")
             for f in info.get("files", []):
                 who[f["filename"]] = _login(info, author)
     default = _login(commits[0], author) if commits else author
@@ -411,9 +469,18 @@ def pushed_files(repository: str, before: str, after: str, author: str = NOBODY)
 
 
 def tree_blobs(repository: str, ref: str = "") -> dict:
-    """{path: blob sha} of the card repo's tree at ref (the branch head when empty)."""
+    """
+    The repo's files by blob sha.
+
+    Args:
+        repository: owner/name
+        ref: A commit or tree sha; "" for the branch head
+
+    Returns:
+        {path: blob sha}; raises RuntimeError when GitHub truncates the listing
+    """
     if ref:
-        data = _api(repository, f"git/trees/{ref}?recursive=1")
+        data = _get_json(repository, f"git/trees/{ref}?recursive=1")
     else:
         reply = fetch_tree(repository, timeout=API_TIMEOUT)
         reply.raise_for_status()
@@ -425,8 +492,17 @@ def tree_blobs(repository: str, ref: str = "") -> dict:
 
 def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[dict] = None, batch: int = 0) -> Report:
     """
-    PSDs by blob sha: {path: (sha, author)}. With a cache ({sha: {font: [layers]}}) known blobs are not downloaded and
-    new ones are added to it; batch > 0 caps the downloads, the rest count as remaining.
+    PSDs read by blob sha through the API, in path order.
+
+    Args:
+        repository: owner/name
+        psds: {path: (blob sha, author)}
+        index: The fonts folder's faces
+        cache: {sha: {font: [layers]}}: known blobs are not downloaded, new ones are added (None: no cache)
+        batch: Cap on the downloads (0: none); the rest count as remaining
+
+    Returns:
+        Report
     """
     report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
     downloads = 0
@@ -439,16 +515,13 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[d
                 continue
             downloads += 1
             try:
-                fonts = psd_fonts(fetch_verified(repository, sha))
+                fonts = psd_fonts(fetch_verified(repository, sha, timeout=API_TIMEOUT))
             except Exception as e:
                 report.errors.append(f"{path}: {e}")
                 continue
             if cache is not None:
                 cache[sha] = fonts
-        report.checked += 1
-        missing = {font: layers for font, layers in fonts.items() if index.resolve(font) is None}
-        if missing:
-            report.cards.append(Card(path, author, missing))
+        _record(report, index, path, author, fonts)
     return report
 
 
@@ -480,6 +553,14 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
     The first run downloads the fonts (270 files, 215 MB) and up to batch PSDs (the whole repo is ~813 PSDs, 15.6 GB:
     about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs no
     longer in the tree leave the cache.
+
+    Args:
+        repository: owner/name
+        cache_path: The cache file (CACHE_JSON), written whatever happens
+        batch: PSD downloads per call
+
+    Returns:
+        Report, with remaining = the PSDs not read yet
     """
     cache = _load_cache(cache_path)
     blobs = tree_blobs(repository)
@@ -491,7 +572,7 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
             faces = cache["fonts"].get(sha)
             if faces is None:
                 try:
-                    faces = face_names(fetch_verified(repository, sha))
+                    faces = face_names(fetch_verified(repository, sha, timeout=API_TIMEOUT))
                 except Exception as e:
                     index.errors.append(f"{basename(path)}: {e}")
                     continue
@@ -516,7 +597,8 @@ def check_repo_fonts(interaction) -> None:
         return
     try:
         text = discord_text(repo_fonts(card_repo.repository))
-    except Exception as e:
+    except Exception as e:                      # the cause goes to the console, the one line to Discord
+        print(format_exc())
         text = f"Font check failed: {e}"
     finally:
         _lock.release()
@@ -527,6 +609,7 @@ def check_repo_fonts(interaction) -> None:
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
+    """The command line: files, a checkout or the API; the markdown on stdout, --json and --discord files when asked."""
     parser = ArgumentParser(prog="python -m commands.font_check",
                             description="Which fonts card PSDs ask for that MDW/Fonts does not supply. Reports, never rejects: "
                                         "findings exit 0.")
@@ -541,7 +624,7 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
     parser.add_argument("--discord", default="", metavar="OUT", help="write the Discord webhook payload here ({} when nothing is missing)")
     options = parser.parse_args(args)
-    _token_from_env()
+    token_from_env()
     index = FontIndex(options.fonts)
     if options.repo:
         if options.whole_tree:
@@ -558,7 +641,7 @@ def main(args: Optional[list] = None) -> int:
     print(markdown(report), end="")
     if options.json:
         with open(options.json, "w", encoding="utf-8") as fh:
-            dump(report.to_json(), fh, indent=1)
+            dump(report.as_dict(), fh, indent=1)
     if options.discord:
         with open(options.discord, "w", encoding="utf-8") as fh:
             dump(discord_payload(report), fh)
@@ -573,9 +656,18 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
+    'API_TIMEOUT',
+    'BATCH',
     'BITE',
+    'CACHE_JSON',
+    'COMMITS_PAGE',
     'Card',
+    'EXCLUDE_FOLDERS',
+    'FILES_PAGE',
+    'FONTS_DIR',
     'FontIndex',
+    'POOL_CHUNK',
+    'POOL_MIN',
     'ROLE_ID',
     'Report',
     'check_blobs',
@@ -586,7 +678,6 @@ __all__ = [
     'discord_payload',
     'discord_text',
     'face_names',
-    'fetch_verified',
     'is_card_psd',
     'layer_fonts',
     'loose_keys',

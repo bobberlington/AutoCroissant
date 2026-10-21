@@ -16,6 +16,7 @@ Start a session at `docs/NEXT_SESSION_PLAN.md`. Everything here is prose; proced
 | `docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md` | The ledger of every intended PSD edit: token migration, stat rows, digit effects, Ability/Name layers, status-word FX, title reprints, the guard (item 21; on hold until the user lifts it, 2026-10-20) | Before any PSD or PNG write in TTSCardMaker; when the edit pipeline meets an odd PSD |
 | `docs/Campaigns/WEB_EDITOR_CAMPAIGN.md` | Card as data: one data file per card as the truth, PSD and PNG as build outputs, tiered migration with gates, browser preview options, the extended editor, sync guarantees (item 22) | Before extending the website editor past item 20, or before anything writes card data in a second place |
 | `docs/Finished/optimization-pass-2026-10-20/` | Task 4's audits: `README.md`, `profile.md`, `network-robustness.md`, `network-speed-results.md`, `code-health.md`, `docs.md`, `refs_table.md`, `bench/` | Looking up a number measured in that pass |
+| `docs/Finished/optimization-pass-2-2026-10-21/` | Pass 2 over the edit pipeline, font check, site badges and commit paths: `README.md` (numbers before/after, what changed, what was skipped), `perf.md`, `code-health.md`, `tests.md`, `bench/` | Looking up a bake's or font check's cost, or why a finding was skipped |
 
 ## Conventions
 

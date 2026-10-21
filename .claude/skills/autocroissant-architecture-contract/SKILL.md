@@ -238,7 +238,10 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.type_emojis   -> utils, global_config, github_api, repo_history; query_card.card_repo LAZILY inside _list_type_icons
  |                            [2026-10-19; NOT in setup.py INCLUDE_FILES, so never compiled]
  |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links; NOT compiled]
- |- commands.tts_save      -> repo_history, github_api, card_models, card_edits, global_config; utils + discord LAZILY inside the
+ |- commands.git_commit    -> github_api, repo_history, global_config: one commit on the card repo (Git Data API; git objects in the
+ |                            history clone pushed over SSH when the token can't write), shared by tts_save and the edit pipeline's
+ |                            card_bake [2026-10-21; NOT compiled; no discord or config]
+ |- commands.tts_save      -> git_commit, repo_history, card_models, card_edits, global_config; utils + discord LAZILY inside the
  |                            posting functions, so `python -m commands.tts_save <save.json>` runs standalone (TTSCardMaker's
  |                            tts-save.yml Action does, with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
  |                            overrides global_config reads) [2026-10-20; TTS save updater + /update_tts_save; NOT compiled]
@@ -448,3 +451,6 @@ the same change, and check whether the corresponding invariant row still holds b
 2026-10-21: the drains tick every 0.1 s and `process_reminders` keeps the 1 s reminder heartbeat (weak point 10 done, invariant 7; reminder data flow (c) starts at that loop; review re-pointed run_command, executor, _fallback_send, invariant 4
 reworded); card pickle saves atomic and locked through `card_models.save_pickle` (weak point 11 rewritten); main.py, card_models.py,
 query_card.py and help.py line numbers re-pointed.
+
+2026-10-21 (audit fixes): commands/git_commit.py added to the module map (the commit plumbing tts_save and card_bake used to carry
+twice); tts_save's dependency line re-pointed (github_api now reached through git_commit).

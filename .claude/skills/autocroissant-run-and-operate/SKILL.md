@@ -353,8 +353,9 @@ Two ways to run it:
 - **By hand: `/update_tts_save`** (admin only). The bot downloads main's copy by blob sha into a temp dir, updates
   it and, when anything changed, commits it to main through the GitHub git data API with `GIT_TOKEN` (message like
   "TTS save: 812 links pinned, 3 cards added"; when the token can't write — 401/403/404 on the blob upload, or no
-  token — git objects in the history clone pushed over SSH). If main moved meanwhile, it redoes the update on the
-  new save (3 tries). It never writes a checkout; the temp dir is deleted. One run at a time.
+  token — git objects in the history clone pushed over SSH; a rate-limited API also goes over SSH for that run). The commit
+  path is commands/git_commit.py since 2026-10-21, shared with the edit pipeline's card_bake. If main moved meanwhile, it
+  redoes the update on the new save (3 tries). It never writes a checkout; the temp dir is deleted. One run at a time.
 - **`/update_stats` does not run it.** Until 2026-10-20 a changed-tree /update_stats queued a run
   (`save_affected` / `update_after_stats`); the Action replaced that and the code was deleted.
 - **Inputs (bot run):** the rules, the save and `site/Card Edits.json` (`EDITS_PATHS`) come from main; names from the website (when it is
@@ -397,8 +398,9 @@ present. It reports and never rejects: a missing font is a message to a person, 
   repo is ~813 PSDs, 15.6 GB, about 25 min), says "Warming the cache", reports partial results and how many PSDs remain;
   later runs download only new blobs, and blobs that left the tree leave the cache. Reply: `**font**: card (layers)` per
   missing font, the fonts folder count, errors. One run at a time ("A font check is already running").
-- **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (91-145 s over the 813 PSDs on 2026-10-21:
-  the six faces of ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
+- **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (9.8 s wall over the 813 PSDs on 2026-10-21 in a
+  process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
+  ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
 ## 8. Artifact conventions — where files land
@@ -631,3 +633,7 @@ section 9, keeping the pointer to autocroissant-failure-archaeology for the hist
 2026-10-21 (later): `/fonts` added (section 7's Font check subsection, section 8's `font_names.json` row, 51 commands). main.py grew by eight
 lines at :278-285 (the /fonts block; its font_check import is lazy, so fontTools loads only when /fonts runs): every main.py citation in
 this file re-pointed by grep the same day (review). The Action sends the Discord message before the commit comment (review).
+
+2026-10-21 (audit fixes): `--all` parses in a process pool (section 7's standalone line re-measured); the TTS save commit path is
+commands/git_commit.py (section 7's by-hand paragraph). main.py's /fonts block (:278-285) unchanged in size: the lazy import now binds the
+module, not a shadowing name.

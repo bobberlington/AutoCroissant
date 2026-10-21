@@ -336,7 +336,7 @@ autocroissant-run-and-operate.)
      when nothing changed.
 
 3. **Do the arithmetic against the limits.** The code prints its own reminder
-   (github_api.py:24-27, `print_token_status`): 60 req/hr anonymous, 5000 req/hr with a token.
+   (github_api.py:26-29, `print_token_status`): 60 req/hr anonymous, 5000 req/hr with a token.
 
    | Sweep | Requests | Verdict |
    |---|---|---|
@@ -530,3 +530,5 @@ update this file.
 `docs/Finished/optimization-pass-2026-10-20/`.
 
 2026-10-21: Recipe 5 re-derived for the 0.1 s tick (≤0.2 s bound) and the separate 1 s reminder loop; main.py line numbers re-pointed. Review: bench path spelled out.
+
+2026-10-21 (review): github_api.py citation re-pointed (:26-29; the module gained two imports above it).

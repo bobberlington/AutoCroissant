@@ -608,8 +608,9 @@ def query_ability(interaction: Interaction,
     queue_message(interaction, f"Found {total_results} results for '{ability}'!")
 
     names = [basename(index) for index in results.index[:results_to_show]]   # index: the path without .png
-    if len(names) == 1:                                  # one card: its image preview
-        queue_message(interaction, card_repo.get_card_url(names[0]))
+    if len(names) == 1:                                  # one card: its image preview (its name when the PNG is not in the tree)
+        url = card_repo.get_card_url(names[0])
+        queue_message(interaction, url or names[0])
     else:                                                # more: name and image link, RESULTS_PER_MESSAGE per message
         for start in range(0, len(names), RESULTS_PER_MESSAGE):
             lines = []

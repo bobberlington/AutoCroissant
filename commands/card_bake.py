@@ -9,8 +9,8 @@ Input: one tree snapshot at head and blobs by sha (the card folders are never ch
 file with a PSD-kind field: refuse `recent` (PSD committed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
 (psd_edit.apply_jobs), rewrite the file with the baked and redundant fields removed and the `_psd` verdict written
-(a Python port of edit.js editsFile), and commit PSD + PNG + file on the branch's current head: GitHub API, or git
-objects in the history clone pushed over SSH when the token can't write. Refusals are data: one bad card never
+(a Python port of edit.js editsFile), and commit PSD + PNG + file on the branch's current head (git_commit: the
+GitHub API, or git objects in the history clone pushed over SSH when the token can't write). Refusals are data: one bad card never
 blocks another; refused verdicts land in one file-only commit. The report goes to stdout, the artifacts (edited
 PSD, merged PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS) and the work dir (RUNNER_TEMP).
@@ -19,15 +19,12 @@ a rate limit, no text engine) are reported but never written as a verdict. The `
 resolves to nothing: on a Mac the platform fonts stand in for a missing or empty fonts dir (psd_edit.OK_FONTS).
 """
 from argparse import ArgumentParser
-from base64 import b64encode
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep
 from os.path import basename, dirname, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch
-from subprocess import CalledProcessError, run as run_process
 from tempfile import mkdtemp
 from time import perf_counter
 from traceback import format_exc
@@ -36,32 +33,24 @@ from unicodedata import combining, normalize
 
 from PIL import Image
 from psd_tools import PSDImage, __version__ as PSD_TOOLS_VERSION
-from requests import RequestException, request
+from requests import RequestException
 
 import commands.github_api as github_api
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import card_name
-from commands.github_api import api_url, fetch_blob, get_with_retry
+from commands.git_commit import API_TIMEOUT, AUTHOR, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
+from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from commands.psd_parser import CardValidator
-from commands.repo_history import refresh
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
-                           STARS_DIR, TYPES_DIR)
+from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
 # ========================
 RECENT = timedelta(minutes=30)                  # a PSD committed more recently is its author's: don't race them
-COMMIT_TRIES = 3                                # main moved meanwhile: redo step 10 on the new head
-CONFLICT = (409, 422)                           # ref update refused (not a fast forward)
 OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
-AUTHOR = {"name": "AutoCroissant", "email": "autocroissant@gmail.com"}      # as the PICKLE and TTS save commits
-GIT_IDENTITY = {"GIT_AUTHOR_NAME": AUTHOR["name"], "GIT_AUTHOR_EMAIL": AUTHOR["email"],
-                "GIT_COMMITTER_NAME": AUTHOR["name"], "GIT_COMMITTER_EMAIL": AUTHOR["email"]}
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
-GIT_TIMEOUT = 300
-API_TIMEOUT = 300                               # a PSD blob is up to 85 MB (113 MB as base64)
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
 FONT_DIRS_ENV = "PSD_TOOLS_FONT_DIRS"           # the runner's fonts dir(s), pathsep-separated; else the checkout's MDW/Fonts
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
@@ -74,19 +63,10 @@ FIELDS = frozenset(CardEdits.TYPES)
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
 KIND = CardEdits.KIND
 
-# ========================
-# Global State
-# ========================
-_cant_write = False                             # POST git/blobs got a 403: commit over SSH until a restart
-
 
 # ========================
 # Data
 # ========================
-class Transient(RuntimeError):
-    """A GitHub, git or runner failure: the card's error is reported, not written as a verdict (the next run retries)."""
-
-
 @dataclass
 class Card:
     """One card named in the edits file with a PSD-kind field: what the run did with it."""
@@ -139,6 +119,7 @@ class Snapshot:
         self.edits_path = next((p for p in EDITS_PATHS if p in tree), None)
 
     def sha(self, path: str) -> str:
+        """The blob sha of a path in the tree."""
         return self.tree[path][1]
 
     def duplicate_of(self, key: str) -> str:
@@ -179,53 +160,9 @@ class Snapshot:
 # ========================
 # GitHub
 # ========================
-def _token() -> str:
-    return github_api.GIT_TOKEN or environ.get("GITHUB_TOKEN", "")
-
-
-def _authenticate() -> None:
-    """The Action has no config.py: github_api's fetches take the token from the environment."""
-    if not github_api.GIT_TOKEN and environ.get("GITHUB_TOKEN"):
-        github_api.HEADERS["Authorization"] = f"token {environ['GITHUB_TOKEN']}"
-
-
-def _status(reply) -> str:
-    try:
-        message = reply.json().get("message", "")
-    except (ValueError, AttributeError):
-        message = ""
-    return f"GitHub {reply.status_code}" + (f": {message}" if message else "")
-
-
-def _api(repository: str, method: str, path: str, check: bool = True, **kwargs):
-    """A GitHub API call on the card repo; check: raise on an error status, with GitHub's message."""
-    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
-    if _token():
-        headers["Authorization"] = f"token {_token()}"
-    if method == "GET":                         # 429 and 5xx retried as the bot's other GETs are
-        reply = get_with_retry(api_url(repository, path), headers=headers, timeout=API_TIMEOUT, **kwargs)
-    else:
-        reply = request(method, api_url(repository, path), headers=headers, timeout=API_TIMEOUT, **kwargs)
-    if check and not reply.ok:
-        raise Transient(f"{_status(reply)} (on {method} {path})")
-    return reply
-
-
-def _ref_head(repository: str) -> str:
-    return _api(repository, "GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"]
-
-
-def _commit_info(repository: str, sha: str) -> dict:
-    """GET git/commits/{sha}: its tree, author and message."""
-    return _api(repository, "GET", f"git/commits/{sha}").json()
-
-
 def _tree(repository: str, tree_sha: str) -> dict:
     """{path: (mode, blob sha)} of a whole tree."""
-    reply = get_with_retry(api_url(repository, f"git/trees/{tree_sha}?recursive=1"), headers=github_api.HEADERS)
-    if reply.status_code != 200:
-        raise Transient(f"{_status(reply)} (on GET git/trees/{tree_sha[:8]})")
-    data = reply.json()
+    data = api(repository, "GET", f"git/trees/{tree_sha}?recursive=1").json()
     if data.get("truncated"):
         raise Transient(f"tree {tree_sha[:8]} is truncated")
     return {entry["path"]: (entry.get("mode", "100644"), entry["sha"]) for entry in data.get("tree", [])
@@ -236,21 +173,22 @@ def _own_commit(info: dict) -> bool:
     return (info.get("author") or {}).get("name") == AUTHOR["name"] and (info.get("message") or "").startswith(OWN_SUBJECT)
 
 
-def blob_sha(data: bytes) -> str:
-    """git's blob sha: sha1("blob N\\0" + data)."""
-    return sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
 def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
     """
     A blob's bytes by sha, checked against the tree (gate blob) and written to path when given.
 
+    Args:
+        repository: owner/name of the card repo
+        sha: The blob sha the tree lists
+        path: Where to write the bytes ("" keeps them in memory only)
+
     Returns:
         The bytes; raises Refused("blob") when they don't hash to sha
     """
-    data = fetch_blob(repository, sha, timeout=API_TIMEOUT).content
-    if blob_sha(data) != sha:
-        raise Refused("blob", f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
+    try:
+        data = github_api.fetch_verified(repository, sha, timeout=API_TIMEOUT)
+    except ValueError as error:
+        raise Refused("blob", str(error)) from error
     if path:
         makedirs(dirname(path), exist_ok=True)
         with open(path, "wb") as fh:
@@ -261,7 +199,7 @@ def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
 def _recent(repository: str, path: str, now: datetime) -> Optional[str]:
     """The sha of a commit touching path within RECENT of now, else None (one small request)."""
     since = (now - RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commits = _api(repository, "GET", "commits", params={"path": path, "since": since, "per_page": 1}).json()
+    commits = api(repository, "GET", "commits", params={"path": path, "since": since, "per_page": 1}).json()
     return commits[0].get("sha", "?") if commits else None
 
 
@@ -314,6 +252,11 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None) -> Optional[
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
     in ORDER, then the other keys in their order ("_psd" where it was, else last), "_by", "_at" (edit.js editsFile's
     layout; _by/_at are kept as they are).
+
+    Args:
+        entry: The card's entry as parsed from the file
+        drop: Fields to remove
+        psd: The "_psd" verdict to write, None to remove it
 
     Returns:
         The entry, or None when no field is left: the entry goes whole, its _-keys with it (section 5 step 10)
@@ -389,130 +332,6 @@ def _now() -> str:
 # ========================
 # Commits (steps 10-11)
 # ========================
-def _git(where: str, *args: str, stdin: Optional[bytes] = None, env: Optional[dict] = None) -> bytes:
-    """git in the blobless history clone: refs, trees and our own objects, never diff or log."""
-    return run_process(["git", "-C", where, *args], input=stdin, capture_output=True, check=True, timeout=GIT_TIMEOUT,
-                       env=env).stdout
-
-
-def _git_env() -> dict:
-    env = {**environ, "GIT_TERMINAL_PROMPT": "0", **GIT_IDENTITY}
-    if "GIT_SSH" not in env and "GIT_SSH_COMMAND" not in env:
-        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
-    return env
-
-
-def _git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:
-    """
-    Write a tree: `tree` (None for a new folder) with changes applied, folder by folder.
-
-    Args:
-        changes: {entry name: blob sha, or {nested changes} for a folder}
-
-    Returns:
-        The new tree's sha (--missing: siblings' blobs aren't in the blobless clone)
-    """
-    entries: dict = {}
-    if tree:
-        for line in _git(clone, "ls-tree", "-z", tree, env=env).decode("utf-8").split("\0"):
-            if line:
-                meta, _, name = line.partition("\t")
-                mode, kind, sha = meta.split(" ")
-                entries[name] = (mode, kind, sha)
-    for name, change in changes.items():
-        old = entries.get(name)
-        if isinstance(change, dict):
-            entries[name] = ("040000", "tree", _git_tree(clone, old[2] if old and old[1] == "tree" else None, change, env))
-        else:
-            entries[name] = (old[0] if old and old[1] == "blob" else "100644", "blob", change)
-    data = "".join(f"{mode} {kind} {sha}\t{name}\0" for name, (mode, kind, sha) in entries.items())
-    return _git(clone, "mktree", "-z", "--missing", stdin=data.encode("utf-8"), env=env).decode().strip()
-
-
-def _git_commit(repository: str, head: str, files: dict, message: str) -> Optional[str]:
-    """
-    Commit files on head in the history clone and push to the branch over SSH (no force).
-
-    Args:
-        files: {repo path: bytes}
-
-    Returns:
-        The new commit's sha, or None when the push was rejected (the branch moved)
-    """
-    if repository != CARD_REPO:
-        raise Transient(f"the history clone mirrors {CARD_REPO}, not {repository}")
-    refresh()                                   # the clone exists and knows head
-    clone, env = expanduser(HISTORY_CLONE), _git_env()
-    changes: dict = {}
-    for path, data in files.items():
-        node = changes
-        *folders, name = path.split("/")
-        for folder in folders:
-            node = node.setdefault(folder, {})
-        node[name] = _git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
-    tree = _git_tree(clone, _git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
-    commit = _git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
-    push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", f"git@github.com:{repository}.git",
-                        f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env=env)
-    if push.returncode:
-        out = push.stdout.decode("utf-8", "replace")
-        if any(line.startswith("!") and "[rejected]" in line for line in out.splitlines()):
-            return None
-        err = [line for line in (push.stderr.decode("utf-8", "replace") or out).splitlines() if line.strip()]
-        raise Transient(f"git push failed: {' / '.join(err[max(0, len(err) - 3):])}"
-                           + ("" if environ.get("SSH_AUTH_SOCK") else " (no SSH_AUTH_SOCK: no SSH agent)"))
-    refresh()
-    return commit
-
-
-def _upload(repository: str, data: bytes) -> Optional[str]:
-    """POST git/blobs: the blob's sha, or None when the token can't write (403: the SSH path takes over)."""
-    global _cant_write
-    reply = _api(repository, "POST", "git/blobs", check=False,
-                 json={"content": b64encode(data).decode("ascii"), "encoding": "base64"})
-    if reply.status_code == 403:
-        limited = (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
-                   or "rate limit" in reply.text.lower())
-        if limited:                             # this run's: not the token's rights
-            raise Transient(f"{_status(reply)}: rate limited (on POST git/blobs)")
-        _cant_write = True
-        return None
-    if not reply.ok:
-        raise Transient(f"{_status(reply)} (on POST git/blobs)")
-    sha = reply.json()["sha"]
-    if sha != blob_sha(data):
-        raise Transient(f"GitHub stored blob {sha[:8]} for data hashing to {blob_sha(data)[:8]}")
-    return sha
-
-
-def _api_commit(repository: str, head: str, base_tree: str, modes: dict, blobs: dict, message: str) -> Optional[str]:
-    """
-    One commit through the Git Data API: tree on base_tree, commit on head, non-force ref update.
-
-    Args:
-        modes: {repo path: mode} of the paths as the tree has them
-        blobs: {repo path: uploaded blob sha}
-
-    Returns:
-        The commit's sha, or None on a 409/422 (the branch moved)
-    """
-    tree = _api(repository, "POST", "git/trees", json={"base_tree": base_tree, "tree": [
-        {"path": path, "mode": modes.get(path, "100644"), "type": "blob", "sha": sha} for path, sha in blobs.items()]}).json()["sha"]
-    commit = _api(repository, "POST", "git/commits", json={"message": message, "tree": tree, "parents": [head],
-                                                           "author": AUTHOR, "committer": AUTHOR}).json()["sha"]
-    try:
-        reply = _api(repository, "PATCH", f"git/refs/heads/{CARD_BRANCH}", check=False, json={"sha": commit, "force": False})
-    except RequestException:                    # no reply: the ref may have moved anyway
-        if _ref_head(repository) != commit:
-            raise
-        return commit
-    if reply.status_code in CONFLICT:
-        return None
-    if not reply.ok:
-        raise Transient(f"{_status(reply)} (on PATCH git/refs/heads/{CARD_BRANCH})")
-    return commit
-
-
 def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Optional[str]], message: str,
          dry_run: bool, out_path: str = "") -> Optional[str]:
     """
@@ -532,11 +351,10 @@ def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Op
         The commit's sha, None when nothing was committed (dry run, or the rewrite returned None);
         raises Refused("head-moved") after COMMIT_TRIES, Refused("edit-changed") from the rewrite
     """
-    global _cant_write
-    uploaded: dict = {}
+    uploaded: set = set()                       # blob shas uploaded this run: a retry re-uploads only the rewritten file
     for attempt in range(COMMIT_TRIES):
-        head = _ref_head(repository)
-        info = _commit_info(repository, head)
+        head = ref_head(repository)
+        info = commit_info(repository, head)
         tree = _tree(repository, info["tree"]["sha"])
         for path, sha in expect.items():
             if tree.get(path, ("", ""))[1] != sha:
@@ -555,24 +373,8 @@ def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Op
         if dry_run:
             return None
         payload = {**files, edits_path: new_text.encode("utf-8")}
-        if _token() and not _cant_write:
-            for path, data in payload.items():
-                if path not in uploaded or path == edits_path:
-                    sha = _upload(repository, data)
-                    if sha is None:
-                        break
-                    uploaded[path] = sha
-            else:
-                modes = {path: tree[path][0] for path in payload if path in tree}
-                commit = _api_commit(repository, head, info["tree"]["sha"], modes, uploaded, message)
-                if commit:
-                    return commit
-                continue
-        try:
-            commit = _git_commit(repository, head, payload, message)
-        except CalledProcessError as error:
-            raise Transient(f"git {error.cmd[3]} in the history clone failed: "
-                               f"{(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+        modes = {path: tree[path][0] for path in payload if path in tree}
+        commit = commit_files(repository, head, info["tree"]["sha"], modes, payload, message, uploaded)
         if commit:
             return commit
     raise Refused("head-moved", f"{CARD_BRANCH} kept moving: not committed after {COMMIT_TRIES} tries")
@@ -595,14 +397,6 @@ def _fonts_dir() -> str:
     return dirs.split(pathsep)[0] if dirs else join(expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
 
 
-def _text_engine() -> bool:
-    try:
-        import psd_tools.composite.text  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 def vocabulary(snapshot: Snapshot):
     """The icon vocabulary from the tree (Types/, Types/Stars/, the stoogedings manifest), as repo_traverser builds it."""
     all_types = [splitext(basename(p))[0].lower() for p in snapshot.tree
@@ -618,6 +412,11 @@ def vocabulary(snapshot: Snapshot):
 def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> list:
     """
     The cards the run looks at: every entry with a PSD-kind field (one card with --card).
+
+    Args:
+        edits: The parsed edits file
+        snapshot: The tree the cards' PSDs are looked up in
+        only: A card name (matched like the authors file), None for every card
 
     Returns:
         [Card] in the file's order; a card without a PSD keeps rel ""
@@ -660,6 +459,16 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
     """
     Section 5 for one card: the recent, duplicate and blob gates, classify, apply with every gate, commit.
     Fills the Card in place; a Refused becomes its refusal, any other exception its "error".
+
+    Args:
+        snapshot: The tree at the run's head
+        card: select()'s Card, filled in place
+        parser: vocabulary()'s offline parser
+        fonts_dir: MDW/Fonts for the text engine
+        chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
+        work: The run's work dir (the card's artifacts go in a folder named after it)
+        dry_run: Write the artifacts, commit nothing
+        now: The run's clock for the recent gate
     """
     started = perf_counter()
     folder = join(work, card.name.replace("/", "_"))
@@ -683,11 +492,11 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         fetch_verified(snapshot.repository, card.png_sha, old_png)
 
         parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-        sorted_out = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd),
+        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd),
                                        card.name in CardValidator.EXCESSIVE_STAT_EXCLUSIONS)
-        card.jobs, card.redundant = dict(sorted_out.jobs), list(sorted_out.redundant)
-        if sorted_out.refusals:                 # per card all-or-nothing (section 10)
-            first, *rest = sorted_out.refusals
+        card.jobs, card.redundant = dict(classified.jobs), list(classified.redundant)
+        if classified.refusals:                 # per card all-or-nothing (section 10)
+            first, *rest = classified.refusals
             raise Refused(first.code, "; ".join([first.why] + [f"{r.code}: {r.why}" for r in rest]))
         if not card.jobs and not card.redundant:
             return
@@ -695,15 +504,15 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         verdict = None
         files, expect = {}, {card.rel: card.psd_sha, card.png: card.png_sha}
         if card.jobs:
-            if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not _text_engine():
+            if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
-            colours = chart() if "ability" in card.jobs else None
-            if "ability" in card.jobs and colours is None:
+            colors = chart() if "ability" in card.jobs else None
+            if "ability" in card.jobs and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
             new_dir = join(folder, "new")
             makedirs(new_dir, exist_ok=True)
             card.baked = psd_edit.apply_jobs(old_psd, old_png, card.rel, card.jobs, parsed, parser, new_dir, fonts_dir,
-                                             colours, update_preview=True)
+                                             colors, update_preview=True)
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             with open(card.baked.png_path, "rb") as fh:
@@ -750,6 +559,12 @@ def land_verdicts(snapshot: Snapshot, cards: list, dry_run: bool, work: str) -> 
     The refused verdicts (section 9's _psd) in one file-only commit; unchanged verdicts and transient refusals
     write nothing, cards whose edit changed meanwhile are left out.
 
+    Args:
+        snapshot: The tree at the run's head
+        cards: The run's Cards after bake_card
+        dry_run: Write the file to the work dir, commit nothing
+        work: The run's work dir
+
     Returns:
         The commit's sha, or None
     """
@@ -782,10 +597,6 @@ def land_verdicts(snapshot: Snapshot, cards: list, dry_run: bool, work: str) -> 
 # ========================
 # Report
 # ========================
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
-
-
 def _card_line(card: Card, dry_run: bool) -> str:
     where = f" `{card.rel}`" if card.rel else ""
     fields = _describe(card) if card.jobs else ", ".join(f"{f} {card.fields[f]!r}" for f in card.fields)
@@ -855,10 +666,10 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
         (markdown report, commit shas); raises on a failure outside a card's steps
     """
     started = perf_counter()
-    _authenticate()
+    token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
     work = _work_dir()
-    head = head or _ref_head(repository)
-    info = _commit_info(repository, head)
+    head = head or ref_head(repository)
+    info = commit_info(repository, head)
     report = Report(repository, head, dry_run, work)
     report.lines.append(f"- Work dir: `{work}`")
     commits: list = []
@@ -878,27 +689,27 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
             if edits is not None:
                 cards = select(edits, snapshot, card)
                 report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
-                                    f"{_plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
+                                    f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
                                     + (f" (--card {card})" if card else ""))
                 fonts = _fonts_dir()
-                engine = "text engine" if _text_engine() else "no text engine"
+                engine = "text engine" if psd_edit.text_engine() else "no text engine"
                 report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
                                     + ("" if isdir(fonts) else " (missing)"))
                 if card and not cards:
                     report.note = f"No entry with a PSD field for {card!r}."
                 if cards:
                     parser = vocabulary(snapshot)
-                    colours: list = []
+                    colors: list = []           # the chart's fills, read once
 
                     def chart() -> Optional[dict]:
-                        if not colours:
+                        if not colors:
                             if psd_edit.STATUS_CHART not in snapshot.tree:
-                                colours.append(None)
+                                colors.append(None)
                             else:
                                 path = join(work, basename(psd_edit.STATUS_CHART))
                                 fetch_verified(repository, snapshot.sha(psd_edit.STATUS_CHART), path)
-                                colours.append(psd_edit.status_fills(PSDImage.open(path)))
-                        return colours[0]
+                                colors.append(psd_edit.status_fills(PSDImage.open(path)))
+                        return colors[0]
                     now = datetime.now(timezone.utc)
                     for one in cards:
                         bake_card(snapshot, one, parser, fonts, chart, work, dry_run, now)
@@ -923,6 +734,7 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
 
 
 def main(args: Optional[list] = None) -> int:
+    """The command line: run() with the Action's flags, the report on stdout."""
     parser = ArgumentParser(prog="python -m commands.card_bake",
                             description="Bake the PSD-kind edits of site/Card Edits.json into the card PSDs and PNGs, "
                                         "one commit per card (docs/EDIT_PIPELINE_DESIGN.md).")
@@ -950,7 +762,6 @@ __all__ = [
     'Snapshot',
     'Transient',
     'bake_card',
-    'blob_sha',
     'dump_edits',
     'fetch_verified',
     'land',

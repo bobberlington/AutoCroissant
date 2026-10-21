@@ -229,7 +229,7 @@ retirement                          — dated entry in autocroissant-failure-arc
 **Honesty note:** this repo has NO feature-flag system, no experiment framework, no A/B
 anything. The entire experiment mechanism is (a) a `getattr(config, "field", default)` read —
 the live pattern in commands/ (2026-10-20: music_player.py:37/54/61,
-utils.py:19, github_api.py:15; re-find with `git grep -n 'getattr(config' -- '*.py'`)
+utils.py:19, github_api.py:17; re-find with `git grep -n 'getattr(config' -- '*.py'`)
 — plus (b) runtime `/set_*` commands that do NOT persist across
 restart (autocroissant-config-and-flags). That is enough for a hobby project. Do not add
 ceremony beyond it.
@@ -341,3 +341,5 @@ Maintenance rules:
   failure-archaeology entry exists (one home per story; this table is the index, not the story).
 - This file's incidents are frozen history (hashes don't drift); the volatile parts are line
   numbers, counts, and "still live" claims — re-verify those with the table above before citing.
+
+2026-10-21 (review): github_api.py citation re-pointed (:17; the module gained two imports above it).

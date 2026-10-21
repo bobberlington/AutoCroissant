@@ -25,6 +25,10 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   (10.28).
 - 2026-10-21: B10, atomic and locked card pickle saves (10.29); the 0.1 s queue tick and /query_ability's grouped
   output (10.30).
+- 2026-10-21 optimization pass 2: /query_ability's single-result hole (one card without a PNG answered `content=None`,
+  which Discord dropped; it posts the name now) and the /fonts lazy-import shadowing; one commit path for the bake and
+  the TTS save (`commands/git_commit.py`); the font check parses in a process pool (813 PSDs 98 s -> 9.8 s). Report:
+  `docs/Finished/optimization-pass-2-2026-10-21/`.
 
 ---
 
@@ -139,13 +143,22 @@ One pass over every module, measured before and after, with no behavior change u
   0 differences on .py and compiled; pickle re-dump byte-identical; `tests/test_split_contract.py`.
 - **Concurrency:** done 2026-10-21 (10.29): one lock per pickle and atomic saves (B10); GitPython calls on the event
   loop time out after 120 s.
-- **Tests:** done 2026-10-20: `tests/` (310 tests on 2026-10-21, about 22 s, offline; 38 parser goldens), run before every push
-  (autocroissant-change-control).
+- **Tests:** done 2026-10-20: `tests/` (350 passed, 18 skipped on 2026-10-21 after pass 2, about 31 s, offline; 38 parser
+  goldens), run before every push (autocroissant-change-control).
 - **Docs:** done 2026-10-20: help.py and the describe strings match all 50 commands (10.20); skill line references
   re-mapped after the split (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py`).
 - **Owner decisions, done 2026-10-21 (10.30):** the queue tick is 0.1 s (reply latency up to ~100 ms per hop instead
   of ~1 s; reminders keep their 1 s heartbeat; idle 1.3 ms CPU/s), and /query_ability lists name and image link 10 per
   message instead of one message per result (one match keeps its image preview). Tests: `tests/test_query_output.py`.
+
+- **Pass 2 (the edit pipeline, font check, site badges), done 2026-10-21:** audits and numbers in
+  `docs/Finished/optimization-pass-2-2026-10-21/`. One commit path (`commands/git_commit.py`: API blob/tree/commit, SSH
+  fallback, `cant_write`/`limited`) shared by `card_bake` and `tts_save` (card_bake 966 -> 777 lines, tts_save
+  1022 -> 891); `github_api.token_from_env`/`blob_sha`/`fetch_verified`; `font_check --all` in a process pool
+  (98 s -> 9.8 s, outputs byte-identical); dead code out of `psd_regions`/`psd_edit` (`region_masks`, `_union`, KIND
+  fallback), `fx_pad`/`union_box` public, Args/Returns on the gates, truthful `__all__`; the website's `valid_verdict`
+  accepts only `baked`/`refused`. 13 new tests (SSH fallback, 409, verdict skipped when the edit changed, Royal
+  Eradicator's two-row atk, the `font` refusal on every fork run, import allowlist, workflow shapes).
 
 Not done in this pass (later; audits on `docs/Finished/optimization-pass-2026-10-20/`):
 - A repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;
@@ -155,6 +168,16 @@ Not done in this pass (later; audits on `docs/Finished/optimization-pass-2026-10
 - `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and `/delete_all_music` have
   no admin gate; with `/purge` any member can delete another user's messages if the bot has Manage Messages
   (docs.md §1.6).
+
+Not done in pass 2 (2026-10-21; `docs/Finished/optimization-pass-2-2026-10-21/README.md` lists the rest):
+- A bake is 23 s per card and 95 % of it is fork compositing: write the merged PNG as the PSD preview
+  (`PSDImage.save(preview=...)`, -9 s) and crop effects to the viewport (-10 s). Fork-side, after the rendering
+  worktrees are free (perf.md 1, 2).
+- `tests/test_card_bake.py` cannot collect under the fork venv (no `requests`, no pip there), so the end-to-end bake test
+  runs nowhere on the Mac; `pyyaml` is listed in `requirements-dev.txt` but not installed, so the two workflow-shape
+  tests skip (tests.md 1, 8).
+- Website build: cache the accent colour by blob hash (-2.9 s of a 5.3 s warm build) and hardlink the dist copies
+  (perf.md 5).
 
 ### 2.6 Explicitly parked
 

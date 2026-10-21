@@ -276,8 +276,8 @@ async def slash_website(interaction: Interaction):
 
 
 def _check_repo_fonts(interaction: Interaction):
-    from commands.font_check import check_repo_fonts    # lazy: fontTools loads only when /fonts runs
-    check_repo_fonts(interaction)
+    import commands.font_check as font_check             # lazy: fontTools loads only when /fonts runs
+    font_check.check_repo_fonts(interaction)
 check_repo_fonts = to_thread(_check_repo_fonts)
 @tree.command(name="fonts", description="Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply.")
 async def slash_fonts(interaction: Interaction):

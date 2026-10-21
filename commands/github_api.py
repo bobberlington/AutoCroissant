@@ -1,4 +1,6 @@
-"""GitHub access for the card repo: the token, auth headers, tree and blob fetches, and the retry policy."""
+"""GitHub access for the card repo: the token, auth headers, tree and blob fetches (sha-verified), and the retry policy."""
+from hashlib import sha1
+from os import environ
 from requests import get
 from requests.exceptions import RequestException
 from time import sleep
@@ -25,6 +27,12 @@ def print_token_status() -> None:
     """One line at startup: is there a token (5000 requests/hour) or not (60)."""
     print("Git token found, API limited to 5000 requests/hour." if GIT_TOKEN
           else "No git token in config, API limited to 60 requests/hour.")
+
+
+def token_from_env() -> None:
+    """The Actions' GITHUB_TOKEN when config.py supplied none (the bot's own token wins)."""
+    if not GIT_TOKEN and environ.get("GITHUB_TOKEN"):
+        HEADERS["Authorization"] = f"token {environ['GITHUB_TOKEN']}"
 
 
 def api_url(repository: str, path: str) -> str:
@@ -74,6 +82,19 @@ def fetch_blob(repository: str, sha: str, stream: bool = False, timeout: int = 3
     return reply
 
 
+def blob_sha(data: bytes) -> str:
+    """git's blob sha: sha1("blob N\\0" + data)."""
+    return sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def fetch_verified(repository: str, sha: str, timeout: int = 30) -> bytes:
+    """A blob's bytes by sha, checked against it; raises ValueError when they don't hash to sha."""
+    data = fetch_blob(repository, sha, timeout=timeout).content
+    if blob_sha(data) != sha:
+        raise ValueError(f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
+    return data
+
+
 def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
     """A small text file by blob sha, read as UTF-8."""
     reply = fetch_blob(repository, sha, timeout=timeout)
@@ -88,9 +109,12 @@ __all__ = [
     'GIT_TOKEN',
     'HEADERS',
     'api_url',
+    'blob_sha',
     'blob_text',
     'fetch_blob',
     'fetch_tree',
+    'fetch_verified',
     'get_with_retry',
     'print_token_status',
+    'token_from_env',
 ]
