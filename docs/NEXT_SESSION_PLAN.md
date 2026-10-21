@@ -17,11 +17,11 @@ Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardma
 Every task still wanted this session, in order; a line is struck through here when it lands and the docs it closes move to
 `docs/Finished/`. PSD and PNG writes stay on hold until the user lifts it.
 
-1. [ ] Rendering round 2 (fork): wait for the workflow (6 branches on `cards`, harness ICC fix, integrate as cards_v2 + the
+1. [x] (landed 2026-10-21 ~06:30: round 2 integrated as cards_v2, the user's seven review branches merged as cards_v3, `cards` a6363a04 pushed, tag `cards-20261020` cut, RENDER_STATUS.md + PR_BODIES.md refreshed) Rendering round 2 (fork): wait for the workflow (6 branches on `cards`, harness ICC fix, integrate as cards_v2 + the
    text engine, critic incl. the stat-toggle check); review; then merge the user's seven reviewed branches
    (drop-shadow, gradient-overlay, outer-glow, text-engine, adjustments, bevel-satin, inner-shadow-glow) into `cards`,
    suite + harness, push `cards`, tag `cards-20261020` (S0 of the edit pipeline), refresh RENDER_STATUS.md / PR_BODIES.md.
-2. [ ] S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
+2. [~] (dispatched 2026-10-21 13:06 UTC, run 39605156043 on Clot White, dry run) S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
 3. [x] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
    badges and build): profile, dedupe the API/SSH commit code with tts_save, fix the single-result-no-image hole in
    /query_ability and the /fonts lazy-import shadowing, speed the font check, review tests; report to
@@ -30,7 +30,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    wait for the worktrees.
 4. [ ] Decision Q1: the parser reads `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22
    redundant name edits drop by the redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
-5. [ ] Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
+5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
 6. [ ] S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
    bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.
 7. [ ] Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, 20 (inline editing),
