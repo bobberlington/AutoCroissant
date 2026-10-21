@@ -277,7 +277,7 @@ repo_traverser.py:476; slash wrapper main.py:359-371.
 >   change signal while every stored timestamp is a GitHub commit date. On 2026-10-19 all 813 local PSDs had
 >   an mtime newer than their stored timestamp, so a default local run would re-parse all 813, append every
 >   current card to old_stats.pkl (an archive balloon) and replace commit dates with mtimes
->   (BUGS_AND_IMPROVEMENTS B6). Its path bug (removeprefix, live 2025-12-02 → 2026-10-19, story:
+>   (docs/BUGS_AND_IMPROVEMENTS.md B6). Its path bug (removeprefix, live 2025-12-02 → 2026-10-19, story:
 >   autocroissant-failure-archaeology Entry 1) had been fixed the day before, but production only ever ran
 >   remote mode, so a second traversal was a second set of bugs to keep.
 > - **Old reminders keep working:** a stored `/update_stats use_local_repo:False` (the form reminders were
@@ -312,7 +312,7 @@ N cards changed or new, M unchanged, K moved.
 - Saving (repo_traverser.py:510-513): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
   not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
   stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
-  not prune (BUGS_AND_IMPROVEMENTS B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
+  not prune (docs/BUGS_AND_IMPROVEMENTS.md B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
   leaves that card stale with the ETag recorded (blob) (B9).
 - Then "Card statistics update complete!" and, if enabled, the problem cards: full detail first
   (path + fenced problem list, split into <=1950-char chunks), then a names-only line per card —
@@ -475,7 +475,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
   The fire path drops them too, so a reminder never fails on them. Watch for "Reminder <id>: migrated command
   ... (dropped retired ...)" lines. Per-machine file: reminders DO NOT
   follow a machine handoff (section 6 step 6).
-- **Not yet observed live** as of 2026-10-19 (BUGS_AND_IMPROVEMENTS V2): watch the first startup's migration
+- **Not yet observed live** as of 2026-10-19 (docs/BUGS_AND_IMPROVEMENTS.md V2): watch the first startup's migration
   lines and the first firing.
 
 ## 10. Guild admin quick table
@@ -528,7 +528,7 @@ text instead of a code block, because code blocks don't render emojis.
   pixels and centered; small pixel art is enlarged nearest-neighbor so it stays crisp; `_no` adds a red ring
   and slash in the same red as the font's `:no`. The font side of these names: ttscardmaker-companion.
 - **Requires discord.py 2.5+** (application-emoji API; `requirements.txt` says `discord.py>=2.5`).
-- **Not yet run against live Discord** (offline fake-client test only, BUGS_AND_IMPROVEMENTS V1). On the
+- **Not yet run against live Discord** (offline fake-client test only, docs/BUGS_AND_IMPROVEMENTS.md V1). On the
   first live start, check the terminal line above, then run `/query_rulebook` on a page with icons.
 
 ## When NOT to use this skill

@@ -90,7 +90,7 @@ and boots without any AI field or torch. Details: **autocroissant-ai-boundary** 
 when true, yt-dlp gets `"cookiesfrombrowser": ("safari", None, None, None)` (music_player.py:55). Set
 `browser_cookies = True` only on a machine with Safari (the Mac). A config.py without `browser_cookies`
 falls back to the old side channel `vram_usage == "mps"` (default `""`), so old Mac configs keep their
-cookies. This replaced the vram_usage-only hack on 2026-10-20 (BUGS_AND_IMPROVEMENTS S1).
+cookies. This replaced the vram_usage-only hack on 2026-10-20 (docs/BUGS_AND_IMPROVEMENTS.md S1).
 
 ### ADMINS — which commands it gates
 
@@ -370,7 +370,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
    which made local mode compare file mtimes with stored GitHub commit dates and re-archive every card
-   (BUGS_AND_IMPROVEMENTS B6). On 2026-10-20 local mode was archived: both options are gone from the
+   (docs/BUGS_AND_IMPROVEMENTS.md B6). On 2026-10-20 local mode was archived: both options are gone from the
    slash command and from `update_stats()`, the traversal lives on branch `archive/local-update-stats`
    (not in main, not compiled), and stored reminders drop the options (`RETIRED_OPTIONS` above).
    (Do not run update_stats at all while merely investigating config — it mutates pickles.)

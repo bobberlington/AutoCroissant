@@ -258,7 +258,7 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   with its default `use_local_timestamp=True`, no per-card API calls. It became path-correct on
   2026-10-19 (archaeology Entry 1). Read its diff differently: every card's `timestamp` changes to a
   local mtime and every card is archived into old_stats, so compare fields other than `timestamp`, and
-  ignore old_stats growth. Never promote its pickles to the live repo (BUGS_AND_IMPROVEMENTS B6).
+  ignore old_stats growth. Never promote its pickles to the live repo (docs/BUGS_AND_IMPROVEMENTS.md B6).
 - **API budget warning:** change detection compares each PSD's blob sha in the tree with
   `card.blob_sha` (`_psd_changed`, repo_traverser.py:73); an unchanged PSD costs no requests. Each
   re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus one commit

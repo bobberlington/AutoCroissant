@@ -447,7 +447,7 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 |---|---|---|
 | `removed` cards you did not delete (and no matching `added` rename) | traversal missed files — wrong mode or path | autocroissant-failure-archaeology |
 | mass `path` changes in field counts | a path regression (the removeprefix local-path bug's signature, fixed 2026-10-19) — STOP, do not push | autocroissant-failure-archaeology Entry 1 |
-| hundreds of modified cards whose only changed field is `timestamp` | pickles from a local-timestamp sweep (BUGS_AND_IMPROVEMENTS B6; since 2026-10-20 only the archived traversal on branch `archive/local-update-stats` can produce them); old_stats.pkl will have grown by one archived copy per card — STOP, do not push | autocroissant-run-and-operate §7 |
+| hundreds of modified cards whose only changed field is `timestamp` | pickles from a local-timestamp sweep (docs/BUGS_AND_IMPROVEMENTS.md B6; since 2026-10-20 only the archived traversal on branch `archive/local-update-stats` can produce them); old_stats.pkl will have grown by one archived copy per card — STOP, do not push | autocroissant-run-and-operate §7 |
 | mass `type` → unknown (check with `--verbose`) | classification broke | impossibility-cards-reference for what classify should do |
 | huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert) | NOT visible in this script's output — measure with `inspect_pickle.py` summary (223 archived versions is the 2026-07-11 baseline) and `git diff --stat HEAD -- old_stats.pkl` |
 

@@ -679,7 +679,7 @@ one in-line substring edit; `apply.py` does them all. Ranges keep their shape.
 
 ---
 
-## 3. BUGS_AND_IMPROVEMENTS.md: rows already fixed or fixed by this pass
+## 3. docs/BUGS_AND_IMPROVEMENTS.md: rows already fixed or fixed by this pass
 
 ### 3.1 Status of every open row (checked against HEAD 7f6bd05)
 
@@ -698,7 +698,7 @@ one in-line substring edit; `apply.py` does them all. Ranges keep their shape.
 | C5 duplicate names | OPEN | `slash_set_ratio` 307/317, `slash_delete_song` 610/617 | only if the pass renames them (change-control: rename the second def only, e.g. `slash_set_repo`, `slash_delete_all_music`) |
 | D1-D7, V1, V2, §1.6 | unchanged by this pass | | none |
 
-### 3.2 Exact edits to BUGS_AND_IMPROVEMENTS.md
+### 3.2 Exact edits to docs/BUGS_AND_IMPROVEMENTS.md
 
 Line refs in rows that stay open until their fix lands:
 - B4: `` `commands/music_player.py` (~line 177) `` → `` `commands/music_player.py` (line 178) ``.
@@ -713,7 +713,7 @@ Now (already true):
 3. §2.3: delete `4. ~~C12 (declare Pillow)~~ done 2026-10-20: Pillow and PyNaCl are declared.`
 4. §2.4: replace the heading and items with:
    ```markdown
-   ### 2.4 Planned next (NEXT_SESSION_PLAN.md; Task 3 first)
+   ### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md; Task 3 first)
 
    1. PSD edits from website edits with the psd-tools fork, no Photoshop or browser (Task 3, the main effort; plan
       decision D4). Photopea is the reference renderer and emergency fallback until the fork meets its targets. Runs

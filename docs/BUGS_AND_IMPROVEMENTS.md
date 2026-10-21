@@ -4,7 +4,7 @@ Compiled 2026-07-11 from a full repo audit; revised 2026-10-19 and 2026-10-20. D
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
-`autocroissant-failure-archaeology` and delete the row here. The next session's plan is `NEXT_SESSION_PLAN.md`.
+`autocroissant-failure-archaeology` and delete the row here. The next session's plan is `docs/NEXT_SESSION_PLAN.md`.
 
 **Retired** (stories in `autocroissant-failure-archaeology`):
 - 2026-10-19: B1, B2, C7, C8, C9, C11; management.py Cython 3.3 failure; dead `.gitignore` patterns (Entries 1, 10).
@@ -102,7 +102,7 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 
 Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26). Open: B8, B9, B10.
 
-### 2.4 Planned next (NEXT_SESSION_PLAN.md; Task 3 first)
+### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md; Task 3 first)
 
 1. PSD edits from website edits with the psd-tools fork, no Photoshop or browser (Task 3, the main effort; plan
    decision D4). Photopea is the reference renderer and emergency fallback until the fork meets its targets. Runs
@@ -112,7 +112,7 @@ Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26
 
 Done 2026-10-20: commit-sha image links (Task 1, e13d754), emoji sync inside /update_stats with the weekly
 reminder removed (Task 1b, e13d754), TTS save automation and /update_tts_save (Task 2: bad0496, ce94585, c4caaf9; the automatic run moved to TTSCardMaker's tts-save.yml the same day),
-the website Table tab (Task 2b, TTSCardMaker 0d49893).
+the website Table tab (Task 2b, TTSCardMaker 0d49893; reverted the same day at the user's request, 75692fb).
 
 ### 2.5 Deep optimization and refinement pass (all code)
 

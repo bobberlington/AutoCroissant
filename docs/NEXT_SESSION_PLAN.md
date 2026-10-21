@@ -6,10 +6,10 @@ Start in `~/Desktop/AutoCroissant`. Read memories `jetson-server` and `ttscardma
 - Bot on the jetson runs main `05c643e` (AI generation moved to branch `archive/ai-generation`); pickles `7d0e29f`;
   50 slash commands; jetson and GitHub in sync.
 - TTSCardMaker main is pushed: website + editor live at https://michaeljsr.github.io/TTSCardMaker/.
-- History-only clone on the jetson: `~/Documents/TTSCardMaker-history.git` (~1 MB). Git there is 2.25: never run a
+- History-only clone on the jetson: `~/Documents/TTSCardMaker-history.git` (about 27 MB). Git there is 2.25: never run a
   diff in it (`log --name-only`/`--raw` download blobs); walk `rev-list --parents` + `ls-tree -r` (~10 s, verified
   against GitHub on 4 cards).
-- PSD research (report, Photopea harness, psd-tools patch, survey data): `~/Documents/psd-research/`. TTS survey
+- PSD research (report, Photopea harness, psd-tools patch, survey data): `~/Documents/Tools/psd-research/`. TTS survey
   scripts are in `/private/tmp/fontexplore/scripts/tts_survey*.py` (gone after a reboot; easy to redo).
 
 ## Orchestration (ultracode, Fable 5.1 as orchestrator)
@@ -97,6 +97,8 @@ from source: `--enable-optimizations --with-lto=full --enable-shared --with-open
 
 ## Task 1. Commit-sha image links (small)
 
+**Status 2026-10-20:** done (e13d754).
+
 `/query`, ability-search results and embeds post `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<sha>/<path>`
 with `<sha>` = the latest commit where that PNG's blob changed (Puzzled Cat -> `24742d07…`).
 1. `commands/repo_history.py`: `git fetch` the history clone; walk new commits only (`rev-list --parents
@@ -106,6 +108,8 @@ with `<sha>` = the latest commit where that PNG's blob changed (Puzzled Cat -> `
 3. Done when: replies use sha links, no extra requests per /query, survives a restart.
 
 ## Task 1b. Emoji sync inside /update_stats (small)
+
+**Status 2026-10-20:** done (e13d754).
 
 The startup sync only uploads missing emojis, and only at restart; the weekly reminder `f590a57e` (`/sync_emojis`,
 Sun 3 AM) covers new icons between restarts, and neither refreshes an edited icon. Instead: during /update_stats,
@@ -125,7 +129,7 @@ rename, 56 Nicknames, 575 role tags cleared, 10 CustomDeck keys fixed, resizeTar
 reported no changes. 29 website names were set to the printed card names first (Card Edits.json). The bot's
 fine-grained token is read-only on the card repo (POST git/blobs -> 403), so commits go through git objects in the
 history clone pushed over SSH with the AutoCroissant key; give the token Contents: write to use the API path.
-Players download the save from the raw link the bot posts (not attached in Discord: 5.5 MB). Decisions taken for the
+Players download the save from the raw link the bot posts (not attached in Discord: 5.9 MB). Decisions taken for the
 audit's open items: complete decks get missing cards at the rule's count; hand-picked and empty decks are left alone;
 cards outside a complete deck's rule are moved out unless listed in the rule's include; gone images are reported only.
 
@@ -174,13 +178,14 @@ Nickname) misses it; a loose "Militron" card sits on the table.
 
 ## Task 2b. View and edit the TTS save on the website
 
-**Status 2026-10-20:** done (0d49893, live): a "Table" tab (`site/assets/table.js`, `tts.js`) loads the save on
-demand, lists decks and bags with their cards and rules, gives players the download link, and lets editors move,
-copy, add, remove, reorder and rename; publishing re-applies the staged operations to the fresh save and commits it
-byte-for-byte like the bot (a JS port of the updater's serializer), and keeps `TTS/decks.json` in step (a card whose
-last copy leaves a rule-synced deck is excluded; one put in that the rule doesn't cover is included).
+**Status 2026-10-20:** shipped (TTSCardMaker 0d49893) and reverted the same day at the user's request (75692fb;
+`site/assets/table.js` and `tts.js` are gone). The tab loaded the save on demand, listed decks and bags with their
+cards and rules, gave players the download link, and let editors move, copy, add, remove, reorder and rename;
+publishing re-applied the staged operations to the fresh save and committed it byte-for-byte like the bot (a JS port
+of the updater's serializer), keeping `TTS/decks.json` in step. Not rescheduled; the Play tab (item 16) must not reuse
+the name "Table".
 
-A "Table" tab on the card browser: load the save from TTSCardMaker (on demand; 5.5 MB), show decks and bags with
+A "Table" tab on the card browser: load the save from TTSCardMaker (on demand; 5.9 MB), show decks and bags with
 their cards, and let editors (same sign-in and batch as card edits) move or copy cards between decks, remove or
 add cards, rename decks and reorder. Publishing applies the operations to a fresh copy of the save and commits it,
 so it merges with the bot's updates. Start after Task 2's audit and rules exist.
@@ -189,7 +194,7 @@ so it merges with the bot's updates. Start after Task 2's audit and rules exist.
 
 The user's call (2026-10-20): spend as many tokens and as much time as needed to make the psd-tools fork good enough
 to replace Photopea. Fork: https://github.com/MichaelJSr/psd-tools, cloned at `~/Documents/Tools/psd-tools` (main just past
-v1.25.0, `upstream` remote; read its `CLAUDE.md` first). Needs Python >= 3.11: on the jetson, after Task 0. Research, harness and data: `~/Documents/psd-research/`
+v1.25.0, `upstream` remote; read its `CLAUDE.md` first). Needs Python >= 3.11: on the jetson, after Task 0. Research, harness and data: `~/Documents/Tools/psd-research/`
 (`REPORT.md`, whose Photopea-first verdict is superseded by D4; `fork/patches.py` holds the gradient fix).
 
 **Where things stand:** unpatched psd-tools 1.25 renders card structure right but stat bars flat (the
@@ -250,6 +255,7 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   contradictions (21 NORMAL damage formula vs 07/10; 12.3 Hardened stacks; 07.3 text vs picture; 19 vs 09 on when
   status effects proc); tags used on cards but defined nowhere: (XCD), (XGCD), (XU) and 1GCD/2CD/1CD/2U/2GCD/3U/4U.
   Fixes are card/rulebook content (TTSCardMaker) plus a parser rule to skip hidden text layers on rulebook pages.
+  Campaign: `docs/Campaigns/RULEBOOK_CONSISTENCY_CAMPAIGN.md` (item 19).
 - **Subseries** (user, 2026-10-20): a card can have a subseries besides its series (Goombella: series Mario, subseries
   Paper Mario: The Thousand-Year Door). Database-only edit: `subseries` (nullable string) in `Card Edits.json`. Website
   side done (TTSCardMaker 15a16be: filters, search `subseries~`, card page, Stats breakdown, editor field in the
@@ -258,6 +264,55 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   "Series · Subseries" (shown for cards with a subseries or website data; /query never showed the series before),
   `/update_metadata` and `/mass_replace` fields, a PSD re-parse keeps it like author and series, `/export_cards`
   column, help text, skills; tests in `tests/test_subseries.py`.
+
+## Ideas 5-21 (2026-10-20, user)
+
+Items 5-15 were pasted by the user on 2026-10-20 (1-4 were not in the paste) and refined and ordered the same day (memory
+`website-and-pipeline-ideas`); 16-19 and 21 have campaign docs (21 a stub), 20 is a smaller design. All of it is queued after Task 3 steps
+4-7 (the edit pipeline). **Order:** 12, 14, 13 -> 15 -> 6, 7, 8 -> 9, 10, 11 -> 5; then 16-21. Record status here as each ships.
+
+**Decisions (user).** Private decks live in the repo encrypted (WebCrypto AES-GCM, key from a deck passphrase via PBKDF2;
+the whole payload, name and description included, is encrypted; salt and owner login in clear; the owner's browser may
+remember the passphrase); public decks are plain JSON `site/decks/<login>/<slug>.json`. Profiles exist only for people who
+create one: authorship is already listed four ways (the Author dropdown `#/cards?author=Name`, the "by Name" link on a
+card page, search `author==`/`author~`, the Stats "Cards per author" chart). Generated cards are fully separate from real
+cards and never in statistics (item 18).
+
+- **12. Effects on toggled stat layers.** The layer effects must render on the stat-bar layers the edit pipeline toggles,
+  or an edited stat sits flat beside its neighbours; Task 3 step 2's effects work, scored per stat cell by the harness.
+- **14. Ability FX layers from the text.** The status-word `Ability FX: <words>` layers are derived: delete and regenerate
+  them on every ability edit (Task 3c); a validator check flags orphaned FX layers whose words left the ability.
+- **13. Stats above 10.** Survey the two cards (Sonic spd 20, Royal Eradicator Main Cannon atk 12), pick one canonical
+  encoding (the template's digit layers run 0-9; a 10 is no visible digit), re-encode both, drop `EXCESSIVE_STAT_EXCLUSIONS`
+  (five names in `commands/psd_parser.py`; Pix, Tainted Lazarus and Twin Emperors are all <= 10 today, so the whole list can go).
+- **15. Text-first rulebook.** One text file per page in TTSCardMaker; pages generated by the fork's text engine; overflow
+  paginates into continuation pages; fixes hidden layers, injection slips and undefined tags at the source (item 19).
+- **6. Sign-in top right.** The existing `edit.js` GitHub-token sign-in, shown top right on every tab; nothing new to authenticate.
+- **7. Profiles.** `site/profiles/<login>.json`, created and edited through the publish flow; page `u/<login>/`; a users page
+  listing the people who made one.
+- **8. Profile sections.** All optional: favourite and hated card and item, series, featured deck, motto, free label/value pairs.
+- **9. Contribution data.** Authored cards (`site/Card Authors.txt`), recent edits from `site/Card Edits.json` `_by`/`_at`,
+  commits from the history walk (the clone `commands/repo_history.py` keeps).
+- **10. Contributions tab.** Beside the version viewer; one page per person over item 9's data.
+- **11. Leaderboard.** By category, with titles; counts publish batches, not fields (a 20-field edit is one contribution).
+- **5. Deck browser.** Public decks as repo files, private decks encrypted (decision above); the deck builder's `d/` share
+  code stays the way to pass a hand around.
+- **16. Play tab (simulator):** `docs/Campaigns/SIMULATOR_CAMPAIGN.md`.
+- **17. Game reports; home of the shared report schema (its §4):** `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`.
+- **18. AI-generated cards:** `docs/Campaigns/AI_CARDS_CAMPAIGN.md`.
+- **19. Rulebook consistency:** `docs/Campaigns/RULEBOOK_CONSISTENCY_CAMPAIGN.md`.
+- **20. Inline editing** (smaller; agreed 2026-10-20). In edit mode the card browser is the editor. Three primitives only:
+  1. Click a value to edit it in place: stat bar cells; the ability; double-click the name; fact chips (series, subseries,
+     author, note) as inline comboboxes. Proposed, not yet agreed: stars, a token picker on `[` and tag completion on `(`,
+     a type-row palette, rulebook title and text.
+  2. Drag one or many cards onto an Author or Series facet to assign it (Subseries, Hidden and ban facets proposed).
+  3. One bottom batch bar listing pending edits as sentences ("Goombella: spd 4 -> 5"), per-item revert, and the existing
+     Review and publish.
+  Each inline editor keeps the form's marker for edits that change the card image (name, stats, ability: PSD + database)
+  vs database-only (Queued, "Two kinds of card edits"). The current form survives only as an "All fields" fallback reached
+  from the batch bar. No new popups or panels; view mode unchanged.
+- **21. Card standardization** (later): every PSD's layer structure and names match its template, then an Action that
+  reports on push; `docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`.
 
 ## Task 3c. Effect layers on pushes (after Task 3)
 
@@ -270,10 +325,10 @@ Discord. First prove it on all cards against the JSX batch's output.
 
 ## Task 4. Deep optimization and refinement pass
 
-BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurrency, tests, docs).
+`docs/BUGS_AND_IMPROVEMENTS.md` §2.5 (network, speed, robustness, code health, concurrency, tests, docs).
 
 **Status (2026-10-20): done** (one commit on main; numbers in BUGS §2.5, audits on `docs/Finished/optimization-pass-2026-10-20/`; scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`).
-- Tests: `tests/` (220 offline tests, 38 parser goldens, `requirements-dev.txt`); run with
+- Tests: `tests/` (220 offline tests then, 238 today; 38 parser goldens, `requirements-dev.txt`); run with
   `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` before every push.
 - Robustness: B4, B5, B7, C1-C3, C5, C6 fixed; `/list_guild_members` removed (50 commands); the queue loops survive a bad
   item; git network calls time out after 120 s; temp files always removed.
@@ -288,5 +343,6 @@ BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurr
 
 ## Order
 
-**Task 3 first and foremost** (the user wants the next session spent on it), with **Task 0 in parallel** (the long
-Python build runs in the background); Task 3c follows Task 3. Quick wins if useful in between: Task 1, Task 1b. Then Task 2 steps 1-3 (audit report to the user) -> Task 2 steps 4-6 -> Task 2b -> Task 4.
+**Task 3 first and foremost** (the user wants the next session spent on it); Task 3c follows Task 3. After Task 3: the
+ideas list 5-15 in its agreed order, then items 16-21 (campaign docs and inline editing; "Ideas 5-21" above). Tasks 0, 1,
+1b, 2 and 4 are done and Task 2b was reverted, not rescheduled (status lines above); nothing else is scheduled.

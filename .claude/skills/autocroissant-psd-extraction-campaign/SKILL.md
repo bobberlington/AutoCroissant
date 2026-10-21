@@ -104,7 +104,7 @@ not in main: local mode was archived out of the bot, see below.)
 - Sandboxed forced LOCAL sweep: 813 cards, 0 typed UNKNOWN, "0 cards changed location", and
   types, paths and stats identical to the stored remote-sweep data.
 - 59 ability and 2 star differences, all reproduced by the git-HEAD parser, so they are upstream PSD
-  edits newer than the bot's last sweep (BUGS_AND_IMPROVEMENTS D5), not effects of the fix.
+  edits newer than the bot's last sweep (docs/BUGS_AND_IMPROVEMENTS.md D5), not effects of the fix.
 - Old parser vs new parser on all 813 PSDs: 0 differences.
 
 **Prediction vs measurement.** Option 1 below predicted Tier A would change only `timestamp`. The 61
@@ -116,7 +116,7 @@ precondition "stats.pkl matches the clone" must be checked first, or an old-vs-n
 **What is still true about local mode.** The fix makes local mode path-correct, not
 timestamp-compatible: with `use_local_timestamp=True`, every card's mtime is newer than its stored
 commit date (813/813 on 2026-10-19), so a local run with local timestamps re-archives everything
-(option 1's own Tier A prediction said so; BUGS_AND_IMPROVEMENTS B6). On 2026-10-20 `/update_stats` first
+(option 1's own Tier A prediction said so; docs/BUGS_AND_IMPROVEMENTS.md B6). On 2026-10-20 `/update_stats` first
 defaulted to remote mode, then local mode was ARCHIVED: the options are gone from the command, and the
 traversal survives as `update_stats_local()` on branch `archive/local-update-stats`, for sandbox sweeps only
 (operating rule owned by autocroissant-run-and-operate §7; story: autocroissant-failure-archaeology

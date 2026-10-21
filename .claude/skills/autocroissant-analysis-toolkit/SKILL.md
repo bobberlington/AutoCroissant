@@ -156,7 +156,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 the removeprefix bug (introduced by f7c915c, fixed 2026-10-19; full incident owned by
 autocroissant-failure-archaeology Entry 1) had NOT corrupted production data. The method still
 applies after the fix: the TIMESTAMP fingerprint below is exactly how you would spot pickles from a
-local-mode run (local mtimes instead of commit times; BUGS_AND_IMPROVEMENTS B6; since 2026-10-20 only the
+local-mode run (local mtimes instead of commit times; docs/BUGS_AND_IMPROVEMENTS.md B6; since 2026-10-20 only the
 archived `update_stats_local()` can produce them), even though the path fingerprint no longer differs
 between modes.
 
@@ -381,7 +381,7 @@ delays the sends behind it in that tick — that is Discord I/O time, not queue 
 `docs/Finished/optimization-pass-2026-10-20/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
 the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An ability query queues one message per
 result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop. Both are open
-owner decisions (BUGS_AND_IMPROVEMENTS §2.5); idle cost of the 1 s loops is 0.33 ms CPU/s.
+owner decisions (docs/BUGS_AND_IMPROVEMENTS.md §2.5); idle cost of the 1 s loops is 0.33 ms CPU/s.
 
 **The diagnostic implication (the point of the recipe):** the queues can contribute at most ~2
 seconds. **Any "hang" over ~3 seconds is thread work (the worker function itself) or Discord I/O
@@ -512,7 +512,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/repo_traverser.py; grep -n 'requests/hour' commands/github_api.py` (repo_traverser.py / github_api.py since the 2026-10-20 split) |
 | Queue loops drain whole deque each 1s tick | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:838-866 on 2026-10-20) |
-| Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, BUGS_AND_IMPROVEMENTS B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
+| Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
 | Problem card list (today: 20 Creature Types / tornado) | the `c.problems` one-liner in Recipe 6 |

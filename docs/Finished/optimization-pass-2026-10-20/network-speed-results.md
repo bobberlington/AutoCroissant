@@ -122,7 +122,7 @@ made YoutubeDL has the same 14 params as the old `dl_pre`.
 
 - Queue tick latency (profile #1) and one message per search result (#2): these change the execution model or the
   output, so they need the owner's sign-off.
-- The psd-tools fork (#4): a separate effort (NEXT_SESSION_PLAN.md).
+- The psd-tools fork (#4): a separate effort (docs/NEXT_SESSION_PLAN.md).
 - Lazy GitPython in update_bot (~30-65 ms): `tests/test_robustness.py::test_push_reports_the_pull_error_not_the_abort`
   patches `update_bot.Git` and `update_bot.GitCommandError` as module attributes, so I reverted it rather than edit
   another phase's test.

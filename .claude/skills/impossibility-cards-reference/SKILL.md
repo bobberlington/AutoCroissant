@@ -352,7 +352,7 @@ parser: a tag in parentheses is never a token, because tokens need square bracke
 The font, its badge list, codepoint allocation and rebuild procedure are owned by
 **ttscardmaker-companion** (§1). Remaining known mismatch: the manifest keeps entries for icons whose PNG
 was renamed or deleted, so their old tokens still parse while the rebuilt font draws letters
-(BUGS_AND_IMPROVEMENTS C13).
+(docs/BUGS_AND_IMPROVEMENTS.md C13).
 
 **Adoption (2026-10-19).** No card PSD uses the font yet: 0 of 813 have a text layer in it, so every stored
 token today still comes from gap injection (§4). About 45 PSDs (81 smart-object icon layers) are the

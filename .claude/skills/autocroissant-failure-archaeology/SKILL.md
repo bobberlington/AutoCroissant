@@ -35,7 +35,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 
 ## Entry 1 — The removeprefix local-mode bug (FLAGSHIP, FIXED 2026-10-19)
 
-**Status: FIXED on 2026-10-19**, committed in 53db8ee. Was BUGS_AND_IMPROVEMENTS B1. For the 7+ months it was live, production data stayed healthy only because every update ran in remote mode. The story below is kept because the failure mode (a mechanical sweep changing semantics in an unexercised code path) will happen again.
+**Status: FIXED on 2026-10-19**, committed in 53db8ee. Was docs/BUGS_AND_IMPROVEMENTS.md B1. For the 7+ months it was live, production data stayed healthy only because every update ran in remote mode. The story below is kept because the failure mode (a mechanical sweep changing semantics in an unexercised code path) will happen again.
 
 ### Symptom
 
@@ -110,7 +110,7 @@ Windows host ever runs local mode.
   UNKNOWN, "0 cards changed location", and types, paths and stats identical to the stored remote-sweep data.
 - The only differences were 59 abilities and 2 star counts. The git-HEAD parser and the new parser gave identical
   output on every PSD (0 differences across all 813), so these 61 cards are PSDs edited after the bot's last sweep,
-  not parser changes. That staleness is tracked as BUGS_AND_IMPROVEMENTS D5.
+  not parser changes. That staleness is tracked as docs/BUGS_AND_IMPROVEMENTS.md D5.
 
 ### Status and what replaced the operating rule
 
@@ -120,7 +120,7 @@ Windows host ever runs local mode.
   found the same day keeps remote mode the recommended default: with the default `use_local_timestamp:True`, local
   file mtimes are compared with stored GitHub commit times, and on 2026-10-19 all 813 local PSDs were newer. A
   default local run would therefore archive every card into old_stats.pkl (the Entry 3 balloon pattern). Tracked
-  as BUGS_AND_IMPROVEMENTS B6. On 2026-10-20 the default itself became remote (Entry 10.10), and later that
+  as docs/BUGS_AND_IMPROVEMENTS.md B6. On 2026-10-20 the default itself became remote (Entry 10.10), and later that
   day local mode was archived out of the bot (Entry 10.12): `/update_stats` is GitHub-only. The current
   operating rule lives in autocroissant-run-and-operate §7.
 - Scheduled runs were separately hardened (Entry 10.1).
@@ -376,7 +376,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   a pre-v2 reminder is migrated (forced, because old values were never checked), and at fire time (forced for
   legacy reminders with no creator).
 - **Verified**: code read 2026-10-19. Still worth keeping after Entry 1's fix, because local mode with local
-  timestamps re-archives everything (BUGS_AND_IMPROVEMENTS B6).
+  timestamps re-archives everything (docs/BUGS_AND_IMPROVEMENTS.md B6).
 - **Superseded 2026-10-20** (Entry 10.12): with local mode archived the option no longer exists, so
   `SCHEDULED_DEFAULTS` was removed. `RETIRED_OPTIONS` now strips `use_local_repo`/`use_local_timestamp` from
   stored reminders instead.

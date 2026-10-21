@@ -316,7 +316,7 @@ optimization pass.
    **autocroissant-failure-archaeology** Entry 1). What remained: with `use_local_timestamp:True` (the
    default) local mode compared file mtimes with timestamps that came from GitHub commit dates, and every
    clone's mtimes are newer (813/813 on 2026-10-19), so a default local run archived every card into
-   old_stats.pkl (BUGS_AND_IMPROVEMENTS B6). The default became remote on 2026-10-20 and the same day local
+   old_stats.pkl (docs/BUGS_AND_IMPROVEMENTS.md B6). The default became remote on 2026-10-20 and the same day local
    mode was archived: `/update_stats` and `update_stats()` no longer take `use_local_repo` /
    `use_local_timestamp`, the traversal lives on branch `archive/local-update-stats` (not in main, so the bot
    can't import it; not compiled), and stored reminders drop the options (`RETIRED_OPTIONS`, analytics.py:41). Revive it only
@@ -343,13 +343,13 @@ optimization pass.
    TTSCardMaker's `Types/` file stems and the stoogedings manifest. Since 2026-10-20 the parser accepts
    exactly the font's spellings; emoji names and the website still normalize differently. Renaming or
    deleting an icon PNG breaks things on both sides without an error, because the manifest keeps the old
-   entry (ttscardmaker-companion §1.6-1.7; BUGS_AND_IMPROVEMENTS C13).
+   entry (ttscardmaker-companion §1.6-1.7; docs/BUGS_AND_IMPROVEMENTS.md C13).
 10. **The 1 s tick is most of a reply's latency** (measured 2026-10-20, Mac: `queue_message` to send
    502 ms mean, p95 966 ms, against 3.9 ms of /query work; a reminder takes two hops, ~1 s), and a search
    sends one message per result (85 per /query_ability on average, max 763) through the single dispatch
    loop, delaying everyone else's replies. Waking the drain on enqueue, or batching up to 10 embeds per
    message, changes the execution model or the output, so both wait for the owner
-   (BUGS_AND_IMPROVEMENTS §2.5; `docs/Finished/optimization-pass-2026-10-20/profile.md`).
+   (docs/BUGS_AND_IMPROVEMENTS.md §2.5; `docs/Finished/optimization-pass-2026-10-20/profile.md`).
 11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:138-143) and
    `save_aliases` (query_card.py:359-362) write in place, unlike reminder.pkl's tmp + fsync + replace, and
    nothing locks them against a concurrent `/push` or `/restart_bot`; a kill mid-write leaves a truncated
