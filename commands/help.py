@@ -85,8 +85,8 @@ stats_commands = {
                                                   "pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
                                                   "Posts a summary, the full report as a file, and the save's download link.",
     "/bake_cards [card] [dry_run]:"             : "Bakes the website's pending card edits (site/Card Edits.json: stats, name, ability text) into the card PSDs and PNGs, "
-                                                  "one commit per card, and posts the report (admin only). /update_stats queues a dry run of it when the edits file "
-                                                  "changed; the two never run at once.\n"
+                                                  "one commit per card, and posts the report (admin only). The fallback by hand: the card website's GitHub Action "
+                                                  "is the live runner. Never runs at the same time as /update_stats.\n"
                                                   "- card: Only this card, matched like Card Authors.txt (default: every card with a pending PSD edit)\n"
                                                   "- dry_run: Render and check the edits, commit nothing (default: True)",
     "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "

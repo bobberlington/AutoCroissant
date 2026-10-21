@@ -166,7 +166,7 @@ code, never exceptions; one bad card never blocks another.
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
-   and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; bar to calibrate from `score/results/cards_v1.json`). A row the
+   and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; the bar stays, the user 2026-10-21: section 7 idea 12). A row the
    fork already renders wrong (class A) is refused here, never pasted.
 4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
@@ -245,6 +245,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   (`/tmp/scout/scan.json`, 2026-10-21): 396 styled rows; 338 with the visible digit styled, 41 with only a hidden digit styled,
   1 at value 10 with one hidden styled digit (Green_Mage atk), 2 at 10 with several (Azamoth_the_Forgotten_King hp: refused),
   14 with several visible styled digits (False_Knight, Tainted_Lazarus: non-template anyway).
+  **Decision (the user, 2026-10-21):** the bar stays (`PARITY_MEAN_MAX` 1.0 / `PARITY_BAD_MAX` 0.5% / `PARITY_THRESH` 24); Mettaton EX's
+  toggles over lit cells (mean 1.03-1.04) wait for a fork fix of the pixel bars' GradientOverlay shade (a rendering round candidate),
+  not a looser bar.
 - **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
   Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
   marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
@@ -323,23 +326,19 @@ ComicSansMS, ...; 112 layers) resolve only from the Mac's platform directories a
 `~/Documents/Tools/psd-research/text-design/score-runs/TRIAGE.md`; card share to confirm): add them under `MDW/Fonts`
 (licence: owner) or those cards refuse on `font`.
 
-**Jetson (fallback, same module).** Code done 2026-10-21 (S7): `commands/card_runner.py` (uncompiled) runs `card_bake.run`
-inside the bot. How the bot notices: at the end of `update_stats` (after the pickles are saved and the summary sent; not on a
-304, only for the card repo) it hands the edits file's blob sha from the tree (`traverser.shas[EDITS_PATH]`) to
-`card_runner.notice_edits`, which compares it with the sha the last bake was queued for (module level, in memory; after a
-restart the first `/update_stats` queues one more bake, harmless: already-baked edits bake to nothing) and queues one
-`bake_cards` through `queue_command`. `/bake_cards [card] [dry_run]` (admin, `dry_run` default True) runs the same code by
-hand. Both take `card_runner.bake_lock`, which `update_stats` holds for its whole run (queued commands run concurrently,
-`process_command_queue` main.py:880-889), so an update and a bake never overlap; whoever finds the lock held says so and waits.
-The report goes where the command ran (a reminder's FakeInteraction too) through `queue_file` like tts_save's `_post`: the head
-lines and sections as messages, the full markdown attached as `card_bake_report.md`, then the commit links; a failure is one line.
-card_bake and psd_edit are imported inside the bake, so the bot starts without the fork; without its text engine the bake
-refuses with one line. **PSD hold (2026-10-20):** the automatic bake is `dry_run=True` in the code (`notice_edits`, dated
-comment, no flag). When the hold lifts the user picks ONE live runner, that literal or the Action's push trigger in
-`card-edits.yml`, never both. Token: the bot's `GIT_TOKEN` (card_bake's `token_from_env()` only fills in when config.py has
+**Jetson (manual fallback, same module).** Code done 2026-10-21 (S7): `commands/card_runner.py` (uncompiled) runs `card_bake.run`
+inside the bot, by hand only: `/bake_cards [card] [dry_run]` (admin, `dry_run` default True). **One live runner, the Action
+(decided by the user 2026-10-21):** the bot never queues a bake on its own; the `notice_edits` hook (a dry-run `bake_cards` queued
+at the end of `update_stats` when the edits file's blob sha changed) landed and was removed the same day. Lifting the PSD hold is
+the push trigger of `card-edits.yml`, nothing in this repo. The bake takes `card_runner.bake_lock`, which `update_stats` holds for
+its whole run (queued commands run concurrently, `process_command_queue` main.py:880-889), so an update and a bake never overlap;
+whoever finds the lock held says so and waits. The report goes where the command ran (a reminder's FakeInteraction too) through
+`queue_file` like tts_save's `_post`: the head lines and sections as messages, the full markdown attached as `card_bake_report.md`,
+then the commit links; a failure is one line. card_bake and psd_edit are imported inside the bake, so the bot starts without the
+fork; without its text engine the bake refuses with one line. Token: the bot's `GIT_TOKEN` (card_bake's `token_from_env()` only fills in when config.py has
 none), so no environment variable is needed in the unit. Push through `git_commit.commit_files` (API, SSH through the history
 clone with the unit's `SSH_AUTH_SOCK` when the token can't write); never `log --name-only` or `diff` in the history clone
-(git 2.25 downloads every blob; it grew to 4 GB once). Still to do after the hold (orchestrator): install the fork tag into
+(git 2.25 downloads every blob; it grew to 4 GB once). Still to do, only if the fallback is ever needed (orchestrator): install the fork tag into
 `~/venvs/autocroissant` (aarch64 wheels resolve; `_rle` builds with gcc 10.5; stock psd-tools 1.25.0 there on 2026-10-21)
 once `tests/test_parser_goldens.py` passes under it; a fonts dir on the jetson (`card_bake._fonts_dir()` reads
 `PSD_TOOLS_FONT_DIRS`, else `LOCAL_DIR_LOC/MDW/Fonts`, and the jetson has no `~/Desktop/TTSCardMaker`: text edits refuse on
@@ -384,8 +383,8 @@ them leaves nothing behind (`$RUNNER_TEMP`), the next push recomputes.
 - **/update_stats and PICKLE pushes.** The pipeline never writes pickles. Whatever order the bake commit and an editor's
   publish land, the database converges on the next `/update_stats`: the PSD blob changed -> re-parse -> the baked value
   stands because the field is gone; a field still present is re-applied over `parsed_values`. The old card goes to `old_stats`
-  (expected); `diff_stats.py` before `/push` must list exactly the baked cards. The shared Lock (section 8) comes before the
-  bot queues a bake or an update after one: `update_stats` has none.
+  (expected); `diff_stats.py` before `/push` must list exactly the baked cards. The shared Lock (section 8) is the only
+  coupling: `update_stats` queues no bake (the notice was removed 2026-10-21) and the bake queues no update.
 - **New edits mid-bake.** Step 10's re-read at H' plus the non-force update; the editor's own 422 retry absorbs our commit.
   An editor rewrite that re-inserts a baked field now equals the PSD -> redundant -> dropped next run, no pixels (whether
   edit.js rebuilds from stale in-memory data after a 422: to confirm; a flicker of "Edited" at worst).
@@ -418,7 +417,7 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 | S4 bot | `card_bake.py`: tree, blobs, `editsFile` port, commit (API + SSH), report, `_psd` | today's Card Edits.json round-trips byte-identical; a dry commit on a throwaway branch (owner-run) | M |
 | S5 TTSCardMaker | `card-edits.yml` dry-run, then live with `gh workflow run --card`, actor guard, tts-save retry; the push trigger goes live only after question 7 (else the first push run reprints the 7 titles) | one stat bake on Mini_Doomer lands PSD + PNG + one-line file diff; site.yml and tts-save.yml run; `diff_stats` lists that card | S |
 | S6 bot + fork | idea 14: FX regeneration (glyph boxes, pixel cut, chart effect block) **code done 2026-10-21**, no fork change (section 7: Gasoline IoU 0.966 / Cannon 0.937 with the JSX cuts, coverage 1.0, Mini_Doomer ability edits with FX pass every gate); idea 12 and idea 13 **code done 2026-10-21** (section 7: Mettaton_EX hp 5 -> 8 passes every gate; the Cannon writes and re-parses but its bevelled digits refuse `parity`) | Gasoline and Royal Eradicator FX layers within the validator's 0.95 coverage and the region bar; Mettaton_EX rows pass parity; goldens refreshed | L |
-| S7 jetson | fork in the bot venv, Lock, edits-sha watch, SSH commit, Discord report. **Code done 2026-10-21** (`commands/card_runner.py`, `/bake_cards`, `bake_lock`, the notice; automatic bake dry-run under the hold); the venv install, one live bake and the peak wait for the hold | one bake with Actions disabled; CPU/RAM peak recorded | M |
+| S7 jetson | a manual fallback: fork in the bot venv, Lock, SSH commit, Discord report. **Code done 2026-10-21** (`commands/card_runner.py`, `/bake_cards`, `bake_lock`; the edits-sha notice landed and was removed the same day: the user chose ONE live runner, the Action, and no notice on the jetson); the venv install only if the fallback is ever needed | only if ever needed: one bake with Actions disabled; CPU/RAM peak recorded | M |
 | S8 user | the 10 edits of section 12 | 10/10; results in `docs/Finished/`; Photopea retired to an archive branch | S |
 
 ## 14. Open questions for the user — answered 2026-10-20

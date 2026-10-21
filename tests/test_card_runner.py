@@ -1,6 +1,6 @@
-"""card_runner (EDIT_PIPELINE_DESIGN section 8, jetson): /bake_cards and the edits-file notice run card_bake.run under
-bake_lock and post the report; the refusal without the fork's text engine; the command's registration, gate, help and
-describe strings. card_bake.run itself is faked here (tests/test_card_bake.py covers it)."""
+"""card_runner (EDIT_PIPELINE_DESIGN section 8, jetson): /bake_cards runs card_bake.run under bake_lock and posts the
+report; the refusal without the fork's text engine; the command's registration, gate, help and describe strings.
+card_bake.run itself is faked here (tests/test_card_bake.py covers it)."""
 import ast
 import asyncio
 from threading import Thread
@@ -117,17 +117,6 @@ def test_bake_waits_for_the_lock(fake_run):
         cr.bake_lock.release()
     worker.join(10)
     assert not worker.is_alive() and len(fake_run) == 1
-
-
-def test_notice_queues_once_per_sha(monkeypatch):
-    monkeypatch.setattr(cr, "_last_edits_sha", None)
-    cr.notice_edits(None, None)                                                       # no edits file
-    assert utils.command_queue == utils.command_queue.__class__() and cr._last_edits_sha is None
-    cr.notice_edits("i", "abc")
-    cr.notice_edits("i", "abc")
-    assert [(a, k, f.__name__) for (a, k), f in utils.command_queue] == [(("i",), {"dry_run": True}, "bake_cards")]
-    cr.notice_edits("i", "def")
-    assert len(utils.command_queue) == 2 and cr._last_edits_sha == "def"
 
 
 def test_card_bake_is_imported_lazily():

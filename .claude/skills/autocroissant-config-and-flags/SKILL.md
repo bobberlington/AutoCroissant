@@ -335,14 +335,12 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
 
-### commands/card_runner.py (added 2026-10-21; not compiled; the bake inside the bot, design section 8 "Jetson")
+### commands/card_runner.py (added 2026-10-21; not compiled; the bake inside the bot by hand, design section 8 "Jetson"; the live runner is the Action)
 
 | Name | Value | Meaning |
 |---|---|---|
 | `REPORT_FILE` | `"card_bake_report.md"` | the full bake report attached in Discord (the summary is the message) |
 | `bake_lock` | `threading.Lock()`, module level | held by `update_stats` for its whole run and by the bake around `card_bake.run`: the two never overlap (queued commands run concurrently) |
-| `_last_edits_sha` | in-memory, starts `None` | the edits file's blob sha the last bake was queued for; `notice_edits` queues one bake when the tree's differs. After a restart the first `/update_stats` queues one more (harmless) |
-| the hold line | `queue_command(bake_cards, interaction, dry_run=True)` in `notice_edits` | NOT a flag: the automatic bake is a dry run while PSD edits are on hold (2026-10-21). Lifting it is that one literal; the user then picks ONE live runner, this or the Action's push trigger |
 | `/bake_cards` defaults | `card=None`, `dry_run=True` (main.py:401-407) | one card or all; render and check only unless `dry_run:False` |
 
 The bake takes the token the bot already has: `card_bake.run` calls `github_api.token_from_env()`, which only patches the
@@ -497,7 +495,7 @@ table with its command before quoting it in the future.
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
 | git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
 | font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
-| card_runner state and the hold line | `grep -n "^[A-Z_]* = \|^bake_lock\|^_last_edits_sha\|dry_run=True" commands/card_runner.py`; `grep -n "bake_lock\|notice_edits" commands/repo_traverser.py` |
+| card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
 | global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py` (no use_local hits; every force_update default is False) |
@@ -529,3 +527,5 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (review): psd_analyzer.py citations re-pointed (+2 for the PARSER_VERSION/title_text imports; `EXPORTED_*`, `COLUMN_ORDER`), repo_traverser.py `UPDATE_RATE` check :391, psd_parser.py `ABILITY_EXCLUSIONS` :950-969 after the WX-78 title fix. Gate re-run: `EXPORTED_STATS_NAME` uses are :398, :405.
 
 2026-10-21 (S7): commands/card_runner.py catalogued (bake_lock, _last_edits_sha, REPORT_FILE, the dry-run hold line, /bake_cards defaults); the lacks_admin table re-derived (13 gates); main.py, repo_traverser.py and help.py citations re-pointed. No flag added: the hold is a literal in the code.
+
+2026-10-21 (hook removed): `_last_edits_sha` and the dry-run hold line are gone from card_runner.py (the user: the Action is the one live runner; /bake_cards is the manual fallback and nothing in the bot queues a bake); the card_runner table and its re-verification row updated. No cited line moved.

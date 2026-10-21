@@ -64,8 +64,9 @@ Mechanics you must know:
   spawn unbounded yt-dlp threads.
 - **Queued commands run concurrently** (one `create_task` + thread per entry), so two long workers that must not overlap
   need their own lock: `card_runner.bake_lock` (2026-10-21) is held by `update_stats` for its whole run (repo_traverser.py:493-496)
-  and by the card bake around `card_bake.run`; the one that finds it held says so and blocks only its own thread. The
-  bake is itself queued by `update_stats` (`notice_edits`, repo_traverser.py:541-542) and so runs after the update released it.
+  and by the card bake around `card_bake.run`; the one that finds it held says so and blocks only its own thread. Nothing
+  queues a bake on its own: the `notice_edits` hook at the end of `update_stats` was removed 2026-10-21 (the user: the Action is
+  the one live runner, `/bake_cards` the fallback by hand).
 - Plain `deque` + append/popleft is safe here without locks because CPython deque append/popleft are
   atomic, producers are threads, and the only consumer is the event loop.
 - The `async def slash_*` wrappers in main.py ARE allowed to await Discord directly (`defer()`,
@@ -115,7 +116,7 @@ Mechanics you must know:
 | 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:874-876, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:164-166). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
-| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21). `update_stats` wraps its whole run in it (repo_traverser.py:493-496); `card_runner.bake_cards` takes it around `card_bake.run`; `notice_edits` only queues. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
+| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21). `update_stats` wraps its whole run in it (repo_traverser.py:493-496); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
 
 ## Data-flow diagrams
 
@@ -170,9 +171,7 @@ changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a
       |   rules, Card Edits.json or the save changed; TTSCardMaker's tts-save.yml Action does that now)
 queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
       |                                            (repo_traverser.py:531-540)
-card repo only: notice_edits(interaction, shas[EDITS_PATH]) (repo_traverser.py:541-542) -> when the edits file's blob
-      |   changed since the last bake queued: queue_command(bake_cards, dry_run=True) (card_runner.py; a dry run under the
-      |   PSD hold; runs after update_stats releases bake_lock; report posted where the update ran)
+      |   (no bake is queued here: the edits-file notice was removed 2026-10-21; /bake_cards is by hand, the Action the live runner)
       v  (subsequent command-queue ticks, pool threads)
 card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new data
       |
@@ -250,7 +249,7 @@ main.py  (registration + queue loops; imports every commands module)
  |                            history clone pushed over SSH when the token can't write), shared by tts_save and the edit pipeline's
  |                            card_bake [2026-10-21; NOT compiled; no discord or config]
  |- commands.card_runner   -> utils, global_config (discord.File); card_bake + psd_edit LAZILY inside bake_cards: bake_lock,
- |                            bake_cards (/bake_cards), notice_edits (the end of update_stats)  [2026-10-21; NOT compiled]
+ |                            bake_cards (/bake_cards)  [2026-10-21; NOT compiled; the notice_edits hook removed the same day]
  |- commands.tts_save      -> git_commit, repo_history, card_models, card_edits, global_config; utils + discord LAZILY inside the
  |                            posting functions, so `python -m commands.tts_save <save.json>` runs standalone (TTSCardMaker's
  |                            tts-save.yml Action does, with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
@@ -260,7 +259,7 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.card_edits    -> card_models: CardAuthors, CardEdits  [compiled]
  |- commands.psd_parser    -> card_models, global_config, psd_tools: PSDParser, CardClassifier, CardValidator,
  |                            IconVocabulary  [compiled; no Discord, network or pandas]
- |- commands.repo_traverser -> card_models, card_edits, card_runner (bake_lock, notice_edits), psd_parser, github_api, utils, query_card, repo_history,
+ |- commands.repo_traverser -> card_models, card_edits, card_runner (bake_lock), psd_parser, github_api, utils, query_card, repo_history,
  |                            type_emojis (module level!; tts_save no longer, 2026-10-20): RepositoryTraverser, update_stats,
  |                            _tree_etags  [compiled]
  |- commands.psd_analyzer  -> the four above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
@@ -437,7 +436,7 @@ Re-find before citing:
 | to_thread coroutine passthrough | `grep -n -e "def to_thread" -e "iscoroutinefunction" commands/utils.py` (80, passthrough 82-84) |
 | run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (757); `grep -rn "executor=executor" commands/music_player.py` |
 | Registration rebind count | `grep -c "= to_thread(" main.py` (50 on 2026-10-21) |
-| update_stats and the card bake share one Lock; the bake is lazy about the fork | `grep -n "bake_lock\|notice_edits" commands/repo_traverser.py commands/card_runner.py`; `grep -n "^import commands.card_bake\|^from commands.card_bake" commands/card_runner.py` (empty: imported inside `bake_cards`) |
+| update_stats and the card bake share one Lock; the bake is lazy about the fork | `grep -n "bake_lock" commands/repo_traverser.py commands/card_runner.py`; `grep -c "notice_edits" commands/repo_traverser.py commands/card_runner.py` (0 and 0); `grep -n "^import commands.card_bake\|^from commands.card_bake" commands/card_runner.py` (empty: imported inside `bake_cards`) |
 | slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (111) |
 | Reminder resolve/bind/queue | `grep -n "slash_registry.get\|queue_command(_run_reminder_command" commands/analytics.py` |
 | Reminders fire as creator; single-flight | `grep -n "_ReminderUser(\|_check_lock\|^LEGACY_RUNS_AS_BOT" commands/analytics.py` |
@@ -471,3 +470,5 @@ twice); tts_save's dependency line re-pointed (github_api now reached through gi
 2026-10-21 (review): repo_traverser.py `update_stats` :472.
 
 2026-10-21 (S7): commands/card_runner.py in the module map; invariant 10 (one Lock for update_stats and the card bake) and the queue-trio bullet on concurrent queued commands; data flow (b) ends with the edits-file notice; rebind count 50; every main.py, repo_traverser.py and help.py citation re-pointed by the old-to-new line map (main.py +1 from :21, +17 from :399; repo_traverser.py +1 from :22, +14 inside update_stats; help.py +5 from :89).
+
+2026-10-21 (hook removed): `notice_edits` and `_last_edits_sha` deleted from card_runner.py, the call at repo_traverser.py:541-542 with them (the user: the Action is the one live runner, the jetson a manual fallback). Data flow (b) now ends with the dataframe refresh; the queue-trio bullet, invariant 10 (bake_lock stays), the module map and the re-verification row updated; no other cited line moved.

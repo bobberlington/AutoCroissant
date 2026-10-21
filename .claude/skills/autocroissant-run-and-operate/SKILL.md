@@ -412,22 +412,17 @@ present. It reports and never rejects: a missing font is a message to a person, 
   ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
-### Card bake (/bake_cards and the edits-file notice, added 2026-10-21; the primary runner is TTSCardMaker's card-edits.yml Action)
+### Card bake (/bake_cards, added 2026-10-21; the one live runner is TTSCardMaker's card-edits.yml Action, the jetson a manual fallback)
 
 The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes the website's PSD-kind edits in
 `site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per card. `commands/card_runner.py`
 (uncompiled; imports card_bake and psd_edit lazily inside the bake, so the bot starts without the fork's psd-tools) runs it
-inside the bot on the jetson; design section 8 "Jetson".
+inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
-- **The notice: `/update_stats` queues a bake when the edits file changed.** At the end of a traversal (not on a 304, only
-  for the card repo) `update_stats` hands the edits file's blob sha from the tree to `card_runner.notice_edits`; when it
-  differs from the sha the last bake was queued for (module-level, in memory) one `bake_cards` is queued through
-  `queue_command`. After a restart the first `/update_stats` queues one more bake: harmless, already-baked edits bake to
-  nothing. The report goes where the update ran, a reminder's channel included (FakeInteraction).
-- **PSD hold (2026-10-21): the automatic bake is a dry run, written in the code** (`notice_edits`, a dated comment, no flag):
-  it renders, checks every gate and commits nothing. When the user lifts the hold, pick ONE live runner: `dry_run=False` in
-  that line, or the push trigger of TTSCardMaker's `card-edits.yml` (also off today). Never both: two runners would race
-  each other on the same commits.
+- **No automatic bake (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
+  its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
+  queued at the end of `/update_stats` when `site/Card Edits.json`'s blob sha changed) landed and was removed the same day.
+  Lifting the PSD hold is the push trigger of TTSCardMaker's `card-edits.yml` (off today), nothing in this repo.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -462,7 +457,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
 | /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:128-141); deleted after each parse (repo_traverser.py:365; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
-| Card bake work dir | /bake_cards, the edits-file notice after /update_stats (commands/card_runner.py -> card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo; none under the PSD hold) |
+| Card bake work dir | /bake_cards (commands/card_runner.py -> card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo; none under the PSD hold) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `font_names.json` | /fonts (commands/font_check.py) | repo root (+ `font_names.json.tmp` while saving): blob sha -> the fonts a card PSD asks for or a font file supplies; pruned to the current tree on every run | NO (gitignored) — per-machine; if deleted, the next /fonts downloads every PSD again in batches |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
@@ -660,7 +655,7 @@ re-find volatile facts with these before trusting them:
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
-| Card bake wiring (/bake_cards; the notice at the end of /update_stats; the Lock) | `grep -n "bake_cards\|name=\"bake_cards\"" main.py`; `grep -n "bake_lock\|notice_edits" commands/repo_traverser.py commands/card_runner.py`; `grep -n "dry_run=True" commands/card_runner.py` (the hold line) |
+| Card bake wiring (/bake_cards; the Lock; no notice since 2026-10-21) | `grep -n "bake_cards\|name=\"bake_cards\"" main.py`; `grep -n "bake_lock" commands/repo_traverser.py commands/card_runner.py`; `grep -c "notice_edits" commands/repo_traverser.py commands/card_runner.py` (0 and 0) |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
@@ -689,3 +684,5 @@ module, not a shadowing name.
 2026-10-21 (review): section 7 notes that `/query` titles its embed with the printed title (`query_card.printed_title`; 157 cards, case/spacing-only ones shown as printed per the user; printed titles join the name lookup); psd_analyzer.py `init_psd` :478; repo_traverser.py `update_stats` :472, `_send_summary` :443, the `UPDATE_RATE` check :391.
 
 2026-10-21 (S7): `/bake_cards` and the edits-file notice (section 7's Card bake subsection, section 8's work-dir row, 52 commands: main.py grew by 17 lines at :21 and :399-414, every main.py, repo_traverser.py and help.py citation in this file re-pointed by the old-to-new line map). The automatic bake is a dry run under the PSD hold; one live runner when it lifts.
+
+2026-10-21 (hook removed): the edits-file notice is gone, decided by the user: the Action is the one live runner, the jetson a manual fallback (/bake_cards only; nothing in the bot queues a bake). Section 7's Card bake subsection, section 8's work-dir row and the wiring row rewritten; repo_traverser.py lost its last two update_stats lines (:541-542), so no cited line in this file moved.

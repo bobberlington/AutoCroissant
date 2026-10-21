@@ -158,6 +158,9 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   10 cards refuse `unsupported-card` (Smoldering x3, Burning, Chilled, Despair, +2 DEF, +2/4/6 ATK, Attacks inflict 2T, 2T, 1, 1st: Slime /
   2nd: Puppet / 3rd: Magician, and "1 Become Back Money" x2 whose stack count keeps them off the chart name): those stay Photoshop work
   (Convert overlays keeps the overlay's own style) or lose the overlay by hand. No PSD touched; the pipeline lands nothing under the hold.
+- **Decision (the user, 2026-10-21):** the 16 overlay word layers on 10 cards without a chart style (Smoldering, Burning, Chilled, Despair,
+  +2 DEF, +2/4/6 ATK, 1st: Slime, 1 Become Back Money) stay refused by the pipeline (`unsupported-card`); no chart additions; the
+  status-word recolouring covers every chart status word in an edited ability, edited or not (design question 6 confirmed).
 
 ### L8. Six title reprints; Thunderfury's entry (design question 7: answered)
 - **What.** `Text/Name` set to the website value: Clot_White "White CLot" -> "White Clot"; PoD08-PoD12 "M.O.A.B" / "D.D.T" / "B.F.B" /

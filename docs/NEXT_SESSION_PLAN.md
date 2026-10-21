@@ -35,12 +35,13 @@ Every task still wanted this session, in order; a line is struck through here wh
    `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22 redundant name edits drop by the
    redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
 5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
-6. [x] (landed 2026-10-21 as 6710a5b; deployed to the jetson the same hour; the parity bar, the jetson hook and the fonts cache are open questions to the user) S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
-   bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.
-   S7 code landed 2026-10-21: `commands/card_runner.py` (`bake_lock` shared with update_stats, `notice_edits` at the end of
-   update_stats queuing one dry-run bake per edits-file change, `/bake_cards [card] [dry_run]` admin command, report posted
-   like the TTS save's; 52 commands, 371 tests). Waiting for the hold: the fork tag in `~/venvs/autocroissant`, a fonts dir
-   on the jetson (no checkout there), one live bake with Actions disabled, the CPU/RAM peak; then ONE live runner.
+6. [x] (landed 2026-10-21 as 6710a5b; deployed to the jetson the same hour; decided by the user 2026-10-21: the parity bar stays, the jetson hook is removed; the fonts cache is still open) S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
+   bottom-row N-10 writing (idea 13); S7 jetson runner (/bake_cards by hand; the Action is the one live runner). No PSD lands.
+   S7 code landed 2026-10-21: `commands/card_runner.py` (`bake_lock` shared with update_stats, `/bake_cards [card] [dry_run]`
+   admin command, report posted like the TTS save's; 52 commands; 377 passed, 24 skipped). The `notice_edits` hook (one dry-run bake queued
+   at the end of update_stats per edits-file change) was removed the same day: the user chose the Action as the ONE live runner,
+   the jetson is a manual fallback. Only if the fallback is ever needed: the fork tag in `~/venvs/autocroissant`, a fonts dir on
+   the jetson (no checkout there), one live bake with Actions disabled, the CPU/RAM peak.
    S6 code landed 2026-10-21 (design §7): idea 12 and 13 in `psd_edit.set_stat`/`template_rows`; idea 14 in `psd_edit.set_text_layer`
    (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
    against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
@@ -264,8 +265,8 @@ bar is set per region: stat-bar cells and text boxes must match Photoshop. Full-
    changed region as expected, no missing font) -> one commit: PSD + PNG + the baked fields removed from
    `Card Edits.json`. The website shows "PSD pending" until it lands.
 5. **Runner:** a GitHub Actions workflow on pushes that change `site/Card Edits.json` (pure Python, fork pinned). If
-   Actions can't do it (time, size or download limits), the jetson handles the card browser's edit requests: the bot
-   notices the Card Edits.json change (its blob sha in the tree) and runs the pipeline.
+   Actions can't do it (time, size or download limits), the jetson handles the card browser's edit requests by hand
+   (`/bake_cards`; decided by the user 2026-10-21: no notice in the bot, the Action is the one live runner).
 6. **Done when:** the harness meets the targets, and 10 real edits (stats, a name, ability text with coloured
    status words) look identical to Photoshop when opened on the Mac. Then Photopea is dropped.
 7. Pin the bot and the pipeline to a fork tag only while a needed change isn't released upstream (the website

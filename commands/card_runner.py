@@ -1,8 +1,9 @@
 """
-The edit pipeline inside the bot (docs/EDIT_PIPELINE_DESIGN.md section 8, "Jetson"): /bake_cards and the edits-file
-watch at the end of /update_stats run card_bake.run under one Lock shared with update_stats (queued commands run
-concurrently) and post its report where the command ran, a reminder's FakeInteraction included. card_bake and the
-fork's psd-tools are imported inside the bake, so the bot starts without them and refuses with one line.
+The edit pipeline inside the bot (docs/EDIT_PIPELINE_DESIGN.md section 8, "Jetson"), the fallback by hand: /bake_cards
+runs card_bake.run under one Lock shared with update_stats (queued commands run concurrently) and posts its report where
+the command ran, a reminder's FakeInteraction included. The live runner is TTSCardMaker's card-edits.yml Action; nothing
+here queues a bake on its own. card_bake and the fork's psd-tools are imported inside the bake, so the bot starts without
+them and refuses with one line.
 """
 from io import BytesIO
 from threading import Lock
@@ -11,7 +12,7 @@ from typing import Optional
 
 from discord import File
 
-from commands.utils import queue_command, queue_file, queue_message, say, split_long_message
+from commands.utils import queue_file, queue_message, say, split_long_message
 from global_config import CARD_REPO
 
 # ========================
@@ -23,7 +24,6 @@ REPORT_FILE = "card_bake_report.md"             # the full report, attached in D
 # Global State
 # ========================
 bake_lock = Lock()                              # update_stats and the bake never run together
-_last_edits_sha: Optional[str] = None           # the edits file's blob the last bake was queued for (None after a start)
 
 
 # ========================
@@ -93,29 +93,10 @@ def bake_cards(interaction, card: Optional[str] = None, dry_run: bool = True) ->
     _post(interaction, text, commits)
 
 
-def notice_edits(interaction, sha: Optional[str]) -> None:
-    """
-    Queue one bake when the edits file's blob differs from the last one a bake was queued for (the end of update_stats).
-    After a restart the first update queues one too: harmless, already-baked edits bake to nothing.
-
-    Args:
-        interaction: Where /update_stats ran; the report goes there
-        sha: The edits file's blob sha from the tree, or None (no file)
-    """
-    global _last_edits_sha
-    if sha is None or sha == _last_edits_sha:
-        return
-    _last_edits_sha = sha
-    # PSD edits on hold since 2026-10-20 (other developers edit the PSDs): a dry run, nothing lands. When the hold
-    # lifts, pick ONE live runner: dry_run=False here, or the push trigger of TTSCardMaker's card-edits.yml. Never both.
-    queue_command(bake_cards, interaction, dry_run=True)
-
-
 # ========================
 # Module Exports
 # ========================
 __all__ = [
     'bake_cards',
     'bake_lock',
-    'notice_edits',
 ]

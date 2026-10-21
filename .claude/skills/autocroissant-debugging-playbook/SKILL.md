@@ -387,3 +387,5 @@ the story here rather than deleting it.
 2026-10-21 (review): repo_traverser.py citations land on their code (`update_stats` :472, history append :371-372, `_send_progress` :434, the end-of-run queue_commands :526-527).
 
 2026-10-21 (S7): the registered-command count is 52 (/bake_cards); main.py and repo_traverser.py citations re-pointed. A "Card bake refused: this Python has no text engine" line after /update_stats is the jetson venv without the fork's psd-tools, not a bug (run-and-operate section 7, Card bake).
+
+2026-10-21 (hook removed): no bake follows /update_stats any more (the `notice_edits` hook is gone; the user: the Action is the one live runner, the jetson a manual fallback), so a "Card bake refused: this Python has no text engine" line can only follow /bake_cards. No cited line moved.

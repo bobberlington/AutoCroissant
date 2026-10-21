@@ -108,7 +108,6 @@ def github(monkeypatch, psds):
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(rt, "_tree_etags", {})
     monkeypatch.setattr(rt, "_file_cache", {})
-    monkeypatch.setattr(cr, "_last_edits_sha", None)              # as after a bot start
     monkeypatch.setattr(pa.RepositoryTraverser, "_repo", lambda self: None)
     monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (TIME, "Tester"))
     for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
@@ -150,7 +149,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == []
     assert sorted(github.blobs()) == sorted([DOOMER, FREEZER, pa.ICON_MANIFEST_PATH, pa.AUTHORS_PATH, pa.EDITS_PATH])
-    assert queued == ["sync_changed_emojis", "refresh", "populate_files", "prep_dataframes", "bake_cards"]   # no TTS save run
+    assert queued == ["sync_changed_emojis", "refresh", "populate_files", "prep_dataframes"]   # no TTS save or bake run
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
     doomer, freezer = stats["Mini Doomer"], stats["The Freezer"]
@@ -271,33 +270,11 @@ def test_deleted_card_alone_is_kept(github):
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
 
 
-def _bakes() -> list:
-    """The bakes queued by the last _run: their (args, kwargs)."""
-    return [(args, kwargs) for (args, kwargs), func in utils.command_queue if func.__name__ == "bake_cards"]
-
-
-def test_edits_sha_notice_queues_one_bake_per_change(github, psds):
-    """The first /update_stats after a start queues one dry-run bake (card_runner.notice_edits); later ones only when
-    the edits file's blob changed, never on a 304 or on a card-only change."""
-    _run()
-    assert _bakes() == [((None,), {"dry_run": True})] and cr._last_edits_sha == _file_sha(github, pa.EDITS_PATH)
-    _run()                                                                           # 304
-    assert _bakes() == []
-    github.files[DOOMER] = psds[OTHER]                                               # a card changed, the edits did not
-    _run()
-    assert _bakes() == []
-    github.files[pa.EDITS_PATH] = json.dumps({"cards": {"Mini Doomer": {"hp": 8, "_by": "web"}}}).encode()
-    _run()
-    assert _bakes() == [((None,), {"dry_run": True})] and cr._last_edits_sha == _file_sha(github, pa.EDITS_PATH)
-    _run()
-    assert _bakes() == []
-
-
-def test_edits_notice_only_for_the_card_repo(github, monkeypatch):
-    """A /set_repo'd update (like the emoji sync) queues no bake."""
+def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):
+    """A /set_repo'd update queues no emoji sync: the type emojis follow the card repo only."""
     monkeypatch.setattr(pa.card_repo, "repository", "someone/else")
     _, queued = _run()
-    assert "bake_cards" not in queued and "sync_changed_emojis" not in queued and cr._last_edits_sha is None
+    assert "sync_changed_emojis" not in queued
 
 
 def test_bake_lock_serialises_update_stats(github, capsys):

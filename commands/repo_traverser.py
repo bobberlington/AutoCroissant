@@ -19,7 +19,7 @@ from typing import Optional
 from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, STARS_DIR, TYPES_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
-from commands.card_runner import bake_lock, notice_edits
+from commands.card_runner import bake_lock
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 from commands.query_card import DEFAULT_REPOSITORY, card_repo
@@ -538,8 +538,6 @@ def _update_stats(interaction: Optional[Interaction],
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree, None, traverser.etag)
     queue_command(card_repo.prep_dataframes)
-    if tree is not None and traverser.repository == DEFAULT_REPOSITORY:
-        notice_edits(interaction, traverser.shas.get(EDITS_PATH))   # one dry-run bake when the edits file changed
 
     return problem_cards
 
