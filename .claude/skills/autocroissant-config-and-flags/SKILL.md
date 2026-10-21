@@ -166,8 +166,8 @@ its checkout without a symlink. No other configuration comes from the environmen
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
 | `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
-| `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | type emoji name -> blob sha of the icon it was made from, written by commands/type_emojis.py; gitignored, per machine. Missing or unreadable = startup adopts the existing emojis as current (no re-upload) |
-| `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and after each /update_stats tree change; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). Only rev-list/ls-tree/fetch run there (diff/log would download blobs) |
+| `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
+| `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). Only rev-list/ls-tree/merge-base/fetch run there (diff/log would download blobs) |
 | `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, kept as an alias), repo_history (`REPOSITORY`, alias) and tts_save; /set_repo still overrides `card_repo.repository` at runtime |
 | `API_BASE`, `RAW_BASE` (2026-10-20) | `"https://api.github.com/repos/"`, `"https://raw.githubusercontent.com/"` | URL prefixes used by commands/github_api.py (API) and repo_history/tts_save (raw links) |
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, repo_traverser, query_card, type_emojis |
@@ -192,7 +192,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:389) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:388) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
 | `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:396, 403) — gitignored via `*.csv` / `*.txt` |
@@ -365,7 +365,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:478, main.py:368). Code that wants a forced re-parse must pass
+   (repo_traverser.py:471, main.py:368). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,

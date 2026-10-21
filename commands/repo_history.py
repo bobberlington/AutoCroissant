@@ -29,7 +29,7 @@ _lock = Lock()
 # Helper Functions
 # ========================
 def _git(*args: str) -> str:
-    """Run git in the history clone (blobless: only rev-list, ls-tree, fetch here, never diff/log)."""
+    """Run git in the history clone (blobless: only rev-list, ls-tree, merge-base, fetch here, never diff/log)."""
     return run(["git", "-C", expanduser(HISTORY_CLONE), *args], capture_output=True, encoding="utf-8",
                check=True, timeout=GIT_TIMEOUT, env={**environ, "GIT_TERMINAL_PROMPT": "0"}).stdout
 
@@ -45,6 +45,15 @@ def _tree(commit: str) -> dict:
     return files
 
 
+def _is_ancestor(commit: str, head: str) -> bool:
+    """Whether commit is in head's history (not after a force push)."""
+    try:
+        _git("merge-base", "--is-ancestor", commit, head)
+        return True
+    except CalledProcessError:
+        return False
+
+
 def _walk(head: str, last: str, known: dict) -> Optional[dict]:
     """
     The paths at head with the commit that last changed each, walking only commits after last.
@@ -55,21 +64,25 @@ def _walk(head: str, last: str, known: dict) -> Optional[dict]:
         known: Map at last
 
     Returns:
-        {path: (blob, commit)}, or None when the new commits don't continue from last
+        {path: (blob, commit)}, or None when head's history doesn't contain last (force push)
     """
     rows = [line.split() for line in _git("rev-list", "--parents", "--topo-order", "--reverse",
                                           f"{last}..{head}" if last else head).splitlines()]
     if not rows:
         return known if head == last else None
     new = {row[0] for row in rows}
+    maps = {last: known} if last else {}
     children: dict = {}
     for row in rows:
         for parent in row[1:]:
-            if parent not in new and parent != last:
-                return None                     # joins older history (force push): walk it all
+            if parent not in new and parent not in maps:    # older than last: a merged branch forked before it
+                if not _is_ancestor(last, head):
+                    return None                 # force push: walk it all
+                # a commit holding each blob is enough for a pinned link: last's where it's the same file
+                maps[parent] = {path: known[path] if path in known and known[path][0] == blob else (blob, parent)
+                                for path, blob in _tree(parent).items()}
             children[parent] = children.get(parent, 0) + 1
 
-    maps = {last: known} if last else {}
     for commit, *parents in rows:               # parents come first
         olds = [maps[p] for p in parents]
         current = {}

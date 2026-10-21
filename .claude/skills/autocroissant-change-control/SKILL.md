@@ -136,7 +136,7 @@ added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`
 | `reminder.pkl` | 39 | Volatile per-host scheduling state (see above) |
 | `reminder.pkl.tmp` | 41 (added 2026-10-19) | Transient file from the atomic reminder save (2026-10-19 rewrite). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
 | `repo_history.json`, `.tmp` | 43-44 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
-| `type_emojis.json`, `.tmp` | 46-47 (added 2026-10-20) | Per-machine map of type emoji name -> icon blob it was made from (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
+| `type_emojis.json`, `.tmp` | 46-47 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
 | `.claude/settings.local.json` | 54 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
 | `music/` | 50 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
 | `*.log`, `logs/`, `*.csv`, `*.txt` | 69-72 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |

@@ -63,6 +63,7 @@ def test_merge_revert_rename(repo):
     assert at6 == {"a.txt": (_blob(git, c1, "a.txt"), c5),                # a revert is a change, even to an old blob
                    "c.txt": (_blob(git, c3, "b.txt"), c6)}                # a rename is new at the rename
     assert rh._walk(c6, c4, at4) == at6                                   # incremental walk = full walk
+    assert rh._walk(c4, c3, rh._walk(c3, "", {})) == at4                 # side forked before last: no full walk
     assert rh._walk(c6, c6, at6) is at6                                   # nothing new
 
 

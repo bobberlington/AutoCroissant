@@ -579,9 +579,9 @@ documented in autocroissant-failure-archaeology).
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:368):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:478 on 2026-10-20):
+- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:471 on 2026-10-20):
   `grep -n "force_update: bool = " commands/repo_traverser.py`
-- `_populate_types_from_local` (repo_traverser.py:201 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+- `_populate_types_from_local` (repo_traverser.py:200 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
   `grep -n -A9 "def _populate_types_from_local" commands/repo_traverser.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:

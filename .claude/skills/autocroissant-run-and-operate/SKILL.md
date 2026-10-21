@@ -75,8 +75,8 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
 | `init_psd` (psd_analyzer.py:476) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
 | `init_query` (query_card.py:751) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
-| `refresh_history` (repo_history.py:117) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
-| `init_type_emojis(client)` (type_emojis.py:406; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
+| `refresh_history` (repo_history.py:130) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
+| `init_type_emojis(client)` (type_emojis.py:429; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 
 AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
 
@@ -265,7 +265,7 @@ beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-r
 `docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:476; slash wrapper main.py:359-371.
+repo_traverser.py:469; slash wrapper main.py:359-371.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -302,14 +302,14 @@ The three options (slash defaults in parentheses, main.py:367-369). (`use_local_
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-RE-PARSED cards; repo_traverser.py:32,390) -> the summary (repo_traverser.py:446):
+RE-PARSED cards; repo_traverser.py:32,390) -> the summary (repo_traverser.py:445):
 
 ```
 N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (repo_traverser.py:510-513): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
+- Saving (repo_traverser.py:503-506): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
   not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
   stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
   not prune (docs/BUGS_AND_IMPROVEMENTS.md B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
@@ -383,13 +383,13 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.pkl`, `old_stats.pkl`, `aliases.pkl` | /update_stats, /alias, metadata commands | repo root | YES — the database, synced via /push |
 | `reminder.pkl` | /set_reminder | repo root | NO (gitignored) — per-machine |
 | `reminder.pkl.tmp` | every reminder save (written, fsynced, then renamed over reminder.pkl) | repo root, normally gone within milliseconds | NO (gitignored since 2026-10-19, `.gitignore:41`). If a hard kill leaves one behind, delete it |
-| `repo_history.json` | startup and every /update_stats that fetched a changed tree (commands/repo_history.py) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
+| `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:364; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:363; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
-| Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
+| Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the pickles |
 | 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
@@ -506,15 +506,17 @@ text instead of a code block, because code blocks don't render emojis.
 - **Startup**: `init_type_emojis` uploads only the MISSING ones (none deleted, none re-uploaded), records existing
   emojis that `type_emojis.json` lacks as current, and loads the token map. Terminal line: "Type emojis: 126 icons and crossed-out variants in <repo>, N uploaded, 126
   ready." Until it finishes, or if it fails ("Emoji sync failed: ..."), tokens stay as plain text.
-- **/update_stats keeps them current** (2026-10-20): after a changed tree (never on "Nothing changed"),
-  `sync_changed_emojis` compares each icon's blob sha with `type_emojis.json` (emoji name -> blob it was made
-  from, gitignored) and replaces only emojis whose icon is new or edited (with its `_no` copy), deletes the
-  ones whose icon is gone, and says one line: "Type emojis: 2 updated, 1 removed" (silent when nothing
-  changed; no Discord call then). Icons download by blob sha (git/blobs API, one request per
-  changed icon, so a full `refresh:True` wants GIT_TOKEN), not raw main. Without the
-  JSON (first start after deploy, or deleted) startup adopts the existing emojis, so nothing is re-uploaded;
-  an icon edited meanwhile needs `/sync_emojis refresh:True`. On any failure the tree ETag is dropped and the
-  line ends "(next /update_stats retries)".
+- **/update_stats keeps them current** (2026-10-20): after a changed, complete tree of the default card repo
+  (never on "Nothing changed", never after `/set_repo` to another repo, never from a tree without `Types/` icons),
+  `sync_changed_emojis` compares each icon's blob sha with `type_emojis.json` (bot application id -> {emoji
+  name -> blob it was made from}, gitignored) and replaces only emojis whose icon is new or edited (with its
+  `_no` copy), deletes the ones whose icon is gone, and says one line: "Type emojis: 2 updated, 1 removed"
+  (silent when nothing changed; no Discord call then). Icons download from raw links (commit-pinned when
+  repo_history knows the blob) and are checked against the blob sha; only a lagging raw main falls back to
+  the git/blobs API, so syncs cost no API quota. An emoji with no recorded blob (first start after deploy,
+  JSON deleted, a new bot identity) counts as current, so nothing is re-uploaded; an icon edited meanwhile
+  needs `/sync_emojis refresh:True`. On any failure the tree ETag is dropped and the line ends "(next
+  /update_stats retries)".
 - **/sync_emojis `[refresh]` `[prune]`** (admin only): the manual full sync, reported in the channel. Uploads
   missing icons and icons edited since their emoji was made; `refresh:True` re-uploads every icon.
   `prune:True` deletes bot emojis whose icon is no longer in the repo; without it they are only listed ("No

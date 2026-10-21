@@ -147,7 +147,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == []
     assert sorted(github.blobs()) == sorted([DOOMER, FREEZER, pa.ICON_MANIFEST_PATH, pa.AUTHORS_PATH, pa.EDITS_PATH])
-    assert queued == ["_refresh_links", "sync_changed_emojis", "populate_files", "prep_dataframes"]   # no TTS save run
+    assert queued == ["sync_changed_emojis", "refresh", "populate_files", "prep_dataframes"]   # no TTS save run
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
     doomer, freezer = stats["Mini Doomer"], stats["The Freezer"]
@@ -163,7 +163,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == [] and github.calls[0][0] == "tree" and github.calls[0][1]   # sent If-None-Match
     assert github.blobs() == [] and os.stat("stats.pkl").st_mtime_ns == mtime     # 304: nothing parsed or saved
-    assert queued == ["populate_files", "prep_dataframes"]
+    assert queued == ["refresh", "populate_files", "prep_dataframes"]                 # the links still refresh
     assert "Nothing changed in the card repo" in capsys.readouterr().out
 
 

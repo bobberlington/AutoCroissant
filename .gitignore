@@ -42,7 +42,7 @@ reminder.pkl.tmp
 # image link commits, rebuilt from the card repo's history (commands/repo_history.py)
 repo_history.json
 repo_history.json.tmp
-# type emoji name -> icon blob it was made from (commands/type_emojis.py)
+# per bot: type emoji name -> icon blob it was made from (commands/type_emojis.py)
 type_emojis.json
 type_emojis.json.tmp
 

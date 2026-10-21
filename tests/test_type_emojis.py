@@ -76,9 +76,10 @@ def test_long_names_fit_with_suffix():
 def state(monkeypatch, tmp_path):
     monkeypatch.setattr(te, "EMOJI_JSON", str(tmp_path / "type_emojis.json"))
     monkeypatch.setattr(te, "_blobs", {})
+    monkeypatch.setattr(te, "_saved", {})
     monkeypatch.setattr(te, "_blobs_loaded", True)
     monkeypatch.setattr(te, "type_emojis", {})
-    monkeypatch.setattr(te, "_icon_png", lambda repository, sha: _png())
+    monkeypatch.setattr(te, "_icon_png", lambda repository, path, sha: _png())
     monkeypatch.setattr(te, "_lock", asyncio.Lock())
     return te
 

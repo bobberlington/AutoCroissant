@@ -1,4 +1,5 @@
 from asyncio import Lock, to_thread
+from hashlib import sha1
 from io import BytesIO
 from json import dump, load
 from os import remove, replace
@@ -9,10 +10,12 @@ from typing import Callable, Optional
 from discord import Client, Interaction
 from discord.utils import escape_markdown
 from PIL import Image, ImageDraw
+from requests import get
 from requests.exceptions import RequestException
 
 from global_config import EMOJI_JSON, STARS_DIR, TYPES_DIR
 from commands.github_api import fetch_blob, fetch_tree
+from commands.repo_history import raw_url
 from commands.utils import queue_long_message
 
 # ========================
@@ -31,7 +34,8 @@ type_emojis: dict[str, str] = {}
 # ========================
 # Global State
 # ========================
-_blobs: dict[str, str] = {}                 # emoji name -> icon blob sha it was made from (EMOJI_JSON)
+_blobs: dict[str, str] = {}                 # emoji name -> icon blob sha it was made from, for the logged-in bot
+_saved: dict[str, dict[str, str]] = {}      # EMOJI_JSON: bot application id -> its _blobs (emojis are per bot)
 _blobs_loaded = False
 _client: Optional[Client] = None            # set at startup, used by the /update_stats sync
 _lock = Lock()                              # one sync at a time
@@ -118,34 +122,52 @@ def _list_type_icons() -> tuple[str, dict[str, tuple[str, str, bool]]]:
     return card_repo.repository, _icons(shas)
 
 
-def _icon_png(repository: str, sha: str) -> bytes:
-    """An icon's exact bytes by blob sha (raw main can lag behind the tree)."""
+def _icon_png(repository: str, path: str, sha: str) -> bytes:
+    """An icon's exact bytes: the raw file when it hashes to sha (no API quota), else the blob (raw main can lag)."""
+    reply = get(raw_url(repository, path, sha), timeout=30)
+    if reply.ok and sha1(b"blob %d\0" % len(reply.content) + reply.content).hexdigest() == sha:
+        return reply.content
     return fetch_blob(repository, sha).content
 
 
+def _app() -> str:
+    """The logged-in bot's application id: the key of its blob map."""
+    return str(getattr(_client, "application_id", "") or "")
+
+
 def _load_blobs() -> None:
-    """Read the saved emoji blob map once."""
+    """Read the logged-in bot's emoji blob map once."""
     global _blobs_loaded
     _blobs_loaded = True
     if not exists(EMOJI_JSON):
         return
     try:
         with open(EMOJI_JSON, encoding="utf-8") as f:
-            _blobs.update({str(k): str(v) for k, v in load(f).items()})
+            _saved.update({str(app): {str(k): str(v) for k, v in blobs.items()}
+                           for app, blobs in load(f).items() if isinstance(blobs, dict)})  # one flat map: dropped
+        _blobs.update(_saved.get(_app(), {}))
     except (OSError, ValueError, AttributeError) as e:
         print(f"Could not read {EMOJI_JSON}, existing type emojis count as current: {e}")
 
 
 def _save_blobs() -> None:
-    """Write the emoji blob map atomically."""
+    """Write the blob maps atomically."""
+    _saved[_app()] = dict(_blobs)
     tmp = f"{EMOJI_JSON}.tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
-            dump(_blobs, f, indent=0, sort_keys=True)
+            dump(_saved, f, indent=0, sort_keys=True)
         replace(tmp, EMOJI_JSON)
     finally:
         if exists(tmp):
             remove(tmp)
+
+
+def _adopt(icons: dict, existing: dict) -> None:
+    """Existing emojis with no recorded blob count as current (no map yet, or a failed startup sync)."""
+    for name, (_, sha, _) in icons.items():
+        if name in existing and name not in _blobs:
+            _blobs[name] = sha
 
 
 def _cross_out(canvas: Image.Image) -> Image.Image:
@@ -239,11 +261,11 @@ async def _upload(client: Client, repository: str, icons: dict, names: list, exi
     """
     uploaded, failed, pngs = [], [], {}
     for name in names:
-        _, sha, crossed_out = icons[name]
+        path, sha, crossed_out = icons[name]
         current = existing.get(name)
         try:
             if sha not in pngs:
-                pngs[sha] = await to_thread(_icon_png, repository, sha)
+                pngs[sha] = await to_thread(_icon_png, repository, path, sha)
             image = await to_thread(_emoji_image, pngs[sha], crossed_out)
             if current is not None:
                 await current.delete()
@@ -298,7 +320,7 @@ async def sync_type_emojis(interaction: Optional[Interaction], client: Client,
         client: Discord client instance
         refresh: Re-upload every icon
         prune: Delete bot emojis whose icon is no longer in Types/
-        edited: Also replace edited icons (startup uploads only missing ones and adopts unmapped existing ones)
+        edited: Also replace edited icons (startup uploads only missing ones)
     """
     global _client
     _client = client
@@ -317,10 +339,7 @@ async def sync_type_emojis(interaction: Optional[Interaction], client: Client,
                 except Exception:
                     pass
         else:
-            if not edited:                      # first run without a map: trust existing emojis, don't replace all
-                for name, (_, sha, _) in icons.items():
-                    if name in existing and name not in _blobs:
-                        _blobs[name] = sha
+            _adopt(icons, existing)
             names = [name for name, (_, sha, _) in icons.items()
                      if refresh or name not in existing or (edited and _blobs.get(name) != sha)]
             uploaded, failed = await _upload(client, repository, icons, names, existing)
@@ -349,8 +368,9 @@ async def sync_type_emojis(interaction: Optional[Interaction], client: Client,
 async def sync_changed_emojis(interaction: Optional[Interaction], repository: str, shas: dict,
                               on_fail: Optional[Callable[[str], None]] = None) -> None:
     """
-    Queued by /update_stats after it fetched a changed tree: upload or replace the emojis whose icon blob is
-    new or changed, and delete the ones whose icon is gone. Says one line when something changed.
+    Queued by /update_stats after it fetched a changed, complete tree of the card repo: upload or replace the
+    emojis whose icon blob is new or changed, and delete the ones whose icon is gone. Says one line when
+    something changed.
 
     Args:
         interaction: Discord interaction to report to, or None
@@ -367,6 +387,8 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
         if not _blobs_loaded:
             await to_thread(_load_blobs)
         icons = _icons(shas)
+        if not icons:                           # no Types/ icons in this tree: never delete every emoji over it
+            return
         gone = [name for name in _blobs if name not in icons]
         if not gone and all(_blobs.get(name) == sha and name in type_emojis
                             for name, (_, sha, _) in icons.items()):
@@ -377,6 +399,7 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
             report = f"Type emoji sync failed: {e} (next /update_stats retries)"
             failed = [str(e)]
         else:
+            _adopt(icons, existing)
             names = [name for name, (_, sha, _) in icons.items() if _blobs.get(name) != sha or name not in existing]
             before = set(existing)
             uploaded, failed = await _upload(client, repository, icons, names, existing)

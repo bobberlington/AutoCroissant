@@ -82,15 +82,15 @@ kinds are appended to it (line numbers as of 2026-10-19):
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:955) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
-card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:449)
-and out to Discord/console (called at repo_traverser.py:402; the archived local traversal on branch
+card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:448)
+and out to Discord/console (called at repo_traverser.py:401; the archived local traversal on branch
 `archive/local-update-stats` has its own copy of this flow).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
 `NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:947-949).
 And `validate()` only runs during a sweep when `output_problematic=True`
-(repo_traverser.py:383-384). Consequence: a sweep run with `output_problematic=False`
+(repo_traverser.py:382-383). Consequence: a sweep run with `output_problematic=False`
 would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
 inflating the Channel-A count by up to 18 with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
@@ -154,7 +154,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 
 **Equality rules.** A fresh `parse_one.py` run has `timestamp: 0.0` and no `author` —
 those two fields come from traversal metadata (git commit dates / DB preservation,
-psd_parser.py:348-352, which also keeps `series` and `subseries`; repo_traverser.py:375), not from the PSD. So:
+psd_parser.py:348-352, which also keeps `series` and `subseries`; repo_traverser.py:374), not from the PSD. So:
 
 - *Golden vs stats.pkl*: all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
@@ -233,7 +233,7 @@ stop, you changed more than you think.
 
 **Step 2 — Full sweep IN THE SANDBOX (the expensive gate).**
 
-Exact signature, verified 2026-10-20 at repo_traverser.py:476 (`cards` is a comma-separated list of
+Exact signature, verified 2026-10-20 at repo_traverser.py:469 (`cards` is a comma-separated list of
 names to re-parse anyway):
 
 ```python
@@ -264,14 +264,14 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus one commit
   page (`_commit_page`, repo_traverser.py:108-111; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
   that gives both the newest commit and, for a new or authorless card, the first author (a file with
-  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:404-430). So
+  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:403-429). So
   `force_update=True` costs ≈ 2 × 813 ≈ **1,630+ calls** (3 × 813 before 2026-10-20; about a third of the 5000/hr
   GIT_TOKEN limit; impossible at 60/hr without a token), plus the tree
   request and the small-file blobs; a default run costs only the changed PSDs. A forced run, or
   the first after a restart (the tree ETag is in memory), always gets the full tree. Minutes of
   wall time. Run it once per promotion, never in a loop.
 - Headless quirk (harmless): at the end `update_stats` queues `card_repo.populate_files` /
-  `prep_dataframes` onto the bot's command queue (repo_traverser.py:528-529); with no bot
+  `prep_dataframes` onto the bot's command queue (repo_traverser.py:523-524); with no bot
   running nothing drains it and the process just exits.
 - With `verbose=True` (default) the sweep prints progress, a summary
   (`N cards changed or new, N unchanged, N moved.`), and the full problem output (Channel A+B).

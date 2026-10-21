@@ -21,7 +21,7 @@ from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
-from commands.query_card import card_repo
+from commands.query_card import DEFAULT_REPOSITORY, card_repo
 from commands.repo_history import refresh as refresh_history
 from commands.type_emojis import sync_changed_emojis
 from commands.utils import queue_command, queue_edit, say
@@ -182,7 +182,6 @@ class RepositoryTraverser:
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
         _tree_etags[repository] = resp.headers.get("ETag")
-        queue_command(_refresh_links, repository)       # tree fetched: re-pin image links
 
         return (problems, num_changed)
 
@@ -466,12 +465,6 @@ def _forget_tree(repository: str) -> None:
     _tree_etags.pop(repository, None)
 
 
-def _refresh_links(repository: str) -> None:
-    """Re-pin image links; on failure drop the tree ETag so the next /update_stats retries."""
-    if not refresh_history():
-        _forget_tree(repository)
-
-
 # ========================
 # Public API Functions
 # ========================
@@ -523,8 +516,10 @@ def update_stats(interaction: Optional[Interaction] = None,
         for card in problem_cards:                        # card names only
             say(interaction, card.split('```')[0])
 
-    if traverser.tree is not None:                  # tree changed (not 304): refresh edited type emojis
+    tree = traverser.tree                           # None on 304; emojis follow the card repo, never a /set_repo one
+    if tree is not None and not tree.get("truncated") and traverser.repository == DEFAULT_REPOSITORY:
         queue_command(sync_changed_emojis, interaction, traverser.repository, traverser.shas, _forget_tree)
+    queue_command(refresh_history)                  # re-pin image links; a git fetch when nothing changed
 
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree, None, traverser.etag)
