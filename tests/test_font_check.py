@@ -263,6 +263,12 @@ def test_discord_text():
     r.remaining = 613
     assert "Warming the cache: 613 card PSDs are not read yet" in fc.discord_text(r)
     assert fc.discord_text(fc.Report(checked=5)).endswith("Every font the cards ask for is in MDW/Fonts.")
+    errors = fc.discord_text(fc.Report(errors=[f"Items/{i}.psd: 403" for i in range(25)])).splitlines()[2]   # a rate-limited run
+    assert errors == "Errors: " + "; ".join(f"Items/{i}.psd: 403" for i in range(10)) + "; and 15 more (in the console)"
+    assert fc.discord_text(fc.Report(errors=["a: x"])).endswith("\nErrors: a: x")
+    withheld = fc.discord_text(fc.Report(checked=5, fonts_unread=2))
+    assert "2 MDW/Fonts files failed to download, so no card is reported missing a font this time" in withheld
+    assert "Every font" not in withheld
 
 
 # ========================
@@ -473,6 +479,54 @@ def test_repo_fonts_cache_and_batches(fonts_dir, fake_psds, monkeypatch, tmp_pat
     assert fc.repo_fonts("o/r", str(cache), batch=1).checked == 1
     assert set(json.loads(cache.read_text(encoding="utf-8"))["psds"]) == {_sha(a)}   # a blob that left the tree leaves the cache
     assert not (tmp_path / "font_names.json.tmp").exists()
+
+
+def test_repo_fonts_font_download_failure_reports_no_card(fonts_dir, fake_psds, monkeypatch, tmp_path):
+    """A font that failed to download may be the one a card asks for: no card is reported, the PSDs still land in the cache."""
+    font, ttc, a = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes(), (fonts_dir / "Pair.ttc").read_bytes(), b"psd-a"
+    fake_psds[a] = {"FixtureCollection-B": ["Name"]}                            # a face of Pair.ttc
+    tree = {"tree": [{"path": "MDW/Fonts/TT.ttf", "type": "blob", "sha": _sha(font)}, {"path": "MDW/Fonts/Pair.ttc", "type": "blob", "sha": _sha(ttc)},
+                     {"path": "Creatures/A.psd", "type": "blob", "sha": _sha(a)}]}
+    fake = FakeGitHub({_sha(font): font, _sha(a): a}, {}, {}, tree)            # Pair.ttc answers 404
+    monkeypatch.setattr(ga, "get", fake.get)
+    cache = tmp_path / "font_names.json"
+    first = fc.repo_fonts("o/r", str(cache))
+    assert (first.checked, first.cards, first.fonts_unread, first.errors) == (1, [], 1, ["Pair.ttc: 404 Error"])
+    saved = json.loads(cache.read_text(encoding="utf-8"))
+    assert set(saved["fonts"]) == {_sha(font)} and set(saved["psds"]) == {_sha(a)}   # the failed font is not cached
+    fake.blobs[_sha(ttc)] = ttc
+    second = fc.repo_fonts("o/r", str(cache))
+    assert (second.checked, second.cards, second.fonts_unread, second.errors) == (1, [], 0, [])
+    tree["tree"].append({"path": "MDW/Fonts/New.ttf", "type": "blob", "sha": _sha(b"new")})   # 404 again
+    tree["tree"][2]["sha"] = _sha(b"psd-b")
+    fake.blobs[_sha(b"psd-b")], fake_psds[b"psd-b"] = b"psd-b", {"BabaUI": ["Ability"]}
+    third = fc.repo_fonts("o/r", str(cache))
+    assert (third.checked, third.cards, third.fonts_unread) == (1, [], 1)       # BabaUI is missing, but New.ttf might supply it
+
+
+def test_repo_fonts_caches_unreadable_blobs(fonts_dir, fake_psds, monkeypatch, tmp_path):
+    """A PSD or font that downloads but can't be read is cached as its error: reported every run, downloaded once."""
+    font, bad, a = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes(), b"not a font", b"psd-a"
+    tree = {"tree": [{"path": "MDW/Fonts/TT.ttf", "type": "blob", "sha": _sha(font)}, {"path": "MDW/Fonts/Bad.ttf", "type": "blob", "sha": _sha(bad)},
+                     {"path": "Creatures/A.psd", "type": "blob", "sha": _sha(a)}]}                       # fake_psds can't read psd-a
+    fake = FakeGitHub({_sha(font): font, _sha(bad): bad, _sha(a): a}, {}, {}, tree)
+    monkeypatch.setattr(ga, "get", fake.get)
+    cache = tmp_path / "font_names.json"
+    first = fc.repo_fonts("o/r", str(cache))
+    assert (first.checked, first.fonts_files, first.fonts_unread) == (0, 1, 0)  # unreadable is not unread: verdicts stand
+    assert [e.split(":")[0] for e in first.errors] == ["Bad.ttf", "Creatures/A.psd"] and first.errors[1] == "Creatures/A.psd: unreadable"
+    n = fake.blob_calls()
+    assert fc.repo_fonts("o/r", str(cache)).errors == first.errors and fake.blob_calls() == n
+    saved = json.loads(cache.read_text(encoding="utf-8"))
+    assert saved["psds"] == {_sha(a): "unreadable"} and isinstance(saved["fonts"][_sha(bad)], str)
+
+
+def test_save_cache_failure_keeps_the_old_file(tmp_path):
+    cache = tmp_path / "font_names.json"
+    fc._save_cache(str(cache), {"fonts": {}, "psds": {}})
+    with pytest.raises(TypeError):
+        fc._save_cache(str(cache), {"fonts": {}, "psds": {"x": object()}})     # json can't write it, midway through
+    assert fc._load_cache(str(cache)) == {"fonts": {}, "psds": {}} and not (tmp_path / "font_names.json.tmp").exists()
 
 
 def test_check_repo_fonts_replies(monkeypatch):

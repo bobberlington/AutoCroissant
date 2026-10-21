@@ -8,7 +8,8 @@ comment, a Discord message pinging the card makers' role); the bot's /fonts runs
                                   [--json <out>] [--discord <payload out>]
     FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}; check_psd(psd, index) -> the missing ones
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
-    check_repo_fonts(interaction) -> the bot's /fonts (cache font_names.json: blob sha -> the names a blob asks for or supplies)
+    check_repo_fonts(interaction) -> the bot's /fonts (cache font_names.json: blob sha -> the names a blob asks for or supplies,
+                                     or why it can't be read)
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
@@ -21,7 +22,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from io import BytesIO
 from json import dump, load
-from os import cpu_count, replace, walk
+from os import cpu_count, fsync, remove, replace, walk
 from os.path import basename, exists, join, relpath, splitext
 from re import sub
 from threading import Lock
@@ -47,6 +48,7 @@ DISCORD_LIMIT = 2000                        # characters per Discord message
 NOBODY = "Someone"                          # the author when no login is known
 CACHE_JSON = "font_names.json"              # the bot's cache: blob sha -> what the blob asks for (PSD) or supplies (font); gitignored
 BATCH = 200                                 # PSDs the bot downloads per /fonts (a 15 MB blob took 1.4 s on 2026-10-21: ~6 min a batch)
+ERRORS_SHOWN = 10                           # error lines in the /fonts reply; the console gets them all
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop keeps in a run but never draws
 API_TIMEOUT = 60
 FILES_PAGE = 300                            # the compare and commit APIs list at most this many files
@@ -241,6 +243,7 @@ class Report:
     fonts_faces: int = 0
     errors: list = field(default_factory=list)  # "path: why" (a bad blob, an unreadable PSD or font)
     remaining: int = 0                          # PSDs not read yet (the bot's batches)
+    fonts_unread: int = 0                       # MDW/Fonts files that failed to download: cards is left empty
 
     def by_font(self) -> dict:
         """{font: {path: [layers]}}, fonts sorted."""
@@ -313,13 +316,17 @@ def discord_text(report: Report) -> str:
         out.append(f"Warming the cache: {report.remaining} card PSDs are not read yet (at most {BATCH} downloads per run); "
                    "run /fonts again for the rest. Partial results:")
     missing = report.by_font()
-    if missing:
+    if report.fonts_unread:
+        out.append(f"{report.fonts_unread} MDW/Fonts file{'s' if report.fonts_unread != 1 else ''} failed to download, so no "
+                   "card is reported missing a font this time; run /fonts again.")
+    elif missing:
         for font, cards in missing.items():
             out.append(f"**{font}**: " + "; ".join(f"{_card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
     else:
         out.append("Every font the cards ask for is in MDW/Fonts.")
     if report.errors:
-        out.append("Errors: " + "; ".join(report.errors))
+        more = len(report.errors) - ERRORS_SHOWN
+        out.append("Errors: " + "; ".join(report.errors[:ERRORS_SHOWN]) + (f"; and {more} more (in the console)" if more > 0 else ""))
     return "\n".join(out)
 
 
@@ -498,7 +505,8 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[d
         repository: owner/name
         psds: {path: (blob sha, author)}
         index: The fonts folder's faces
-        cache: {sha: {font: [layers]}}: known blobs are not downloaded, new ones are added (None: no cache)
+        cache: {sha: {font: [layers]}, or the error text of a blob psd-tools can't read}: known blobs are not downloaded,
+            new ones are added; a failed download is not (None: no cache)
         batch: Cap on the downloads (0: none); the rest count as remaining
 
     Returns:
@@ -515,13 +523,20 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[d
                 continue
             downloads += 1
             try:
-                fonts = psd_fonts(fetch_verified(repository, sha, timeout=API_TIMEOUT))
-            except Exception as e:
+                data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
+            except Exception as e:              # tried again next run
                 report.errors.append(f"{path}: {e}")
                 continue
+            try:
+                fonts = psd_fonts(data)
+            except Exception as e:              # the same bytes fail the same way: cached
+                fonts = str(e)
             if cache is not None:
                 cache[sha] = fonts
-        _record(report, index, path, author, fonts)
+        if isinstance(fonts, str):
+            report.errors.append(f"{path}: {fonts}")
+        else:
+            _record(report, index, path, author, fonts)
     return report
 
 
@@ -541,9 +556,20 @@ def _load_cache(path: str) -> dict:
 
 
 def _save_cache(path: str, cache: dict) -> None:
-    with open(path + ".tmp", "w", encoding="utf-8") as fh:
-        dump(cache, fh)
-    replace(path + ".tmp", path)
+    """card_models.save_pickle's write (tmp, fsync, replace), copied: the Action's closure has no card_models."""
+    temp_path = path + ".tmp"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as fh:
+            dump(cache, fh)
+            fh.flush()
+            fsync(fh.fileno())
+        replace(temp_path, path)
+    except BaseException:
+        try:
+            remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch: int = BATCH) -> Report:
@@ -552,7 +578,8 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
 
     The first run downloads the fonts (270 files, 215 MB) and up to batch PSDs (the whole repo is ~813 PSDs, 15.6 GB:
     about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs no
-    longer in the tree leave the cache.
+    longer in the tree leave the cache. When a font file fails to download, any card could be asking for one of its
+    faces: the PSDs are still read and cached, but no card is reported (fonts_unread).
 
     Args:
         repository: owner/name
@@ -566,20 +593,31 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
     blobs = tree_blobs(repository)
     index = FontIndex()
     fonts = {p: s for p, s in blobs.items() if p.startswith(FONTS_DIR + "/") and p.count("/") == 2 and p.lower().endswith(FONT_EXTENSIONS)}
+    unread = 0
     try:
         for path in sorted(fonts):
             sha = fonts[path]
             faces = cache["fonts"].get(sha)
             if faces is None:
                 try:
-                    faces = face_names(fetch_verified(repository, sha, timeout=API_TIMEOUT))
-                except Exception as e:
+                    data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
+                except Exception as e:          # tried again next run
                     index.errors.append(f"{basename(path)}: {e}")
+                    unread += 1
                     continue
+                try:
+                    faces = face_names(data)
+                except Exception as e:          # fontTools can't read it: cached, like a PSD's
+                    faces = str(e)
                 cache["fonts"][sha] = faces
-            index.add(faces)
+            if isinstance(faces, str):
+                index.errors.append(f"{basename(path)}: {faces}")
+            else:
+                index.add(faces)
         psds = {p: (s, NOBODY) for p, s in blobs.items() if is_card_psd(p)}
         report = check_blobs(repository, psds, index, cache["psds"], batch)
+        if unread:
+            report.fonts_unread, report.cards = unread, []
         keep = set(fonts.values()) | {s for s, _ in psds.values()}
         cache["fonts"] = {s: v for s, v in cache["fonts"].items() if s in keep}
         cache["psds"] = {s: v for s, v in cache["psds"].items() if s in keep}
@@ -596,7 +634,10 @@ def check_repo_fonts(interaction) -> None:
         queue_long_message(interaction, "A font check is already running; wait for its reply.")
         return
     try:
-        text = discord_text(repo_fonts(card_repo.repository))
+        report = repo_fonts(card_repo.repository)
+        if len(report.errors) > ERRORS_SHOWN:
+            print("Font check errors:\n" + "\n".join(report.errors))
+        text = discord_text(report)
     except Exception as e:                      # the cause goes to the console, the one line to Discord
         print(format_exc())
         text = f"Font check failed: {e}"
@@ -662,6 +703,7 @@ __all__ = [
     'CACHE_JSON',
     'COMMITS_PAGE',
     'Card',
+    'ERRORS_SHOWN',
     'EXCLUDE_FOLDERS',
     'FILES_PAGE',
     'FONTS_DIR',
