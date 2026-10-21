@@ -21,7 +21,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    text engine, critic incl. the stat-toggle check); review; then merge the user's seven reviewed branches
    (drop-shadow, gradient-overlay, outer-glow, text-engine, adjustments, bevel-satin, inner-shadow-glow) into `cards`,
    suite + harness, push `cards`, tag `cards-20261020` (S0 of the edit pipeline), refresh RENDER_STATUS.md / PR_BODIES.md.
-2. [~] (dispatched 2026-10-21 13:06 UTC, run 39605156043 on Clot White, dry run) S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
+2. [x] (done 2026-10-21: run 39605156043, dry run on Clot White: the Action installed the fork at tag cards-20261020, cached the fonts, baked the title 'White CLot' -> 'White Clot' in 33 s within the parity bar, uploaded before/after/diff crops and the new PSD/PNG as artifacts, committed nothing) S5: a dispatched DRY RUN of TTSCardMaker's card-edits Action against the tag; read its artifacts and report.
 3. [x] Optimization and refinement pass 2 over tonight's new code (psd_edit, psd_regions, card_bake, font_check, the site
    badges and build): profile, dedupe the API/SSH commit code with tts_save, fix the single-result-no-image hole in
    /query_ability and the /fonts lazy-import shadowing, speed the font check, review tests; report to
