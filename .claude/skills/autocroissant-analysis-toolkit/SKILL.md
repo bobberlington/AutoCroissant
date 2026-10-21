@@ -377,8 +377,8 @@ are checked every second, then their commands take the queued-command path above
 loop awaits each send SEQUENTIALLY inside the tick (main.py:852-861 as of 2026-10-20), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
-**Measured 2026-10-20** (Mac, sandbox; `/Users/michaelsrouji/Documents/ac-optimization/profile.md`, bench scripts in
-`.../ac-optimization/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
+**Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
+`docs/Finished/optimization-pass-2026-10-20/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
 the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An ability query queues one message per
 result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop. Both are open
 owner decisions (BUGS_AND_IMPROVEMENTS §2.5); idle cost of the 1 s loops is 0.33 ms CPU/s.
@@ -522,3 +522,6 @@ above over the numbers in this file. If `PSDParser._extract_from_layers` changes
 mirror must be updated (see the MAINTENANCE NOTE in gap_trace.py itself). When a recipe's worked
 example stops reproducing, that is itself a finding: apply Recipe 3 to find out what changed, then
 update this file.
+
+2026-10-20 (later): the profile and bench scripts cited in Recipe 5 moved from `~/Documents/ac-optimization/` to branch
+`docs/Finished/optimization-pass-2026-10-20/`.

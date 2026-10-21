@@ -379,7 +379,7 @@ Assembled from the rulebook's own examples; the joins are this skill's.
    Known gaps. Status effect and type effects are card text — say so.
 3. **Where the text lives.** Source of truth: the PSD text layers in `Auxiliary/Rulebook/` (PNG beside each); published
    as `site/dist/data/rules.json` (`{"rules": [{id, name, ability, …}]}`) and the website's Rulebook tab; `stats.pkl`
-   holds the same 48 entries. Verbatim extract with hidden/overflow markers: `~/Documents/rules-skill/rulebook.md`.
+   holds the same 48 entries. Verbatim extract with hidden/overflow markers: `.claude/skills/impossibility-simulator-rules/reference/rulebook.md` (beside it: `glossary.md`, every defined term and abbreviation with its page; `data-facts.md`, the card-data counts behind this file; `header.md`/`footer.md`, build_rulebook.py's inputs).
 4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the 48 pages, sorted by page
    name, lowercased, icons as emojis; `search_text` is required by the slash command (main.py), so only a whitespace-only
    search reaches the engine's all-pages path. `/export_rulebook`: all pages as a text file.
@@ -433,11 +433,11 @@ are defined only on cards (the book names ~22 of 64).
 |---|---|
 | 48 pages, PSD per PNG | `ls ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/*.psd \| wc -l` (and `*.png`) |
 | rules.json count and any page's text | `python3 -I -c "import json;r=json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/rules.json'))['rules'];print(len(r));print(r[0])"` |
-| stats.pkl == rules.json | `python3 -I ~/Documents/rules-skill/scripts/loadpkl.py ~/Desktop/AutoCroissant/stats.pkl /tmp/s.json` (stub loader, no psd_tools needed) then compare `ability` per name |
-| Hidden / off-canvas layers | `python ~/Documents/rules-skill/alllayers.py <page.psd>` from a venv with psd-tools (the system `python3` lacks it; autocroissant-build-and-env §1) |
-| Tag counts | `python3 -I ~/Documents/rules-skill/scripts/tags.py ~/Desktop/TTSCardMaker/site/dist/data/cards.json` |
-| Status effect texts, mentions | `python3 -I ~/Documents/rules-skill/scripts/mentions.py <cards.json>`; or `/query_ability type==debuff` |
-| Card counts by kind/stars/type (cards.json: 302 creature rows, 46/105/93/58) | `python3 -I ~/Documents/rules-skill/scripts/counts.py <cards.json>`, `python3 -I ~/Documents/rules-skill/scripts/agg.py <cards.json>` |
+| stats.pkl == rules.json | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/loadpkl.py ~/Desktop/AutoCroissant/stats.pkl /tmp/s.json` (stub loader, no psd_tools needed) then compare `ability` per name |
+| Hidden / off-canvas layers | `python .claude/skills/impossibility-simulator-rules/scripts/alllayers.py <page.psd>` from a venv with psd-tools (the system `python3` lacks it; autocroissant-build-and-env §1) |
+| Tag counts | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/tags.py ~/Desktop/TTSCardMaker/site/dist/data/cards.json` |
+| Status effect texts, mentions | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/mentions.py <cards.json>`; or `/query_ability type==debuff` |
+| Card counts by kind/stars/type (cards.json: 302 creature rows, 46/105/93/58) | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/counts.py <cards.json>`, `python3 -I .claude/skills/impossibility-simulator-rules/scripts/agg.py <cards.json>` |
 | stats.pkl counts used above (297 = 45/103/93/56, 75 untyped, per-type distinct creatures, 182 item PSDs) | after the loadpkl.py line above: `python3 -I -c "import json,collections as c;s=json.load(open('/tmp/s.json'));cr=[v for v in s.values() if v['card_type']=='creature'];print(len(cr),sorted(c.Counter(v['stars'] for v in cr).items()),sum(1 for v in cr if not v['types']),c.Counter(t for v in cr for t in set(v['types'])),len({v['path'] for v in s.values() if v['card_type']=='item'}))"` (`set()` per creature, not icon occurrences) |
 | Ban list (53); moved from `MDW/` to `site/` 2026-10-20 | `grep -c ' - ' ~/Desktop/TTSCardMaker/site/Constructed\ Ban\ List.txt` |
 | Website hand rule | `grep -n "HAND\|FIELD_MAX_STARS" ~/Desktop/TTSCardMaker/site/assets/deck.js` |
@@ -445,6 +445,11 @@ are defined only on cards (the book names ~22 of 64).
 | Rounding table (07_Stats5: 20 bases, then 6 change columns of 20 cells, then the page number) | `python3 -I -c "import json,re,math;t=[p for p in json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/rules.json'))['rules'] if p['id']=='07-stats5'][0]['ability'].split('+75%')[1];n=[float(x) for x in re.findall(r'\d+(?:\.\d+)?',t)];b=n[:20];c=n[20:140];print(sum(math.floor(2*x*(1+k)+0.5)/2!=v for (k,x),v in zip([(k,x) for k in(-.25,-.5,-.75,.25,.5,.75) for x in b],c)),'mismatches')"` (prints `0 mismatches`) |
 | Old rules | `ls ~/Desktop/TTSCardMaker/MDW/Old\ Rules/` (22 PSD+PNG pairs) |
 
-When a rulebook PSD changes: rebuild the site, run `/update_stats`, regenerate `rulebook.md` with
-`~/Documents/rules-skill/build_rulebook.py`, re-check Known gaps, update dates. When cards change: refresh the tag and
+When a rulebook PSD changes: rebuild the site, run `/update_stats`, regenerate `reference/rulebook.md` with
+`python3 .claude/skills/impossibility-simulator-rules/scripts/build_rulebook.py` (no `-I`: it imports the sibling `notes.py`; reads `reference/header.md`, `footer.md` and `SRC`, the Mac clone's `site/dist/data/rules.json`), re-check Known gaps, update dates. When cards change: refresh the tag and
 status effect counts. If the ban list moves: update §2.
+
+2026-10-20 (later): the scratch folder `~/Documents/rules-skill/` moved into this skill: scripts to `scripts/` (notes.py holds
+build_rulebook.py's per-page annotations; layers.py lists the hidden text layers of several pages, `python scripts/layers.py <dir> <page.psd>...`
+from the psd-tools venv; the one-shot patch scripts that shaped this file were not kept), rulebook.md, glossary.md,
+data-facts.md, header.md and footer.md to `reference/`.

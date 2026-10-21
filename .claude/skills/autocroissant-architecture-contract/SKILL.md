@@ -349,7 +349,7 @@ optimization pass.
    sends one message per result (85 per /query_ability on average, max 763) through the single dispatch
    loop, delaying everyone else's replies. Waking the drain on enqueue, or batching up to 10 embeds per
    message, changes the execution model or the output, so both wait for the owner
-   (BUGS_AND_IMPROVEMENTS §2.5; `/Users/michaelsrouji/Documents/ac-optimization/profile.md`).
+   (BUGS_AND_IMPROVEMENTS §2.5; `docs/Finished/optimization-pass-2026-10-20/profile.md`).
 11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:138-143) and
    `save_aliases` (query_card.py:359-362) write in place, unlike reminder.pkl's tmp + fsync + replace, and
    nothing locks them against a concurrent `/push` or `/restart_bot`; a kill mid-write leaves a truncated
@@ -437,3 +437,5 @@ Re-find before citing:
 
 Maintenance rule: if any grep above stops matching, the architecture moved — update this contract in
 the same change, and check whether the corresponding invariant row still holds before assuming it does.
+
+2026-10-20 (later): profile.md, cited in weak point 10, moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`.

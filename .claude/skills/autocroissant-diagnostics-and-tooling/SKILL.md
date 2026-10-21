@@ -557,16 +557,47 @@ Conventions (match the existing five — read one before writing):
    annotated output, failure modes, questions answered), and a provenance re-run line. A script
    without a section here does not exist as far as the skill library is concerned.
 
-## Measurement tools outside this folder (2026-10-20)
+## Measurement tools beyond the five (2026-10-20)
 
-Not part of the five, and not read-only in the same sense (they need a sandbox copy), but kept:
+Not part of the five, and not read-only in the same sense (most need a sandbox copy), but kept:
 
 | Tool | Where | What it measures |
 |---|---|---|
 | Offline test suite | `tests/` (`~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests`) | Behaviour contracts, parser goldens; owner: autocroissant-validation-and-qa row 1c |
-| Whole-corpus parser gate | `/Users/michaelsrouji/Documents/ac-optimization/scripts/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
-| Profiling and benches | `/Users/michaelsrouji/Documents/ac-optimization/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and the pickles) and `scripts/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS, /update_stats requests; results in `profile.md` and `network-speed-results.md` there |
-| Skill line-ref refresh | `/Users/michaelsrouji/Documents/ac-optimization/docs_refaudit/refs6.py` + `apply6.py`; `grepcheck.py` runs every quoted grep | Stale `file:line` references after code moves (follows code across files) |
+| Whole-corpus parser gate | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` (table below; venv interpreter) | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
+| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS, /update_stats requests; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
+| Skill line-ref refresh | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py` + `apply6.py`; `grepcheck.py` runs every quoted grep | Stale `file:line` references after code moves (follows code across files) |
+
+### Optimization-pass scripts
+
+`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (moved byte-identical from `~/Documents/ac-optimization/`
+on 2026-10-20); the invocations below are relative to that folder. ROOT is a sandbox copy of the repo (`git archive HEAD` plus
+config.py and the pickles, under /tmp); "live" means read-only GitHub GETs with the real token. parse_all_ns.py, the `_ns`
+scripts and search_ab.py import the bot (psd_tools, discord): run them with `~/.venvs/ac-py314-psd125/bin/python`, not the
+system `python3`; compare.py and the line-ref tools are stdlib.
+
+| Script | Invocation | What it does |
+|---|---|---|
+| parse_all_ns.py | `parse_all_ns.py <out.json> [ROOT]` (ROOT defaults to `/tmp/psdreg/ac`) | Parses every card PSD of the `~/Desktop/TTSCardMaker` clone with ROOT's parser (16 processes); dumps every field plus the validator's list, `timestamp`/`author` dropped |
+| compare.py | `compare.py a.json b.json` | Field-by-field differences between two parse_all_ns dumps; expect `813 cards, 0 differences` |
+| commits_ns.py | `commits_ns.py ROOT OUT.json [page]` | Live: requests and ms per `_get_remote_timestamp` lookup on 5 cards (existing and new-card paths); `page` sets `COMMITS_PAGE` |
+| e2e_update_ns.py | `e2e_update_ns.py ROOT OUT.json` | Live: `/update_stats cards:<6 cards>` on a throwaway copy `ROOT_e2e` (2 cards deleted first so they take the new-card path); only the copy's pickles change |
+| etag_handoff_ns.py | `etag_handoff_ns.py ROOT` | Offline, fake GitHub: after a changed /update_stats, does card_repo's next tree fetch get a 304? Throwaway copy `ROOT_etag` |
+| import_ns.py | `import_ns.py ROOT [N]` | `import main` wall time, RSS and heavy modules loaded, best of N fresh processes (default 5) |
+| startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel), then one /sync_emojis listing |
+| tts_ns.py | `tts_ns.py ROOT` | Live: GitHub reads of two back-to-back no-change /update_tts_save runs plus the website's cards.json |
+| search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (reads the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
+| search_ab.py | `search_ab.py ROOT` | Interleaved A/B in one process: old fuzzy step / name lookup vs the new ones, same queries, results asserted equal; `exec`s search_ns.py beside it |
+| race_ns.py | `race_ns.py N SWITCH [shared]` | Commit lookups across threads on the real `_repo()` against a local echo server; `shared` = one client for all threads (the bug). Imports the LIVE repo (`sys.path` hardcoded to `~/Desktop/AutoCroissant`), no sandbox |
+| refs5.py, final.py, table.py, to_md.py / apply.py | no arguments, in that order (each reads the previous JSON) | Skill `file:line` audit against HEAD: anchor each ref to the commit where its symbol sat on that line (refs5.json), decide with overrides.json (final.json), list the edits (table.json), render them as markdown or apply them to the skills |
+| refs6.py, apply6.py `[--dry]` | no arguments | Refresh against the WORKING TREE, following code moved across files (the psd_analyzer split): final.json → refs6.json, applied with overrides6.json; refs5_lib.py holds the shared regexes. Only the hand-written overrides*.json are kept; refs5/final/table/refs6.json are regenerated by the run |
+| grepcheck.py | no arguments | Runs every read-only grep quoted in the skills; lists the ones that now print nothing |
+| provcheck.py | no arguments | For `grep -n ...` commands followed by expected line numbers, flags numbers the grep does not hit |
+
+The line-ref tools `chdir` to `/Users/michaelsrouji/Desktop/AutoCroissant` and keep their JSON under the old
+`~/Documents/ac-optimization/docs_refaudit`: a `D` / `OUT` constant at the top of apply.py, apply6.py, to_md.py and refs6.py, but
+inline in each `open()` of refs5.py (1 line), final.py (3) and table.py (2); point all of them at this folder before re-running.
+The JSON files here are their last outputs; overrides.json and overrides6.json are hand-written inputs.
 
 ## When NOT to use this skill
 
@@ -583,7 +614,7 @@ Not part of the five, and not read-only in the same sense (they need a sandbox c
 - **The stories behind the red flags** (removeprefix bug, whitespace saga, old_stats ballooning)
   → **autocroissant-failure-archaeology**.
 - **Whole-corpus parser regression checks** (old parser vs new parser on every PSD; sandboxed local
-  sweep) → **autocroissant-validation-and-qa** §4.1 (no script for them exists yet).
+  sweep) → **autocroissant-validation-and-qa** §4.1 (method A is scripted: `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py` + `compare.py`, table above).
 - **First-principles analysis beyond these five tools** (API budgets, queue timing, designing a
   new experiment) → **autocroissant-analysis-toolkit**.
 
@@ -606,7 +637,7 @@ Re-verification one-liners (from repo root):
 ```bash
 S=.claude/skills/autocroissant-diagnostics-and-tooling/scripts
 ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/
-# expect: diff_stats.py dump_psd_layers.py gap_trace.py inspect_pickle.py parse_one.py
+# expect: diff_stats.py dump_psd_layers.py gap_trace.py inspect_pickle.py parse_one.py (plus optimization/, 2026-10-20)
 
 # golden: DB summary (813 cards, 223 archived, 1 problem, 0 orphans, 0 suspicious)
 python3 $S/inspect_pickle.py | grep -v "Git token"
@@ -646,3 +677,6 @@ grep -n "def to_dict" commands/card_models.py                      # field-omiss
 If `_extract_from_layers` changes shape, update gap_trace.py (its docstring says so). If
 TTSCardMaker grows a new top-level folder, update inspect_pickle.py's known-top-folders tuple.
 If a script is added, this document must gain a routing row, a section, and a provenance line.
+
+2026-10-20 (later): the optimization-pass scripts and their JSON moved from `~/Documents/ac-optimization/` into
+`scripts/optimization/` (byte-identical, described above); the reports and `bench/` went to `docs/Finished/optimization-pass-2026-10-20/`.

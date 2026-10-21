@@ -261,8 +261,8 @@ by blob sha (4 downloads run ahead of parsing). Small files (authors, edits, ico
 also re-parses those (after a parser fix); `force_update:True` re-downloads every PSD. The run saves whenever
 anything changed, PSD or not. Cards saved before blob shas existed cost one `get_commits(since=...)` pass the
 first time. Measured 2026-10-20 (live, 6 PSDs): 16-18 s before the commit lookups moved into a 2-thread pool
-beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-results.md in
-`/Users/michaelsrouji/Documents/ac-optimization/`).
+beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-results.md on
+`docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
 repo_traverser.py:476; slash wrapper main.py:359-371.
@@ -392,7 +392,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the pickles |
-| 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | `/Users/michaelsrouji/Documents/ac-optimization/` (profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, `bench/`, `scripts/`, `docs_refaudit/`) | NO — outside the repo, Mac only |
+| 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
 
 ## 9. Reminders operations
 
@@ -591,3 +591,6 @@ Maintenance: update the date stamps and counts above whenever the pickles are re
 are added. If local mode is ever revived from branch `archive/local-update-stats`, it must first stop comparing
 mtimes with commit dates (B6); then revisit section 7's operating rule and the `RETIRED_OPTIONS` note in
 section 9, keeping the pointer to autocroissant-failure-archaeology for the history.
+
+2026-10-20 (later): the optimization-pass pointers above moved from `~/Documents/ac-optimization/` to
+`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (scripts) and `docs/Finished/optimization-pass-2026-10-20/` (reports, bench).

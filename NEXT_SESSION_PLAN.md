@@ -116,7 +116,7 @@ blob sha (raw `main` can lag). Then remove the reminder: `/remove_reminder remin
 ## Task 2. TTS save auto-update (bot)
 
 **Status 2026-10-20:** steps 1-7 done. Save committed as `TTS/Impossibility Simulator.json`, rules `TTS/decks.json`
-(audit: `~/Documents/tts-save/AUDIT.md`), updater `commands/tts_save.py` (`python -m commands.tts_save <save.json>`),
+(audit: `TTS/AUDIT.md` in TTSCardMaker, written by `TTS/audit.py`), updater `commands/tts_save.py` (`python -m commands.tts_save <save.json>`),
 `/update_tts_save` (admin). The automatic path is TTSCardMaker's Action `.github/workflows/tts-save.yml` (pushes of
 PNGs, `TTS/decks.json`, `site/Card Edits.json`; daily 11:41 UTC; dispatch), which runs `python -m commands.tts_save`
 with the `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE` env overrides read by global_config.py (done
@@ -242,7 +242,7 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
   problems_ok, allow_high_stats, dup_of, series, subseries, creatures); only the first kind is baked and removed.
 - **Rules skill:** `.claude/skills/impossibility-simulator-rules` (the game itself, from the rulebook pages).
-- **Rulebook data issues** found while writing the rules skill (details: `~/Documents/rules-skill/rulebook.md`,
+- **Rulebook data issues** found while writing the rules skill (details: `.claude/skills/impossibility-simulator-rules/reference/rulebook.md`,
   end sections): /query_rulebook and the website carry hidden or off-canvas text players never see (duplicate
   paragraphs on 09, a hidden PASSIVES block on 11, an older resolve-order draft on 12 Reactions2 that contradicts
   12 Reactions3, an older ITEMS block on 22); type-injection slips on pages 14, 14.2, 15, 16, 19.2, 20 (icons appended
@@ -272,7 +272,7 @@ Discord. First prove it on all cards against the JSX batch's output.
 
 BUGS_AND_IMPROVEMENTS.md §2.5 (network, speed, robustness, code health, concurrency, tests, docs).
 
-**Status (2026-10-20): done** (one commit on main; numbers in BUGS §2.5, audits in `~/Documents/ac-optimization/`).
+**Status (2026-10-20): done** (one commit on main; numbers in BUGS §2.5, audits on `docs/Finished/optimization-pass-2026-10-20/`; scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`).
 - Tests: `tests/` (220 offline tests, 38 parser goldens, `requirements-dev.txt`); run with
   `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` before every push.
 - Robustness: B4, B5, B7, C1-C3, C5, C6 fixed; `/list_guild_members` removed (50 commands); the queue loops survive a bad

@@ -742,7 +742,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `tests/test_network_speed.py`. Parser gate: 813 cards, 0 differences (.py and compiled).
 - **Status**: done 2026-10-20 (uncommitted when written). Not done: the 1 s tick latency and one message per
   search result (owner decisions), lazy GitPython, per-thread `requests.Session` for blobs; details in
-  `/Users/michaelsrouji/Documents/ac-optimization/network-speed-results.md`.
+  (`docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 ## How to add an entry
 
@@ -791,3 +791,6 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
 | Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 477; `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
+
+2026-10-20 (later): the optimization-pass reports moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`
+(`docs/Finished/optimization-pass-2026-10-20/`); its scripts to `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`.

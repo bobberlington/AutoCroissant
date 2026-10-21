@@ -318,7 +318,7 @@ baseline in this file updated in the same breath).
 ### 4.1 The two regression methods used on 2026-10-19
 
 Both ran for the icon-font change and the local-path fix. Method A was scripted on 2026-10-20 and kept:
-`/Users/michaelsrouji/Documents/ac-optimization/scripts/parse_all_ns.py <out.json> <sandbox root>` (every card PSD,
+`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` (every card PSD,
 every field plus the validator's list, `timestamp`/`author` dropped) and `compare.py a.json b.json`
 (field-by-field; expect `813 cards, 0 differences`). Build each sandbox with `git archive` (HEAD, or the
 working tree copied) in /tmp; never check out HEAD in the live repo. Method B's scripts were not kept.
@@ -489,7 +489,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | eb9aa84 revert exists | `git show -s --oneline eb9aa84` |
 | Remote-sweep API cost (blob + one commit page per re-parsed PSD, post-gate) | `grep -n "_get_remote_timestamp\|_commit_page\|COMMITS_PAGE =\|_blob\|_psd_changed" commands/repo_traverser.py` |
 | Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (238 passed, about 15 s, 2026-10-20) |
-| Method A scripts kept | `ls /Users/michaelsrouji/Documents/ac-optimization/scripts/parse_all_ns.py /Users/michaelsrouji/Documents/ac-optimization/scripts/compare.py` |
+| Method A scripts kept | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/compare.py` |
 | PSD count (~904) | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` |
 
 Maintenance triggers: any accepted parser/validator change (update baselines + golden
@@ -497,3 +497,6 @@ table + date-stamps); a new golden nomination (section 3 procedure); the first
 card migrated to stoogedings tokens (expect Channel-A icon problems to become possible; add a
 token golden); exclusion-list membership changes (update counts here AND the acceptance
 explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).
+
+2026-10-20 (later): method A's scripts moved from `~/Documents/ac-optimization/scripts/` into
+`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (byte-identical).

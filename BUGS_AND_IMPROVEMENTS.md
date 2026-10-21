@@ -140,9 +140,9 @@ One pass over every module, measured before and after, with no behavior change u
 - **Tests:** done 2026-10-20: `tests/` (220 tests, about 13 s, offline; 38 parser goldens), run before every push
   (autocroissant-change-control).
 - **Docs:** done 2026-10-20: help.py and the describe strings match all 50 commands (10.20); skill line references
-  re-mapped after the split (`docs_refaudit/refs6.py`).
+  re-mapped after the split (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py`).
 
-Not done in this pass (owner decisions or later; audits in `/Users/michaelsrouji/Documents/ac-optimization/`):
+Not done in this pass (owner decisions or later; audits on `docs/Finished/optimization-pass-2026-10-20/`):
 - The 1 s queue tick is ~99% of a reply's bot-side time (502 ms mean), and a search sends one message per result
   (85 per /query_ability on average): both change the execution model or the output (profile.md items 1-2).
 - B10 atomic pickle saves; a repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;

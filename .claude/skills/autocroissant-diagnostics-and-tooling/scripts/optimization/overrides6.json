@@ -1,0 +1,95 @@
+{
+ "autocroissant-validation-and-qa|64|199": [
+  "commands/card_models.py",
+  71,
+  71
+ ],
+ "autocroissant-validation-and-qa|66|487": [
+  "commands/psd_parser.py",
+  404,
+  404
+ ],
+ "autocroissant-validation-and-qa|67|521": [
+  "commands/psd_parser.py",
+  486,
+  486
+ ],
+ "autocroissant-validation-and-qa|70|595": [
+  "commands/psd_parser.py",
+  560,
+  560
+ ],
+ "autocroissant-validation-and-qa|72|628-660": [
+  "commands/psd_parser.py",
+  593,
+  625
+ ],
+ "autocroissant-validation-and-qa|81|863-898": [
+  "commands/psd_parser.py",
+  916,
+  952
+ ],
+ "autocroissant-validation-and-qa|86|1165": [
+  "commands/repo_traverser.py",
+  403,
+  403
+ ],
+ "autocroissant-validation-and-qa|93|1155": [
+  "commands/repo_traverser.py",
+  384,
+  385
+ ],
+ "autocroissant-validation-and-qa|157|929": [
+  "commands/repo_traverser.py",
+  376,
+  376
+ ],
+ "autocroissant-validation-and-qa|383|707": [
+  "commands/psd_parser.py",
+  955,
+  955
+ ],
+ "autocroissant-debugging-playbook|148|104-106": [
+  "main.py",
+  110,
+  112
+ ],
+ "impossibility-cards-reference|38|361": [
+  "commands/psd_parser.py",
+  331,
+  331
+ ],
+ "impossibility-cards-reference|114|1648": [
+  "commands/repo_traverser.py",
+  343,
+  343
+ ],
+ "impossibility-cards-reference|114|1568": [
+  "commands/repo_traverser.py",
+  275,
+  275
+ ],
+ "impossibility-cards-reference|165|469": [
+  "commands/psd_parser.py",
+  499,
+  499
+ ],
+ "impossibility-cards-reference|165|407": [
+  "commands/psd_parser.py",
+  377,
+  377
+ ],
+ "impossibility-cards-reference|519|27": [
+  "commands/query_card.py",
+  32,
+  32
+ ],
+ "autocroissant-research-frontier|141|495": null,
+ "autocroissant-research-methodology|231|38": null,
+ "autocroissant-research-methodology|232|20": null,
+ "autocroissant-research-methodology|231|42": null,
+ "autocroissant-research-methodology|232|25": null,
+ "autocroissant-research-methodology|232|17": null,
+ "autocroissant-research-methodology|231|55": null,
+ "autocroissant-research-methodology|231|62": null
+}
