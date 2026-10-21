@@ -261,6 +261,47 @@ def test_blob_5xx_skips_the_card(github, psds, capsys):
     assert github.blobs() == []                                       # 304: stays stale until the repo changes
 
 
+def test_broken_download_is_tried_once_more(github, psds, capsys):
+    """A stream that breaks mid-file (IncompleteRead) is fetched again once; the card parses on the second try."""
+    from requests.exceptions import ChunkedEncodingError
+
+    class Broken:
+        def __init__(self, reply):
+            self.reply = reply
+        def __getattr__(self, name):
+            return getattr(self.reply, name)
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def iter_content(self, size):
+            yield self.reply.content[:size]
+            raise ChunkedEncodingError("Connection broken: IncompleteRead")
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    real, once = github.get, [_sha(psds[OTHER])]
+
+    def flaky(url, **kw):
+        reply = real(url, **kw)
+        if once and url.endswith(once[0]):
+            once.pop()
+            return Broken(reply)
+        return reply
+    github.calls.clear()
+    import commands.github_api as ga
+    patched = ga.get                                                   # the fixture's fake.get
+    ga.get = flaky
+    try:
+        _run()
+    finally:
+        ga.get = patched
+    out = capsys.readouterr().out
+    assert "download failed" in out and "trying once more" in out
+    stats, _ = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER])          # the second try landed
+    assert github.blobs().count(DOOMER) == 2
+
+
 def test_deleted_card_alone_is_kept(github):
     """Current behaviour (BUGS B8): pruning needs a changed card, so a deletion alone leaves the card listed."""
     _run()

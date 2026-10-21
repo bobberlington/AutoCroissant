@@ -126,22 +126,23 @@ class RepositoryTraverser:
         return cached[1]
 
     def _download(self, path: str, sha: str) -> Optional[str]:
-        """A PSD into a temp file, or None."""
-        name, done = None, False
-        try:
-            with self._blob(sha, stream=True) as reply:
-                fd, name = mkstemp(suffix=".psd")
-                with fdopen(fd, "wb") as fh:
-                    for chunk in reply.iter_content(1 << 20):
-                        fh.write(chunk)
-            done = True
-            return name
-        except (RequestException, OSError) as e:
-            print(f"{path}: download failed ({e})")
-            return None
-        finally:
-            if not done and name is not None and isfile(name):      # partial download
-                remove(name)
+        """A PSD into a temp file, or None; a broken connection gets one more try (a 15 MB stream breaks now and then)."""
+        for last in (False, True):
+            name, done = None, False
+            try:
+                with self._blob(sha, stream=True) as reply:
+                    fd, name = mkstemp(suffix=".psd")
+                    with fdopen(fd, "wb") as fh:
+                        for chunk in reply.iter_content(1 << 20):
+                            fh.write(chunk)
+                done = True
+                return name
+            except (RequestException, OSError) as e:
+                print(f"{path}: download failed ({e})" + ("" if last else "; trying once more"))
+            finally:
+                if not done and name is not None and isfile(name):      # partial download
+                    remove(name)
+        return None
 
     def traverse_remote(self,
                         repository: str,
