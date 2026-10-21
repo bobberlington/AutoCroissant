@@ -46,7 +46,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
    against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
    stock psd-tools). All of it lands nothing under the hold.
-7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards grid + idea 24 editor running) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
+7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards panel + idea 24 full-page editor with the visual picker site/assets/pick.js as 812cb89; 20 running next, then 23, 5) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
    card picking), 20 (inline editing), 23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
 8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
 
