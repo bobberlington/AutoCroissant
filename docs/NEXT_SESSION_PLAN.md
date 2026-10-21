@@ -28,7 +28,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    `docs/Finished/optimization-pass-2-2026-10-21/`. Landed 2026-10-21: `commands/git_commit.py` (one commit path),
    font check 98 s -> 9.8 s, both holes fixed, 350 tests; the fork-side bake speedups (preview write, viewport effects)
    wait for the worktrees.
-4. [x] (done 2026-10-21: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, the 94 case/spacing-only ones shown as the file name by the site and `/query`, which also finds printed titles; `CardInfo.parser_version`
+4. [x] (done 2026-10-21, deployed to the jetson 07:49 as 5835139, site 1c13eaa; the next `/update_stats` re-parses every card once: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, the 94 case/spacing-only ones shown as the file name by the site and `/query`, which also finds printed titles; `CardInfo.parser_version`
    makes the next /update_stats re-parse every card once; 8 goldens re-pinned; build_site shows the title with the stem as
    alias; `EXCESSIVE_STAT_EXCLUSIONS` deleted, Sonic and the Cannon `allow_high_stats` in Card Edits.json; Thunderfury aligned;
    20 name edits redundant now, 21 with Thunderfury, Sans and Papyrus have no `Name` layer) Decision Q1: the parser reads
