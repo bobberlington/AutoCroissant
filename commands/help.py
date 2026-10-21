@@ -84,6 +84,11 @@ stats_commands = {
     "/update_tts_save:"                         : "Updates the Tabletop Simulator save on the card repo (TTS/Impossibility Simulator.json) and commits it (admin only): "
                                                   "pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
                                                   "Posts a summary, the full report as a file, and the save's download link.",
+    "/bake_cards [card] [dry_run]:"             : "Bakes the website's pending card edits (site/Card Edits.json: stats, name, ability text) into the card PSDs and PNGs, "
+                                                  "one commit per card, and posts the report (admin only). /update_stats queues a dry run of it when the edits file "
+                                                  "changed; the two never run at once.\n"
+                                                  "- card: Only this card, matched like Card Authors.txt (default: every card with a pending PSD edit)\n"
+                                                  "- dry_run: Render and check the edits, commit nothing (default: True)",
     "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "
                                                   "and the fonts folder's count. Reads every card PSD once (cached by blob; a first run warms the cache over several calls).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"

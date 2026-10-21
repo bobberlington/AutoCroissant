@@ -38,8 +38,7 @@ the workflow facts were re-checked.
   in the edits file silences STATS TOO HIGH for Sonic and the Cannon (`commands/psd_parser.py:1031-1033`).
 - **Name.** The bot names a card from its file stem (`commands/card_models.py:209-211`) and, since 2026-10-21 (question 1,
   `PARSER_VERSION` 2), reads the printed title into `display_name` when it differs (`psd_parser._printed_title`: the visible
-  `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card; 157 of 813 cards; the 94 differing only by letter case or spacing show as the file name on the site and in `/query`,
-  `query_card.printed_title`); a Card Edits.json `name` still wins, with the title kept in `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
+  `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card; 157 of 813 cards, shown as printed, letter case included: the user's call of 2026-10-21); a Card Edits.json `name` still wins, with the title kept in `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
   after the card, 4 hide it (Sonic's title is a pixel layer), 5 are rasterized.
 - **Ability.** 605 cards have exactly one visible `Ability` directly under top-level `Text` (box text, Single-line composer);
   34 elsewhere, 7 hidden and re-laid out, 5 several visible, 19 empty (the categories overlap, 670 > 651: to confirm). The
@@ -169,26 +168,45 @@ code, never exceptions; one bad card never blocks another.
    ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; bar to calibrate from `score/results/cards_v1.json`). A row the
    fork already renders wrong (class A) is refused here, never pasted.
-4. **Apply.** Stat: visibility toggle. Refuse `parity` when the old **or the new** digit carries an effect whose own
-   `enabled` is true (the block flag is not enough: Mini_Doomer `Hp Dark/2` has `effects.enabled` True over an InnerShadow and
-   a GradientOverlay both `enabled=False`); the baseline bar of step 3 cannot see an effect on a digit that is hidden today
-   (section 7 for later). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
+4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
+   `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
+   enough: Mini_Doomer `Hp Dark/2` has `effects.enabled` True over an InnerShadow and a GradientOverlay both `enabled=False`);
+   a shown digit with its own enabled effect keeps it and the hidden one's is cleared; to 10 nothing moves; from 10 the one
+   hidden styled digit's block comes back, several such digits refuse `unsupported-card`; a hidden styled digit beside a visible
+   unstyled one (Mettaton_EX Atk 6) is left alone, so the path matters (7 -> 10 -> 4 styles 4 with the 6's effect, 7 -> 4 moves
+   nothing). Two rows (idea 13): Top shows the value and Bottom 0 up to 10, then Top none
+   and Bottom value - 10 (`psd_edit.set_stat`). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
-   swatch is 8-bit); `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`. Round 1 refuses a word whose chart layer is styled (15
-   names, `styled-word`) until FX generation is proven (section 7).
+   swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
+   `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`. Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
+   deleted and one is cut per styled status word in the new text (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat,
+   named as `Effect Layers.jsx` names them): the JSX's key copy (the word's runs white, the rest black) laid out and rasterized
+   again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1), the ability's own raster
+   gives the pixels (`numpy("color"/"shape")` after `rasterize`), `PixelLayer.fromarray` makes the layer with a unicode name
+   and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
+   it goes directly above the top-level `Text` group. A hand-made overlay word layer over the ability is hidden when it names a
+   styled chart status, else the card refuses `unsupported-card`. `styled-word` remains only for a psd-tools without the engine
+   pieces (`psd_edit._fx_engine`).
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview regenerated (an honest flattened image in the committed PSD, 20-45 s) or `save(update_preview=False)`
    (0.2 s, stale preview): question 2 decides once, for every card; no flag. Gate `bytes`: compare parsed layer
    records old vs new (names, flags, channel lengths, EngineData), not raw offsets (a text edit shifts every later record): a
-   toggle changes exactly the two flag bytes of `N_old`/`N_new`, a text edit one record + its channels. Gate `size`: PSD within
+   toggle changes exactly the two flag bytes of `N_old`/`N_new` plus the effect blocks its Edit declares moved (the same bytes leave
+   one record and land on the other, or leave only when cleared), a text edit one record + its channels; an ability edit's FX
+   layers: exactly the declared `<Ability> FX: ...` records gone and the regenerated ones come (pixel records, transparency
+   channel first, carrying the chart's `lfx2`/`lrFX` bytes), one flag byte per hidden overlay; records are paired in file order
+   once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
    replaced (ability compared after the parser's own whitespace rule on both sides); `alt_names` unchanged;
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
-   `FIXED_BY[field]`; no `EFFECT LAYER *`, no `STATS TOO HIGH`.
+   `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
+   every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
+   2026-10-21 review). FX layers back as declared after the reopen: the names in order,
+   visible, styled, directly above `Text`, no overlay word layer showing.
    Name: `Text/Name` read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels).
@@ -213,21 +231,57 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
 
 ## 7. Ideas 12, 13, 14
 
-- **12. Effects on toggled digits.** After round 2 paints effects on empty-bbox adjustment layers: copy the `lfx2` block from
-  the previously visible digit to the new one and clear it on the old (the effect belongs to the visible digit). Gate: the
-  parity bar on Mettaton_EX's rows before and after; this also settles whether Photoshop and the fork agree that the effect's
-  shape is the mask (to confirm). Until then `parity` refuses those rows (87-107 cards).
-- **13. Stats above 10.** Done 2026-10-21: the pipeline refuses > 10 on the value alone; `EXCESSIVE_STAT_EXCLUSIONS` is
-  deleted (STATS TOO HIGH unless the edits file says `allow_high_stats`: Sonic, Royal Eradicator Main Cannon; goldens
-  refreshed). Still open: the canonical encoding (top row 10 + bottom row N-10, question 3) and re-encoding Sonic and the
-  Cannon by hand (their `20` and opacity-0 `10` change 0 pixels and can go).
-- **14. FX layers from the text** (shared with Task 3c). Derived state: on every ability edit delete all `Ability FX: ...`
-  layers and regenerate one per chart word present (`word#n` for repeats): glyph boxes from the engine's layout
-  (`Layout.glyphs`, `composite/text/layout.py:70`; exposure through the render result to confirm), pixels cut from the
-  render, the chart layer's effect block as a tagged block, placed above the `Text` group, named as `MDW/Scripts/Effect
-  Layers.jsx` does. Gate: `_check_effect_layer` (`commands/psd_parser.py:475-501`, coverage >= 0.95). Prove it against the JSX
-  output on Gasoline and Royal Eradicator first; the 52 old overlay word layers are hidden when an FX layer replaces them
-  (owner decision). Round 1 ships fill-only colouring and refuses styled words.
+- **12. Effects on toggled digits.** Code done 2026-10-21 (`psd_edit.set_stat`, section 5 step 4 for the rule): the hidden digit's
+  `lfx2`/`lrFX` blocks move onto the shown digit (`tagged_blocks.pop` / `[key] =`; the fork's effects proxy re-reads them, no
+  cache); gate `bytes` checks the same bytes left one record and landed on the other. Measured on Mettaton_EX hp 5 -> 8 through
+  every gate: 2 flag bytes + 5884 block bytes (lfx2 5476 + lrFX 408 with headers), baseline parity mean 0.90 / 0.0% bad / max 7
+  (bar 1.0 / 0.5%), 18,311 pixels replaced, parser reads 8, rerun nothing, 10.2 s without the preview; spd 6 -> 9 likewise (mean
+  0.898). The moved effect paints the new cells: inside digit 2's mask after hp 5 -> 2 the render averages the official PNG's
+  colour inside digit 5's mask within 0.3 per channel (the lit cells were 20+ brighter before), so the fork's mask-as-shape agrees
+  with Photoshop's export on these cards. Still refused at the baseline, by the row's own bar and not the digits: Mettaton's
+  toggles whose region takes in lit cells (hp 5 -> 2 mean 1.03, atk 7 -> 6 mean 1.04; 0% bad, max 7: the pixel bars' GradientOverlay
+  renders at 1.17-1.30 per lit cell, the dark cells at 0.87-0.96), and every Royal Eradicator Main Cannon row (ColorOverlay +
+  BevelEmboss digits: 5-7% bad, max 110, with the block popped 58%: the fork paints most of the bevel, not all). Census
+  (`/tmp/scout/scan.json`, 2026-10-21): 396 styled rows; 338 with the visible digit styled, 41 with only a hidden digit styled,
+  1 at value 10 with one hidden styled digit (Green_Mage atk), 2 at 10 with several (Azamoth_the_Forgotten_King hp: refused),
+  14 with several visible styled digits (False_Knight, Tainted_Lazarus: non-template anyway).
+- **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
+  Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
+  marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
+  reads 2 (measured on a /tmp copy with the marker hidden); with it, Top none + Bottom 0 reads 10, Top 7 + Bottom 0 reads 7, Top
+  none + Bottom 5 reads 15. Writing: value <= 10 shows Top = value (10: none) and Bottom = 0; 11-19 Top none and Bottom = value - 10;
+  20 needs a Bottom marker too (none on the Cannon: refused `stat>10`); `classify` refuses > 20, and 11-20 on a one-row card
+  (`stat>10`, "a second row is standardization work (ledger L3)"); gate `reparse` accepts `STATS TOO HIGH` only for a stat above
+  10 on two rows (also when the raise from <= 10 adds it: 7 -> 15 passes, review fix 2026-10-21). Measured on the Cannon (12 -> 7, 15, 10; hp 9 -> 2 as the replace case): 3/2/2/2 flag bytes, 6360 block bytes
+  (Bottom 2's ColorOverlay + BevelEmboss follows the shown digit), the parser reads each value back; the render gates refuse it
+  (idea 12 above). Earlier 2026-10-21: `EXCESSIVE_STAT_EXCLUSIONS` deleted (STATS TOO HIGH unless the edits file says
+  `allow_high_stats`: Sonic, Royal Eradicator Main Cannon; goldens refreshed). Still open: Sonic's conversion (L3: two rows under
+  a `Spd Dark`, a marker in each).
+- **14. FX layers from the text** (shared with Task 3c). Code done 2026-10-21 (`psd_edit.set_text_layer`, section 5 step 4 for
+  the recipe; no fork change: the glyph pixels come from the JSX's own key-copy technique over the engine's public `model`,
+  `layout` and `raster` modules, `PlacedGlyph` still has no cluster index). Derived state: every `<Ability> FX: ...` layer goes
+  and one comes back per styled status word (`Ability FX: Blazing`, `#n` for a repeat), above `Text`, the chart's `lfx2`/`lrFX`
+  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Proof
+  against `Effect Layers.jsx` (Convert overlays, the 2026-10-20 trial copies under `/private/tmp/fontexplore/fx/mig/out/`) on the
+  unchanged text: Gasoline `Ability FX: Blazing` IoU 0.966 with the JSX pixel cut, 99.9% of our ink on its ink, bbox equal but
+  for one column (the fork's `g`), validator coverage 1.0 (the JSX's 3,422 ink pixels, ours 3,312); the chart's Blazing glow and
+  Gasoline's overlay glow are the same parameters, and an FX cut from Photoshop's own raster renders like the JSX state over
+  the FX box (mean 0.01, 0% bad) and within the bar over the ability region against the official PNG (0.112% bad, mean 0.70);
+  with the text re-rasterized by the fork (what an edit does) the region reads 1.10% / 1.47: the Century raster's fidelity (8% of
+  glyph pixels), not the FX. Royal Eradicator Main Cannon IoU 0.937, 100% of ours on the JSX's; the JSX kept the overlay's
+  orange-red glow (255,42,26) and word, we normalize both to the chart's red, so the FX box differs from the PNG and the JSX
+  state by design (13-14% bad) while the ability region stays within the bar (0.357% / 0.86). Both proof cards keep image-icon
+  gaps, so the token rule refuses their edits in the pipeline. A real edit through every gate on Mini_Doomer (fork, no preview):
+  adding Blazing and Frozen 24.8 s (baseline 7.0, render 7.7, idempotence 7.7), two FX layers (2 x 5,916 block bytes landed, 9,964 and
+  7,777 ink pixels, coverage 1.0), parity 0.018% / 0.86, 201,292 pixels replaced, PSD +60,688 bytes (the fork's RLE of the
+  re-rasterized Ability plus the two layers); then dropping Frozen and repeating Blazing 17.8 s, `Blazing#1`/`#2`, the two old
+  records removed and two added, +4,056 bytes; validator clean, reruns redundant. Through `card_bake.run(dry_run=True)` against a
+  fake GitHub (chart fetched by sha): Blazing added to Mini_Doomer bakes in 29.1 s with the preview regenerated, the committed-to-be
+  PSD 30,329,782 -> 30,231,517 bytes (the fork's RLE of the re-rasterized Ability is tighter than Photoshop's, FX layer included), the
+  report line names `FX layers: Ability FX: Blazing`. Gate `bytes` pairs records in file order around
+  the declared removed/added FX records; gate `reparse` checks the layers back, visible, styled, directly above `Text`, no overlay
+  showing, no `EFFECT LAYER` problem. Tests: `tests/test_psd_edit.py` (the JSX comparison skips when the trial copies are gone),
+  `tests/test_card_bake.py` dry run.
 
 ## 8. Runner
 
@@ -269,13 +323,30 @@ ComicSansMS, ...; 112 layers) resolve only from the Mac's platform directories a
 `~/Documents/Tools/psd-research/text-design/score-runs/TRIAGE.md`; card share to confirm): add them under `MDW/Fonts`
 (licence: owner) or those cards refuse on `font`.
 
-**Jetson (fallback, same module).** Install the fork tag into `~/venvs/autocroissant` (aarch64 wheels resolve; `_rle` builds
-with gcc 10.5) once `tests/test_parser_goldens.py` passes under it. How the bot notices: at the end of `traverse_remote`
-compare `self.shas[EDITS_PATH]` with the last seen sha and `queue_command(card_bake.run, ...)`; fonts and chart kept in
-`~/Documents/card-bake/` by sha. Push through `git_commit.git_commit` over SSH (`SSH_AUTH_SOCK` from the unit); never `log --name-only`
-or `diff` in the history clone (git 2.25 downloads every blob; it grew to 4 GB once). Report through `queue_file` like `_post`.
-Prerequisite: a `threading.Lock` shared by `update_stats` and the bake (both `to_thread`; queued commands run concurrently,
-`main.py:843-858`). Costs: 4 shared cores, 6 GB (peak to confirm), 20-85 MB uploads, the reminder's cadence (to confirm).
+**Jetson (fallback, same module).** Code done 2026-10-21 (S7): `commands/card_runner.py` (uncompiled) runs `card_bake.run`
+inside the bot. How the bot notices: at the end of `update_stats` (after the pickles are saved and the summary sent; not on a
+304, only for the card repo) it hands the edits file's blob sha from the tree (`traverser.shas[EDITS_PATH]`) to
+`card_runner.notice_edits`, which compares it with the sha the last bake was queued for (module level, in memory; after a
+restart the first `/update_stats` queues one more bake, harmless: already-baked edits bake to nothing) and queues one
+`bake_cards` through `queue_command`. `/bake_cards [card] [dry_run]` (admin, `dry_run` default True) runs the same code by
+hand. Both take `card_runner.bake_lock`, which `update_stats` holds for its whole run (queued commands run concurrently,
+`process_command_queue` main.py:880-889), so an update and a bake never overlap; whoever finds the lock held says so and waits.
+The report goes where the command ran (a reminder's FakeInteraction too) through `queue_file` like tts_save's `_post`: the head
+lines and sections as messages, the full markdown attached as `card_bake_report.md`, then the commit links; a failure is one line.
+card_bake and psd_edit are imported inside the bake, so the bot starts without the fork; without its text engine the bake
+refuses with one line. **PSD hold (2026-10-20):** the automatic bake is `dry_run=True` in the code (`notice_edits`, dated
+comment, no flag). When the hold lifts the user picks ONE live runner, that literal or the Action's push trigger in
+`card-edits.yml`, never both. Token: the bot's `GIT_TOKEN` (card_bake's `token_from_env()` only fills in when config.py has
+none), so no environment variable is needed in the unit. Push through `git_commit.commit_files` (API, SSH through the history
+clone with the unit's `SSH_AUTH_SOCK` when the token can't write); never `log --name-only` or `diff` in the history clone
+(git 2.25 downloads every blob; it grew to 4 GB once). Still to do after the hold (orchestrator): install the fork tag into
+`~/venvs/autocroissant` (aarch64 wheels resolve; `_rle` builds with gcc 10.5; stock psd-tools 1.25.0 there on 2026-10-21)
+once `tests/test_parser_goldens.py` passes under it; a fonts dir on the jetson (`card_bake._fonts_dir()` reads
+`PSD_TOOLS_FONT_DIRS`, else `LOCAL_DIR_LOC/MDW/Fonts`, and the jetson has no `~/Desktop/TTSCardMaker`: text edits refuse on
+`font` until card_bake keeps fonts and the chart in `~/Documents/card-bake/` by sha or the unit sets the variable; the work dir
+is a fresh `mkdtemp(prefix="card-bake_")` per run there, `RUNNER_TEMP` on the Action); one live bake with Actions disabled; the
+CPU/RAM peak. Costs: 4 shared cores, 6.8 GB total (4.2 GB free on 2026-10-21; peak to confirm), 20-85 MB uploads, the
+reminder's cadence (daily `/update_stats` at 5AM).
 
 ## 9. Website: pending, baked, refused
 
@@ -299,7 +370,12 @@ Prerequisite: a `threading.Lock` shared by `update_stats` and the bake (both `to
 Four sinks: the commit body; the job summary + artifact (report, before/after/diff crops, parse diff, record diff); `_psd` for
 the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes are a closed list: `duplicate`, `unsupported-card`,
 `stat>10`, `recent`, `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
-`idempotence`, `edit-changed`, `head-moved`, `error`. Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
+`idempotence`, `edit-changed`, `head-moved`, `error`. Since 2026-10-21 `unsupported-card` also names a row whose several digits
+carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
++2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
+styled digit means the render missed the bar, no longer that the digit is styled, and `styled-word` means only that this
+psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
+Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
 them leaves nothing behind (`$RUNNER_TEMP`), the next push recomputes.
 
@@ -341,8 +417,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 | S3 bot | text path: name and ability via `set_text`/`set_span_style`/`rasterize`, chart fills, `font`/`overflow` refusals | name edit on Mini_Doomer and 3 single-Ability cards pass every gate; a too-long ability refuses | M |
 | S4 bot | `card_bake.py`: tree, blobs, `editsFile` port, commit (API + SSH), report, `_psd` | today's Card Edits.json round-trips byte-identical; a dry commit on a throwaway branch (owner-run) | M |
 | S5 TTSCardMaker | `card-edits.yml` dry-run, then live with `gh workflow run --card`, actor guard, tts-save retry; the push trigger goes live only after question 7 (else the first push run reprints the 7 titles) | one stat bake on Mini_Doomer lands PSD + PNG + one-line file diff; site.yml and tts-save.yml run; `diff_stats` lists that card | S |
-| S6 bot + fork | idea 14: FX regeneration (glyph boxes, pixel cut, chart effect block); idea 12 after round 2; idea 13 after the owner's decision | Gasoline and Royal Eradicator FX layers within the validator's 0.95 coverage and the region bar; Mettaton_EX rows pass parity; goldens refreshed | L |
-| S7 jetson | fork in the bot venv, Lock, edits-sha watch, SSH commit, Discord report | one bake with Actions disabled; CPU/RAM peak recorded | M |
+| S6 bot + fork | idea 14: FX regeneration (glyph boxes, pixel cut, chart effect block) **code done 2026-10-21**, no fork change (section 7: Gasoline IoU 0.966 / Cannon 0.937 with the JSX cuts, coverage 1.0, Mini_Doomer ability edits with FX pass every gate); idea 12 and idea 13 **code done 2026-10-21** (section 7: Mettaton_EX hp 5 -> 8 passes every gate; the Cannon writes and re-parses but its bevelled digits refuse `parity`) | Gasoline and Royal Eradicator FX layers within the validator's 0.95 coverage and the region bar; Mettaton_EX rows pass parity; goldens refreshed | L |
+| S7 jetson | fork in the bot venv, Lock, edits-sha watch, SSH commit, Discord report. **Code done 2026-10-21** (`commands/card_runner.py`, `/bake_cards`, `bake_lock`, the notice; automatic bake dry-run under the hold); the venv install, one live bake and the peak wait for the hold | one bake with Actions disabled; CPU/RAM peak recorded | M |
 | S8 user | the 10 edits of section 12 | 10/10; results in `docs/Finished/`; Photopea retired to an archive branch | S |
 
 ## 14. Open questions for the user — answered 2026-10-20
@@ -376,4 +452,5 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 - A separate status file or a `_`-key filter in `build_site.apply_edits`: both readers already drop `_`-keys and `editsFile`
   keeps unknown keys; `_psd` in the edits file is enough.
 - Checking out card folders in the Action (16.4 GB) or reading PSDs from `raw.githubusercontent.com` (lags the tree).
-- Fill-only recolouring of a styled status word (15 of 66): not Photoshop parity; refuse until the FX layer is regenerated.
+- Fill-only recolouring of a styled status word (15 of 66): not Photoshop parity. Fenced since 2026-10-21 by construction: a
+  styled word is coloured and gets its FX layer in the same edit (section 7 idea 14), or the card refuses `styled-word`.

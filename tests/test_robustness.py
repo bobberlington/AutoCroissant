@@ -463,7 +463,7 @@ def test_help_covers_every_command():
     documented = {re.match(r"/(\w+)", key).group(1) for d in (help_module.general_commands, help_module.text_commands,
                   help_module.card_commands, help_module.stats_commands, help_module.music_commands)
                   for key in d if key.startswith("/")}
-    assert documented == set(_registered()) and len(documented) == 51
+    assert documented == set(_registered()) and len(documented) == 52
     assert "list_guild_members" not in documented and not hasattr(main, "list_guild_members")
 
 

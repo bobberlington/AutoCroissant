@@ -54,7 +54,7 @@ committed (53db8ee).
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
-| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:103`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
+| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:104`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
 | requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:17`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
@@ -65,7 +65,7 @@ they ride in as dependencies of other packages. Verified via pip metadata 2026-0
 
 | Hidden dep | Arrives via | Who needs it | Evidence |
 |---|---|---|---|
-| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:12` (emoji images), the only PIL import on main; `main.py:75` and `query_card.py:20` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Declared explicitly since 2026-10-20. |
+| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import Image, ImageDraw` in `commands/type_emojis.py:12` (emoji images), the only PIL import on main; `main.py:76` and `query_card.py:20` import that module at load time | Remove psd-tools and the whole bot fails at import, not just PSD parsing. Declared explicitly since 2026-10-20. |
 | PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it) | discord.py itself only requires aiohttp (and audioop-lts on 3.13+); it does not pull PyNaCl. Declared explicitly since 2026-10-20. |
 
 **The rule**: if psd-tools or PyGithub is ever removed from `requirements.txt`, add
@@ -297,3 +297,5 @@ Line numbers drift; re-verify volatile facts with:
 2026-10-21 (audit fixes): requests import citations re-pointed (github_api.py:4, tts_save.py:31, the new git_commit.py:17); pyyaml added
 to requirements-dev.txt. The 11 compiled modules still build with Cython 3.3.0 (query_card.py changed one line: /query_ability's single
 result without a PNG posts the name). Review: the uncompiled list names the five 2026-10-21 modules.
+
+2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.

@@ -2,8 +2,8 @@
 card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
 sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), own commits, the SSH fallback
-for a token that can't write, --dry-run, --card. A real bake needs the fork's renderer; that test skips under stock
-psd-tools. The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs
+for a token that can't write, --dry-run, --card. A real bake (a stat, and an ability with an FX layer) needs the fork's
+renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs
 --help there without config.py, with an allowlist of third-party imports.
     PYTHONPATH=/tmp/wt-pipeline-dev/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
     (the fork venv needs requests for this file)
@@ -584,6 +584,39 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()                                 # the field is gone: nothing to look at
     assert commits == [] and "0 with PSD fields" in text
+
+
+@fork
+def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
+    """Idea 14 through the driver: an ability edit adding Blazing fetches the chart by sha, cuts "Ability FX: Blazing" above
+    Text, passes every gate and names the layer in the report; --dry-run leaves the artifacts and commits nothing."""
+    from time import perf_counter
+    from psd_tools import PSDImage
+    chart = clone / pe.STATUS_CHART
+    if not chart.exists():
+        pytest.skip("no status chart")
+    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
+    parser = pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    old = pe.parse_card(parser, str(clone / DOOMER), DOOMER)["card"]["ability"]
+    files = github.files_at(github.head)
+    files[pe.STATUS_CHART] = chart.read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": old + " Inflict Blazing.", "note": "fx", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer ability")
+    started = perf_counter()
+    text, commits = cb.run(dry_run=True)
+    seconds = perf_counter() - started
+    assert commits == [] and "## Baked (1)" in text and "FX layers: Ability FX: Blazing" in text and "not committed (dry run)" in text
+    assert github.files_at(github.head) == files                            # nothing landed
+    work = tmp_path / cb.WORK_NAME / "Mini Doomer"
+    saved = PSDImage.open(str(work / "new" / "Mini_Doomer.psd"))
+    fx, = pe.fx_layers(saved, pe.ability_layer(saved))
+    assert fx.name == "Ability FX: Blazing" and saved.index(fx) == saved.index(pe._text_group(saved)) + 1 and saved.has_preview()
+    parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
+    assert parse["fx"] == ["Ability FX: Blazing"] and parse["validator"] == [] and parse["new"]["ability"].endswith("Inflict Blazing.")
+    rewritten = json.loads((work / "Card Edits.json").read_text(encoding="utf-8"))
+    entry = rewritten["cards"]["Mini Doomer"]                                # the note keeps the entry; the ability is baked out
+    assert "ability" not in entry and entry["note"] == "fx" and entry["_psd"]["state"] == "baked" and entry["_psd"]["for"] == {"ability": old + " Inflict Blazing."}
+    print(f"dry-run bake {seconds:.1f} s; PSD {len(files[DOOMER])} -> {(work / 'new' / 'Mini_Doomer.psd').stat().st_size} bytes")
 
 
 # ========================

@@ -43,11 +43,11 @@ python3 main.py
 ### What healthy startup output looks like (as of 2026-07-11; 2026-10-19 additions marked)
 
 ```
-Git token found, API limited to 5000 requests/hour.    <- import time: main.py:89 print_token_status() (github_api.py); "No git token in config..." if GIT_TOKEN unset
-We have logged in as AutoCroissant#....                <- on_ready (main.py:107-108)
-Registered 51 slash commands for reminder system.      <- slash_registry populated (main.py:110-112); 51 since 2026-10-21 (/fonts added; 50 on 2026-10-20 after /list_guild_members was removed)
-Bot initialization complete                            <- the four loops started (main.py:123-126)
-Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:102)
+Git token found, API limited to 5000 requests/hour.    <- import time: main.py:90 print_token_status() (github_api.py); "No git token in config..." if GIT_TOKEN unset
+We have logged in as AutoCroissant#....                <- on_ready (main.py:108-109)
+Registered 52 slash commands for reminder system.      <- slash_registry populated (main.py:111-113); 52 since 2026-10-21 (/fonts and /bake_cards added; 50 on 2026-10-20 after /list_guild_members was removed)
+Bot initialization complete                            <- the four loops started (main.py:124-127)
+Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:103)
 Trying to open reminder.pkl.                           <- init_reminder
 reminder.pkl is empty or missing.                      <- or "Existing dict found in reminder.pkl, updating entries..." plus "Rescheduled reminder <id> from <t1> to <t2>" and (2026-10-19, first start after the rewrite) "Reminder <id>: migrated command `...` -> `...`" lines
 Trying to open stats.pkl                               <- init_psd
@@ -63,11 +63,11 @@ Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N up
 Lines after "Bot initialization complete" come from queued async work and can interleave.
 The token-presence line prints ONCE, from main.py (`print_token_status`; since the 2026-10-20 split the card modules print nothing at import, so scripts show no token line).
 
-### on_ready init order (main.py:107-127)
+### on_ready init order (main.py:108-128)
 
 `on_ready` populates `slash_registry` (command name -> callback; this is what lets reminders run
 bot commands), spawns a per-guild command sync task, then QUEUES five init functions and finally
-starts the reminder heartbeat and the three queue-drain loops (main.py:123-126). Queued work only executes once the loops
+starts the reminder heartbeat and the three queue-drain loops (main.py:124-127). Queued work only executes once the loops
 start draining — so the loops effectively start first, and nothing is sent to Discord before they run.
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
@@ -80,9 +80,9 @@ start draining — so the loops effectively start first, and nothing is sent to 
 
 AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
 
-The three drains (main.py:863-895) each tick every 0.1 s (once a second until 2026-10-21): `process_command_queue`,
+The three drains (main.py:880-912) each tick every 0.1 s (once a second until 2026-10-21): `process_command_queue`,
 `process_dispatch_queue` (message/file sends), `process_edit_queue` (edits). A fourth loop, `process_reminders`
-(main.py:857-859), enqueues `check_reminder` once a second — that is the reminder heartbeat. All bot output rides
+(main.py:874-876), enqueues `check_reminder` once a second — that is the reminder heartbeat. All bot output rides
 these queues, so replies have up to ~0.1 s of queue latency by design. Depth: autocroissant-architecture-contract.
 
 ## 2. Command anatomy (30-second version)
@@ -99,9 +99,9 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 
 | Way | Gate | What happens |
 |---|---|---|
-| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:161-172) |
-| `/restart_bot` | NONE (verified main.py:151-158 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
-| Ctrl-C in the terminal | local | discord.py shuts down; main.py:904-905 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
+| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:162-173) |
+| `/restart_bot` | NONE (verified main.py:152-159 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
+| Ctrl-C in the terminal | local | discord.py shuts down; main.py:921-922 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
 
 `restart_bot()` (commands/update_bot.py:11-15) does `execv('./startup.sh', argv)`; on
 `FileNotFoundError` it falls back to `execl(python, python, main.py ...)` — i.e. re-exec the same
@@ -128,11 +128,11 @@ exec python3 main.py`), but its contents are per-machine and UNVERIFIED (the jet
 
 ## 4. Command sync model
 
-- On EVERY start, `sync_guild_commands` (main.py:98-102) runs per guild: `tree.copy_global_to(guild)`
+- On EVERY start, `sync_guild_commands` (main.py:99-103) runs per guild: `tree.copy_global_to(guild)`
   then `tree.sync(guild=guild)`. Guild-scoped syncs take effect essentially immediately, so after a
   restart the commands are current in every guild the bot is in (a stale Discord client may need a
   restart/reload to show them — client-side cache, not the bot).
-- `/sync_global` (admin; main.py:687-693 -> management.py:75-97) clears the tree's global command set,
+- `/sync_global` (admin; main.py:704-710 -> management.py:75-97) clears the tree's global command set,
   syncs that (now-empty) global set, then re-copies and re-syncs each guild, finishing with
   "Commands synced globally and to N guilds." Use it to clean up duplicated/stale command entries
   (e.g. commands appearing twice because a global copy lingers). Discord platform note (not
@@ -192,7 +192,7 @@ Consequence of "local pickles win": if machine B pulls while holding OLDER pickl
 (because machine A pushed newer ones and B never pulled before diverging), the auto-merge would keep
 B's stale pickles. The handoff runbook below exists to prevent ever being in that state.
 
-### /update — push, pull, restart (main.py:196-209 -> update_bot.py:136-161)
+### /update — push, pull, restart (main.py:197-210 -> update_bot.py:136-161)
 
 Sequence: stop all four loops -> "Doing a complete update of the bot!" ->
 "Pushing aliases.pkl, stats.pkl, and old_stats.pkl." -> git_push -> "Pulling latest changes from
@@ -216,7 +216,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 | "Push failed: <err>" | Rebase conflict (aborted), fetch/auth failure, or push error (ssh key, a race). A remote that is merely ahead is handled by the rebase. If inside /update, the update aborts. |
 | "Git pull failed: <err>" | Merge machinery failed; read the git error. Rebase fallback may follow. |
 | "Rebase also failed: ..." + "Manual intervention may be required." | Bot cannot self-heal the clone. SSH in, `git status`, resolve, restart. |
-| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:204-207) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
+| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:205-208) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
 | "Restarting bot!" then nothing | Process replaced by execv/execl. Watch the terminal/host for the fresh startup lines. |
 
 ## 6. Multi-machine handoff runbook
@@ -265,16 +265,16 @@ beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-r
 `docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 **One-time re-parse after a parser bump (2026-10-21):** every parse is stamped `PARSER_VERSION` (psd_parser.py:22, now 2:
-the printed title read into `display_name`), and `_psd_changed` re-parses a card whose stamp differs (repo_traverser.py:76;
+the printed title read into `display_name`), and `_psd_changed` re-parses a card whose stamp differs (repo_traverser.py:77;
 the tree ETag is skipped while any card is stale, :162). So the first `/update_stats` after deploying a bump downloads every
 PSD once (~813 blobs plus their commit pages, minutes; "813 cards changed or new"; no history grows: the blobs are unchanged)
 and later runs are cheap again. Expect it after the 2026-10-21 deploy; no `force_update` needed. Once re-parsed, `/query` titles its
-embed with the printed title (`query_card.printed_title`; an embed instead of a bare image URL): 157 cards, of which the 94 differing
-from the file name only by letter case or spacing (POORLY DRAWN CABBAGE, A P E X) keep showing the file name; the website shows
-the same name, and `/query` finds a card by its printed title (`_populate_titles`, refreshed after every `/update_stats`).
+embed with the printed title (`query_card.printed_title`; an embed instead of a bare image URL): 157 cards, including the 94 that differ
+from the file name only by letter case or spacing (POORLY DRAWN CABBAGE, A P E X), shown as printed (the user's call, 2026-10-21); the
+website shows the same name, and `/query` finds a card by its printed title (`_populate_titles`, refreshed after every `/update_stats`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:472; slash wrapper main.py:373-385.
+repo_traverser.py:473; slash wrapper main.py:374-386.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -300,7 +300,7 @@ repo_traverser.py:472; slash wrapper main.py:373-385.
 >   (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl`). Post-update checks are owned by
 >   autocroissant-validation-and-qa.
 
-The three options (slash defaults in parentheses, main.py:381-383). (`use_local_repo` and
+The three options (slash defaults in parentheses, main.py:382-384). (`use_local_repo` and
 `use_local_timestamp` existed until 2026-10-20; see the rule.)
 
 | Option (default) | What it actually does |
@@ -311,14 +311,14 @@ The three options (slash defaults in parentheses, main.py:381-383). (`use_local_
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-RE-PARSED cards; repo_traverser.py:32,391) -> the summary (repo_traverser.py:443):
+RE-PARSED cards; repo_traverser.py:33,392) -> the summary (repo_traverser.py:444):
 
 ```
 N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (repo_traverser.py:504-507): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
+- Saving (repo_traverser.py:517-520): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
   not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
   stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
   not prune (docs/BUGS_AND_IMPROVEMENTS.md B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
@@ -338,7 +338,7 @@ with 100+ commits costs one more request for its first commit). A daily run spen
 spends a large share of the 5000/hr `GIT_TOKEN` budget, so don't schedule it. Without a token (60/hr) a forced
 or first-ever run cannot finish; check for the "Git token found" startup line.
 
-PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:113-140) into a temp file deleted
+PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:114-141) into a temp file deleted
 right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
 files (`site/Card Authors.txt`, `site/Card Edits.json`; in `MDW/` before 2026-10-20) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
@@ -412,6 +412,41 @@ present. It reports and never rejects: a missing font is a message to a person, 
   ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
+### Card bake (/bake_cards and the edits-file notice, added 2026-10-21; the primary runner is TTSCardMaker's card-edits.yml Action)
+
+The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes the website's PSD-kind edits in
+`site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per card. `commands/card_runner.py`
+(uncompiled; imports card_bake and psd_edit lazily inside the bake, so the bot starts without the fork's psd-tools) runs it
+inside the bot on the jetson; design section 8 "Jetson".
+
+- **The notice: `/update_stats` queues a bake when the edits file changed.** At the end of a traversal (not on a 304, only
+  for the card repo) `update_stats` hands the edits file's blob sha from the tree to `card_runner.notice_edits`; when it
+  differs from the sha the last bake was queued for (module-level, in memory) one `bake_cards` is queued through
+  `queue_command`. After a restart the first `/update_stats` queues one more bake: harmless, already-baked edits bake to
+  nothing. The report goes where the update ran, a reminder's channel included (FakeInteraction).
+- **PSD hold (2026-10-21): the automatic bake is a dry run, written in the code** (`notice_edits`, a dated comment, no flag):
+  it renders, checks every gate and commits nothing. When the user lifts the hold, pick ONE live runner: `dry_run=False` in
+  that line, or the push trigger of TTSCardMaker's `card-edits.yml` (also off today). Never both: two runners would race
+  each other on the same commits.
+- **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
+  matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
+  `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
+- **One at a time: `card_runner.bake_lock`.** `update_stats` holds it for its whole run and the bake takes it around
+  `card_bake.run`; queued commands otherwise run concurrently (one thread each). Whoever finds it held says "Waiting for the
+  running card bake or update to finish..." and waits. Two `/update_stats` therefore no longer overlap either.
+- **Where the report goes:** "Baking the website's card edits (dry run)...", then the report's head lines and sections as
+  messages (the `<details>` tracebacks stripped) with the full markdown attached as `card_bake_report.md`, then the commit
+  links when any. A failure outside a card's steps is one line, "Card bake failed: <Error>: <why>" (traceback on stdout);
+  the traverser never crashes on it.
+- **Refusals you will see on the jetson today:** "Card bake refused: this Python has no text engine (install the fork's
+  psd-tools[text] in the bot venv)." until the fork tag `cards-20261020` is installed into `~/venvs/autocroissant`
+  (orchestrator's step, after the hold; stock psd-tools 1.25.0 there on 2026-10-21). After that, text edits refuse on `font`
+  until the jetson has a fonts dir: `card_bake._fonts_dir()` reads `PSD_TOOLS_FONT_DIRS`, else `LOCAL_DIR_LOC/MDW/Fonts`,
+  and the jetson has no `~/Desktop/TTSCardMaker` (design: fonts and chart in `~/Documents/card-bake/` by sha; the work dir is
+  a fresh `mkdtemp(prefix="card-bake_")` per run there).
+- **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
+  docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
+
 ## 8. Artifact conventions — where files land
 
 All paths relative to the CWD the bot was started from (= repo root, always).
@@ -425,8 +460,9 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:364; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:128-141); deleted after each parse (repo_traverser.py:365; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
+| Card bake work dir | /bake_cards, the edits-file notice after /update_stats (commands/card_runner.py -> card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo; none under the PSD hold) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `font_names.json` | /fonts (commands/font_check.py) | repo root (+ `font_names.json.tmp` while saving): blob sha -> the fonts a card PSD asks for or a font file supplies; pruned to the current tree on every run | NO (gitignored) — per-machine; if deleted, the next /fonts downloads every PSD again in batches |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
@@ -437,11 +473,11 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 
 Rewritten 2026-10-19 (commands/analytics.py, 957 lines; uncommitted as of that date). Times are
 Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:15), so they follow daylight
-saving. `check_reminder` is queued once per second by its own loop, `process_reminders` (main.py:857-859). History of
+saving. `check_reminder` is queued once per second by its own loop, `process_reminders` (main.py:874-876). History of
 what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
 invariants: autocroissant-architecture-contract.
 
-### /set_reminder (admin only, main.py:217)
+### /set_reminder (admin only, main.py:218)
 
 | Option | Accepts | Notes |
 |---|---|---|
@@ -521,7 +557,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 
 | Command | Gate | Notes |
 |---|---|---|
-| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:648-660) |
+| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:665-677) |
 | `/list_guilds` | admin | Name, ID, member count per guild |
 | `/leave_guild guild_id` | admin | Numeric ID required |
 | `/list_guild_channels guild_id` | admin | Works with default intents |
@@ -604,7 +640,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(init\|process_.*_queue.start\|Bot initialization complete" main.py` |
-| Slash-command count (51 on 2026-10-21: /fonts added; 50 on 2026-10-20: /update_tts_save added, /list_guild_members removed) | `grep -c "@tree.command" main.py` |
+| Slash-command count (52 on 2026-10-21: /fonts and /bake_cards added; 50 on 2026-10-20: /update_tts_save added, /list_guild_members removed) | `grep -c "@tree.command" main.py` |
 | Members intent off, so no /list_guild_members (removed 2026-10-20, C6) | `grep -n "Intents\|list_guild_members" main.py` (Intents lines only) |
 | /restart_bot still ungated | `grep -n -A4 'name="restart_bot"' main.py` |
 | /update stops loops first | `grep -n -B2 -A6 'name="update"' main.py` |
@@ -624,6 +660,7 @@ re-find volatile facts with these before trusting them:
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
+| Card bake wiring (/bake_cards; the notice at the end of /update_stats; the Lock) | `grep -n "bake_cards\|name=\"bake_cards\"" main.py`; `grep -n "bake_lock\|notice_edits" commands/repo_traverser.py commands/card_runner.py`; `grep -n "dry_run=True" commands/card_runner.py` (the hold line) |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
@@ -649,4 +686,6 @@ module, not a shadowing name.
 
 2026-10-21 (titles): section 7 gained the one-time re-parse paragraph (PARSER_VERSION 2 reads the printed title; ~813 downloads on the next /update_stats).
 
-2026-10-21 (review): section 7 notes that `/query` titles its embed with the printed title (`query_card.printed_title`; 157 cards, the 94 case/spacing-only shown as the file name; printed titles join the name lookup); psd_analyzer.py `init_psd` :478; repo_traverser.py `update_stats` :472, `_send_summary` :443, the `UPDATE_RATE` check :391.
+2026-10-21 (review): section 7 notes that `/query` titles its embed with the printed title (`query_card.printed_title`; 157 cards, case/spacing-only ones shown as printed per the user; printed titles join the name lookup); psd_analyzer.py `init_psd` :478; repo_traverser.py `update_stats` :472, `_send_summary` :443, the `UPDATE_RATE` check :391.
+
+2026-10-21 (S7): `/bake_cards` and the edits-file notice (section 7's Card bake subsection, section 8's work-dir row, 52 commands: main.py grew by 17 lines at :21 and :399-414, every main.py, repo_traverser.py and help.py citation in this file re-pointed by the old-to-new line map). The automatic bake is a dry run under the PSD hold; one live runner when it lifts.

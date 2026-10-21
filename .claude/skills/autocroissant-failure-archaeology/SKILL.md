@@ -385,21 +385,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:360-364 after the split).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:361-365 after the split).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:208 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:209 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:472 after the 2026-10-20 split), matching main.py:382.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:473 after the 2026-10-20 split), matching main.py:383.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -764,8 +764,8 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Symptom**: a reply waited for the next 1 s drain (502 ms mean, ~99% of /query's bot-side time, 10.28), and
   /query_ability sent one message per matching card (85 on average, max 763) through the one dispatch loop.
 - **Root cause**: `@tasks.loop(seconds=1)` on the three drains; one `queue_message` per result in `query_ability`.
-- **Evidence**: the three drains tick every 0.1 s (main.py:863-895; ordering, per-item try, `_running`, the fallback
-  and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:857-859), started
+- **Evidence**: the three drains tick every 0.1 s (main.py:880-912; ordering, per-item try, `_running`, the fallback
+  and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:874-876), started
   and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s,
   no Discord): 1.29 ms CPU/s with 0 reminders, 1.53 with 200 (0.33 / 0.40 at 1 s), 2 threads alive.
   `query_ability` (query_card.py:577-623) posts one match as before (its image URL, a preview; since 2026-10-21 its name when
@@ -833,3 +833,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-21 (titles): psd_parser.py, repo_traverser.py and card_models.py citations re-pointed (PARSER_VERSION 2 reads the printed title; `EXCESSIVE_STAT_EXCLUSIONS` deleted).
 
 2026-10-21 (review): psd_parser.py citations re-pointed (+7 after `_printed_title`) after the WX-78 title fix.
+
+2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.

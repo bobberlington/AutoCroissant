@@ -82,6 +82,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - **How many.** 2 cards (`/tmp/psdmap/card_Sonic.txt`, `card_Royal_Eradicator_Main_Cannon.txt`). **Tool.** Fork script or Photoshop,
   one-off; then drop the list and refresh `tests/make_goldens.py`. **Check.** `parse_one.py`: Sonic spd 20, Royal Eradicator atk 12, problems
   NONE before and after; clean-ups PNG byte-equal; Sonic within the stat-row bar (its pixel-art bars stay; only the `Darks` groups move).
+- **2026-10-21 (pipeline, design §7 idea 13).** The Top `10` is no stray: the parser skips a row with no visible digit, so without it the
+  Cannon reads 2 (measured); `psd_edit.template_rows` requires it in Top (visible, opacity 0) and takes one in Bottom for 20, so Sonic's
+  conversion adds a marker to each row and the "deleted" clean-up above is withdrawn. The Cannon's ColorOverlay + BevelEmboss digits
+  miss the render bar (5-7% bad): its toggles refuse `parity` until the fork paints bevels right.
 
 ### L4. Effect blocks on every digit of a styled row (plan item 12; 107 cards)
 - **What.** In each `<Stat> Dark` row where a digit carries an enabled effect, the look must survive a toggle: either all ten digits get the
@@ -95,6 +99,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   `pasteEffects` per layer (companion §4). **Check.** Harness per stat cell on Mettaton_EX before and after (also settles whether the fork
   and Photoshop agree the effect's shape is the mask); parse and PNG unchanged; blind until the renderer paints effects on empty-bbox
   adjustment layers (RENDER_STATUS critic cause 1, 41% of all bad pixels). **Risk, depends.** Copy to all ten vs move on toggle: question 5.
+- **2026-10-21 (pipeline, design §7 idea 12): move on toggle, in code.** `set_stat` moves the hidden digit's `lfx2`/`lrFX` onto the shown
+  one (gate `bytes` checks the same bytes left and landed); Mettaton_EX hp 5 -> 8 passes every gate (parity mean 0.90, 0% bad), so no
+  PSD needs all ten digits styled; stale hidden styled digits (Mettaton Atk 6) are left alone. Toggles whose region takes in lit cells
+  still refuse at the baseline (mean 1.03-1.04 vs the 1.0 bar: the pixel bars' GradientOverlay, not the digits).
 
 ### L5. Ability layer naming, visibility and blank content
 - **What.** Exactly one visible text layer named `Ability` directly under top-level `Text`, with text. **Why.** The parser reads every
@@ -119,12 +127,12 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   card (153 over all 813, status effects included); 3 hidden (Sonic, whose title is the pixel layer `Layer 0 copy`; Baba; Man_Serpent_Shield;
   plus the field card E._Gadd's_Garage); 5 none or rasterized (ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card); 16 with two or more
   visible `Name` layers (17 over all 813 with the field card The_Gates_of_Ahn'Qiraj; `aggregate.txt`, `corpus.jsonl`).
-- **Titles vs file names (2026-10-21 parse).** 157 of 813 differ: 94 by letter case or spacing only (shown as the file name; 6 look
-  like typos: SPringtrap, Dark MAtter, MEtal General, MAsked Dedede, StaR DREAM, Zero OVerride), 63 otherwise (shown as printed; to
-  decide: Kyle "hdckighfkvhvgmk", The Bagel "The Bagel Or... is it" (a subtitle layer on the title row), Blockade "The Wall By Ech",
-  Leeroy Jenkins "LEEEEEEEEEROY" (JENKINS is its own layer), Sir Grodus "Grodus", The Chicken "Chicken", Rasta Beast "Pasta Beast",
-  Indoctrination "Indoctrinati0n", NME Stock "NME Stock™"); Sans and Papyrus title their layers after the print, not `Name`. Retitle
-  the card (a name edit reprints it through the pipeline) or rename the file in the batch.
+- **Titles vs file names (2026-10-21 parse).** 157 of 813 differ: 94 by letter case or spacing only, 63 otherwise. All are shown
+  as printed (the user, 2026-10-21). The odd ones (The Bagel "The Bagel Or... is it", Leeroy Jenkins "LEEEEEEEEEROY", Blockade "The Wall By
+  Ech", Sir Grodus "Grodus", The Chicken "Chicken", Rasta Beast "Pasta Beast", Indoctrination "Indoctrinati0n", Kyle) are INTENTIONAL
+  in-jokes: NOT standardization work, never retitle them. Six case-only titles look like typos (SPringtrap, Dark MAtter, MEtal General,
+  MAsked Dedede, StaR DREAM, Zero OVerride): ask the user card by card before any reprint; a name edit reprints a title through the
+  pipeline. Sans and Papyrus title their layers after the print, not `Name`.
 - **Tool.** Fork: `layer.name` set, 0 pixels; rasterized titles: Photoshop retype (pixels change; question 6) or leave them to
   `display_name` from `Card Edits.json`. **Check.** Parser reads `Text/Name` == the printed title (after the question-1 code); PNG
   byte-equal. **Depends.** `Effect Layers.jsx` keys FX layers on the text layer's name (`<layer> FX:`): rename before L7 or rerun Update all.
@@ -142,6 +150,14 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - **Check.** Parser gate; 0 `EFFECT LAYER *` problems; harness ability region; Photoshop: Single-line composer kept (L10). **Risk.** The JSX
   deletes converted overlays and the answer says hide: set that first; non-sRGB cards are converted to sRGB (0.9% of pixels differ by
   rounding); the 15 styles must be loaded from `MDW/Debuff And Attributes Layer Effects.asl`. **Depends.** Before L1; L6 renames first.
+- **2026-10-21 (pipeline, design §7 idea 14): FX regeneration in code.** `psd_edit.set_text_layer` rebuilds the ability's `Ability FX: …`
+  layers on every ability edit (one per styled chart word, the chart's `lfx2`/`lrFX` copied, directly above `Text`; against the JSX cuts
+  IoU 0.966 Gasoline / 0.937 Cannon, validator coverage 1.0) and HIDES the overlay word layers it replaces. Census of the 53 overlay
+  layers on 40 cards (`/tmp/i2_census.py`, fork venv): 37 name a styled chart status and go hidden with that card's first baked ability
+  edit (30 cards wholly, Gasoline and the Cannon among them; Monkey_D_Goofy and Morpho_Knight also carry refusing ones); 16 layers on
+  10 cards refuse `unsupported-card` (Smoldering x3, Burning, Chilled, Despair, +2 DEF, +2/4/6 ATK, Attacks inflict 2T, 2T, 1, 1st: Slime /
+  2nd: Puppet / 3rd: Magician, and "1 Become Back Money" x2 whose stack count keeps them off the chart name): those stay Photoshop work
+  (Convert overlays keeps the overlay's own style) or lose the overlay by hand. No PSD touched; the pipeline lands nothing under the hold.
 
 ### L8. Six title reprints; Thunderfury's entry (design question 7: answered)
 - **What.** `Text/Name` set to the website value: Clot_White "White CLot" -> "White Clot"; PoD08-PoD12 "M.O.A.B" / "D.D.T" / "B.F.B" /

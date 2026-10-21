@@ -113,8 +113,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:36) is checked against every path segment
-during stats traversal and duplicate-PNG detection (repo_traverser.py:342, 275). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:37) is checked against every path segment
+during stats traversal and duplicate-PNG detection (repo_traverser.py:343, 276). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -187,7 +187,7 @@ joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and a
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:201) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:202) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -459,7 +459,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
 | `author` | `author` | omitted when falsy |
-| `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card; byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards; the 94 differing only in letter case or spacing are shown as the file name by the website and `/query`, `query_card.printed_title`, and `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
+| `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card; byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards, 94 of them differing only in letter case or spacing, shown as printed (the user's call, 2026-10-21); `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
 | `note` / `hidden` | same | from Card Edits.json; omitted when falsy |
 | `duplicate_of` | same | the original card, for another PNG of the same PSD; omitted when falsy |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
@@ -490,12 +490,12 @@ aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars
 subseries, subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-repo_traverser.py:404), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+repo_traverser.py:405), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:472), the same as the slash command (main.py:382);
+is `update_stats(force_update=False)` (repo_traverser.py:473), the same as the slash command (main.py:383);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -526,10 +526,10 @@ autocroissant-change-control):
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(repo_traverser.py:371-372; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+(repo_traverser.py:372-373; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
 archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:194-203 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
-`_update_old_stats_paths` (repo_traverser.py:61-71) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (repo_traverser.py:62-72) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
@@ -607,7 +607,7 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
    case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:355-379). 48 pages today.
 10. One result posts its image URL (a preview, via `get_card_url`); several are listed as `<name> — <url>` lines,
     10 per message (`RESULTS_PER_MESSAGE`, query_card.py:30; since 2026-10-21, one message per result before);
-    `howmany:True` returns just the count; `limit` caps output (main.py:290-303).
+    `howmany:True` returns just the count; `limit` caps output (main.py:291-304).
 
 ## 8. When NOT to use this skill
 
@@ -670,4 +670,6 @@ change, sections 4-5 are stale until rewritten.
 
 2026-10-21 (later): the parser reads the printed title into `display_name` (PARSER_VERSION 2; §6 table and the pickle-only list, `parser_version`); `EXCESSIVE_STAT_EXCLUSIONS` deleted (§3.4, §5); psd_parser.py line numbers re-pointed.
 
-2026-10-21 (review): frontmatter and the `display_name` row (157 cards; WX-78's "wx-" + image layer "78" reads as the file name; case/spacing-only titles shown as the file name); `commands/psd_parser.py` citations with the folder prefix re-pointed (`card_name` :337, `CardClassifier` :230-315) and the rest after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.
+2026-10-21 (review): frontmatter and the `display_name` row (157 cards; WX-78's "wx-" + image layer "78" reads as the file name; case/spacing-only titles shown as printed, the user's call); `commands/psd_parser.py` citations with the folder prefix re-pointed (`card_name` :337, `CardClassifier` :230-315) and the rest after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.
+
+2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.

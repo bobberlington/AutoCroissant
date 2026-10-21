@@ -42,7 +42,7 @@ and code changes in the same commit** — rationale in the next section.
 
 ## The self-update machinery (what /push, /pull, /update actually do)
 
-All in `commands/update_bot.py` (registered in `main.py:175-209`). **The canonical
+All in `commands/update_bot.py` (registered in `main.py:176-210`). **The canonical
 step-by-step anatomy — every message each command prints, the failure table, the
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
@@ -57,7 +57,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
   `AUTO-RESOLVE: ...` merge commit.
 - **/update** → `update_bot()` (update_bot.py:136-161): stops the three send/edit
-  queue loops first (main.py:205-207), then `/push` + `/pull` + restart. With
+  queue loops first (main.py:206-208), then `/push` + `/pull` + restart. With
   `force_reset:True` it instead runs `git reset --hard origin/main`
   (update_bot.py:118-133) and restarts.
 
@@ -79,7 +79,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
    ONLY when the reverted commit touches pickles alone, and only with the diff_stats.py
    gate re-run on the result before any push. Step-by-step recovery procedure:
    autocroissant-debugging-playbook §1.
-3. **`force_reset:True` is dangerous** — main.py:198 literally labels it
+3. **`force_reset:True` is dangerous** — main.py:199 literally labels it
    `(dangerous!)`. It skips the pickle push entirely and hard-resets to
    `origin/main`, discarding ALL local state: uncommitted code edits AND every
    pickle change since the last successful /push (e.g. an afternoon of
@@ -156,7 +156,7 @@ deliberate change-control decision: either force-add it or (better) amend
 
 ## Checklist: add a new slash command
 
-Worked example to imitate: the `/update_stats` block at main.py:373-385 (2026-10-20).
+Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
    query_card.py, parsing in psd_parser.py, the /update_stats traversal in repo_traverser.py, GitHub access in
@@ -184,20 +184,21 @@ Worked example to imitate: the `/update_stats` block at main.py:373-385 (2026-10
    wrapper — that is the convention every block follows; see "looks safe but isn't"
    for why you must not delete or fold it.
    Admin-only commands start with the `if lacks_admin(interaction): ... return`
-   block (copy it from /push, main.py:188-190). The newest example of a whole admin
-   command block is `/sync_emojis` (main.py:696-709, added 2026-10-19).
+   block (copy it from /push, main.py:189-191). The newest example of a whole admin
+   command block is `/bake_cards` (main.py:399-412, added 2026-10-21; its worker is the
+   uncompiled commands/card_runner.py), before it `/sync_emojis` (main.py:713-726, 2026-10-19).
 3. **Add `@app_commands.describe`** for every parameter. Description wording and
    style: **autocroissant-docs-and-style**. Note Discord quirks that already shaped
    signatures here: big integers (guild/user IDs) are passed as `str` because Discord
    ints cap around 15 digits.
 4. **Add a help entry** in `commands/help.py`: pick the right dict
    (`general_commands`:6, `text_commands`:29, `card_commands`:42,
-   `stats_commands`:77, `music_commands`:103), key format
+   `stats_commands`:79, `music_commands`:112), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:131) dispatches on the category word.
+   `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `tts_save` and `github_api` were deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
@@ -207,10 +208,10 @@ Worked example to imitate: the `/update_stats` block at main.py:373-385 (2026-10
    setup.py:9-18).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
-   `on_ready` (main.py:106-127) records every command in `slash_registry` (which is
+   `on_ready` (main.py:107-128) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
-   (`sync_guild_commands`, main.py:98-102). If the command does not appear after
-   restart, run `/sync_global` (main.py:688). Client-side, Discord may need a
+   (`sync_guild_commands`, main.py:99-103). If the command does not appear after
+   restart, run `/sync_global` (main.py:705). Client-side, Discord may need a
    reload before new commands show up.
 7. **Verify** by invoking the command in Discord; do not run `python3 main.py`
    casually to test — starting the bot connects it to the live guilds
@@ -326,8 +327,8 @@ and update this file.
 | Stored reminders drop retired options | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py` |
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
-| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 79, 107; 131) |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (310 passed, 17 fork-only skips on 2026-10-21) |
+| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 79, 112; 136) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (380 passed, 24 fork-only skips on 2026-10-21 after the S6/S7 review fixes) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
@@ -336,3 +337,6 @@ and update this file.
 2026-10-21: atomic locked pickle saves (B10) added to class (b) and the pickle discipline; `*.pkl.tmp` row; line numbers re-pointed.
 
 2026-10-21 (titles): class (a) gate names the PARSER_VERSION rule (version 2: the printed title; suite 356 passed, 18 skipped; the class (a) row now says 356 tests, 74 s).
+
+2026-10-21 (S7): `/bake_cards` is the newest admin command block (checklist step 2; help dict lines re-pointed, `card_runner` named among the uncompiled modules in step 5); tests/test_robustness.py counts 52 commands; main.py, repo_traverser.py and help.py citations re-pointed.
+2026-10-21 (review): the offline-suite row reads 380 passed, 24 skipped (the S6/S7 working tree after the review fixes).

@@ -18,6 +18,7 @@ from commands.analytics import (
     remove_reminder,
     set_reminder,
 )
+from commands.card_runner import bake_cards
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
@@ -393,6 +394,22 @@ async def slash_update_tts_save(interaction: Interaction):
         return
     await interaction.response.defer()
     await update_tts_save(interaction)
+
+
+bake_cards = to_thread(bake_cards)
+@tree.command(name="bake_cards", description="Bakes the website's pending card edits into the card PSDs and PNGs; posts the report (admin only).")
+@app_commands.describe(
+    card='Only this card, matched like Card Authors.txt. Default = every card with a pending PSD edit.',
+    dry_run='Render and check the edits, commit nothing. Default = True.',
+)
+async def slash_bake_cards(interaction: Interaction,
+                           card: Optional[str] = None,
+                           dry_run: Optional[bool] = True):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
+    await interaction.response.defer()
+    await bake_cards(interaction, card, dry_run)
 
 
 export_stats_to_file = to_thread(export_stats_to_file)

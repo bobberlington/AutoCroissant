@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:472 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:473 as of 2026-10-20; until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -358,7 +358,7 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:762-895; queue helpers commands/utils.py:25-60): three module-level
+**The mechanism** (verify at main.py:779-912; queue helpers commands/utils.py:25-60): three module-level
 deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=0.1)`
 coroutine (1 s until 2026-10-21). Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
@@ -369,12 +369,12 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Path | Hops | Queue-added latency |
 |---|---|---|
 | Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 0.1 s (avg ~50 ms) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:117-121, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:118-122, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
 
-Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:857-859 as of
+Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:874-876 as of
 2026-10-21), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked
 every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:876-884 as of 2026-10-21), so one slow Discord HTTP call
+loop awaits each send SEQUENTIALLY inside the tick (main.py:893-901 as of 2026-10-21), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
 **Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
@@ -395,7 +395,7 @@ autocroissant-debugging-playbook), never queue scheduling.** Don't investigate t
 **Conclusive result:** you state the expected latency for the exact path the command took (≤0.1 s or
 ≤0.2 s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:762-895.
+main.py:779-912.
 
 ---
 
@@ -448,7 +448,7 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(repo_traverser.py:371-372), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(repo_traverser.py:372-373), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned

@@ -8,7 +8,8 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
 file with a PSD-kind field: refuse `recent` (PSD pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
-(psd_edit.apply_jobs), rewrite the file with the baked and redundant fields removed and the `_psd` verdict written
+(psd_edit.apply_jobs; an ability edit also regenerates the status words' FX layers from the chart, section 7 idea 14),
+rewrite the file with the baked and redundant fields removed and the `_psd` verdict written
 (a Python port of edit.js editsFile), and commit PSD + PNG + file on the branch's current head (git_commit: the
 GitHub API, or git objects in the history clone pushed over SSH when the token can't write). Refusals are data: one bad card never
 blocks another; refused verdicts land in one file-only commit. The report goes to stdout, the artifacts (edited
@@ -544,7 +545,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 image.save(join(folder, f"{name}.png"))
             with open(join(folder, "parse.json"), "w", encoding="utf-8") as fh:
                 fh.write(dumps({"old": parsed["card"], "new": card.baked.reparse["card"], "jobs": card.jobs,
-                                "validator": card.baked.reparse["validator"]}, indent=1, ensure_ascii=False))
+                                "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
                        "at": _now()}
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
@@ -622,6 +623,8 @@ def _card_line(card: Card, dry_run: bool) -> str:
     if card.baked:
         parity = "; ".join("%s %.2f%% bad, mean %.2f" % (f, m["bad_pct"], m["mean"]) for f, m in card.baked.parity.items())
         line += f"; parity {parity}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
+        if card.baked.fx:
+            line += f"; FX layers: {', '.join(card.baked.fx)}"
     if card.redundant:
         line += f"; already on the card: {', '.join(card.redundant)}"
     if card.commit:

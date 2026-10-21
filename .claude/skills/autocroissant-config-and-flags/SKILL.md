@@ -57,7 +57,7 @@ Ground rules:
 
 | Field | Required? | Default (getattr) | Read at | Status | Effect |
 |---|---|---|---|---|---|
-| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:903) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
+| `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:920) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
 | `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, repo_traverser and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
@@ -99,23 +99,24 @@ user is NOT an admin** (`interaction.user.id not in ADMINS`). Every call site re
 `if lacks_admin(...): send "You do not have permission"; return`. The invariant is owned by
 **autocroissant-architecture-contract**.
 
-Commands gated by `lacks_admin` in main.py (all 12 call sites, verified 2026-10-20 after the C6 removal; line numbers
+Commands gated by `lacks_admin` in main.py (all 13 call sites, verified 2026-10-21 after `/bake_cards`; line numbers
 drift — re-derive with `grep -n "lacks_admin" main.py`):
 
 | Slash command | main.py line |
 |---|---|
-| `/stop_bot` | 161 |
-| `/pull` | 175 |
-| `/push` | 185 |
-| `/update` | 198 |
-| `/set_reminder` | 227 |
-| `/update_tts_save` (added 2026-10-20) | 377 |
-| `/list_guilds` | 648 |
-| `/leave_guild` | 663 |
-| `/sync_global` | 672 |
-| `/sync_emojis` (added 2026-10-19) | 687 |
-| `/list_guild_channels` | 703 |
-| `/get_channel_messages` | 723 |
+| `/stop_bot` | 164 |
+| `/pull` | 179 |
+| `/push` | 189 |
+| `/update` | 202 |
+| `/set_reminder` | 232 |
+| `/update_tts_save` (added 2026-10-20) | 392 |
+| `/bake_cards` (added 2026-10-21) | 408 |
+| `/list_guilds` | 683 |
+| `/leave_guild` | 698 |
+| `/sync_global` | 707 |
+| `/sync_emojis` (added 2026-10-19) | 722 |
+| `/list_guild_channels` | 738 |
+| `/get_channel_messages` | 758 |
 
 `/list_guild_members` was removed 2026-10-20 (C6: it needed the privileged members intent, which the bot
 does not enable).
@@ -126,7 +127,7 @@ Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
   Reminders saved before 2026-10-19 have no creator and still run as the bot (`LEGACY_RUNS_AS_BOT`); the bot's
   own id is in the dev Mac's ADMINS. Mechanism: autocroissant-architecture-contract invariant 9.
 
-Quirk, stated plainly: `/restart_bot` (main.py:151-158) is NOT gated — anyone in the guild can
+Quirk, stated plainly: `/restart_bot` (main.py:152-159) is NOT gated — anyone in the guild can
 restart the bot, while `/stop_bot` is admin-only. Observed code fact as of 2026-10-20; whether
 that is intentional is unknown (candidate cleanup — route through autocroissant-change-control).
 
@@ -193,7 +194,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:391) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:392) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
 | `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:398, 405) — gitignored via `*.csv` / `*.txt` |
@@ -209,7 +210,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:76, :162). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
+| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:77, :163). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
 | `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:950-969) | cards allowed to have no ability layer |
 
 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
@@ -268,7 +269,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 | `RETRY_WAITS` | `(1, 2)` | seconds between the 3 tries of `get_with_retry` (connection error, 429 or 5xx) |
 
 Also new 2026-10-20: `NET_TIMEOUT = 120` (commands/update_bot.py:8, seconds per git fetch/pull/push) and
-`MAX_CONTENT = 2000` (main.py:762, Discord's message limit; longer content is split before sending).
+`MAX_CONTENT = 2000` (main.py:779, Discord's message limit; longer content is split before sending).
 
 ### commands/type_emojis.py (lines 18-29, added 2026-10-19; not compiled)
 
@@ -333,6 +334,21 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 | `POOL_MIN`, `POOL_CHUNK` | `8`, `4` | `--all` parses this many PSDs or more in a process pool of half the cores, this many per task (813 PSDs: 98 s -> 9.8 s on the Mac, 2026-10-21); `/fonts` and `--repo` read blobs one by one |
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
+
+### commands/card_runner.py (added 2026-10-21; not compiled; the bake inside the bot, design section 8 "Jetson")
+
+| Name | Value | Meaning |
+|---|---|---|
+| `REPORT_FILE` | `"card_bake_report.md"` | the full bake report attached in Discord (the summary is the message) |
+| `bake_lock` | `threading.Lock()`, module level | held by `update_stats` for its whole run and by the bake around `card_bake.run`: the two never overlap (queued commands run concurrently) |
+| `_last_edits_sha` | in-memory, starts `None` | the edits file's blob sha the last bake was queued for; `notice_edits` queues one bake when the tree's differs. After a restart the first `/update_stats` queues one more (harmless) |
+| the hold line | `queue_command(bake_cards, interaction, dry_run=True)` in `notice_edits` | NOT a flag: the automatic bake is a dry run while PSD edits are on hold (2026-10-21). Lifting it is that one literal; the user then picks ONE live runner, this or the Action's push trigger |
+| `/bake_cards` defaults | `card=None`, `dry_run=True` (main.py:401-407) | one card or all; render and check only unless `dry_run:False` |
+
+The bake takes the token the bot already has: `card_bake.run` calls `github_api.token_from_env()`, which only patches the
+headers when config.py supplied no `GIT_TOKEN`, and `git_commit.token()` prefers `GIT_TOKEN`; no environment variable is
+needed inside the bot. The fonts dir and work dir are card_bake's (`PSD_TOOLS_FONT_DIRS` else `LOCAL_DIR_LOC/MDW/Fonts`;
+`RUNNER_TEMP` else a fresh `mkdtemp`): the jetson has neither a checkout nor the env, see run-and-operate section 7.
 
 ### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
 
@@ -400,7 +416,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:472, main.py:382). Code that wants a forced re-parse must pass
+   (repo_traverser.py:473, main.py:383). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -481,6 +497,7 @@ table with its command before quoting it in the future.
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
 | git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
 | font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
+| card_runner state and the hold line | `grep -n "^[A-Z_]* = \|^bake_lock\|^_last_edits_sha\|dry_run=True" commands/card_runner.py`; `grep -n "bake_lock\|notice_edits" commands/repo_traverser.py` |
 | global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py` (no use_local hits; every force_update default is False) |
@@ -510,3 +527,5 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (titles): `PARSER_VERSION` row added (2); `EXCESSIVE_STAT_EXCLUSIONS` row removed (deleted; `allow_high_stats` in Card Edits.json replaces it); psd_parser.py and repo_traverser.py citations re-pointed.
 
 2026-10-21 (review): psd_analyzer.py citations re-pointed (+2 for the PARSER_VERSION/title_text imports; `EXPORTED_*`, `COLUMN_ORDER`), repo_traverser.py `UPDATE_RATE` check :391, psd_parser.py `ABILITY_EXCLUSIONS` :950-969 after the WX-78 title fix. Gate re-run: `EXPORTED_STATS_NAME` uses are :398, :405.
+
+2026-10-21 (S7): commands/card_runner.py catalogued (bake_lock, _last_edits_sha, REPORT_FILE, the dry-run hold line, /bake_cards defaults); the lacks_admin table re-derived (13 gates); main.py, repo_traverser.py and help.py citations re-pointed. No flag added: the hold is a literal in the code.

@@ -28,7 +28,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    `docs/Finished/optimization-pass-2-2026-10-21/`. Landed 2026-10-21: `commands/git_commit.py` (one commit path),
    font check 98 s -> 9.8 s, both holes fixed, 350 tests; the fork-side bake speedups (preview write, viewport effects)
    wait for the worktrees.
-4. [x] (done 2026-10-21, deployed to the jetson 07:49 as 5835139, site 1c13eaa; the next `/update_stats` re-parses every card once: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, the 94 case/spacing-only ones shown as the file name by the site and `/query`, which also finds printed titles; `CardInfo.parser_version`
+4. [x] (done 2026-10-21, deployed to the jetson 07:49 as 5835139, site 1c13eaa; the next `/update_stats` re-parses every card once: `PARSER_VERSION` 2 reads the printed title into `display_name`, 157 cards, shown as printed, letter case included (user, 2026-10-21); `/query` also finds printed titles; `CardInfo.parser_version`
    makes the next /update_stats re-parse every card once; 8 goldens re-pinned; build_site shows the title with the stem as
    alias; `EXCESSIVE_STAT_EXCLUSIONS` deleted, Sonic and the Cannon `allow_high_stats` in Card Edits.json; Thunderfury aligned;
    20 name edits redundant now, 21 with Thunderfury, Sans and Papyrus have no `Name` layer) Decision Q1: the parser reads
@@ -37,8 +37,16 @@ Every task still wanted this session, in order; a line is struck through here wh
 5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
 6. [ ] S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
    bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.
-7. [ ] Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, 20 (inline editing),
-   23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
+   S7 code landed 2026-10-21: `commands/card_runner.py` (`bake_lock` shared with update_stats, `notice_edits` at the end of
+   update_stats queuing one dry-run bake per edits-file change, `/bake_cards [card] [dry_run]` admin command, report posted
+   like the TTS save's; 52 commands, 371 tests). Waiting for the hold: the fork tag in `~/venvs/autocroissant`, a fonts dir
+   on the jetson (no checkout there), one live bake with Actions disabled, the CPU/RAM peak; then ONE live runner.
+   S6 code landed 2026-10-21 (design §7): idea 12 and 13 in `psd_edit.set_stat`/`template_rows`; idea 14 in `psd_edit.set_text_layer`
+   (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
+   against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
+   stock psd-tools). All of it lands nothing under the hold.
+7. [ ] Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
+   card picking), 20 (inline editing), 23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
 8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
 
 Waiting on the user (not blocking): lifting the PSD hold (then S8, the standardization batch, the six title reprints,
@@ -360,6 +368,13 @@ cards and never in statistics (item 18).
   gathers it in /update_stats (it already opens every changed PSD) into a committed derived JSON keyed by PSD blob sha
   (no new pickle), pushed with /push; build_site.py writes one small file per card, fetched when the dropdown opens. The
   font check's per-blob cache, /fonts and the push guard read the same data. After the website foundation (6-8).
+
+- **24. Full-page profile editor with visual card picking** (user, 2026-10-21): editing a profile opens a full page (not the
+  small dialog) where the favourite/hated card and item are picked from card tiles with previews (search + filters like the
+  browser, click to pick), the featured hand is picked from the deck builder's saved hands, and the page previews the
+  profile as it will look. Same publish flow and file format as today. Also (same request): a person's page shows their
+  contributions AND a visual grid of the cards they made plus author facts (series, kinds, stars, first and latest card,
+  most edited card...), not only counts; built right after ideas 9-11 land. The picker is the primitive idea 20 reuses.
 
 ## Task 3c. Effect layers on pushes (after Task 3)
 

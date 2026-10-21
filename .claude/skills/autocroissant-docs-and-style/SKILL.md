@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 51 registered commands as of 2026-10-21; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 52 registered commands as of 2026-10-21; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
 ---
 
 # AutoCroissant docs and style
@@ -35,7 +35,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (157 lines as of 2026-10-21, after the /query_ability entry grew a line and the /fonts entry was added) is five module-level dicts, a
+`commands/help.py` (162 lines as of 2026-10-21, after the /query_ability entry grew a line and the /fonts and /bake_cards entries were added) is five module-level dicts, a
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
@@ -46,10 +46,10 @@ router function, and `__all__`. Note help.py is itself a cythonized module
 | `general_commands` | 6 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
 | `text_commands` | 29 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
 | `card_commands` | 42 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 79 | 9 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts` 2026-10-21) | `stats` |
-| `music_commands` | 107 | 17 | `music` |
+| `stats_commands` | 79 | 10 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts`, `/bake_cards` 2026-10-21) | `stats` |
+| `music_commands` | 112 | 17 | `music` |
 
-Total: 52 keys, 51 real commands documented (all of them, 2026-10-21). The `"Query Syntax:"` key
+Total: 53 keys, 52 real commands documented (all of them, 2026-10-21). The `"Query Syntax:"` key
 (help.py:52) is a sanctioned pseudo-entry — a non-command key used to document
 the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
 colon like real keys so they render uniformly.
@@ -74,20 +74,20 @@ line a one-sentence summary and push parameter detail into bullets.
 
 ### 2.3 How print_help routes
 
-`print_help(interaction, help_wanted)` (help.py:131-149) is a plain if/elif
+`print_help(interaction, help_wanted)` (help.py:136-154) is a plain if/elif
 chain: `"text"` → text_commands, `"card"` → card_commands, `"music"` →
-music_commands, `"stats"` → stats_commands (help.py:139-140), and **anything
-else falls through to general_commands** (else at help.py:141-142). The
+music_commands, `"stats"` → stats_commands (help.py:144-145), and **anything
+else falls through to general_commands** (else at help.py:146-147). The
 `"general"` choice works only via the fallback (there is no explicit
 `elif help_wanted == "general"`). The slash command's Choice list
-(main.py:140-144) offers exactly: text, card, music, stats, general.
+(main.py:141-145) offers exactly: text, card, music, stats, general.
 
 Rendering: entries are concatenated as `f"{cmd}\n{desc}\n\n"` inside a
 ` ``` ` code fence and sent with `queue_long_message` (split at the 1950-char BREAK_LEN, one
 `queue_message` per part) — never a direct await (see section 5.6).
 
 Adding a category = three edits in lockstep: new dict in help.py, new `elif` in
-`print_help`, new `Choice` in main.py:139-145 — plus updating `/help`'s own
+`print_help`, new `Choice` in main.py:140-146 — plus updating `/help`'s own
 signature key (skipping it left `stats` out of `/help`'s entry until 2026-10-20).
 
 ### 2.4 THE CHECKLIST (the rule this skill exists to enforce)
@@ -112,13 +112,13 @@ add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 
 ## 3. Known drift (audited 2026-07-11, re-audited and fixed 2026-10-20)
 
-### 3.1 Coverage drift: none (0 of 51 missing, 2026-10-21)
+### 3.1 Coverage drift: none (0 of 52 missing, 2026-10-21)
 
 The four missing entries (`/view_old_metadata`, `/list_guild_channels`, `/get_channel_messages`, and
 `/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
 asserts help.py covers exactly the registered commands. Nothing in help.py refers to a nonexistent command.
 **Extraction trap**: do NOT grep for bare `name=` — `Choice(name=...)`
-lines (e.g. main.py:140-144) will pollute the list. Use the anchored pattern:
+lines (e.g. main.py:141-145) will pollute the list. Use the anchored pattern:
 
 ```bash
 grep -oE '@tree\.command\(name="[^"]+"' main.py | sed 's/@tree.command(name="//;s/"//' | sort > /tmp/main_cmds.txt
@@ -140,20 +140,21 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 ## 4. Command description conventions (main.py describe strings)
 
-Derived from the live registrations (51 on 2026-10-21); follow these when writing new ones.
-Re-find line numbers by quoting the example text. The cleanest recent end-to-end example is
-`/sync_emojis` (main.py:697-709 + its help.py entry): admin marker in both surfaces, defaults
-stated in every describe string.
+Derived from the live registrations (52 on 2026-10-21); follow these when writing new ones.
+Re-find line numbers by quoting the example text. The cleanest recent end-to-end examples are
+`/bake_cards` (main.py:399-412 + its help.py entry, 2026-10-21; tests/test_card_runner.py checks the two surfaces agree) and
+`/sync_emojis` (main.py:714-726 + its help.py entry): admin marker in both surfaces, defaults
+stated in every describe string. Discord caps a command description and each describe string at 100 characters.
 
 | Convention | Real example (verified 2026-10-20) |
 |---|---|
-| State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:356); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:652) |
-| State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:580) |
-| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (main.py:664; all 12 `lacks_admin`-gated commands carry it, e.g. 161, 176, 186, 196) |
-| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:139-145), `blend_mode` (main.py:358-361), `field` for /mass_replace (main.py:493-499; `subseries` added 2026-10-20) |
+| State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:357); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:669) |
+| State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:597) |
+| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (main.py:681; all 13 `lacks_admin`-gated commands carry it, e.g. 162, 177, 187, 197, 400) |
+| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146), `blend_mode` (main.py:359-362), `field` for /mass_replace (main.py:510-516; `subseries` added 2026-10-20) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
-| "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:323; same shape for /set_repo, main.py:333) |
-| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:677, 717, 735-736): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
+| "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:324; same shape for /set_repo, main.py:334) |
+| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:694, 734, 752-753): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
 | Sentence case, trailing period | pervasive; keep it |
 
 New admin commands put the "(admin only)" marker in BOTH places (`/stop_bot`, `/pull`, `/push` and `/update`
@@ -192,7 +193,7 @@ Sanctioned variants (don't "normalize" them): analytics.py keeps its globals in 
 Configuration and Public API (`Time Parsing`, `Command Parsing`, `Storage`, `Scheduler`);
 music_player.py puts `state = MusicState()` immediately after its dataclass
 (music_player.py:44) and has no bottom init section. main.py uses a different banner style —
-`####################` boxes per command category (e.g. main.py:131-133) — keep
+`####################` boxes per command category (e.g. main.py:132-134) — keep
 that style in main.py only.
 
 Section banner format everywhere else, exactly 24 `=`:
@@ -241,8 +242,8 @@ rule arrived with Cython 3.3: declare an annotated variable once, never re-annot
 
 ### 5.5 f-strings
 
-Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:146;
-`f"Synced commands to guild: {guild.name} ({guild.id})"` main.py:102). No
+Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:151;
+`f"Synced commands to guild: {guild.name} ({guild.id})"` main.py:103). No
 `%` or `.format()` in new code.
 
 ### 5.6 queue_* discipline in command functions
@@ -250,7 +251,7 @@ Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:146;
 Worker functions are **sync** and never await Discord directly; they call
 `queue_message` / `queue_file` / `queue_edit` / `queue_command`
 (commands/utils.py:36-60) and main.py's 0.1 s loops do the actual sends.
-`print_help` (help.py:131-149) is the minimal canonical example: sync def,
+`print_help` (help.py:136-154) is the minimal canonical example: sync def,
 takes `Interaction`, ends in `queue_long_message`. The whole execution model and
 why violating it deadlocks or drops messages: `autocroissant-architecture-contract`.
 
@@ -442,24 +443,24 @@ Re-run before trusting; line numbers drift. Expected values in comments are the
 
 ```bash
 # Five dicts + router exist; help.py length
-grep -nE '^(general|text|card|stats|music)_commands = \{|^def print_help' commands/help.py   # lines 6,29,42,79,105,129
-wc -l commands/help.py                                                                       # 155
+grep -nE '^(general|text|card|stats|music)_commands = \{|^def print_help' commands/help.py   # lines 6,29,42,79,112,136
+wc -l commands/help.py                                                                       # 162
 
 # print_help routes "stats"; else-fallback is general
-grep -n -A1 'help_wanted == "stats"' commands/help.py        # 137-138 → stats_commands
+grep -n -A1 'help_wanted == "stats"' commands/help.py        # 144-145 → stats_commands
 
 # Slash choices for /help include stats (Choice noise is exactly why extraction is anchored)
-grep -n 'Choice(name="stats"' main.py                        # 143
+grep -n 'Choice(name="stats"' main.py                        # 144
 
-# Registered-vs-documented drift audit (expect 51 vs 51; 0 missing, §3.1)
-grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 51
-grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 51
+# Registered-vs-documented drift audit (expect 52 vs 52; 0 missing, §3.1)
+grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 52
+grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 52
 # full diff procedure: §3.1 comm commands
 
 # D1 fixed: only /update force_reset mentions a hard reset
-grep -n 'hard reset' commands/help.py main.py                # help.py:13 and main.py:198 (/update force_reset) only
+grep -n 'hard reset' commands/help.py main.py                # help.py:13 and main.py:199 (/update force_reset) only
 # D2 fixed: both say default False
-grep -n 'only_ability' commands/help.py main.py              # help.py:90 "(default: False)", main.py:401 "Default = False.", main.py:405 "= False"
+grep -n 'only_ability' commands/help.py main.py              # help.py:95 "(default: False)", main.py:418 "Default = False.", main.py:422 "= False"
 
 # /help entry lists every category (fixed 2026-10-20)
 grep -n '"/help <' commands/help.py                          # 7: text/card/music/stats/general
@@ -493,7 +494,7 @@ ls .claude/skills/ | wc -l                                    # 17
 
 Maintenance rules for this file: when a §3 drift instance is fixed, delete its
 row and re-run the audit; when a command is added, re-run the §3.1 diff and
-update the counts (51/51) and dict-entry table; when an 18th skill appears, add
+update the counts (52/52) and dict-entry table; when an 18th skill appears, add
 its ownership row in §7.3. Refresh the date stamps whenever you touch this file.
 
 2026-10-21: help.py's /query_ability entry describes the grouped output (155 lines; 157 with the /fonts entry); help.py and main.py line numbers re-pointed (review: admin-gate examples, guild_id/channel_id, pickle import).
@@ -501,3 +502,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-21 (review): github_api.py citations re-pointed (:17; the module gained two imports above it).
 
 2026-10-21 (titles): card_models.py citation re-pointed (`CardInfo.parser_version` added).
+
+2026-10-21 (S7): `/bake_cards` added to stats_commands (help.py 162 lines, 53 keys / 52 commands; `tests/test_card_runner.py` asserts the help entry and describe strings state the same defaults and the admin marker); section 4 names the 100-character cap; help.py and main.py line numbers re-pointed.

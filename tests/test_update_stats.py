@@ -3,10 +3,12 @@ import hashlib
 import json
 import os
 import pickle
+from threading import Thread
 
 import pytest
 from requests import HTTPError
 
+import commands.card_runner as cr
 import commands.github_api as ga
 import commands.psd_analyzer as pa
 import commands.repo_traverser as rt
@@ -106,6 +108,7 @@ def github(monkeypatch, psds):
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(rt, "_tree_etags", {})
     monkeypatch.setattr(rt, "_file_cache", {})
+    monkeypatch.setattr(cr, "_last_edits_sha", None)              # as after a bot start
     monkeypatch.setattr(pa.RepositoryTraverser, "_repo", lambda self: None)
     monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (TIME, "Tester"))
     for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
@@ -147,7 +150,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == []
     assert sorted(github.blobs()) == sorted([DOOMER, FREEZER, pa.ICON_MANIFEST_PATH, pa.AUTHORS_PATH, pa.EDITS_PATH])
-    assert queued == ["sync_changed_emojis", "refresh", "populate_files", "prep_dataframes"]   # no TTS save run
+    assert queued == ["sync_changed_emojis", "refresh", "populate_files", "prep_dataframes", "bake_cards"]   # no TTS save run
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
     doomer, freezer = stats["Mini Doomer"], stats["The Freezer"]
@@ -163,7 +166,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == [] and github.calls[0][0] == "tree" and github.calls[0][1]   # sent If-None-Match
     assert github.blobs() == [] and os.stat("stats.pkl").st_mtime_ns == mtime     # 304: nothing parsed or saved
-    assert queued == ["refresh", "populate_files", "prep_dataframes"]                 # the links still refresh
+    assert queued == ["refresh", "populate_files", "prep_dataframes"]                 # the links still refresh; no bake
     assert "Nothing changed in the card repo" in capsys.readouterr().out
 
 
@@ -266,6 +269,50 @@ def test_deleted_card_alone_is_kept(github):
     _run()
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
+
+
+def _bakes() -> list:
+    """The bakes queued by the last _run: their (args, kwargs)."""
+    return [(args, kwargs) for (args, kwargs), func in utils.command_queue if func.__name__ == "bake_cards"]
+
+
+def test_edits_sha_notice_queues_one_bake_per_change(github, psds):
+    """The first /update_stats after a start queues one dry-run bake (card_runner.notice_edits); later ones only when
+    the edits file's blob changed, never on a 304 or on a card-only change."""
+    _run()
+    assert _bakes() == [((None,), {"dry_run": True})] and cr._last_edits_sha == _file_sha(github, pa.EDITS_PATH)
+    _run()                                                                           # 304
+    assert _bakes() == []
+    github.files[DOOMER] = psds[OTHER]                                               # a card changed, the edits did not
+    _run()
+    assert _bakes() == []
+    github.files[pa.EDITS_PATH] = json.dumps({"cards": {"Mini Doomer": {"hp": 8, "_by": "web"}}}).encode()
+    _run()
+    assert _bakes() == [((None,), {"dry_run": True})] and cr._last_edits_sha == _file_sha(github, pa.EDITS_PATH)
+    _run()
+    assert _bakes() == []
+
+
+def test_edits_notice_only_for_the_card_repo(github, monkeypatch):
+    """A /set_repo'd update (like the emoji sync) queues no bake."""
+    monkeypatch.setattr(pa.card_repo, "repository", "someone/else")
+    _, queued = _run()
+    assert "bake_cards" not in queued and "sync_changed_emojis" not in queued and cr._last_edits_sha is None
+
+
+def test_bake_lock_serialises_update_stats(github, capsys):
+    """update_stats waits for a running bake (card_runner.bake_lock, shared with /bake_cards) and says so."""
+    cr.bake_lock.acquire()
+    try:
+        worker = Thread(target=_run)
+        worker.start()
+        worker.join(0.5)
+        assert worker.is_alive() and not os.path.exists("stats.pkl")
+    finally:
+        cr.bake_lock.release()
+    worker.join(120)
+    assert not worker.is_alive() and os.path.exists("stats.pkl")
+    assert "Waiting for the running card bake or update to finish" in capsys.readouterr().out
 
 
 def test_website_files_live_in_site():

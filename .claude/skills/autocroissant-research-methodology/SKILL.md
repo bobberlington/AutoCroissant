@@ -193,7 +193,7 @@ safe/read-only and run from the repo root; `$S` = `.claude/skills/autocroissant-
 | 3 | The Lich King (golden) | Single small gap + bbox prune threshold | `python3 $S/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"` |
 | 4 | The 18 exclusion-list cards (ABILITY_EXCLUSIONS, psd_parser.py:950-969; the 5 EXCESSIVE_STAT_EXCLUSIONS went on 2026-10-21, replaced by `allow_high_stats` in Card Edits.json) | Each is a documented rule-breaker; "cleaner" mechanisms reliably re-break one | Sandbox sweep; problem output must not grow (procedure: validation-and-qa) |
 | 5 | One rulebook page | Rulebook takes ANY text layer as ability (no layer named "ability"); also "20 Creature Types" (MISSPELT TYPE: tornado) must remain the ONLY *pickled* (parse-time) problem — the full-validation baseline is 5, per autocroissant-validation-and-qa §2's two-surface distinction | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` — expect type rulebook, ability starting "TABLE OF CONTENTS" |
-| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:257) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, repo_traverser.py:36), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
+| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:257) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, repo_traverser.py:37), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
 
 If a proposed mechanism survives all six rows AND a sandbox sweep whose diff_stats output
 matches a written prediction (section 2), it has met the bar. Promotion itself (commit/push)
@@ -347,3 +347,5 @@ Maintenance rules:
 2026-10-21 (titles): the stat exclusion list is gone (row 4 of the counter-case table, the re-verify row).
 
 2026-10-21 (review): psd_parser.py `ABILITY_EXCLUSIONS` citation re-pointed (:950-969) after the WX-78 title fix.
+
+2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.

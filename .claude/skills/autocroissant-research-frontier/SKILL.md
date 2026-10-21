@@ -41,7 +41,7 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
   text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:355 —
-  literally one `str.contains` call; wrapper at query_card.py:641, registered main.py:307).
+  literally one `str.contains` call; wrapper at query_card.py:641, registered main.py:308).
   Ask it a question and it matches nothing unless your words appear verbatim.
 - `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:271): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
@@ -54,8 +54,8 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | Asset | Where | Why it matters |
 |---|---|---|
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:452) writes `rules.txt`; `/export_rulebook` (main.py:412) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:357) writes `stats.csv` with an aliases column; `/export_cards` (main.py:399) | Structured stats + ability text in one table |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:452) writes `rules.txt`; `/export_rulebook` (main.py:429) | 48 pages of game rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:357) writes `stats.csv` with an aliases column; `/export_cards` (main.py:416) | Structured stats + ability text in one table |
 | Type-annotated ability text | `_inject_type_names` (psd_parser.py:901) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
@@ -376,3 +376,5 @@ changing old questions invalidates every historical score.
 2026-10-21 (titles): psd_parser.py citations re-pointed (PARSER_VERSION 2 reads the printed title into `display_name`).
 
 2026-10-21 (review): psd_analyzer.py citations +2 (`export_rulebook_to_file` :452, `export_stats_to_file` :357); psd_parser.py citations re-pointed after the WX-78 title fix.
+
+2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.

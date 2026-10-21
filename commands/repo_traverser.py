@@ -19,6 +19,7 @@ from typing import Optional
 from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, STARS_DIR, TYPES_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
+from commands.card_runner import bake_lock, notice_edits
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 from commands.query_card import DEFAULT_REPOSITORY, card_repo
@@ -489,6 +490,18 @@ def update_stats(interaction: Optional[Interaction] = None,
     Returns:
         List of formatted problem messages
     """
+    if verbose and bake_lock.locked():
+        say(interaction, "Waiting for the running card bake or update to finish...")
+    with bake_lock:                                 # never beside a card bake (card_runner)
+        return _update_stats(interaction, output_problematic, force_update, verbose, cards)
+
+
+def _update_stats(interaction: Optional[Interaction],
+                  output_problematic: bool,
+                  force_update: bool,
+                  verbose: bool,
+                  cards: str) -> list[str]:
+    """The traversal, the saves and the queued follow-ups; update_stats holds bake_lock around it."""
     if verbose:
         say(interaction, "Updating card statistics database... This may take a while.")
 
@@ -525,6 +538,8 @@ def update_stats(interaction: Optional[Interaction] = None,
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree, None, traverser.etag)
     queue_command(card_repo.prep_dataframes)
+    if tree is not None and traverser.repository == DEFAULT_REPOSITORY:
+        notice_edits(interaction, traverser.shas.get(EDITS_PATH))   # one dry-run bake when the edits file changed
 
     return problem_cards
 
