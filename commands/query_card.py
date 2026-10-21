@@ -552,25 +552,6 @@ def _stats_card(filename: str):
     return stats_db.stats.get(card_name(path)) if path else None
 
 
-def printed_title(card) -> Optional[str]:
-    """
-    The title to show for a card instead of its name: a website name as written, else the printed title when it differs
-    from the name beyond letter case and spacing ("Black Clot" for Clot_Black; not "CABBAGE" or "A P E X").
-
-    Args:
-        card: A CardInfo
-
-    Returns:
-        The title, or None to show the card's name
-    """
-    title = getattr(card, "display_name", None)
-    if not title:
-        return None
-    if "name" in (getattr(card, "parsed_values", None) or {}):       # a Card Edits.json name
-        return title
-    return title if "".join(title.lower().split()) != "".join(card.name.lower().split()) else None
-
-
 def query_name(interaction: Interaction, query: str) -> None:
     """
     Query and display a card by name.
@@ -588,7 +569,7 @@ def query_name(interaction: Interaction, query: str) -> None:
     url, page = card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
-    shown = printed_title(card) if card else None
+    shown = getattr(card, "display_name", None) if card else None
     subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
@@ -846,7 +827,6 @@ __all__ = [
     'init_query',
     'query_ability',
     'query_ability_num_occur',
-    'printed_title',
     'query_name',
     'query_rulebook',
     'set_match_ratio',

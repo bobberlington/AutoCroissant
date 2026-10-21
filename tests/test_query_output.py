@@ -98,17 +98,6 @@ def _card(name, title=None, edit=False):
     return SimpleNamespace(name=name, display_name=title, parsed_values={"name": None} if edit else None)
 
 
-def test_printed_title_folds_case_and_spacing():
-    """A title differing from the name by letter case or spacing alone shows as the name; a website name as written."""
-    assert qc.printed_title(_card("Apex Predator", "A P E X P R E D A T O R")) is None
-    assert qc.printed_title(_card("Poorly Drawn Cabbage", "POORLY DRAWN CABBAGE")) is None
-    assert qc.printed_title(_card("Clot Black", "Black Clot")) == "Black Clot"
-    assert qc.printed_title(_card("Mr Krabs", "Mr. Krabs")) == "Mr. Krabs"
-    assert qc.printed_title(_card("Sans", "snas.", edit=True)) == "snas."
-    assert qc.printed_title(_card("Fawful", "FAWFUL", edit=True)) == "FAWFUL"
-    assert qc.printed_title(_card("Mini Doomer")) is None
-
-
 def test_titles_join_the_name_lookup(repo, monkeypatch):
     """/query finds a card by its printed title; names already taken and cards without a PNG are left alone."""
     repo.git_files = {"clot_black.png": "Auxiliary/Minions/Clot_Black.png", "cabbage.png": "Auxiliary/Items/Cabbage.png"}
