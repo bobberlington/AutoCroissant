@@ -103,7 +103,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on `Text/Name`; refuse the card-named, hidden and rasterized layers (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | refused ("not yet") | - |
 | `types` | PSD (icon layers or font tokens) | refused ("not yet") | - |
-| `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched | stays |
+| `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
 | `type` `subtype` `series` | folder | never touched | stay |
 | `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
 
@@ -161,7 +161,7 @@ code, never exceptions; one bad card never blocks another.
    `png_for`), PNG path(s) and shas. Skip own commits (message `Card edit:` / actor AutoCroissant).
 1. **Fetch** every card named in the file that has a field outside the folder and database-only kinds (section 3): PSD,
    PNG(s), chart (once per run), fonts (cached). Gate `blob`: sha1(`blob N\0` + data) == tree sha. Refuse `recent` first
-   (PSD committed < 30 min ago: don't race its author; one `commits?path=&since=` call per card, the tree has no dates).
+   (PSD pushed < 30 min ago: don't race its author; by push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
    `unsupported-card` (non-template rows, not one visible `Text/Ability`, name layer not `Text/Name`, overlay word or
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
@@ -313,7 +313,7 @@ them leaves nothing behind (`$RUNNER_TEMP`), the next push recomputes.
 - **New edits mid-bake.** Step 10's re-read at H' plus the non-force update; the editor's own 422 retry absorbs our commit.
   An editor rewrite that re-inserts a baked field now equals the PSD -> redundant -> dropped next run, no pixels (whether
   edit.js rebuilds from stale in-memory data after a 422: to confirm; a flicker of "Edited" at worst).
-- **Two bakes.** Actions `concurrency: card-edits`; jetson: the Lock. A PSD committed in the last 30 min is skipped. Site lag
+- **Two bakes.** Actions `concurrency: card-edits`; jetson: the Lock. A PSD pushed in the last 30 min is skipped. Site lag
   after a bake (old value until `/update_stats` + `/push` + build) is named by "Re-parse pending" (section 9).
 
 ## 12. Acceptance: the 10 edits

@@ -6,7 +6,7 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
     run(repository, head, dry_run, card) -> (markdown report, commit shas)
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
-file with a PSD-kind field: refuse `recent` (PSD committed in the last 30 min), fetch its PSD and official PNG (gate
+file with a PSD-kind field: refuse `recent` (PSD pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
 (psd_edit.apply_jobs), rewrite the file with the baked and redundant fields removed and the `_psd` verdict written
 (a Python port of edit.js editsFile), and commit PSD + PNG + file on the branch's current head (git_commit: the
@@ -47,7 +47,9 @@ from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PAT
 # ========================
 # Configuration
 # ========================
-RECENT = timedelta(minutes=30)                  # a PSD committed more recently is its author's: don't race them
+RECENT = timedelta(minutes=30)                  # a PSD pushed more recently is its author's: don't race them
+PUSHES = 100                                    # activity entries per request (GitHub's max)
+COMPARE_FILES = 300                             # a compare lists at most this many files
 OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
@@ -84,6 +86,7 @@ class Card:
     new_psd_sha: str = ""
     commit: Optional[str] = None
     dropped: list = field(default_factory=list)     # fields removed from the file
+    creatures: bool = False                     # the entry has a creatures list (it sets the stats)
     verdict: Optional[dict] = None              # the _psd meta written for it (refused cards)
     note: str = ""
     traceback: str = ""
@@ -195,11 +198,25 @@ def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
     return data
 
 
-def _recent(repository: str, path: str, now: datetime) -> Optional[str]:
-    """The sha of a commit touching path within RECENT of now, else None (one small request)."""
+def recent_paths(repository: str, head: str, now: datetime) -> Optional[set]:
+    """
+    The paths that pushes within RECENT of now changed, up to head: by push time, not commit date (two requests at most).
+
+    Returns:
+        The paths, or None when there were too many pushes or files to tell
+    """
     since = (now - RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commits = api(repository, "GET", "commits", params={"path": path, "since": since, "per_page": 1}).json()
-    return commits[0].get("sha", "?") if commits else None
+    pushes = api(repository, "GET", "activity", params={"ref": CARD_BRANCH, "time_period": "day", "per_page": PUSHES}).json()
+    window = [push for push in pushes if (push.get("timestamp") or "") >= since]
+    if not window:
+        return set()
+    base = min(window, key=lambda push: push["timestamp"]).get("before") or ""
+    if len(window) >= PUSHES or not base.strip("0"):  # a new branch has no before
+        return None
+    files = api(repository, "GET", f"compare/{base}...{head}", params={"per_page": 1}).json().get("files") or []
+    if len(files) >= COMPARE_FILES:
+        return None
+    return {f["filename"] for f in files} | {f["previous_filename"] for f in files if f.get("previous_filename")}
 
 
 # ========================
@@ -429,7 +446,7 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
             continue
         rel = snapshot.psds.get(key, "")
         name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
-        cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else ""))
+        cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures"))))
     return cards
 
 
@@ -454,7 +471,7 @@ def _subject(card: Card) -> str:
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
-              dry_run: bool, now: datetime) -> None:
+              dry_run: bool, recent: Callable[[], Optional[set]]) -> None:
     """
     Section 5 for one card: the recent, duplicate and blob gates, classify, apply with every gate, commit.
     Fills the Card in place; a Refused becomes its refusal, any other exception its "error".
@@ -467,7 +484,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
         work: The run's work dir (the card's artifacts go in a folder named after it)
         dry_run: Write the artifacts, commit nothing
-        now: The run's clock for the recent gate
+        recent: Returns recent_paths() (fetched once)
     """
     started = perf_counter()
     folder = join(work, card.name.replace("/", "_"))
@@ -477,9 +494,14 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if original:
                 raise Refused("duplicate", f"a numbered PNG exported from `{original}`")
             raise Refused("unsupported-card", "no PSD in the card repo")
-        recent = _recent(snapshot.repository, card.rel, now)
-        if recent:
-            raise Refused("recent", f"PSD committed in the last {RECENT.seconds // 60} min (`{recent[:8]}`)")
+        stats = [f for f in card.fields if f in psd_edit.STAT_FIELDS]
+        if stats and card.creatures:            # CardEdits.apply sets the stats from creature 1: a baked stat would be undone
+            raise Refused("unsupported-card", f"{', '.join(stats)}: the entry's creatures list sets the stats")
+        pushed = recent()
+        if pushed is None:
+            raise Refused("recent", f"too many pushes in the last {RECENT.seconds // 60} min to tell")
+        if card.rel in pushed:
+            raise Refused("recent", f"PSD pushed in the last {RECENT.seconds // 60} min")
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png:
             raise Refused("unsupported-card", "no PNG beside the PSD")
@@ -704,9 +726,14 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
                                 fetch_verified(repository, snapshot.sha(psd_edit.STATUS_CHART), path)
                                 colors.append(psd_edit.status_fills(PSDImage.open(path)))
                         return colors[0]
-                    now = datetime.now(timezone.utc)
+                    pushed: list = []           # recent_paths(), read once
+
+                    def recent() -> Optional[set]:
+                        if not pushed:
+                            pushed.append(recent_paths(repository, head, datetime.now(timezone.utc)))
+                        return pushed[0]
                     for one in cards:
-                        bake_card(snapshot, one, parser, fonts, chart, work, dry_run, now)
+                        bake_card(snapshot, one, parser, fonts, chart, work, dry_run, recent)
                         if one.commit:
                             commits.append(one.commit)
                     report.cards = cards
@@ -762,6 +789,7 @@ __all__ = [
     'land_verdicts',
     'main',
     'psd_fields',
+    'recent_paths',
     'render',
     'rewrite_edits',
     'rewrite_entry',

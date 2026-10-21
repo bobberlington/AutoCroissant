@@ -2,7 +2,7 @@
 git_commit, the commit path card_bake and tts_save share: upload_blob's NO_WRITE / rate-limit split, commit_files'
 API-then-SSH order against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network).
 """
-from subprocess import CalledProcessError, CompletedProcess
+from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired
 
 import pytest
 
@@ -40,6 +40,9 @@ def test_commit_files_through_the_api(github):
     github.conflicts = 1                        # the branch moved: None, the caller retries from the new head; nothing re-uploaded
     assert gc.commit_files(gc.CARD_REPO, github.head, base, {}, {"a.txt": b"a2"}, "again", uploaded) is None
     assert _posts(github)[4:] == ["git/trees", "git/commits"]
+    github.stuck = True                         # unmoved: a rule refused the update, not a race
+    with pytest.raises(gc.Transient, match=r"GitHub 422: Repository rule violations found \(on PATCH"):
+        gc.commit_files(gc.CARD_REPO, github.head, base, {}, {"a.txt": b"a2"}, "again", uploaded)
 
 
 def test_upload_blob_no_write_and_rate_limit(github):
@@ -112,6 +115,22 @@ def test_git_commit_push_outcomes(monkeypatch):
         raise CalledProcessError(128, ["git", "-C", where, "hash-object"], stderr=b"fatal: bad object")
     monkeypatch.setattr(gc, "git", boom)
     with pytest.raises(gc.Transient, match="git hash-object in the history clone failed: fatal: bad object"):
+        gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
+
+    def slow(where, *args, stdin=None, env=None):
+        raise TimeoutExpired(["git", "-C", where, args[0]], gc.GIT_TIMEOUT)
+    monkeypatch.setattr(gc, "git", slow)        # a timeout or no git is the runner's: Transient, never a verdict
+    with pytest.raises(gc.Transient, match="git in the history clone failed: .* timed out after 300 seconds"):
+        gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
+    monkeypatch.setattr(gc, "git", git)
+
+    def no_push(cmd, **kw):
+        raise FileNotFoundError(2, "No such file or directory", "git")
+    monkeypatch.setattr(gc, "run_process", no_push)
+    with pytest.raises(gc.Transient, match="git push failed: .*No such file or directory"):
+        gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
+    monkeypatch.setattr(gc, "run_process", lambda cmd, **kw: (_ for _ in ()).throw(TimeoutExpired(cmd, gc.GIT_TIMEOUT)))
+    with pytest.raises(gc.Transient, match="git push failed: .* timed out after 300 seconds"):
         gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
 
 

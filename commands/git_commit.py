@@ -11,7 +11,7 @@ config imports (the token: config through github_api, else GITHUB_TOKEN); never 
 from base64 import b64encode
 from os import environ
 from os.path import expanduser
-from subprocess import CalledProcessError, run as run_process
+from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from typing import Optional
 
 from requests import RequestException, request
@@ -141,7 +141,7 @@ def api_commit(repository: str, head: str, base_tree: str, modes: dict, blobs: d
         blobs: {repo path: uploaded blob sha}
 
     Returns:
-        The commit's sha, or None on a 409/422 (the branch moved)
+        The commit's sha, or None on a 409/422 when the branch moved; raises Transient when it didn't (a rule refused it)
     """
     tree = api(repository, "POST", "git/trees", json={"base_tree": base_tree, "tree": [
         {"path": path, "mode": modes.get(path, "100644"), "type": "blob", "sha": sha} for path, sha in blobs.items()]}).json()["sha"]
@@ -153,7 +153,7 @@ def api_commit(repository: str, head: str, base_tree: str, modes: dict, blobs: d
         if ref_head(repository) != commit:
             raise
         return commit
-    if reply.status_code in CONFLICT:
+    if reply.status_code in CONFLICT and ref_head(repository) != head:
         return None
     if not reply.ok:
         raise Transient(f"{status(reply)} (on PATCH git/refs/heads/{CARD_BRANCH})")
@@ -232,9 +232,13 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
     except CalledProcessError as error:
         raise Transient(f"git {error.cmd[3]} in the history clone failed: "
                         f"{(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
-    # --no-thin: a thin pack would fetch the old blobs as its delta bases
-    push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", f"git@github.com:{repository}.git",
-                        f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    except (TimeoutExpired, OSError) as error:  # slower than GIT_TIMEOUT, or no git
+        raise Transient(f"git in the history clone failed: {error}") from error
+    try:                                        # --no-thin: a thin pack would fetch the old blobs as its delta bases
+        push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", f"git@github.com:{repository}.git",
+                            f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git push failed: {error}") from error
     if push.returncode:
         out = push.stdout.decode("utf-8", "replace")
         if any(line.startswith("!") and "[rejected]" in line for line in out.splitlines()):

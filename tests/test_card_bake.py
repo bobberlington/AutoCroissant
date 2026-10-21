@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import shutil
+from datetime import datetime, timedelta, timezone
 from subprocess import run as run_process
 from sys import executable
 
@@ -50,8 +51,9 @@ class FakeGitHub:
         self.blobs: dict = {}
         self.trees: dict = {}
         self.commits: dict = {}
-        self.recent: set = set()            # PSD paths committed "in the last 30 minutes"
-        self.conflicts = 0                  # PATCH ref answers conflict_status this many times
+        self.recent: set = set()            # paths pushed "in the last 30 minutes"
+        self.conflicts = 0                  # PATCH ref answers conflict_status this many times, someone else's push landing first
+        self.stuck = False                  # PATCH ref answers 422 with the branch unmoved (a ruleset)
         self.conflict_status = 422          # ... 409 or 422 (both mean "not a fast forward")
         self.conflict_on = ""               # ... only for commits whose message starts so ("" = any)
         self.broken: dict = {}              # blob sha -> the bytes served instead
@@ -108,8 +110,11 @@ class FakeGitHub:
             if sha in self.down:
                 return Reply(503, body={"message": "Service Unavailable"})
             return Reply(data=self.broken.get(sha, self.blobs[sha]))
-        if method == "GET" and route == "commits":
-            return Reply(body=[{"sha": "recent01" * 5}] if (params or {}).get("path") in self.recent else [])
+        if method == "GET" and route == "activity":
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return Reply(body=[{"before": "b" * 40, "after": self.head, "timestamp": now}] if self.recent else [])
+        if method == "GET" and route.startswith("compare/"):
+            return Reply(body={"files": [{"filename": path} for path in sorted(self.recent)]})
         if method == "POST" and route == "git/blobs":
             from base64 import b64decode
             if self.rate_limited:
@@ -131,8 +136,11 @@ class FakeGitHub:
             return Reply(201, body={"sha": sha})
         if method == "PATCH" and route == "git/refs/heads/main":
             commit = self.commits.get(json["sha"])
+            if self.stuck:
+                return Reply(422, body={"message": "Repository rule violations found"})
             if self.conflicts and (commit or {}).get("message", "").startswith(self.conflict_on):
                 self.conflicts -= 1
+                self.commit({**self.files_at(self.head), "elsewhere.txt": b"%d" % self.conflicts}, "web", "Website edit: elsewhere")
                 return Reply(self.conflict_status, body={"message": "Update is not a fast forward"})
             if not commit or [p["sha"] for p in commit["parents"]] != [self.head]:
                 return Reply(422, body={"message": "Update is not a fast forward"})
@@ -310,6 +318,7 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert "**Nothing baked.**" in text and f"Refused verdicts committed `{commits[1][:8]}`" in text    # card-edits.yml greps "committed `"
     blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
     assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, the file at H' twice
+    assert [route for _, route in github.calls].count("activity") == 1     # the recent gate reads the pushes once a run
 
     # a rerun on the pipeline's own commit does nothing
     text, commits = cb.run()
@@ -347,9 +356,44 @@ def test_card_restricts_the_run(github):
 def test_recent_refuses_before_fetching(github):
     github.recent.add(DOOMER)
     text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "recent: PSD committed in the last 30 min" in text
+    assert commits == [] and "recent: PSD pushed in the last 30 min" in text
     assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route.endswith(_sha(github.blobs[_sha(github.files_at(github.head)[DOOMER])]))]
     assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"]                 # transient: no verdict
+    github.recent = {f"Other/{i}.psd" for i in range(cb.COMPARE_FILES)}
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "recent: too many pushes in the last 30 min to tell" in text
+
+
+def test_recent_paths_by_push_time(monkeypatch):
+    """A commit dated hours ago but pushed just now is recent: the window is the pushes', the paths the compare's."""
+    now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+    pushes = [{"before": "c2", "after": "c3", "timestamp": "2026-10-21T11:50:00Z"},
+              {"before": "c1", "after": "c2", "timestamp": "2026-10-21T11:40:00Z"},
+              {"before": "c0", "after": "c1", "timestamp": "2026-10-21T11:00:00Z"}]      # before the window
+    asked = []
+
+    def api(repository, method, path, **kwargs):
+        asked.append(path)
+        if path == "activity":
+            return Reply(body=pushes)
+        return Reply(body={"files": [{"filename": "a.psd"}, {"filename": "b.psd", "previous_filename": "old b.psd"}]})
+    monkeypatch.setattr(cb, "api", api)
+    assert cb.recent_paths(cb.CARD_REPO, "c3", now) == {"a.psd", "b.psd", "old b.psd"} and asked == ["activity", "compare/c1...c3"]
+    assert cb.recent_paths(cb.CARD_REPO, "c3", now + timedelta(hours=1)) == set() and asked[2:] == ["activity"]
+    pushes[1]["before"] = "0" * 40                                                      # a new branch: can't tell
+    assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None
+
+
+def test_stat_edit_with_creatures_is_refused(github):
+    """CardEdits.apply sets the stats from creature 1: a baked hp would be undone, so the card is refused before any fetch."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1}], "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    text, commits = cb.run(card="Mini Doomer")
+    entry = _edits_at(github)["cards"]["Mini Doomer"]
+    assert len(commits) == 1 and entry["hp"] == 6 and entry["creatures"][0]["hp"] == 7
+    assert entry["_psd"]["reason"] == "unsupported-card: hp: the entry's creatures list sets the stats"
+    assert not [route for _, route in github.calls if route == f"git/blobs/{_sha(files[DOOMER])}"]
 
 
 def test_blob_gate(github):
@@ -369,6 +413,15 @@ def test_head_moved_after_three_conflicts(github, status):
     github.conflicts = 2
     text, commits = cb.run(card="Mini Doomer")
     assert len(commits) == 1 and _edits_at(github)["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
+
+
+def test_refused_ref_update_is_an_error_not_a_race(github):
+    """A 422 with the branch unmoved (a ruleset) is GitHub's refusal: one try, its message, no verdict."""
+    github.stuck = True
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "error: GitHub 422: Repository rule violations found (on PATCH git/refs/heads/main)" in text
+    assert [route for method, route in github.calls if method == "PATCH"] == ["git/refs/heads/main"]
+    assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 5
 
 
 def test_edit_changed_meanwhile(github):
