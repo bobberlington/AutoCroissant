@@ -1,7 +1,7 @@
 # Card PSD edits and standardization campaign (2026-10-20)
 
 **Status:** on hold until the user lifts it (2026-10-20): other developers are editing the PSDs, so nothing writes a PSD or PNG in
-TTSCardMaker until the user says so. Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-21"). This file is the single ledger of every PSD
+TTSCardMaker until the user says so. Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-22"). This file is the single ledger of every PSD
 change we intend (section 3); `docs/EDIT_PIPELINE_DESIGN.md`, the rulebook campaign and `docs/NEXT_SESSION_PLAN.md` (item 21) point here;
 the companion skill does not yet. Numbers measured 2026-10-20 over the 813 card PSDs of `~/Desktop/TTSCardMaker` (every PSD outside `MDW/`
 and `Auxiliary/Markers/`); 651 are creatures, minions, items, auxiliary items and N.M.E. items, the cards a template with stat bars or a

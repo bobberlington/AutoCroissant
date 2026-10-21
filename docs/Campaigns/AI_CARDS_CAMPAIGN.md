@@ -1,6 +1,6 @@
 # AI-generated cards campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 18 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-21"). Rule citations are rulebook pages as
+**Status:** designed 2026-10-20, not scheduled; plan item 18 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-22"). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; card numbers are `~/Desktop/TTSCardMaker/site/dist/data/cards.json`
 of 2026-10-20 (801 rows; dup rows dropped). Anything not checked on disk or in git is marked "to confirm". Playtest hooks are the
 Play tab (`docs/Campaigns/SIMULATOR_CAMPAIGN.md`) and `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`; both unscheduled.
