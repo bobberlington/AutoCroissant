@@ -224,14 +224,15 @@ class CardRepository:
         if string_match:
             column, value = string_match.groups()
             column = column.lower()
-            value = value.strip().lower()
+            value = value.strip().strip('"').lower()
 
             # Check if column exists
             if column not in self.cards_dff.columns:
                 return None
 
-            # Filter by exact match (case-insensitive)
-            return self.cards_dff[self.cards_dff[column].astype(str).str.lower() == value]
+            # Filter by exact match (case-insensitive); an empty cell never matches ("None"/"nan" as text)
+            col = self.cards_dff[column]
+            return self.cards_dff[col.notna() & (col.astype(str).str.lower() == value)]
 
         # Try string contains pattern (e.g., type~creature)
         string_contains_pattern = compile(r"^(\w+)~(.+)$", IGNORECASE)
@@ -239,16 +240,30 @@ class CardRepository:
         if contains_match:
             column, value = contains_match.groups()
             column = column.lower()
-            value = value.strip().lower()
+            value = value.strip().strip('"').lower()
 
             # Check if column exists
             if column not in self.cards_dff.columns:
                 return None
 
-            # Filter by contains (case-insensitive)
-            return self.cards_dff[self.cards_dff[column].astype(str).str.lower().str.contains(value, na=False, regex=False)]
+            # Filter by contains (case-insensitive); an empty cell never matches
+            col = self.cards_dff[column]
+            return self.cards_dff[col.notna() & col.astype(str).str.lower().str.contains(value, na=False, regex=False)]
 
         return None
+
+    @staticmethod
+    def _split_unquoted(text: str, sep: str) -> list[str]:
+        """text split on sep, except inside "double quotes" (subseries=="mario & luigi")."""
+        parts, start, quoted = [], 0, False
+        for i, ch in enumerate(text):
+            if ch == '"':
+                quoted = not quoted
+            elif ch == sep and not quoted:
+                parts.append(text[start:i])
+                start = i + 1
+        parts.append(text[start:])
+        return parts
 
     def ability_search_engine(self, ability: str) -> DataFrame:
         """
@@ -262,6 +277,7 @@ class CardRepository:
         - Numeric comparisons: "hp>5", "stars<=3", "def==10"
         - String exact match: "type==creature", "subtype==attack"
         - String contains: "type~aux", "series~kirby"
+        - Quoted values keep & and |: 'subseries=="mario & luigi"'
 
         Args:
             ability: Search query string
@@ -272,17 +288,17 @@ class CardRepository:
         ability = ability.strip()
 
         # Handle OR queries
-        if "|" in ability:
-            queries = [q.strip() for q in ability.split("|")]
-            results = [self.ability_search_engine(q) for q in queries]
+        queries = self._split_unquoted(ability, "|")
+        if len(queries) > 1:
+            results = [self.ability_search_engine(q.strip()) for q in queries]
             combined = concat(results)
             # Drop duplicates by index (card name) and ability column
             return combined[~combined.index.duplicated(keep='first')]
 
         # Handle AND queries
-        if "&" in ability:
-            queries = [q.strip() for q in ability.split("&")]
-            results = [self.ability_search_engine(q) for q in queries]
+        queries = self._split_unquoted(ability, "&")
+        if len(queries) > 1:
+            results = [self.ability_search_engine(q.strip()) for q in queries]
             result = results[0]
             for r in results[1:]:
                 result = merge(result, r, left_index=True, right_index=True, how="inner", copy=False)

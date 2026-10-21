@@ -40,11 +40,11 @@ Glossary (used throughout):
 | Term | Meaning |
 |---|---|
 | gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:318 as of 2026-10-20) where a type icon visually sits |
-| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:473; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
+| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:475; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
 | midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:22,375). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
-| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:838) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:876-880) |
+| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:840) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:878-882) |
 | sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
@@ -301,7 +301,7 @@ It re-drives the real `PSDParser` methods and prints 6 numbered steps. What each
 | [3] joined text with `<GAP:n>` markers | every 3+ space run the injector will target | a gap that is really table formatting; a missing gap where an icon sits (author used ≤2 spaces) |
 | [4] below-midline icons, sorted + prune decision | injection candidates, row grouping (40px), `max(last_y//3, card_mid_y)` threshold | a legitimate icon in `dropped:` (prune too aggressive); row grouping merging two visual rows |
 | [5] gap count vs kept types | the ordinal balance | MISMATCH → leftovers appended to last line, or gaps left unfilled |
-| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:778 on 2026-10-20) having eaten a legitimate gap before punctuation |
+| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:780 on 2026-10-20) having eaten a legitimate gap before punctuation |
 
 ### Worked example — The Lich King (verified 2026-07-11)
 
@@ -405,7 +405,7 @@ check. It thrashed because the equality is false for legitimate layouts:
   were missed or icons misrouted. The threshold must be tuned by a corpus census, not intuition.
 - C2 (gaps side): fire only when kept_types > 0 AND at least one gap on an icon-bearing card
   remains unfilled after injection — and measure this BEFORE the punctuation cleanup at
-  psd_parser.py:778 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
+  psd_parser.py:780 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
   would vanish from the final text).
 - C3 (guard): kept_types == 0 → never fire (exempts Warcraftian Hunter and the 4 rulebook tables).
 
@@ -480,7 +480,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 | The 5 EXCESSIVE_STAT_EXCLUSIONS | Cards whose summed stat digits exceed 10 | Verify each with parse_one against the visible bars; if the sum is faithful, the >10 rule (not the card) is what needs redesign — the list encodes game content in code. CANDIDATE: data-driven expected-max instead of a name list |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
-`ability == ""` with `ability is None` (`not card.ability`, psd_parser.py:937 as of 2026-10-20). The parser
+`ability == ""` with `ability is None` (`not card.ability`, psd_parser.py:939 as of 2026-10-20). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
 `None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
 card; only `None` (or absence of the layer) is a problem. **Predicted effect:**

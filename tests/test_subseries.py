@@ -1,5 +1,6 @@
 """Subseries: a database-only card field (Card Edits.json or /update_metadata, never the PSD)."""
 import inspect
+import json
 import pickle
 import shutil
 from types import SimpleNamespace
@@ -85,6 +86,28 @@ def test_reparse_keeps_a_hand_set_subseries(clone):
     assert psd_parser.parse(str(clone / rel), rel).subseries is None
 
 
+def test_reparse_takes_series_and_subseries_from_before_the_edits(clone):
+    """A re-parse keeps the pre-edit values (parsed_values), so removing the website edit later still clears it."""
+    rel = "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd"
+    if not (clone / rel).exists():
+        pytest.skip(f"no {rel}")
+    psd_parser = parser()
+    name = cm.card_name(rel)
+    edits = pa.CardEdits.parse(json.dumps({"cards": {name: {"subseries": "Paper Mario", "series": "Paper Mario"}}}))
+    stored = _card(name, "mario")
+    edits.apply(name, stored)
+    assert (stored.series, stored.subseries) == ("Paper Mario", "Paper Mario")
+    psd_parser.db.stats[name] = stored
+    card = psd_parser.parse(str(clone / rel), rel)
+    assert (card.series, card.subseries) == ("mario", None)                    # the PSD side, not the edit
+    edits.apply(name, card)
+    assert (card.series, card.subseries) == ("Paper Mario", "Paper Mario")
+    pa.CardEdits().apply(name, card)                                           # edit removed from the website
+    assert (card.series, card.subseries) == ("mario", None)
+    stored.parsed_values = {"subseries": "Super Paper Mario"}                  # hand-set before the edit
+    assert psd_parser.parse(str(clone / rel), rel).subseries == "Super Paper Mario"
+
+
 # ========================
 # Query DSL
 # ========================
@@ -105,6 +128,24 @@ def test_column_exists_when_no_card_has_one(repo):
     found = r._parse_stat_query("subseries==x")
     assert found is not None and found.empty                     # a filter, not a text search of "subseries==x"
     assert list(r.ability_search_engine('"subseries==x"').index) == ["A Snack"]
+
+
+@pytest.mark.parametrize("only", [("Kirby", "A Snack"), None])
+def test_empty_cells_never_match_as_text(repo, only):
+    """No subseries is None/NaN; pandas < 3 turns those into "None"/"nan" text, which must not match."""
+    r = repo({k: v for k, v in FAKE.items() if only is None or k in only})
+    for query in ("subseries~n", "subseries~an", "subseries~on", "subseries==none", "subseries==nan"):
+        assert not set(r.ability_search_engine(query).index) & {"Kirby", "A Snack"}, query
+
+
+def test_quoted_values_keep_and_and_or(repo):
+    cards = dict(FAKE, Luigi=_card("Luigi", "mario", "Mario & Luigi"), Fire=_card("Fire", ability="Fire & ice | wind."))
+    r = repo(cards)
+    assert list(r.ability_search_engine('subseries=="mario & luigi"').index) == ["Luigi"]
+    assert list(r.ability_search_engine('series==mario & subseries~"& luigi"').index) == ["Luigi"]
+    assert set(r.ability_search_engine('subseries=="Mario & Luigi" | series==kirby').index) == {"Luigi", "Kirby"}
+    assert list(r.ability_search_engine('"fire & ice | wind"').index) == ["Fire"]
+    assert r._split_unquoted('a | "b', "|") == ["a ", ' "b']                  # an unclosed quote still splits before it
 
 
 # ========================

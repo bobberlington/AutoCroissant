@@ -49,7 +49,7 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 | 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-20: **238 passed** (163 before that day's optimization pass) | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
 | 2 | **diff_stats deltas on a full sweep** | sandbox sweep, then `diff_stats.py before.pkl after.pkl` | HEAD vs working today: `813/813, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
 | 3 | **Validator problem-card count** (must not increase) | pickled surface: `inspect_pickle.py --problems`; full surface: re-validation one-liner (section 2) | pickled: **exactly 1** ("20 Creature Types" — `MISSPELT TYPE: tornado`); full validation: **exactly 5** (the 1 above + 4 computed-only, listed in section 2) | Extraction quality did not regress anywhere the validator can see |
-| 4 | **Exclusion-list sizes** | count `CardValidator.ABILITY_EXCLUSIONS` and `EXCESSIVE_STAT_EXCLUSIONS` | **18** ABILITY_EXCLUSIONS (psd_parser.py:894 on 2026-10-20) + **5** EXCESSIVE_STAT_EXCLUSIONS (psd_parser.py:887) | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
+| 4 | **Exclusion-list sizes** | count `CardValidator.ABILITY_EXCLUSIONS` and `EXCESSIVE_STAT_EXCLUSIONS` | **18** ABILITY_EXCLUSIONS (psd_parser.py:896 on 2026-10-20) + **5** EXCESSIVE_STAT_EXCLUSIONS (psd_parser.py:889) | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
 | 5 | **Eyeballing Discord output** | run a command, look at the message | none | Weakest. Catches only gross breakage; never sufficient alone. Acceptable as a final smoke check AFTER 1–4 pass, never as a substitute |
 
 If evidence levels conflict, the stronger level wins. A change that "looks great" in
@@ -63,13 +63,13 @@ Problems travel through two distinct channels, and they have different baselines
 **Channel A — parse-time problems, PERSISTED in the pickle.**
 `CardInfo.problems` is a dataclass field (card_models.py:71). During parsing these problem
 kinds are appended to it (line numbers as of 2026-10-19):
-- `NO ABILITY LAYER` (psd_parser.py:404), when no ability text layer exists.
-- `MISSPELT TYPE: <name>` (psd_parser.py:486), for visible pixel layers named in
+- `NO ABILITY LAYER` (psd_parser.py:406), when no ability text layer exists.
+- `MISSPELT TYPE: <name>` (psd_parser.py:488), for visible pixel layers named in
   `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']` (psd_parser.py:23).
 - Since 2026-10-19, four icon-font problems, added once each through `_add_problem`
-  (psd_parser.py:560): `UNKNOWN ICON TOKEN: [x]`, `UNKNOWN ICON CHARACTER: U+XXXX`,
+  (psd_parser.py:562): `UNKNOWN ICON TOKEN: [x]`, `UNKNOWN ICON CHARACTER: U+XXXX`,
   `ICON TOKEN NOT IN STOOGEDINGS FONT: [x]` and `ICON TOKEN PARTLY IN STOOGEDINGS FONT: [x]`
-  (psd_parser.py:593-625; meanings in impossibility-cards-reference §4.1). On 2026-10-19 no card
+  (psd_parser.py:595-627; meanings in impossibility-cards-reference §4.1). On 2026-10-19 no card
   PSD uses the font, and none fires on the corpus (method A in section 4.1), so the baseline below is
   unchanged. Expect them to appear as cards migrate; each firing is a real authoring mistake.
 
@@ -78,9 +78,9 @@ kinds are appended to it (line numbers as of 2026-10-19):
 `inspect_pickle.py --problems` counts exactly this channel.
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never pickled.**
-`CardValidator.validate(card)` (psd_parser.py:916-952 on 2026-10-20) builds a fresh local list from
+`CardValidator.validate(card)` (psd_parser.py:918-954 on 2026-10-20) builds a fresh local list from
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
-`STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:955) — then extends it with
+`STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:957) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
 card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:448)
 and out to Discord/console (called at repo_traverser.py:401; the archived local traversal on branch
@@ -88,7 +88,7 @@ and out to Discord/console (called at repo_traverser.py:401; the archived local 
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
-`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:947-949).
+`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:949-951).
 And `validate()` only runs during a sweep when `output_problematic=True`
 (repo_traverser.py:382-383). Consequence: a sweep run with `output_problematic=False`
 would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
@@ -154,7 +154,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 
 **Equality rules.** A fresh `parse_one.py` run has `timestamp: 0.0` and no `author` —
 those two fields come from traversal metadata (git commit dates / DB preservation,
-psd_parser.py:348-352, which also keeps `series` and `subseries`; repo_traverser.py:374), not from the PSD. So:
+psd_parser.py:348-353, which also keeps `series` and `subseries`; repo_traverser.py:374), not from the PSD. So:
 
 - *Golden vs stats.pkl*: all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
@@ -384,12 +384,12 @@ python3 $SCRIPTS/diff_stats.py /tmp/stats_head.pkl stats.pkl   # every line must
 
 ## 6. How to add a CardValidator check
 
-**Where.** Computed checks go in `CardValidator.validate` (psd_parser.py:916) or, for
-creature/minion stat rules, `CardValidator._validate_stats` (psd_parser.py:955). This is
+**Where.** Computed checks go in `CardValidator.validate` (psd_parser.py:918) or, for
+creature/minion stat rules, `CardValidator._validate_stats` (psd_parser.py:957). This is
 the DEFAULT home for new checks: return-value-only, visible in sweeps and `parse_one.py`,
 zero database footprint, trivially removable. Parse-time checks
 (`card.problems.append(...)` inside `PSDParser`, like MISSPELT TYPE at
-psd_parser.py:486) PERSIST into stats.pkl — every firing is written into the committed
+psd_parser.py:488) PERSIST into stats.pkl — every firing is written into the committed
 database and needs a sweep to add AND to scrub. Only make a check parse-time if it needs
 information that exists solely during layer traversal, and expect a higher precision bar.
 

@@ -124,10 +124,10 @@ including a leaked `.ds_store` entry; since the 2026-10-19 dotfile fix it prints
 
 | Signature | What you see | Mechanism it points to |
 |---|---|---|
-| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:404) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:939) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
+| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:406) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:941) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
 | Icon above midline | The icon appears in `[1]`, not `[4]`; the gap in `[3]` stays unfilled | Icon y < 1200 → it's classified as a creature type, never an injection candidate. TYPE_REGION_RATIO=0.5 is deliberate — do NOT "fix" by injecting top-half icons (fenced off in autocroissant-psd-extraction-campaign) |
-| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:876-880) — the classic "types stuck at the end of the ability" symptom |
-| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:778) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
+| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:878-882) — the classic "types stuck at the end of the ability" symptom |
+| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:780) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
 
 **Conclusive result:** you can name the stage ([1]–[6]), state the mechanism in one sentence, it
 predicts the exact stored (wrong) text AND the healthy cards' correctness, and parse_one reproduces

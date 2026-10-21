@@ -54,7 +54,7 @@ Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
 Loaded existing old stats from old_stats.pkl
-Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:452); counts as of 2026-07-11
+Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:468); counts as of 2026-07-11
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N = 0 once synced
@@ -74,7 +74,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 |---|---|---|
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
 | `init_psd` (psd_analyzer.py:476) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
-| `init_query` (query_card.py:772) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
+| `init_query` (query_card.py:788) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:130) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
 | `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 

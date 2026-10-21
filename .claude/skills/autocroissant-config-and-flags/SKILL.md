@@ -208,8 +208,8 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` | 5 card names (psd_parser.py:887-893) | cards exempt from the stats>10 check |
-| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:894-913) | cards allowed to have no ability layer |
+| `CardValidator.EXCESSIVE_STAT_EXCLUSIONS` | 5 card names (psd_parser.py:889-895) | cards exempt from the stats>10 check |
+| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:896-915) | cards allowed to have no ability layer |
 
 The two exclusion sets are per-card whitelists the owner wants to eventually eliminate ("perfect
 extraction" goal). Their semantics and the validation rules live in
@@ -224,7 +224,7 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:771) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:787) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -342,8 +342,8 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (query_card.py:726-743; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:746-765) | `"MichaelJSr/TTSCardMaker"` — always |
+| `/set_ratio` | `card_repo.match_ratio` (query_card.py:742-759; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:762-781) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`,
 `browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.

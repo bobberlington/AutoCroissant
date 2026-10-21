@@ -127,7 +127,7 @@ minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creat
 
 This is the part newcomers lack. A card PSD is a layer TREE; the parser walks
 `psd.descendants()` and dispatches on layer kind, name, visibility, and position
-(`PSDParser._process_layer`, psd_parser.py:459-486). Annotated excerpt of a real dump
+(`PSDParser._process_layer`, psd_parser.py:461-488). Annotated excerpt of a real dump
 (`dump_psd_layers.py`, reproduced 2026-07-11):
 
 ```
@@ -157,7 +157,7 @@ problems NONE.
 ### 3.1 The naming trap: `layer.kind == "type"` means TEXT
 
 In psd-tools, "type" is the layer KIND for text layers (typography), and has nothing to do with
-card types. `psd_parser.py:465` dispatches text layers on exactly this. Card-type ICONS are
+card types. `psd_parser.py:467` dispatches text layers on exactly this. Card-type ICONS are
 pixel/smart-object layers matched by NAME (3.3). Misread this and nothing else in the parser makes
 sense.
 
@@ -165,8 +165,8 @@ sense.
 
 A text layer contributes ability text iff its name (lowercased) is `"ability"` — OR the card is a
 rulebook page (`"Rulebook" in relative_path`), in which case ALL text layers contribute
-(psd_parser.py:499, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
-repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:498-519):
+(psd_parser.py:501, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
+repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:500-521):
 
 | Raw sequence | Becomes | Why |
 |---|---|---|
@@ -179,8 +179,8 @@ repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_
 
 Multiple ability text layers (common on rulebook pages) are sorted by position (3.5's row sort) and
 joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(psd_parser.py:769-779). If NO ability text layer exists at all, the parse-time problem
-`NO ABILITY LAYER` is recorded (psd_parser.py:404).
+(psd_parser.py:771-781). If NO ability text layer exists at all, the parse-time problem
+`NO ABILITY LAYER` is recorded (psd_parser.py:406).
 
 ### 3.3 Card-type icons and the midline
 
@@ -194,7 +194,7 @@ sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and t
 aliases for icon-font tokens (§4.1).
 
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon
-(psd_parser.py:473-478). Position decides its meaning, using
+(psd_parser.py:475-480). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
 (psd_parser.py:22, 375):
 
@@ -205,7 +205,7 @@ A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type
 
 ### 3.4 Stats (hp/def/atk/spd)
 
-Two-stage name matching (psd_parser.py:627-677):
+Two-stage name matching (psd_parser.py:629-679):
 
 1. A layer is a stat layer if any ancestor (up to 3 levels) has "dark" or "bars" in its name
    (`Stats Bars > Darks > Hp Dark` qualifies).
@@ -238,7 +238,7 @@ value defaults to **10**: that is how maxed stats are encoded in the template. N
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
-`_sort_by_position` (psd_parser.py:801-828): sort by bbox top `y`; group into visual rows where
+`_sort_by_position` (psd_parser.py:803-830): sort by bbox top `y`; group into visual rows where
 `|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten.
 This is reading order — top-to-bottom, then left-to-right — and it determines both multi-text-layer
 join order and type-icon injection order.
@@ -248,7 +248,7 @@ join order and type-icon injection order.
 Card authors drop type ICONS inside the ability paragraph in Photoshop; the text layer just has a
 run of spaces where each icon sits. Extraction must splice `[typename]` tokens back into those
 gaps. This is the owner-stated hardest live problem; the spec below is exact
-(`_inject_type_names`, psd_parser.py:838-882, plus callers at 529-539).
+(`_inject_type_names`, psd_parser.py:840-884, plus callers at 529-539).
 
 Constants:
 
@@ -256,9 +256,9 @@ Constants:
 |---|---|---|
 | `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:22 |
 | gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:318 |
-| row grouping threshold | 40 px | psd_parser.py:802 |
-| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:835 |
-| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:778 |
+| row grouping threshold | 40 px | psd_parser.py:804 |
+| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:837 |
+| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:780 |
 
 Algorithm:
 
@@ -273,7 +273,7 @@ Algorithm:
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
    gaps pass through unchanged. Types are consumed strictly in sorted (reading) order.
 4. LEFTOVER types (more icons than gaps) are appended to the LAST line as ` [t1] [t2] ...`
-   (psd_parser.py:877-880). More gaps than icons: extra gaps stay as-is as literal spaces.
+   (psd_parser.py:879-882). More gaps than icons: extra gaps stay as-is as literal spaces.
 5. Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
@@ -400,12 +400,12 @@ The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_parser.py:885-981)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:887-983)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle:
-  `NO ABILITY LAYER` (psd_parser.py:404) and `MISSPELT TYPE: <name>` (psd_parser.py:485-486,
+  `NO ABILITY LAYER` (psd_parser.py:406) and `MISSPELT TYPE: <name>` (psd_parser.py:487-488,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 42).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
@@ -426,7 +426,7 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 
 **The exclusion lists are the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
-autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:887-913:
+autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:889-915:
 
 - `EXCESSIVE_STAT_EXCLUSIONS` (5, stats legitimately above 10): Royal Eradicator Main Cannon, Pix,
   Tainted Lazarus, Sonic, Twin Emperors.
@@ -479,7 +479,7 @@ database-only ones (unless `/update_metadata` had set them). The pipeline's verd
 website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
-a PSD re-parse keeps it with author and series (psd_parser.py:348-352) and a Card Edits.json value wins again at the
+a PSD re-parse keeps it with author and series (psd_parser.py:348-353) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
@@ -556,12 +556,12 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
 existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:670-723). At `populate_files` time each alias key is inserted into `git_files` as
+(query_card.py:686-739). At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
 Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
 `red_bloon -> pod01red_bloon.png`.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:215-285)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:215-301)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
 :315-334): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
@@ -597,12 +597,12 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:322-334). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:338-350). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:244) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:336-360). 48 pages today.
+   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:352-376). 48 pages today.
 10. Results return card IMAGES (urls via `get_card_url`); `howmany:True` returns just the count;
     `limit` caps output (main.py:276-290).
 

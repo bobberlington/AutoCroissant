@@ -41,9 +41,9 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
   text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:315 —
-  literally one `str.contains` call; wrapper at query_card.py:616, registered main.py:293).
+  literally one `str.contains` call; wrapper at query_card.py:632, registered main.py:293).
   Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:253): `|` OR,
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:268): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.
@@ -56,7 +56,7 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 | 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
 | Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:450) writes `rules.txt`; `/export_rulebook` (main.py:398) | 48 pages of game rules, one function call away |
 | Cards as CSV | `export_stats_to_file` (psd_analyzer.py:355) writes `stats.csv` with an aliases column; `/export_cards` (main.py:385) | Structured stats + ability text in one table |
-| Type-annotated ability text | `_inject_type_names` (psd_parser.py:838) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
+| Type-annotated ability text | `_inject_type_names` (psd_parser.py:840) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
 
@@ -215,7 +215,7 @@ executes perfectly.
 
 ### Residue 3a — Line-position estimation for bbox-anchored injection (OPEN)
 
-**Why open:** today's type-icon injection (`_inject_type_names`, psd_parser.py:838-882 as of 2026-10-20)
+**Why open:** today's type-icon injection (`_inject_type_names`, psd_parser.py:840-884 as of 2026-10-20)
 assigns icons to `\s{3,}` text gaps by global reading order and never checks whether an
 icon's y-coordinate matches the line it lands in. The fix everyone wants — anchor each icon
 to its text LINE by (x, y) — hits a wall: **psd-tools exposes only the whole text layer's

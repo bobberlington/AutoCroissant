@@ -74,10 +74,10 @@ line a one-sentence summary and push parameter detail into bullets.
 
 ### 2.3 How print_help routes
 
-`print_help(interaction, help_wanted)` (help.py:127-145) is a plain if/elif
+`print_help(interaction, help_wanted)` (help.py:128-146) is a plain if/elif
 chain: `"text"` → text_commands, `"card"` → card_commands, `"music"` →
-music_commands, `"stats"` → stats_commands (help.py:135-136), and **anything
-else falls through to general_commands** (else at help.py:137-138). The
+music_commands, `"stats"` → stats_commands (help.py:136-137), and **anything
+else falls through to general_commands** (else at help.py:138-139). The
 `"general"` choice works only via the fallback (there is no explicit
 `elif help_wanted == "general"`). The slash command's Choice list
 (main.py:139-143) offers exactly: text, card, music, stats, general.
@@ -182,7 +182,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
    (`stats_db = StatsDatabase()` at card_models.py:206 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:771-772).
+   `card_repo = CardRepository()` + `init_query` at query_card.py:787-788).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    with one standing exception: utils.py, the shared toolbox, has none.
@@ -241,7 +241,7 @@ rule arrived with Cython 3.3: declare an annotated variable once, never re-annot
 
 ### 5.5 f-strings
 
-Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:142;
+Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:143;
 `f"Synced commands to guild: {guild.name} ({guild.id})"` main.py:102). No
 `%` or `.format()` in new code.
 
@@ -250,7 +250,7 @@ Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:142;
 Worker functions are **sync** and never await Discord directly; they call
 `queue_message` / `queue_file` / `queue_edit` / `queue_command`
 (commands/utils.py:36-60) and main.py's 1-second loops do the actual sends.
-`print_help` (help.py:127-145) is the minimal canonical example: sync def,
+`print_help` (help.py:128-146) is the minimal canonical example: sync def,
 takes `Interaction`, ends in `queue_long_message`. The whole execution model and
 why violating it deadlocks or drops messages: `autocroissant-architecture-contract`.
 
@@ -459,7 +459,7 @@ grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 50
 # D1 fixed: only /update force_reset mentions a hard reset
 grep -n 'hard reset' commands/help.py main.py                # help.py:13 and main.py:195 (/update force_reset) only
 # D2 fixed: both say default False
-grep -n 'only_ability' commands/help.py main.py              # help.py:86 "(default: False)", main.py:387 "Default = False.", main.py:391 "= False"
+grep -n 'only_ability' commands/help.py main.py              # help.py:87 "(default: False)", main.py:387 "Default = False.", main.py:391 "= False"
 
 # /help entry lists every category (fixed 2026-10-20)
 grep -n '"/help <' commands/help.py                          # 7: text/card/music/stats/general

@@ -188,7 +188,7 @@ Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10
    (`general_commands`:6, `text_commands`:29, `card_commands`:42,
    `stats_commands`:77, `music_commands`:103), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:128) dispatches on the category word.
+   `print_help` (help.py:129) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
    by default (`type_emojis`, `repo_history`, `tts_save` and `github_api` were deliberately left out; the four

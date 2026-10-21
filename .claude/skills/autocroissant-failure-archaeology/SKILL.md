@@ -153,7 +153,7 @@ The Freezer and Mini Doomer parsed with junk spacing/quotes around injected `[ty
 Pre-saga and post-saga, the **only** whitespace transformation applied to ability text is punctuation tightening, applied AFTER injection:
 
 ```python
-ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_parser.py:778 as of 2026-10-20
+ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)   # psd_parser.py:780 as of 2026-10-20
 ```
 
 The rejected transformations (do not reintroduce): `sub(r'\s{2,}', ' ', ...)` (1c26747, also ate newlines) and `sub(r'[ \t]{2,}', ' ', ...)` (d6d1278, still destroyed gap evidence and legitimate spacing).
@@ -230,7 +230,7 @@ Six days in January 2026, the validator emitted `TYPE / WHITESPACE MISMATCH (N t
 
 1. **Legitimate mismatches exist.** A type at the start or end of a line consumes a type icon without any mid-text `\s{3,}` gap — the *exact* case 0490195 had just added support for. Whole-text gap counting therefore under-counts on healthy cards, so count inequality is not a reliable error signal.
 2. **The concurrent placement bug polluted the data.** With 0490195's index-shift bug live, gap/type accounting was wrong on the very cards used to judge the check.
-3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_parser.py:876-880 (2026-10-20):
+3. **The rewrite chose a forgiving invariant instead**: inject per line while types remain, then **append leftover types to the last line** rather than raise a problem — visible-but-mispositioned beats false alarms. Current code, psd_parser.py:878-882 (2026-10-20):
 
 ```python
         # Append remaining types to the last line
@@ -298,12 +298,12 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 
 - **Symptom**: long messages with multiple ``` code blocks split mid-fence, breaking Discord rendering; then splitting crashed outright.
 - **Root cause & fixes**: old `split_long_message` only handled a message that both started AND ended with a single fence. **e21b986** (2026-01-18) rewrote it with an `in_code` fence-tracking loop — but also removed the `max_length` default, breaking callers that passed no argument. **d699b3f** (2026-01-26) restored `max_length: int = BREAK_LEN`.
-- **Status**: fixed; current `split_long_message` at utils.py:212, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_parser.py:894 as of 2026-10-20.)
+- **Status**: fixed; current `split_long_message` at utils.py:212, BREAK_LEN=1950. (e21b986 also introduced `ABILITY_EXCLUSIONS`, now psd_parser.py:896 as of 2026-10-20.)
 
 ### 8.2 Deploy items / card.types clobber + force_update born
 
 - **Symptom**: item cards (the "deploy items") showed wrong types.
-- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_parser.py:473-476 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
+- **Root cause**: after per-layer processing correctly appended above-midline icons to `card.types` (psd_parser.py:475-478 as of 2026-10-20), a later block **overwrote** it with the below-midline bbox list: `card.types = [name for name, _ in type_bboxes if name]` — i.e. types became the inline-ability icons.
 - **Fix**: **f94d95f** (2026-01-18) deleted the overwrite. Same commit: added `MISSPELT_CARD_TYPES = ['undread', 'tornado']` validator (now `+ 'error'`, psd_parser.py:23 as of 2026-10-20 — today's single problem card "20 Creature Types" trips `tornado`), and threaded the `force_update` parameter end-to-end (slash param born here; its interaction with archiving is Entry 3).
 - **Status**: fixed in f94d95f.
 

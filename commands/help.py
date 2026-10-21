@@ -57,6 +57,7 @@ card_commands = {
                                                   "- String exact: type==creature, subtype==attack, series==kirby, subseries==paper mario\n"
                                                   "- String contains: type~creature, series~kirby, subseries~door (case-insensitive)\n"
                                                   "- Combine conditions: '\"damage\" & type==creature & hp>7', 'series==mario & subseries~door'\n"
+                                                  "- Values with & or | go in quotes: subseries==\"mario & luigi\"\n"
                                                   "- Fuzzy matching works for non-exact text queries",
     "/sync_emojis [refresh] [prune]:"           : "Uploads every missing or edited icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only). /update_stats does this too when the card repo changed.\n"
                                                   "- refresh: Re-upload every icon, even unchanged ones\n"
