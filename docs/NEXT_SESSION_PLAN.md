@@ -35,7 +35,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    `Text/Name` into `display_name` (goldens refreshed; build_site shows it; the 22 redundant name edits drop by the
    redundancy rule); drop `EXCESSIVE_STAT_EXCLUSIONS` (Q3); align Thunderfury's entry.
 5. [~] (running 2026-10-21 ~06:35: nine branches from cards a6363a04 incl. two bake speedups; integrates as cards_v4) Rendering round 3 if the critic leaves causes worth it (text gamma residue, group overlays, shadow shapes...).
-6. [ ] S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
+6. [x] (landed 2026-10-21 as 6710a5b; deployed to the jetson the same hour; the parity bar, the jetson hook and the fonts cache are open questions to the user) S6 code only: the digit-effect move on toggle (idea 12), FX regeneration from text (idea 14), top-row-10 +
    bottom-row N-10 writing (idea 13); S7 jetson runner (bot notices the edits sha, runs the bake over SSH). No PSD lands.
    S7 code landed 2026-10-21: `commands/card_runner.py` (`bake_lock` shared with update_stats, `notice_edits` at the end of
    update_stats queuing one dry-run bake per edits-file change, `/bake_cards [card] [dry_run]` admin command, report posted
@@ -45,7 +45,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
    against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
    stock psd-tools). All of it lands nothing under the hold.
-7. [ ] Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
+7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards grid + idea 24 editor running) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
    card picking), 20 (inline editing), 23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
 8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
 
