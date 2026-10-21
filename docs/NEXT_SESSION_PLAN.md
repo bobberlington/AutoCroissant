@@ -46,7 +46,7 @@ Every task still wanted this session, in order; a line is struck through here wh
    (every ability edit regenerates the `Ability FX:` layers from the chart and hides the overlays it replaces; no fork change; proven
    against the JSX cuts on Gasoline and the Cannon, Mini_Doomer edits through every gate; bot suite 380 passed, 24 skipped under
    stock psd-tools). All of it lands nothing under the hold.
-7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards panel + idea 24 full-page editor with the visual picker site/assets/pick.js as 812cb89; 20 inline editing landed as the next TTSCardMaker commit (site/assets/inline.js: in-place stat cells, ability, name, chips; Ctrl/Shift-select + drag onto Series/Author; one batch bar; All fields fallback); 23 built on both sides 2026-10-21 (bot: psd_details.json; site: the Details dropdown), then 5) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
+7. [~] (6-8 landed 2026-10-21 as TTSCardMaker 4473dd1; 9-11 as 41b929b with the People tab and plain titles; the person-page cards panel + idea 24 full-page editor with the visual picker site/assets/pick.js as 812cb89; 20 inline editing landed as the next TTSCardMaker commit (site/assets/inline.js: in-place stat cells, ability, name, chips; Ctrl/Shift-select + drag onto Series/Author; one batch bar; All fields fallback); 23 landed 2026-10-21 as AutoCroissant ad90c62 + TTSCardMaker 9bdbc6f (771 of 773 cards have a record; jetson 13:38); 5 (decks) running as its own workflow) Website foundation (ideas 6-8): sign-in top right, opt-in profiles, users page; then 9-11, the person-page cards grid + author facts and 24 (full-page profile editor with visual
    card picking), 20 (inline editing), 23 (details dropdown), 5 (decks). Each as its own verified workflow against ~/Desktop/TTSCardMaker.
 8. [ ] Memory and plan status after every landing; docs that complete move to `docs/Finished/` with a dated README.
 
@@ -366,8 +366,8 @@ cards and never in statistics (item 18).
   `python -m commands.psd_details --clone <dir>` for all 813 (8.9 s on the Mac, 2.7 MB, records 0.9-16.7 KB, median 3.7 KB);
   `/push` commits the file with the pickles, `/pull` keeps it on a conflict, `/fonts` reads its fonts before downloading;
   site side built the same day: `site/build/build_site.py` fetches the file, joins records by blob sha and writes
-  `data/details/<id>.json`; `site/assets/details.js` renders the dropdown; both halves uncommitted until the orchestrator
-  commits them together with the backfilled file): on the card browser, a per-card "Details" dropdown with every useful
+  `data/details/<id>.json`; `site/assets/details.js` renders the dropdown; LANDED 2026-10-21 as AutoCroissant ad90c62 (file backfilled
+  and committed, jetson deployed 13:38) and TTSCardMaker 9bdbc6f (site build green: 771 of 773 cards have a record, the two without are image-only)): on the card browser, a per-card "Details" dropdown with every useful
   fact about the PSD: fonts used, each expandable to the layers using it (missing fonts flagged); text layers (text, font,
   size, colour, visibility); effects per layer; smart objects; canvas size, colour mode, ICC profile; type-icon style
   (image layers or font tokens); stat-row encoding; status-word FX and overlay layers; template match and ledger
