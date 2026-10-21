@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:477 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:476 as of 2026-10-20; until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -445,7 +445,7 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(repo_traverser.py:370-371), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(repo_traverser.py:369-370), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned

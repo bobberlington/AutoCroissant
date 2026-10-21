@@ -13,7 +13,7 @@ from pandas import DataFrame, Index, concat, merge
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATH, RULEBOOK_DIR, SITE_URL, STATS_PKL
+from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
 from commands.type_emojis import render_type_tokens
@@ -168,7 +168,7 @@ class CardRepository:
         Supports:
         - Numeric comparisons: hp>5, def<=10, atk>=3, spd==7, stars<6
         - String exact matches: type==creature, subtype==attack, series==kirby
-        - String contains: type~creature (contains 'creature')
+        - String contains: type~creature (contains 'creature'), subseries~door
 
         Args:
             ability: Query string
@@ -362,16 +362,18 @@ class CardRepository:
             dump(self.git_file_alias, f)
 
     def _populate_edit_names(self) -> None:
-        """Website aliases and names from the card repo's Card Edits.json."""
+        """Website aliases and names from the card repo's Card Edits.json (the first of EDITS_PATHS in the tree)."""
         from commands.psd_analyzer import CardEdits
-        sha = next((item.get("sha") for item in (self._tree or {}).get("tree", []) if item.get("path") == EDITS_PATH), None)
-        if not sha:
+        shas = {item.get("path", ""): item.get("sha", "") for item in (self._tree or {}).get("tree", [])}
+        path = next((p for p in EDITS_PATHS if shas.get(p)), None)
+        if path is None:
             return
+        sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
             try:
                 self._edit_names = (sha, CardEdits.parse(blob_text(self.repository, sha)).names())
             except Exception as e:
-                print(f"Could not read {EDITS_PATH}: {e}")
+                print(f"Could not read {path}: {e}")
                 return
         names = self._edit_names[1]
         for card, extra in names.items():
@@ -409,6 +411,8 @@ class CardRepository:
         cards_df = DataFrame.from_dict(get_stats_as_dict()).transpose()
 
         if not cards_df.empty:
+            if "subseries" not in cards_df:             # database-only field: absent until a card has one
+                cards_df = cards_df.assign(subseries=None)
             if "hidden" in cards_df:                    # hidden on the website
                 cards_df = cards_df[cards_df["hidden"] != True]
             if "duplicate_of" in cards_df:              # same card as its original
@@ -512,9 +516,11 @@ def query_name(interaction: Interaction, query: str) -> None:
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
     shown = getattr(card, "display_name", None) if card else None
+    subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
-    if card and (shown or any(extra)):                  # website name, note or duplicate: an embed says so
+    if card and (shown or subseries or any(extra)):     # website name, subseries, note or duplicate: an embed says so
+        extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         found = card_repo.site_ids.get(basename(card_repo.git_files.get(closest, "")).lower())
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)

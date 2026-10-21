@@ -7,7 +7,7 @@ description: Domain reference for the Impossibility Simulator card game AS ENCOD
 
 All counts and line numbers verified 2026-07-11; §3.3, §4.1, §6 timestamp semantics and §8-9
 updated 2026-10-19 (icon font, `.DS_Store` fix, `force_update` default) and 2026-10-20 (exact token
-spellings, remote-mode default, blob-sha re-parsing, new CardInfo fields, §6 line refs). Line numbers drift; every volatile fact has a
+spellings, remote-mode default, blob-sha re-parsing, new CardInfo fields incl. the database-only `subseries`, §6 line refs). Line numbers drift; every volatile fact has a
 re-verification one-liner in "Provenance and maintenance" at the bottom. Commands assume
 cwd = `/Users/michaelsrouji/Desktop/AutoCroissant` (this repo's root).
 
@@ -25,7 +25,7 @@ https://github.com/JasonBechdolt and maintained by friends since middle school."
 Photoshop file (`.psd`, the editable source of truth) with a rendered `.png` sibling (the image the
 bot posts in Discord, served from `raw.githubusercontent.com`). TTSCardMaker is cloned at
 `~/Desktop/TTSCardMaker` — that path is the documented convention, set as `LOCAL_DIR_LOC` in
-`global_config.py:4`. This bot (AutoCroissant) READS TTSCardMaker over the GitHub API (reading the
+`global_config.py:5`. This bot (AutoCroissant) READS TTSCardMaker over the GitHub API (reading the
 local clone, "local mode", was archived on 2026-10-20; the clone still serves the offline diagnostics
 scripts), parses the PSDs into a stats database (`stats.pkl`), and answers queries against it.
 The bot never writes to TTSCardMaker.
@@ -58,6 +58,9 @@ live folder tree.
 | `Auxiliary/Status Effects/Buffs/x.psd` | `buff` | — | none |
 | `Auxiliary/<AnythingElse>/x.psd` (fall-through) | literal leaf folder, lowercased | — | none |
 | anything else | `unknown` | — | none |
+
+`subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json or `/update_metadata` set it, and a
+re-parse keeps it like `author` and `series` (§6).
 
 Observed live subtrees (2026-07-11): `Items/` subtypes = Active, Attack, Counter, Deploy, Equip,
 Heal, Infliction, Negation, Support; `Field/` and `Items/*/` have `1 Stars`..`4 Stars`; Creatures
@@ -110,8 +113,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:37) is checked against every path segment
-during stats traversal and duplicate-PNG detection (repo_traverser.py:343, 275). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:36) is checked against every path segment
+during stats traversal and duplicate-PNG detection (repo_traverser.py:342, 275). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -184,7 +187,7 @@ joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and a
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:202) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:201) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -433,7 +436,7 @@ autocroissant-psd-extraction-campaign). Verbatim, psd_parser.py:887-913:
 
 ## 6. Data schemas: CardInfo and the pickles
 
-`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:58-125, :29-56), pickled as
+`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:58-128, :29-56), pickled as
 `commands.psd_analyzer.*` (`__module__` pinned since the 2026-10-20 split).
 Consequence: **unpickling stats.pkl/old_stats.pkl requires this repo on sys.path with a config.py
 present** (module import chain). Pickles from before the
@@ -451,6 +454,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `ability` | `ability` | omitted when None (MDW, ability-less cards) |
 | `stars` | `stars` | omitted when None |
 | `subtype` / `series` | same | omitted when falsy |
+| `subseries` | `subseries` | a series within the series (Goombella: series Mario, subseries Paper Mario: The Thousand-Year Door); database-only — from Card Edits.json or `/update_metadata`, never the PSD or folder, kept on re-parse like `author`; omitted when falsy (2026-10-20) |
 | `types` | `types` | list[str] of upper-half icons; omitted when empty |
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
@@ -462,21 +466,31 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 `problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names` and `blob_sha` live only in the pickle
 (stats.pkl stores CardInfo objects); they are not `to_dict` keys.
 
+**Two kinds of Card Edits.json edits** (`CardEdits`, card_edits.py). `name`, `type`, `subtype`, `stars`, `types`,
+`hp`/`def`/`atk`/`spd`, `ability` and `creatures` override what the parser read from the PSD; `note`, `hidden`,
+`problems_ok`, `allow_high_stats`, `series` and `subseries` are database-only: no PSD layer holds them. Either way
+`apply()` saves the pre-edit value in `parsed_values` so dropping the edit restores it — the PSD value for the first
+kind; for the second the folder name for `series`, `False` for the bools, `None` for `note`/`subseries` (unless
+`/update_metadata` had set them). `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
+`dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
+a PSD re-parse keeps it with author and series (psd_parser.py:348-352) and a Card Edits.json value wins again at the
+next `/update_stats`.
+
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
 cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:58-62) fixes export/display order:
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
-subtype.
+subseries, subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-repo_traverser.py:405), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+repo_traverser.py:404), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:477), the same as the slash command (main.py:368);
+is `update_stats(force_update=False)` (repo_traverser.py:476), the same as the slash command (main.py:368);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
-the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `MDW/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20), the
+the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; `MDW/` until the move lands), the
 team's record of who made each card.
 - **Format:** two sections of `left = right` lines.
   - `[people]`: git/GitHub name = display name.
@@ -504,10 +518,10 @@ autocroissant-change-control):
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(repo_traverser.py:370-371; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:169-178 —
+(repo_traverser.py:369-370; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:172-181 —
 deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
-`_update_old_stats_paths` (repo_traverser.py:62-72) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (repo_traverser.py:61-71) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
@@ -517,7 +531,7 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:32`, singleton `card_repo` at :746) maintains
+`CardRepository` (`commands/query_card.py:32`, singleton `card_repo` at :750) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
 (`populate_files` :55-79). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
@@ -536,7 +550,7 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
 existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:645-698). At `populate_files` time each alias key is inserted into `git_files` as
+(query_card.py:649-702). At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
 Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
 `red_bloon -> pod01red_bloon.png`.
@@ -557,10 +571,12 @@ excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 | `a \| b` | OR (index union, deduplicated) | `hp>9 \| spd>9` |
 | `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10` |
 | `col==value` | string equality, case-insensitive | `series==kirby` |
-| `col~value` | string contains, case-insensitive | `type~creature` |
+| `col~value` | string contains, case-insensitive | `type~creature`, `subseries~door` |
 
 Numeric-queryable columns: hp, def, atk, spd, stars. String-queryable: type, subtype, series,
-author, path, ability, types (the list is stringified, so `types~undead` works).
+subseries, author, path, ability, types (the list is stringified, so `types~undead` works). `prep_dataframes`
+adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
+gotcha-4 text fall-through; `series==mario & subseries~door` is the website's own example.
 
 **Evaluation order and gotchas** (all verified in code, 2026-07-11):
 
@@ -618,6 +634,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
 | DSL internals | `grep -n '_stat_pattern\|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
+| subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | Clone location | `grep -n LOCAL_DIR_LOC global_config.py` |
 | Slash surface + update_stats defaults | `grep -n 'tree.command(name="query\|name="alias\|name="update_stats' main.py` and `sed -n '359,365p' main.py` |

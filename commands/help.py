@@ -54,9 +54,9 @@ card_commands = {
                                                   "- OR queries: Use | to combine, e.g., 'fire | water'\n"
                                                   "- AND queries: Use & to require multiple, e.g., 'fire & flying'\n"
                                                   "- Numeric comparisons: hp>5, def<=10, atk==3, spd>=7, stars<6\n"
-                                                  "- String exact: type==creature, subtype==attack, series==kirby\n"
-                                                  "- String contains: type~creature, series~kirby (case-insensitive)\n"
-                                                  "- Combine conditions: '\"damage\" & type==creature & hp>7'\n"
+                                                  "- String exact: type==creature, subtype==attack, series==kirby, subseries==paper mario\n"
+                                                  "- String contains: type~creature, series~kirby, subseries~door (case-insensitive)\n"
+                                                  "- Combine conditions: '\"damage\" & type==creature & hp>7', 'series==mario & subseries~door'\n"
                                                   "- Fuzzy matching works for non-exact text queries",
     "/sync_emojis [refresh] [prune]:"           : "Uploads every missing or edited icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only). /update_stats does this too when the card repo changed.\n"
                                                   "- refresh: Re-upload every icon, even unchanged ones\n"
@@ -75,8 +75,7 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones). "
-                                                               "When card images, TTS/decks.json, MDW/Card Edits.json or the TTS save changed, it also updates the TTS save (as /update_tts_save; posts only when the save changed or the update failed).\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones).\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
                                                                "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
                                                                "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",
@@ -87,16 +86,17 @@ stats_commands = {
                                                    "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
-    "/update_metadata <query> [del_entry] [author] [ability] [stars] [subtype] [series] [hp] [defense] [attack] [speed] [card_type] [types]:" :
+    "/update_metadata <query> [del_entry] [author] [ability] [stars] [subtype] [series] [subseries] [hp] [defense] [attack] [speed] [card_type] [types]:" :
                                                   "Edit metadata for a card. Provide query to find card, then any fields to update.\n"
                                                   "- del_entry: Delete entire metadata entry\n"
                                                   "- types: Comma-separated list, e.g., 'fire,water'\n"
-                                                  "- author: cards listed in TTSCardMaker's MDW/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
-                                                  "- fields fixed on the website (MDW/Card Edits.json) are set from that file again on the next /update_stats\n"
+                                                  "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
+                                                  "- author: cards listed in TTSCardMaker's site/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
+                                                  "- fields fixed on the website (site/Card Edits.json) are set from that file again on the next /update_stats\n"
                                                   "- No parameters (except query) shows current metadata",
     "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
-    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database (author, series, subtype, card_type).",
+    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database (author, series, subseries, subtype, card_type).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 

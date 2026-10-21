@@ -1,7 +1,7 @@
 """
 /update_stats: RepositoryTraverser reads the card repo's tree on GitHub, re-parses the PSDs whose blob changed, then
 applies the authors file, Card Edits.json and the duplicate PNGs; update_stats saves the result and queues the
-follow-ups (type emojis, the TTS save, the card list).
+follow-ups (type emojis, the card list).
 """
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -16,14 +16,13 @@ from tempfile import mkstemp
 from threading import local
 from typing import Optional
 
-from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, STARS_DIR, TYPES_DIR
+from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, STARS_DIR, TYPES_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
 from commands.query_card import card_repo
 from commands.repo_history import refresh as refresh_history
-from commands.tts_save import save_affected, update_after_stats
 from commands.type_emojis import sync_changed_emojis
 from commands.utils import queue_command, queue_edit, say
 
@@ -227,14 +226,15 @@ class RepositoryTraverser:
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
     def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
-        """The card repo's authors file (AUTHORS_PATH), or None if it's missing or unreadable."""
+        """The card repo's authors file (the first of AUTHORS_PATHS in the tree), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
-        if AUTHORS_PATH not in paths:
+        path = next((p for p in AUTHORS_PATHS if p in paths), None)
+        if path is None:
             return None
         try:
-            return CardAuthors.parse(self._repo_text(AUTHORS_PATH))
+            return CardAuthors.parse(self._repo_text(path))
         except RequestException as e:
-            print(f"Could not read {AUTHORS_PATH}; authors stay as they are: {e}")
+            print(f"Could not read {path}; authors stay as they are: {e}")
             return None
 
     def _apply_authors(self, authors: Optional[CardAuthors]) -> int:
@@ -252,14 +252,15 @@ class RepositoryTraverser:
         return changed
 
     def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
-        """The card repo's website fixes (EDITS_PATH), or None if missing or unreadable."""
+        """The card repo's website fixes (the first of EDITS_PATHS in the tree), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
-        if EDITS_PATH not in paths:
+        path = next((p for p in EDITS_PATHS if p in paths), None)
+        if path is None:
             return None
         try:
-            return CardEdits.parse(self._repo_text(EDITS_PATH))
+            return CardEdits.parse(self._repo_text(path))
         except (RequestException, ValueError) as e:
-            print(f"Could not read {EDITS_PATH}; edits stay as they are: {e}")
+            print(f"Could not read {path}; edits stay as they are: {e}")
             return None
 
     def _sync_duplicates(self, response) -> int:
@@ -524,8 +525,6 @@ def update_stats(interaction: Optional[Interaction] = None,
 
     if traverser.tree is not None:                  # tree changed (not 304): refresh edited type emojis
         queue_command(sync_changed_emojis, interaction, traverser.repository, traverser.shas, _forget_tree)
-        if save_affected(traverser.repository, traverser.shas):
-            queue_command(update_after_stats, interaction, traverser.repository, _forget_tree)
 
     # Always refresh card_repo stats
     queue_command(card_repo.populate_files, traverser.tree, None, traverser.etag)

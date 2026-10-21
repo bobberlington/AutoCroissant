@@ -1,6 +1,6 @@
 ---
 name: autocroissant-validation-and-qa
-description: Load this skill BEFORE judging whether any AutoCroissant change is safe or finished — whenever the task sounds like "is this change safe", "test this", "validate", "verify", "acceptance", "QA", "golden", "regression", "how do I know it works", "did the parser break anything", or before pushing/committing pickles (/push, /update, PICKLE commits) or touching commands/psd_analyzer.py (parser, CardValidator, exclusion lists). This repo has NO CI and only an offline pytest suite (tests/); this skill defines what counts as evidence — the evidence hierarchy (golden-card byte-equality > full-sweep diff_stats deltas > validator problem-card counts > exclusion-list sizes > eyeballing Discord output), the certified golden-card inventory (Mini Doomer, The Freezer, The Lich King) with expected values and the nomination procedure, the sandboxed parser-change acceptance procedure with the exact update_stats invocation and its GitHub-API cost, the two 2026-10-19 regression methods (old-vs-new parser over every PSD with no pickles or API; sandboxed forced LOCAL sweep compared field-by-field with the stored remote data, with that day's numbers: 813 cards, 0 unknown, 0 path changes, 59 ability + 2 star diffs explained as upstream PSD edits), the pickle-push diff gate, how to add a CardValidator check without repeating the TYPE/WHITESPACE MISMATCH mistake, and the concrete definition of "regression". Baselines certified 2026-07-11; regression methods extended and re-measured 2026-10-19.
+description: Load this skill BEFORE judging whether any AutoCroissant change is safe or finished — whenever the task sounds like "is this change safe", "test this", "validate", "verify", "acceptance", "QA", "golden", "regression", "how do I know it works", "did the parser break anything", or before pushing/committing pickles (/push, /update, PICKLE commits) or touching commands/psd_analyzer.py (parser, CardValidator, exclusion lists). This repo has NO CI and only an offline pytest suite (tests/); this skill defines what counts as evidence — the evidence hierarchy (golden-card byte-equality > full-sweep diff_stats deltas > validator problem-card counts > exclusion-list sizes > eyeballing Discord output), the certified golden-card inventory (Mini Doomer, The Freezer, The Lich King) with expected values and the nomination procedure, the sandboxed parser-change acceptance procedure with the exact update_stats invocation and its GitHub-API cost, the two 2026-10-19 regression methods (old-vs-new parser over every PSD with no pickles or API; sandboxed forced LOCAL sweep compared field-by-field with the stored remote data, with that day's numbers: 813 cards, 0 unknown, 59 ability + 2 star diffs explained as upstream PSD edits), the pickle-push diff gate, how to add a CardValidator check without repeating the TYPE/WHITESPACE MISMATCH mistake, and the concrete definition of "regression". Baselines certified 2026-07-11; regression methods re-measured 2026-10-19.
 ---
 
 # AutoCroissant validation & QA: what counts as evidence
@@ -46,7 +46,7 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 |---|---|---|---|---|
 | 1 | **Byte-identical golden-card parses** | `parse_one.py` / `gap_trace.py` output diff before vs after; ability text byte-compared to the stats.pkl entry | Golden inventory table in section 3 | The parser produces exactly the same output on cards known to exercise the hard paths. Byte-level: even one changed space in ability text is a real change (whitespace is load-bearing — the gaps are the type-injection signal; see the 2026-02-08 saga, 1c26747 through 3bbaa2b/4bcee6b) |
 | 1b | **Old-vs-new parser equality over EVERY PSD** (added 2026-10-19) | section 4.1 method A: import the git-HEAD `psd_analyzer` and the working-tree one side by side, parse all card PSDs with both, compare every field | 2026-10-19: 813 PSDs, **0 differences** (the icon-font change) | The parser change is behavior-neutral on today's corpus, with no pickles, no network, no API budget. Stronger than a sweep diff for "did my code change anything", because it isolates the code from upstream PSD edits |
-| 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-20: **220 passed** (163 before that day's optimization pass) | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
+| 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-20: **239 passed** (163 before that day's optimization pass) | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
 | 2 | **diff_stats deltas on a full sweep** | sandbox sweep, then `diff_stats.py before.pkl after.pkl` | HEAD vs working today: `813/813, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
 | 3 | **Validator problem-card count** (must not increase) | pickled surface: `inspect_pickle.py --problems`; full surface: re-validation one-liner (section 2) | pickled: **exactly 1** ("20 Creature Types" — `MISSPELT TYPE: tornado`); full validation: **exactly 5** (the 1 above + 4 computed-only, listed in section 2) | Extraction quality did not regress anywhere the validator can see |
 | 4 | **Exclusion-list sizes** | count `CardValidator.ABILITY_EXCLUSIONS` and `EXCESSIVE_STAT_EXCLUSIONS` | **18** ABILITY_EXCLUSIONS (psd_parser.py:894 on 2026-10-20) + **5** EXCESSIVE_STAT_EXCLUSIONS (psd_parser.py:887) | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
@@ -74,7 +74,7 @@ kinds are appended to it (line numbers as of 2026-10-19):
   unchanged. Expect them to appear as cards migrate; each firing is a real authoring mistake.
 
 `StatsDatabase.save()` pickles the CardInfo objects themselves, so these problems persist into
-`stats.pkl` and surface as the `"problem"` key in `to_dict()` (card_models.py:113).
+`stats.pkl` and surface as the `"problem"` key in `to_dict()` (card_models.py:116).
 `inspect_pickle.py --problems` counts exactly this channel.
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never pickled.**
@@ -82,15 +82,15 @@ kinds are appended to it (line numbers as of 2026-10-19):
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:955) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
-card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:450)
-and out to Discord/console (called at repo_traverser.py:403; the archived local traversal on branch
+card**: during a sweep it flows only into `_format_problems` (repo_traverser.py:449)
+and out to Discord/console (called at repo_traverser.py:402; the archived local traversal on branch
 `archive/local-update-stats` has its own copy of this flow).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
 `NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:947-949).
 And `validate()` only runs during a sweep when `output_problematic=True`
-(repo_traverser.py:384-385). Consequence: a sweep run with `output_problematic=False`
+(repo_traverser.py:383-384). Consequence: a sweep run with `output_problematic=False`
 would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
 inflating the Channel-A count by up to 18 with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
@@ -154,7 +154,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 
 **Equality rules.** A fresh `parse_one.py` run has `timestamp: 0.0` and no `author` —
 those two fields come from traversal metadata (git commit dates / DB preservation,
-psd_parser.py:349-350, repo_traverser.py:376), not from the PSD. So:
+psd_parser.py:348-352, which also keeps `series` and `subseries`; repo_traverser.py:375), not from the PSD. So:
 
 - *Golden vs stats.pkl*: all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
@@ -195,7 +195,7 @@ cd /tmp/ac_sandbox
 ```
 
 Why cwd is load-bearing: `STATS_PKL = "stats.pkl"` and `OLD_STATS_PKL = "old_stats.pkl"`
-are cwd-relative (global_config.py:6-8) — `update_stats()` loads and saves whichever
+are cwd-relative (global_config.py:7-9) — `update_stats()` loads and saves whichever
 pickles sit in the current working directory. Run the sweep with `cwd=/tmp/ac_sandbox`
 and only the sandbox pickles change.
 
@@ -233,7 +233,7 @@ stop, you changed more than you think.
 
 **Step 2 — Full sweep IN THE SANDBOX (the expensive gate).**
 
-Exact signature, verified 2026-10-20 at repo_traverser.py:477 (`cards` is a comma-separated list of
+Exact signature, verified 2026-10-20 at repo_traverser.py:476 (`cards` is a comma-separated list of
 names to re-parse anyway):
 
 ```python
@@ -260,18 +260,18 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   local mtime and every card is archived into old_stats, so compare fields other than `timestamp`, and
   ignore old_stats growth. Never promote its pickles to the live repo (BUGS_AND_IMPROVEMENTS B6).
 - **API budget warning:** change detection compares each PSD's blob sha in the tree with
-  `card.blob_sha` (`_psd_changed`, repo_traverser.py:74); an unchanged PSD costs no requests. Each
+  `card.blob_sha` (`_psd_changed`, repo_traverser.py:73); an unchanged PSD costs no requests. Each
   re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus one commit
-  page (`_commit_page`, repo_traverser.py:109-112; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
+  page (`_commit_page`, repo_traverser.py:108-111; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
   that gives both the newest commit and, for a new or authorless card, the first author (a file with
-  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:405-431). So
+  100+ commits costs one more request, `_get_remote_timestamp`, repo_traverser.py:404-430). So
   `force_update=True` costs ≈ 2 × 813 ≈ **1,630+ calls** (3 × 813 before 2026-10-20; about a third of the 5000/hr
   GIT_TOKEN limit; impossible at 60/hr without a token), plus the tree
   request and the small-file blobs; a default run costs only the changed PSDs. A forced run, or
   the first after a restart (the tree ETag is in memory), always gets the full tree. Minutes of
   wall time. Run it once per promotion, never in a loop.
 - Headless quirk (harmless): at the end `update_stats` queues `card_repo.populate_files` /
-  `prep_dataframes` onto the bot's command queue (repo_traverser.py:531-532); with no bot
+  `prep_dataframes` onto the bot's command queue (repo_traverser.py:528-529); with no bot
   running nothing drains it and the process just exits.
 - With `verbose=True` (default) the sweep prints progress, a summary
   (`N cards changed or new, N unchanged, N moved.`), and the full problem output (Channel A+B).
@@ -488,7 +488,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | MISMATCH check history | `git show -s --oneline fed8a83 081b1fd` and `git show fed8a83 -- commands/psd_analyzer.py` |
 | eb9aa84 revert exists | `git show -s --oneline eb9aa84` |
 | Remote-sweep API cost (blob + one commit page per re-parsed PSD, post-gate) | `grep -n "_get_remote_timestamp\|_commit_page\|COMMITS_PAGE =\|_blob\|_psd_changed" commands/repo_traverser.py` |
-| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (220 passed, about 13 s, 2026-10-20) |
+| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (239 passed, about 15 s, 2026-10-20) |
 | Method A scripts kept | `ls /Users/michaelsrouji/Documents/ac-optimization/scripts/parse_all_ns.py /Users/michaelsrouji/Documents/ac-optimization/scripts/compare.py` |
 | PSD count (~904) | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` |
 

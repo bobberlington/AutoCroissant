@@ -61,7 +61,7 @@ None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
 Owned by `ttscardmaker-companion`:
-- The website and editor are live (pushed 2026-10-20); the bot reads `MDW/Card Authors.txt` and `MDW/Card Edits.json`.
+- The website and editor are live (pushed 2026-10-20); the bot reads `site/Card Authors.txt` and `site/Card Edits.json` (`MDW/` fallback until the card repo's move lands; drop it afterwards).
 - The website unpickles the bot's pickles with stub classes for `commands.*`: anyone who can push AutoCroissant
   `main` can run code in the TTSCardMaker Actions job, and renaming CardInfo attributes blanks website fields.
 - 7 fonts are still missing from `MDW/Fonts` (Windows/Office ones, BabaUI).
@@ -111,7 +111,7 @@ Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26
    effects would cut about 40% (profile.md item 4).
 
 Done 2026-10-20: commit-sha image links (Task 1, e13d754), emoji sync inside /update_stats with the weekly
-reminder removed (Task 1b, e13d754), TTS save automation and /update_tts_save (Task 2: bad0496, ce94585, c4caaf9),
+reminder removed (Task 1b, e13d754), TTS save automation and /update_tts_save (Task 2: bad0496, ce94585, c4caaf9; the automatic run moved to TTSCardMaker's tts-save.yml the same day),
 the website Table tab (Task 2b, TTSCardMaker 0d49893).
 
 ### 2.5 Deep optimization and refinement pass (all code)

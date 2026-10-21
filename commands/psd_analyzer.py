@@ -12,7 +12,7 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
-from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR
+from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
@@ -58,7 +58,7 @@ EXPORTED_RULES_NAME = "rules"
 COLUMN_ORDER = [
     'aliases', 'type', 'ability', 'hp', 'def', 'atk', 'spd',
     'types', 'path', 'timestamp', 'author', 'stars',
-    'problem', 'series', 'subtype'
+    'problem', 'series', 'subseries', 'subtype'
 ]
 
 
@@ -141,12 +141,12 @@ def mass_replace_field(interaction: Interaction,
 
     Args:
         interaction: Discord interaction
-        field: Field name to modify (e.g., 'author', 'series', 'subtype', 'card_type')
+        field: Field name to modify (e.g., 'author', 'series', 'subseries', 'subtype', 'card_type')
         old_value: Value to replace
         new_value: New value
     """
     # Validate field name
-    valid_fields = ['author', 'series', 'subtype', 'card_type']
+    valid_fields = ['author', 'series', 'subseries', 'subtype', 'card_type']
     if field not in valid_fields:
         queue_message(interaction, f"Invalid field '{field}'. Valid fields are: {', '.join(valid_fields)}")
         return
@@ -172,6 +172,7 @@ def manual_metadata_entry(interaction: Interaction,
                           stars: Optional[int] = None,
                           subtype: Optional[str] = None,
                           series: Optional[str] = None,
+                          subseries: Optional[str] = None,
                           hp: Optional[int] = None,
                           defense: Optional[int] = None,
                           attack: Optional[int] = None,
@@ -190,6 +191,7 @@ def manual_metadata_entry(interaction: Interaction,
         stars: Star count
         subtype: Card subtype
         series: Card series
+        subseries: Card subseries (database only, never in the PSD)
         hp: HP stat
         defense: Defense stat
         attack: Attack stat
@@ -244,6 +246,10 @@ def manual_metadata_entry(interaction: Interaction,
     if series is not None:
         card.series = series
         updates.append(f"series: {series}")
+
+    if subseries is not None:
+        card.subseries = subseries
+        updates.append(f"subseries: {subseries}")
 
     if hp is not None:
         card.stats.hp = hp

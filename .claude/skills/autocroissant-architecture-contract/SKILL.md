@@ -105,7 +105,7 @@ Mechanics you must know:
 | 2 | **All Discord output from worker code goes through `queue_message`/`queue_file`/`queue_edit`/`queue_any`/`queue_command`** (utils.py:36-60). | Direct calls from a thread produce never-awaited coroutines (message silently lost) or thread-unsafe loop access. You also forfeit the fallback chain: your send dies permanently at the 15-minute token expiry instead of degrading to `channel.send`, and reminders (which run your command with a FakeInteraction) break because FakeInteraction only implements the queue-facing surface. |
 | 3 | **The three queue loops must be running for ANYTHING to send.** Started in `on_ready` (main.py:123-125); deliberately STOPPED by `/restart_bot` (main.py:152-154), `/stop_bot` (main.py:164-166), `/update` (main.py:201-203) so no queued output races process replacement. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (update_bot.py:18, 47, 136), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
 | 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (48 occurrences as of 2026-10-20; e.g. main.py:258, 359). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:110-111), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
-| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:203, re-exported by psd_analyzer), `card_repo` (query_card.py:746), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:29, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
+| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:206, re-exported by psd_analyzer), `card_repo` (query_card.py:750), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:29, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); every card module reaches utils: psd_analyzer → repo_traverser → query_card → type_emojis → utils (since the 2026-10-20 split). | Any tool that unpickles `stats.pkl` must have this repo on `sys.path` AND a config.py present — `CardInfo`/`CardStats` are dataclasses defined in `commands.card_models` with `__module__` pinned to `commands.psd_analyzer` (the facade re-exports them), so unpickling imports the facade and the chain reaches `config`. This is why the diagnostics scripts run from the repo root; code outside this repo must stub the classes, as TTSCardMaker's website build does (`_Unpickler` in site/build/build_site.py). config.py is SECRET — never print or read its values. |
 | 7 | **`check_reminder` is re-queued every tick — reminder-path work must stay cheap, and stay single-flight.** The first statement of `process_command_queue` is `queue_command(check_reminder)` (main.py:840); the entry drains on the next tick, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:161-163). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
@@ -143,28 +143,27 @@ Discord
 ```
 /update_stats  (wrapper defers, main.py:370)
       v
-WORKER THREAD: update_stats() (repo_traverser.py:477)
+WORKER THREAD: update_stats() (repo_traverser.py:476)
       |  GitHub trees API with If-None-Match: 304 -> "Nothing changed in the card repo since the
-      |    last update." and the run ends (ETag cache in memory only; repo_traverser.py:163-165)
+      |    last update." and the run ends (ETag cache in memory only; repo_traverser.py:162-164)
       |  build the icon vocabulary: Types/ + Types/Stars/ names + the stoogedings manifest
       |    (MDW/Fonts/stoogedings-src/stoogedings.json; impossibility-cards-reference §4.1)
       |  pick PSDs (GitHub only; local mode archived 2026-10-20, weak point 5): new, moved, blob sha
-      |    != card.blob_sha (_psd_changed, repo_traverser.py:74-86; commits-since fallback for
+      |    != card.blob_sha (_psd_changed, repo_traverser.py:73-85; commits-since fallback for
       |    cards without blob_sha), named in cards:, or force_update
       |  DOWNLOAD_WORKERS=4 stream blobs (git/blobs API) into mkstemp files ahead of parsing
-      |    (repo_traverser.py:128-141, 352-400)
+      |    (repo_traverser.py:127-140, 352-400)
       v
 per picked PSD: one commit lookup (_get_remote_timestamp); PSDParser.parse; remove temp file;
   old CardInfo -> old_stats only if its blob changed or it moved; CardValidator
       v
-stats_db singleton (card_models.py:203) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
+stats_db singleton (card_models.py:206) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
       |  (save only when num_changed > 0 or traverser.changed)
       v
-changed tree only: queue_command(sync_changed_emojis); if tts_save.save_affected(...) (an image blob,
-      |   TTS/decks.json, MDW/Card Edits.json or the save differs from the last tree save_affected saw, or
-      |   a run is owed: the last one failed or none ran since startup) -> queue_command(update_after_stats)
+changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a TTS save run when images, the
+      |   rules, Card Edits.json or the save changed; TTSCardMaker's tts-save.yml Action does that now)
 queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
-      |                                            (repo_traverser.py:524-532)
+      |                                            (repo_traverser.py:524-529)
       v  (subsequent command-queue ticks, pool threads)
 card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new data
       |
@@ -239,15 +238,17 @@ main.py  (registration + queue loops; imports every commands module)
  |                            [2026-10-19; NOT in setup.py INCLUDE_FILES, so never compiled]
  |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links; NOT compiled]
  |- commands.tts_save      -> repo_history, github_api, card_models, card_edits, global_config; utils + discord LAZILY inside the
- |                            posting functions, so `python -m commands.tts_save <save.json>` runs standalone
- |                            [2026-10-20; TTS save updater + /update_tts_save; NOT compiled]
+ |                            posting functions, so `python -m commands.tts_save <save.json>` runs standalone (TTSCardMaker's
+ |                            tts-save.yml Action does, with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
+ |                            overrides global_config reads) [2026-10-20; TTS save updater + /update_tts_save; NOT compiled]
  |- commands.card_models   -> global_config ONLY: CardType, CardStats, CardInfo (the pickled classes, __module__ pinned to
  |                            commands.psd_analyzer), StatsDatabase, stats_db, card_name  [2026-10-20 split; compiled]
  |- commands.card_edits    -> card_models: CardAuthors, CardEdits  [compiled]
  |- commands.psd_parser    -> card_models, global_config, psd_tools: PSDParser, CardClassifier, CardValidator,
  |                            IconVocabulary  [compiled; no Discord, network or pandas]
  |- commands.repo_traverser -> card_models, card_edits, psd_parser, github_api, utils, query_card, repo_history,
- |                            tts_save, type_emojis (module level!): RepositoryTraverser, update_stats, _tree_etags  [compiled]
+ |                            type_emojis (module level!; tts_save no longer, 2026-10-20): RepositoryTraverser, update_stats,
+ |                            _tree_etags  [compiled]
  |- commands.psd_analyzer  -> the four above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
  |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
  |- commands.frankenstein  -> utils, query_card (card_repo)
@@ -308,7 +309,7 @@ optimization pass.
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
 4. **(Fixed 2026-10-19) Remote traversal used to leak temp files.** Each downloaded temp file is now
-   removed in a `finally` right after parsing, and files left by an error at the end (repo_traverser.py:364-365, 392-400). Kept here as a pointer:
+   removed in a `finally` right after parsing, and files left by an error at the end (repo_traverser.py:363-364, 392-400). Kept here as a pointer:
    archaeology Entry 10.2.
 5. **(Retired 2026-10-20) Local mode's change signal did not match the stored data.** The local-mode PATH
    bug (removeprefix, 2025-12-02 → 2026-10-19) was fixed with `relpath` (story:
@@ -349,7 +350,7 @@ optimization pass.
    loop, delaying everyone else's replies. Waking the drain on enqueue, or batching up to 10 embeds per
    message, changes the execution model or the output, so both wait for the owner
    (BUGS_AND_IMPROVEMENTS §2.5; `/Users/michaelsrouji/Documents/ac-optimization/profile.md`).
-11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:135-140) and
+11. **The card pickle saves are not atomic.** `StatsDatabase.save` (card_models.py:138-143) and
    `save_aliases` (query_card.py:359-362) write in place, unlike reminder.pkl's tmp + fsync + replace, and
    nothing locks them against a concurrent `/push` or `/restart_bot`; a kill mid-write leaves a truncated
    pickle (network-robustness audit item 2; open).

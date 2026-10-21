@@ -106,7 +106,6 @@ def github(monkeypatch, psds):
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(rt, "_tree_etags", {})
     monkeypatch.setattr(rt, "_file_cache", {})
-    monkeypatch.setattr(rt, "save_affected", lambda *a: False)
     monkeypatch.setattr(pa.RepositoryTraverser, "_repo", lambda self: None)
     monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (TIME, "Tester"))
     for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
@@ -148,7 +147,7 @@ def test_first_run_then_304(github, capsys):
     problems, queued = _run()
     assert problems == []
     assert sorted(github.blobs()) == sorted([DOOMER, FREEZER, pa.ICON_MANIFEST_PATH, pa.AUTHORS_PATH, pa.EDITS_PATH])
-    assert queued == ["_refresh_links", "sync_changed_emojis", "populate_files", "prep_dataframes"]
+    assert queued == ["_refresh_links", "sync_changed_emojis", "populate_files", "prep_dataframes"]   # no TTS save run
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
     doomer, freezer = stats["Mini Doomer"], stats["The Freezer"]
@@ -248,3 +247,25 @@ def test_deleted_card_alone_is_kept(github):
     _run()
     stats, old = _saved()
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
+
+
+def test_old_mdw_paths_still_read(github):
+    """Until the card repo moves them, the authors and edits files are read from MDW/ (the second of the two paths)."""
+    old_authors, old_edits = pa.AUTHORS_PATHS[1], pa.EDITS_PATHS[1]
+    assert (old_authors, old_edits) == ("MDW/Card Authors.txt", "MDW/Card Edits.json")
+    github.files[old_authors] = github.files.pop(pa.AUTHORS_PATH)
+    github.files[old_edits] = github.files.pop(pa.EDITS_PATH)
+    assert _run()[0] == []
+    stats, _ = _saved()
+    assert (stats["Mini Doomer"].author, stats["The Freezer"].note) == ("Bob", "checked")
+    assert {old_authors, old_edits} <= set(github.blobs()) and not {pa.AUTHORS_PATH, pa.EDITS_PATH} & set(github.blobs())
+
+
+def test_site_paths_win_over_mdw(github):
+    """Both layouts present (mid-move): site/ is read, MDW/ is not even downloaded."""
+    github.files[pa.AUTHORS_PATHS[1]] = b"[people]\nbobgit = Old Bob\n[cards]\nmini_doomer = bobgit\n"
+    github.files[pa.EDITS_PATHS[1]] = json.dumps({"cards": {"The Freezer": {"note": "old"}}}).encode()
+    assert _run()[0] == []
+    stats, _ = _saved()
+    assert (stats["Mini Doomer"].author, stats["The Freezer"].note) == ("Bob", "checked")
+    assert not {pa.AUTHORS_PATHS[1], pa.EDITS_PATHS[1]} & set(github.blobs())

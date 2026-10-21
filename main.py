@@ -411,6 +411,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     stars='Star count (e.g., 1-7).',
     subtype='Card subtype.',
     series='Card series.',
+    subseries='A series within the series (e.g. Paper Mario in Mario). Database only, never in the PSD.',
     hp='HP stat value.',
     defense='Defense stat value.',
     attack='Attack stat value.',
@@ -427,6 +428,7 @@ async def slash_update_metadata(
     stars: Optional[int] = None,
     subtype: Optional[str] = None,
     series: Optional[str] = None,
+    subseries: Optional[str] = None,
     hp: Optional[int] = None,
     defense: Optional[int] = None,
     attack: Optional[int] = None,
@@ -443,6 +445,7 @@ async def slash_update_metadata(
         stars,
         subtype,
         series,
+        subseries,
         hp,
         defense,
         attack,
@@ -469,13 +472,14 @@ async def slash_view_old_metadata(
 mass_replace_field = to_thread(mass_replace_field)
 @tree.command(name="mass_replace", description="Replace all instances of one field value with another.")
 @app_commands.describe(
-    field='The field to modify (author, series, subtype, or card_type).',
+    field='The field to modify (author, series, subseries, subtype, or card_type).',
     old_value='The value being replaced.',
     new_value='The new value to set.',
 )
 @app_commands.choices(field=[
     Choice(name="author", value="author"),
     Choice(name="series", value="series"),
+    Choice(name="subseries", value="subseries"),
     Choice(name="subtype", value="subtype"),
     Choice(name="card_type", value="card_type"),
 ])

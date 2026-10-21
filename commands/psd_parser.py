@@ -345,11 +345,11 @@ class PSDParser:
             series=card_dict.get("series"),
         )
 
-        # Preserve author and series from existing card
-        if existing_card and existing_card.author:
-            card.author = existing_card.author
-        if existing_card and existing_card.series:
-            card.series = existing_card.series
+        # Preserve author and series (and subseries) from existing card
+        if existing_card:
+            for attr in ("author", "series", "subseries"):      # getattr: older pickles lack subseries
+                if getattr(existing_card, attr, None):
+                    setattr(card, attr, getattr(existing_card, attr))
 
         # Set initial stats if present
         if "hp" in card_dict:

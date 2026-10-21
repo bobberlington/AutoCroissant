@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: Load this skill for anything on the TTSCardMaker side of the project (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, "[fire]" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1PGT), (OYT), (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, share links /c/<slug>/, Open Graph previews, "the website is stale", missing fonts, font audit, "Photoshop says fonts are missing", Photoshop scripting, JSX, ExtendScript, ActionManager, `open -a "Adobe Photoshop 2023"`, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on "Blazing"), overlay text layers, effect layers "Ability FX: …", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, PSUserConfig WarnRunningScripts, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status.
+description: Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, "[fire]" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1PGT), (OYT), (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, "the website is stale", missing fonts, font audit, "Photoshop says fonts are missing", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on "Blazing"), overlay text layers, effect layers "Ability FX: …", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status.
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -33,9 +33,10 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/requirements.txt`, `site/README.md` | Source |
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
+| TTS save workflow | `.github/workflows/tts-save.yml` (keeps `TTS/Impossibility Simulator.json` current with the bot's updater; rules `TTS/decks.json`; §2.6) | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
-| Card authors file | `MDW/Card Authors.txt`: `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
+| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; the bot reads `site/` first and falls back to `MDW/` until the move lands): `[people]` git name = display name, `[cards]` Card = person. The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
 | Scratch work: audit outputs, Photoshop test JSX, migration prototype | `/private/tmp/fontexplore/` (**volatile: macOS wipes /tmp on reboot; nothing there is committed**) | Scratch |
@@ -226,15 +227,15 @@ spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old 
 | Card text, stats, authors, timestamps, problems | `stats.pkl` from `https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/` (`BOT_REPO` env) | `load_bot_pickle` |
 | Text history | `old_stats.pkl` (optional) | `main` |
 | Aliases | `aliases.pkl` (alias → PNG file name) | `main` |
-| **Authors** | `MDW/Card Authors.txt`. `[people]` git name = shown name; `[cards]` Card Name = person. Card names match case-insensitively, `_` = space, whitespace collapsed; `[people]` lookups are case-insensitive. Listed card: `people.get(cards[name], cards[name])`; else `people.get(bot_author, bot_author)`. Same rule as AutoCroissant. A missing file or malformed line only warns | `parse_authors`, `card_key`, `person` |
+| **Authors** | `site/Card Authors.txt`. `[people]` git name = shown name; `[cards]` Card Name = person. Card names match case-insensitively, `_` = space, whitespace collapsed; `[people]` lookups are case-insensitive. Listed card: `people.get(cards[name], cards[name])`; else `people.get(bot_author, bot_author)`. Same rule as AutoCroissant. A missing file or malformed line only warns | `parse_authors`, `card_key`, `person` |
 | File list + blob hashes | `git ls-tree -r -z HEAD` (works in a sparse, blobless checkout) | `repo_tree` |
 | **Card images** | Each card PNG becomes 3 WebP files named `<blob16>-240/-360/-720.webp`. 240 and 360 are the grid at 1x/2x, 720 is the card view. Cached in `site/.cache/img` by git blob hash, unused files pruned; settings in `IMAGE_SIZES`. PNG bytes come from the local file, else `raw.githubusercontent.com/MichaelJSr/TTSCardMaker/main/` | `make_images` |
 | Icons | `Types/`, `Types/Stars/` → 96 px WebP (q90, lossless alpha; shown at ≤ 34 px). Names and aliases from the stoogedings manifest | `build_icons` |
 | **Image versions** | One `git log --raw --no-renames` pass over all history, commit metadata only, no blobs (0.05 s for 520 commits). For each card PNG it lists the commits that changed its content. Exact renames (same blob deleted and added in one commit, i.e. folder moves such as the `Auxillary/` typo fix) are followed; a rename that also edits the image starts a new history. Inexact rename detection (`-M`) is deliberately not used: in a blobless clone it would download blobs. A shallow clone gets none and warns | `image_versions` |
-| Ban list | `MDW/Constructed Ban List.txt`, matched on letters and digits (`alnum`) incl. aliases | `parse_banlist` |
+| Ban list | `site/Constructed Ban List.txt`, matched on letters and digits (`alnum`) incl. aliases | `parse_banlist` |
 | **Duplicates** | A numbered PNG with no PSD of its own next to a card's PSD (`A_Snack.psd` → `A_Snack2.png`, `A_Snack3.png`). The team's rule: duplicates always share the original's PSD. Each becomes its own card with the original's data, `dup` = original id (the original gets `dups`). Its name is the alias pointing at that PNG (longest, capitalised: "breakfast" → Breakfast), else the original's name. Its author is the original's. Duplicates don't count as mentioning cards and are left out of the Stats page. The other names are hidden title layers in the PSD (Breakfast, Supper; Grape Juice; Inconspicuous Watermelon), but which PNG gets which name is only recorded by `/alias` | `main`, `dupsOf` (app.js) |
 | Unused status effects | Debuffs/buffs that no card's text names get `_unused` (Unused flag, filter, and a list on the Stats page) | app.js `init` |
-| **Website admins** | `MDW/Website Admins.txt` (GitHub logins; the repo owner is always one). A personal repo gives collaborators only write, so admin is a site rule: ban list, hidden cards, people, this list | `parse_admins`; edit.js `isAdmin` |
+| **Website admins** | `site/Website Admins.txt` (GitHub logins; the repo owner is always one). A personal repo gives collaborators only write, so admin is a site rule: ban list, hidden cards, people, this list | `parse_admins`; edit.js `isAdmin` |
 | **Creatures** | stats.pkl `creatures` (bot split) or the `creatures` edit → `entry.creatures` [{hp, def, atk, spd}]; card stats = creature 1 | `main`, `apply_edits` |
 | Unparsed cards | PSDs/PNGs under Creatures/, Items/, Field/, N.M.E/ and Auxiliary/ that aren't in stats.pkl: image only, classified by folder | `main`, `classify` |
 
@@ -267,8 +268,8 @@ TTSCardMaker Actions runner (same trusted circle today).
 
 - **Triggers:** push to `main`, cron `17 */6 * * *`, and `workflow_dispatch`.
 - **Checkout:** `actions/checkout@v7`, `fetch-depth: 0` + `filter: blob:none` (every commit and tree, about 25 MB, no
-  contents), plus a non-cone sparse checkout of `/site/`, `/Types/`, the manifest, the ban list,
-  `/MDW/Card Authors.txt`, `/MDW/Card Edits.json` and `/MDW/Website Admins.txt`.
+  contents), plus a non-cone sparse checkout of `/site/` (which holds the four hand-kept website files since
+  2026-10-20), `/Types/` and the font manifest.
 - **Steps:**
   - `setup-python@v7` (3.12, pip cache) → `pip install -r site/build/requirements.txt` (pillow) → `configure-pages@v6`
   - a cache-key step hashing `git ls-tree -r HEAD | grep -i '\.png$'`, then `actions/cache@v6` on `site/.cache` with key
@@ -345,17 +346,40 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 - **Consequence:** a bad PICKLE push becomes public, and the site is only as fresh as the last `/update_stats` + `/push`.
 - **Card edits:** pushed card content changes images immediately, but text and stats only after the bot re-parses
   and pushes.
-- **Authors:** both sides read `MDW/Card Authors.txt` with the same rule, so authors agree whatever the bot recorded.
+- **Authors:** both sides read `site/Card Authors.txt` with the same rule, so authors agree whatever the bot recorded.
 - **Duplicates:** `/update_stats` records `<Name>N.png` (no PSD of its own) as a copy of `<Name>`'s card with
   `duplicate_of`; name = edit > `/alias` > the PSD's hidden title (in order) > the original's. Search skips them.
 - **Bot ↔ site:** `/query` replies have a Card page button (ids from the site's cards.json) and show website
-  names/notes; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
-- **Website edits:** `MDW/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
+  names, notes and series/subseries; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
+- **Website edits:** `site/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
   triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
   `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (card_edits.py).
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.
+
+### 2.6 TTS save workflow (.github/workflows/tts-save.yml, 2026-10-20)
+
+Keeps `TTS/Impossibility Simulator.json` current with AutoCroissant's updater `commands/tts_save.py` (what it
+changes, and the bot's manual `/update_tts_save`: autocroissant-run-and-operate §7 "TTS save"). Until 2026-10-20 the
+bot ran the updater itself after `/update_stats`; this Action replaced that.
+
+- **Triggers:** push to `main` touching `**/*.png`, `TTS/decks.json` or `site/Card Edits.json`; cron `41 11 * * *`;
+  `workflow_dispatch`. The save's own commit matches none of them, so a run never triggers the next.
+- **Checkout:** this repo, non-cone sparse `/TTS/` + `/site/Card Edits.json`; the bot (`bobberlington/AutoCroissant`
+  main) into `bot/`, sparse `commands/tts_save.py`, `repo_history.py`, `card_models.py`, `card_edits.py`,
+  `github_api.py` and `global_config.py` (everything the updater imports; `commands/` is a namespace package, no
+  `__init__.py`; no config.py: github_api reads it in a try/except).
+- **Run:** `setup-python@v7` (3.12), `pip install requests`, then in `bot/`
+  `python -m commands.tts_save "$GITHUB_WORKSPACE/TTS/Impossibility Simulator.json" | tee tts-save-report.md` with
+  `AUTOCROISSANT_LOCAL_DIR=${{ github.workspace }}` (the updater reads `TTS/decks.json` and `site/Card Edits.json`
+  there) and `AUTOCROISSANT_HISTORY_CLONE=~/TTSCardMaker-history.git` (its bare blobless clone, made on each run;
+  `expanduser` resolves the `~`). Both are read by AutoCroissant's global_config.py (`environ.get`). The first
+  version symlinked the workspace to `~/Desktop/TTSCardMaker` instead; the overrides removed that step.
+- **Commit:** only when the save changed: identity `AutoCroissant <autocroissant@gmail.com>` (the bot's PICKLE
+  identity), message `TTS save: <first four "## " report sections>`, `git push`. `permissions: contents: write`,
+  `concurrency: tts-save` (no cancel), `timeout-minutes: 20`. The `.bak.json` and `.report.md` the updater writes
+  beside the save stay on the runner.
 
 ## 3. Missing-fonts audit (2026-10-19, re-checked 2026-10-20)
 
@@ -411,8 +435,8 @@ Recommendations:
 - (a) Before editing rulebook PSDs, activate Consolas through Adobe Fonts, or Photoshop will substitute and reflow.
 - (b) The owner's call (2026-10-20): "for any fonts you find, add them to the fonts folder, there isnt any issue with
   having them in that folder." So found fonts, commercial ones included, go into `MDW/Fonts/` (and get installed).
-  Note: the card-browser workflow checks out only `site/`, `Types/`, the font manifest, the ban list, `Card Authors.txt`,
-  `Card Edits.json` and `Website Admins.txt`, and it publishes
+  Note: the card-browser workflow checks out only `site/` (with the four hand-kept website files), `Types/` and the
+  font manifest, and it publishes
   only `site/dist`, so `MDW/Fonts/` never goes onto the website. It is in the GitHub repo.
 - (c) The audit only reads text layers, so the parser is unaffected by missing fonts. psd-tools reads stored text,
   not rendered glyphs.
@@ -617,7 +641,8 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 ## Provenance and maintenance
 
 All facts verified 2026-10-19 (TTSCardMaker HEAD 3a268ca); §1.2 badges and §1.6 matching rules updated
-2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d. Run the commands from
+2026-10-20; commit status, Pages, §2.2 workflow and sparse paths re-verified 2026-10-20 against 027fd0d; §2.6 (tts-save.yml,
+env overrides instead of the symlink) written 2026-10-20 against the uncommitted working tree on 15a16be. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
 
 ```bash
@@ -635,6 +660,8 @@ grep -n "multi::after" site/assets/style.css
 git check-ignore -v MDW/Fonts/stoogedings-src/.venv site/dist site/.cache          # three hits
 # Workflow triggers and sparse paths
 grep -n "cron\|workflow_dispatch\|branches\|sparse-checkout:\|filter:" .github/workflows/site.yml
+# TTS save workflow: triggers, the six bot files, the two env overrides, no symlink (expect no "ln -s")
+grep -n "cron\|paths:\|/commands/\|/global_config.py\|AUTOCROISSANT_\|ln -s" .github/workflows/tts-save.yml
 # Site data source and deck rules
 grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_MAX_STARS =" site/assets/deck.js
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)

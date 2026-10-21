@@ -533,14 +533,14 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
 change — state no more than this): `manual_metadata_entry` creates a missing card as
-`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:217) with `timestamp` 0.0 and no
-`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:74) re-parses a card that
+`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:219) with `timestamp` 0.0 and no
+`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:73) re-parses a card that
 is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
 since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
 existing entry survive until the PSD's blob changes, `cards:` names the card, or `force_update:True`; a
 re-parse of an unchanged blob does not archive the manual version to old_stats. Conclusion the code
 supports: `/update_metadata` is a between-sweeps correction tool, not a durable fix. Durable fixes live
-in the parser, the source PSD, or `MDW/Card Edits.json` (re-applied after every re-parse).
+in the parser, the source PSD, or `site/Card Edits.json` (re-applied after every re-parse).
 
 ---
 
@@ -579,9 +579,9 @@ documented in autocroissant-failure-archaeology).
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:368):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:479 on 2026-10-20):
+- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:478 on 2026-10-20):
   `grep -n "force_update: bool = " commands/repo_traverser.py`
-- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+- `_populate_types_from_local` (repo_traverser.py:201 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
   `grep -n -A9 "def _populate_types_from_local" commands/repo_traverser.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
@@ -605,8 +605,8 @@ documented in autocroissant-failure-archaeology).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
 - Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:64, `_psd_changed`
-  repo_traverser.py:74, `manual_metadata_entry` psd_analyzer.py:167, its CardInfo creation
-  psd_analyzer.py:217; /update_metadata at main.py:405):
+  repo_traverser.py:73, `manual_metadata_entry` psd_analyzer.py:167, its CardInfo creation
+  psd_analyzer.py:219; /update_metadata at main.py:405):
   `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.

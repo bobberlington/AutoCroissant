@@ -1,5 +1,5 @@
 """
-TTSCardMaker's hand-kept card files: MDW/Card Authors.txt (CardAuthors) and MDW/Card Edits.json (CardEdits).
+TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors) and site/Card Edits.json (CardEdits).
 No Discord, network or psd-tools.
 """
 from copy import deepcopy
@@ -14,7 +14,7 @@ from commands.card_models import CardInfo, CardStats
 @dataclass
 class CardAuthors:
     """
-    TTSCardMaker's MDW/Card Authors.txt: the team's record of who made each card.
+    TTSCardMaker's site/Card Authors.txt: the team's record of who made each card.
 
     Two sections of "left = right" lines (# starts a comment):
       [people]  git/GitHub name = name to show for that person
@@ -57,19 +57,19 @@ class CardAuthors:
 @dataclass
 class CardEdits:
     """
-    TTSCardMaker's MDW/Card Edits.json: card fixes from the website's Edit button.
+    TTSCardMaker's site/Card Edits.json: card fixes from the website's Edit button.
     {"cards": {"Card Name": {"field": value, "_by": ..., "_at": ...}}}; names match like the authors file.
     Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
 
-    TYPES = {"name": str, "type": str, "subtype": str, "series": str, "stars": int, "types": list,
+    TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
              "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list}
-    NULLABLE = {"subtype", "series", "stars", "hp", "def", "atk", "spd"}
-    ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "stars": "stars",
-             "types": "types", "ability": "ability", "note": "note", "hidden": "hidden", "problems_ok": "problems_ok",
-             "allow_high_stats": "allow_high_stats"}
+    NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd"}
+    ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
+             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "hidden": "hidden",
+             "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),

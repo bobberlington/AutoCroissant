@@ -81,6 +81,7 @@ class CardInfo:
     duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
     alt_names: Optional[list] = None          # hidden title layers: names of the duplicates
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
+    subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -98,6 +99,8 @@ class CardInfo:
             result["subtype"] = self.subtype
         if self.series:
             result["series"] = self.series
+        if getattr(self, "subseries", None):      # older pickles lack the attribute
+            result["subseries"] = self.subseries
         if self.types:
             result["types"] = self.types
         if self.author:

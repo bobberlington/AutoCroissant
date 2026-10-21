@@ -58,7 +58,7 @@ their creatures and items from here" (04_Table5). Also on the table (04_Table): 
 of the full deck" of "newer or recently changed cards that require more playtesting", mixed with "Baseline" creatures
 "considered balanced"; "For most players you can ignore this", it is for "a more wacky experience". How a hand is built
 from the full decks is not stated (Known gaps). **Constructed** is defined only in
-`~/Desktop/TTSCardMaker/MDW/Constructed Ban List.txt`: "choose whatever cards you want out of the entire deck for your
+`~/Desktop/TTSCardMaker/site/Constructed Ban List.txt` (in `MDW/` until 2026-10-20): "choose whatever cards you want out of the entire deck for your
 hand", "You may also only have one of each item in your hand", and each player may pick "one 3 star or lower field item
 to be active in the shop at the start of the game". It bans 53 cards (creatures 8/8/9/4 for 5★–2★, items 8/8/3/1 for
 4★–1★, 4 field items) for
@@ -439,7 +439,7 @@ are defined only on cards (the book names ~22 of 64).
 | Status effect texts, mentions | `python3 -I ~/Documents/rules-skill/scripts/mentions.py <cards.json>`; or `/query_ability type==debuff` |
 | Card counts by kind/stars/type (cards.json: 302 creature rows, 46/105/93/58) | `python3 -I ~/Documents/rules-skill/scripts/counts.py <cards.json>`, `python3 -I ~/Documents/rules-skill/scripts/agg.py <cards.json>` |
 | stats.pkl counts used above (297 = 45/103/93/56, 75 untyped, per-type distinct creatures, 182 item PSDs) | after the loadpkl.py line above: `python3 -I -c "import json,collections as c;s=json.load(open('/tmp/s.json'));cr=[v for v in s.values() if v['card_type']=='creature'];print(len(cr),sorted(c.Counter(v['stars'] for v in cr).items()),sum(1 for v in cr if not v['types']),c.Counter(t for v in cr for t in set(v['types'])),len({v['path'] for v in s.values() if v['card_type']=='item'}))"` (`set()` per creature, not icon occurrences) |
-| Ban list (53); slated to move with the MDW reorganisation | `grep -c ' - ' ~/Desktop/TTSCardMaker/MDW/Constructed\ Ban\ List.txt` |
+| Ban list (53); moved from `MDW/` to `site/` 2026-10-20 | `grep -c ' - ' ~/Desktop/TTSCardMaker/site/Constructed\ Ban\ List.txt` |
 | Website hand rule | `grep -n "HAND\|FIELD_MAX_STARS" ~/Desktop/TTSCardMaker/site/assets/deck.js` |
 | Slash commands | `grep -n 'name="query_rulebook"\|name="export_rulebook"' main.py`; `grep -n rulebook_dff commands/query_card.py` |
 | Rounding table (07_Stats5: 20 bases, then 6 change columns of 20 cells, then the page number) | `python3 -I -c "import json,re,math;t=[p for p in json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/rules.json'))['rules'] if p['id']=='07-stats5'][0]['ability'].split('+75%')[1];n=[float(x) for x in re.findall(r'\d+(?:\.\d+)?',t)];b=n[:20];c=n[20:140];print(sum(math.floor(2*x*(1+k)+0.5)/2!=v for (k,x),v in zip([(k,x) for k in(-.25,-.5,-.75,.25,.5,.75) for x in b],c)),'mismatches')"` (prints `0 mismatches`) |

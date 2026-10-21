@@ -54,7 +54,7 @@ Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
 Loaded existing old stats from old_stats.pkl
-Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:429); counts as of 2026-07-11
+Loaded 765 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:431); counts as of 2026-07-11
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, N uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N = 0 once synced
@@ -73,8 +73,8 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
-| `init_psd` (psd_analyzer.py:470) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
-| `init_query` (query_card.py:747) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
+| `init_psd` (psd_analyzer.py:476) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
+| `init_query` (query_card.py:751) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:117) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
 | `init_type_emojis(client)` (type_emojis.py:406; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 
@@ -265,7 +265,7 @@ beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-r
 `/Users/michaelsrouji/Documents/ac-optimization/`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:477; slash wrapper main.py:359-371.
+repo_traverser.py:476; slash wrapper main.py:359-371.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -302,14 +302,14 @@ The three options (slash defaults in parentheses, main.py:367-369). (`use_local_
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-RE-PARSED cards; repo_traverser.py:33,390) -> the summary (repo_traverser.py:447):
+RE-PARSED cards; repo_traverser.py:32,390) -> the summary (repo_traverser.py:446):
 
 ```
 N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (repo_traverser.py:511-514): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
+- Saving (repo_traverser.py:510-513): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
   not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
   stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
   not prune (BUGS_AND_IMPROVEMENTS B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
@@ -329,41 +329,49 @@ with 100+ commits costs one more request for its first commit). A daily run spen
 spends a large share of the 5000/hr `GIT_TOKEN` budget, so don't schedule it. Without a token (60/hr) a forced
 or first-ever run cannot finish; check for the "Git token found" startup line.
 
-PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:114-141) into a temp file deleted
+PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:113-140) into a temp file deleted
 right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
-files through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
+files (`site/Card Authors.txt`, `site/Card Edits.json`; `MDW/` until the move lands) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
 
-### TTS save (/update_tts_save, added 2026-10-20)
+### TTS save (/update_tts_save, added 2026-10-20; the automatic path is a TTSCardMaker Action since the same day)
 
 The Tabletop Simulator save lives in the card repo at `TTS/Impossibility Simulator.json` (`TTS_SAVE_PATH`).
-commands/tts_save.py downloads main's copy by blob sha into a temp dir, updates it (image links pinned to commit
-shas, renames followed, missing cards added to complete decks, Nicknames set to the website's names, role tags
-cleared, the Lua resizeTargets table regenerated) and, when anything changed, commits it to main through the
-GitHub git data API with `GIT_TOKEN` (message like "TTS save: 812 links pinned, 3 cards added"). If main moved
-meanwhile, it redoes the update on the new save (3 tries). It never writes a checkout; the temp dir is deleted.
+commands/tts_save.py updates it: image links pinned to commit shas, renames followed, missing cards added to
+complete decks, Nicknames set to the website's names, role tags cleared, the Lua resizeTargets table regenerated.
+Two ways to run it:
 
-- **When it runs:** `/update_tts_save` (admin only) on demand; and automatically after a `/update_stats` that
-  fetched a changed tree (never on "Nothing changed") when an image blob (.png/.jpg/.jpeg, any case),
-  `TTS/decks.json`, `MDW/Card Edits.json` or the save itself differs from the previous tree, or a run is owed
-  (the previous automatic run failed, or none ran since startup: the first changed-tree /update_stats after a
-  restart always runs it). One run at a time. `/update_stats` is not admin-gated, so any user's
-  /update_stats can lead to a bot commit of the save.
-- **Inputs:** the rules, the save and `MDW/Card Edits.json` come from main; names from the website (when it is
+- **Automatic: TTSCardMaker's GitHub Action** `.github/workflows/tts-save.yml` (details: ttscardmaker-companion
+  §2.6). On a push to main that changes a PNG, `TTS/decks.json` or `site/Card Edits.json`, daily at 11:41 UTC, or
+  by hand (`workflow_dispatch`), it sparse-checks out the updater and its imports from `bobberlington/AutoCroissant`
+  main (no config.py: github_api reads it in a try/except), runs `python -m commands.tts_save` on the checkout's save
+  with the two env overrides `AUTOCROISSANT_LOCAL_DIR=$GITHUB_WORKSPACE` (where it reads `TTS/decks.json` and
+  `site/Card Edits.json`) and `AUTOCROISSANT_HISTORY_CLONE=~/TTSCardMaker-history.git` (its own bare blobless clone;
+  global_config.py reads both with `environ.get`), and commits the save as AutoCroissant when it changed (message
+  from the report's first section titles). The report is the job log. A save commit matches none of the triggers,
+  so it does not run again.
+- **By hand: `/update_tts_save`** (admin only). The bot downloads main's copy by blob sha into a temp dir, updates
+  it and, when anything changed, commits it to main through the GitHub git data API with `GIT_TOKEN` (message like
+  "TTS save: 812 links pinned, 3 cards added"; when the token can't write: git objects in the history clone pushed
+  over SSH). If main moved meanwhile, it redoes the update on the new save (3 tries). It never writes a checkout;
+  the temp dir is deleted. One run at a time.
+- **`/update_stats` does not run it.** Until 2026-10-20 a changed-tree /update_stats queued a run
+  (`save_affected` / `update_after_stats`); the Action replaced that and the code was deleted.
+- **Inputs (bot run):** the rules, the save and `site/Card Edits.json` (else `MDW/Card Edits.json`: `EDITS_PATHS`) come from main; names from the website (when it is
   unreachable, Nicknames are left as they are); never from a local checkout. The history clone (and its links map) must
   be at main's head, else the run is retried 10 s later, then fails after 3 tries (also when nothing would
-  change) and the next /update_stats retries.
-- **Where the report goes:** the invoking channel (for the automatic run, the /update_stats interaction, also
-  when a reminder ran it): a short summary (header lines and section titles with counts), the full markdown
-  report as `tts_save_report.md`, then the download link. The automatic run posts only when it committed or failed
-  ("TTS save update failed: ... (next /update_stats retries)"); `/update_tts_save` always posts.
+  change).
+- **Where the report goes (bot run):** the invoking channel (also when a reminder ran it): a short summary
+  (header lines and section titles with counts), the full markdown report as `tts_save_report.md`, then the
+  download link; on failure "TTS save update failed: ...".
 - **Players' download link:** `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<commit>/TTS/Impossibility%20Simulator.json`
   (the commit just made; with no change, the `main` link). The 5.5 MB save is never attached in Discord.
 - **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
-  `partial` for hand-picked decks). The bot reads main's copy. Edit it in TTSCardMaker and push; the next
-  /update_stats picks it up. A rule that matches no PNG leaves its deck alone and is listed under Errors.
-- **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root) updates a local file in place
-  and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it.
+  `partial` for hand-picked decks). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
+  picks it up. A rule that matches no PNG leaves its deck alone and is listed under Errors.
+- **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a
+  local file in place and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it. `TTS/decks.json` and
+  `site/Card Edits.json` (else `MDW/Card Edits.json`) come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
 - Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
 
 ## 8. Artifact conventions — where files land
@@ -379,8 +387,8 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:128-141); deleted after each parse (repo_traverser.py:365; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
-| TTS save working copy | /update_tts_save, /update_stats after card image changes | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo | n/a |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:127-140); deleted after each parse (repo_traverser.py:364; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the pickles |
@@ -389,7 +397,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 ## 9. Reminders operations
 
 Rewritten 2026-10-19 (commands/analytics.py, 957 lines; uncommitted as of that date). Times are
-Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:14), so they follow daylight
+Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:15), so they follow daylight
 saving. `check_reminder` is queued once per second by the command loop (main.py:840). History of
 what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
 invariants: autocroissant-architecture-contract.
@@ -572,7 +580,7 @@ re-find volatile facts with these before trusting them:
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
 | reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
-| TTS save wiring | `grep -n "update_tts_save\|save_affected\|update_after_stats" main.py commands/repo_traverser.py`; `grep -n "^TTS_SAVE_PATH" global_config.py` |
+| TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |

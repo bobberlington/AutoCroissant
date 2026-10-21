@@ -1,7 +1,7 @@
 """
 Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Simulator.json in the card repo).
 
-    python -m commands.tts_save <save.json>        (from the bot's root)
+    python -m commands.tts_save <save.json>        (from the bot's root; TTSCardMaker's tts-save.yml Action runs this)
     update_save(path) -> report text
     update_repo_save() -> (report text, commit sha or None)    (the bot: the save on the card repo's main)
 
@@ -36,7 +36,7 @@ from commands.card_edits import CardAuthors
 from commands.card_models import card_name as _stem
 from commands.github_api import GIT_TOKEN
 from commands.repo_history import pinned_ref, refresh
-from global_config import (API_BASE, CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE,
+from global_config import (API_BASE, CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE,
                            RULES_PATH, SITE_URL, TTS_SAVE_PATH)
 
 # ========================
@@ -70,18 +70,15 @@ REPORT_FILE = "tts_save_report.md"
 PUSH_URL = f"git@github.com:{CARD_REPO}.git"       # git fallback: pushed with the service's SSH agent
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissant@gmail.com",
                 "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "autocroissant@gmail.com"}  # as PICKLE commits
-IMAGES = (".png", ".jpg", ".jpeg")                  # files the save links to
 
 # ========================
 # Global State
 # ========================
 _lock = Lock()                                      # one run at a time
-_retry = True                                       # the next automatic run runs regardless (failed, or restarted)
 _cant_write = False                                 # POST git/blobs got a 403: commit over SSH until a restart
 _objects: dict = {}                                 # git object sha -> tree entries / blob bytes (immutable)
 _used: set = set()                                  # shas read this run; older ones are dropped
 _site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
-_watched: Optional[dict] = None                     # watched files of the last tree save_affected saw
 
 
 # ========================
@@ -314,8 +311,10 @@ class _Names:
         self.site = {c["png"]: c["name"] for c in cards if isinstance(c, dict) and c.get("png") and c.get("name")}
         try:
             if local:
-                with open(join(repo.checkout, EDITS_PATH), encoding="utf-8") as f:
-                    edits = f.read()
+                path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
+                if path is not None:
+                    with open(join(repo.checkout, path), encoding="utf-8") as f:
+                        edits = f.read()
             if edits is not None:
                 self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
@@ -918,13 +917,15 @@ def update_repo_save() -> tuple:
         for attempt in range(COMMIT_TRIES):
             head = _api("GET", f"git/ref/heads/{CARD_BRANCH}").json()["object"]["sha"]
             base = _api("GET", f"git/commits/{head}").json()["tree"]["sha"]
-            files = _files_at(base, (TTS_SAVE_PATH, RULES_PATH, EDITS_PATH))
+            files = _files_at(base, (TTS_SAVE_PATH, RULES_PATH) + EDITS_PATHS)
             if TTS_SAVE_PATH not in files:
                 raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main")
             mode, old_blob = files[TTS_SAVE_PATH]
             with open(save_path, "wb") as f:
                 f.write(_blob(old_blob))
-            rules, edits = (_blob(files[p][1]).decode("utf-8") if p in files else None for p in (RULES_PATH, EDITS_PATH))
+            edits_path = next((p for p in EDITS_PATHS if p in files), None)
+            rules = _blob(files[RULES_PATH][1]).decode("utf-8") if RULES_PATH in files else None
+            edits = _blob(files[edits_path][1]).decode("utf-8") if edits_path is not None else None
             text, report = _update(save_path, (rules, f"main `{head[:8]}`"), extras=False, edits=(edits,))
             if head != report.head or head != repo_history._head:   # pins from main's head, even for "no changes"
                 why = (f"the history clone is at `{report.head[:8] or 'nothing'}` (links map at "
@@ -975,56 +976,12 @@ def update_repo_save() -> tuple:
 
 def update_tts_save(interaction) -> None:
     """/update_tts_save: update the save on main, post the summary, the report file and the download link."""
-    global _retry
     try:
         text, sha = update_repo_save()
     except Exception as e:
         _say(interaction, f"TTS save update failed: {e}")
         return
-    _retry = False
     _post(interaction, text, sha)
-
-
-def save_affected(repository: str, shas: dict) -> bool:
-    """
-    After /update_stats fetched a changed tree: does the save need a run?
-
-    Args:
-        repository: The repo /update_stats read (the save lives only in CARD_REPO)
-        shas: {path: blob sha} of the new tree (compared with the last tree given here)
-
-    Returns:
-        True when an image, the rules, Card Edits.json or the save changed, or the run is owed (_retry)
-    """
-    if repository != CARD_REPO:
-        return False
-    global _watched
-    watched = {p: s for p, s in shas.items() if p.lower().endswith(IMAGES) or p in (RULES_PATH, EDITS_PATH, TTS_SAVE_PATH)}
-    changed, _watched = watched != _watched, watched
-    return _retry or changed
-
-
-def update_after_stats(interaction, repository: str, on_fail: Optional[Callable[[str], None]] = None) -> None:
-    """
-    Queued by /update_stats when save_affected: like /update_tts_save, but says nothing when nothing changed.
-
-    Args:
-        interaction: The /update_stats interaction (or a reminder's), or None
-        repository: The repo /update_stats read
-        on_fail: Called with repository on failure, so the next /update_stats fetches the tree again
-    """
-    global _retry
-    try:
-        text, sha = update_repo_save()
-    except Exception as e:
-        _retry = True
-        if on_fail:
-            on_fail(repository)
-        _say(interaction, f"TTS save update failed: {e} (next /update_stats retries)")
-        return
-    _retry = False
-    if sha:
-        _post(interaction, text, sha)
 
 
 def main() -> None:
@@ -1045,7 +1002,5 @@ __all__ = [
     'update_save',
     'update_repo_save',
     'update_tts_save',
-    'save_affected',
-    'update_after_stats',
     'main',
 ]

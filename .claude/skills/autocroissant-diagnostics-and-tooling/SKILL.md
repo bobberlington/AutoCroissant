@@ -62,7 +62,7 @@ What these tools do NOT answer: whether a measured value is *acceptable*
 - Every script except `dump_psd_layers.py` needs `config.py` present in the repo root (secret;
   the bot module import chain reads it). Without it the import chain fails.
 - `parse_one.py` and `gap_trace.py` additionally need the TTSCardMaker clone at
-  `~/Desktop/TTSCardMaker` (`LOCAL_DIR_LOC`, global_config.py:4) — both for the PSD itself and
+  `~/Desktop/TTSCardMaker` (`LOCAL_DIR_LOC`, global_config.py:5) — both for the PSD itself and
   to populate the known-types list from the clone's `Types/` folder.
 - Because `parse_one.py` and `gap_trace.py` `chdir` to the repo root at import, a **relative**
   PSD argument resolves against the repo root, not your shell's cwd and not the clone. Always
@@ -202,8 +202,8 @@ validator problems: NONE
   entry character-for-character (verified 2026-07-11).
 - `validator problems` — exactly what `/update_stats` would record in `card.problems`.
 
-**`--with-db` vs fresh** (verified 2026-07-11): `PSDParser.parse` preserves `author` and
-`series` from an existing DB entry when they are non-empty (psd_parser.py, the
+**`--with-db` vs fresh** (verified 2026-07-11): `PSDParser.parse` preserves `author`,
+`series` and (since 2026-10-20) `subseries` from an existing DB entry when they are non-empty (psd_parser.py, the
 "Preserve author and series" block in `parse()` — grep below). Default (fresh) parses against an
 empty DB: no preservation, so Mini Doomer fresh shows neither field, while
 `--with-db` adds `series: Kirby` and `author: Chestnut` and prints

@@ -384,21 +384,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:361-365 after the split).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:360-364 after the split).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:209 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:208 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:479 after the 2026-10-20 split), matching main.py:368.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:478 after the 2026-10-20 split), matching main.py:368.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -608,7 +608,13 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Evidence**: bad0496 (`python -m commands.tts_save`), ce94585 (`/update_tts_save`; `update_after_stats` after a
   /update_stats whose tree touched images, TTS/decks.json, MDW/Card Edits.json or the save), c4caaf9 (when
   `GIT_TOKEN` can't write: commit through the history clone and push over SSH, no force).
-- **Status**: shipped; operations in autocroissant-run-and-operate §TTS save.
+- **Status**: shipped; operations in autocroissant-run-and-operate §TTS save. The run after /update_stats
+  (`save_affected`, `update_after_stats`, `_retry`, `_watched`) was deleted later on 2026-10-20: TTSCardMaker's
+  `.github/workflows/tts-save.yml` runs `python -m commands.tts_save` on PNG / `TTS/decks.json` /
+  `site/Card Edits.json` pushes (`MDW/Card Edits.json` before the website files moved, 2026-10-20), daily and on dispatch
+  (ttscardmaker-companion §2.6); it first symlinked its
+  workspace to `~/Desktop/TTSCardMaker`, replaced by the `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE`
+  env overrides in global_config.py. `/update_tts_save` stays as the manual run.
 
 ### 10.20 help.py and describe strings matched to the code (was C1, C2, C3, 2026-10-20)
 
@@ -708,7 +714,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Root cause**: growth by accretion; the classifier assumed every path had its folder rule's depth.
 - **Evidence**: commands/card_models.py, card_edits.py, psd_parser.py, repo_traverser.py hold the code;
   psd_analyzer.py re-exports it and keeps the metadata/export commands and init_psd. `CardInfo.__module__ =
-  CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:124): re-dumped stats.pkl and old_stats.pkl were
+  CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:127): re-dumped stats.pkl and old_stats.pkl were
   byte-identical in all four .py/.so combinations. The four modules joined INCLUDE_FILES (11 compiled) so the moved
   code keeps its compiled semantics; query_card imports through the facade so a stale monolithic .so cannot leave
   two `stats_db` objects. `classify` returns UNKNOWN for a path too shallow for its rule (psd_parser.py:237-247).

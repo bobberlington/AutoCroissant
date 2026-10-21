@@ -1,4 +1,4 @@
-"""CardEdits (MDW/Card Edits.json): parsing, validation and apply/restore."""
+"""CardEdits (site/Card Edits.json): parsing, validation and apply/restore."""
 import json
 from copy import deepcopy
 
@@ -42,6 +42,7 @@ def test_parse_rejects_non_json():
     ("stars", None, True), ("ability", None, False), ("name", None, False), ("ability", "x", True), ("ability", 1, False),
     ("types", ["a", "b"], True), ("types", ["a", 1], False), ("types", "a", False), ("hidden", True, True),
     ("hidden", 1, False), ("aliases", ["x"], True), ("unknown", 1, False),
+    ("subseries", "Paper Mario", True), ("subseries", None, True), ("subseries", 1, False),
     ("creatures", [{"hp": 7, "def": None}], True), ("creatures", [{"hp": -1}], False), ("creatures", [{"hp": True}], False),
     ("creatures", [{"mana": 1}], False), ("creatures", [1], False), ("creatures", {}, False),
 ])
@@ -91,6 +92,21 @@ def test_null_stat_edit_unsets_it():
     card = _card(stats=CardStats(hp=6, defense=2, attack=3, speed=4))
     _edits({"Foo Bar": {"hp": None}}).apply("Foo Bar", card)
     assert card.stats.hp == -1 and "hp" not in card.to_dict()
+
+
+def test_subseries_edit_is_database_only():
+    """No PSD value exists, so parsed_values keeps None and dropping the edit clears the field."""
+    card = _card(series="mario")
+    e = _edits({"Foo Bar": {"subseries": "Paper Mario", "series": "Mario"}})
+    assert e.apply("Foo Bar", card) is True
+    assert (card.series, card.subseries) == ("Mario", "Paper Mario")
+    assert card.parsed_values == {"subseries": None, "series": "mario", "problems": ["MISSPELT TYPE: tornado"]}
+    assert card.problems == ["MISSPELT TYPE: tornado"]       # subseries answers no parser problem
+    assert e.get(card, "subseries") == "Paper Mario"
+    _edits({"Foo Bar": {"subseries": None}}).apply("Foo Bar", card)
+    assert card.subseries is None and card.series == "mario"
+    assert CardEdits().apply("Foo Bar", card) is True and card.parsed_values is None
+    assert card.subseries is None and "subseries" not in card.to_dict()
 
 
 def test_creatures_edit_on_real_card(real_stats):

@@ -35,7 +35,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (153 lines as of 2026-10-20) is five module-level dicts, a
+`commands/help.py` (153 lines as of 2026-10-20, after the subseries field and the TTS save sentence left /update_stats) is five module-level dicts, a
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
@@ -142,18 +142,18 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 Derived from the live registrations (50 on 2026-10-20); follow these when writing new ones.
 Re-find line numbers by quoting the example text. The cleanest recent end-to-end example is
-`/sync_emojis` (main.py:679-691 + its help.py entry): admin marker in both surfaces, defaults
+`/sync_emojis` (main.py:683-695 + its help.py entry): admin marker in both surfaces, defaults
 stated in every describe string.
 
 | Convention | Real example (verified 2026-10-20) |
 |---|---|
-| State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:342); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:634) |
-| State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:562) |
-| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (main.py:646; all 12 `lacks_admin`-gated commands carry it, e.g. 159, 173, 183, 193) |
-| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:138-144), `blend_mode` (main.py:344-347), `field` for /mass_replace (main.py:476-481) |
+| State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:342); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:638) |
+| State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:566) |
+| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (main.py:650; all 12 `lacks_admin`-gated commands carry it, e.g. 159, 173, 183, 193) |
+| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:138-144), `blend_mode` (main.py:344-347), `field` for /mass_replace (main.py:479-485; `subseries` added 2026-10-20) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
 | "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:309; same shape for /set_repo, main.py:319) |
-| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:659, 699, 717-718): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
+| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:663, 703, 721-722): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
 | Sentence case, trailing period | pervasive; keep it |
 
 New admin commands put the "(admin only)" marker in BOTH places (`/stop_bot`, `/pull`, `/push` and `/update`
@@ -181,8 +181,8 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    (banner named "Public API Functions", "Discord Command Functions", "Music
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
-   (`stats_db = StatsDatabase()` at card_models.py:203 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:746-747).
+   (`stats_db = StatsDatabase()` at card_models.py:206 and `init_psd` at the end of psd_analyzer.py;
+   `card_repo = CardRepository()` + `init_query` at query_card.py:750-751).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    with one standing exception: utils.py, the shared toolbox, has none.
@@ -390,7 +390,7 @@ neighboring fact, check this map and link instead.
 | impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, parser side of stoogedings icon tokens (§4.1), validation, pickle schemas, query DSL |
 | autocroissant-config-and-flags | Every config axis: config.py field names, constants, runtime-settable vs restart-required |
 | autocroissant-build-and-env | Env setup, requirements.txt, Cython build/clean, negative-indexing ban rationale, stale-.so trap |
-| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations |
+| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (/update_tts_save; the tts-save Action as the automatic path) |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
 | autocroissant-ai-boundary (archived: only on branch `archive/ai-generation`, not on main) | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
@@ -398,7 +398,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |
 | autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause |
-| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
+| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save workflow tts-save.yml (§2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
 | impossibility-simulator-rules (added 2026-10-20) | How the game is played: rulebook rules, timing tags, damage arithmetic, status effects, glossary, known rulebook gaps |
 | autocroissant-docs-and-style (THIS) | help.py/describe formats + sync checklist + drift audit; house code style; skill-library meta-rules; templates |
 
@@ -459,7 +459,7 @@ grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 50
 # D1 fixed: only /update force_reset mentions a hard reset
 grep -n 'hard reset' commands/help.py main.py                # help.py:13 and main.py:195 (/update force_reset) only
 # D2 fixed: both say default False
-grep -n 'only_ability' commands/help.py main.py              # help.py:87 "(default: False)", main.py:387 "Default = False.", main.py:391 "= False"
+grep -n 'only_ability' commands/help.py main.py              # help.py:86 "(default: False)", main.py:387 "Default = False.", main.py:391 "= False"
 
 # /help entry lists every category (fixed 2026-10-20)
 grep -n '"/help <' commands/help.py                          # 7: text/card/music/stats/general

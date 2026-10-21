@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load this skill for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, TTS_SAVE_PATH, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH, STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device, POSSIBLE_SCHEDULERS). Contains the config.py field table (names only; values are secret), global_config.py and per-module constants, prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants, prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -151,11 +151,15 @@ quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `ar
 
 ## global_config.py — committed shared constants
 
-Whole file, 14 lines (verify: `cat global_config.py`):
+Whole file, 31 lines (verify: `cat global_config.py`). Two constants read the environment first (2026-10-20,
+`environ.get(name, default)`), so TTSCardMaker's `tts-save.yml` Action can run `python -m commands.tts_save` on
+its checkout without a symlink. No other configuration comes from the environment (tts_save.py only inspects
+`SSH_AUTH_SOCK` to word its SSH-push error; tts_save.py and repo_history.py pass the environment through to git with
+`GIT_TERMINAL_PROMPT=0`; verify: `grep -rn environ --include="*.py" commands/ main.py global_config.py`):
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `LOCAL_DIR_LOC` | `"~/Desktop/TTSCardMaker"` | the documented clone location of the card repo. The bot itself no longer reads it (local mode was archived 2026-10-20); the diagnostics scripts (parse_one.py, gap_trace.py) and the archived traversal on branch `archive/local-update-stats` expand it with `expanduser`. This path convention is load-bearing across the toolchain |
+| `LOCAL_DIR_LOC` | `"~/Desktop/TTSCardMaker"`, env `AUTOCROISSANT_LOCAL_DIR` | the card repo checkout. `/update_stats` no longer reads it (local mode was archived 2026-10-20); commands/tts_save.py reads `TTS/decks.json` and `site/Card Edits.json` (else `MDW/Card Edits.json`) under it in standalone runs (the Action sets it to `$GITHUB_WORKSPACE`); the diagnostics scripts (parse_one.py, gap_trace.py) and the archived traversal on branch `archive/local-update-stats` expand it with `expanduser`. This path convention is load-bearing across the toolchain |
 | `ALIAS_PKL` | `"aliases.pkl"` | card-alias pickle (committed to git) |
 | `STATS_PKL` | `"stats.pkl"` | the card stats database pickle (committed) |
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
@@ -163,12 +167,12 @@ Whole file, 14 lines (verify: `cat global_config.py`):
 | `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | type emoji name -> blob sha of the icon it was made from, written by commands/type_emojis.py; gitignored, per machine. Missing or unreadable = startup adopts the existing emojis as current (no re-upload) |
-| `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"` | bare blobless clone of the card repo, fetched on startup and after each /update_stats tree change; cloned on first use. Only rev-list/ls-tree/fetch run there (diff/log would download blobs) |
+| `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and after each /update_stats tree change; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). Only rev-list/ls-tree/fetch run there (diff/log would download blobs) |
 | `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, kept as an alias), repo_history (`REPOSITORY`, alias) and tts_save; /set_repo still overrides `card_repo.repository` at runtime |
 | `API_BASE`, `RAW_BASE` (2026-10-20) | `"https://api.github.com/repos/"`, `"https://raw.githubusercontent.com/"` | URL prefixes used by commands/github_api.py (API) and repo_history/tts_save (raw links) |
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, repo_traverser, query_card, type_emojis |
-| `ICON_MANIFEST_PATH`, `AUTHORS_PATH`, `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `"MDW/Card Authors.txt"`, `"MDW/Card Edits.json"`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules); moved here from psd_analyzer and tts_save (psd_analyzer re-exports the first three) |
-| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` (and /update_stats after card image changes) updates and commits; players download it from its raw link (commands/tts_save.py) |
+| `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt", "MDW/Card Authors.txt")`, `("site/Card Edits.json", "MDW/Card Edits.json")`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20: every reader (repo_traverser, query_card, tts_save) takes the first path present; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. Drop the `MDW/` fallback once the card repo's move has landed. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
+| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's tts-save.yml Action, which passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
 Pickle schemas and commit discipline are owned by **impossibility-cards-reference** and
@@ -188,19 +192,19 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:390) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:389) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
-| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:390, 397) — gitignored via `*.csv` / `*.txt` |
-| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:451) |
-| `COLUMN_ORDER` | 15 field names, `'aliases'`…`'subtype'` | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:108-109, 381) |
+| `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:396, 403) — gitignored via `*.csv` / `*.txt` |
+| `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:457) |
+| `COLUMN_ORDER` | 16 field names, `'aliases'`…`'subtype'` (`'subseries'` after `'series'` since 2026-10-20) | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:108-109, 387) |
 | `MISSPELT_CARD_TYPES` | `['undread', 'tornado', 'error']` | layer names that trigger the MISSPELT TYPE validation problem (as of 2026-07-11 exactly one live card trips it: the "20 Creature Types" rulebook page, per inspect_pickle.py) |
 | `ICON_FONT_PREFIX` (2026-10-19) | `"stoogedings"` | a text-layer style run whose font PostScript name starts with this (case-insensitive) is read as icon tokens; the font's full name is `stoogedings-Regular`. Changing it without renaming the font in TTSCardMaker silently turns token parsing off |
 | `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read by `_repo_text`: fetched by blob sha through the GitHub API and cached in `_file_cache` (only the offline diagnostics helper `_icons_from_local` reads a local clone). Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
 | `ICON_VARIANTS` (2026-10-19) | `("", "tint", "sticker", "no")` | the `:variant` suffixes the parser accepts; any other suffix is an `UNKNOWN ICON TOKEN` problem |
 | `ICON_SCAN_PATTERN` (2026-10-19) | `\[[^\[\]\r\n\x03]{1,48}\]` or one character in U+E000–U+F8FF or ★ (U+2605) | what the parser treats as a candidate token: a bracketed run of 1-48 characters on one line, a Private Use Area character, or the star. Semantics: impossibility-cards-reference §4.1 |
-| `EDITS_PATH` (2026-10-20) | `"MDW/Card Edits.json"` | website fixes. Read on every `/update_stats` (`CardEdits`, `_apply_edits`; PSD values kept in `card.parsed_values`) and by `populate_files` for website names/aliases. Missing or bad JSON: warning, cards unchanged |
-| `AUTHORS_PATH` (2026-10-20) | `"MDW/Card Authors.txt"` | card-repo path of the authors file. It is read on every `/update_stats` (`_repo_text`, cached by blob sha) and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
+| `EDITS_PATHS` / `EDITS_PATH` (2026-10-20) | `("site/Card Edits.json", "MDW/Card Edits.json")` | website fixes; the first path in the card repo's tree is read (`site/` since the move, `MDW/` before). Read on every `/update_stats` (`CardEdits`, `_apply_edits`; PSD values kept in `card.parsed_values`) and by `populate_files` for website names/aliases. Fields = the website's EDIT_FIELDS (`CardEdits.TYPES`; `subseries` since 2026-10-20, database-only like note/aliases/hidden: impossibility-cards-reference §6). Missing or bad JSON: warning, cards unchanged |
+| `AUTHORS_PATHS` / `AUTHORS_PATH` (2026-10-20) | `("site/Card Authors.txt", "MDW/Card Authors.txt")` | card-repo paths of the authors file; the first one present is read. It is read on every `/update_stats` (`_repo_text`, cached by blob sha) and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
@@ -220,7 +224,7 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:746) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:750) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -290,8 +294,10 @@ ttscardmaker-companion §1.6.
 | `LAG_PAUSE` | `10` s | wait before redoing a run whose history clone lagged main |
 | `API_TIMEOUT` | `120` s | per GitHub API call (the save blob is 5.5 MB, 7.4 MB as base64) |
 | `REPORT_FILE` | `"tts_save_report.md"` | name of the report attached in Discord |
-| `_retry` | in-memory, starts `True` | a run is owed (the last automatic one failed, or none ran since startup): the next changed-tree /update_stats runs it regardless |
-| `_watched` | in-memory, starts `None` | {path: blob} of the watched files (images, rules, Card Edits.json, the save) in the last changed tree /update_stats gave `save_affected`; the next one is compared with it |
+| `_cant_write` | in-memory, starts `False` | POST git/blobs answered 403 (token can't write): commits go through the history clone over SSH until a restart |
+
+Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml Action owns the automatic path):
+`IMAGES`, `_retry`, `_watched`, `save_affected`, `update_after_stats`.
 
 ### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
 
@@ -336,8 +342,8 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (query_card.py:701-718; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:721-740) | `"MichaelJSr/TTSCardMaker"` — always |
+| `/set_ratio` | `card_repo.match_ratio` (query_card.py:705-722; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (query_card.py:725-744) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`,
 `browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
@@ -359,7 +365,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:479, main.py:368). Code that wants a forced re-parse must pass
+   (repo_traverser.py:478, main.py:368). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -438,6 +444,7 @@ table with its command before quoting it in the future.
 | Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
 | GIT_TOKEN consumers/rate-limit prints | `grep -rn "GIT_TOKEN" commands/ main.py` (defined once in github_api.py) |
 | tts_save constants | `grep -n "^[A-Z_]* = \|^GIT_TOKEN" commands/tts_save.py` |
+| global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |

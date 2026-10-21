@@ -38,7 +38,7 @@ AutoCroissant stay main-only).
 | # | Decision |
 |---|---|
 | D1 | TTSCardMaker pushed. |
-| D2 | The TTS save lives in TTSCardMaker, kept up to date by the bot. The website can view and edit it (move cards between decks and other actions TTS allows). |
+| D2 | The TTS save lives in TTSCardMaker, kept up to date by a TTSCardMaker Action running the bot's updater (`tts-save.yml`; `/update_tts_save` by hand). The website can view and edit it (move cards between decks and other actions TTS allows). |
 | D3 | "Latest commit per PNG" comes from the history clone on the jetson. |
 | D4 | No Aspose. Photopea works, but the goal is a psd-tools fork good enough to replace it on the jetson with no browser (unlimited time/tokens). Edits run on GitHub Actions if possible, else on the jetson. |
 | D5 | Cards in the save that no longer exist in the repo: report only for now. |
@@ -117,8 +117,10 @@ blob sha (raw `main` can lag). Then remove the reminder: `/remove_reminder remin
 
 **Status 2026-10-20:** steps 1-7 done. Save committed as `TTS/Impossibility Simulator.json`, rules `TTS/decks.json`
 (audit: `~/Documents/tts-save/AUDIT.md`), updater `commands/tts_save.py` (`python -m commands.tts_save <save.json>`),
-`/update_tts_save` (admin) plus an automatic run after a /update_stats whose tree changed card images, the rules,
-Card Edits.json or the save. First production run: commit dceef8eb (867 links pinned, 12 cards added, ZOEY -> Z!!!!!
+`/update_tts_save` (admin). The automatic path is TTSCardMaker's Action `.github/workflows/tts-save.yml` (pushes of
+PNGs, `TTS/decks.json`, `site/Card Edits.json`; daily 11:41 UTC; dispatch), which runs `python -m commands.tts_save`
+with the `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE` env overrides read by global_config.py (done
+2026-10-20; the bot's run after /update_stats and its symlink step were removed). First production run: commit dceef8eb (867 links pinned, 12 cards added, ZOEY -> Z!!!!!
 rename, 56 Nicknames, 575 role tags cleared, 10 CustomDeck keys fixed, resizeTargets regenerated); the second run
 reported no changes. 29 website names were set to the printed card names first (Card Edits.json). The bot's
 fine-grained token is read-only on the card repo (POST git/blobs -> 403), so commits go through git objects in the
@@ -215,7 +217,7 @@ bar is set per region: stat-bar cells and text boxes must match Photoshop. Full-
    -> render the changed layers -> delta-merge onto the official PNG -> gate (re-parse gives the edited values,
    changed region as expected, no missing font) -> one commit: PSD + PNG + the baked fields removed from
    `Card Edits.json`. The website shows "PSD pending" until it lands.
-5. **Runner:** a GitHub Actions workflow on pushes that change `MDW/Card Edits.json` (pure Python, fork pinned). If
+5. **Runner:** a GitHub Actions workflow on pushes that change `site/Card Edits.json` (pure Python, fork pinned). If
    Actions can't do it (time, size or download limits), the jetson handles the card browser's edit requests: the bot
    notices the Card Edits.json change (its blob sha in the tree) and runs the pipeline.
 6. **Done when:** the harness meets the targets, and 10 real edits (stats, a name, ability text with coloured
@@ -227,14 +229,21 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
 
 ## Queued (2026-10-20, user)
 
-- **Move the website data files out of MDW/** (`Card Authors.txt`, `Card Edits.json`, `Website Admins.txt`,
-  `Constructed Ban List.txt`) to `site/` (directly under it, not `site/data/`): bot first (read the new path, fall
-  back to the old; deploy), then one TTSCardMaker commit (`git mv` + build_site.py constants + edit.js file map +
-  site.yml and tts-save.yml sparse checkouts/filters + README), then drop the fallback. Wait for the Task 4 pass to
-  land its psd_analyzer split first.
+- **TTS save by Action — done (2026-10-20):** `tts-save.yml` in TTSCardMaker is the automatic path; the bot's
+  post-/update_stats run (`save_affected`, `update_after_stats`) is deleted, `/update_tts_save` stays; global_config
+  reads `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE` so the Action needs no symlink (its sparse
+  checkout now lists every module the updater imports).
+- **Move the website data files out of MDW/ — bot side done, TTSCardMaker commit prepared (2026-10-20):**
+  `Card Authors.txt`, `Card Edits.json`, `Website Admins.txt`, `Constructed Ban List.txt` go to `site/` (directly
+  under it). Bot: `AUTHORS_PATHS` / `EDITS_PATHS` in global_config.py (`site/` first, `MDW/` fallback), read by
+  repo_traverser, query_card and tts_save; help text, skills and tests updated (one test keeps the old path alive).
+  TTSCardMaker: `git mv` of the four files + build_site.py constants + edit.js file map + deck.js comment +
+  site.yml / tts-save.yml sparse checkouts and triggers + site/README staged, not committed (the orchestrator
+  commits it right after this stage). **Left:** once that commit is on main and the site has rebuilt, drop the
+  `MDW/` fallback (second element of each `_PATHS` tuple, `test_old_mdw_paths_still_read`, the doc notes).
 - **Two kinds of card edits.** The pipeline (Task 3 step 4), `CardEdits` and the editor must distinguish edits that
   change the PSD and the database (name, stats, ability text) from database-only edits (note, aliases, hidden,
-  problems_ok, allow_high_stats, dup_of, series, creatures); only the first kind is baked and removed.
+  problems_ok, allow_high_stats, dup_of, series, subseries, creatures); only the first kind is baked and removed.
 - **Rules skill:** `.claude/skills/impossibility-simulator-rules` (the game itself, from the rulebook pages).
 - **Rulebook data issues** found while writing the rules skill (details: `~/Documents/rules-skill/rulebook.md`,
   end sections): /query_rulebook and the website carry hidden or off-canvas text players never see (duplicate
@@ -246,10 +255,12 @@ Photopea can't be forked (closed source); its paid self-hosted edition ($500-2,0
   Fixes are card/rulebook content (TTSCardMaker) plus a parser rule to skip hidden text layers on rulebook pages.
 - **Subseries** (user, 2026-10-20): a card can have a subseries besides its series (Goombella: series Mario, subseries
   Paper Mario: The Thousand-Year Door). Database-only edit: `subseries` (nullable string) in `Card Edits.json`. Website
-  side in progress (filters, search `subseries~`, card page, Stats breakdown, editor field in the database-only group).
-  Bot side after the Task 4 pass lands: `CardInfo.subseries` (+ `to_dict`), `CardEdits.TYPES/NULLABLE/ATTRS`,
-  `prep_dataframes` column, query DSL `subseries==`/`subseries~`, `/query` output "Series · Subseries", `/update_metadata`
-  and `/mass_replace` fields, `/export_cards` column, help text, impossibility-cards-reference + docs-and-style updates.
+  side done (TTSCardMaker 15a16be: filters, search `subseries~`, card page, Stats breakdown, editor field in the
+  database-only group). **Bot side done (2026-10-20, after Task 4):** `CardInfo.subseries` (+ `to_dict`),
+  `CardEdits.TYPES/NULLABLE/ATTRS`, `prep_dataframes` column, query DSL `subseries==`/`subseries~`, `/query` embed
+  "Series · Subseries" (shown for cards with a subseries or website data; /query never showed the series before),
+  `/update_metadata` and `/mass_replace` fields, a PSD re-parse keeps it like author and series, `/export_cards`
+  column, help text, skills; tests in `tests/test_subseries.py`.
 
 ## Task 3c. Effect layers on pushes (after Task 3)
 

@@ -16,7 +16,7 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 - **The pickles**: `stats.pkl` (card database, 813 cards), `old_stats.pkl` (archived
   old card versions), `aliases.pkl` (name shortcuts). They ARE the database and they
   are **committed to git**. Constants `STATS_PKL` / `OLD_STATS_PKL` / `ALIAS_PKL` in
-  `global_config.py:5-9`.
+  `global_config.py:6-10`.
 - **PICKLE commit**: a commit containing only pickle files, message literally
   `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:25`).
 - **Dev machine**: where a human edits code and runs `git push`.
@@ -116,7 +116,7 @@ procedure for parser changes (goldens → sandbox sweep → diff review):
 **autocroissant-validation-and-qa**.
 
 **Why reminder.pkl is gitignored while the other three pickles are committed**
-(`.gitignore:39`, `REMIND_PKL` in global_config.py:9): stats/old_stats/aliases are
+(`.gitignore:39`, `REMIND_PKL` in global_config.py:10): stats/old_stats/aliases are
 the shared card database that must stay consistent across the two hosting machines —
 syncing them is the whole point of /push//update. reminder.pkl is volatile runtime
 scheduling state that mutates whenever reminders fire or reschedule; committing it
@@ -188,7 +188,7 @@ Worked example to imitate: the `/update_stats` block at main.py:359-371 (2026-10
    (`general_commands`:6, `text_commands`:29, `card_commands`:42,
    `stats_commands`:77, `music_commands`:103), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:127) dispatches on the category word.
+   `print_help` (help.py:128) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
    by default (`type_emojis`, `repo_history`, `tts_save` and `github_api` were deliberately left out; the four

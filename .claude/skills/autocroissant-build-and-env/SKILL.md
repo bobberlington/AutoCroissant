@@ -30,7 +30,7 @@ Quick orientation:
 | PyNaCl | Required for Discord voice encryption. You do NOT install it directly — it arrives transitively via PyGithub (see section 3, this is a trap). | `python3 -m pip show PyNaCl` |
 | opus library | Standard discord.py voice requirement. This bot's `FFmpegOpusAudio` path delegates opus encoding to ffmpeg, so libopus is only strictly needed if anything switches to PCM audio (the volume-control path suggests exactly that, music_player.py:327). Cheap insurance: `brew install opus` / `apt install libopus0`. Labeled guidance. | `brew list opus` |
 | config.py | Created BY HAND in the repo root; gitignored; contains tokens — never commit, never print. Only `TOKEN` is required to boot: `main.py:12` is `from config import TOKEN` and every other field is read with `getattr(config, ..., default)` (e.g. utils.py:19, music_player.py:37). A TOKEN-only config boots, but `ADMINS` then defaults to `[]` so admin-gated commands deny everyone. Field names and semantics: see **autocroissant-config-and-flags**. | `grep -n "from config import" main.py` |
-| TTSCardMaker clone (full host only) | The card-source repo is expected at `~/Desktop/TTSCardMaker` (`global_config.py:4`, `LOCAL_DIR_LOC`). The bot works without it: `/update_stats` reads GitHub only since local mode was archived on 2026-10-20 (to branch `archive/local-update-stats`; autocroissant-run-and-operate §7). The clone serves the diagnostics scripts (parse_one.py, gap_trace.py), sandbox sweeps, and the stoogedings icon font build (ttscardmaker-companion). | `ls ~/Desktop/TTSCardMaker` |
+| TTSCardMaker clone (full host only) | The card-source repo is expected at `~/Desktop/TTSCardMaker` (`global_config.py:5`, `LOCAL_DIR_LOC`). The bot works without it: `/update_stats` reads GitHub only since local mode was archived on 2026-10-20 (to branch `archive/local-update-stats`; autocroissant-run-and-operate §7). The clone serves the diagnostics scripts (parse_one.py, gap_trace.py), sandbox sweeps, and the stoogedings icon font build (ttscardmaker-companion). | `ls ~/Desktop/TTSCardMaker` |
 
 ## 2. Requirements
 
@@ -54,7 +54,7 @@ committed (53db8ee).
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
-| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:104`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
+| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:103`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
 | requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:2`, `commands/tts_save.py:32`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
@@ -202,7 +202,7 @@ Then:
    insurance: opus (section 1). Verify: `which ffmpeg`.
 4. Clone the card source where the bot expects it:
    `git clone https://github.com/MichaelJSr/TTSCardMaker ~/Desktop/TTSCardMaker`
-   (path is `LOCAL_DIR_LOC`, global_config.py:4). The bot works without it: `/update_stats`
+   (path is `LOCAL_DIR_LOC`, global_config.py:5). The bot works without it: `/update_stats`
    reads GitHub only since local mode was archived on 2026-10-20
    (**autocroissant-run-and-operate** §7). The repo's history is about 25 GB of PSDs; the dev Mac's clone
    is blobless (`--filter=blob:none`) and shallow (depth 1) as of 2026-10-19, so local `git log`

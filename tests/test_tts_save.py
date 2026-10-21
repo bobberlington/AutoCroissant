@@ -1,12 +1,16 @@
-"""tts_save: byte-identical serializer, _sync_decks and _fix_keys on a small forged save."""
+"""tts_save: byte-identical serializer, _sync_decks and _fix_keys on a small forged save; the Action's env overrides."""
 from copy import deepcopy
-from json import loads
+from json import dumps, loads
+from os import environ
+from subprocess import run
+from sys import executable
+from types import SimpleNamespace
 
 import pytest
 
 import commands.repo_history as rh
 import commands.tts_save as tts
-from conftest import CLONE
+from conftest import CLONE, REPO
 
 RAW = tts.RAW
 HEAL = "Items/Heal/2 Stars/"
@@ -122,3 +126,60 @@ def test_fix_keys(repo):
     assert stale["CustomDeck"] == {"5": shown} and fine["CustomDeck"] == {"5": shown}   # the deck's entry wins
     assert loose["CustomDeck"] == {"7": own} and other["CustomDeck"] == {"9": own}
     assert report.stale == ["`e1` A: 9 -> 5; own face differed, the deck's kept", "`e3` B: 3 -> 7"]
+
+
+# ========================
+# Environment overrides
+# ========================
+def _paths(env: dict) -> list:
+    code = "import global_config as g; print(g.LOCAL_DIR_LOC); print(g.HISTORY_CLONE)"
+    return run([executable, "-c", code], cwd=REPO, env=env, capture_output=True, text=True, check=True).stdout.split("\n")[:2]
+
+
+def test_env_overrides_for_the_action():
+    """TTSCardMaker's tts-save.yml points the checkout and the history clone elsewhere through the environment."""
+    env = {k: v for k, v in environ.items() if not k.startswith("AUTOCROISSANT_")}
+    assert _paths(env) == ["~/Desktop/TTSCardMaker", "~/Documents/TTSCardMaker-history.git"]
+    env.update(AUTOCROISSANT_LOCAL_DIR="/work/cards", AUTOCROISSANT_HISTORY_CLONE="/work/history.git")
+    assert _paths(env) == ["/work/cards", "/work/history.git"]
+
+
+# ========================
+# Card Edits.json: site/ first, MDW/ until the move lands
+# ========================
+def _checkout(tmp_path, **layouts):
+    root = tmp_path / "checkout"
+    for folder, name in layouts.items():
+        (root / folder).mkdir(parents=True, exist_ok=True)
+        (root / folder / "Card Edits.json").write_text(dumps({"cards": {"A": {"name": name}}}), encoding="utf-8")
+    return str(root)
+
+
+def test_names_read_card_edits_from_either_folder(repo, tmp_path):
+    assert tts.EDITS_PATHS == ("site/Card Edits.json", "MDW/Card Edits.json")
+    for folder in ("site", "MDW"):
+        repo.checkout = _checkout(tmp_path / folder, **{folder: f"Alpha in {folder}"})
+        names = tts._Names(repo, [])                                  # offline: the website is unreachable
+        assert names.known(A) == f"Alpha in {folder}" and names.of(B) == "B"
+    repo.checkout = _checkout(tmp_path / "both", site="New", MDW="Old")
+    assert tts._Names(repo, []).known(A) == "New"
+    repo.checkout = str(tmp_path / "empty")
+    assert tts._Names(repo, []).known(A) is None
+
+
+def test_files_at_lists_both_edits_paths(monkeypatch):
+    """update_repo_save asks main's tree for every EDITS_PATHS entry and reads the first one found."""
+    blob = lambda name, sha: {"path": name, "type": "blob", "mode": "100644", "sha": sha}
+    sub = lambda name, sha: {"path": name, "type": "tree", "mode": "040000", "sha": sha}
+    trees = {"r1": [sub("TTS", "t1"), sub("site", "s1"), sub("MDW", "m1")], "r2": [sub("TTS", "t1"), sub("MDW", "m1")],
+             "t1": [blob("decks.json", "d"), blob("Impossibility Simulator.json", "v")],
+             "s1": [blob("Card Edits.json", "e-new"), blob("index.html", "h")], "m1": [blob("Card Edits.json", "e-old"), blob("cardback.png", "k")]}
+    monkeypatch.setattr(tts, "_api", lambda method, path, **kw: SimpleNamespace(json=lambda: {"tree": trees[path.rsplit("/", 1)[1]]}))
+    monkeypatch.setattr(tts, "_objects", {})
+    monkeypatch.setattr(tts, "_used", set())
+    wanted = (tts.TTS_SAVE_PATH, tts.RULES_PATH) + tts.EDITS_PATHS
+    files = tts._files_at("r1", wanted)
+    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d", "site/Card Edits.json": "e-new", "MDW/Card Edits.json": "e-old"}
+    assert next(p for p in tts.EDITS_PATHS if p in files) == "site/Card Edits.json"
+    files = tts._files_at("r2", wanted)
+    assert next(p for p in tts.EDITS_PATHS if p in files) == "MDW/Card Edits.json" and "site/Card Edits.json" not in files
