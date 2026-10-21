@@ -1,7 +1,8 @@
 """
-Write tests/goldens/ from the CURRENT parser. Only after a parser change was accepted (validation-and-qa section 4),
-or to re-pin a golden whose PSD changed upstream:
-    python tests/make_goldens.py [--vocab]      (--vocab also re-freezes Types/, Types/Stars/ and the manifest)
+Write tests/goldens/ from the CURRENT parser. By default only the goldens whose PSD changed upstream (or that have none
+yet); name card paths to re-pin just those; --all only after a parser change was accepted (validation-and-qa section 4):
+    python tests/make_goldens.py [--vocab] [--all | <card path> ...]
+(--vocab also re-freezes Types/, Types/Stars/ and the manifest)
 """
 import json
 import sys
@@ -25,11 +26,23 @@ def freeze_vocab() -> None:
                                 indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _changed(rel: str) -> bool:
+    golden = golden_file(rel)
+    return not golden.exists() or json.loads(golden.read_text(encoding="utf-8"))["blob"] != blob_sha(CLONE / rel)
+
+
 def main() -> None:
+    named = [a for a in sys.argv[1:] if not a.startswith("--")]
+    unknown = [rel for rel in named if rel not in CARDS]
+    if unknown:
+        sys.exit(f"not in CARDS (tests/golden_cards.py): {', '.join(unknown)}")
     if "--vocab" in sys.argv or not VOCAB.exists():
         freeze_vocab()
+    cards = CARDS if "--all" in sys.argv else named or [rel for rel in CARDS if _changed(rel)]
+    if not cards:
+        print("Every golden matches its PSD; nothing re-pinned.")
     p = parser()
-    for rel in CARDS:
+    for rel in cards:
         out = {"path": rel, "blob": blob_sha(CLONE / rel), **parse(p, CLONE, rel)}
         golden_file(rel).write_text(json.dumps(out, indent=1, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
         print(rel)

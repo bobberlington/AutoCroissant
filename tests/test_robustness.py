@@ -3,6 +3,7 @@ temp files cleaned, git timeouts, help/describe text (C1-C3), unique handler nam
 import ast
 import asyncio
 import inspect
+import os
 import re
 import subprocess
 import tempfile
@@ -391,9 +392,13 @@ def test_failed_json_saves_leave_no_tmp(monkeypatch, tmp_path):
 # Git timeouts
 # ========================
 def test_git_fetch_times_out(monkeypatch, tmp_path):
+    for key, value in {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(tmp_path),
+                       "XDG_CONFIG_HOME": str(tmp_path)}.items():   # no user config (git 2.25 ignores GIT_CONFIG_GLOBAL)
+        monkeypatch.setenv(key, value)
     def git(*args):
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
-    git("init", "-q", "-b", "main")
+    git("init", "-q")
+    git("symbolic-ref", "HEAD", "refs/heads/main")                      # git 2.25 has no init -b
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
     git("remote", "add", "origin", "ssh://git@example.invalid/repo.git")
     stall = tmp_path / "stall.sh"

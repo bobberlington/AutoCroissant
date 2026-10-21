@@ -30,15 +30,29 @@ def _traverser(cards: dict) -> pa.RepositoryTraverser:
 
 
 @pytest.fixture(scope="module")
-def repo_paths(clone):
-    out = subprocess.run(["git", "-C", str(clone), "ls-files"], capture_output=True, encoding="utf-8", check=True)
-    return out.stdout.splitlines()
+def repo_blobs(clone):
+    """The clone's committed files: path -> blob sha."""
+    out = subprocess.run(["git", "-C", str(clone), "ls-files", "-s", "-z"], capture_output=True, encoding="utf-8",
+                         check=True)
+    return {path: meta.split()[1] for meta, path in (e.split("\t", 1) for e in out.stdout.split("\0") if e)}
+
+
+def _drift(stats: dict, blobs: dict) -> list:
+    """PSDs the clone and stats.pkl disagree on: added, removed or edited since the last /update_stats."""
+    stored = {c.path: c.blob_sha for c in stats.values() if not c.duplicate_of}
+    psds = {p: b for p, b in blobs.items()
+            if p.lower().endswith(".psd") and not any(f in pa.EXCLUDE_FOLDERS for f in p.split("/"))}
+    return sorted(p for p in stored.keys() | psds.keys() if stored.get(p) != psds.get(p))
 
 
 # ========================
 # Duplicates
 # ========================
-def test_real_duplicates(real_stats, repo_paths, no_aliases):
+def test_real_duplicates(real_stats, repo_blobs, no_aliases):
+    drift = _drift(real_stats.stats, repo_blobs)
+    if drift:
+        pytest.skip(f"clone and stats.pkl out of step ({len(drift)} PSDs, e.g. {drift[0]})")
+    repo_paths = list(repo_blobs)
     expected = {n: (c.duplicate_of, c.display_name) for n, c in real_stats.stats.items() if c.duplicate_of}
     assert len(expected) >= 5, "the pickle should hold the A Snack / Watermelon / ... duplicates"
     tr = _traverser({n: deepcopy(c) for n, c in real_stats.stats.items() if not c.duplicate_of})
@@ -87,15 +101,16 @@ def test_real_creature_split(real_stats, clone):
     multi = {n: c for n, c in real_stats.stats.items()
              if getattr(c, "creatures", None) and not getattr(c, "parsed_values", None)}
     assert len(multi) >= 3, "Tainted Lazarus, Pix and Twin Emperors split into creatures"
-    p, checked = parser(), 0
+    p, stale = parser(), []
     for name, stored in sorted(multi.items()):
         psd = clone / stored.path
-        if not psd.exists() or (stored.blob_sha and blob_sha(psd) != stored.blob_sha):
-            continue                                              # PSD edited since the last /update_stats
+        if not psd.exists() or not stored.blob_sha or blob_sha(psd) != stored.blob_sha:
+            stale.append(name)                                    # PSD edited since the last /update_stats
+            continue
         card = p.parse(str(psd), stored.path)
         assert [c.to_dict() for c in card.creatures] == [c.to_dict() for c in stored.creatures], name
         assert card.stats.to_dict() == card.creatures[0].to_dict()
         assert any(x.startswith("SEVERAL CREATURES") for x in card.problems)
         assert pa.CardValidator.validate(card) == card.problems   # their high stats are excluded
-        checked += 1
-    assert checked >= 3
+    if stale:
+        pytest.skip(f"clone and stats.pkl out of step: {', '.join(stale)}")

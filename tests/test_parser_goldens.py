@@ -16,11 +16,18 @@ def psd_parser(clone):
 def test_golden(psd_parser, clone, rel):
     expected = json.loads(golden_file(rel).read_text(encoding="utf-8"))
     if not (clone / rel).exists() or blob_sha(clone / rel) != expected["blob"]:
-        pytest.skip(f"{rel} changed upstream since the golden was made (re-pin: tests/make_goldens.py)")
+        pytest.skip(f"{rel} changed upstream since the golden was made (re-pin: python tests/make_goldens.py)")
     got = parse(psd_parser, clone, rel)
     assert got["card"] == expected["card"]
     assert got["alt_names"] == expected["alt_names"]
     assert got["validator"] == expected["validator"]
+
+
+def test_certified_goldens_are_current(clone):
+    """The certified cards are always parsed, never skipped: one edited upstream must be re-certified."""
+    stale = [rel for rel in CERTIFIED if not (clone / rel).exists()
+             or blob_sha(clone / rel) != json.loads(golden_file(rel).read_text(encoding="utf-8"))["blob"]]
+    assert stale == [], "re-pin with python tests/make_goldens.py, then check test_certified_values"
 
 
 def test_certified_values():

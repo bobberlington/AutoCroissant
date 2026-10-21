@@ -1,4 +1,4 @@
-# Run: /Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the pickles)
+# Run: ~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the pickles)
 import hashlib
 import socket
 import sys
@@ -12,11 +12,13 @@ import pytest
 # Configuration
 # ========================
 REPO = Path(__file__).resolve().parents[1]
-CLONE = Path(expanduser("~/Desktop/TTSCardMaker"))      # LOCAL_DIR_LOC; PSD tests skip without it
-PICKLES = ("stats.pkl", "old_stats.pkl", "aliases.pkl", "reminder.pkl")
-
 sys.path.insert(0, str(REPO))
-try:                                                     # the real config.py when present (never printed)
+from global_config import ALIAS_PKL, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_PKL, STATS_PKL  # noqa: E402
+
+CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it
+PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL)
+
+try:                                                    # the real config.py when present (never printed)
     import config  # noqa: F401
 except ImportError:
     fake = types.ModuleType("config")
@@ -65,7 +67,7 @@ def offline(monkeypatch, tmp_path):
 @pytest.fixture(scope="session")
 def real_stats():
     """The live stats.pkl, loaded read-only through StatsDatabase (never saved)."""
-    path = REPO / "stats.pkl"
+    path = REPO / STATS_PKL
     if not path.exists():
         pytest.skip("no stats.pkl")
     import commands.card_models as cm
