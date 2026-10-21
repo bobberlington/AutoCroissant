@@ -40,7 +40,7 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 ### Why the current state falls short
 
 - `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
-  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:315 —
+  text and returns whole pages (`rulebook_search_engine`, commands/query_card.py:352 —
   literally one `str.contains` call; wrapper at query_card.py:632, registered main.py:293).
   Ask it a question and it matches nothing unless your words appear verbatim.
 - `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:268): `|` OR,

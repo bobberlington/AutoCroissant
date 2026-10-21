@@ -31,7 +31,7 @@ containing only pickle-file changes, created by the bot's own `/push` (commands/
 ## 1. "Stats/cards look wrong after an update" (pickle corruption - costliest failure class)
 
 The database is `stats.pkl` (dict name -> CardInfo) plus `old_stats.pkl` (archive of prior versions)
-and `aliases.pkl`. `update_stats` (commands/repo_traverser.py:476) traverses the TTSCardMaker card
+and `aliases.pkl`. `update_stats` (commands/repo_traverser.py:471) traverses the TTSCardMaker card
 repo through the GitHub trees API (the only mode since local mode was archived on 2026-10-20), re-parses
 new, moved or changed PSDs (by blob sha), archives the old version into old_stats only when the PSD changed or moved, and saves. Corruption here silently propagates to the other machine via
 `/push`/`/pull`, so triage BEFORE pushing.

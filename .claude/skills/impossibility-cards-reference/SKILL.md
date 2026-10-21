@@ -479,7 +479,7 @@ database-only ones (unless `/update_metadata` had set them). The pipeline's verd
 website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
-a PSD re-parse keeps it with author and series (psd_parser.py:348-353) and a Card Edits.json value wins again at the
+a PSD re-parse keeps it with author and series (psd_parser.py:348-354) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip

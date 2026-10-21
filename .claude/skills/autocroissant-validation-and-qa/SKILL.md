@@ -154,7 +154,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 
 **Equality rules.** A fresh `parse_one.py` run has `timestamp: 0.0` and no `author` —
 those two fields come from traversal metadata (git commit dates / DB preservation,
-psd_parser.py:348-353, which also keeps `series` and `subseries`; repo_traverser.py:374), not from the PSD. So:
+psd_parser.py:348-354, which also keeps `series` and `subseries`; repo_traverser.py:381), not from the PSD. So:
 
 - *Golden vs stats.pkl*: all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
