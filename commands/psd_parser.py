@@ -966,6 +966,9 @@ class CardValidator:
         "Panda",
         "Chomp",
         "Abyss Watcher",
+        "Anubisath Guardian",     # three minions with an empty Ability layer (user, 2026-10-21)
+        "Qiraji Soldier",
+        "Silithid",
     }
 
     @staticmethod

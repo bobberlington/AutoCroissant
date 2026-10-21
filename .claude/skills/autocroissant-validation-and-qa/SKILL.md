@@ -408,7 +408,7 @@ lowercase detail after a colon — existing vocabulary: `UNKNOWN TYPE`,
 `ABILITY TEXT NOT FOUND`, `HP NOT FOUND`, `STATS TOO HIGH`, `NO ABILITY LAYER`,
 `MISSPELT TYPE: tornado`. Match it.
 
-**Exclusion-set etiquette.** `ABILITY_EXCLUSIONS` (18 names) exists to silence TRUE positives — cards that
+**Exclusion-set etiquette.** `ABILITY_EXCLUSIONS` (21 names since 2026-10-21) exists to silence TRUE positives — cards that
 legitimately have no ability text (`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card
 by `allow_high_stats` in Card Edits.json, data rather than code). Adding a name requires a stated
 reason (commit message at minimum: which card, why it's legitimate) and is **registered

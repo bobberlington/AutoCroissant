@@ -430,9 +430,10 @@ wants to eliminate (see autocroissant-research-frontier; the campaign to shrink 
 autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: stats above 10
 are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_parser.py:950-969:
 
-- `ABILITY_EXCLUSIONS` (18, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
+- `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
-  Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher.
+  Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher, and since
+  2026-10-21 (user) the three minions with an empty Ability layer: Anubisath Guardian, Qiraji Soldier, Silithid.
 
 ## 6. Data schemas: CardInfo and the pickles
 
@@ -637,7 +638,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 |---|---|
 | Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/repo_traverser.py` |
 | Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
-| Exclusion lists (5 + 18 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
+| Exclusion list (21 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
 | Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |
 | Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_parser.py` |
 | Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |

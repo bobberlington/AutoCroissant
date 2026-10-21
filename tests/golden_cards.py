@@ -34,7 +34,7 @@ CARDS = CERTIFIED + (
     "Field/3 Stars/White_Space.psd",
     "Field/4 Stars/The_Maelstrom.psd",
     "Field/2 Stars/Irithyll.psd",                                       # row grouping (_sort_by_position threshold)
-    "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability text
+    "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability text, in ABILITY_EXCLUSIONS since 2026-10-21
     "Auxiliary/Minions/God_Tamer.psd",                                  # no stars, ability excluded
     "Auxiliary/Minions/Whelp.psd",
     "Auxiliary/Items/Poorly_Drawn_Cabbage.psd",

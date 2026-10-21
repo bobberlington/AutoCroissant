@@ -16,7 +16,5 @@
   ]
  },
  "path": "Auxiliary/Minions/Anubisath_Guardian.psd",
- "validator": [
-  "ABILITY TEXT NOT FOUND"
- ]
+ "validator": []
 }

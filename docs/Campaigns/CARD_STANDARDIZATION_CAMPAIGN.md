@@ -111,8 +111,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   groups; paths in `lists.py`); 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax,
   Apex_Predator; 4 re-laid out in separately styled layers); 5 several visible (Lit_Bob-omb 2, Tainted_Lazarus 2, Miracle_Matter 5,
   Twin_Emperors 5, Warcraftian_Druid 2); 20 blank: 17 visible with no text (`lists.py`), Galacta_Warrior's visible two spaces and 2 hidden
-  (Abyss_Watcher, Warrior_Dee; `corpus.jsonl` `text_len`); 17 of the 20 are in `ABILITY_EXCLUSIONS` (18 names, `psd_parser.py:950-969`), the
-  3 not: Anubisath_Guardian, Qiraji_Soldier, Silithid (D1).
+  (Abyss_Watcher, Warrior_Dee; `corpus.jsonl` `text_len`); all 20 are in `ABILITY_EXCLUSIONS` (21 names, `psd_parser.py:950-972`; the user
+  added Anubisath_Guardian, Qiraji_Soldier and Silithid on 2026-10-21, D1).
 - **Tool.** Fork script: rename and move the layer under `Text` (layer move API on the fork: to confirm), else Photoshop. Blank content:
   the owner fills it or certifies it (then an empty layer is the standard for ability-less minions and `ABILITY_EXCLUSIONS` shrinks to the
   certified list; Shadow Duelist is stale there already, D3).
@@ -188,7 +188,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - `docs/Campaigns/RULEBOOK_CONSISTENCY_CAMPAIGN.md` §3: H1 six hidden text layers on four pages (09_TakingYourTurn x2, 11_Abilities x2,
   12_Reactions2, 22_Negation) to delete (hidden text is parsed); H2 off-canvas and overflow boxes (11_Abilities6; 12, 14, 20); V1 the stray
   box on 16_The_Field (a decision); X2 icons after the page number on 6 pages; C1-C6 text once decided; BUGS D2: the layer named `tornado`
-  on 20_Creature_Types. Tool: Photoshop with Consolas active (companion §3); later plan item 15. Check: that campaign's G3 (rules.json diff).
+  on 20_Creature_Types is supposed to be `wind` (user, 2026-10-21): rename it. Tool: Photoshop with Consolas active (companion §3); later plan item 15. Check: that campaign's G3 (rules.json diff).
 
 ### L12. Files beside the PSDs (no edit wanted; recorded so nobody "fixes" them)
 - 813 PSDs, 821 PNGs (`git ls-files`). 5 case-only stem mismatches (Dark_matter.psd/Dark_Matter.png, grand_doomer/Grand_Doomer, hr-h/HR-H,

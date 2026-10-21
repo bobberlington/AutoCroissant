@@ -212,7 +212,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
 | `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:80, :166). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
-| `CardValidator.ABILITY_EXCLUSIONS` | 18 card names (psd_parser.py:950-969) | cards allowed to have no ability layer |
+| `CardValidator.ABILITY_EXCLUSIONS` | 21 card names (psd_parser.py:950-972) | cards allowed to have no ability layer |
 
 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
 The exclusion set is a per-card whitelist the owner wants to eventually eliminate ("perfect

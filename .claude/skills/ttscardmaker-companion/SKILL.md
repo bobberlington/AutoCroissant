@@ -242,6 +242,7 @@ spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old 
 | **Website admins** | `site/Website Admins.txt` (GitHub logins; the repo owner is always one). A personal repo gives collaborators only write, so admin is a site rule: ban list, hidden cards, people, this list | `parse_admins`; edit.js `isAdmin` |
 | **Creatures** | stats.pkl `creatures` (bot split) or the `creatures` edit → `entry.creatures` [{hp, def, atk, spd}]; card stats = creature 1 | `main`, `apply_edits` |
 | Unparsed cards | PSDs/PNGs under Creatures/, Items/, Field/, N.M.E/ and Auxiliary/ that aren't in stats.pkl: image only, classified by folder | `main`, `classify` |
+| **Decks** (2026-10-21) | `site/decks/<owner>/<slug>.json`, hands published from the website's deck builder with the edit batch (format: `site/decks/README.md`). Public: resolved against visible cards (unknown ids dropped with a warning, counted) → `data/decks.json` + a `decks/<owner>/<slug>/` share page; private: PBKDF2 → AES-GCM made in the browser, shapes checked, passed through as they are, no page. Bad files skipped with a warning, never a failed build; `decks: {public, private}` and `files.decks` in cards.json | `read_decks`, `clean_deck`, `deck_text` |
 
 The pickles are loaded **without AutoCroissant code** (`_Unpickler` stubs every `commands.*` class). Renaming
 `CardInfo` is harmless; renaming attributes (`card_type`, `ability`, `stats.hp`, `timestamp`) silently blanks those
