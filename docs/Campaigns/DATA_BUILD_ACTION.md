@@ -583,7 +583,9 @@ github_api reads it inside a try/except and takes the token from the environment
   - `subseries` → `subseries`;
   - `del_entry` → `hidden: true`.
 
-  A value the head's entry (or `[cards]` line) already has is no change: no op, no restamp of `_by`, no commit.
+  A value the head's entry (or `[cards]` line) already has is no change: no op, no restamp of `_by`, no commit. An entry
+  holding PSD fields keeps its `_by`/`_at` when a Discord edit sets none of them (an alias, a folder field): the bake
+  credits the entry's `_by`, and a `discord:` one gets no `Edit-by` trailer, so the PSD field's editor keeps the credit.
   The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands, and
   until step 10 saves stats.pkl so a restart keeps it. A card with only
   a PNG gets the entry in the file (the website shows it) but no database row.
@@ -820,7 +822,9 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
        gives (a field `Card Edits.json` already sets is not carried), and the top-level key `aliases_moved`, after which the
        bot ignores aliases.pkl. Measured 2026-10-22 on the parity seed at af826714: 60 aliases onto 53 cards, 596 series
        values (the parity's 624 minus the 28 that `Card Edits.json` already overrides), 0 authors.
-     - *Consumers, in the same sitting as the migration commit* (TTSCardMaker):
+     - *Consumers* (TTSCardMaker), in the same sitting as the migration commit; the `discord:<user>` display (the third
+       item) lands before, or with, the jetson deploy of the writers, which stamp `_by: discord:<user>` from the first
+       `/update_metadata` or `/alias` on:
        - build_site skips aliases.pkl when `aliases_moved` is set; otherwise the site keeps the pickle's 60 aliases (the
          bot never rewrites aliases.pkl) and drifts with the first `/alias` move (TTSCardMaker `work/alias-migration`
          62f69df5 has this);

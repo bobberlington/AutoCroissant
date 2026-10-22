@@ -49,7 +49,7 @@ class CardRepository:
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
         self._edits = None                               # that file, parsed (CardEdits): /alias reads its aliases
-        self._moved_hint = False                         # an unparsable Card Edits.json named ALIASES_MOVED (no _edits yet)
+        self._moved_hint = False                         # the latest Card Edits.json didn't parse but named ALIASES_MOVED
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
@@ -175,7 +175,7 @@ class CardRepository:
 
     def aliases_moved(self) -> bool:
         """Card Edits.json says aliases.pkl moved into it (ALIASES_MOVED): the pickle's aliases no longer count."""
-        return self._edits.aliases_moved if self._edits is not None else self._moved_hint
+        return self._moved_hint or (self._edits is not None and self._edits.aliases_moved)
 
     def _populate_aliases(self) -> None:
         """Populate aliases.pkl's aliases into the file registry, until they moved into Card Edits.json."""
@@ -425,10 +425,10 @@ class CardRepository:
                 edits = CardEdits.parse(text)
             except Exception as e:
                 print(f"Could not read {path}: {e}")
-                if text is not None and f'"{ALIASES_MOVED}"' in text:   # unparsed, but migrated: aliases.pkl stays off
-                    self._moved_hint = True
+                if text is not None:                     # unparsed, but migrated: aliases.pkl stays off
+                    self._moved_hint = f'"{ALIASES_MOVED}"' in text
                 return
-            self._edits, self._edit_names = edits, (sha, edits.names())
+            self._edits, self._edit_names, self._moved_hint = edits, (sha, edits.names()), False
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 

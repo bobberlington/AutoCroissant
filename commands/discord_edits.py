@@ -4,9 +4,9 @@ Discord's card edits as commits to the card repo (docs/Campaigns/DATA_BUILD_ACTI
 commit per command; the commit never carries a pickle. It goes through card_bake.land (on main's current head, again from
 the new head when main moved) and git_commit (the API with the bot's GIT_TOKEN, else the history clone pushed over SSH: the
 path /bake_cards and /update_tts_save commit by). Its subject starts "Discord:", it carries an Edit-by trailer, and each
-entry it changes gets _by ("discord:<username>") and _at; a value the head already has is no change (no op, no restamp,
-no commit). Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the
-alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
+entry it changes gets _by ("discord:<username>") and _at (one holding PSD fields keeps its stamps when the edit sets
+none: their editor keeps the bake credit); a value the head already has is no change (no op, no restamp, no commit).
+Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
 
 Fields: author -> a [cards] line in Card Authors.txt; ability, hp/def/atk/spd -> the "psd" kind (they persist and show
 "PSD pending" on the website; the next bake prints them); stars and types are refused for now (the bake can't print them,
@@ -131,6 +131,26 @@ def _entries(text: Optional[str]) -> dict:
     return out
 
 
+def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
+    """
+    edits_file for a Discord edit. No op: the head's text as it is (never reformatted). An entry holding PSD fields
+    keeps its _by and _at when its op sets none of them: the bake credits the entry's _by, and a discord: one gets no
+    Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor.
+    """
+    ops = [op for op in ops if op.get("set") or op.get("unset")]
+    if not ops:
+        return text
+    psd = lambda fields: any(CardEdits.KIND.get(f) == "psd" for f in fields)
+    keep = {CardAuthors.key(op["key"]) for op in ops if not psd(op.get("set") or {})}
+    data = loads(edits_file(text, ops, at, by))
+    before = _entries(text)
+    for key, fields in data["cards"].items():
+        old = before.get(CardAuthors.key(key))
+        if CardAuthors.key(key) in keep and psd(fields) and isinstance(old, dict) and old.get("_by"):
+            fields.update({k: old[k] for k in ("_by", "_at") if k in old})
+    return dump_edits(data)
+
+
 def _section(lines: list, name: str) -> Optional[tuple]:
     """authorsFile's section(): (first line, end) of a [name] section's body, None when absent."""
     start = next((i for i, line in enumerate(lines) if line.strip().lower() == f"[{name}]"), None)
@@ -238,14 +258,21 @@ def replace_author(text: Optional[str], old: str, new: str, known: bool = True) 
         known: old is an author the bot knows; when it isn't and no line names old, the file stays as it is
 
     Returns:
-        (the text, the [cards] names rewritten, the [people] lines set {git name: new})
+        (the text (text itself when nothing changes), the [cards] names rewritten, the [people] lines set {git name:
+        new}); new takes the spelling of a person the file already names in another case
     """
     lines = authors_file(text, [], {}).split("\n")  # the sections there, as authorsFile makes them
-    same = lambda value: value.strip().lower() == old.strip().lower()
+    fold = lambda value: " ".join(value.split()).lower()
+    same = lambda value: fold(value) == fold(old)
 
     def entries(name: str) -> list:
         found = _section(lines, name)
         return [j for j in range(*found) if not lines[j].strip().startswith("#") and "=" in lines[j]] if found else []
+    if not same(new):                           # someone already named so: their spelling (edit.js spell), one group
+        start, end = _section(lines, "cards")
+        names = [lines[j].split("=", 1)[1] for j in entries("cards") + entries("people")] \
+            + [m.group(1) for m in (GROUP.fullmatch(lines[i].strip()) for i in range(start, end)) if m]
+        new = next((" ".join(n.split()) for n in names if fold(n) == fold(new)), new)
     moved = []
     for j in entries("cards"):
         left, right = lines[j].split("=", 1)
@@ -254,13 +281,13 @@ def replace_author(text: Optional[str], old: str, new: str, known: bool = True) 
             moved.append(left.strip())
     people = {lines[j].split("=", 1)[0].strip(): new for j in entries("people") if same(lines[j].split("=", 1)[1])}
     if not moved and not people and not known:
-        return (NEW_AUTHORS if text is None else text), [], {}
+        return text, [], {}
     if not any(same(lines[j].split("=", 1)[0]) for j in entries("people")):
         people[old.strip()] = new
     start, end = _section(lines, "cards")
-    for i in range(start, end):                 # old's group headers: new's
+    for i in range(start, end):                 # old's group headers, and new's in another case: new's
         found = GROUP.fullmatch(lines[i].strip())
-        if found and same(found.group(1)):
+        if found and (same(found.group(1)) or fold(found.group(1)) == fold(new)):
             lines[i] = f"# --- credited to {new} ({found.group(2)}) ---"
     while True:                                 # two groups of new's: the later one's lines join the first, in order
         start, end = _section(lines, "cards")
@@ -363,7 +390,8 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
         if repr(card) != before:
             changed.append(name)
     current = edits if edits is not None else card_repo._edits
-    legacy = {} if current is None or current.aliases_moved else card_repo.git_file_alias
+    moved = edits.aliases_moved if edits is not None else card_repo.aliases_moved()   # no file read: aliases.pkl, as the build
+    legacy = {} if moved else card_repo.git_file_alias
     pngs = {card_name(p).lower(): p for p in card_repo.git_files.values()}
     dups: dict = {}
     for name, dup in stats.items():
@@ -389,6 +417,7 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
             changed.append(name)
     if edits is not None:
         card_repo._edits, card_repo._edit_names = edits, (blob_sha(edits_text.encode("utf-8")), edits.names())
+        card_repo._moved_hint = False                # the file parsed: it says whether aliases moved
     if changed:
         try:
             card_repo.prep_dataframes()
@@ -450,6 +479,8 @@ def manual_metadata_entry(interaction,
                       (ability, stars, subtype, series, subseries, hp, defense, attack, speed, card_type, types)))
     given = {field: values[option] for option, field in METADATA if values[option] is not None}
     given = {f: v.strip() if isinstance(v, str) and f != "ability" else v for f, v in given.items()}
+    if "ability" in given:                      # edit.js: \r dropped, the ends trimmed, the spaces inside kept
+        given["ability"] = given["ability"].replace("\r", "").strip()
     if "types" in given:
         given["types"] = [t.strip().lower() for t in given["types"].split(",") if t.strip()]
     author = " ".join(author.split()) if author is not None else None
@@ -470,6 +501,11 @@ def manual_metadata_entry(interaction,
         else:
             say(interaction, f"Current metadata for **{name}**:\n```{_format_metadata(card, name)}```")
         return
+    original = getattr(card, "duplicate_of", None)
+    if author is not None and original:          # the build and the site credit a duplicate with its original's author
+        say(interaction, f"Not committed: **{name}** is a numbered copy of **{original}**'s card, so its author is "
+                         f"{original}'s. Set the author on {original}.")
+        return
     blocked = [f for f in given if f in NOT_BAKED]
     if blocked:                                  # psd_edit refuses the card's whole bake while one is pending
         say(interaction, f"Not committed: {' and '.join(blocked)} can't be set from Discord yet. The card bake can't "
@@ -487,7 +523,7 @@ def manual_metadata_entry(interaction,
     def edit(text):                             # only the fields the head's entry doesn't already have
         entry = entry_of(text, name)[1]
         done["fields"] = {f: v for f, v in given.items() if f not in entry or entry[f] != v or type(entry[f]) is not type(v)}
-        return edits_file(text, [{"key": name, "set": done["fields"], "unset": []}], at, by) if done["fields"] else text
+        return _stamped(text, [{"key": name, "set": done["fields"], "unset": []}], at, by)
 
     def credit(text):                           # only when the card's [cards] line credits someone else
         done["author"] = card_line(text, name) != author
@@ -511,10 +547,14 @@ def manual_metadata_entry(interaction,
     set_now = done["fields"]
     same = [f for f in given if f not in set_now] + (["author"] if author is not None and not done["author"] else [])
     psd = [f for f in set_now if CardEdits.KIND.get(f) == "psd"]
+    shared = original or next((n for n, c in stats_db.stats.items() if getattr(c, "duplicate_of", None) == name), None)
+    unbaked = ("the card bake doesn't print it (numbered PNGs share the card's PSD), so it stays a database edit; "
+               "change the PSD to show it on the card image.")
     lines = [f"  • {f}: {_short(v)}" for f, v in set_now.items()] + ([f"  • author: {author}"] if done["author"] else [])
     say(interaction, f"Updated **{name}** in the card repo ({_link(sha)}):\n" + "\n".join(lines)
         + (f"\nAlready so in the card repo: {', '.join(same)}." if same else "")
-        + (f"\n{', '.join(psd)}: pending on the card image until the next card bake prints it." if psd else "")
+        + (f"\n{', '.join(psd)}: {unbaked if shared else 'pending on the card image until the next card bake prints it.'}"
+           if psd else "")
         + ("" if card is not None else "\nNo data for this card yet (its PSD isn't parsed): the website shows the edit."))
 
 
@@ -542,17 +582,24 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
     if not old or not new:
         say(interaction, "Not committed: old_value and new_value can't be empty.")
         return
+    if old == new:
+        say(interaction, f"Not committed: old_value and new_value are both '{old}'.")
+        return
     by, at = editor(interaction), now()
     subject = f"{SUBJECT} /mass_replace {field} '{_short(old)}' -> '{_short(new)}'"
+    seen: dict = {}
     try:
         if field == "author":
-            seen: dict = {}
             known = any((c.author or "").strip().lower() == old.lower() for c in stats_db.stats.values())
 
             def rewrite(text):
                 seen["text"], seen["moved"], seen["people"] = replace_author(text, old, new, known)
                 return seen["text"]
-            sha, written = commit(subject, by, lambda: [f"- {n}" for n in seen["moved"]]
+
+            def spelled() -> str:              # new as written: an existing person's spelling (replace_author)
+                return next(iter(seen.get("people", {}).values()), new)
+            sha, written = commit(lambda: f"{SUBJECT} /mass_replace {field} '{_short(old)}' -> '{_short(spelled())}'", by,
+                                  lambda: [f"- {n}" for n in seen["moved"]]
                                   + [f"- [people] {g} = {v}" for g, v in seen["people"].items()], authors=rewrite)
             names = None
         else:
@@ -565,22 +612,28 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
 
             def rewrite(text):                  # a card whose entry already says new: no op
                 entries = _entries(text)
-                return edits_file(text, [{"key": n, "set": {target: new}, "unset": []} for n in names
-                                         if entries.get(CardAuthors.key(n), {}).get(target) != new], at, by)
-            sha, written = commit(f"{subject} ({len(names)} cards)", by, [f"- {n}" for n in names], rewrite)
+                seen["names"] = [n for n in names if entries.get(CardAuthors.key(n), {}).get(target) != new]
+                return _stamped(text, [{"key": n, "set": {target: new}, "unset": []} for n in seen["names"]], at, by)
+            sha, written = commit(lambda: f"{subject} ({len(seen['names'])} cards)", by,
+                                  lambda: [f"- {n}" for n in seen["names"]], rewrite)
     except Exception as error:                  # noqa: BLE001
         _failed(interaction, f"/mass_replace {field}", error)
         return
     if not sha:
-        say(interaction, f"No card has {field} '{old}': nothing to commit." if field == "author"
-            else f"Nothing to replace: no card shows {field} '{old}' in the card repo's files.")
+        if field != "author":
+            say(interaction, f"Nothing to replace: every card with {field} '{old}' already has '{new}' in the card repo.")
+        elif seen.get("moved") or seen.get("people"):
+            say(interaction, f"Card Authors.txt already credits '{spelled()}' wherever it credited '{old}': nothing to commit.")
+        else:
+            say(interaction, f"No card has author '{old}': nothing to commit.")
         return
     changed = refresh(names, written.get("edits"), written.get("authors"))
     if field == "author":
+        new = spelled()
         detail = (f"{len(seen['moved'])} [cards] lines now credit {new}; [people] "
                   + ", ".join(f"{git} = {shown}" for git, shown in seen["people"].items()))
     else:
-        detail = f"{len(names)} card entries in Card Edits.json"
+        detail = f"{len(seen['names'])} card entries in Card Edits.json"
     say(interaction, f"Replaced {field}='{old}' with '{new}' ({_link(sha)}): {detail}; {len(changed)} cards changed now.")
 
 
@@ -614,15 +667,20 @@ def edit_aliases(card_repo) -> list:
 
 
 def _alias_ops(text: str, alias: str, card: Optional[str]) -> list:
-    """Card Edits.json ops putting alias on card's entry alone (card None: on no entry). [] when already so."""
+    """
+    Card Edits.json ops putting alias on card's entry alone (card None: on no entry). [] when already so: the card
+    holding the alias in any spelling (alias_key, as lookups match) keeps its list as it is.
+    """
     cards = (loads(text) if text else {}).get("cards") or {}
     ops = []
+    norm = alias_key(alias)
     for key, fields in cards.items():
         if not isinstance(fields, dict):
             continue
         current = list(fields.get("aliases") or [])
-        mine = card is not None and CardAuthors.key(key) == CardAuthors.key(card)
-        kept = [a for a in current if alias_key(a) != alias_key(alias)] + ([alias] if mine else [])
+        kept = [a for a in current if alias_key(a) != norm]
+        if card is not None and CardAuthors.key(key) == CardAuthors.key(card):
+            kept = current if len(kept) < len(current) else current + [alias]
         if kept != current:
             ops.append({"key": key, "set": {"aliases": kept} if kept else {}, "unset": [] if kept else ["aliases"]})
     if card is not None and not any(CardAuthors.key(k) == CardAuthors.key(card) for k in cards):
@@ -662,7 +720,7 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
         holders = [c for a, c in edit_aliases(card_repo) if alias_key(a) == norm]
         try:
             sha, written = commit(f"{SUBJECT} /alias {alias} removed" + (f" ({holders[0]})" if holders else ""), by, [],
-                                  lambda text: edits_file(text, _alias_ops(text, alias, None), at, by))
+                                  lambda text: _stamped(text, _alias_ops(text, alias, None), at, by))
         except Exception as error:              # noqa: BLE001
             _failed(interaction, f"/alias {alias}", error)
             return
@@ -688,7 +746,7 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
         return
     try:
         sha, written = commit(f"{SUBJECT} /alias {alias} -> {card}", by, [],
-                              lambda text: edits_file(text, _alias_ops(text, alias, card), at, by))
+                              lambda text: _stamped(text, _alias_ops(text, alias, card), at, by))
     except Exception as error:                  # noqa: BLE001
         _failed(interaction, f"/alias {alias}", error)
         return

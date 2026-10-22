@@ -293,8 +293,18 @@ def test_update_metadata_on_a_duplicate_and_failure(repo, monkeypatch):
     de.manual_metadata_entry(repo.who, "A Snack", attack=9)                      # the original: its duplicate copied again
     assert repo.stats["A Snack2"].stats.attack == 9 and repo.stats["A Snack2"].display_name == "Breakfast"
     assert repo.stats["A Snack2"].duplicate_of == "A Snack"
+    assert "the card bake doesn't print it (numbered PNGs share" in repo.sent[0] and "next card bake" not in repo.sent[0]
     de.manual_metadata_entry(repo.who, "A Snack2", ability="Breakfast.")         # the duplicate's own entry
     assert repo.stats["A Snack2"].ability == "Breakfast." and repo.stats["A Snack"].ability == "Does a thing."
+    assert "the card bake doesn't print it" in repo.sent[1]
+    head = repo.github.head
+    de.manual_metadata_entry(repo.who, "A Snack2", author="Zomoroko")            # the original's author, always
+    assert repo.github.head == head and "Set the author on A Snack" in repo.sent[2]
+    de.manual_metadata_entry(repo.who, "Goombella", ability=" \r\n  ")            # blank once trimmed: refused
+    assert repo.github.head == head and "must be" in repo.sent[3]
+    de.manual_metadata_entry(repo.who, "Goombella", ability="\r\n Two  spaces. \n")   # ends trimmed, the inside kept
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]["ability"] == "Two  spaces."
+    assert "pending on the card image until the next card bake" in repo.sent[4]
     repo.github.stuck = True
     head = repo.github.head
     de.manual_metadata_entry(repo.who, "Goombella", hp=1)
@@ -312,10 +322,51 @@ def test_mass_replace_series_one_commit(repo):
     assert message.startswith("Discord: /mass_replace series 'MARIO' -> 'Mario Bros' (2 cards)\n\n- Goombella\n- The Freezer")
     cards = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]
     assert cards["Goombella"]["series"] == cards["The Freezer"]["series"] == "Mario Bros" and "A Snack2" not in cards
-    assert cards["The Freezer"]["_psd"] == EDITS["The Freezer"]["_psd"] and cards["The Freezer"]["_by"] == BY
+    assert cards["The Freezer"]["_psd"] == EDITS["The Freezer"]["_psd"] and cards["Goombella"]["_by"] == BY
+    assert (cards["The Freezer"]["_by"], cards["The Freezer"]["_at"]) == ("web", AT)   # its PSD field's editor kept
     assert repo.stats["Goombella"].series == "Mario Bros" and "Replaced series='MARIO'" in repo.sent[0]
     de.mass_replace_field(repo.who, "subtype", "nothing", "x")
     assert "No card has subtype" in repo.sent[1] and len(_commits(repo.github, start)) == 1
+
+
+def test_mass_replace_counts_and_no_ops(repo):
+    """The subject and the reply count the entries changed; old == new and a hand-formatted file make no commit."""
+    start = repo.github.head
+    repo.stats["Goombella"].series = "MARIO"                                     # its entry already says "Mario"
+    de.mass_replace_field(repo.who, "series", "mario", "Mario")
+    (message,) = _commits(repo.github, start)
+    assert message.startswith("Discord: /mass_replace series 'mario' -> 'Mario' (1 cards)\n\n- The Freezer\n\nEdit-by")
+    assert "1 card entries in Card Edits.json" in repo.sent[0]
+    for field, value in (("series", "Mario"), ("author", "Zomoroko")):
+        de.mass_replace_field(repo.who, field, value, f" {value} ")
+        assert "are both" in repo.sent[len(repo.sent) - 1]
+    files = repo.github.files_at(repo.github.head)                               # a hand-formatted Card Edits.json
+    loose = json.dumps(json.loads(files[EDITS_PATH]), indent=4).encode()
+    head = repo.github.commit({**files, EDITS_PATH: loose}, "web", "hand edit")
+    de.mass_replace_field(repo.who, "series", "mario", "Mario")
+    assert repo.github.head == head and "already has 'Mario'" in repo.sent[len(repo.sent) - 1]
+    de.manage_alias(repo.who, "nothing", None)
+    assert repo.github.head == head and "No alias exists" in repo.sent[len(repo.sent) - 1]
+
+
+def test_mass_replace_author_spellings(repo):
+    """new in another case than a person the file names: that person's spelling, one group; a case respelling of old;
+    no authors file and an unknown author: no file."""
+    start = repo.github.head
+    repo.stats["The Freezer"].author = "Zomoroko"
+    de.mass_replace_field(repo.who, "author", "Zomoroko", "michaeljsr")
+    text = _at_head(repo.github, AUTHORS_PATH)
+    assert "michaeljsr" not in text and text.count("credited to") == 1
+    assert "# --- credited to MichaelJSr (3) ---\nA Snack = MichaelJSr\nMini Doomer = MichaelJSr\nThe Freezer = MichaelJSr\n" in text
+    assert _commits(repo.github, start)[0].startswith("Discord: /mass_replace author 'Zomoroko' -> 'MichaelJSr'")
+    assert "now credit MichaelJSr" in repo.sent[0]
+    de.mass_replace_field(repo.who, "author", "MichaelJSr", "Michaeljsr")        # old's own case changed: a rename
+    assert "# --- credited to Michaeljsr (3) ---" in _at_head(repo.github, AUTHORS_PATH)
+    de.mass_replace_field(repo.who, "author", "michaelJSR", "Michaeljsr")        # already so everywhere
+    assert len(_commits(repo.github, start)) == 2 and "already credits 'Michaeljsr'" in repo.sent[2]
+    assert de.replace_author(None, "Bob", "Robert", known=False) == (None, [], {})
+    text, moved, people = de.replace_author(AUTHORS, "Bob", "zomoroko")          # new's spelling from [people]/[cards]
+    assert people == {"Bob": "Zomoroko"}
 
 
 def test_mass_replace_author_rewrites_the_authors_file(repo):
@@ -368,6 +419,31 @@ def test_alias_create_move_delete(repo):
     assert len(_commits(repo.github, start)) == 3
 
 
+def test_alias_on_a_card_with_two_aliases(repo, monkeypatch):
+    """An alias the card already has (not its last, any spelling) is no change: no reorder, no restamp, no commit. An entry
+    holding a website PSD edit keeps its editor's stamps (the bake's Edit-by credit)."""
+    text = '{"about":"x","cards":{"Foo":{"aliases":["a","b"],"_by":"web:x","_at":"2026"}}}'
+    assert de._alias_ops(text, "a", "Foo") == [] and de._alias_ops(text, "b", "Foo") == []
+    assert de._alias_ops(text, "A", "Foo") == [] and de._alias_ops(text, "a", "Bar")[0]["set"] == {"aliases": ["b"]}
+    assert de._alias_ops(text, "c", "Foo") == [{"key": "Foo", "set": {"aliases": ["a", "b", "c"]}, "unset": []}]
+    assert de._stamped(text, [], AT, BY) == text                                 # never reformatted
+    files = repo.github.files_at(repo.github.head)
+    data = json.loads(files[EDITS_PATH])
+    data["cards"]["Goombella"] = {"hp": 6, "aliases": ["Goomba", "Bella"], "_by": "webber", "_at": AT}
+    head = repo.github.commit({**files, EDITS_PATH: dump_edits(data).encode()}, "webber", "Website edit: Goombella")
+    repo.registry._edits = CardEdits.parse(dump_edits(data))
+    de.manage_alias(repo.who, "goomba", "goombella")
+    assert repo.github.head == head and "'goomba' already finds Goombella" in repo.sent[0]
+    de.manage_alias(repo.who, "Paper Goomba", "goombella")
+    entry = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]
+    assert entry == {"hp": 6, "aliases": ["Goomba", "Bella", "Paper Goomba"], "_by": "webber", "_at": AT}
+    assert _commits(repo.github, head)[0].endswith(f"Edit-by: {BY}")            # the commit is the Discord user's
+    card = cb.select(CardEdits.parse(_at_head(repo.github, EDITS_PATH)), cb.Snapshot(cb.CARD_REPO, "h", {}, {}), "Goombella")[0]
+    assert card.by == "webber"
+    de.manage_alias(repo.who, "Late", "mini doomer")                             # no PSD field: the Discord user's stamps
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]["_by"] == BY
+
+
 def test_alias_refuses_aliases_pkl_until_the_migration(repo, monkeypatch):
     monkeypatch.setattr(repo.registry, "git_file_alias", {"breakfast": "a_snack2.png"})
     head = repo.github.head
@@ -417,6 +493,30 @@ def test_aliases_moved_kept_when_card_edits_fails_to_parse(monkeypatch):
         registry._populate_edit_names()
         registry._populate_aliases()
         assert registry.aliases_moved() is moved and ("stale.png" in registry.git_files) is not moved
+
+
+def test_aliases_moved_named_by_a_newer_unparsable_file(monkeypatch):
+    """An older parsed file without aliases_moved in memory, then a newer one naming it that doesn't parse: aliases.pkl off;
+    the next file that parses decides again."""
+    texts = {"old": dump_edits({"about": ABOUT, "cards": {}}), "bad": '{"aliases_moved": "x", "cards": {,}}',
+             "new": dump_edits({"about": ABOUT, "cards": {}})}
+    monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: texts[sha])
+    registry = qc.CardRepository()
+    for sha, moved in (("old", False), ("bad", True), ("new", False)):
+        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": sha}]}
+        registry._populate_edit_names()
+        assert registry.aliases_moved() is moved
+
+
+def test_refresh_uses_aliases_pkl_when_card_edits_was_never_read(repo):
+    """No Card Edits.json parsed: a duplicate's name comes from aliases.pkl, as the build names it; the hint turns it off."""
+    repo.registry._edits = None
+    repo.stats["A Snack2"].display_name = None
+    de.refresh(None, None, AUTHORS.replace("A Snack = MichaelJSr", "A Snack = Zomoroko"))     # A Snack changes: copied again
+    assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("Zomoroko", "Breakfast")
+    repo.registry._moved_hint = True                                             # an unparsed file that names aliases_moved
+    de.refresh(None, None, AUTHORS)
+    assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("MichaelJSr", "A Snack")
 
 
 def test_aliases_pkl_ignored_once_moved(monkeypatch):
