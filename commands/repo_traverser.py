@@ -60,7 +60,7 @@ class RepositoryTraverser:
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
         self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
         self.details_changed = 0                 # records gathered this run
-        self.font_index = None                   # the /fonts cache's faces for the records' "supplied" flags, or None
+        self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
 
     def _update_old_stats_paths(self) -> None:
@@ -181,6 +181,8 @@ class RepositoryTraverser:
         self.tree = resp.json()                         # parsed once; the helpers below read it
         self.etag = resp.headers.get("ETag") or ""
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
+        from commands import psd_details                # lazy: fontTools loads here, not at startup
+        self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts; none on a 304
 
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
@@ -540,7 +542,7 @@ def update_stats(interaction: Optional[Interaction] = None,
         List of formatted problem messages
     """
     if verbose and bake_lock.locked():
-        say(interaction, "Waiting for the running card bake or update to finish...")
+        say(interaction, "Waiting for the running card update, bake or font check to finish...")
     with bake_lock:                                 # never beside a card bake (card_runner)
         return _update_stats(interaction, output_problematic, force_update, verbose, cards)
 
@@ -560,7 +562,6 @@ def _update_stats(interaction: Optional[Interaction],
     traverser.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
     from commands import psd_details                # lazy: fontTools loads here, not at startup
     traverser.details = psd_details.load()
-    traverser.font_index = psd_details.font_index()
 
     problem_cards, num_changed = traverser.traverse_remote(
         card_repo.repository,
@@ -577,7 +578,8 @@ def _update_stats(interaction: Optional[Interaction],
     if num_changed > 0 or gone or traverser.changed:
         stats_db.save()
     if traverser.tree is not None and not traverser.tree.get("truncated"):    # new blobs in, gone blobs out
-        if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed:
+        refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
+        if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed or refilled:
             psd_details.save(traverser.details)
 
     if verbose:

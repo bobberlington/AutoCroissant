@@ -81,7 +81,7 @@ def bake_cards(interaction, card: Optional[str] = None, dry_run: bool = True) ->
         say(interaction, "Card bake refused: this Python has no text engine (install the fork's psd-tools[text] in the bot venv).")
         return
     if bake_lock.locked():
-        say(interaction, "Waiting for the running card update or bake to finish...")
+        say(interaction, "Waiting for the running card update, bake or font check to finish...")
     with bake_lock:
         say(interaction, f"Baking the website's card edits{' (dry run)' if dry_run else ''}...")
         try:

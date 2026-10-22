@@ -14,7 +14,8 @@ rewrite the file with the baked and redundant fields removed and the `_psd` verd
 GitHub API, or git objects in the history clone pushed over SSH when the token can't write). Refusals are data: one bad card never
 blocks another; refused verdicts land in one file-only commit. The report goes to stdout, the artifacts (edited
 PSD, merged PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
-(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS) and the work dir (RUNNER_TEMP).
+(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
+fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
 a rate limit, no text engine) are reported but never written as a verdict. The `font` gate refuses only where a face
 resolves to nothing: on a Mac the platform fonts stand in for a missing or empty fonts dir (psd_edit.OK_FONTS).
@@ -43,7 +44,7 @@ from commands.card_models import card_name
 from commands.git_commit import API_TIMEOUT, AUTHOR, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
+from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -54,7 +55,6 @@ COMPARE_FILES = 300                             # a compare lists at most this m
 OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
-FONT_DIRS_ENV = "PSD_TOOLS_FONT_DIRS"           # the runner's fonts dir(s), pathsep-separated; else the checkout's MDW/Fonts
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
 # edit.js FIELDS, in order: how a rewritten entry lists its fields
@@ -409,9 +409,24 @@ def _work_dir() -> str:
     return mkdtemp(prefix=f"{WORK_NAME}_")
 
 
-def _fonts_dir() -> str:
+def _fonts_dir(snapshot: Optional[Snapshot] = None) -> str:
+    """
+    FONT_DIRS_ENV's first dir, else the checkout's MDW/Fonts, else the fonts cache brought to the snapshot's MDW/Fonts.
+
+    Raises Transient when a font file failed to download: a missing face would be refused as a `font` verdict.
+    """
     dirs = environ.get(FONT_DIRS_ENV, "")
-    return dirs.split(pathsep)[0] if dirs else join(expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
+    if dirs:
+        return dirs.split(pathsep)[0]
+    checkout = join(expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
+    if isdir(checkout) or snapshot is None:
+        return checkout
+    from commands.font_check import refresh_cache, tree_fonts      # lazy: not in the Action's files
+    fonts = refresh_cache(snapshot.repository, tree_fonts({path: sha for path, (_, sha) in snapshot.tree.items()}))
+    if fonts.failed:
+        name = min(fonts.failed)
+        raise Transient(f"fonts cache: {plural(len(fonts.failed), 'font file')} failed to download ({name}: {fonts.failed[name]})")
+    return fonts.directory
 
 
 def vocabulary(snapshot: Snapshot):
@@ -710,13 +725,13 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
                 report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
                                     f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
                                     + (f" (--card {card})" if card else ""))
-                fonts = _fonts_dir()
-                engine = "text engine" if psd_edit.text_engine() else "no text engine"
-                report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
-                                    + ("" if isdir(fonts) else " (missing)"))
                 if card and not cards:
                     report.note = f"No entry with a PSD field for {card!r}."
                 if cards:
+                    fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
+                    engine = "text engine" if psd_edit.text_engine() else "no text engine"
+                    report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
+                                        + ("" if isdir(fonts) else " (missing)"))
                     parser = vocabulary(snapshot)
                     colors: list = []           # the chart's fills, read once
 

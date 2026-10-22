@@ -30,6 +30,13 @@ ROLE = "546427268751294475"
 FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual FontSet: the face, Photoshop's two extras
 
 
+@pytest.fixture(autouse=True)
+def no_local_fonts(monkeypatch, tmp_path):
+    """No PSD_TOOLS_FONT_DIRS and no checkout: /fonts reads fonts through the fake GitHub only."""
+    monkeypatch.delenv(fc.FONT_DIRS_ENV, raising=False)
+    monkeypatch.setattr(fc, "LOCAL_DIR_LOC", str(tmp_path / "no-checkout"))
+
+
 # ========================
 # Fixture fonts (the fork's tests/psd_tools/composite/text/conftest.py recipe, cut down)
 # ========================
@@ -267,7 +274,7 @@ def test_discord_text():
     assert errors == "Errors: " + "; ".join(f"Items/{i}.psd: 403" for i in range(10)) + "; and 15 more (in the console)"
     assert fc.discord_text(fc.Report(errors=["a: x"])).endswith("\nErrors: a: x")
     withheld = fc.discord_text(fc.Report(checked=5, fonts_unread=2))
-    assert "2 MDW/Fonts files failed to download, so no card is reported missing a font this time" in withheld
+    assert "2 MDW/Fonts files could not be read, so no card is reported missing a font this time" in withheld
     assert "Every font" not in withheld
 
 
@@ -577,12 +584,14 @@ def test_check_repo_fonts_replies(monkeypatch):
     import commands.utils as utils
     sent, seen = [], []
     monkeypatch.setattr(utils, "queue_long_message", lambda interaction, text, **kw: sent.append(text))
-    monkeypatch.setattr(fc, "repo_fonts", lambda repository: (seen.append(repository), fc.Report(checked=3, fonts_files=2, fonts_faces=2))[1])
+    import commands.card_runner as cr
+    monkeypatch.setattr(fc, "repo_fonts", lambda repository, fonts_lock: (seen.append((repository, fonts_lock)),
+                                                                          fc.Report(checked=3, fonts_files=2, fonts_faces=2))[1])
     fc.check_repo_fonts("interaction")
-    assert seen == [qc.card_repo.repository]
+    assert seen == [(qc.card_repo.repository, cr.bake_lock)]
     assert sent == ["MDW/Fonts: 2 files, 2 faces. 3 card PSDs read.\nEvery font the cards ask for is in MDW/Fonts."]
 
-    def boom(repository):
+    def boom(repository, fonts_lock):
         raise RuntimeError("tree 503")
     monkeypatch.setattr(fc, "repo_fonts", boom)
     fc.check_repo_fonts("interaction")
