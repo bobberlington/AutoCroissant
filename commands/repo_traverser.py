@@ -374,7 +374,7 @@ class RepositoryTraverser:
                 continue
             name = card_name(path)
             self.db.seen_cards.append(name)
-            if name not in self.db.stats and self.db.restore(name):     # the archived record again; same blob: no download
+            if name not in self.db.stats and self.db.restore(name, path, item.get("sha")):  # same blob: no download
                 self.restored.append(name)
                 self.changed += 1
             if force_update or CardAuthors.key(name) in self.only or self._psd_changed(name, path, item.get("sha")):
@@ -442,25 +442,28 @@ class RepositoryTraverser:
 
     def _archive_sources(self, names: list) -> None:
         """
-        Each archived card's deleting commit (its path's newest, one request) and, for a rename, the new name: the
-        card new or changed this run with its blob, else the commit's rename of the path (one more request, only when
-        this run parsed a new blob or restored a card). A failure leaves them unset.
+        Each archived card's deleting commit (its path's newest, one request, run side by side) and, for a rename,
+        the new name: the card new or changed this run with its blob, else the commit's rename of the path (its files
+        read once per commit, only when this run parsed a new blob or restored a card). A failure leaves them unset.
         """
+        tags = {name: self.db.archive_tag(name) for name in names}
+        tags = {name: tag for name, tag in tags.items() if tag}
         fresh = set(self.new_blobs.values()) | set(self.restored)
-        for name in names:
-            versions = self.db.old_stats.get(name) or []
-            tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
-            if not tag:
-                continue
+        renames: dict = {}                                      # commit sha -> {old path: new name}
+        with ThreadPoolExecutor(LOOKUP_WORKERS) as pool:
+            pages = {name: pool.submit(self._commit_page, tag["path"]) for name, tag in tags.items()}
+        for name, tag in tags.items():
             renamed = self.new_blobs.get(tag["blob"]) if tag.get("blob") else None
             try:
-                commits = self._commit_page(tag["path"])
+                commits = pages[name].result()
                 if commits:
-                    tag["commit"] = commits[0].sha
+                    sha = tag["commit"] = commits[0].sha
                     if renamed is None and fresh:
-                        renamed = next((card_name(f.filename) for f in commits[0].files
-                                        if f.status == "renamed" and f.previous_filename == tag["path"]
-                                        and card_name(f.filename) in fresh), None)
+                        if sha not in renames:
+                            renames[sha] = {f.previous_filename: card_name(f.filename)
+                                            for f in commits[0].files if f.status == "renamed"}
+                        renamed = renames[sha].get(tag["path"])
+                        renamed = renamed if renamed in fresh else None
             except Exception as e:
                 print(f"{tag['path']}: deleting commit not found ({e})")
             if renamed:
@@ -548,8 +551,7 @@ def _archived_names(db: StatsDatabase, names: list) -> list:
     """Archived names for the message, a rename's new name beside it."""
     out = []
     for name in names:
-        versions = db.old_stats.get(name) or []
-        tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
+        tag = db.archive_tag(name)
         new = tag.get("renamed_to") if tag else None
         out.append(f"{name} (now {new})" if new else name)
     return out

@@ -424,7 +424,8 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Deck rules** (`TTS/decks.json`, 2026-10-22): the 7 "Specific Item Decks" are complete rules (count 1, back
   `MDW/cardback_item.png`, 94 cards); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
   Version" decks have `add_new_since: 318001ea` (the save's first commit): each gains every creature of its
-  stars the save then lacked (renames followed by blob; a card moved to other stars moves deck with it; no record is
+  stars the save then lacked (renames followed by blob; a card moved to other stars moves deck with it, nothing else
+  moves; no record is
   kept, so a card taken out by hand comes back unless the rule excludes it). `TTS/audit.py` keeps `add_new_since` and
   every complete counted rule when it rewrites the file.
 - **Triggers:** cron `41 11 * * *` and `workflow_dispatch` (input `force`, default true). No push trigger since 2911a8c.

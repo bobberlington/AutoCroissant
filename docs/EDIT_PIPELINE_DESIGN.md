@@ -196,8 +196,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    pieces (`psd_edit._fx_engine`).
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
-6. **Save.** Preview regenerated (an honest flattened image in the committed PSD, 20-45 s) or `save(update_preview=False)`
-   (0.2 s, stale preview): question 2 decides once, for every card; no flag. Gate `bytes`: compare parsed layer
+6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
+   the fork's `save(preview=)`, 0.13 s; regenerated where it can't, 9-11 s) or `save(update_preview=False)` (stale preview):
+   question 2 decides once, for every card; no flag. Gate `bytes`: compare parsed layer
    records old vs new (names, flags, channel lengths, EngineData), not raw offsets (a text edit shifts every later record): a
    toggle changes exactly the two flag bytes of `N_old`/`N_new` plus the effect blocks its Edit declares moved (the same bytes leave
    one record and land on the other, or leave only when cleared), a text edit one record + its channels; an ability edit's FX
@@ -474,6 +475,11 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
    `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).
    2026-10-21: round 3's fork branch `perf/save-with-preview` (98804ede, head 6f91981e) implements `save(preview=)`; `card_bake` still
    calls `apply_jobs(..., update_preview=True)` and switches to passing the merged PNG once the new pin tag is installed.
+   2026-10-22: done against tag `cards-20261021`. `apply_jobs` keeps Photoshop's preview and replaces the merge's pixels with the
+   unconverted render (`stored_preview`, `render_pair`, `merge_preview`; 8-bit RGB with a preview); `save_psd` passes it as
+   `save(preview=)`. Mini_Doomer hp 5 -> 8: save 11.2 s -> 0.13 s, bake 13.0 s -> 1.8 s; the preview changes on exactly the
+   PNG's 18201 delta pixels, which read back (ICC applied) equal to the merged PNG. Stock psd-tools (no `preview`
+   keyword) and other cards regenerate as before.
 3. **Top row 10 + bottom row N-10** (Royal Eradicator's layout; the parser already sums it). Sonic is converted once to that
    layout (standardization work; refused until then). `EXCESSIVE_STAT_EXCLUSIONS` goes. **Done 2026-10-21**: the list is
    deleted; Sonic and Royal Eradicator Main Cannon carry `allow_high_stats` in the edits file (the only two cards above 10).
