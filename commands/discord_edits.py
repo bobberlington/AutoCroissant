@@ -17,7 +17,9 @@ commit. /alias writes `aliases` on the entry of the card its PNG belongs to. ali
 migration sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
 
 The migration (section 14 step 5, after the parity re-parse): one commit, authored by the bot, of the files `migrate`
-writes, aliases.pkl's aliases and the Discord-only values (carried) together:
+writes, aliases.pkl's aliases and the Discord-only values (carried) together. An entry another editor stamped keeps
+its _by and _at; the fields the migration adds to it are listed in its _bot, credited to nobody (edit.js and
+edits_file drop a field from _bot when they set or unset it):
 
     python -m commands.discord_edits migrate --clone <full card repo clone> [--ref HEAD] [--aliases aliases.pkl]
         [--stats stats.pkl] --out-dir DIR
@@ -46,6 +48,7 @@ SUBJECT = "Discord:"                            # every commit's subject starts 
 EDIT_BY = "Edit-by"                             # the trailer key (card_bake.EDIT_BY, build_site.EDIT_BY)
 DISCORD = "discord:"                            # an editor's _by and Edit-by: "discord:<username>" (card_bake.DISCORD)
 BOT = "AutoCroissant"                           # the migration's _by (build_site.BOT_AUTHOR: counted for nobody)
+BOT_FIELDS = "_bot"                             # an entry's fields the migration set under another editor's _by (edit.js, build_site)
 FIELDS = frozenset(ORDER)
 GROUP = re_compile(r"# --- credited to (.+) \((\d+)\) ---")     # authorsFile's group headers (fullmatch)
 RULEBOOK_GROUP = "# --- rulebook pages ---"
@@ -83,7 +86,8 @@ def editor(interaction) -> str:
 def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edit.js editsFile: Card Edits.json with ops applied. A touched entry is matched like the authors file, lists its
-    fields in ORDER, then its other keys (_psd kept), then _by and _at (replaced); an entry left without keys goes.
+    fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets), then _by and _at
+    (replaced); an entry left without keys goes.
 
     Args:
         text: The file ("" or None: a new one)
@@ -110,6 +114,13 @@ def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
         current.update(op.get("set") or {})
         current.pop("_by", None)
         current.pop("_at", None)
+        if isinstance(current.get(BOT_FIELDS), list):          # a field this op sets or unsets is no longer the bot's
+            touched = set(op.get("set") or ()) | set(op.get("unset") or ())
+            left = [f for f in current[BOT_FIELDS] if f not in touched and f in current]
+            if left:
+                current[BOT_FIELDS] = left
+            else:
+                current.pop(BOT_FIELDS)
         cards.pop(key, None)
         names = [f for f in ORDER if f in current] + [f for f in current if f not in FIELDS]
         if names:
@@ -803,13 +814,27 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
 # The migration (section 14 step 5): aliases.pkl and the Discord-only values, one commit
 # ========================
 def _bot_edits(text: str, ops: list, at: str) -> dict:
-    """ops applied with _by AutoCroissant; an entry that was there keeps its editor's stamps (their bake credit)."""
+    """
+    ops applied with _by AutoCroissant; an entry that was there keeps its editor's stamps (their bake credit), and
+    the fields the ops add to another editor's entry are listed in its _bot (BOT_FIELDS): not that editor's edit.
+    """
     data = loads(edits_file(text, ops, at, BOT))
     before = _entries(text)
-    for key, fields in data["cards"].items():
+    cards = data["cards"]
+    for key, fields in list(cards.items()):
         old = before.get(CardAuthors.key(key))
-        if isinstance(old, dict) and old.get("_by"):
-            fields.update({k: old[k] for k in ("_by", "_at") if k in old})
+        if not (isinstance(old, dict) and old.get("_by")):
+            continue
+        bot = []
+        if str(old["_by"]).lower() != BOT.lower():                 # the bot's fields before, then the ones it adds
+            was = old.get(BOT_FIELDS) if isinstance(old.get(BOT_FIELDS), list) else []
+            bot = [f for f in was if f in fields] + [f for f in fields if f in FIELDS and f not in old and f not in was]
+        stamps = {k: old[k] for k in ("_by", "_at") if k in old}
+        if bot == (fields.get(BOT_FIELDS) or []):                  # an entry left as it was keeps its layout
+            fields.update(stamps)
+        else:
+            rest = {k: v for k, v in fields.items() if k not in ("_by", "_at", BOT_FIELDS)}
+            cards[key] = {**rest, **({BOT_FIELDS: bot} if bot else {}), **stamps}
     return data
 
 
@@ -855,7 +880,8 @@ def alias_ops(aliases: dict, text: str, pngs: list) -> tuple:
 def migrate_aliases(aliases: dict, text: str, pngs: list, at: str) -> tuple:
     """
     aliases.pkl alone into Card Edits.json (alias_ops), plus ALIASES_MOVED. New entries get _by AutoCroissant; an entry
-    already there keeps its _by and _at. The migration commit is migrate()'s: this, with the carried values.
+    already there keeps its _by and _at (the fields added to it in _bot). The migration commit is migrate()'s: this,
+    with the carried values.
 
     Returns:
         (the new text, report lines)
@@ -917,7 +943,7 @@ def migrate(aliases: dict, stats: dict, text: str, authors_text: Optional[str], 
     """
     The migration commit's files: aliases.pkl's aliases (alias_ops) and the Discord-only values (carried) in Card
     Edits.json with ALIASES_MOVED, and the carried authors as [cards] lines. New entries get _by AutoCroissant; an
-    entry already there keeps its _by and _at.
+    entry already there keeps its _by and _at (the fields added to it in _bot).
 
     Returns:
         (Card Edits.json, Card Authors.txt (None when unchanged), report lines)
