@@ -21,7 +21,8 @@ import numpy as np
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from psd_tools import PSDImage
-from psd_tools.constants import Resource, Tag
+from psd_tools.api.pil_io import post_process
+from psd_tools.constants import ColorMode, Resource, Tag
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
@@ -984,6 +985,23 @@ def render_region(psd: PSDImage, region: tuple) -> Image.Image:
     return psd.composite(viewport=region, ignore_preview=True)
 
 
+def render_pair(psd: PSDImage, region: tuple) -> tuple:
+    """
+    One render of the region, as render_region() returns it and in the PSD's own values (what its preview stores).
+
+    Args:
+        psd: The card
+        region: Canvas bbox to render
+
+    Returns:
+        (render, raw): raw before the embedded profile's sRGB conversion; the same image without a profile
+    """
+    raw = psd.composite(viewport=region, ignore_preview=True, apply_icc=False)
+    if Resource.ICC_PROFILE not in psd.image_resources:
+        return raw, raw
+    return post_process(raw, None, psd.image_resources.get_data(Resource.ICC_PROFILE)), raw
+
+
 def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
     """
     Render the unedited region and measure it against the official PNG (gate parity).
@@ -1001,6 +1019,11 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
     if not _within_bar(measured):
         raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d" % (measured["bad_pct"], measured["mean"], measured["max"]))
     return render, measured
+
+
+def _changed(base: Image.Image, render: Image.Image) -> np.ndarray:
+    """Region-sized mask: where the edited render differs from the baseline."""
+    return (np.asarray(base.convert("RGBA")) != np.asarray(render.convert("RGBA"))).any(axis=2)
 
 
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
@@ -1021,12 +1044,52 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
         raise Refused("shape", f"PNG mode {png.mode}")
     x0, y0, x1, y1 = region
     out = np.array(png.convert("RGBA"))
-    before = np.asarray(base.convert("RGBA"))
-    after = np.asarray(render.convert("RGBA"))
-    changed = (before != after).any(axis=2)
+    changed = _changed(base, render)
     patch = out[y0:y1, x0:x1]
-    patch[changed] = after[changed]
+    patch[changed] = np.asarray(render.convert("RGBA"))[changed]
     return Image.fromarray(out).convert(png.mode), int(changed.sum())
+
+
+def stored_preview(psd: PSDImage) -> Optional[Image.Image]:
+    """
+    The PSD's flattened preview in its own values, for merge_preview() and save_psd().
+
+    Args:
+        psd: The card before the edit
+
+    Returns:
+        RGB or RGBA; None (save() regenerates it) without a preview, past 8-bit RGB, or under stock psd-tools (no
+        save(preview=))
+    """
+    if "preview" not in signature(psd.save).parameters or psd.color_mode != ColorMode.RGB or psd.depth != 8:
+        return None
+    if not psd.has_preview():
+        return None
+    image = psd.topil(apply_icc=False)
+    return image if image is not None and image.mode in ("RGB", "RGBA") else None
+
+
+def merge_preview(preview: Image.Image, base: Image.Image, render: Image.Image, raw: Image.Image,
+                  region: tuple) -> Image.Image:
+    """
+    merge_png() for the PSD's own preview: the pixels it replaces take the raw render (render_pair()).
+
+    Args:
+        preview: stored_preview() (or the merge so far)
+        base: baseline()'s render of the region
+        render: The region rendered from the edited PSD
+        raw: The same render in the PSD's own values
+        region: The edit's padded region
+
+    Returns:
+        The preview, its mode kept (an RGB one takes the raw render over white)
+    """
+    x0, y0, x1, y1 = region
+    out = np.array(preview.convert("RGBA"))
+    changed = _changed(base, render)
+    after = _flat(raw) if preview.mode == "RGB" else np.asarray(raw.convert("RGBA"))
+    out[y0:y1, x0:x1][changed] = after[changed]
+    return Image.fromarray(out).convert(preview.mode)
 
 
 def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
@@ -1287,17 +1350,20 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
 # ========================
 # Save
 # ========================
-def save_psd(psd: PSDImage, path: str, update_preview: bool = True) -> None:
+def save_psd(psd: PSDImage, path: str, update_preview: bool = True, preview: Optional[Image.Image] = None) -> None:
     """
     Write the PSD.
 
     Args:
         psd: The edited card
         path: Where it goes
-        update_preview: The fork regenerates the flattened preview (decision 2: always, from the driver; 20-45 s);
-            False keeps the stale preview (0.2 s: the fork-only tests)
+        update_preview: Store a current flattened preview (decision 2: always, from the driver); False keeps the
+            stale one (the fork-only tests)
+        preview: merge_preview()'s image, stored as it is; None regenerates it from the layers (a full composite)
     """
-    if update_preview:
+    if update_preview and preview is not None:
+        psd.save(path, preview=preview)
+    elif update_preview:
         psd.save(path)
     elif "update_preview" in signature(psd.save).parameters:
         psd.save(path, update_preview=False)
@@ -1346,7 +1412,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         out_dir: Where the new PSD and PNG go (same file names)
         fonts_dir: MDW/Fonts
         chart: status_fills() for ability edits
-        update_preview: save_psd()
+        update_preview: save_psd(); the preview is the old one with the merge's pixels when the fork can store it
 
     Returns:
         Baked; raises Refused (any other exception is the driver's "error")
@@ -1373,22 +1439,28 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
     merged, parity, changed_pixels = png, {}, 0
+    preview = stored_preview(old) if update_preview else None
     timings["baseline"] = timings["render"] = 0.0
     for edit in edits:
         start = perf_counter()
         base, parity[edit.field] = baseline(old, png, edit.region)
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
-        render = render_region(new, edit.region)
+        if preview is None:
+            render = render_region(new, edit.region)
+        else:
+            render, raw = render_pair(new, edit.region)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
+        if preview is not None:
+            preview = merge_preview(preview, base, render, raw, edit.region)
         changed_pixels += replaced
     gate_shape(png, merged, new)
     gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
     start = perf_counter()
-    save_psd(new, new_psd, update_preview)
+    save_psd(new, new_psd, update_preview, preview)
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
@@ -1444,12 +1516,14 @@ __all__ = [
     'gate_size',
     'layer_records',
     'merge_png',
+    'merge_preview',
     'name_layer',
     'normalize_ability',
     'offline_parser',
     'parse_card',
     'read_name',
     'shown_name',
+    'render_pair',
     'render_region',
     'run_fills',
     'save_png',
@@ -1460,6 +1534,7 @@ __all__ = [
     'set_text_layer',
     'status_fills',
     'status_spans',
+    'stored_preview',
     'template_row',
     'template_rows',
     'uses_icon_font',

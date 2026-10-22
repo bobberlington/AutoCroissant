@@ -10,6 +10,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 import json
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
+from inspect import signature
 from pathlib import Path
 from re import search
 
@@ -17,6 +18,7 @@ import numpy as np
 import pytest
 from PIL import Image
 from psd_tools import PSDImage
+from psd_tools.constants import Resource
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
@@ -273,6 +275,35 @@ def test_merge_png_is_a_pixel_delta():
     assert refused.value.code == "shape"
 
 
+def test_merge_preview_takes_the_raw_render():
+    """merge_png()'s pixels, in the PSD's own values; an RGB preview takes them over white."""
+    base = Image.new("RGBA", (4, 4), (10, 20, 30, 255))
+    render, raw = base.copy(), Image.new("RGBA", (4, 4), (9, 9, 9, 255))
+    render.putpixel((1, 1), (200, 0, 0, 255))
+    raw.putpixel((1, 1), (190, 4, 2, 255))
+    render.putpixel((3, 2), (0, 200, 0, 51))
+    raw.putpixel((3, 2), (0, 190, 0, 51))
+    for mode, fill in (("RGBA", (1, 2, 3, 255)), ("RGB", (1, 2, 3))):
+        preview = pe.merge_preview(Image.new(mode, (10, 10), fill), base, render, raw, (2, 2, 6, 6))
+        assert preview.mode == mode and preview.size == (10, 10)
+        assert preview.getpixel((3, 3))[:3] == (190, 4, 2) and preview.getpixel((2, 2)) == fill
+        assert preview.getpixel((5, 4)) == ((0, 190, 0, 51) if mode == "RGBA" else (204, 242, 204))
+
+
+def test_save_psd_stores_the_merged_preview(tmp_path):
+    """The fork stores stored_preview()'s image as given; stock psd-tools has no save(preview=): None, regenerate."""
+    psd = PSDImage.new("RGB", (4, 4), (10, 20, 30))
+    if "preview" not in signature(PSDImage.save).parameters:
+        assert pe.stored_preview(psd) is None
+        return
+    preview = pe.stored_preview(psd)
+    assert preview.mode == "RGB" and preview.getpixel((0, 0)) == (10, 20, 30)
+    preview.putpixel((1, 1), (200, 0, 0))
+    pe.save_psd(psd, str(tmp_path / "x.psd"), True, preview)
+    saved = PSDImage.open(str(tmp_path / "x.psd"))
+    assert saved.has_preview() and np.array_equal(np.asarray(saved.topil(apply_icc=False)), np.asarray(preview))
+
+
 def test_save_png_keeps_the_official_colour_chunks(tmp_path):
     """The merged PNG carries Photoshop's iCCP, gAMA, cHRM and pHYs chunks: only pixels change."""
     from PIL.PngImagePlugin import PngInfo
@@ -481,6 +512,18 @@ def test_layer_records_fingerprint(clone):
 # Stats (the fork: viewport renders)
 # ========================
 @text_engine
+def test_render_pair_is_render_region_and_its_raw_values(clone):
+    """One unconverted render gives render_region()'s image byte for byte, and the preview's values beside it."""
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    assert Resource.ICC_PROFILE in psd.image_resources                # a non-sRGB profile: the two differ
+    box = (763, 1199, 863, 1285)
+    render, raw = pe.render_pair(psd, box)
+    assert np.array_equal(np.asarray(render), np.asarray(pe.render_region(psd, box)))
+    assert not np.array_equal(np.asarray(render), np.asarray(raw))
+    assert pe.stored_preview(psd).mode == "RGB"
+
+
+@text_engine
 def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     """S2's gate: 2 flag bytes, the parser reads 8, 0 pixels differ outside the row mask, a rerun does nothing."""
     parsed, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path, update_preview=True)
@@ -497,6 +540,9 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     assert int((differs & ~row).sum()) == 0 and int(differs.sum()) == baked.changed_pixels > 0
     saved = PSDImage.open(baked.psd_path)
     assert saved.has_preview() and {d.name for d in pe.template_row(saved, "hp")[1].values() if d.visible} == {"8"}
+    old_preview = PSDImage.open(_card(clone, MINI_DOOMER)[0]).topil(apply_icc=False)
+    moved = (np.asarray(old_preview) != np.asarray(saved.topil(apply_icc=False))).any(axis=2)
+    assert moved.any() and int((moved & ~differs).sum()) == 0      # Photoshop's preview, the merge's pixels replaced
     assert Image.open(baked.png_path).info.get("icc_profile") == Image.open(_card(clone, MINI_DOOMER)[1]).info.get("icc_profile")
     again = pe.classify(baked.reparse, {"hp": 8}, saved)
     assert again.jobs == {} and again.redundant == ["hp"]
