@@ -11,7 +11,7 @@ general_commands = {
     "/push:"                                    : "Commits the card pickles and psd_details.json (the website's PSD details), rebases onto new code, pushes and reports status (admin only).",
     "/update [force_reset]:"                    : "Pushes the pickles and psd_details.json, pulls, then restarts (admin only).\n"
                                                   "- force_reset: Skip the push and pull; hard reset to origin/main instead, discarding local pickles (dangerous! default: False)",
-    "/purge [user] [num] [bulk]:"               : "Deletes one user's messages among the most recent ones in this channel.\n"
+    "/purge [user] [num] [bulk]:"               : "Deletes one user's messages among the most recent ones in this channel (admin only).\n"
                                                   "- user: Whose messages (default: the bot's own)\n"
                                                   "- num: How many recent messages to search (default 100, -1 = all)\n"
                                                   "- bulk: Bulk delete; faster, needs Manage Messages (default: False)",
@@ -65,9 +65,9 @@ card_commands = {
                                                   "- prune: Delete bot emojis whose icon is no longer in Types/",
     "/set_ratio [value]:"                       : "View or set the fuzzy match tolerance (0.0-1.0). "
                                                   "No argument shows current ratio. Higher = stricter matching.",
-    "/set_repo [new_repo]:"                     : "View or set the GitHub repository (format: USER/REPO). "
+    "/set_repo [new_repo]:"                     : "View or set the GitHub repository, format USER/REPO (admin only). "
                                                   "No argument shows current repo.",
-    "/alias [alias] [card]:"                    : "Manage card aliases. Maps a short name (e.g., 'red') to a full card name for improved search accuracy.\n"
+    "/alias [alias] [card]:"                    : "Manage card aliases (admin only). Maps a short name (e.g., 'red') to a full card name for improved search accuracy.\n"
                                                   "- No arguments: View all aliases\n"
                                                   "- One argument: Delete the specified alias\n"
                                                   "- Two arguments: Create/update an alias",
@@ -96,7 +96,7 @@ stats_commands = {
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
     "/update_metadata <query> [del_entry] [author] [ability] [stars] [subtype] [series] [subseries] [hp] [defense] [attack] [speed] [card_type] [types]:" :
-                                                  "Edit metadata for a card. Provide query to find card, then any fields to update.\n"
+                                                  "Edit metadata for a card (admin only). Provide query to find card, then any fields to update.\n"
                                                   "- del_entry: Delete entire metadata entry\n"
                                                   "- types: Comma-separated list, e.g., 'fire,water'\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
@@ -105,7 +105,7 @@ stats_commands = {
                                                   "- No parameters (except query) shows current metadata",
     "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
-    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database (author, series, subseries, subtype, card_type).",
+    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only).",
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 
@@ -129,8 +129,8 @@ music_commands = {
     "/pause:"                                   : "Pauses/unpauses the current song.",
     "/stop:"                                    : "Stops the currently playing song and clears the queue.",
     "/disconnect:"                              : "Disconnects the bot from voice, stopping playback and clearing all queues.",
-    "/delete_song <song_name>:"                 : "Deletes a song or folder from the music directory.",
-    "/delete_all_music:"                        : "Deletes all music files under the music directory.",
+    "/delete_song <song_name>:"                 : "Deletes a song or folder from the music directory (admin only).",
+    "/delete_all_music:"                        : "Deletes all music files under the music directory (admin only).",
 }
 
 def print_help(interaction: Interaction, help_wanted: str):
