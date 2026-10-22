@@ -40,8 +40,11 @@ text_commands = {
 }
 
 card_commands = {
-    "/query <query>:"                           : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
-                                                  "The Card page button opens it on the website; the printed title, website names and notes show too.",
+    "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
+                                                  "The Card page button opens it on the website; the printed title, website names and notes show too.\n"
+                                                  "- as_of: A date, YYYY-MM-DD in Pacific time: the card as it was at the end of that day, from its stored "
+                                                  "versions (archived cards too). The reply says which version and its date; an older version shows its "
+                                                  "data instead of the image (default: the current card)",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions. One match posts its image; "
                                                    "more are listed as name and image link, 10 per message.\n"

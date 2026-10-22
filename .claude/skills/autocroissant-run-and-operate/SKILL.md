@@ -462,7 +462,8 @@ network, a truncated tree) is one error line.
   `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree]`, `--json <out>`, `--discord <out>`. On the clone at e4e0a58 the notes
   are Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors
   `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`; Anubisath Guardian, Qiraji Soldier, Silithid, Mini Doomer and Royal
-  Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these).
+  Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these). On TTSCardMaker 07589cc7
+  (2026-10-22) only Computer Virus has notes (812 PSDs); the test reads the three fixed cards' old versions from the clone's history.
 
 ### PSD details (psd_details.json, added 2026-10-21; the data behind the website's card Details dropdown, plan item 23)
 
@@ -528,6 +529,27 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   a fresh `mkdtemp(prefix="card-bake_")` per run there).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
   docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
+
+### Discord archive and card matching (added 2026-10-22; CLI only, run by hand)
+
+commands/discord_archive.py (the miner) and commands/discord_match.py (the matcher) are both uncompiled and not in setup.py.
+Together they find the earliest Discord post of each card, plus its posters, the names people used for it and its revisions.
+
+- **Privacy rule:** the mined data is other people's words and images. It stays under `~/Documents/Tools/discord-archive/`
+  (the miner's `--out` must be that folder or one inside it, and the matcher refuses a root inside a git repo). Nothing mined goes into any repo, test
+  fixtures included (this repo is public), so tests use made-up guilds, ids, names and images only.
+- **Miner:** `python -m commands.discord_archive --guild <id> --all --config <path to config.py>` (`--list` for
+  channels only, `--channels <id>...` to go first, `--retry-downloads` for failed images). It sends GET requests only
+  through REST v10, never the gateway or a write, so it can run beside the bot on the same token. It is resumable
+  (cursors/) and stores images by sha256. The token is read from config.py with ast and is never printed. Long runs:
+  start it with `nohup` and log under the archive folder. Outputs: messages/, attachments/, attachments.jsonl,
+  channels.json, summary.json, runs.jsonl.
+- **Matcher:** `python -m commands.discord_match score` (perceptual hashes, file names, chat text and macOS Vision OCR
+  of card titles; `--no-ocr` without pyobjc; card caches in match/), then `build`. `build` writes matches.json,
+  REPORT.md, proposal/ and ambiguous.json/.html, whose entries A1, A2... wait for the owner's ruling. The owner rules
+  with `python3 -I apply_rulings.py "A12 = <card>, A13 = none"` in the archive folder, which also rebuilds.
+  `selftest` measures accuracy on degraded copies of the cards. The matcher never talks to Discord, and bot and
+  webhook posts never date a card.
 
 ## 8. Artifact conventions — where files land
 

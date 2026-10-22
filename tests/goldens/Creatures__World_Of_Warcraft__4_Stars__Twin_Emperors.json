@@ -1,6 +1,6 @@
 {
  "alt_names": null,
- "blob": "f8c7ca66a6361fb9114fe5cece3b6f706451adc0",
+ "blob": "a31777ab0e7e671c976239322c226604f1d3e1c7",
  "card": {
   "ability": "This is 2 entities that share HP.\nIf both attack the same creature, heal 2 HP.\nVek'nilash:\n            Immune to 3 star and below debuffs.\n(2CD) Attacks inflict 3T3 Softened.\nVek'lor:\nAttacks inflict 2T1 Enfeebled.",
   "atk": 5,

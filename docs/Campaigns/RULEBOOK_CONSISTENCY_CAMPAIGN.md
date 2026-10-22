@@ -122,7 +122,7 @@ page; S rows may stay open (the simulator leaves them "by hand", `docs/Campaigns
   `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise.
 - **Parser:** skip hidden text layers on rule pages (`psd_parser.py:560-584`; change-control, goldens, a sandboxed
   sweep). Predicted effect: the texts of 09, 11, 12.2 and 22 shrink, 4 rulebook entries change in stats.pkl, 0 cards.
-  Not a substitute for deleting the layers. X1-X3 slips are the extraction campaign's (gap vs icon order, star glyphs).
+  Not a substitute for deleting the layers. Done 2026-10-22 (`_extract_from_layers`, tests/test_rulebook_hidden.py). X1-X3 slips are the extraction campaign's (gap vs icon order, star glyphs).
 **You have a result when** the checker's C, U, M, H and X sections are empty and `rulebook.md` carries no markers.
 
 ### P4. Guard

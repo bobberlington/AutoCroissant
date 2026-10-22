@@ -395,6 +395,8 @@ class PSDParser:
             if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
                 effect_layers.append(layer)     # a pixel copy of words from a text layer; nothing to parse
                 continue
+            if is_rulepage and layer.kind == "type" and not layer.is_visible():
+                continue                        # hidden rule text isn't printed
             if layer.kind == "type":
                 text_layers.append(layer)
             self._process_layer(

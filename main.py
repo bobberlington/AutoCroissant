@@ -275,13 +275,15 @@ async def slash_remove_reminder(interaction: Interaction,
 #   CARD COMMANDS  #
 ####################
 query_name = to_thread(query_name)
-@tree.command(name="query", description="Query a card by name.")
+@tree.command(name="query", description="Query a card by name, now or as it was on a date.")
 @app_commands.describe(
     query='The name of the card you want to search for',
+    as_of='YYYY-MM-DD (Pacific time): the card as it was that day, archived cards too. Default = now.',
 )
 async def slash_query_name(interaction: Interaction,
-                           query: str):
-    await query_name(interaction, query)
+                           query: str,
+                           as_of: Optional[str] = None):
+    await query_name(interaction, query, as_of)
 
 
 @tree.command(name="website", description="Link to the card browser website.")

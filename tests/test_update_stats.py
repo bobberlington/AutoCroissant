@@ -1018,7 +1018,7 @@ def test_details_follow_the_parsed_cards(github, psds, clone, monkeypatch):
     assert set(details) == {_file_sha(github, DOOMER), _file_sha(github, FREEZER)}
     doomer = details[_file_sha(github, DOOMER)]
     assert (doomer["path"], doomer["name"], doomer["parser"]) == (DOOMER, "Mini Doomer", pa.PARSER_VERSION)
-    assert doomer["stats"]["hp"] == "template" and doomer["icons"] == "images" and doomer["template"]["name_layer"] == "Text/Name"
+    assert doomer["stats"]["hp"] == "template" and doomer["icons"] == "mixed" and doomer["template"]["name_layer"] == "Text/Name"
     assert {e["supplied"] for e in doomer["fonts"].values()} == ({True} if fonts.is_dir() else {None})
     mtime = os.stat("psd_details.json").st_mtime_ns
     _run()                                                                      # 304

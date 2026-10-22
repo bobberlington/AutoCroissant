@@ -100,7 +100,8 @@ inflating the Channel-A count by up to 18 with zero real regression. **Always sw
 
 Certified baselines (both measured 2026-07-11):
 
-- **Channel A (pickled): exactly 1 problem card.**
+- **Channel A (pickled): exactly 1 problem card.** (The PSD was fixed upstream on 2026-10-22, TTSCardMaker 100511d3:
+  its `tornado` layer is now `wind`; the next sweep drops this to 0 and adds `wind` to the page's types.)
   ```bash
   python3 $SCRIPTS/inspect_pickle.py --problems
   # 20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']
@@ -127,13 +128,15 @@ Certified baselines (both measured 2026-07-11):
 **The acceptance gate is: neither count may increase.** A decrease is progress and must be
 explained (which card, which fix), then the baselines in this file get updated.
 
-## 3. The golden inventory (certified 2026-07-11)
+## 3. The golden inventory (certified 2026-07-11; all three re-pinned 2026-10-22)
 
 Goldens are the strongest evidence because each was chosen from a battle scar: The Freezer
 and Mini Doomer WERE the bug cards of the 2026-02-08 whitespace saga (8 commits in one
 day — 7 parser commits plus a mid-saga PICKLE — 1c26747 through 3bbaa2b "Fix the issue of
 collapsing spaces"/4bcee6b; chronology in autocroissant-failure-archaeology Entry 2); The
-Lich King pins the single-gap + prune-threshold path. All PSD paths are relative to the
+Lich King pinned the single-gap + prune-threshold path until 2026-10-22, when the stoogedings
+batch put both cards' inline types in the text as tokens (gap injection is still exercised by the
+Twin Emperors, Irithyll and 00_Table_of_Contents goldens). All PSD paths are relative to the
 TTSCardMaker clone at `~/Desktop/TTSCardMaker`.
 
 **This table is the CANONICAL home of the golden expected values.** Other skills quote
@@ -142,9 +145,9 @@ THIS table (and the date-stamps) first; the snapshots point back to this section
 
 | Golden | PSD path | What it certifies | Expected values (certified 2026-07-11) |
 |---|---|---|---|
-| **Mini Doomer** | `Auxiliary/Minions/Mini_Doomer.psd` | Minion classification; stars counted from visible pixel layers (two visible "Warpstar" smartobjects under a "Stars" group); 3 creature types; summed stat digits | `type=minion`, `stars=2`, `types=['wind', 'defensive_minion', 'light']`, `hp=5 def=2 atk=5 spd=5`, ability ends `(BOT) Die.`, validator problems `NONE` |
-| **The Freezer** | `Field/1 Stars/The_Freezer.psd` | Field classification; multi-type inline injection including line-START and line-END type positions; parse output equals the stats.pkl entry byte-for-byte | `type=field`, `stars=1`, `types=['field']`, problems `NONE`, ability EXACTLY:<br>`For friendly creatures:`<br>`[water] Turns into [ice]. [ice]: +1 DEF`<br>`(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`<br>(re-certified 2026-10-22: equal to the stats.pkl entry character-for-character from PICKLE 3888392 on; the line read `(1PGT)` before the 2026-10-21 cooldown update, impossibility-simulator-rules §3) |
-| **The Lich King** | `Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd` | Single gap + single below-midline type (exact match, no leftovers); prune-threshold arithmetic | `gap_trace.py`: above-midline creature types `['ice', 'undead']`; 1 text layer (y=1773); gap `<GAP:7>` in `Minions inherit<GAP:7>.`; 1 below-midline icon `undead @ (x=734, y=2239)`; prune threshold `max(last_y//3=746, card_mid_y=1200) = 1200`; kept `['undead']`, dropped none; final line `Minions inherit [undead].` |
+| **Mini Doomer** | `Auxiliary/Minions/Mini_Doomer.psd` | Minion classification; stars counted from visible pixel layers (two visible "Warpstar" smartobjects under a "Stars" group); 3 creature types; summed stat digits | `type=minion`, `stars=2`, `types=['wind', 'defensive_minion', 'light']`, `hp=5 def=2 atk=5 spd=5`, ability ends `(BOT) Die.`, validator problems `NONE` (re-pinned 2026-10-22: blob e0b11bab -> 197c3e76, TTSCardMaker 38c55bd3 (queue A gradient badges); every parsed field and the validator unchanged. The `(BOT)` is now a stoogedings badge run in Text/Ability with an `Ability FX: (BOT)` pixel layer (2165-2251) over it, so psd_details `icons` is `mixed` and the Ability layer's bbox bottom moved 2245 -> 2251 (psd_edit's padded region 2258 -> 2264), 96 layer records) |
+| **The Freezer** | `Field/1 Stars/The_Freezer.psd` | Field classification; inline types at line START and line END (since 2026-10-22 as stoogedings `[token]` runs, icon layers hidden: 0 gaps, 0 below-midline icons; before, 4 gaps filled from 4 icon layers); parse output equals the stats.pkl entry byte-for-byte | `type=field`, `stars=1`, `types=['field']`, problems `NONE`, ability EXACTLY:<br>`For friendly creatures:`<br>`[water] Turns into [ice]. [ice]: +1 DEF`<br>`(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`<br>(re-certified 2026-10-22: equal to the stats.pkl entry character-for-character from PICKLE 3888392 on; the line read `(1PGT)` before the 2026-10-21 cooldown update, impossibility-simulator-rules §3; re-pinned 2026-10-22: blob 90fa61f4 -> 8505c4f0, TTSCardMaker 91fcda38, every parsed field and the validator unchanged) |
+| **The Lich King** | `Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd` | Above-midline creature types beside an inline `[undead]` token (until 2026-10-22: single gap + single below-midline type, prune-threshold arithmetic) | `gap_trace.py` (2026-10-22, blob c69f7c24, TTSCardMaker 1c24dd48): above-midline creature types `['ice', 'undead']`; 1 text layer (y=1767) reading `Minions inherit [undead].`; 0 gaps, 0 below-midline icons (gap count 0 vs kept types 0, match); final line `Minions inherit [undead].`; `hp=7 def=6 atk=7 spd=5`, problems `NONE`. Through blob 1732d9bf it was: text layer y=1773, `Minions inherit<GAP:7>.`, icon `undead @ (x=734, y=2239)`, prune `max(746, 1200) = 1200`, kept `['undead']`; the parse was the same |
 
 Commands to reproduce (each takes a few seconds; read-only):
 
@@ -503,7 +506,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | MISMATCH check history | `git show -s --oneline fed8a83 081b1fd` and `git show fed8a83 -- commands/psd_analyzer.py` |
 | eb9aa84 revert exists | `git show -s --oneline eb9aa84` |
 | Remote-sweep API cost (blob + one commit page per re-parsed PSD, post-gate) | `grep -n "_get_remote_timestamp\|_commit_page\|COMMITS_PAGE =\|_blob\|_psd_changed" commands/card_data.py` |
-| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (417 passed, 24 skipped, about 60-85 s, 2026-10-21) |
+| Offline suite | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (819 passed, 31 skipped, 2026-10-22, TTSCardMaker 07589cc7; 14 min on a loaded Mac) |
 | Method A scripts kept | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py .claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/compare.py` |
 | PSD count (~904) | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` |
 
@@ -525,6 +528,10 @@ explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): §2 names `commands/card_check.py` as the second place `validate()` runs (per pushed PSD, after the edits, into TTSCardMaker's card-check.yml report); validate :975-1011, `_validate_stats` :1014, the mutation :1005-1008, the sweep's gate :391-392 and `_format_problems` :466 (called :410) re-pointed; suite row 417 passed, 24 skipped (tests/test_card_check.py: 22, among them an API-failure exit-0 test and a readers-parity test against repo_traverser).
+
+2026-10-22 (stoogedings batch): The Freezer and The Lich King re-pinned with `tests/make_goldens.py` (blobs 90fa61f4 -> 8505c4f0, 1732d9bf -> c69f7c24); every parsed field, alt_names and the validator are unchanged, only the blob moved. Their inline types are now tokens, so §3 lists the new `gap_trace` facts. `tests/test_psd_details.py` follows Royal Eradicator's new layers (icons `mixed`, the Blazing overlay now an `Ability FX: Blazing` layer). Suite 688 passed, 38 skipped against TTSCardMaker 5034c4cf.
+
+2026-10-22 (queue A, L11, L14): 14 goldens re-pinned with `tests/make_goldens.py` after proving each against its old blob from the clone's history: 12 parse identically (Mini Doomer, Tainted Lazarus, Pix, Twin Emperors, Royal Eradicator, Wham Bam Bone, Sniffle Thwomp, Little Guy, P.A.N.D.A., The Radiance, Poison Circle, Poison); God Tamer stars 0 -> 5 (L14 Stars group, NO STARS FOUND gone); 20_Creature_Types `tornado` -> `wind` (types gain `wind`, MISSPELT TYPE gone). No clone card shows NO STARS FOUND or MISSPELT TYPE now (card_check over 812 PSDs: only Computer Virus), so tests/test_card_check.py reads God Tamer, Bubble and 20_Creature_Types from the clone's history (OLD); tests/test_rulebook_hidden.py compares the four H1 pages before and after 100511d3 (to_dict equal); the JSX-FX comparison reads Gasoline and Royal Eradicator from before the JSX ran on them. Fork-only: four psd_edit FX tests on Mini Doomer fail because an ability edit deletes the `Ability FX: (BOT)` badge layer (FX layers are rebuilt only for chart status words); open. Suite 704 passed, 30 skipped against TTSCardMaker 07589cc7.
 
 2026-10-22 (data build): the sweep's code moved from repo_traverser.py to the uncompiled commands/card_data.py
 (validate and `_format_problems`, the change check, the download and commit-lookup cost, the timestamp source); those

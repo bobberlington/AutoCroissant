@@ -52,7 +52,7 @@ RULEBOOK_GROUP = "# --- rulebook pages ---"
 NEW_AUTHORS = "[people]\n\n[cards]\n"           # authorsFile's file when there is none
 ABOUT = ("Card data fixes from the website's Edit button. Keyed by card file name; each field overrides the PSD. Read by "
          "the website and the bot (/update_stats).")                    # edit.js ABOUT, for a new file
-MOVED_NOTE = "AutoCroissant's aliases.pkl moved into the cards' aliases on {at}: the bot reads aliases only here"
+MOVED_NOTE = "AutoCroissant's aliases.pkl moved into the cards' aliases on {at}: a bot or build that knows this key reads aliases only here"
 # /update_metadata's options -> Card Edits.json fields, in the command's order
 METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), ("series", "series"),
             ("subseries", "subseries"), ("hp", "hp"), ("defense", "def"), ("attack", "atk"), ("speed", "spd"),
