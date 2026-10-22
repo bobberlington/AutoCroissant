@@ -437,6 +437,12 @@ class CardRepository:
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 
+    def relink(self) -> None:
+        """Card Edits.json's names and aliases, then the printed titles, onto keys the registry lacks (after /alias delete)."""
+        for card, extra in self._edit_names[1].items():
+            self._add_lookup(card, extra)
+        self._populate_titles()
+
     def _populate_titles(self) -> None:
         """Printed titles the parser read (display_name), so /query finds "Black Clot" as well as Clot_Black."""
         try:

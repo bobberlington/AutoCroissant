@@ -16,8 +16,8 @@ they stand (old's group renamed) and adds a "[people] old = new" line; its other
 commit. /alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the
 migration sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
 
-The migration (section 14 step 5, after the parity re-parse): one commit of the files `migrate` writes, aliases.pkl's
-aliases and the Discord-only values (carried) together:
+The migration (section 14 step 5, after the parity re-parse): one commit, authored by the bot, of the files `migrate`
+writes, aliases.pkl's aliases and the Discord-only values (carried) together:
 
     python -m commands.discord_edits migrate --clone <full card repo clone> [--ref HEAD] [--aliases aliases.pkl]
         [--stats stats.pkl] --out-dir DIR
@@ -35,7 +35,7 @@ from traceback import format_exc
 from typing import Callable, Optional
 
 from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardEdits, _collate, dump_edits
-from commands.card_models import card_name
+from commands.card_models import CardType, card_name
 from commands.github_api import blob_sha
 from global_config import AUTHORS_PATHS, CARD_REPO, EDITS_PATHS
 
@@ -57,6 +57,7 @@ MOVED_NOTE = "AutoCroissant's aliases.pkl moved into the cards' aliases on {at}:
 METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), ("series", "series"),
             ("subseries", "subseries"), ("hp", "hp"), ("defense", "def"), ("attack", "atk"), ("speed", "spd"),
             ("card_type", "type"), ("types", "types"))
+KINDS = {t.value.lower(): t.value for t in CardType}   # a card_type typed in Discord: one of these, any case
 NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses for now (psd_edit.NOT_YET): not taken
 MASS = {"series": "series", "subseries": "subseries", "subtype": "subtype", "card_type": "type"}   # /mass_replace -> field
 BODY_LINES = 40                                 # a commit body lists at most this many cards
@@ -483,6 +484,8 @@ def manual_metadata_entry(interaction,
         given["ability"] = given["ability"].replace("\r", "").strip()
     if "types" in given:
         given["types"] = [t.strip().lower() for t in given["types"].split(",") if t.strip()]
+    if "type" in given:
+        given["type"] = KINDS.get(given["type"].lower(), given["type"])
     author = " ".join(author.split()) if author is not None else None
     if del_entry:
         given["hidden"] = True
@@ -511,6 +514,9 @@ def manual_metadata_entry(interaction,
         say(interaction, f"Not committed: {' and '.join(blocked)} can't be set from Discord yet. The card bake can't "
                          "print them, and while one waits in Card Edits.json the bake refuses every other edit to the "
                          "card's PSD. Change them in the PSD.")
+        return
+    if given.get("type", "") not in ("", *KINDS.values()):
+        say(interaction, f"Not committed: card_type must be one of {', '.join(KINDS.values())}.")
         return
     bad = [f for f, v in given.items() if not CardEdits.valid(f, v) or v in ("", [])]
     if bad or author == "":
@@ -582,6 +588,11 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
     if not old or not new:
         say(interaction, "Not committed: old_value and new_value can't be empty.")
         return
+    if field == "card_type":
+        if new.lower() not in KINDS:
+            say(interaction, f"Not committed: card_type must be one of {', '.join(KINDS.values())}.")
+            return
+        new = KINDS[new.lower()]
     if old == new:
         say(interaction, f"Not committed: old_value and new_value are both '{old}'.")
         return
@@ -731,6 +742,7 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
         if path and basename(path).lower() != f"{norm}.png":    # an alias's entry, never a card's own file name
             card_repo.git_files.pop(f"{norm}.png", None)
         refresh([], written.get("edits"))
+        card_repo.relink()                      # a name or printed title with that key finds its card again
         say(interaction, f"Deleted alias: {alias} ({_link(sha)})")
         return
     wanted = val.strip().lower().replace(" ", "_")
@@ -928,7 +940,9 @@ def main(args: Optional[list] = None) -> int:
     _write(join(options.out_dir, basename(EDITS_PATHS[0])), text)
     if authors is not None:
         _write(join(options.out_dir, basename(authors_path or AUTHORS_PATHS[0])), authors)
-    print("\n".join(report))
+    from commands.git_commit import AUTHOR
+    print("\n".join(report + [f"Commit them as the bot (build_site counts its commits for nobody): "
+                              f"git commit --author '{AUTHOR['name']} <{AUTHOR['email']}>'"]))
     return 0
 
 

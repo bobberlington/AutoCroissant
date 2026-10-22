@@ -827,9 +827,13 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
        `/update_metadata` or `/alias` on:
        - build_site skips aliases.pkl when `aliases_moved` is set; otherwise the site keeps the pickle's 60 aliases (the
          bot never rewrites aliases.pkl) and drifts with the first `/alias` move (TTSCardMaker `work/alias-migration`
-         62f69df5 has this);
+         4c728f15 on 5dd2a408 has this, with the migration commit itself);
        - the site's "edited" marks leave out every `_by: AutoCroissant` entry, not only alias-only ones (the 596 carried
-         series values are no website edits);
+         series values are no website edits; nor are the two `allow_high_stats` entries of 2026-10-21). The migration
+         commit is authored `AutoCroissant <autocroissant@gmail.com>` (`migrate` prints the `git commit --author` to use),
+         so build_site's history counts it for nobody. A carried value merged into an entry a website editor made (14 entries at
+         5dd2a408: 12 series, 5 alias lists) keeps that entry's `_by`/`_at` (an entry has one stamp), so the site credits
+         it to that editor;
        - a `_by` or `Edit-by` of `discord:<user>` is shown "via Discord", never linked as a person (`#/u/discord%3A…`;
          app.js's "Edited on the website" panel and Edited tip, and build_site's shallow-clone contributions fallback,
          which calls `rec_of(key_of(by))`). `work/changes-tabs` does it for the Database edits tab.

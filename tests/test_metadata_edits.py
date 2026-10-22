@@ -349,6 +349,20 @@ def test_mass_replace_counts_and_no_ops(repo):
     assert repo.github.head == head and "No alias exists" in repo.sent[len(repo.sent) - 1]
 
 
+def test_card_type_is_a_known_kind(repo):
+    """card_type from Discord: a CardType value in its own spelling, else refused with no commit."""
+    start = repo.github.head
+    de.mass_replace_field(repo.who, "card_type", "minion", "minnion")
+    de.manual_metadata_entry(repo.who, "Goombella", card_type="beast")
+    assert repo.github.head == start and all("card_type must be one of" in s for s in repo.sent)
+    de.mass_replace_field(repo.who, "card_type", "MINION", " Creature ")
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]["type"] == "creature"
+    assert _commits(repo.github, start)[0].startswith("Discord: /mass_replace card_type 'MINION' -> 'creature' (1 cards)")
+    de.manual_metadata_entry(repo.who, "Goombella", card_type="mdw")
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]["type"] == "MDW"
+    assert len(_commits(repo.github, start)) == 2
+
+
 def test_mass_replace_author_spellings(repo):
     """new in another case than a person the file names: that person's spelling, one group; a case respelling of old;
     no authors file and an unknown author: no file."""
@@ -417,6 +431,26 @@ def test_alias_create_move_delete(repo):
     de.manage_alias(repo.who, "mini_doomer", "goombella")                        # a card image's own name
     assert "No alias exists" in repo.sent[5] and "not created" in repo.sent[6] and "already the name" in repo.sent[7]
     assert len(_commits(repo.github, start)) == 3
+
+
+def test_alias_delete_keeps_name_and_title_lookups(repo):
+    """Deleting an alias whose key is also a Card Edits.json name or a printed title: that lookup finds its card again."""
+    files = repo.github.files_at(repo.github.head)
+    data = json.loads(files[EDITS_PATH])
+    data["cards"]["Goombella"] = {**data["cards"]["Goombella"], "name": "Bella"}
+    repo.github.commit({**files, EDITS_PATH: dump_edits(data).encode()}, "web", "Website edit: Goombella")
+    repo.registry._edits = CardEdits.parse(dump_edits(data))
+    repo.registry._edit_names = ("x", repo.registry._edits.names())
+    repo.stats["The Freezer"].display_name = "Cold Room"
+    repo.registry._add_lookup("Goombella", ["Bella"])
+    repo.registry._populate_titles()
+    assert repo.registry.git_files["bella.png"] == GOOMBELLA and repo.registry.git_files["cold_room.png"] == FREEZER
+    for alias in ("Bella", "Cold Room"):
+        de.manage_alias(repo.who, alias, "mini doomer")
+        assert repo.registry.git_files[f"{alias.lower().replace(' ', '_')}.png"] == DOOMER
+        de.manage_alias(repo.who, alias, None)
+    assert "Deleted alias: Cold Room" in repo.sent[3]
+    assert repo.registry.git_files["bella.png"] == GOOMBELLA and repo.registry.git_files["cold_room.png"] == FREEZER
 
 
 def test_alias_on_a_card_with_two_aliases(repo, monkeypatch):
@@ -575,7 +609,7 @@ def test_carried_values_are_the_discord_only_ones():
     assert lines[0].startswith("1 aliases: 1 moved") and lines[2].startswith("3 Discord-only values")
 
 
-def test_migration_cli(tmp_path):
+def test_migration_cli(tmp_path, capsys):
     clone = tmp_path / "cards"
     files = {EDITS_PATH: dump_edits({"about": ABOUT, "cards": EDITS}).encode(), AUTHORS_PATH: AUTHORS.encode(),
              OMORI: b"psd", **{p: b"png" for p in TREE}}
@@ -594,6 +628,7 @@ def test_migration_cli(tmp_path):
     cards = json.loads((out / "Card Edits.json").read_text(encoding="utf-8"))["cards"]
     assert cards["A Snack2"]["aliases"] == ["breakfast"] and cards["Omori Kid"]["series"] == "OMORI"
     assert "Omori Kid = Someone" in (out / "Card Authors.txt").read_text(encoding="utf-8")   # not the first commit's author
+    assert capsys.readouterr().out.rstrip().endswith("git commit --author 'AutoCroissant <autocroissant@gmail.com>'")
     with pytest.raises(SystemExit):                                             # no alias-only migration
         de.main(["migrate-aliases", "--clone", str(clone), "--out", str(out / "x.json")])
 
