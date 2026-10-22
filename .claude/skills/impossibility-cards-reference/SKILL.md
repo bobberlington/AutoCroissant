@@ -394,21 +394,25 @@ Some cards give a word or phrase in the ability text a glow, stroke or gradient,
 | Problem | Meaning |
 |---|---|
 | `EFFECT LAYER WITHOUT TEXT LAYER: <name>` | No text layer has the name before ` FX: ` (renamed or deleted). |
-| `EFFECT LAYER WORDS NOT IN TEXT: <name>` | A phrase is no longer in that text layer. |
+| `EFFECT LAYER WORDS NOT IN TEXT: <name>` | An orphaned layer (idea 14): a phrase is no longer in that text layer, or `Frozen#2` names an occurrence past the last match (`PSDParser._occurrences` counts like Effect Layers.jsx: whole words when there are any, else every match). Checked first, so an orphan reads as this, not as OUT OF DATE (Mettaton with a Blazing layer but no Blazing in its text scored 0.498 too). |
 | `EFFECT LAYER OUT OF DATE: <name> (run Effect Layers > Update all)` | Under 95% (`EFFECT_COVERAGE_MIN`) of the effect layer's opaque pixels sit on the text layer's own stored pixels: the text was edited or moved after the layer was made. A fresh layer scores 1.0. Gasoline with words inserted before "Blazing" scored 0.268, even though the word was still in the text. |
+
+Measured 2026-10-21: no card PSD in TTSCardMaker has an effect layer yet (0 of 813, so all three fire 0 times);
+on 72 Photoshop-made trial copies outside the corpus (/tmp, the JSX trials and migration rehearsals) they flagged 3, all
+true: 2 OUT OF DATE (the deliberately stale Gasoline copies) and 1 WORDS NOT IN TEXT (Mettaton_newlayer).
 
 The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only, so recoloring is fine). Text
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_parser.py:948-1038)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:966-1056)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle (the website's Parser notes):
-  `NO ABILITY LAYER` (psd_parser.py:414), `NO STARS FOUND` (:420), `MISSPELT TYPE: <name>` (:548-549,
+  `NO ABILITY LAYER` (psd_parser.py:414), `NO STARS FOUND` (:420), `MISSPELT TYPE: <name>` (:566-567,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
-  line 24), the effect-layer and icon-token ones through `_add_problem` (:626; callers :488-501, :656-688) and `SEVERAL CREATURES` (:862).
+  line 24), the effect-layer and icon-token ones through `_add_problem` (:641; callers :489-504, :674-706) and `SEVERAL CREATURES` (:880).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
   REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
   `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check
@@ -419,23 +423,28 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 
 | Problem string | Fires when | Source |
 |---|---|---|
-| `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :683-685 |
-| `ABILITY TEXT NOT FOUND` | type is not unknown/MDW, ability empty, name not in ABILITY_EXCLUSIONS | :687-692 |
-| `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :713-717 |
-| `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :719-726 |
-| `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1031-1033 |
-| `NO ABILITY LAYER` | no ability text layer found at parse time; validate() DELETES it again for names in ABILITY_EXCLUSIONS | :422, :700-702 |
-| `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :455-456 |
+| `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :1008-1009 |
+| `ABILITY TEXT NOT FOUND` | type is not unknown/MDW, ability empty, name not in ABILITY_EXCLUSIONS | :1012-1016 |
+| `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :1038-1041 |
+| `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1044-1050 |
+| `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1053-1054 |
+| `NO ABILITY LAYER` | no ability text layer found at parse time; validate() DELETES it again for names in ABILITY_EXCLUSIONS | :414, :1024-1026 |
+| `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :566-567 |
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
 autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: stats above 10
-are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_parser.py:950-969:
+are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_parser.py:968-990:
 
 - `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
   Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher, and since
   2026-10-21 (user) the three minions with an empty Ability layer: Anubisath Guardian, Qiraji Soldier, Silithid.
+- **Shadow Duelist is not stale** (checked 2026-10-21, BUGS D3): its PNG prints no ability, but its hidden `Ability` layer
+  still holds "Heals the creature this is summoned on by 2 HP at the end of its turn." The parser reads hidden Ability
+  layers (four relaid-out cards depend on it, §4.2), so that text is in stats.pkl and the entry silences nothing today;
+  it is right again once the layer is emptied or the text printed (card content, the PSD hold). Removing it changes no
+  output; `tests/test_parser_goldens.py::test_shadow_duelist_exclusion` pins the PSD (skips when it changes upstream).
 
 ## 6. Data schemas: CardInfo and the pickles
 
@@ -680,3 +689,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): §5 names `commands/card_check.py` as the second place the validator runs; the `CardValidator` range is :948-1038. Same day: the parse-time list gained `NO STARS FOUND` (:420), the effect layer's (:626) and `SEVERAL CREATURES` (:862), `MISSPELT_CARD_TYPES` re-pointed to line 24, and the card-check line says only those reach the website. Gate: the :626 entry names `_add_problem` and its effect-layer and icon-token callers.
+
+2026-10-21 (D3, idea 14): §4.2 WORDS NOT IN TEXT also covers a `#n` past the last match (orphaned effect layers) and records the corpus and trial-copy counts; §5 says why Shadow Duelist stays excluded; psd_parser.py citations re-pointed (+1 to +3 inside the effect check, +18 after it); the §5 table rows, stale before, re-pointed to the validator (:1008-1050) and MISSPELT TYPE to :566-567.
