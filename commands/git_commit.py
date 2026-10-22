@@ -18,7 +18,7 @@ from requests import RequestException, request
 
 import commands.github_api as github_api
 from commands.github_api import api_url, blob_sha, get_with_retry
-from commands.repo_history import refresh
+from commands.repo_history import batch_env, refresh
 from global_config import CARD_BRANCH, CARD_REPO, HISTORY_CLONE
 
 # ========================
@@ -164,17 +164,14 @@ def api_commit(repository: str, head: str, base_tree: str, modes: dict, blobs: d
 # git over SSH (the history clone)
 # ========================
 def git(where: str, *args: str, stdin: Optional[bytes] = None, env: Optional[dict] = None) -> bytes:
-    """git in a repo dir. In the blobless history clone only refs, trees and our own objects: never diff or log."""
+    """git in a repo dir, no prompts. In the blobless history clone only refs, trees and our own objects: never diff or log."""
     return run_process(["git", "-C", where, *args], input=stdin, capture_output=True, check=True, timeout=GIT_TIMEOUT,
-                       env=env).stdout
+                       env=batch_env(where) if env is None else env).stdout
 
 
 def git_env() -> dict:
-    """No prompts (SSH_AUTH_SOCK comes from the service), the bot's identity."""
-    env = {**environ, "GIT_TERMINAL_PROMPT": "0", **GIT_IDENTITY}
-    if "GIT_SSH" not in env and "GIT_SSH_COMMAND" not in env:
-        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
-    return env
+    """No prompts, ssh in BatchMode (SSH_AUTH_SOCK comes from the service), the bot's identity."""
+    return batch_env(expanduser(HISTORY_CLONE), **GIT_IDENTITY)
 
 
 def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:

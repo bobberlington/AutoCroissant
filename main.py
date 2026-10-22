@@ -100,20 +100,36 @@ async def sync_guild_commands(guild):
     """Sync commands to a specific guild."""
     tree.copy_global_to(guild=guild)
     await tree.sync(guild=guild)
+    _synced_guilds.add(guild.id)
     print(f"Synced commands to guild: {guild.name} ({guild.id})")
+
+
+_started = False                                        # on_ready's one-time inits have run
+_synced_guilds: set = set()                             # guild ids whose commands are synced
 
 
 # Events
 @client.event
 async def on_ready():
+    """Login, and again after every failed RESUME: inits run once; a repeat syncs new guilds and revives failed loops."""
+    global _started
     print(f'We have logged in as {client.user}')
+
+    for guild in client.guilds: # Sync commands to each guild not synced yet
+        if guild.id not in _synced_guilds:
+            create_task(sync_guild_commands(guild))
+
+    if _started:
+        revived = [loop for loop in _loops() if loop.failed()]    # stopped ones stay stopped (/update)
+        for loop in revived:
+            loop.start()
+        print(f"Reconnected: inits skipped, revived {', '.join(l.coro.__name__ for l in revived) or 'no loops'}")
+        return
+    _started = True
 
     for cmd in tree.get_commands():
         slash_registry[cmd.name] = cmd.callback
     print(f"Registered {len(slash_registry)} slash commands for reminder system.")
-
-    for guild in client.guilds: # Sync commands to each guild
-        create_task(sync_guild_commands(guild))
 
     queue_command(init_reminder)
     queue_command(init_psd)
@@ -121,10 +137,8 @@ async def on_ready():
     queue_command(refresh_history)                      # commit-pinned card image links
     queue_command(init_type_emojis, client)
 
-    process_reminders.start()
-    process_command_queue.start()
-    process_dispatch_queue.start()
-    process_edit_queue.start()
+    for loop in _loops():
+        loop.start()
     print("Bot initialization complete")
 
 
@@ -910,6 +924,11 @@ async def process_edit_queue():
             await _edit(interaction, edit_kwargs)
         except Exception as e:
             _log_drop("Edit", interaction, e)
+
+
+def _loops() -> tuple:
+    """The four loops on_ready starts."""
+    return (process_reminders, process_command_queue, process_dispatch_queue, process_edit_queue)
 
 
 # ========================

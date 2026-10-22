@@ -233,20 +233,19 @@ def test_cli_reports_an_unreadable_psd(tmp_path, capsys):
 # /push carries the file
 # ========================
 def test_push_commits_the_details_file_with_the_pickles(monkeypatch):
+    from git import GitCommandError
     added = []
 
     class FakeGit:
-        def __init__(self, *a):
-            pass
         def add(self, path):
             added.append(path)
         def commit(self, *a):
-            raise ub.GitCommandError("commit", 1, b"nothing to commit")
+            raise GitCommandError("commit", 1, b"nothing to commit")
         def pull(self, *a, **kw):
             pass
         def rev_list(self, *a):
             return "0\n"
-    monkeypatch.setattr(ub, "Git", FakeGit)
+    monkeypatch.setattr(ub, "_git", FakeGit)
     monkeypatch.setattr(ub, "isfile", lambda path: path == DETAILS_JSON)
     sent = []
     async def send(content):

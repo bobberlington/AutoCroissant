@@ -420,24 +420,69 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
 
 
 def test_push_reports_the_pull_error_not_the_abort(monkeypatch):
+    from git import GitCommandError
     class FakeGit:
-        def __init__(self, *a):
-            pass
         def add(self, *a):
             pass
         def commit(self, *a):
-            raise ub.GitCommandError("commit", 1, b"nothing to commit")
+            raise GitCommandError("commit", 1, b"nothing to commit")
         def pull(self, *a, **kw):
-            raise ub.GitCommandError("pull", -9, b"did not complete in 120 secs")
+            raise GitCommandError("pull", -9, b"did not complete in 120 secs")
         def rebase(self, *a):
-            raise ub.GitCommandError("rebase", 128, b"No rebase in progress?")
-    monkeypatch.setattr(ub, "Git", FakeGit)
+            raise GitCommandError("rebase", 128, b"No rebase in progress?")
+    monkeypatch.setattr(ub, "_git", FakeGit)
     sent = []
     async def send(content):
         sent.append(content)
-    with pytest.raises(ub.GitCommandError):
+    with pytest.raises(GitCommandError):
         asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
     assert "did not complete" in sent[0] and "rebase" not in sent[0]
+
+
+# ========================
+# on_ready again after a failed RESUME
+# ========================
+class FakeLoop:
+    def __init__(self, name):
+        self.coro = SimpleNamespace(__name__=name)
+        self.starts, self.running, self.dead = 0, False, False
+
+    def failed(self):
+        return self.dead
+
+    def start(self):
+        if self.running and not self.dead:
+            raise RuntimeError("Task is already launched and is not completed.")   # what tasks.Loop does
+        self.starts, self.running, self.dead = self.starts + 1, True, False
+
+
+def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
+    loops = [FakeLoop(n) for n in ("reminders", "commands", "dispatch", "edits")]
+    queued, synced = [], []
+    guilds = [SimpleNamespace(id=1, name="a")]
+    async def sync(guild, **kw):
+        synced.append(guild.id)
+    monkeypatch.setattr(main, "_loops", lambda: loops)
+    monkeypatch.setattr(main, "queue_command", lambda func, *a: queued.append(func.__name__))
+    monkeypatch.setattr(main, "client", SimpleNamespace(user="bot", guilds=guilds))
+    monkeypatch.setattr(main.tree, "copy_global_to", lambda **kw: None)
+    monkeypatch.setattr(main.tree, "sync", sync)
+    monkeypatch.setattr(main, "_started", False)
+    monkeypatch.setattr(main, "_synced_guilds", set())
+    monkeypatch.setattr(main, "slash_registry", {})
+
+    async def ready_twice():
+        await main.on_ready()
+        await asyncio.sleep(0)                                          # the guild sync tasks run
+        loops[1].dead = True                                            # the command queue loop crashed
+        guilds.append(SimpleNamespace(id=2, name="b"))                  # joined while disconnected
+        await main.on_ready()                                           # the repeat: no RuntimeError
+        await asyncio.sleep(0)
+    asyncio.run(ready_twice())
+    assert queued == ["init_reminder", "init_psd", "init_query", "refresh", "init_type_emojis"]
+    assert [loop.starts for loop in loops] == [1, 2, 1, 1]
+    assert synced == [1, 2] and main.slash_registry
+    assert "Reconnected: inits skipped, revived commands" in capsys.readouterr().out
 
 
 # ========================
