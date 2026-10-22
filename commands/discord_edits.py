@@ -1,20 +1,26 @@
 """
 Discord's card edits as commits to the card repo (docs/Campaigns/DATA_BUILD_ACTION.md section 11, decisions 2 and 3):
 /update_metadata, /mass_replace and /alias write TTSCardMaker's site/Card Edits.json and site/Card Authors.txt in one
-commit per command, never the pickles. The commit goes through card_bake.land (on main's current head, again from the
-new head when main moved) and git_commit (the API with the bot's GIT_TOKEN, else the history clone pushed over SSH: the
+commit per command; the commit never carries a pickle. It goes through card_bake.land (on main's current head, again from
+the new head when main moved) and git_commit (the API with the bot's GIT_TOKEN, else the history clone pushed over SSH: the
 path /bake_cards and /update_tts_save commit by). Its subject starts "Discord:", it carries an Edit-by trailer, and each
-entry it writes gets _by ("discord:<username>") and _at. Then the bot applies the change in memory (CardEdits.apply,
-CardAuthors.resolve, the alias registry), so /query shows it before the next /update_stats or card sync builds it.
+entry it changes gets _by ("discord:<username>") and _at; a value the head already has is no change (no op, no restamp,
+no commit). Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the
+alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
 
-Fields: author -> a [cards] line in Card Authors.txt; ability, stars, types, hp/def/atk/spd -> the "psd" kind (they persist
-and show "PSD pending" on the website; the next bake prints ability and stats on the card, stars and types not yet);
-subtype, series, card_type -> subtype, series, type (the "folder" kind); subseries; del_entry -> hidden: true. /mass_replace author rewrites the [cards] lines and the
-[people] right-hand sides and adds a "[people] old = new" line; its other fields write one entry per card, in one commit.
-/alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the alias migration
-(migrate_aliases) sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
+Fields: author -> a [cards] line in Card Authors.txt; ability, hp/def/atk/spd -> the "psd" kind (they persist and show
+"PSD pending" on the website; the next bake prints them); stars and types are refused for now (the bake can't print them,
+and a pending one holds back the card's whole bake); subtype, series, card_type -> subtype, series, type (the "folder"
+kind); subseries; del_entry -> hidden: true. /mass_replace author rewrites the right-hand sides in Card Authors.txt where
+they stand (old's group renamed) and adds a "[people] old = new" line; its other fields write one entry per card, in one
+commit. /alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the
+migration sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
 
-    python -m commands.discord_edits migrate-aliases --clone <card repo clone> [--ref HEAD] [--aliases aliases.pkl] [--out FILE]
+The migration (section 14 step 5, after the parity re-parse): one commit of the files `migrate` writes, aliases.pkl's
+aliases and the Discord-only values (carried) together:
+
+    python -m commands.discord_edits migrate --clone <full card repo clone> [--ref HEAD] [--aliases aliases.pkl]
+        [--stats stats.pkl] --out-dir DIR
 
 edits_file and authors_file are ports of site/assets/edit.js editsFile and authorsFile.
 """
@@ -23,16 +29,15 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from json import loads
 from os.path import basename
-from re import compile as re_compile, fullmatch
+from re import IGNORECASE, compile as re_compile, fullmatch
 from subprocess import run as run_process
-from sys import stderr
 from traceback import format_exc
 from typing import Callable, Optional
 
 from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardEdits, _collate, dump_edits
 from commands.card_models import card_name
 from commands.github_api import blob_sha
-from global_config import CARD_REPO, EDITS_PATHS
+from global_config import AUTHORS_PATHS, CARD_REPO, EDITS_PATHS
 
 # ========================
 # Configuration
@@ -52,7 +57,7 @@ MOVED_NOTE = "AutoCroissant's aliases.pkl moved into the cards' aliases on {at}:
 METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), ("series", "series"),
             ("subseries", "subseries"), ("hp", "hp"), ("defense", "def"), ("attack", "atk"), ("speed", "spd"),
             ("card_type", "type"), ("types", "types"))
-NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses for now (psd_edit.NOT_YET)
+NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses for now (psd_edit.NOT_YET): not taken
 MASS = {"series": "series", "subseries": "subseries", "subtype": "subtype", "card_type": "type"}   # /mass_replace -> field
 BODY_LINES = 40                                 # a commit body lists at most this many cards
 SHOWN = 60                                      # a value is cut to this many characters in a reply or commit body
@@ -115,6 +120,15 @@ def entry_of(text: str, name: str) -> tuple:
     cards = (loads(text).get("cards") or {}) if text else {}
     key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(name)), None)
     return key, (cards[key] if key is not None and isinstance(cards[key], dict) else {})
+
+
+def _entries(text: Optional[str]) -> dict:
+    """Card Edits.json's entries by CardAuthors.key (the first of a key, as edits_file matches)."""
+    out: dict = {}
+    for key, fields in ((loads(text).get("cards") or {}) if text else {}).items():
+        if isinstance(fields, dict):
+            out.setdefault(CardAuthors.key(key), fields)
+    return out
 
 
 def _section(lines: list, name: str) -> Optional[tuple]:
@@ -194,38 +208,76 @@ def authors_file(text: Optional[str], ops: list, people: dict) -> str:
     return "\n".join(lines)
 
 
-def replace_author(text: Optional[str], old: str, new: str) -> tuple:
+def card_line(text: Optional[str], name: str) -> Optional[str]:
+    """The person a card's [cards] line credits (authorsFile's match), None when it has no line."""
+    lines = (text or "").split("\n")
+    found = _section(lines, "cards")
+    for j in range(*found) if found else ():
+        if not lines[j].strip().startswith("#") and "=" in lines[j] \
+                and CardAuthors.key(lines[j].split("=")[0]) == CardAuthors.key(name):
+            return "=".join(lines[j].split("=")[1:]).strip()
+    return None
+
+
+def _group_end(lines: list, header: int) -> int:
+    """The line after a "credited to" group's last card line."""
+    j = header + 1
+    while j < len(lines) and lines[j].strip() and not lines[j].strip().startswith(("#", "[")):
+        j += 1
+    return j
+
+
+def replace_author(text: Optional[str], old: str, new: str, known: bool = True) -> tuple:
     """
-    /mass_replace author: every [cards] line crediting old moves to new (authorsFile), every [people] line showing old
-    shows new, and "old = new" joins [people] when old has no line there, so cards credited to the git name follow.
-    A group left empty loses its header.
+    /mass_replace author (design section 11: right-hand sides rewritten): every [cards] line crediting old credits new
+    where it stands (a rulebook page stays among the rulebook pages), old's "credited to" group is renamed new's (merged
+    into new's own group when there is one), every [people] line showing old shows new, and "old = new" joins [people]
+    when old has no line there, so cards credited to the git name follow.
+
+    Args:
+        known: old is an author the bot knows; when it isn't and no line names old, the file stays as it is
 
     Returns:
-        (the text, the [cards] names moved, the [people] lines set {git name: new})
+        (the text, the [cards] names rewritten, the [people] lines set {git name: new})
     """
-    lines = (NEW_AUTHORS if text is None else text).split("\n")
+    lines = authors_file(text, [], {}).split("\n")  # the sections there, as authorsFile makes them
     same = lambda value: value.strip().lower() == old.strip().lower()
 
     def entries(name: str) -> list:
         found = _section(lines, name)
-        return [lines[j].split("=", 1) for j in range(*found) if not lines[j].strip().startswith("#") and "=" in lines[j]] \
-            if found else []
-    moved = [left.strip() for left, right in entries("cards") if same(right)]
-    people = {left.strip(): new for left, right in entries("people") if same(right)}
-    if not any(same(left) for left, _ in entries("people")):
+        return [j for j in range(*found) if not lines[j].strip().startswith("#") and "=" in lines[j]] if found else []
+    moved = []
+    for j in entries("cards"):
+        left, right = lines[j].split("=", 1)
+        if same(right):
+            lines[j] = f"{left.strip()} = {new}"
+            moved.append(left.strip())
+    people = {lines[j].split("=", 1)[0].strip(): new for j in entries("people") if same(lines[j].split("=", 1)[1])}
+    if not moved and not people and not known:
+        return (NEW_AUTHORS if text is None else text), [], {}
+    if not any(same(lines[j].split("=", 1)[0]) for j in entries("people")):
         people[old.strip()] = new
-    out = authors_file(text, [{"key": name, "author": new} for name in moved], people).split("\n")
-    i = len(out) - 1
-    while i >= 0:                               # old's emptied group headers go, with the blank line before them
-        found = GROUP.fullmatch(out[i].strip())
-        follows = next((line.strip() for line in out[i + 1:] if line.strip()), "")
-        if found and same(found.group(1)) and found.group(2) == "0" and (not follows or follows.startswith(("#", "["))):
-            del out[i]
-            if i > 0 and not out[i - 1].strip():
-                del out[i - 1]
-                i -= 1
-        i -= 1
-    return "\n".join(out), moved, people
+    start, end = _section(lines, "cards")
+    for i in range(start, end):                 # old's group headers: new's
+        found = GROUP.fullmatch(lines[i].strip())
+        if found and same(found.group(1)):
+            lines[i] = f"# --- credited to {new} ({found.group(2)}) ---"
+    while True:                                 # two groups of new's: the later one's lines join the first, in order
+        start, end = _section(lines, "cards")
+        headers = [i for i in range(start, end) if (GROUP.fullmatch(lines[i].strip()) or [None, None])[1] == new]
+        if len(headers) < 2:
+            break
+        first, later = headers[0], headers[1]
+        block = lines[later + 1:_group_end(lines, later)]
+        cut = later - 1 if later > 0 and not lines[later - 1].strip() else later
+        del lines[cut:_group_end(lines, later)]
+        _bump(lines, new, len(block))
+        for line in block:
+            j = first + 1
+            while j < _group_end(lines, first) and _collate(lines[j]) < _collate(line):
+                j += 1
+            lines.insert(j, line)
+    return authors_file("\n".join(lines), [], people), moved, people
 
 
 # ========================
@@ -237,13 +289,13 @@ def _short(value) -> str:
     return text if len(text) <= SHOWN else text[:SHOWN - 1] + "…"
 
 
-def commit(subject: str, by: str, body, edits: Optional[Callable] = None, authors: Optional[Callable] = None) -> tuple:
+def commit(subject, by: str, body, edits: Optional[Callable] = None, authors: Optional[Callable] = None) -> tuple:
     """
     One commit on the card repo's main through card_bake.land: the rewrites run on the files at main's head, and again
     on the new head when main moved meanwhile (up to COMMIT_TRIES times).
 
     Args:
-        subject: The commit subject ("Discord: ...")
+        subject: The commit subject ("Discord: ..."), or a function giving it once the rewrites ran
         by: The editor: the Edit-by trailer
         body: Lines between the subject and the trailer, or a function giving them once the rewrites ran
         edits: Card Edits.json's text at the head -> the new text (None or the same text: unchanged)
@@ -266,7 +318,8 @@ def commit(subject: str, by: str, body, edits: Optional[Callable] = None, author
     def message(included: list) -> str:
         lines = body() if callable(body) else body
         lines = lines[:BODY_LINES] + ([f"- … {len(lines) - BODY_LINES} more"] if len(lines) > BODY_LINES else [])
-        return "\n\n".join(part for part in (subject, "\n".join(lines), f"{EDIT_BY}: {by}") if part)
+        title = subject() if callable(subject) else subject
+        return "\n\n".join(part for part in (title, "\n".join(lines), f"{EDIT_BY}: {by}") if part)
     share = card_bake.Share(None, {}, {}, rewrite("edits", edits),
                             authors=rewrite("authors", authors) if authors is not None else None)
     sha = card_bake.land(CARD_REPO, [share], message, False)
@@ -280,7 +333,9 @@ def _link(sha: str) -> str:
 def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str] = None) -> list:
     """
     The committed files applied in memory, as the next build applies them: the authors file and Card Edits.json on these
-    cards, then their duplicates copied again (card_data._sync_duplicates), then the query tables rebuilt.
+    cards, then the duplicates copied again and renamed (card_data._sync_duplicates: an alias on a duplicate's PNG names
+    it), then the query tables rebuilt and stats.pkl saved (so a restart before the next /update_stats keeps the edit;
+    the next build writes the same values).
 
     Args:
         names: Card names (None: every card)
@@ -290,6 +345,7 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     Returns:
         The names whose card changed
     """
+    from commands.card_data import CardBuild
     from commands.psd_analyzer import stats_db
     from commands.query_card import card_repo
     edits = CardEdits.parse(edits_text) if edits_text is not None else None
@@ -306,15 +362,31 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
             edits.apply(name, card)
         if repr(card) != before:
             changed.append(name)
-    for name, dup in list(stats.items()):           # a duplicate is its original's copy (card_data._sync_duplicates)
+    current = edits if edits is not None else card_repo._edits
+    legacy = {} if current is None or current.aliases_moved else card_repo.git_file_alias
+    pngs = {card_name(p).lower(): p for p in card_repo.git_files.values()}
+    dups: dict = {}
+    for name, dup in stats.items():
         original = getattr(dup, "duplicate_of", None)
-        if original in changed and not getattr(stats[original], "duplicate_of", None):
-            copy = deepcopy(stats[original])
-            copy.name, copy.duplicate_of, copy.parsed_values, copy.problems, copy.alt_names = name, original, None, [], None
-            copy.display_name = dup.display_name
-            if edits is not None:
-                edits.apply(name, copy)
-            stats[name] = copy
+        found = fullmatch(r"(.+?)(\d+)\.png", basename(pngs.get(name.lower(), "")), IGNORECASE)
+        if original in stats and not getattr(stats[original], "duplicate_of", None) and found:
+            dups[name] = (original, int(found.group(2)), found.group(0).lower())
+    siblings: dict = {}
+    for original, number, _ in dups.values():
+        siblings.setdefault(original, []).append(number)
+    for name, (original, number, png) in dups.items():  # a duplicate is its original's copy (card_data._sync_duplicates)
+        if original not in changed and edits is None:
+            continue
+        before, src = repr(stats[name]), stats[original]
+        copy = deepcopy(src)
+        copy.name, copy.duplicate_of, copy.parsed_values, copy.problems, copy.alt_names = name, original, None, [], None
+        own = (current.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if current is not None else []
+        copy.display_name = CardBuild._duplicate_name(png, src, number, sorted(siblings[original]), legacy, own)
+        if current is not None:
+            current.apply(name, copy)
+        stats[name] = copy
+        if repr(copy) != before:
+            changed.append(name)
     if edits is not None:
         card_repo._edits, card_repo._edit_names = edits, (blob_sha(edits_text.encode("utf-8")), edits.names())
     if changed:
@@ -322,6 +394,10 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
             card_repo.prep_dataframes()
         except Exception:                       # noqa: BLE001 - the tables catch up on the next /update_stats
             print(f"Query tables not rebuilt:\n{format_exc()}")
+        try:
+            stats_db.save()
+        except Exception:                       # noqa: BLE001 - in memory still; the next /update_stats saves it
+            print(f"stats.pkl not saved:\n{format_exc()}")
     return changed
 
 
@@ -358,8 +434,8 @@ def manual_metadata_entry(interaction,
         query: Card name query
         del_entry: Hide the card (hidden: true)
         author: Card author ([cards] line)
-        ability, stars, types, hp, defense, attack, speed: PSD fields (pending until the bake prints them; stars and
-            types it can't yet)
+        ability, hp, defense, attack, speed: PSD fields (pending until the bake prints them)
+        stars, types: refused for now (the bake can't print them; a pending one would hold back the card's bake)
         subtype, series, card_type, subseries: folder and database fields
     """
     from commands.psd_analyzer import _format_metadata, stats_db
@@ -376,7 +452,7 @@ def manual_metadata_entry(interaction,
     given = {f: v.strip() if isinstance(v, str) and f != "ability" else v for f, v in given.items()}
     if "types" in given:
         given["types"] = [t.strip().lower() for t in given["types"].split(",") if t.strip()]
-    author = author.strip() if author is not None else None
+    author = " ".join(author.split()) if author is not None else None
     if del_entry:
         given["hidden"] = True
     archived = stats_db.archived().get(name) if name not in stats_db.stats else None
@@ -394,18 +470,37 @@ def manual_metadata_entry(interaction,
         else:
             say(interaction, f"Current metadata for **{name}**:\n```{_format_metadata(card, name)}```")
         return
-    bad = [f for f, v in given.items() if not CardEdits.valid(f, v) or v == ""]
+    blocked = [f for f in given if f in NOT_BAKED]
+    if blocked:                                  # psd_edit refuses the card's whole bake while one is pending
+        say(interaction, f"Not committed: {' and '.join(blocked)} can't be set from Discord yet. The card bake can't "
+                         "print them, and while one waits in Card Edits.json the bake refuses every other edit to the "
+                         "card's PSD. Change them in the PSD.")
+        return
+    bad = [f for f, v in given.items() if not CardEdits.valid(f, v) or v in ("", [])]
     if bad or author == "":
         say(interaction, f"Not committed: {', '.join(bad) or 'author'} must be "
                          + ("a whole number, 0 or more, or some text." if bad else "a name."))
         return
     by, at = editor(interaction), now()
-    changed = list(given) + (["author"] if author is not None else [])
-    body = [f"- {f}: {_short(v)}" for f, v in given.items()] + ([f"- author: {author}"] if author is not None else [])
+    done: dict = {"fields": {}, "author": False}
+
+    def edit(text):                             # only the fields the head's entry doesn't already have
+        entry = entry_of(text, name)[1]
+        done["fields"] = {f: v for f, v in given.items() if f not in entry or entry[f] != v or type(entry[f]) is not type(v)}
+        return edits_file(text, [{"key": name, "set": done["fields"], "unset": []}], at, by) if done["fields"] else text
+
+    def credit(text):                           # only when the card's [cards] line credits someone else
+        done["author"] = card_line(text, name) != author
+        return authors_file(text, [{"key": name, "author": author}], {}) if done["author"] else text
+
+    def fields() -> list:
+        return list(done["fields"]) + (["author"] if done["author"] else [])
+
+    def body() -> list:
+        return [f"- {f}: {_short(v)}" for f, v in done["fields"].items()] + ([f"- author: {author}"] if done["author"] else [])
     try:
-        sha, written = commit(f"{SUBJECT} /update_metadata {name} ({', '.join(changed)})", by, body,
-                              (lambda text: edits_file(text, [{"key": name, "set": given, "unset": []}], at, by)) if given else None,
-                              (lambda text: authors_file(text, [{"key": name, "author": author}], {})) if author is not None else None)
+        sha, written = commit(lambda: f"{SUBJECT} /update_metadata {name} ({', '.join(fields())})", by, body,
+                              edit if given else None, credit if author is not None else None)
     except Exception as error:                  # noqa: BLE001 - one line in Discord, the traceback on stdout
         _failed(interaction, f"/update_metadata {name}", error)
         return
@@ -413,12 +508,13 @@ def manual_metadata_entry(interaction,
         say(interaction, f"**{name}**: the card repo already has those values; nothing committed.")
         return
     refresh([name], written.get("edits"), written.get("authors"))
-    psd = [f for f in given if CardEdits.KIND.get(f) == "psd" and f not in NOT_BAKED]
-    kept = [f for f in given if f in NOT_BAKED]
-    lines = [f"  • {f}: {_short(v)}" for f, v in given.items()] + ([f"  • author: {author}"] if author is not None else [])
+    set_now = done["fields"]
+    same = [f for f in given if f not in set_now] + (["author"] if author is not None and not done["author"] else [])
+    psd = [f for f in set_now if CardEdits.KIND.get(f) == "psd"]
+    lines = [f"  • {f}: {_short(v)}" for f, v in set_now.items()] + ([f"  • author: {author}"] if done["author"] else [])
     say(interaction, f"Updated **{name}** in the card repo ({_link(sha)}):\n" + "\n".join(lines)
+        + (f"\nAlready so in the card repo: {', '.join(same)}." if same else "")
         + (f"\n{', '.join(psd)}: pending on the card image until the next card bake prints it." if psd else "")
-        + (f"\n{', '.join(kept)}: the card bake can't print it yet; the edit holds until the PSD is fixed." if kept else "")
         + ("" if card is not None else "\nNo data for this card yet (its PSD isn't parsed): the website shows the edit."))
 
 
@@ -442,21 +538,19 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
     if field != "author" and field not in MASS:
         say(interaction, f"Invalid field '{field}'. Valid fields are: author, {', '.join(MASS)}")
         return
-    old, new = old_value.strip(), new_value.strip()
+    old, new = " ".join(old_value.split()), " ".join(new_value.split())
     if not old or not new:
         say(interaction, "Not committed: old_value and new_value can't be empty.")
-        return
-    if field == "author" and not any((c.author or "").strip().lower() == old.lower() for c in stats_db.stats.values()):
-        say(interaction, f"No card has author '{old}': nothing to commit.")
         return
     by, at = editor(interaction), now()
     subject = f"{SUBJECT} /mass_replace {field} '{_short(old)}' -> '{_short(new)}'"
     try:
         if field == "author":
             seen: dict = {}
+            known = any((c.author or "").strip().lower() == old.lower() for c in stats_db.stats.values())
 
             def rewrite(text):
-                seen["text"], seen["moved"], seen["people"] = replace_author(text, old, new)
+                seen["text"], seen["moved"], seen["people"] = replace_author(text, old, new, known)
                 return seen["text"]
             sha, written = commit(subject, by, lambda: [f"- {n}" for n in seen["moved"]]
                                   + [f"- [people] {g} = {v}" for g, v in seen["people"].items()], authors=rewrite)
@@ -468,17 +562,22 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
             if not names:
                 say(interaction, f"No card has {field} '{old}': nothing to commit.")
                 return
-            sha, written = commit(f"{subject} ({len(names)} cards)", by, [f"- {n}" for n in names],
-                                  lambda text: edits_file(text, [{"key": n, "set": {target: new}, "unset": []} for n in names], at, by))
+
+            def rewrite(text):                  # a card whose entry already says new: no op
+                entries = _entries(text)
+                return edits_file(text, [{"key": n, "set": {target: new}, "unset": []} for n in names
+                                         if entries.get(CardAuthors.key(n), {}).get(target) != new], at, by)
+            sha, written = commit(f"{subject} ({len(names)} cards)", by, [f"- {n}" for n in names], rewrite)
     except Exception as error:                  # noqa: BLE001
         _failed(interaction, f"/mass_replace {field}", error)
         return
     if not sha:
-        say(interaction, f"Nothing to replace: no card shows {field} '{old}' in the card repo's files.")
+        say(interaction, f"No card has {field} '{old}': nothing to commit." if field == "author"
+            else f"Nothing to replace: no card shows {field} '{old}' in the card repo's files.")
         return
     changed = refresh(names, written.get("edits"), written.get("authors"))
     if field == "author":
-        detail = (f"{len(seen['moved'])} [cards] lines moved to {new}; [people] "
+        detail = (f"{len(seen['moved'])} [cards] lines now credit {new}; [people] "
                   + ", ".join(f"{git} = {shown}" for git, shown in seen["people"].items()))
     else:
         detail = f"{len(names)} card entries in Card Edits.json"
@@ -602,81 +701,176 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
 
 
 # ========================
-# The alias migration (section 14 step 5)
+# The migration (section 14 step 5): aliases.pkl and the Discord-only values, one commit
 # ========================
-def migrate_aliases(aliases: dict, text: str, pngs: list, at: str) -> tuple:
-    """
-    aliases.pkl into Card Edits.json: each alias on the entry of the card its PNG belongs to, resolved as the bot does
-    (the PNG's file name, else the first whose name ends so, in tree order), with spaces for underscores; plus
-    ALIASES_MOVED, so the bot and the build stop reading the pickle. An alias whose PNG is gone is left out and reported;
-    one that is its card's own name stays (a duplicate is named by it). New entries get _by AutoCroissant; an entry
-    already there keeps its _by and _at.
+def _bot_edits(text: str, ops: list, at: str) -> dict:
+    """ops applied with _by AutoCroissant; an entry that was there keeps its editor's stamps (their bake credit)."""
+    data = loads(edits_file(text, ops, at, BOT))
+    before = _entries(text)
+    for key, fields in data["cards"].items():
+        old = before.get(CardAuthors.key(key))
+        if isinstance(old, dict) and old.get("_by"):
+            fields.update({k: old[k] for k in ("_by", "_at") if k in old})
+    return data
 
-    Args:
-        aliases: aliases.pkl (alias -> PNG file name)
-        text: Card Edits.json
-        pngs: The card repo's PNG paths, in tree order
-        at: The _at stamp
+
+def alias_ops(aliases: dict, text: str, pngs: list) -> tuple:
+    """
+    aliases.pkl as Card Edits.json ops: each alias on the entry of the card its PNG belongs to, resolved as the bot does
+    (the PNG's file name, else the first whose name ends so, in tree order), with spaces for underscores. An alias whose
+    PNG is gone is left out; one already on its card (any spelling) is not added twice; one that is its card's own name
+    stays (a duplicate is named by it).
 
     Returns:
-        (the new text, report lines)
+        (ops, report lines)
     """
     names: dict = {}
     for path in pngs:
         names.setdefault(basename(path).lower(), path)
     wanted: dict = {}
-    report = []
+    lines, left_out = [], 0
     for alias, target in sorted(aliases.items()):
         target = str(target).lower()
         path = names.get(target) or next((p for f, p in names.items() if f.endswith(target)), None)
         spelled = " ".join(str(alias).replace("_", " ").split())
         if path is None:
-            report.append(f"- {alias} -> {target}: no such PNG, left out")
+            lines.append(f"- {alias} -> {target}: no such PNG, left out")
+            left_out += 1
         else:
             wanted.setdefault(card_name(path), []).append(spelled)
-            report.append(f"- {alias} -> {card_name(path)} ({path})")
-    ops = []
+            lines.append(f"- {alias} -> {card_name(path)} ({path})")
+    ops, added = [], 0
+    entries = _entries(text)
     for card, spelled in wanted.items():
-        current = list(entry_of(text, card)[1].get("aliases") or [])
+        current = list(entries.get(CardAuthors.key(card), {}).get("aliases") or [])
         merged = current + [a for i, a in enumerate(spelled) if alias_key(a) not in {alias_key(c) for c in current + spelled[:i]}]
+        added += len(merged) - len(current)
         if merged != current:
             ops.append({"key": card, "set": {"aliases": merged}, "unset": []})
-    data = loads(edits_file(text, ops, at, BOT))
-    before = (loads(text).get("cards") or {}) if text else {}
-    for key, fields in data["cards"].items():   # an entry that was there keeps its editor's stamps (their bake credit)
-        if isinstance(before.get(key), dict) and before[key].get("_by"):
-            fields.update({k: before[key][k] for k in ("_by", "_at") if k in before[key]})
+    found = sum(len(v) for v in wanted.values())
+    head = (f"{len(aliases)} aliases: {added} moved onto {len(ops)} cards, {found - added} already on their card "
+            f"(the same alias, any spelling), {left_out} left out")
+    return ops, [head] + lines
+
+
+def migrate_aliases(aliases: dict, text: str, pngs: list, at: str) -> tuple:
+    """
+    aliases.pkl alone into Card Edits.json (alias_ops), plus ALIASES_MOVED. New entries get _by AutoCroissant; an entry
+    already there keeps its _by and _at. The migration commit is migrate()'s: this, with the carried values.
+
+    Returns:
+        (the new text, report lines)
+    """
+    ops, report = alias_ops(aliases, text, pngs)
+    data = _bot_edits(text, ops, at)
     data[ALIASES_MOVED] = MOVED_NOTE.format(at=at[:10])
-    report.insert(0, f"{len(aliases)} aliases: {sum(len(v) for v in wanted.values())} moved onto {len(wanted)} cards, "
-                     f"{len(aliases) - sum(len(v) for v in wanted.values())} left out")
     return dump_edits(data), report
+
+
+def carried(stats: dict, text: str, authors_text: Optional[str], first_authors: dict) -> tuple:
+    """
+    The Discord-only values (section 14 step 5's parity re-parse): what a re-parse keeps from the database (author,
+    series, subseries: psd_parser's "preserve") that no card-repo input gives: not the card's folder, nor Card
+    Edits.json, nor Card Authors.txt with the first commit's author. /update_metadata and /mass_replace set them before
+    they committed to the card repo; a build from the card repo alone would lose them. A field Card Edits.json already
+    sets is that value (it wins), so it isn't carried.
+
+    Args:
+        stats: stats.pkl
+        text: Card Edits.json
+        authors_text: Card Authors.txt (None: none)
+        first_authors: PSD path -> the author of its first commit (card_history.GitIndex.first)
+
+    Returns:
+        (Card Edits.json ops, Card Authors.txt ops, report lines)
+    """
+    from commands.psd_parser import CardClassifier   # lazy: psd-tools loads only for the migration
+    entries = _entries(text)
+    authors = CardAuthors.parse(authors_text or "")
+    ops, credits, lines = [], [], []
+    for name, card in sorted(stats.items()):
+        if getattr(card, "duplicate_of", None):     # its original's copy
+            continue
+        parsed = getattr(card, "parsed_values", None) or {}
+        kept = lambda attr: parsed[attr] if attr in parsed else getattr(card, attr, None)
+        entry = entries.get(CardAuthors.key(name), {})
+        try:
+            folder = CardClassifier.classify(card.path or "")
+        except (ValueError, IndexError):        # a folder the parser can't read: none given
+            folder = {}
+        fresh = {"series": folder.get("series"), "subseries": None}
+        values = {attr: kept(attr) for attr in ("series", "subseries")
+                  if kept(attr) and kept(attr) != fresh[attr] and attr not in entry and CardEdits.valid(attr, kept(attr))}
+        if values:
+            ops.append({"key": name, "set": values, "unset": []})
+            lines += [f"- {name}: {attr} {value!r} (the folder gives {fresh[attr]!r})" for attr, value in values.items()]
+        author, given = kept("author"), authors.resolve(name, first_authors.get(card.path))
+        if author and authors.resolve(name, author) != given:      # both through [cards] and [people], as a build
+            credits.append({"key": name, "author": " ".join(str(author).split())})
+            lines.append(f"- {name}: author {author!r} (the card repo gives {given!r})")
+    head = (f"{sum(len(op['set']) for op in ops)} Discord-only values on {len(ops)} cards into Card Edits.json, "
+            f"{len(credits)} authors into Card Authors.txt")
+    return ops, credits, [head] + lines
+
+
+def migrate(aliases: dict, stats: dict, text: str, authors_text: Optional[str], pngs: list, first_authors: dict,
+            at: str) -> tuple:
+    """
+    The migration commit's files: aliases.pkl's aliases (alias_ops) and the Discord-only values (carried) in Card
+    Edits.json with ALIASES_MOVED, and the carried authors as [cards] lines. New entries get _by AutoCroissant; an
+    entry already there keeps its _by and _at.
+
+    Returns:
+        (Card Edits.json, Card Authors.txt (None when unchanged), report lines)
+    """
+    value_ops, credits, values_report = carried(stats, text, authors_text, first_authors)
+    moved, aliases_report = alias_ops(aliases, text, pngs)
+    data = _bot_edits(text, value_ops + moved, at)
+    data[ALIASES_MOVED] = MOVED_NOTE.format(at=at[:10])
+    new_authors = authors_file(authors_text, credits, {}) if credits else None
+    return dump_edits(data), new_authors, aliases_report + values_report
 
 
 def _git(clone: str, *args: str) -> str:
     return run_process(["git", "-C", clone, *args], capture_output=True, check=True, text=True, encoding="utf-8").stdout
 
 
+def _write(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def main(args: Optional[list] = None) -> int:
-    """The command line: migrate-aliases (writes the migrated Card Edits.json; commits nothing)."""
+    """The command line: migrate (writes the migration commit's files; commits nothing)."""
     parser = ArgumentParser(prog="python -m commands.discord_edits", description="Discord's card edits (the bot's side).")
     sub = parser.add_subparsers(dest="command", required=True)
-    migrate = sub.add_parser("migrate-aliases", help="move aliases.pkl into Card Edits.json (written to --out, never committed)")
-    migrate.add_argument("--clone", required=True, help="a clone of the card repo (the tree and Card Edits.json at --ref)")
-    migrate.add_argument("--ref", default="HEAD", help="the card repo commit to read (default HEAD)")
-    migrate.add_argument("--aliases", default="aliases.pkl", help="aliases.pkl (default ./aliases.pkl)")
-    migrate.add_argument("--out", default="-", help="where the new Card Edits.json goes (default stdout)")
+    step = sub.add_parser("migrate", help="aliases.pkl and the Discord-only values into the card repo's files "
+                                          "(written to --out-dir for one commit, never committed)")
+    step.add_argument("--clone", required=True, help="a full (not shallow) clone of the card repo: its tree, history and "
+                                                     "files at --ref")
+    step.add_argument("--ref", default="HEAD", help="the card repo commit to read (default HEAD)")
+    step.add_argument("--aliases", default="aliases.pkl", help="aliases.pkl (default ./aliases.pkl)")
+    step.add_argument("--stats", default="stats.pkl", help="stats.pkl the parity re-parse matched (default ./stats.pkl)")
+    step.add_argument("--out-dir", required=True, help="where Card Edits.json (and Card Authors.txt when it changes) go")
     options = parser.parse_args(args)
-    from commands.card_db import load_pickle   # the allow-list unpickler: a dict of strings needs no globals
-    aliases = load_pickle(options.aliases)
+    from commands.card_db import load_pickle   # the allow-list unpickler
+    from commands.card_history import GitIndex
+    from os import makedirs
+    from os.path import join
+    aliases, stats = load_pickle(options.aliases), load_pickle(options.stats)
     tree = [p for p in _git(options.clone, "ls-tree", "-r", "-z", "--name-only", options.ref).split("\0")
             if p.lower().endswith(".png")]
-    text, report = migrate_aliases(aliases, _git(options.clone, "show", f"{options.ref}:{EDITS_PATHS[0]}"), tree, now())
-    if options.out == "-":
-        print(text, end="")
-    else:
-        with open(options.out, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
-    print("\n".join(report), file=stderr)
+    authors_path = next((p for p in AUTHORS_PATHS if _git(options.clone, "ls-tree", "--name-only", options.ref, "--", p).strip()),
+                        None)
+    authors_text = _git(options.clone, "show", f"{options.ref}:{authors_path}") if authors_path else None
+    first = {path: commit.author for path, commit in GitIndex.from_git(options.clone, options.ref).first.items()}
+    text, authors, report = migrate(aliases, stats, _git(options.clone, "show", f"{options.ref}:{EDITS_PATHS[0]}"),
+                                    authors_text, tree, first, now())
+    makedirs(options.out_dir, exist_ok=True)
+    _write(join(options.out_dir, basename(EDITS_PATHS[0])), text)
+    if authors is not None:
+        _write(join(options.out_dir, basename(authors_path or AUTHORS_PATHS[0])), authors)
+    print("\n".join(report))
     return 0
 
 
@@ -699,6 +893,10 @@ __all__ = [
     'manage_alias',
     'manual_metadata_entry',
     'mass_replace_field',
+    'alias_ops',
+    'card_line',
+    'carried',
+    'migrate',
     'migrate_aliases',
     'refresh',
     'replace_author',

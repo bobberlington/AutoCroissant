@@ -14,6 +14,7 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL
+from commands.card_edits import ALIASES_MOVED
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
@@ -48,6 +49,7 @@ class CardRepository:
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
         self._edits = None                               # that file, parsed (CardEdits): /alias reads its aliases
+        self._moved_hint = False                         # an unparsable Card Edits.json named ALIASES_MOVED (no _edits yet)
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
@@ -173,7 +175,7 @@ class CardRepository:
 
     def aliases_moved(self) -> bool:
         """Card Edits.json says aliases.pkl moved into it (ALIASES_MOVED): the pickle's aliases no longer count."""
-        return self._edits is not None and self._edits.aliases_moved
+        return self._edits.aliases_moved if self._edits is not None else self._moved_hint
 
     def _populate_aliases(self) -> None:
         """Populate aliases.pkl's aliases into the file registry, until they moved into Card Edits.json."""
@@ -417,10 +419,14 @@ class CardRepository:
             return
         sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
+            text = None
             try:
-                edits = CardEdits.parse(blob_text(self.repository, sha))
+                text = blob_text(self.repository, sha)
+                edits = CardEdits.parse(text)
             except Exception as e:
                 print(f"Could not read {path}: {e}")
+                if text is not None and f'"{ALIASES_MOVED}"' in text:   # unparsed, but migrated: aliases.pkl stays off
+                    self._moved_hint = True
                 return
             self._edits, self._edit_names = edits, (sha, edits.names())
         for card, extra in self._edit_names[1].items():

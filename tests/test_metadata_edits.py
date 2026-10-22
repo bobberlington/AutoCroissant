@@ -88,8 +88,10 @@ def repo(monkeypatch, tmp_path):
     db.stats = stats
     monkeypatch.setattr(cm.stats_db, "stats", stats)
     monkeypatch.setattr(cm.stats_db, "old_stats", {})
-    monkeypatch.setattr(cm.stats_db, "save", lambda *a: pytest.fail("a Discord edit saved the pickles"))
+    saves = []
+    monkeypatch.setattr(cm.stats_db, "save", lambda *a: saves.append(1))
     registry = qc.CardRepository()
+    registry.git_file_alias = {"breakfast": "a_snack2.png"}                      # aliases.pkl's: A Snack2's name
     registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in (SNACK, SNACK2, DOOMER, FREEZER, GOOMBELLA, FIX)}
     registry._edits = CardEdits.parse(files[EDITS_PATH].decode())
     monkeypatch.setattr(qc, "card_repo", registry)
@@ -98,7 +100,7 @@ def repo(monkeypatch, tmp_path):
     monkeypatch.setattr(registry, "save_aliases", lambda: pytest.fail("a Discord edit saved aliases.pkl"))
     sent = []
     monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
-    return SimpleNamespace(github=fake, stats=stats, registry=registry, sent=sent, prepped=prepped,
+    return SimpleNamespace(github=fake, stats=stats, registry=registry, sent=sent, prepped=prepped, saves=saves,
                            who=SimpleNamespace(user=SimpleNamespace(name="someone", id=7)))
 
 
@@ -171,17 +173,44 @@ def test_authors_file_matches_edit_js(tmp_path):
     assert "The Freezer" not in out and "# --- credited to Chestnut (1) ---\nGoombella = Chestnut\n\n# --- rulebook pages ---" in out
 
 
-def test_replace_author_moves_lines_and_people():
+def test_replace_author_rewrites_right_hand_sides_in_place(clone_authors):
+    """Design section 11: the right-hand sides change where they stand; the group is renamed, a rulebook page stays a
+    rulebook page; into new's own group when new has one; a person nobody lists: unchanged unless the bot knows them."""
     text, moved, people = de.replace_author(AUTHORS, "michaeljsr", "Michael S")
     assert moved == ["A Snack", "Mini Doomer", "Rule One"]
     assert people == {"Michael": "Michael S", "MichaelJSr": "Michael S"}            # old's own line rewritten: none added
-    assert "credited to MichaelJSr" not in text and "# --- credited to Michael S (3) ---" in text
+    assert text == AUTHORS.replace("MichaelJSr\nZomoroko = Zomoroko", "Michael S\nZomoroko = Zomoroko").replace(
+        "Michael = MichaelJSr", "Michael = Michael S").replace("credited to MichaelJSr (2)", "credited to Michael S (2)").replace(
+        "A Snack = MichaelJSr", "A Snack = Michael S").replace("Mini Doomer = MichaelJSr", "Mini Doomer = Michael S").replace(
+        "Rule One = MichaelJSr", "Rule One = Michael S")
     authors = CardAuthors.parse(text)
     assert {authors.resolve(n, "x") for n in ("A Snack", "Mini Doomer", "Rule One")} == {"Michael S"}
     assert authors.resolve("Unlisted", "MichaelJSr") == "Michael S" and authors.resolve("Unlisted", "Michael") == "Michael S"
     assert authors.resolve("The Freezer", None) == "Zomoroko"
+    text, moved, people = de.replace_author(AUTHORS, "Zomoroko", "MichaelJSr")    # into MichaelJSr's group, in order
+    assert moved == ["The Freezer"] and "credited to Zomoroko" not in text
+    assert "# --- credited to MichaelJSr (3) ---\nA Snack = MichaelJSr\nMini Doomer = MichaelJSr\nThe Freezer = MichaelJSr\n\n# --- rulebook" in text
     text, moved, people = de.replace_author(AUTHORS, "Bob", "Robert")              # nobody listed: the git name maps
     assert moved == [] and people == {"Bob": "Robert"} and CardAuthors.parse(text).resolve("X", "Bob") == "Robert"
+    assert de.replace_author(AUTHORS, "Bob", "Robert", known=False) == (AUTHORS, [], {})
+    real = clone_authors()                                                       # the card repo's file: groups and counts kept
+    groups = lambda t: re.findall(r"# --- (?:credited to (.+) \((\d+)\)|rulebook pages) ---", t)
+    rules = lambda t: t[t.index("# --- rulebook pages ---"):].count(" = ")
+    who = max(set(re.findall(r"credited to (.+) \(", real)) & {r.split(" = ", 1)[1] for r in real[real.index("# --- rulebook"):].splitlines() if " = " in r})
+    text, moved, _ = de.replace_author(real, who, who + " Prime")
+    cards = real[real.index("\n[cards]\n"):]
+    assert rules(text) == rules(real) and len(moved) == cards.count(f" = {who}\n") + cards.endswith(f" = {who}")
+    assert groups(text) == [(g + " Prime" if g == who else g, n) for g, n in groups(real)]
+
+
+@pytest.fixture
+def clone_authors(clone):
+    def read():
+        done = subprocess.run(["git", "-C", str(clone), "show", f"HEAD:{AUTHORS_PATH}"], capture_output=True)
+        if done.returncode != 0:
+            pytest.skip(f"no {AUTHORS_PATH} at the clone's HEAD")
+        return done.stdout.decode("utf-8")
+    return read
 
 
 # ========================
@@ -190,15 +219,15 @@ def test_replace_author_moves_lines_and_people():
 def test_update_metadata_makes_one_commit(repo):
     start = repo.github.head
     de.manual_metadata_entry(repo.who, "Mini Doomer", del_entry=True, author="Zomoroko", ability="Explodes.  [fire] then.",
-                             stars=3, subtype="Bomb", series="Doom", subseries="Mini", hp=6, defense=0, attack=7, speed=1,
-                             card_type="minion", types=" Fire, wind ")
+                             subtype="Bomb", series="Doom", subseries="Mini", hp=6, defense=0, attack=7, speed=1,
+                             card_type="minion")
     (message,) = _commits(repo.github, start)
     subject, _, rest = message.partition("\n\n")
-    assert subject == "Discord: /update_metadata Mini Doomer (ability, stars, subtype, series, subseries, hp, def, atk, spd, type, types, hidden, author)"
+    assert subject == "Discord: /update_metadata Mini Doomer (ability, subtype, series, subseries, hp, def, atk, spd, type, hidden, author)"
     assert rest.endswith(f"\n\nEdit-by: {BY}") and "- hp: 6" in rest
     entry = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]
     at = entry["_at"]
-    assert entry == {"type": "minion", "subtype": "Bomb", "series": "Doom", "subseries": "Mini", "stars": 3, "types": ["fire", "wind"],
+    assert entry == {"type": "minion", "subtype": "Bomb", "series": "Doom", "subseries": "Mini",
                      "hp": 6, "def": 0, "atk": 7, "spd": 1, "ability": "Explodes.  [fire] then.", "hidden": True, "_by": BY, "_at": at}
     given = {k: v for k, v in entry.items() if not k.startswith("_")}
     before = dump_edits({"about": ABOUT, "cards": EDITS})
@@ -206,7 +235,7 @@ def test_update_metadata_makes_one_commit(repo):
     assert _at_head(repo.github, AUTHORS_PATH) == de.authors_file(AUTHORS, [{"key": "Mini Doomer", "author": "Zomoroko"}], {})
     card = repo.stats["Mini Doomer"]                                             # applied in memory at once
     assert (card.stats.hp, card.stats.defense, card.ability, card.hidden, card.subseries, card.author) == (6, 0, "Explodes.  [fire] then.", True, "Mini", "Zomoroko")
-    assert card.parsed_values["hp"] == 5 and repo.prepped
+    assert card.parsed_values["hp"] == 5 and repo.prepped and repo.saves == [1]         # stats.pkl kept for a restart
     assert "Updated **Mini Doomer**" in repo.sent[len(repo.sent) - 1] and "pending on the card image" in repo.sent[len(repo.sent) - 1]
     assert cb.select(CardEdits.parse(_at_head(repo.github, EDITS_PATH)), cb.Snapshot(cb.CARD_REPO, "h", {}, {}), "Mini Doomer")[0].fields["hp"] == 6
 
@@ -233,6 +262,31 @@ def test_update_metadata_png_only_card_and_bad_values(repo):
     assert "Mr. Fix" not in repo.stats and "No data for this card yet" in repo.sent[2]
     de.manual_metadata_entry(repo.who, "Mr. Fix", series="Tools")                # the same again: nothing to commit
     assert len(_commits(repo.github, start)) == 1 and "nothing committed" in repo.sent[3]
+    for bad in ({"stars": 3}, {"types": "fire"}, {"types": " , ", "hp": 2}):      # the bake can't print them: refused
+        de.manual_metadata_entry(repo.who, "Mini Doomer", **bad)
+        assert "can't be set from Discord yet" in repo.sent[len(repo.sent) - 1]
+    assert len(_commits(repo.github, start)) == 1
+
+
+def test_update_metadata_skips_values_the_card_repo_has(repo, monkeypatch):
+    """A value the head's entry or [cards] line already has is no op: no restamp, no commit, the web editor's _by kept."""
+    stamps = iter(f"2026-10-22T10:00:{s:02d}Z" for s in range(60))
+    monkeypatch.setattr(de, "now", lambda: next(stamps))                        # every call a second later
+    start = repo.github.head
+    de.manual_metadata_entry(repo.who, "Mr. Fix", series="Tools")
+    de.manual_metadata_entry(repo.who, "Mr. Fix", series="Tools")
+    assert len(_commits(repo.github, start)) == 1 and "nothing committed" in repo.sent[1]
+    de.manual_metadata_entry(repo.who, "Goombella", series="Mario")              # set by "web" already
+    de.manual_metadata_entry(repo.who, "Mini Doomer", author="MichaelJSr")       # its [cards] line already
+    assert len(_commits(repo.github, start)) == 1 and all("nothing committed" in t for t in repo.sent[2:4])
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"] == EDITS["Goombella"]
+    de.manual_metadata_entry(repo.who, "Goombella", series="Mario", hp=6, author=" Zomo \n roko ")   # only hp and author
+    subject, _, rest = _commits(repo.github, start)[0].partition("\n\n")
+    assert subject == "Discord: /update_metadata Goombella (hp, author)" and "- series" not in rest
+    assert "- author: Zomo roko" in rest and "Goombella = Zomo roko" in _at_head(repo.github, AUTHORS_PATH)
+    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"] == {"series": "Mario", "hp": 6, "_by": BY,
+                                                                                  "_at": "2026-10-22T10:00:04Z"}
+    assert "Already so in the card repo: series." in repo.sent[4]
 
 
 def test_update_metadata_on_a_duplicate_and_failure(repo, monkeypatch):
@@ -276,6 +330,11 @@ def test_mass_replace_author_rewrites_the_authors_file(repo):
     assert repo.stats["The Freezer"].author == "Zomoroko"
     de.mass_replace_field(repo.who, "author", "Nobody", "X")
     assert "No card has author 'Nobody'" in repo.sent[1] and len(_commits(repo.github, start)) == 1
+    repo.stats["The Freezer"].author = "Somebody"                                # credited by the file alone
+    de.mass_replace_field(repo.who, "author", "zomoroko", " Zomo \n Prime ")    # one line, whitespace collapsed
+    assert len(_commits(repo.github, start)) == 2 and "Replaced author='zomoroko' with 'Zomo Prime'" in repo.sent[2]
+    assert _commits(repo.github, start)[0].startswith("Discord: /mass_replace author 'zomoroko' -> 'Zomo Prime'\n\n- The Freezer\n")
+    assert "# --- credited to Zomo Prime (1) ---\nThe Freezer = Zomo Prime\n" in _at_head(repo.github, AUTHORS_PATH)
 
 
 # ========================
@@ -287,11 +346,13 @@ def test_alias_create_move_delete(repo):
     cards = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]
     assert cards["A Snack2"] == {"aliases": ["Late Breakfast"], "_by": BY, "_at": cards["A Snack2"]["_at"]}
     assert repo.registry.git_files["late_breakfast.png"] == SNACK2 and "Created alias: Late Breakfast -> A Snack2" in repo.sent[0]
+    assert repo.stats["A Snack2"].display_name == "Late Breakfast"               # the duplicate's longest alias names it
     assert _commits(repo.github, start)[0] == f"Discord: /alias Late Breakfast -> A Snack2\n\nEdit-by: {BY}"
     de.manage_alias(repo.who, "late breakfast", "Goombella.png")                # moved: off A Snack2, onto Goombella, one commit
     cards = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]
     assert "A Snack2" not in cards and cards["Goombella"]["aliases"] == ["late breakfast"] and cards["Goombella"]["series"] == "Mario"
     assert repo.registry.git_files["late_breakfast.png"] == GOOMBELLA
+    assert repo.stats["A Snack2"].display_name == "Breakfast" and repo.stats["Goombella"].display_name is None
     de.manage_alias(repo.who, " late  breakfast", "goombella")                  # the same spelling: nothing to commit
     assert "already finds Goombella" in repo.sent[2] and len(_commits(repo.github, start)) == 2
     de.manage_alias(repo.who, "", None)
@@ -338,9 +399,24 @@ def test_migrate_aliases_mapping():
     assert cards["A Snack"] == {"aliases": ["Snack", "grape juice"], "_by": "web", "_at": AT}   # merged; its stamps kept
     assert cards["Mini Doomer"]["aliases"] == ["doomy", "mini doomer"]          # the end of a file name, as the bot finds it
     assert cards["The Freezer"]["aliases"] == ["freezy"] and cards["Goombella"] == EDITS["Goombella"]
-    assert report[0] == "6 aliases: 5 moved onto 4 cards, 1 left out"
+    assert report[0] == "6 aliases: 5 moved onto 4 cards, 0 already on their card (the same alias, any spelling), 1 left out"
     assert "- zoey -> z!!!!!.png: no such PNG, left out" in report and f"- doomy -> Mini Doomer ({DOOMER})" in report
     assert de.migrate_aliases(LEGACY, new, TREE, AT)[0] == new                    # idempotent
+    again = de.migrate_aliases({**LEGACY, "MINI DOOMER": "mini_doomer.png"}, text, TREE, AT)
+    assert again[1][0].startswith("7 aliases: 5 moved onto 4 cards, 1 already on their card")   # a same-card spelling
+
+
+def test_aliases_moved_kept_when_card_edits_fails_to_parse(monkeypatch):
+    """A Card Edits.json that names aliases_moved but doesn't parse still keeps aliases.pkl off."""
+    for text, moved in (('{"aliases_moved": "x", "cards": {,}}', True), ('{"cards": {,}}', False)):
+        monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: text)
+        registry = qc.CardRepository()
+        registry.git_file_alias = {"stale": "a_snack.png"}
+        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": "bad"}]}
+        registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in TREE}
+        registry._populate_edit_names()
+        registry._populate_aliases()
+        assert registry.aliases_moved() is moved and ("stale.png" in registry.git_files) is not moved
 
 
 def test_aliases_pkl_ignored_once_moved(monkeypatch):
@@ -366,19 +442,60 @@ def test_aliases_pkl_ignored_once_moved(monkeypatch):
         assert build._sync_duplicates(tree) == 1 and db.stats["A Snack2"].display_name == name
 
 
+OMORI = "Creatures/Omori/2 Stars/Omori_Kid.psd"
+
+
+def _carry_stats():
+    stats = {"Omori Kid": _card("Omori Kid", OMORI, "OMORI", author="MichaelJSr"),               # the folder: "omori"
+             "Goombella": _card("Goombella", GOOMBELLA[:-4] + ".psd", "Paper Mario", author="Michael"),   # Card Edits wins
+             "Plain": _card("Plain", "Creatures/Kirby/1 Stars/Plain.psd", "kirby", author="Zomoroko"),
+             "A Snack": _card("A Snack", SNACK[:-4] + ".psd", "The Binding of Isaac", author="MichaelJSr", card_type="item"),
+             "Lonely": _card("Lonely", "Items/Tools/1 Stars/Lonely.psd", None, author="Chestnut", subseries="Odd", card_type="item"),
+             "A Snack2": _card("A Snack2", SNACK[:-4] + ".psd", "Copy", duplicate_of="A Snack", card_type="item")}
+    stats["Plain"].series, stats["Plain"].parsed_values = "Edited", {"series": "kirby"}    # an edit on top: the PSD's value counts
+    return stats
+
+
+def test_carried_values_are_the_discord_only_ones():
+    """What a re-parse keeps from the database (series, subseries, author) and no card-repo input gives."""
+    first = {OMORI: "MichaelJSr", "Creatures/Kirby/1 Stars/Plain.psd": "Zomoroko", "Items/Tools/1 Stars/Lonely.psd": "Tyler",
+             GOOMBELLA[:-4] + ".psd": "MichaelJSr"}                              # "Michael" shows as MichaelJSr: the same
+    text = dump_edits({"about": ABOUT, "cards": EDITS})
+    ops, credits, report = de.carried(_carry_stats(), text, AUTHORS, first)
+    assert ops == [{"key": "A Snack", "set": {"series": "The Binding of Isaac"}, "unset": []},
+                   {"key": "Lonely", "set": {"subseries": "Odd"}, "unset": []},
+                   {"key": "Omori Kid", "set": {"series": "OMORI"}, "unset": []}]
+    assert credits == [{"key": "Lonely", "author": "Chestnut"}]                 # A Snack's [cards] line already says so
+    assert report[0] == "3 Discord-only values on 3 cards into Card Edits.json, 1 authors into Card Authors.txt"
+    edits, authors, lines = de.migrate({"breakfast": "a_snack2.png"}, _carry_stats(), text, AUTHORS, TREE, first, AT)
+    cards = json.loads(edits)["cards"]                                          # one commit's files: aliases and values
+    assert CardEdits.parse(edits).aliases_moved and cards["A Snack2"]["aliases"] == ["breakfast"]
+    assert cards["Omori Kid"] == {"series": "OMORI", "_by": "AutoCroissant", "_at": AT} and cards["Goombella"] == EDITS["Goombella"]
+    assert cards["The Freezer"] == EDITS["The Freezer"] and CardAuthors.parse(authors).resolve("Lonely", "Tyler") == "Chestnut"
+    assert lines[0].startswith("1 aliases: 1 moved") and lines[2].startswith("3 Discord-only values")
+
+
 def test_migration_cli(tmp_path):
     clone = tmp_path / "cards"
-    for path in TREE + [EDITS_PATH]:
+    files = {EDITS_PATH: dump_edits({"about": ABOUT, "cards": EDITS}).encode(), AUTHORS_PATH: AUTHORS.encode(),
+             OMORI: b"psd", **{p: b"png" for p in TREE}}
+    for path, data in files.items():
         (clone / path).parent.mkdir(parents=True, exist_ok=True)
-        (clone / path).write_bytes(dump_edits({"about": ABOUT, "cards": EDITS}).encode() if path == EDITS_PATH else b"png")
-    git = ["git", "-C", str(clone), "-c", "user.name=t", "-c", "user.email=t@t"]
+        (clone / path).write_bytes(data)
+    git = ["git", "-C", str(clone), "-c", "user.name=MichaelJSr", "-c", "user.email=t@t"]
     subprocess.run(["git", "init", "-q", str(clone)], check=True)
     subprocess.run(git + ["add", "-A"], check=True)
     subprocess.run(git + ["commit", "-qm", "cards"], check=True)
     (tmp_path / "aliases.pkl").write_bytes(pickle.dumps(LEGACY))
-    out = tmp_path / "edits.json"
-    assert de.main(["migrate-aliases", "--clone", str(clone), "--aliases", str(tmp_path / "aliases.pkl"), "--out", str(out)]) == 0
-    assert json.loads(out.read_text(encoding="utf-8"))["cards"]["A Snack2"]["aliases"] == ["breakfast"]
+    (tmp_path / "stats.pkl").write_bytes(pickle.dumps({"Omori Kid": _card("Omori Kid", OMORI, "OMORI", author="Someone")}))
+    out = tmp_path / "out"
+    assert de.main(["migrate", "--clone", str(clone), "--aliases", str(tmp_path / "aliases.pkl"),
+                    "--stats", str(tmp_path / "stats.pkl"), "--out-dir", str(out)]) == 0
+    cards = json.loads((out / "Card Edits.json").read_text(encoding="utf-8"))["cards"]
+    assert cards["A Snack2"]["aliases"] == ["breakfast"] and cards["Omori Kid"]["series"] == "OMORI"
+    assert "Omori Kid = Someone" in (out / "Card Authors.txt").read_text(encoding="utf-8")   # not the first commit's author
+    with pytest.raises(SystemExit):                                             # no alias-only migration
+        de.main(["migrate-aliases", "--clone", str(clone), "--out", str(out / "x.json")])
 
 
 def test_live_aliases_find_the_same_card_image_after_the_migration(clone):

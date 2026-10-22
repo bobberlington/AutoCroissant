@@ -529,7 +529,7 @@ commit touching its path (the last entry of the per_page=100 commit page, or `.r
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
 survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` writes the card's `[cards]`
 line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
-right-hand sides plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
+right-hand sides where they stand (the group renamed, rulebook pages left in place) plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
 
 Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
 autocroissant-change-control):
@@ -596,8 +596,8 @@ icon collisions).
 Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. Since branch
 work/discord-writers (2026-10-22) `/alias` (commands/discord_edits.py) writes `aliases` on the Card Edits.json entry of
 the card the PNG belongs to (one commit; target: an existing png, suffix match allowed), key alone deletes, no args
-lists. `python -m commands.discord_edits migrate-aliases` writes the 60 into Card Edits.json with the top-level
-`aliases_moved` key; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
+lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.json, with the Discord-only series values the
+parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
 names), and before that `/alias` refuses to change an aliases.pkl alias.
 
 ### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:218-304)

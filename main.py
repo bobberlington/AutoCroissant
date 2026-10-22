@@ -460,7 +460,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     del_entry='Hide this card on the website and in queries (hidden in Card Edits.json). Default = False.',
     author='The creator of the card (a line in the card repo\'s Card Authors.txt).',
     ability='Card ability text (printed on the card image by the next card bake).',
-    stars='Star count (e.g., 1-7).',
+    stars='Not yet: the card bake can\'t print stars (change them in the PSD).',
     subtype='Card subtype.',
     series='Card series.',
     subseries='A series within the series (e.g. Paper Mario in Mario). Database only, never in the PSD.',
@@ -469,7 +469,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     attack='Attack stat value.',
     speed='Speed stat value.',
     card_type='Card type (e.g., creature, item, field).',
-    types='Comma-separated list of types (e.g., "fire,water").',
+    types='Not yet: the card bake can\'t print types (change them in the PSD).',
 )
 async def slash_update_metadata(
     interaction: Interaction,
