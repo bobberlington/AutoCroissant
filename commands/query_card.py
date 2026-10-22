@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
 from discord import Embed, Interaction
 from os.path import basename, splitext
@@ -13,7 +14,7 @@ from pandas import DataFrame, Index, concat, merge
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL
+from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL, TIMEZONE
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
@@ -29,6 +30,10 @@ DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
 RESULTS_PER_MESSAGE = 10                                 # /query_ability lines per message
 _alias_lock = Lock()                                     # one writer for aliases.pkl
+AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
+UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
+AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are not dated yet: a version shows those it had "
+                    "when it was replaced, the current card today's.")
 
 
 @dataclass
@@ -552,20 +557,29 @@ def _stats_card(filename: str):
     return stats_db.stats.get(card_name(path)) if path else None
 
 
-def query_name(interaction: Interaction, query: str) -> None:
+def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None) -> None:
     """
     Query and display a card by name.
 
     Args:
         interaction: Discord interaction
         query: Card name to search for
+        as_of: A date (YYYY-MM-DD): the card as it was at the end of that day, from its stored versions
     """
+    if as_of and as_of.strip():
+        _query_as_of(interaction, query, as_of)
+        return
+
     closest = card_repo._find_closest_match(query)
 
     if not closest:
         queue_message(interaction, "No card found!")
         return
+    _post_card(interaction, closest)
 
+
+def _post_card(interaction: Interaction, closest: str) -> None:
+    """The card's image (an embed when it has a website name, subseries, note or original) and any ambiguity."""
     url, page = card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
@@ -587,6 +601,147 @@ def query_name(interaction: Interaction, query: str) -> None:
     if closest in card_repo.ambiguous_names:
         ambiguous_options = "\n".join(card_repo.ambiguous_names[closest])
         queue_message(interaction, f"Ambiguous name found. If this wasn't the card you wanted, try:\n{ambiguous_options}")
+
+
+# ========================
+# /query as_of
+# ========================
+def parse_as_of(text: str, today: date) -> tuple:
+    """
+    An as_of date, read in TIMEZONE.
+
+    Args:
+        text: The date, YYYY-MM-DD
+        today: Today in TIMEZONE
+
+    Returns:
+        (the day, its end as epoch seconds, "") or (None, 0.0, why not)
+    """
+    found = AS_OF_PATTERN.match(text.strip())
+    try:
+        day = date(int(found.group(1)), int(found.group(2)), int(found.group(3))) if found else None
+    except ValueError:                                   # 2026-02-30, month 13...
+        day = None
+    if day is None:
+        return (None, 0.0, "That isn't a date: use YYYY-MM-DD, e.g. 2026-02-01.")
+    if day > today:
+        return (None, 0.0, f"{day.isoformat()} is in the future (today is {today.isoformat()}, {TIMEZONE.key}).")
+    return (day, datetime.combine(day + timedelta(days=1), dt_time(0), tzinfo=TIMEZONE).timestamp(), "")
+
+
+def version_at(versions: list, end: float) -> Optional[int]:
+    """Index of the latest version (oldest first) stamped before end; None when all are later."""
+    found = None
+    for i, card in enumerate(versions):
+        if (getattr(card, "timestamp", 0.0) or 0.0) < end:
+            found = i
+    return found
+
+
+def _day(stamp) -> str:
+    """A stamp's date in TIMEZONE."""
+    if not stamp or stamp < UNKNOWN_BEFORE:
+        return "an unknown date"
+    return datetime.fromtimestamp(stamp, TIMEZONE).date().isoformat()
+
+
+def _approx(card) -> str:
+    """Said of legacy versions (no blob): their dates can't be checked against git."""
+    known = (getattr(card, "timestamp", 0.0) or 0.0) >= UNKNOWN_BEFORE
+    return " (date approximate)" if known and not getattr(card, "blob_sha", None) else ""
+
+
+def _archived_text(tag: dict) -> str:
+    """'archived on <date> (PSD deleted in <commit>)'; 'by' for a backfill (deleted earlier)."""
+    commit = tag.get("commit")
+    deleted = f"PSD deleted in {commit[:7]}" if commit else "PSD deleted"
+    if tag.get("renamed_to"):
+        deleted += f", renamed to {tag['renamed_to']}"
+    return f"archived {'by' if tag.get('backfill') else 'on'} {_day(tag.get('at'))} ({deleted})"
+
+
+def _as_of_match(query: str) -> Optional[tuple]:
+    """(registry file name or None, card name) for query, archived cards included (their PNG may be gone)."""
+    from commands.psd_analyzer import card_name, stats_db
+    try:
+        archived = {card_repo._normalize_card_name(name): name for name in stats_db.archived()}
+    except RuntimeError:                                 # /update_stats writing meanwhile
+        archived = {}
+    key = card_repo._normalize_card_name(query)
+    if len(key) >= 200 or (key not in card_repo.git_files and key not in archived):
+        found = get_close_matches(key, card_repo.git_filenames + list(archived), n=1, cutoff=card_repo.match_ratio)
+        if not found:
+            return None
+        key = found[0]
+    if key in card_repo.git_files:
+        return (key, card_name(card_repo.git_files[key]))
+    return (None, archived[key])
+
+
+def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
+    """
+    /query as_of: the card at the end of that day in TIMEZONE. Its versions are old_stats (oldest first) then the
+    current card; each runs from its timestamp to the next one's, the last of an archived card to its archive.
+
+    Args:
+        interaction: Discord interaction
+        query: Card name to search for
+        as_of: The date, YYYY-MM-DD
+    """
+    from commands.psd_analyzer import _format_metadata, stats_db
+    day, end, why = parse_as_of(as_of, datetime.now(TIMEZONE).date())
+    if why:
+        queue_message(interaction, why)
+        return
+    found = _as_of_match(query)
+    if found is None:
+        queue_message(interaction, "No card found!")
+        return
+    key, name = found
+    label = f"**{name}**"
+    current = stats_db.stats.get(name)
+    if current is not None and getattr(current, "duplicate_of", None):     # a copy: its original's history
+        label = f"**{name}** (same card as {current.duplicate_of})"
+        name = current.duplicate_of
+        current = stats_db.stats.get(name)
+    versions = list(stats_db.old_stats.get(name) or [])
+    if current is not None:
+        versions.append(current)
+    if not versions:
+        queue_message(interaction, f"{label} has no stored card data.")
+        return
+
+    head = f"{label} as of {day.isoformat()} (end of day, {TIMEZONE.key}): "
+    index = version_at(versions, end)
+    if index is None:
+        first = versions[0]
+        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(first.timestamp)}"
+                                   f"{_approx(first)}.")
+        return
+    card = versions[index]
+    which = f"version {index + 1} of {len(versions)}"
+    since = f"from {_day(card.timestamp)}{_approx(card)}"
+    tag = None if current is not None else getattr(versions[len(versions) - 1], "archived", None)
+    if tag and end > (tag.get("at") or 0):
+        line = f"{head}{_archived_text(tag)}. Its last version ({which}), {since}:"
+    elif card is current:
+        line = f"{head}the current card ({which}), {since}."
+    else:
+        until = ""
+        if index + 1 < len(versions):
+            until = f" until {_day(versions[index + 1].timestamp)}"
+        elif tag:
+            until = f" until it was {_archived_text(tag)}"
+        line = f"{head}{which}, {since}{until}."
+    line = f"{line}\n{AS_OF_EDITS_NOTE}"
+
+    if card is current and key:                          # the current card: its image, as without as_of
+        queue_message(interaction, line)
+        _post_card(interaction, key)
+        return
+    page = card_repo.site_url(key) if key else None      # an older version: its stored data (no image of it is kept)
+    queue_message(interaction, f"{line}\n```{_format_metadata(card, name)}```",
+                  links=[("Card page", page)] if page else None)
 
 
 def query_ability(interaction: Interaction,
