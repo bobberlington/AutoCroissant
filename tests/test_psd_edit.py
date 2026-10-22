@@ -200,6 +200,19 @@ def test_normalize_ability_matches_the_parser():
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
+def test_keep_breaks_puts_back_the_layers_breaks():
+    """The website shows an ability's \x03 as a newline and a name's breaks as spaces: kept where the edit kept them."""
+    layer = "it. \x03(BOT) Die.\rAttacks pierce."
+    assert pe.keep_breaks(layer, "it. \r(BOT) Die. Inflict Poison.\rAttacks pierce.", "ability") == \
+        "it. \x03(BOT) Die. Inflict Poison.\rAttacks pierce."
+    assert pe.keep_breaks(layer, "it.\r(BOT) Die.\rNew.\rAttacks pierce.", "ability") == \
+        "it.\x03(BOT) Die.\rNew.\rAttacks pierce."                 # a new paragraph stays one
+    assert pe.keep_breaks("Die.\rLive.", "Die.\rLive.\rAgain.", "ability") == "Die.\rLive.\rAgain."
+    assert pe.keep_breaks("Unbreakable\x03strength", "Unbreakable Strength", "name") == "Unbreakable\x03Strength"
+    assert pe.keep_breaks("Mega\rBee", "Mega Bees", "name") == "Mega\rBees"
+    assert pe.keep_breaks("B.F.B", "B.F.B.", "name") == "B.F.B."
+
+
 def test_changed_range_is_the_engines():
     assert pe.changed_range("Inflict Poison.", "Inflict Poison for 2 turns.") == (14, 26)
     assert pe.changed_range("Inflict Poison.", "Inflict.") == (7, 7)                 # removal only
@@ -1007,6 +1020,10 @@ def test_gate_stories_refuses_changes_beyond_the_edit(clone):
     features["1"] = engine_data.Float(99.0)                     # the ability's font size, in its story alone
     with pytest.raises(pe.Refused, match=rf"stories \[{ability}\] changed: no edit there"):
         pe.gate_stories(old, new, {pe.story_index(pe.name_layer(new))})
+    with pytest.raises(pe.Refused, match="Ability's Txt2 story has other styles: FontSize at 0-72: layer 50.0, story 99.0"):
+        pe.gate_stories(old, new, {ability})                    # the layer's own size disagrees: Photoshop shows 99
+    pe.ability_layer(new).engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]["FontSize"] = \
+        engine_data.Float(99.0)
     assert pe.gate_stories(old, new, {ability}) == [ability]
     new = PSDImage.open(path)
     pe._txt2(new)["1"]["0"]["99"] = engine_data.Integer(1)      # DocumentSettings gains a key
@@ -1017,6 +1034,76 @@ def test_gate_stories_refuses_changes_beyond_the_edit(clone):
     del blocks[next(key for key in blocks.keys() if key != Tag.TEXT_ENGINE_DATA)]
     with pytest.raises(pe.Refused, match="document blocks changed"):
         pe.gate_stories(old, new, set())
+
+
+@text_edit
+def test_ability_edit_keeps_a_forced_line_break(clone, chart):
+    """Mini Doomer's "it. \x03(BOT) Die.": the website's newline there stays a soft break, its paragraph runs as they were."""
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    layer = pe.ability_layer(psd)
+    old = layer.text
+    assert "it. \x03(BOT) Die." in old
+    pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Inflict Poison.", str(clone / pe.FONTS_DIR), chart)
+    assert layer.text == old.rstrip() + " Inflict Poison."
+    runs = [int(n) for n in layer.engine_dict["ParagraphRun"]["RunLengthArray"]]
+    model = pe._story_list(pe._txt2(psd))[2][pe.story_index(layer)]["0"]
+    assert runs == [int(run["1"].value) for run in model["5"]["0"]] == [72, len(layer.text) + 1 - 72]
+    assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []
+
+
+@text_edit
+def test_icon_font_tokens_and_colour_glyphs(clone, chart):
+    """The_Hive is set in stoogedings: a typed [fire] takes the icon font in TySh and the story; its colour glyphs
+    would come out white with no overlay over the ability (Mini Doomer's gradient covers them), so it refuses."""
+    psd = PSDImage.open(_card(clone, "Field/4 Stars/The_Hive.psd")[0])
+    layer = pe.ability_layer(psd)
+    assert pe.uses_icon_font(layer) and pe.icon_font(layer) == "stoogedings-Regular"
+    assert not pe.uses_icon_font(pe.name_layer(psd)) and not pe._overlaid(layer)
+    assert pe._overlaid(pe.ability_layer(PSDImage.open(_card(clone, MINI_DOOMER)[0])))
+    text = pe.normalize_ability(layer.text) + " Deal 1 [fire] damage."
+    with pytest.raises(pe.Refused, match="colour glyphs") as refused:
+        pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
+    assert refused.value.code == "font"
+    start = layer.text.index("[fire]")
+    fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
+    style, unit = layer.engine_dict["StyleRun"], 0
+    for n, run in zip(style["RunLengthArray"], style["RunArray"]):
+        if unit <= start < unit + int(n):
+            assert fonts[int(run["StyleSheet"]["StyleSheetData"]["Font"])] == "stoogedings-Regular"
+            assert unit + int(n) == start + len("[fire]")
+        unit += int(n)
+    assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []     # the story's font is the same
+
+
+@text_edit
+def test_story_style_drift_catches_a_tysh_only_fill(clone, tmp_path):
+    """A fill written to TySh alone: Photoshop would show the story's colour. The bake refuses such a card."""
+    path, png = _card(clone, MINI_DOOMER)
+    psd = PSDImage.open(path)
+    assert pe.story_style_drift(psd) == []
+    data = pe.ability_layer(psd).engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]
+    data["FillColor"]["Values"][1] = engine_data.Float(0.0)
+    assert pe.story_style_drift(psd) == [("Ability", "FillColor at 0-72: layer [1.0, 0.0, 1.0, 1.0], story [1.0, 1.0, 1.0, 1.0]")]
+    with pytest.raises(pe.Refused, match="Ability's Txt2 story has other styles: FillColor"):
+        pe.gate_stories(PSDImage.open(path), psd, set())
+    drifted = tmp_path / "drifted.psd"
+    pe.save_psd(psd, str(drifted), update_preview=False)
+    with pytest.raises(pe.Refused, match="other styles") as refused:      # checked before any job or parse
+        pe.apply_jobs(str(drifted), png, MINI_DOOMER, {"hp": 8}, {}, None, str(tmp_path), str(clone / pe.FONTS_DIR))
+    assert refused.value.code == "unsupported-card"
+
+
+@text_edit
+def test_gate_stories_refuses_a_dropped_text_index(clone):
+    """A layer without its TextIndex leaves its story orphaned (a fork whose edits drop it): refused, not passed."""
+    path = _card(clone, MINI_DOOMER)[0]
+    old, new = PSDImage.open(path), PSDImage.open(path)
+    layer = pe.name_layer(new)
+    index = pe.story_index(layer)
+    del layer._data.text_data[b"TextIndex"]
+    with pytest.raises(pe.Refused, match="TextIndex") as refused:
+        pe.gate_stories(old, new, {index})
+    assert refused.value.code == "bytes" and str(index) in refused.value.why
 
 
 @text_edit

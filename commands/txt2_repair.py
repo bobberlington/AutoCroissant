@@ -4,9 +4,9 @@ layer's own TySh text but not its story in the document's Txt2 block, which is t
 and saving the card in Photoshop put the old text back (B.F.B. -> B.F.B). Per PSD, every type layer whose story lacks
 its TySh text gets the story rewritten to that text through the fork's TypeLayer.sync_story (text and run lengths; the
 story's styles stay, and Photoshop redoes its glyph layout), and nothing else changes: the PSD is saved without a new
-preview, then checked (every story holds its layer's text, only the repaired stories changed and the rest of Txt2 and
-the other document blocks are the old bytes: psd_edit.gate_stories; every layer record, the image resources and the
-stored composite are the old bytes too).
+preview, then checked (every story holds its layer's text and styles, only the repaired stories changed, the rest of
+Txt2 and the other document blocks are the old bytes: psd_edit.gate_stories; every layer record, the image resources
+and the stored composite are the old bytes too).
 
     python -m commands.txt2_repair <psd>... (--out DIR | --in-place | --check)
     repair(path, out_path) -> Repair; verify(old_path, new_path, stories) -> the changed stories

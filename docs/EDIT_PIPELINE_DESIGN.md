@@ -214,6 +214,12 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    every story holds its layer's text, only the edited layers' stories changed, the rest of Txt2 and every other
    document-wide block are the old bytes. A card that already has a stale story is refused `unsupported-card` until
    `python -m commands.txt2_repair` rewrites it; a fork without `TypeLayer.sync_story` edits no text (transient error).
+   The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
+   character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
+   that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
+   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). An edit on a layer
+   set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs the engine draws
+   in one colour, so the bake refuses `font` unless an opaque overlay effect covers the layer (Mini Doomer's gradient).
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields

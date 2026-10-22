@@ -10,6 +10,7 @@ module loads under stock psd-tools.
 from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from difflib import SequenceMatcher
 from inspect import signature
 from io import BytesIO
 from os.path import basename, getsize, join
@@ -23,11 +24,12 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from psd_tools import PSDImage
 from psd_tools.api.pil_io import post_process
-from psd_tools.constants import ColorMode, Resource, Tag
+from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, CardValidator, IconVocabulary, PSDParser, title_text
+from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, IconVocabulary,
+                                 PSDParser, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import FONT_ALIASES
 
@@ -61,6 +63,15 @@ ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels
                          "overlay": {"flags"}}  # what an edit may change per record (overlay: a hidden hand-made word layer)
 STORY_KEYS = (("1", "1", "0", "0"), ("DocumentObjects", "TextObjects", "Model", "Text"))   # Txt2's stories and their
 #   text: Photoshop CC numbers the keys, older versions name them
+STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run's features, the FontSet, a paint's values
+    {"runs": ("6", "0"), "data": "0", "length": "1", "features": ("0", "6"), "fonts": ("0", "1", "0"),
+     "font": ("0", "0", "0"), "paint": ("0", "1")},
+    {"runs": ("StyleRun", "RunArray"), "data": "RunData", "length": "Length", "features": ("StyleSheet", "Features"),
+     "fonts": ("DocumentResources", "FontSet", "Resources"), "font": ("Resource", "Identifier", "Name"),
+     "paint": ("Color", "Values")})
+STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoLeading": 4, "Leading": 5,
+                "HorizontalScale": 6, "VerticalScale": 7, "Tracking": 8, "BaselineShift": 9, "FillColor": 53,
+                "StrokeColor": 54}   # TySh StyleSheetData keys a story run holds too, with Photoshop CC's feature number
 
 
 # ========================
@@ -134,6 +145,7 @@ class Edit:
     hidden: list = field(default_factory=list)  # record indices of the overlay word layers an ability edit hid
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above Text, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted first (derived state: all of the text layer's)
+    story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
 
 
 @dataclass
@@ -344,12 +356,12 @@ def _txt2(psd: PSDImage):
 
 
 def _story_list(root) -> tuple:
-    """(Txt2 DocumentObjects, its TextObjects key, the stories, the Model and Text keys) in either spelling."""
-    for objects_key, items_key, model, text in STORY_KEYS:
+    """(Txt2 DocumentObjects, its TextObjects key, the stories, the Model and Text keys, STORY_KEYS index)."""
+    for spelling, (objects_key, items_key, model, text) in enumerate(STORY_KEYS):
         objects = root.get(objects_key)
         items = objects.get(items_key) if hasattr(objects, "get") else None
         if items is not None:
-            return objects, items_key, items, model, text
+            return objects, items_key, items, model, text, spelling
     raise Refused("unsupported-card", "a Txt2 block without text objects")
 
 
@@ -363,7 +375,7 @@ def stories(psd: PSDImage) -> Optional[list]:
     root = _txt2(psd)
     if root is None:
         return None
-    _, _, items, model, text = _story_list(root)
+    _, _, items, model, text, _ = _story_list(root)
     return [str(story[model][text].value) for story in items]
 
 
@@ -390,6 +402,84 @@ def stale_stories(psd: PSDImage) -> list:
     return out
 
 
+def _dig(node, path):
+    for key in path:
+        node = node[key]
+    return node
+
+
+def _plain(value, fonts: list):
+    """A style value comparable across TySh and Txt2: a font's name, a paint's ARGB, a rounded number."""
+    if fonts is not None:
+        return fonts[int(value)]
+    value = getattr(value, "value", value)
+    return round(float(value), 4) if isinstance(value, (int, float)) and not isinstance(value, bool) else value
+
+
+def _style_spans(runs: list) -> list:
+    """[(unit start, unit end, features)] from (length, features) runs."""
+    out, unit = [], 0
+    for length, features in runs:
+        out.append((unit, unit + length, features))
+        unit += length
+    return out
+
+
+def story_style_drift(psd: PSDImage) -> list:
+    """
+    (layer name, why) per type layer whose Txt2 story holds its text but other styles: per character, each
+    STORY_MIRROR key both hold must agree (a font by name, a color by its values). Photoshop would show the story's
+    styles, so a fill written to TySh alone would silently go back. Keys a story run leaves out (inherited) are skipped.
+    """
+    root = _txt2(psd)
+    if root is None:
+        return []
+    _, _, items, model_key, text_key, spelling = _story_list(root)
+    keys = STORY_STYLE_KEYS[spelling]
+    story_fonts = [str(_dig(font, keys["font"]).value) for font in _dig(root, keys["fonts"])]
+    out = []
+    for layer in psd.descendants():
+        index = story_index(layer) if _is_text_layer(layer) else None
+        if index is None or not 0 <= index < len(items):
+            continue
+        model = items[index][model_key]
+        if str(model[text_key].value) != str(layer.engine_dict["Editor"]["Text"].value):
+            continue                            # stale_stories' to report
+        style = layer.engine_dict["StyleRun"]
+        tysh = _style_spans([(int(n), run["StyleSheet"]["StyleSheetData"])
+                             for n, run in zip(style["RunLengthArray"], style["RunArray"])])
+        story = _style_spans([(int(run[keys["length"]].value), _dig(run[keys["data"]], keys["features"]))
+                              for run in _dig(model, keys["runs"])])
+        tysh_fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
+        cuts = sorted({u for a, b, _ in tysh + story for u in (a, b)})
+        why = None
+        for a, b in zip(cuts, cuts[1:]):
+            mine = next((f for u0, u1, f in tysh if u0 <= a < u1), None)
+            theirs = next((f for u0, u1, f in story if u0 <= a < u1), None)
+            if mine is None or theirs is None:
+                why = f"style runs end at {tysh[-1][1]} and {story[-1][1]}"
+                break
+            for name, number in STORY_MIRROR.items():
+                feature = name if spelling else str(number)
+                if name not in mine or feature not in theirs:
+                    continue
+                left, right = mine[name], theirs[feature]
+                if name.endswith("Color"):
+                    left, right = ([_plain(v, None) for v in _dig(x, path)] for x, path in
+                                   ((left, ("Values",)), (right, keys["paint"])))
+                else:
+                    left = _plain(left, tysh_fonts if name == "Font" else None)
+                    right = _plain(right, story_fonts if name == "Font" else None)
+                if left != right:
+                    why = f"{name} at {a}-{b}: layer {left!r}, story {right!r}"
+                    break
+            if why:
+                break
+        if why:
+            out.append((layer.name, why))
+    return out
+
+
 def ability_layer(psd: PSDImage):
     """
     The single visible Ability text layer directly under Text.
@@ -407,17 +497,34 @@ def ability_layer(psd: PSDImage):
     return layer
 
 
-def uses_icon_font(layer) -> bool:
-    """Whether any run of the text layer is set in the stoogedings icon font."""
+def icon_font(layer) -> Optional[str]:
+    """The PostScript name of the stoogedings icon font a run of the text layer is set in, or None."""
     try:
         fonts = layer.resource_dict["FontSet"]
         for run in layer.engine_dict["StyleRun"]["RunArray"]:
-            name = str(fonts[int(run["StyleSheet"]["StyleSheetData"]["Font"])]["Name"])
-            if name.lower().startswith("stoogedings"):
-                return True
-    except (KeyError, IndexError, TypeError, ValueError):
+            name = str(fonts[int(run["StyleSheet"]["StyleSheetData"]["Font"])]["Name"].value)   # str() of the String: quoted
+            if name.lower().startswith(ICON_FONT_PREFIX):
+                return name
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
         pass
-    return False
+    return None
+
+
+def _overlaid(layer) -> bool:
+    """
+    Whether an opaque Normal overlay effect paints over the layer's own colours (Mini Doomer's gradient, its badges
+    on FX layers above): then the engine's one-colour icon glyphs look like Photoshop's colour ones under it.
+    """
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
+    effects = layer.effects
+    return bool(effects.enabled) and any(
+        isinstance(effect, (ColorOverlay, GradientOverlay, PatternOverlay)) and effect.enabled
+        and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL for effect in effects)
+
+
+def uses_icon_font(layer) -> bool:
+    """Whether any run of the text layer is set in the stoogedings icon font."""
+    return icon_font(layer) is not None
 
 
 def run_fills(layer) -> list:
@@ -519,6 +626,32 @@ def changed_range(old: str, new: str) -> tuple:
     while suffix < min(len(old), len(new)) - prefix and old[len(old) - 1 - suffix] == new[len(new) - 1 - suffix]:
         suffix += 1
     return prefix, len(new) - suffix
+
+
+def keep_breaks(old: str, new: str, which: str) -> str:
+    """
+    The new text with the layer's own breaks back where the edit kept them: the website shows an ability's forced line
+    break (\\x03) as a newline and a name's breaks as spaces, so setting its text as given would turn a soft break
+    into a paragraph (Mini Doomer's "it. \\x03(BOT) Die.") or a two-line title into one line.
+
+    Args:
+        old: The layer's text
+        new: The text to set, ability breaks as \\r
+        which: "name" or "ability"
+
+    Returns:
+        new, each \\r (ability) or space (name) the diff pairs with an old break of those kinds made that break
+    """
+    kinds, shown = ("\r\x03", " ") if which == "name" else ("\x03", "\r")
+    if not any(c in old for c in kinds):
+        return new
+    seen = "".join(shown if c in kinds else c for c in old)
+    out = list(new)
+    for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
+        for i in range(size):
+            if old[a + i] in kinds:
+                out[b + i] = old[a + i]
+    return "".join(out)
 
 
 def _word_bounds(text: str, start: int, end: int) -> tuple:
@@ -930,13 +1063,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     Args:
         psd: The open card (edited in place)
         which: "name" (Text/Name) or "ability" (the single visible Text/Ability)
-        text: The new text; newlines become paragraph breaks
+        text: The new text; newlines become paragraph breaks but where the layer had a forced line break (keep_breaks)
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font, overflow; ImportError
-        when the fork edits TySh alone (no story_sync: Photoshop would show the Txt2 story's old text)
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also colour glyphs),
+        overflow; ImportError when the fork edits TySh alone (no story_sync: Photoshop would show the story's old text)
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
     word would inherit its color: the edited words are reset to the body fill, then every status word in the text
@@ -952,8 +1085,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
     layer = name_layer(psd) if which == "name" else ability_layer(psd)
+    old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
-    old_text, old_bbox = layer.text, tuple(layer.bbox)
+    text = keep_breaks(old_text, text, which)
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
@@ -961,9 +1095,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if which == "name":     # point text has no box: the title must stay on the canvas and off the badges it clears today
         stars, icons, _ = badge_layers(psd)
         badges = [badge for badge in stars + icons if not _touches(layer, badge)]
+    tokens = []
     if which == "ability":
-        if TOKEN.search(text) and not uses_icon_font(layer):
+        icons = icon_font(layer)
+        if TOKEN.search(text) and icons is None:
             raise Refused("unsupported-card", "[type] tokens on a card with image icons")
+        # a token the edit typed takes the run before it: set it in the icon font, as the old ones are
+        tokens = [match.span() for match in TOKEN.finditer(text) if match.start() < end and match.end() > start]
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)
         if not chart:
             if old_fx or overlays:
@@ -984,6 +1122,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer.set_span_style(start, end, fill=body)
     for span_start, span_end, color in spans:
         layer.set_span_style(span_start, span_end, fill=color.fill)
+    for token_start, token_end in tokens:
+        layer.set_span_style(token_start, token_end, Font=icons)
     fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
     try:
         report = layer.rasterize(fonts=fonts)
@@ -994,6 +1134,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         raise Refused("font", f"not resolved exactly: {', '.join(loose)}")
     if "overflow" in report.warnings:
         raise Refused("overflow", f"{which} does not fit")
+    if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # stoogedings' icons are SVG colour glyphs
+        raise Refused("font", f"{which}: colour glyphs (the icon font) would be drawn in one colour")
     bbox = tuple(layer.bbox)
     if clip(bbox, psd.width, psd.height) != bbox:
         raise Refused("overflow", f"{which} runs off the canvas")
@@ -1008,7 +1150,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     made = _regenerate_fx(psd, layer, text, styled, fonts, engine) if styled else []
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in made]
     region = union_box([_pad(box, pad, psd) for box, pad in reach])
-    return Edit(which, old_text, text, [layer], [_record_index(layer)], region,
+    return Edit(which, old_text, text, [layer], [_record_index(layer)], region, story=story,
                 hidden=[_record_index(overlay) for overlay in hide],
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
@@ -1319,13 +1461,13 @@ def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
-    layer's story holds its layer's text, only the edited layers' stories changed, and the rest of Txt2 and every
-    other document-wide block are the old bytes.
+    layer keeps its TextIndex and its story holds its layer's text and styles (story_style_drift), only the edited
+    layers' stories changed, and the rest of Txt2 and every other document-wide block are the old bytes.
 
     Args:
         old: The card as opened
         new: The saved card, reopened
-        edited: TextIndex of each layer whose story may change
+        edited: TextIndex of each layer whose story may change (taken before the edit)
 
     Returns:
         The changed stories' indices, sorted; raises Refused("bytes")
@@ -1342,7 +1484,11 @@ def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
         raise Refused("bytes", f"{name}'s Txt2 story holds {collapse(story)!r}, the layer {collapse(own)!r}")
     if txt2 not in before:
         return []
-    (objects_a, _, items_a, _, _), (objects_b, _, items_b, _, _) = _story_list(_txt2(old)), _story_list(_txt2(new))
+    indices = [sorted(story_index(layer) for layer in psd.descendants() if _is_text_layer(layer)
+                      and story_index(layer) is not None) for psd in (old, new)]
+    if indices[0] != indices[1]:                # a layer without one is orphaned from the story Photoshop would read
+        raise Refused("bytes", f"type layers' TextIndex {indices[0]} -> {indices[1]}")
+    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(_txt2(old)), _story_list(_txt2(new))
     if len(items_a) != len(items_b):
         raise Refused("bytes", f"Txt2 stories {len(items_a)} -> {len(items_b)}")
     changed = [i for i, (a, b) in enumerate(zip(items_a, items_b)) if _raw(a) != _raw(b)]
@@ -1354,6 +1500,9 @@ def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
             for root, objects, items in ((_txt2(old), objects_a, items_a), (_txt2(new), objects_b, items_b))]
     if rest[0] != rest[1]:
         raise Refused("bytes", "Txt2 changed outside its stories")
+    drift = story_style_drift(new)
+    if drift:
+        raise Refused("bytes", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
     return changed
 
 
@@ -1535,6 +1684,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     stale = stale_stories(new)
     if stale:                                   # a pre-fix bake's PSD: Photoshop already shows the old text
         raise Refused("unsupported-card", f"{stale[0][0]}'s Txt2 story is stale: run commands.txt2_repair on it")
+    drift = story_style_drift(new)
+    if drift:                                   # Photoshop shows the story's styles, not the layer's
+        raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
 
     edits = []                                  # text first: an ability's FX records shift the digits' record indices
     for name, value in sorted(jobs.items(), key=lambda job: job[0] in STAT_FIELDS):
@@ -1580,7 +1732,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     start = perf_counter()
     reopened = PSDImage.open(new_psd)
-    gate_stories(old, reopened, {story_index(edit.layers[0]) for edit in edits if edit.field in TEXT_FIELDS})
+    gate_stories(old, reopened, {edit.story for edit in edits if edit.field in TEXT_FIELDS})
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
@@ -1606,6 +1758,8 @@ __all__ = [
     'Refused',
     'STATUS_CHART',
     'STORY_KEYS',
+    'STORY_MIRROR',
+    'STORY_STYLE_KEYS',
     'STAT_FIELDS',
     'STAT_MAX',
     'StatusColor',
@@ -1629,6 +1783,8 @@ __all__ = [
     'gate_shape',
     'gate_size',
     'gate_stories',
+    'icon_font',
+    'keep_breaks',
     'layer_records',
     'merge_png',
     'merge_preview',
@@ -1653,6 +1809,7 @@ __all__ = [
     'stored_preview',
     'stories',
     'story_index',
+    'story_style_drift',
     'story_sync',
     'template_row',
     'template_rows',
