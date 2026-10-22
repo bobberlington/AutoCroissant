@@ -52,8 +52,9 @@ class RepositoryTraverser:
         self._lookups: dict = {}                 # repo path -> Future of its commit page
         self.edits: Optional[CardEdits] = None
         self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
-        self.failed = 0                          # failed downloads: the tree ETag is not kept, so the next run retries
+        self.failed = 0                          # failed downloads and PSDs: the tree ETag is not kept, so the next run retries
         self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
+        self.unreadable: list = []               # PSDs that raised while read: {path, blob, error}; their cards keep their data
         self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
         self.repository = ""
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
@@ -201,8 +202,7 @@ class RepositoryTraverser:
         self._update_old_stats_paths()
         if self.failed:                                 # no 304 next time: the failed files are fetched again
             _forget_tree(repository)
-            say(interaction, f"Could not download {self.failed} file{'' if self.failed == 1 else 's'} from the card repo; "
-                             "the next /update_stats tries again.")
+            self._send_failures(interaction)
         elif self.font_index is None and psd_details.tree_fonts(self.shas):
             _forget_tree(repository)                    # no fonts: the supplied flags are tried again next run
         else:
@@ -397,6 +397,9 @@ class RepositoryTraverser:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
                     card = self.parser.parse(local_file, path)
                     self._gather_details(local_file, path, name, sha)
+                except Exception as e:                          # one bad PSD: its card keeps its data, the run goes on
+                    self._unreadable(path, name, sha, e)
+                    continue
                 finally:
                     remove(local_file)
                 old = self.db.stats.get(name)
@@ -466,6 +469,13 @@ class RepositoryTraverser:
             if renamed:
                 tag["renamed_to"] = renamed
 
+    def _unreadable(self, path: str, name: str, sha: str, error: Exception) -> None:
+        """Count a PSD that raised as failed (a new name holds the prune, like a failed download); one console line."""
+        print(f"{path}: not read ({error}); its card keeps its last version")
+        self.failed += 1
+        self.failed_new += name not in self.db.stats or name in self.restored
+        self.unreadable.append({"path": path, "blob": sha, "error": str(error)[:300]})
+
     def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
         """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
         try:
@@ -510,6 +520,19 @@ class RepositoryTraverser:
             queue_edit(interaction, content=message)
         else:
             print(message)
+
+    def _send_failures(self, interaction: Optional[Interaction]) -> None:
+        """The failed downloads, then the PSDs that could not be read (by path)."""
+        unread = len(self.unreadable)
+        downloads = self.failed - unread
+        if downloads:
+            say(interaction, f"Could not download {downloads} file{'' if downloads == 1 else 's'} from the card repo; "
+                             "the next /update_stats tries again.")
+        if unread:
+            say(interaction, f"Could not read {unread} PSD{'' if unread == 1 else 's'} from the card repo ("
+                             + ", ".join(u["path"] for u in self.unreadable) + "); "
+                             + ("its card keeps its" if unread == 1 else "their cards keep their")
+                             + " last version and the next /update_stats tries again.")
 
     @staticmethod
     def _send_summary(interaction: Optional[Interaction],
@@ -626,6 +649,7 @@ def _update_stats(interaction: Optional[Interaction],
     if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
         keep = set(traverser.shas.values()) | {c.archived["blob"] for c in stats_db.archived().values() if c.archived.get("blob")}
+        keep |= {c.blob_sha for c in stats_db.stats.values() if getattr(c, "blob_sha", None)}   # a failed PSD's card keeps its record
         pruned = 0 if traverser.tree.get("truncated") else psd_details.prune(traverser.details, keep)
         if pruned or traverser.details_changed or refilled:
             psd_details.save(traverser.details)
