@@ -156,6 +156,25 @@ def test_pin_links_reports_pinned_and_repinned(repo):
     assert tts._commit_message(report) == "TTS save: 2 links pinned"
 
 
+def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
+    """A changed save gets <stem>.message.txt, _commit_message's line, for tts-save.yml's commit (UPD-2)."""
+    names = Names()
+    names.source, names.site = "test", {}
+    monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None: names)
+    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
+    path = tmp_path / "save.json"
+    path.write_text(tts._dump(save), encoding="utf-8")
+    text, report = tts._update(str(path))
+    message = tmp_path / "save.message.txt"
+    assert report.changed and message.read_text(encoding="utf-8") == tts._commit_message(report) + "\n"
+    assert tts._commit_message(report) == "TTS save: 12 links pinned, 2 cards added, 1 card removed"
+    assert (tmp_path / "save.report.md").read_text(encoding="utf-8") == text
+    message.unlink()
+    _, again = tts._update(str(path))
+    assert not again.changed and not message.exists()                    # nothing changed: no subject
+
+
 def test_fix_keys(repo):
     shown = {"FaceURL": f"{RAW}main/{tts._encode(A)}"}
     own = {"FaceURL": f"{RAW}main/{tts._encode(B)}"}

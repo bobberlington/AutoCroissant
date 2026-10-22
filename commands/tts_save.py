@@ -9,7 +9,8 @@ Pins every repo image link to the commit that last changed the file, follows ren
 their rules (TTS/decks.json: missing repo cards added, cards outside the rule removed; a rule matching nothing leaves
 its deck alone), sets card Nicknames to the
 card browser's names, clears role tags, regenerates the Lua resizeTargets table. When something changed it writes
-<stem>.<time>.bak.json and <stem>.report.md next to the save. The shas in the links are the only state.
+<stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt (the commit subject) next to the save. The shas in the
+links are the only state.
 The bot updates a temp copy of main's save and commits it with git_commit (the GitHub API; when the token can't write:
 git objects in the history clone, pushed over SSH); it never writes a checkout.
 """
@@ -653,6 +654,20 @@ def _render(report: _Report, head: list) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _commit_message(report: _Report) -> str:
+    """'TTS save: 812 links pinned, 3 cards added', from the report."""
+    links = sum(n for _, _, n in report.pinned.values()) + sum(n for _, _, n in report.repinned.values())
+    added = sum(len(cards) for _, cards in report.added)
+    removed = sum(len(cards) for _, cards in report.removed)
+    names = sum(report.names_real.values()) + sum(report.names_case.values())
+    parts = [f"{_plural(links, 'link')} pinned" if links else "",
+             f"{_plural(added, 'card')} added" if added else "",
+             f"{_plural(removed, 'card')} removed" if removed else "",
+             f"{_plural(len(report.renamed), 'rename')} followed" if report.renamed else "",
+             f"{_plural(names, 'Nickname')} fixed" if names else ""]
+    return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
+
+
 def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, edits: Optional[tuple] = None) -> tuple:
     """update_save, also returning the _Report. rules: see _load_rules; extras: write the backup and report files;
     edits: see _Names."""
@@ -697,26 +712,14 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
     if report.changed and extras:
         with open(f"{stem}.report.md", "w", encoding="utf-8") as f:
             f.write(text)
+        with open(f"{stem}.message.txt", "w", encoding="utf-8") as f:     # tts-save.yml's commit subject
+            f.write(_commit_message(report) + "\n")
     return text, report
 
 
 # ========================
 # Bot Flow
 # ========================
-def _commit_message(report: _Report) -> str:
-    """'TTS save: 812 links pinned, 3 cards added', from the report."""
-    links = sum(n for _, _, n in report.pinned.values()) + sum(n for _, _, n in report.repinned.values())
-    added = sum(len(cards) for _, cards in report.added)
-    removed = sum(len(cards) for _, cards in report.removed)
-    names = sum(report.names_real.values()) + sum(report.names_case.values())
-    parts = [f"{_plural(links, 'link')} pinned" if links else "",
-             f"{_plural(added, 'card')} added" if added else "",
-             f"{_plural(removed, 'card')} removed" if removed else "",
-             f"{_plural(len(report.renamed), 'rename')} followed" if report.renamed else "",
-             f"{_plural(names, 'Nickname')} fixed" if names else ""]
-    return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
-
-
 def _api(method: str, path: str, **kwargs):
     """git_commit.api on the card repo (raw: a blob's bytes; check: raise on an error status)."""
     return git_commit.api(CARD_REPO, method, path, **kwargs)
@@ -796,7 +799,7 @@ def _post(interaction, text: str, sha: Optional[str]) -> None:
 # ========================
 def update_save(save_path: str) -> str:
     """
-    Update a TTS save in place and return the report. When it changed: backup and report beside it.
+    Update a TTS save in place and return the report. When it changed: backup, report and commit subject beside it.
 
     Args:
         save_path: The save's JSON file
