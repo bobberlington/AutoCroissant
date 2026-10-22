@@ -47,7 +47,7 @@ M, H, X, T, G, V, S.
 | C4 | C | (19_Status_Effects) vs (09_TakingYourTurn) | status DMG/heal "procs at (ENDT)" vs phase 4 "Status Effects deal damage/heal, duration ticks down by 1", after phase 3's (ENDT) |
 | C5 | C+H | (12_Reactions2) hidden vs (12_Reactions3) | hidden older draft resolves 4>2>1>3 ("Attacks also resolve forward"); the visible rule is 4>2>3>1 |
 | C6 | C+H | (22_Negation) hidden | older ITEMS block: "returns to the hand", "Equip and active items" (no Deploy), "are still expended" |
-| U1 | U | 44 cards | tags defined nowhere: (1GCD) 22, (2CD) 14, (1CD) 13, (2U) 6, (2GCD) 2, (3U) 1, (4U) 1 = 59 occurrences on 44 distinct cards; plus "(1/2CD)" on Chris & Jordi. (02_Abbreviations) defines 16 patterns; all 16 are used on cards; the website renders the 7 as plain text. 2026-10-21: waits for the team's timing-system update (§8 question 1) |
+| U1 | U | (02_Abbreviations), (11_Abilities2), (11_Abilities4), (22_Negation) | 2026-10-21: the tags defined nowhere (1GCD, 2CD, 1CD, 2U, 2GCD, 3U, 4U, (1/2CD)) are now the shipped system on the cards: the team's cooldown update (TTSCardMaker df02b3b "cooldowns (2)" .. 7cb4c86 "cooldowns (5)", 178 card PSDs + PNGs) moved every card to (nCD), (a/bCD), (nGCD), (a/bGCD), (nU) (218 PSDs; mapping and counts in the rules skill §3; badges in ttscardmaker-companion §1.2). **Open (2026-10-21):** rulebook pages 02_Abbreviations, 11_Abilities2, 11_Abilities4, 22_Negation still show the old tags: the team updates them. Old tags left there: 02 (XPT) (XPGT) (EXT) (FTEXT) (EXGT); 11_Abilities2 (XPT) (1PT) (XPGT) (2PGT); 11_Abilities4 (EXT) (FTEXT) (E2T) (FTE2T) (E2GT); 22 (E2T). Until then no page defines the new tags. Before the update (2026-10-20): 59 occurrences of the 7 tags on 44 distinct cards plus "(1/2CD)" on Chris & Jordi; (02_Abbreviations) defines 16 patterns, all then used on cards |
 | U2 | U | pages | "prime creature" (15_Minions, 16_The_Field2, 18_Field_Cards), "tier" (11_Abilities), "proc"/"instance" (19_Status_Effects), "on-hit" (10_Attacking, 22_Negation; "on hit" 12_Reactions4), "innate actions" (11_Abilities7), "cleanse" (Hexed card), "N.M.E." (05_Shops), the "Don't be stupid" rule (01_Getting_Started) |
 | M1 | M | (19_Status_Effects), (19_Status_Effects2) vs cards | "Smouldering" 5 times on pages (+1 lowercase on 19) vs the card "Smoldering" (20_Creature_Types spells it the card's way); "Regeneration" (19) vs the card "Regen" |
 | M2 | M | pages vs 64 status effect cards | the pages name 19 of 64 status effects (case-sensitive whole word; SKILL.md Known gaps says "~22", stale, P1 refreshes it) and define none; the cards are the only definitions |
@@ -65,7 +65,7 @@ M, H, X, T, G, V, S.
 | S1 | S | see SKILL.md Known gaps "Silent" | lane tie by star level (08); combo damage on sneak attacks and ability DMG, "25% +1" rounding (10); "one ACTION" (09) vs "2 innate actions" (11_Abilities7) and Inspired; creatures in hand and winning (01, 15); hand limits, summoning beyond refilling a slot (16); starting BRICKS; unspent star points; "5+ star" vs decks ending at 5★ (22); COUNTER item type (14) vs damage type (21); the Auxiliary/Creatures cards. Outside that list: reacting to (OFS)/(OS)/(OD) abilities ("nothing is stated", SKILL.md §3); Constructed's shop pool (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` Layer 1) |
 
 **Numbers measured today** (commands in §9): 604 tag occurrences of 35 distinct tags in 351 of 767 cards; 7 distinct
-undefined tags, 59 occurrences, 44 cards; 0 defined-but-unused tag patterns; 0 status effect defined twice; 19 of 64
+undefined tags, 59 occurrences, 44 cards (2026-10-21: now the cards' new system, U1); 0 defined-but-unused tag patterns; 0 status effect defined twice; 19 of 64
 status effects named on pages; 10 named by no other card; 2 spelling drifts (Smouldering, Regeneration); 6 hidden
 text layers on 4 pages; 1 off-canvas and 3 overflow texts (rulebook.md markers); 6 pages with icons after the page number.
 
@@ -96,7 +96,7 @@ hand runs: to confirm. Offline, read-only, prints a report and exits 1 on anythi
 4. **Page hygiene** (needs psd-tools): hidden and off-canvas text layers; text past its box (overflow) when psd-tools
    exposes it, else the rulebook.md marker list; icons after the page number; 3+ space runs (today only 00_Table_of_Contents).
 5. **Spelling** over pages and cards with a word list seeded from the glossary and card names; findings are T rows.
-**You have a result when** one command reproduces today's numbers (§3 last paragraph) and lists the same 44 cards.
+**You have a result when** one command reproduces today's numbers (§3 last paragraph) and lists the same 44 cards (2026-10-20 inputs; on today's cards U1's tags are the new system on 218 PSDs).
 
 ### P2. Decision log (user decides; an agent only drafts rows)
 
@@ -115,11 +115,11 @@ page; S rows may stay open (the simulator leaves them "by hand", `docs/Campaigns
   `python scripts/build_rulebook.py` (no `-I`, it imports `notes.py`) and re-check Known gaps.
 - **Pages, later:** a text-first rulebook (the user's idea; `docs/NEXT_SESSION_PLAN.md` item 15) or Task 3's
   psd-tools text edits make a page fix a text edit; the checker is unchanged.
-- **Cards:** U1 is one decision with two outcomes: define (XCD), (XGCD), (XU) on (02_Abbreviations) and add them to
-  `badge_tags()`/`tagInfo()` (the Old Rules' "(CD)" meant counter damage, now CDMG: say so on the page), or rewrite the
-  44 cards onto existing tags. Card text edits go through the edit pipeline (PSD + database edit in `site/Card
-  Edits.json`, `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise. 2026-10-21: U1 waits
-  for the team's timing-system update (§8 question 1).
+- **Cards:** U1 needs no card edit any more: on 2026-10-21 the team moved every card to the new tags, and the badges
+  follow in `badge_tags()`/`tagInfo()`. What is left is pages: the team updates 02_Abbreviations, 11_Abilities2,
+  11_Abilities4 and 22_Negation to the new tags (the Old Rules' "(CD)" meant counter damage, now CDMG: say so on the
+  page). Card text edits go through the edit pipeline (PSD + database edit in `site/Card Edits.json`,
+  `docs/NEXT_SESSION_PLAN.md` "Two kinds of card edits"); today Photoshop. T1 and G1 likewise.
 - **Parser:** skip hidden text layers on rule pages (`psd_parser.py:560-584`; change-control, goldens, a sandboxed
   sweep). Predicted effect: the texts of 09, 11, 12.2 and 22 shrink, 4 rulebook entries change in stats.pkl, 0 cards.
   Not a substitute for deleting the layers. X1-X3 slips are the extraction campaign's (gap vs icon order, star glyphs).
@@ -153,7 +153,7 @@ a decision-log row and none is decided in code.
 
 ## 5. Order and gates
 
-P0 -> P1 -> P2 (seeded) -> P3 pages (C1-C6, H1-H2, V1) -> P3 cards (U1, T1, G1) -> P3 parser -> P4 -> P5 -> P6.
+P0 -> P1 -> P2 (seeded) -> P3 pages (C1-C6, H1-H2, V1, U1) -> P3 cards (T1, G1) -> P3 parser -> P4 -> P5 -> P6.
 Gates (take the branch, do not rationalize): **G1** P1 reproduces §3's numbers, else fix the checker before any log
 row. **G2** every C/U row decided before its page is edited. **G3** after each page fix, once `/update_stats`, `/push` and a `site.yml` run have
 landed it, the checker's count for that page drops and no other page changes (diff rules.json before/after; right
@@ -162,7 +162,7 @@ has been green on a real push once. **G5** P5 findings never bypass P2.
 
 ## 6. You have a result when
 
-Zero undefined tags on cards (today 59 on 44); every status effect defined exactly once and every page spelling equal
+Every tag on the cards defined on a page (2026-10-20: 59 undefined on 44 cards; 2026-10-21: all cards on the new system, which no page defines yet, U1); every status effect defined exactly once and every page spelling equal
 to its card (today 2 drifts); every C row has a decision and the page shows it; zero hidden, off-canvas or overflow
 text in rules.json (today 6 + 1 + 3); the checker passes on push to TTSCardMaker main; `/query_rulebook` returns only
 text a player can see.
@@ -174,7 +174,8 @@ text a player can see.
   `site.yml` rebuilds rules.json from stats.pkl.
 - Hiding a layer instead of deleting it: hidden text is parsed today (`psd_parser.py:560`); H1 exists because of this.
 - Case-insensitive status matching: "empty slot" (16_The_Field) is not the debuff Empty; 20 vs 19 names.
-- Giving (XCD)/(XGCD)/(XU) meanings in `badge_tags()` or the skill before (02_Abbreviations) defines them.
+- Giving the new tags meanings beyond their letters (cooldown, global cooldown, uses) in `badge_tags()`/`tagInfo()` or the skill
+  before the pages define them (2026-10-21: badges and letter-only tooltips for the shipped cards, the old tags kept).
 - Reading effects out of ability text with regexes as if text were a schema (`docs/Campaigns/SIMULATOR_CAMPAIGN.md` Known wrong paths;
   the 2026-02-08 whitespace saga). The checker counts words; it does not interpret them.
 - `MDW/Old Rules/` as a source for a decision: history only (C1 came from there).
@@ -188,6 +189,8 @@ text a player can see.
 1. U1: define the three tags or rewrite the 44 cards? If defined, is CD "turns of this creature" and GCD "global turns"?
    2026-10-21 (the user): neither yet. The team is preparing a large timing-system update away from the old tags; U1 waits for it, and
    nothing defines or rewrites a tag before it ships (then the stoogedings badges and the rules skill follow).
+   2026-10-21: shipped on the cards (TTSCardMaker df02b3b..7cb4c86); the badges (font, website) and the rules skill follow the same day. Left: the
+   pages 02_Abbreviations, 11_Abilities2, 11_Abilities4, 22_Negation still show the old tags: the team updates them (U1).
 2. V1: delete the stray text box on (16_The_Field), or is it a deliberate joke the printed page keeps?
 3. M1: "Smouldering" or "Smoldering"? The card file name follows the choice (rename = card edit).
 4. C4: do status effects tick in phase 3 with (ENDT) effects or in phase 4? 09 and 19 need one answer.

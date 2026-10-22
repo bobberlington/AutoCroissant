@@ -238,6 +238,7 @@ a regression):
 - **The Freezer** → type=field, stars=1, types=['field'], problems NONE, ability
   character-for-character:
   `For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`
+  (Note: the PSD reads `(1GCD)` since 2026-10-21 (cooldown update, impossibility-simulator-rules §3); stats.pkl keeps `(1PGT)` until the next `/update_stats`, after which this golden's line reads `(1GCD) Choose …`.)
 - **The Lich King** → ability's last line `Minions inherit [undead].` (full trace in Phase 2).
 
 Any `False` → the parser in your working tree no longer reproduces the database. Either you changed

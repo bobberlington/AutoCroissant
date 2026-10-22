@@ -288,6 +288,7 @@ Prune threshold = max(2239//3=746, 1200) = 1200 → kept. 1 gap vs 1 type → ma
 `"Minions inherit [undead]."` The Freezer (golden) shows the multi-gap case — three icons injected
 across two lines, producing exactly:
 `"For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1."`
+(Since 2026-10-21 the PSD reads `(1GCD)` there: the team's cooldown update, impossibility-simulator-rules §3.)
 
 (The golden values quoted in sections 3-4 — Mini Doomer, The Freezer, The Lich King — are
 snapshots of 2026-07-11; canonical current expected values live in autocroissant-validation-and-qa
@@ -342,9 +343,10 @@ There are four new parse-time problems, all persisted:
 | `ICON TOKEN NOT IN STOOGEDINGS FONT: [x]` | A known icon name typed in the body font. |
 | `ICON TOKEN PARTLY IN STOOGEDINGS FONT: [x]` | The font was only applied to part of the token. |
 
-**Badges.** The font also turns timing tags typed in it, such as `(1PGT)` or `(OYT)`, into colored pill
-badges (70 tags; exact uppercase only), adopted as part of the font on 2026-10-19 (look and sizes:
-ttscardmaker-companion §1.2). That is purely a rendering ligature: the text is still `(1PGT)`,
+**Badges.** The font also turns timing tags typed in it, such as `(1GCD)`, `(1/2CD)`, `(2U)` or `(OYT)`, into
+colored pill badges (exact uppercase only), adopted as part of the font on 2026-10-19; the cards' cooldown and uses
+tags of 2026-10-21 join the rulebook's old tags, which stay (tag list, count, look and sizes: ttscardmaker-companion
+§1.2; meanings: impossibility-simulator-rules §3). That is purely a rendering ligature: the text is still `(1GCD)`,
 so the parser stores it unchanged, and nothing in AutoCroissant parses badges. Matching rule for the
 parser: a tag in parentheses is never a token, because tokens need square brackets.
 

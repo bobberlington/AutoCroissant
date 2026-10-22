@@ -1,6 +1,6 @@
 ---
 name: impossibility-simulator-rules
-description: Load this skill when a task needs to understand or explain how the Impossibility Simulator card game is PLAYED — "how does the game work", "explain the rules", "what does (1PGT) / (OFS) / (E2T) / (WOF) mean", "turn order", "global turn", "turn phases", "how is damage calculated", "ATK - DEF", "combo damage", "sneak attack", "rounding", "minion / protective minion / prime creature", "primary field / secondary field", "item types" (healing/food, attack, negation, support, counter, infliction, equip, fragile equip, active, deploy), "N.M.E. shop", "star points / points / BRICKS", "reactions / resolve order", "negation / true negation", "status effects / buffs / debuffs / stacking / upgrade chains", "creature types and immunities", "damage types", "death / revives / points on death", "starting hand / constructed / ban list", "which rulebook page says X", or when writing or checking a /query_rulebook answer, rulebook text, ability wording, or any user-facing text that must use the game's own vocabulary. Contains the game in one page, turns, phases and timing tags, attack arithmetic, items, reactions, all 64 status effects, a glossary and Known gaps, each rule citing its page. Card DATA encoding is impossibility-cards-reference.
+description: Load this skill when a task needs to understand or explain how the Impossibility Simulator card game is PLAYED — "how does the game work", "explain the rules", "what does (1CD) / (1GCD) / (2U) / (1/2CD) / (OFS) / (WOF) mean", "cooldown / global cooldown / uses", the old (1PGT) / (E2T) tags, "turn order", "global turn", "turn phases", "how is damage calculated", "ATK - DEF", "combo damage", "sneak attack", "rounding", "minion / protective minion / prime creature", "primary field / secondary field", "item types" (healing/food, attack, negation, support, counter, infliction, equip, fragile equip, active, deploy), "N.M.E. shop", "star points / points / BRICKS", "reactions / resolve order", "negation / true negation", "status effects / buffs / debuffs / stacking / upgrade chains", "creature types and immunities", "damage types", "death / revives / points on death", "starting hand / constructed / ban list", "which rulebook page says X", or when writing or checking a /query_rulebook answer, rulebook text, ability wording, or any user-facing text that must use the game's own vocabulary. Contains the game in one page, turns, phases and timing tags (the rulebook's old tags and the cards' cooldown and uses tags of 2026-10-21), attack arithmetic, items, reactions, all 64 status effects, a glossary and Known gaps, each rule citing its page. Card DATA encoding is impossibility-cards-reference.
 ---
 
 # Impossibility Simulator: the rules of the game
@@ -92,9 +92,10 @@ only, "Minions cannot mine", 15_Minions) or DEFENSE MODE (DEF doubled until its 
 (09_TakingYourTurn). Every minion and parent creature in the primary field "may use their actions", in whatever order the player chooses
 (15_Minions).
 
-**Timing tags** are defined on (02_Abbreviations) and explained on (11_Abilities)–(11_Abilities7). "X" is a variable;
+**Timing tags, old system (the rulebook's).** Defined on (02_Abbreviations) and explained on (11_Abilities)–(11_Abilities7). "X" is a variable;
 cards print the number. 🕐 = "time based" ("refreshed and become usable again in the specified timeframe"); ⏳ = "multi
-turn". Counts = distinct cards using the tag (604 uses in 351 of 767 cards).
+turn". Counts = distinct cards using the tag on 2026-10-20 (604 uses in 351 of 767 cards), before the cards moved to the
+new system below: since 2026-10-21 (XPT), (XPGT), (EXT), (FTEXT), (EXGT) appear only on the pages.
 
 | Tag | Rulebook wording | Cards |
 |---|---|---|
@@ -114,14 +115,39 @@ turn". Counts = distinct cards using the tag (604 uses in 351 of 767 cards).
 | (OS) forced | On summon, every time (11_Abilities5) | 8 |
 | (OD) forced | On death, forced (11_Abilities5); "Does not apply to creatures not on the field" (17_Death) | 23 |
 | (WOF) forced | While on field: passives (11_Abilities7); in 02_Abbreviations' FORCED box with (OFS)/(OS)/(OD) | 20 |
-| (XCD), (XGCD), (XU) | **Not in the rulebook.** Read from context as X-turn cooldown, X-global-turn cooldown, X uses (inference) | (1GCD) 20, (2CD) 14, (1CD) 13, (2U) 6, (2GCD) 2, (3U) 1, (4U) 1 |
+| (XCD), (XGCD), (XU) | **Not in the rulebook.** On 2026-10-20 already on some cards; the new system below | cards, not uses (RULEBOOK U1's 22 is uses): (1GCD) 20, (2CD) 14, (1CD) 13, (2U) 6, (2GCD) 2, (3U) 1, (4U) 1 |
 
 An unused time based ability: "it's saved so you can use it on the next turn, but its cooldown doesn't reset until it's
 used"; abilities "do not count time passing while in the hand" (11_Abilities4). Forced tags are "non-optional and
 assumed to happen automatically" (11_Abilities3). "You may react to time based [such as (BOGT)] effects with any (AAT)
 effects or facedown items" (12_Reactions5): by 02_Abbreviations "time based" is every 🕐 tag ((XPT), (XPGT), (EXT),
 (FTEXT), (EXGT) and the forced (BOT)/(ENDT)/(BOGT)/(ENDGT)); nothing is stated for (OFS)/(OS)/(OD); (OFS) abilities have
-true negation immunity (22_Negation).
+true negation immunity (22_Negation). These quotes are about the old tags; no page says yet whether they carry over.
+
+**Timing tags, new system (from the cards, 2026-10-21; the rulebook pages still define the old tags).** The team
+(TTSCardMaker df02b3b "cooldowns (2)" .. 7cb4c86 "cooldowns (5)", 178 card PSDs + PNGs) replaced the per-turn and
+every-N tags on every card. No page defines the new tags: (02_Abbreviations), (11_Abilities2), (11_Abilities4) and
+(22_Negation) still show the old ones (the team updates them). Meanings are only what the letters say: CD cooldown,
+GCD global cooldown, U uses. How a cooldown counts, what the two numbers of (a/bCD) do, when uses refill, and whether a
+tag implies (OYT) or (AAT) are stated nowhere (Known gaps). Counts = occurrences in every text layer except `Name` / PSDs, over
+every PSD outside `MDW/` (rulebook pages hold no new tag; 2026-10-21 survey; per-PSD pairing against stats.pkl as of PICKLE 56b43b9, 2026-10-21 05:30, parsed
+before the change).
+
+| Family | Letters | On the cards (uses / PSDs) | Replaced, per PSD |
+|---|---|---|---|
+| (nCD) | cooldown, N | (1CD) 101/88, (2CD) 55/55, (3CD) 3/2, (XCD) 1/1 | (1PT) → (1CD); (EnT) → (nCD): (E2T) → (2CD), (E3T) → (3CD), (EXT) → (XCD) |
+| (a/bCD) | cooldown, two numbers | (1/2CD) 15/15 | (FTE2T) → (1/2CD) |
+| (nGCD) | global cooldown, N | (1GCD) 94/82, (2GCD) 11/11, (XGCD) 1/1 | (1PGT) → (1GCD); (E2GT) → (2GCD), (EXGT) → (XGCD) |
+| (a/bGCD) | global cooldown, two numbers | (-1/1GCD) 1/1 (The Temple of Ahn'Qiraj) | (-1/1CD), itself undefined |
+| (nU) | N uses | (2U) 18/17, (3U) 2/2, (4U) 2/2, (XU) 2/1 | the n of an (nPT)/(nPGT) with n ≥ 2: (2PT) → (1CD)(2U); (2PGT), (3PGT), (4PGT) → (1GCD) with (2U), (3U), (4U); (XPT)/(XPGT) → (1CD)/(1GCD) with (XU) (Michael's Blessing) |
+
+Unchanged: (OYT), (AAT), (BOT), (ENDT), (BOGT), (ENDGT), (OFS), (OS), (OD), (WOF) and (nPG) (cards only: (1PG) 32/30,
+(2PG) 4/4, (3PG) 3/3, (XPG) 2/2). 218 PSDs carry a new tag: 173 had only old tags, 45 already had one of the former undefined tags.
+The tag sets of 214 follow the last column exactly; 4 also moved from turns to global turns: Water Totem (1CD) → (1GCD), The Gates
+of Ahn'Qiraj (2CD) → (2GCD), Crock Pot (1PT) → (1GCD), The Temple of Ahn'Qiraj (-1/1CD) → (-1/1GCD). The Bank (N.M.E, 7cb4c86) lost its only tag: its
+"(XPT)" was rewritten without a tag ("Cooldowns of stored actions/abilities recharge as if they were used"), so it
+is not among the 218. "(OPT)" on Bobberlington and Michael is in neither system (plain text). The old tags remain only on rulebook pages.
+
 **Simultaneous effects** (11_Abilities6): higher-SPD creature first, then the higher-cumulative-SPD team's active items,
 then field cards; ties use turn-order tie-breakers; the owner orders same-side conflicts; both teams setting one value
 "remains random"; simultaneous HP-setting revives add up (to Max); directly conflicting effects: the player chooses.
@@ -383,7 +409,7 @@ Assembled from the rulebook's own examples; the joins are this skill's.
 4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the 48 pages, sorted by page
    name, lowercased, icons as emojis; `search_text` is required by the slash command (main.py), so only a whitespace-only
    search reaches the engine's all-pages path. `/export_rulebook`: all pages as a text file.
-   `/query_ability` searches card text (`type==debuff & stars==3`, `(1pgt)`; DSL in impossibility-cards-reference §7).
+   `/query_ability` searches card text (`type==debuff & stars==3`, `(1gcd)`; DSL in impossibility-cards-reference §7).
 5. **Text players never see** is in rules.json/stats.pkl/`/query_rulebook`: hidden duplicates (09), a hidden PASSIVES
    block (11_Abilities), an off-canvas "ABILITIES 7" header (11_Abilities6), an older reactions draft with order 4>2>1>3
    (12_Reactions2; the rule is 4>2>3>1), an older ITEMS block (22_Negation), overflow text (12_Reactions "of 5.",
@@ -405,7 +431,8 @@ Contradictions:
 - 19_Status_Effects: status DMG/heal at (ENDT); 09_TakingYourTurn: phase 4, after (ENDT).
 - Hidden drafts (12_Reactions2 order 4>2>1>3; 22_Negation ITEMS) disagree with the visible pages, which win.
 
-Undefined: (XCD), (XGCD), (XU) (27/24/8 card uses; Old Rules' "(CD)" meant counter damage); "prime creature"; "tier";
+Undefined: the cards' new tags (nCD), (a/bCD), (nGCD), (a/bGCD), (nU) since 2026-10-21 (§3; the pages 02_Abbreviations,
+11_Abilities2, 11_Abilities4 and 22_Negation still show the old tags; Old Rules' "(CD)" meant counter damage); "prime creature"; "tier";
 "proc", "instance", "on-hit", "reactively", "cleanse", "innate actions/type"; "N.M.E."; the "Don't be stupid" rule.
 
 Silent: how a hand is built from the full or developer/baseline decks (new players draw from the simple-version decks,
@@ -436,6 +463,7 @@ are defined only on cards (the book names ~22 of 64).
 | stats.pkl == rules.json | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/loadpkl.py ~/Desktop/AutoCroissant/stats.pkl /tmp/s.json` (stub loader, no psd_tools needed) then compare `ability` per name |
 | Hidden / off-canvas layers | `python .claude/skills/impossibility-simulator-rules/scripts/alllayers.py <page.psd>` from a venv with psd-tools (the system `python3` lacks it; autocroissant-build-and-env §1) |
 | Tag counts | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/tags.py ~/Desktop/TTSCardMaker/site/dist/data/cards.json` |
+| New-system tag counts (§3, 2026-10-21) | every `(…)` of up to 14 non-space characters in every type layer except `Name` of every PSD outside `MDW/`, tag -> uses and PSDs (`/tmp/cdsurvey/survey.py` with psd-tools, scratch: gone on reboot); the replacement column pairs each PSD's tag set with its `ability` in stats.pkl as of PICKLE 56b43b9 |
 | Status effect texts, mentions | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/mentions.py <cards.json>`; or `/query_ability type==debuff` |
 | Card counts by kind/stars/type (cards.json: 302 creature rows, 46/105/93/58) | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/counts.py <cards.json>`, `python3 -I .claude/skills/impossibility-simulator-rules/scripts/agg.py <cards.json>` |
 | stats.pkl counts used above (297 = 45/103/93/56, 75 untyped, per-type distinct creatures, 182 item PSDs) | after the loadpkl.py line above: `python3 -I -c "import json,collections as c;s=json.load(open('/tmp/s.json'));cr=[v for v in s.values() if v['card_type']=='creature'];print(len(cr),sorted(c.Counter(v['stars'] for v in cr).items()),sum(1 for v in cr if not v['types']),c.Counter(t for v in cr for t in set(v['types'])),len({v['path'] for v in s.values() if v['card_type']=='item'}))"` (`set()` per creature, not icon occurrences) |
