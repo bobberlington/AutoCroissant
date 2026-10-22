@@ -29,7 +29,7 @@ import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.github_api as ga  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
+from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
@@ -44,6 +44,8 @@ TOKEN = "test-token"
 
 
 fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: " + fork_reason())
+fork_text = pytest.mark.skipif(not (_text_engine() and _story_sync()),
+                               reason="a text bake needs the fork's Txt2 story sync: " + fork_reason())
 
 
 # ========================
@@ -772,7 +774,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     assert commits == [] and "0 with PSD fields" in text
 
 
-@fork
+@fork_text
 def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     """Idea 14 through the driver: an ability edit adding Blazing fetches the chart by sha, cuts "Ability FX: Blazing" above
     Text, passes every gate and names the layer in the report; --dry-run leaves the artifacts and commits nothing."""
