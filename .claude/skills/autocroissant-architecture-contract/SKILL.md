@@ -333,7 +333,7 @@ optimization pass.
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
 4. **(Fixed 2026-10-19) Remote traversal used to leak temp files.** Each downloaded temp file is now
-   removed in a `finally` right after parsing, and files left by an error at the end (card_data.py:478, :488, :519-526). Kept here as a pointer:
+   removed in a `finally` right after parsing (card_data.py:481-488; :478 when its commit lookup fails), and files left by an error at the end (:524-526). Kept here as a pointer:
    archaeology Entry 10.2.
 5. **(Retired 2026-10-20) Local mode's change signal did not match the stored data.** The local-mode PATH
    bug (removeprefix, 2025-12-02 → 2026-10-19) was fixed with `relpath` (story:

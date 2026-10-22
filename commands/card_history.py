@@ -342,8 +342,9 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
                     edits: Optional[Commit] = None, authors: Optional[Commit] = None) -> list:
     """
     A build's versions, after its parse, edits, authors and archive: a card whose data changed has its card before
-    appended to its history (at its own path), closed where the new version starts; an art-only change or a move
-    keeps the version going. Duplicates get none.
+    appended to its history (at its own path), closed where the new version starts (never before that version's own
+    start: a held PSD change or a re-read after an edit); an art-only change or a move keeps the version going; a
+    card restored with the same data drops its archived record. Duplicates get none.
 
     Args:
         before: stats at the build's start (a deep copy)
@@ -379,6 +380,12 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
             info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None)
             info["to"], info["to_commit"], info["png_commit"] = None, None, None
             card.version = info
+            if name in restored:                      # back with the same data: its archived record is no version
+                versions = db.old_stats.get(name) or []
+                if versions and versions[len(versions) - 1] is old and getattr(old, "archived", None):
+                    versions.pop()
+                    if not versions:
+                        del db.old_stats[name]
             continue
         if name in reparsed:
             start = start_of(card, index, old)
@@ -386,6 +393,9 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
             only_author = {k for k, v in data_of(old).items() if v != data_of(card)[k]} == {"author"}
             source = authors if only_author else edits
             start = meta(source, source.at if source else card.timestamp, "authors" if only_author else "edit")
+        prior = getattr(old, "version", None) or {}
+        if prior.get("from") is not None and start["from"] is not None and start["from"] < prior["from"]:
+            start["from"], start["from_commit"] = prior["from"], prior.get("from_commit")   # never before the one it ends
         card.version = start
         if name in restored:
             close(old, index, start["from"], end_of(start))

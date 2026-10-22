@@ -385,7 +385,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:364-368 after the split; card_data.py:478, :488 since 2026-10-22).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:364-368 after the split; card_data.py:481-488 since 2026-10-22, plus :478 when the commit lookup fails).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)

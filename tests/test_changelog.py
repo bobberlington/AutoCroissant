@@ -85,7 +85,8 @@ def test_every_kind():
     after = {"Changed": _card("Changed", blob_sha="b2", stats=cm.CardStats(5, 2, 3, 9)), "Art": _card("Art", blob_sha="b2"),
              "Reparse": _card("Reparse", ability="(1CD) Hit hard."), "Moved": _card("Moved", path="Items/Moved.psd"),
              "Moved2": _card("Moved2", path="Items/Moved2.psd", stars=2), "Edited": _card("Edited", note="checked"),
-             "Authors": _card("Authors", author="Alice"), "New": _card("New"), "Back": _card("Back"), "Same": _card("Same"),
+             "Authors": _card("Authors", author="Alice"), "New": _card("New"), "Fresh": _card("Fresh"), "Back": _card("Back"),
+             "Same": _card("Same"),
              "Dup2": _card("Dup2", duplicate_of="Same", display_name="Other")}
     archived_before = {"Back": _card("Back")}
     archived_after = {"Gone": _card("Gone", archived={"commit": "cd"}),
@@ -94,15 +95,15 @@ def test_every_kind():
                        {"Edited": "web-user"}, _index())
     kinds = {e["card"]: e["kind"] for e in events}
     assert kinds == {"Changed": "changed", "Art": "art", "Reparse": "reparse", "Moved": "moved", "Moved2": "moved",
-                     "Edited": "edited", "Authors": "authors", "Gone": "archived", "Old": "renamed", "New": "new",
-                     "Back": "restored"}                                          # Same and its duplicate: nothing
+                     "Edited": "edited", "Authors": "authors", "Gone": "archived", "Old": "renamed", "Fresh": "new",
+                     "Back": "restored"}                     # Same and its duplicate: nothing; New: the rename's line only
     by = {e["card"]: e for e in events}
     assert by["Changed"]["fields"] == {"spd": [4, 9]} and by["Changed"]["verdict"] == "buff" and by["Changed"]["commit"] == "c9"
     assert by["Changed"]["blob"] == ["b1", "b2"] and by["Changed"]["by"] == "maker"
     assert by["Edited"]["edit_by"] == "web-user" and "edit_by" not in by["Authors"]
     assert by["Moved2"]["fields"] == {"stars": [1, 2]} and by["Moved2"]["from_path"] == "Items/1 Stars/Moved2.psd"
     assert by["Gone"]["commit"] == "cd" and by["Gone"]["by"] == "remover" and by["Old"]["renamed_to"] == "New"
-    assert by["New"]["by"] == "Bob" and set(cl.KINDS) >= set(kinds.values())
+    assert by["Fresh"]["by"] == "Bob" and set(cl.KINDS) >= set(kinds.values())
 
 
 def test_seq_never_reused():
@@ -148,6 +149,17 @@ def test_pushes_from_the_activity_list_and_the_fallback():
         {"B": "c2", "A": "c4", "D": "c4", "C": "c5", "F": None, "E": None}
 
 
+def test_the_bake_commit_is_a_push_of_its_own():
+    """Without the activity list, the run's bake commit B never joins the push before it, even by the same author."""
+    commits = [("c1", 10.0, "AutoCroissant"), ("B", 20.0, "AutoCroissant")]
+    events = [{"kind": "edited", "card": "A", "commit": "c1"}, {"kind": "changed", "card": "C", "commit": "B"}]
+    by = {e["card"]: e["push"] for e in cl.assign_pushes([dict(e) for e in events], [], commits, "c0", {"B"})}
+    assert by["A"] == {"after": "c1", "before": "c0", "by": "AutoCroissant", "at": 10.0}
+    assert by["C"] == {"after": "B", "before": "c1", "by": cl.CARD_SYNC, "at": 20.0}
+    merged = {e["card"]: e["push"]["after"] for e in cl.assign_pushes([dict(e) for e in events], [], commits, "c0")}
+    assert merged == {"A": "B", "C": "B"}                                         # what --baked prevents
+
+
 def test_payload_words_links_and_order():
     events = [dict(e, push=PUSH) for e in cl.number([
         {"kind": "new", "card": "Kirby", "title": "Kirby", "card_type": "creature", "stars": 3, "by": "Bob"},
@@ -172,6 +184,19 @@ def test_payload_words_links_and_order():
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
     assert cl.payload([], "https://site") is None
+
+
+def test_every_kind_posts_alone():
+    """A group of any one kind (a rollback's lone restore event included) makes a titled message with a count."""
+    for kind in cl.KINDS:
+        event = {"kind": kind, "card": "A", "renamed_to": "B", "restored_from": "f00dfeed" * 5, "fields": {"hp": [1, 2]}}
+        group = cl.number([event], 0, at=T, build="https://x/runs/1")
+        out = cl.messages(group, "https://site", repository="o/r")
+        title = out[0]["body"]["embeds"][0]["title"]
+        assert len(out) == 1 and title.startswith("Card sync, ") and not title.endswith(": "), kind
+    body = cl.payload(cl.number([{"kind": "restore", "card": "", "restored_from": "f00dfeed" * 5}], 0, at=T))
+    assert body["embeds"][0]["title"].endswith(": 1 data rollback")
+    assert body["embeds"][0]["description"] == "**Rollback**\nCard data restored from f00dfeed"
 
 
 def test_payload_stays_within_discord_limits():

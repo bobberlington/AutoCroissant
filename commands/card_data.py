@@ -713,6 +713,7 @@ QUALITY_SLACK = 3                                                 # G5: cards th
 DETAILS_SHARE = 0.05                                              # G5: psd_details records that may go
 EXIT_OK, EXIT_ERROR, EXIT_GATE = 0, 1, 2
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}                              # a missing blob fails instead of being fetched
+ALIASES_REF = "main"                                              # aliases.pkl's AutoCroissant ref until step 5
 
 
 def _git(repo: str, *args: str) -> str:
@@ -764,6 +765,8 @@ class GitBuild(CardBuild):
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
+        self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
+        self.still_failed: list = []             # of those, skipped this run (same blob): still failed
         self._rate_low = False
         self._rate_held: set = set()
 
@@ -789,6 +792,12 @@ class GitBuild(CardBuild):
         todo, num_old = super()._todo(response, force_update)
         kept = []
         for path, name, sha in todo:
+            known = self.failed_before.get((path, sha))
+            if (known is not None and known.get("parser_version") == PARSER_VERSION and not force_update
+                    and CardAuthors.key(name) not in self.only):
+                self.still_failed.append(dict(known))           # unread until its blob, the parser or `cards` changes
+                self.failed_new += name not in self.db.stats or name in self.restored
+                continue
             if not self._store(sha):
                 if self.rest >= self.budget:
                     self._hold(path, name)
@@ -931,15 +940,19 @@ def gates(before: dict, after: dict, details_before: int, details_after: int, ar
 
 
 def _restore(db_dir: str, sha: str) -> tuple:
-    """A data commit's stats, old_stats and details (db/ at that commit of its own repo; fetched when a shallow
-    checkout lacks it)."""
-    from commands.card_db import OLD_STATS_JSON, STATS_JSON, parse_old_stats, parse_stats
+    """A data commit's stats, old_stats, details and manifest (db/ at that commit of its own repo; fetched when a
+    shallow checkout lacks it)."""
+    from commands.card_db import MANIFEST_JSON, OLD_STATS_JSON, STATS_JSON, parse_old_stats, parse_stats
     if run(["git", "-C", db_dir, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True).returncode != 0:
         _git(db_dir, "fetch", "-q", "--depth", "1", "origin", sha)
     prefix = _git(db_dir, "rev-parse", "--show-prefix").strip()
     text = {name: _git(db_dir, "show", f"{sha}:{prefix}{name}") for name in (STATS_JSON, OLD_STATS_JSON, "psd_details.json")}
     details = json_loads(text["psd_details.json"]).get("cards") or {}
-    return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details)
+    try:
+        manifest = json_loads(_git(db_dir, "show", f"{sha}:{prefix}{MANIFEST_JSON}"))
+    except CalledProcessError:
+        manifest = {}
+    return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details, manifest)
 
 
 def _bot_file(ref: str, name: str, folder: str, required: bool = True) -> str:
@@ -1068,7 +1081,8 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
 
 def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", seed: str = "",
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
-          aliases: Optional[dict] = None, dry_run: bool = False, restore: str = "", builder_ref: str = "") -> Outcome:
+          aliases: Optional[dict] = None, dry_run: bool = False, restore: str = "", builder_ref: str = "",
+          baked: bool = False) -> Outcome:
     """
     One build (design section 7.1): db/ before (or the seed's pickles, refined once), the tree and index from git, the
     changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
@@ -1086,10 +1100,12 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         allow_archive: Lift G2
         budget: REST downloads at most
         run_url: The Actions run (manifest, commit message)
-        aliases: alias -> PNG file name (aliases.pkl), for the duplicates' names (default: the seed folder's, if any)
+        aliases: alias -> PNG file name (aliases.pkl), for the duplicates' names (default: the seed folder's, else
+            AutoCroissant's at ALIASES_REF)
         dry_run: Build and report, write nothing
         restore: A data commit whose db/ becomes the current one again
         builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
+        baked: head is the run's local bake commit B (a push of its own, by the card sync)
 
     Returns:
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
@@ -1109,6 +1125,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         details = psd_details.load(path_join(folder, "psd_details.json"))
         if aliases is None and isfile(path_join(folder, "aliases.pkl")):
             aliases = load_aliases(path_join(folder, "aliases.pkl"))
+    if aliases is None and not restore:
+        aliases = load_aliases(ALIASES_REF)
     pending_before = (manifest_before.get("pending") or {}) if not seeding and not restore else {}
     carried = pending_before.get("full") or None              # a budgeted full re-parse going on
     if carried and carried.get("parser_version") != PARSER_VERSION:
@@ -1119,14 +1137,16 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget, aliases=aliases)
     index = run_build.index
     seeded = refine(db.stats, db.old_stats, index) if seeding else None
+    restored_manifest: dict = {}
     if restore:
-        db.stats, db.old_stats, details = _restore(db_dir, restore)
+        db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
     before, before_old = deepcopy(db.stats), deepcopy(db.old_stats)
     archived_before = _archived(before, before_old)
     details_before = len(details)
 
     run_build.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
     run_build.again = set(pending_before.get("stale") or [])  # held by the last run's budget: read now
+    run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}
     run_build.details = details
     edits = authors = None
     if not restore:
@@ -1168,7 +1188,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
             base = None
         commits = _commits(checkout, base, run_build.head)
-        new_events = changelog.assign_pushes(new_events, pushes(repository, checkout, commits), commits, base)
+        new_events = changelog.assign_pushes(new_events, pushes(repository, checkout, commits), commits, base,
+                                             {run_build.head} if baked else None)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -1188,8 +1209,9 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     kinds = [e["kind"] for e in new_events]
     out.counts = {"cards": len(db.stats), "versions": sum(len(v) for v in db.old_stats.values()),
                   "archived": len(db.archived()), "details": len(details), "changed": kinds.count("changed"),
-                  "new": kinds.count("new"), "failed": run_build.failed, "baked": 0}
-    failed = [{"path": u["path"], "blob": u["blob"], "error": u["error"]} for u in run_build.unreadable]
+                  "new": kinds.count("new"), "failed": run_build.failed + len(run_build.still_failed), "baked": 0}
+    failed = sorted([{"path": u["path"], "blob": u["blob"], "error": u["error"], "parser_version": PARSER_VERSION}
+                     for u in run_build.unreadable] + run_build.still_failed, key=lambda f: f["path"])
     stale = sorted(run_build.stale)
     still = None
     if stale and approved:                                # the approval goes on with the re-parse
@@ -1212,6 +1234,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "pending": {"stale": stale, "failed": failed, "full": still, "repin": []},
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
         "restored_from": restore or None}
+    if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
+        for key in ("card_commit", "card_commit_at", "inputs", "seed"):
+            out.manifest[key] = restored_manifest.get(key, out.manifest[key])
+        kept = restored_manifest.get("pending") or {}
+        out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None, "repin": []}
     if seeded is not None:
         out.lines = seeded.lines() + out.lines
     if out.refused:
@@ -1243,12 +1270,13 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     return out
 
 
-def rewrite_commit(db_dir: str, checkout: str, old: str, new: str) -> dict:
+def rewrite_commit(db_dir: str, checkout: str, old: str, new: str, message: str = "") -> dict:
     """
     Stage 4's B-to-M rewrite: the run's local bake commit B became main commit M (the same card files plus the save),
     so every reference to B in db/ (version starts and ends, PNG pins, archive tags, card dates, the events, their
     push and the manifest) becomes M, B's time M's. The manifest gains main_commit, counts.baked (the PSDs B changed)
-    and pending.repin (the PNGs B changed: their save links are pinned by the next run).
+    and pending.repin (the PNGs B changed: their save links are pinned by the next run). The data commit's message
+    file, if given, names M too.
 
     Returns:
         The manifest written
@@ -1288,7 +1316,7 @@ def rewrite_commit(db_dir: str, checkout: str, old: str, new: str) -> dict:
                 event[key] = new
         push = event.get("push") or {}
         if push.get("after") == old:
-            push.update(after=new, at=new_at, by="Card sync")
+            push.update(after=new, at=new_at, by=changelog.CARD_SYNC)
         return event
     changelog.rewrite_events(db_dir, fix_event)
     changed = [line.split("\t", 1) for line in _git(checkout, "diff-tree", "--no-commit-id", "-r", "--name-status", old).splitlines()]
@@ -1298,6 +1326,11 @@ def rewrite_commit(db_dir: str, checkout: str, old: str, new: str) -> dict:
     manifest.setdefault("counts", {})["baked"] = sum(1 for _, path in changed if path.lower().endswith(".psd"))
     manifest.setdefault("pending", {})["repin"] = sorted(path for status, path in changed
                                                           if path.lower().endswith(".png") and status != "D")
+    if message and isfile(message):
+        with open(message, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(message, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(old, new).replace(old[:8], new[:8]))
     return write_db(db_dir, stats, old_stats, psd_details.text_of(details), manifest)
 
 
@@ -1332,10 +1365,13 @@ def _plain_line(event: dict) -> str:
 
 
 def subject(out: Outcome, head: str) -> str:
-    """The data commit's subject: "Card data: 2 changed, 1 new, 1 archived (main 1a2b3c4d)"."""
+    """The data commit's subject: "Card data: 2 changed, 1 new, 1 archived (main 1a2b3c4d)"; a rollback names its
+    data commit."""
+    if out.manifest.get("restored_from"):
+        return f"Card data: restored from {out.manifest['restored_from'][:8]} (main {head[:8]})"
     kinds = [line.split(":", 1)[0] for line in out.lines if ":" in line]
-    parts = [f"{kinds.count(k)} {k}" for k in ("changed", "new", "archived", "renamed", "restored", "edited", "art", "moved", "reparse")
-             if kinds.count(k)]
+    parts = [f"{kinds.count(k)} {k}" for k in ("changed", "new", "archived", "renamed", "restored", "edited", "authors", "art",
+                                                "moved", "reparse") if kinds.count(k)]
     return f"Card data: {', '.join(parts) or 'refreshed'} (main {head[:8]})"
 
 
@@ -1367,7 +1403,7 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--seed", default="", help="start from these pickles: a folder holding stats.pkl, old_stats.pkl and "
                                                     "psd_details.json, or an AutoCroissant commit")
     parser.add_argument("--aliases", default="", help="aliases.pkl for the duplicates' names: a path, or an AutoCroissant "
-                                                       "ref (main); default the seed's, if any")
+                                                       f"ref; default the seed's, else {ALIASES_REF}'s")
     parser.add_argument("--full", action="store_true", help="re-parse every card (approves gates G4 and G5)")
     parser.add_argument("--cards", default="", help="comma-separated card names to re-parse")
     parser.add_argument("--allow-archive", action="store_true", help="lift gate G2 (more cards archived than usual)")
@@ -1376,8 +1412,9 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--run", default="", help="the Actions run URL (manifest, commit message)")
     parser.add_argument("--builder-ref", default="", help="the AutoCroissant ref of this builder (manifest)")
     parser.add_argument("--summary", default="", help="write the job summary (Markdown) here")
-    parser.add_argument("--message", default="", help="write the data commit's message here")
+    parser.add_argument("--message", default="", help="write the data commit's message here (--rewrite: names M in it)")
     parser.add_argument("--dry-run", action="store_true", help="build and report; write no db/")
+    parser.add_argument("--baked", action="store_true", help="--head is the run's local bake commit (its own push)")
     parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
                                                                         "become main commit M (after the main push)")
     args = parser.parse_args(argv)
@@ -1385,13 +1422,14 @@ def main(argv: Optional[list] = None) -> int:
     token_from_env()
     try:
         if args.rewrite:
-            manifest = rewrite_commit(args.db, args.checkout, args.rewrite[0], args.rewrite[1])
+            manifest = rewrite_commit(args.db, args.checkout, args.rewrite[0], args.rewrite[1], args.message)
             print(f"db/ now names {manifest['main_commit'][:8]} for {args.rewrite[0][:8]}; "
                   f"{len(manifest['pending']['repin'])} PNGs to re-pin.")
             return EXIT_OK
         aliases = load_aliases(args.aliases) if args.aliases else None
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.seed, args.full, args.cards,
-                    args.allow_archive, args.budget, args.run, aliases, args.dry_run, args.restore, args.builder_ref)
+                    args.allow_archive, args.budget, args.run, aliases, args.dry_run, args.restore, args.builder_ref,
+                    args.baked)
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
         return EXIT_ERROR

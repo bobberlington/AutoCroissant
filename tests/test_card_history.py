@@ -253,6 +253,31 @@ def test_build_versions_of_a_restored_card():
     assert len(db.old_stats["A"]) == 1 and record.version["to"] == 2000.0 and db.stats["A"].version["cause"] == "psd"
 
 
+
+def test_build_versions_never_end_before_they_start():
+    """A PSD change read after a later edit (held by the budget, or a re-read): the new version starts no earlier
+    than the one it ends."""
+    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
+    old = _card(blob_sha="b1", note="checked")
+    old.version = ch.meta(ch.Commit(0, "e1", 3000.0, "web"), 3000.0, "edit")
+    db = _db({"A": _card(ability="Changed.", blob_sha="b2", note="checked")})
+    ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index)
+    previous, current = db.old_stats["A"][0].version, db.stats["A"].version
+    assert previous["from"] <= previous["to"] == current["from"] == 3000.0 and current["cause"] == "psd"
+
+
+def test_restored_with_the_same_data_at_another_path_is_no_version():
+    """An archived card back at another path with the same data: its archived record goes, its version goes on."""
+    index = _index_with({"b1": ("c1", 1000.0)})
+    record = _card(blob_sha="b1", archived={"at": 1500.0, "path": "Items/A.psd", "blob": "b1", "commit": None})
+    record.version = ch.start_of(record, index, None)
+    ch.close(record, index, 1500.0)
+    db = _db({"A": _card(path="Items/Heal/A.psd", blob_sha="b1")}, {"A": [record]})
+    assert ch.record_versions({}, {"A": record}, db, {"A": 1}, ["A"], index) == []
+    db.drop_stale_archives()
+    assert "A" not in db.old_stats and (db.stats["A"].version["from"], db.stats["A"].version["to"]) == (1000.0, None)
+
+
 # ========================
 # CLI
 # ========================

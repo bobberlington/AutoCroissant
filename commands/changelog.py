@@ -1,9 +1,9 @@
 """
 The card changelog, without Discord, network or psd-tools: per-version field changes (stats, ability, timing tags,
 name, types, stars and the other data fields) with a buff/nerf verdict, the build's events from the database before
-and after (new, changed, art, reparse, moved, renamed, archived, restored, edited, authors), the push that brought
-each (the activity list, else consecutive commits by one author), their numbering, and one Discord message per push
-within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1.
+and after (new, changed, art, reparse, moved, renamed, archived, restored, edited, authors; restore for a rollback),
+the push that brought each (the activity list, else consecutive commits by one author), their numbering, and one
+Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1.
 
 CLI: python -m commands.changelog history --pickles <dir> <card>  |  post --db <db dir> --site <url> --out <file>
      |  advance --db <db dir> --seq <n> --push <sha>  (after Discord accepted that message)
@@ -39,10 +39,12 @@ KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "mi
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
               "unknown": "Other"}                        # site/assets/app.js KIND_LABEL
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
-            (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"))   # re-reads: one line
+            (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
+            (("restore",), "Rollback"))                  # re-reads: one line
 COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("moved", "moved"), ("renamed", "renamed"),
                ("archived", "archived"), ("restored", "restored"), ("edited", "edited"), ("authors", "edited"),
-               ("reparse", "re-read"))                   # the title's counts: "1 new, 2 changed"
+               ("reparse", "re-read"), ("restore", "data rollback"))   # the title's counts: "1 new, 2 changed"
+CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
 GITHUB = "https://github.com/"
 MESSAGES_MAX = 20                                        # per run; the rest wait for the next one (the cursor)
 EMBEDS_MAX = 10                                          # Discord: embeds per message
@@ -180,6 +182,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         Events in name order, unnumbered (number() gives the seq); a duplicate's change is its original's
     """
     reparsed, edits_by, file_commits = reparsed or {}, edits_by or {}, file_commits or {}
+    renamed = {(getattr(archived_after.get(n), "archived", None) or {}).get("renamed_to")
+               for n in before if n not in after and n in archived_after}           # a rename's new name: no "new" line
 
     def source(blob: Optional[str] = None, sha: Optional[str] = None, path: Optional[str] = None) -> dict:
         """The causing commit and its author: the path's newest commit (the one that put this blob there: a revert to
@@ -195,6 +199,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         if (new is not None and getattr(new, "duplicate_of", None)) or (old is not None and getattr(old, "duplicate_of", None)):
             continue
         if old is None and new is not None:
+            if name in renamed and name not in archived_before:
+                continue
             out.append(_event("restored" if name in archived_before else "new", name, new, by=new.author,
                               commit=source(getattr(new, "blob_sha", None), path=new.path).get("commit")))
         elif old is not None and new is None:
@@ -238,7 +244,8 @@ def number(new_events: list, last_seq: int, posted_seq: int = 0, at: Optional[fl
     return out
 
 
-def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[str] = None) -> list:
+def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[str] = None,
+                  alone: Optional[set] = None) -> list:
     """
     Each event's push (in place): the activity list's push whose before..after holds the event's commit, else the
     run of consecutive commits by one author holding it. A re-read, or an event whose commit is in neither, gets none
@@ -249,6 +256,7 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
         pushes: [{"after", "before", "by", "at", "commits": [sha, ...]}], oldest first (the activity list)
         commits: [(sha, at, author)] of the build's new commits, oldest first (the fallback)
         base: The commit before them (the last build's), the first fallback push's before
+        alone: Commits that are a push of their own by CARD_SYNC (the run's local bake commit B, never listed)
 
     Returns:
         The events in push order (oldest push first, push-less ones last), ready for number()
@@ -263,6 +271,10 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
     for sha, at, author in commits:                       # consecutive commits by one author: one push
         if sha in found:
             previous = sha
+            continue
+        if sha in (alone or ()):
+            found[sha] = {"after": sha, "before": previous, "by": CARD_SYNC, "at": at}
+            group, previous = [], sha
             continue
         if group and group[0][2] == author and group[len(group) - 1][0] == previous:
             group.append((sha, at, author, previous))
@@ -383,8 +395,10 @@ def _kind_label(card_type: Optional[str]) -> str:
 
 def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     """One event as a line of the post, its card linked."""
-    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids)})"
     kind = event["kind"]
+    if kind == "restore":
+        return f"Card data restored from {_md((event.get('restored_from') or '?')[:8])}"
+    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids)})"
     if kind == "new":
         stars = f", {event['stars']}\u2605" if event.get("stars") else ""
         by = f" by {_md(event['by'])}" if event.get("by") else ""
@@ -413,8 +427,8 @@ def _when(at: Optional[float]) -> str:
 def title_of(group: list) -> str:
     """"Zomoroko, Oct 22 14:05: 1 new, 2 changed": who pushed and when (a push-less group: the card sync, at its build)."""
     push = group[0].get("push")
-    who, at = (push.get("by") or "Someone", push.get("at")) if push else ("Card sync", group[0].get("at"))
-    if push and who == "Card sync":                       # the run's own commit M (rewrite_commit)
+    who, at = (push.get("by") or "Someone", push.get("at")) if push else (CARD_SYNC, group[0].get("at"))
+    if push and who == CARD_SYNC:                         # the run's own commit M (rewrite_commit)
         who = "Website edits baked into the PSDs"
     kinds = [e["kind"] for e in group]
     counts: dict = {}
@@ -471,6 +485,8 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
         tail.append(f"{hidden} more on the website: {site}/#/changes/changelog")
     if tail:
         embeds.append({"description": " ".join(tail)})
+    if not embeds:                                        # a kind with no section: the title alone
+        embeds.append({})
     embeds[0] = {"title": title, **({"url": url} if url else {}), **embeds[0]}
     return {"embeds": embeds, "allowed_mentions": {"parse": []}}
 
@@ -562,6 +578,7 @@ def main(argv: Optional[list] = None) -> int:
 # Module Exports
 # ========================
 __all__ = [
+    'CARD_SYNC',
     'FIELDS',
     'KINDS',
     'TAG_PATTERN',

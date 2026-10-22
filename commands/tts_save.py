@@ -299,7 +299,8 @@ def db_names(stats_path: str, tree: dict) -> dict:
     """
     cards.json's png -> name from a card data build's stats.json, by build_site's rule: a card's printed title (the
     parser's, under any Card Edits.json name) else its name, a duplicate PNG its display name, then a PSD or PNG the
-    data lacks its file stem; rule pages are left out (build_site lists them apart). Card Edits.json names are applied by _Names, as for cards.json.
+    data lacks its file stem; rule pages are left out (build_site lists them apart). Card Edits.json names are applied
+    by _Names, as for cards.json.
     """
     from commands.card_db import parse_stats
     with open(stats_path, encoding="utf-8") as fh:
