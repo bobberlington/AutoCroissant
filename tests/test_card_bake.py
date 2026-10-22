@@ -29,7 +29,8 @@ import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.github_api as ga  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync, text_engine as _text_engine  # noqa: E402
+from conftest import (CLONE, PLAIN_DOOMER, REPO, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,  # noqa: E402
+                      text_engine as _text_engine)
 from golden_cards import VOCAB  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
@@ -777,7 +778,8 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
 @fork_text
 def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     """Idea 14 through the driver: an ability edit adding Blazing fetches the chart by sha, cuts "Ability FX: Blazing" above
-    Text, passes every gate and names the layer in the report; --dry-run leaves the artifacts and commits nothing."""
+    Text, passes every gate and names the layer in the report; --dry-run leaves the artifacts and commits nothing. Mini
+    Doomer before its badge layer (PLAIN_DOOMER): with it the edit refuses (test_ability_bake_refuses_a_badge_card)."""
     from time import perf_counter
     from psd_tools import PSDImage
     chart = clone / pe.STATUS_CHART
@@ -785,8 +787,12 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
         pytest.skip("no status chart")
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
     parser = pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
-    old = pe.parse_card(parser, str(clone / DOOMER), DOOMER)["card"]["ability"]
+    png = DOOMER[:len(DOOMER) - 4] + ".png"
+    plain = {DOOMER: at_rev(clone, PLAIN_DOOMER, DOOMER), png: at_rev(clone, PLAIN_DOOMER, png)}
+    (tmp_path / "plain.psd").write_bytes(plain[DOOMER])
+    old = pe.parse_card(parser, str(tmp_path / "plain.psd"), DOOMER)["card"]["ability"]
     files = github.files_at(github.head)
+    files.update(plain)
     files[pe.STATUS_CHART] = chart.read_bytes()
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": old + " Inflict Blazing.", "note": "fx", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
@@ -805,6 +811,22 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     entry = rewritten["cards"]["Mini Doomer"]                                # the note keeps the entry; the ability is baked out
     assert "ability" not in entry and entry["note"] == "fx" and entry["_psd"]["state"] == "baked" and entry["_psd"]["for"] == {"ability": old + " Inflict Blazing."}
     print(f"dry-run bake {seconds:.1f} s; PSD {len(files[DOOMER])} -> {(work / 'new' / 'Mini_Doomer.psd').stat().st_size} bytes")
+
+
+@fork_text
+def test_ability_bake_refuses_a_badge_card(github, clone):
+    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit would drop it, so the card is refused
+    with the reason in its verdict and nothing of it lands."""
+    chart = clone / pe.STATUS_CHART
+    if not chart.exists():
+        pytest.skip("no status chart")
+    files = github.files_at(github.head)
+    files[pe.STATUS_CHART] = chart.read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer ability")
+    text, commits = cb.run(dry_run=True)
+    assert commits == [] and "## Refused (1)" in text
+    assert "unsupported-card: ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop" in text
 
 
 # ========================

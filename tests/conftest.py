@@ -92,6 +92,18 @@ def blob_sha(path) -> str:
     return blob_sha_bytes(Path(path).read_bytes())
 
 
+PLAIN_DOOMER = "38c55bd361b60b99b9521c43cf9577213845a4ce^"   # Mini Doomer before queue A's "Ability FX: (BOT)" badge layer
+
+
+def at_rev(clone, rev: str, rel: str) -> bytes:
+    """A card repo file at rev, from the clone's history; skips the test when the history lacks it."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True).stdout
+    except (subprocess.CalledProcessError, OSError):
+        pytest.skip(f"the clone's history lacks {rev}:{rel}")
+
+
 def text_engine() -> bool:
     """psd_edit's probe (not card_bake's: it imports requests)."""
     from commands.psd_edit import text_engine as probe

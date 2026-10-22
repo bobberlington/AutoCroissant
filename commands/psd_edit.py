@@ -58,6 +58,7 @@ TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability te
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
+BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
                          "overlay": {"flags"}}  # what an edit may change per record (overlay: a hidden hand-made word layer)
@@ -753,6 +754,25 @@ def fx_layers(psd: PSDImage, base) -> list:
     return [layer for layer in psd.descendants() if not layer.is_group() and layer.name.startswith(prefix)]
 
 
+def fx_label(base, fx) -> str:
+    """What an FX layer of base holds, without a repeat's number: "Ability FX: Frozen#2" -> "Frozen"."""
+    return sub(r"#\d+$", "", fx.name[len(base.name + FX_TAG):])
+
+
+def kept_fx(old_fx: list, base, chart: Optional[dict]) -> tuple:
+    """
+    The FX layers an ability edit cannot make again (it rebuilds only the chart's styled status words).
+
+    Returns:
+        (badge layers: badge and token runs, "Ability FX: (1CD) | (2U)" on queue A's gradient cards; other layers: words
+        without a chart style), names
+    """
+    badges = [fx.name for fx in old_fx if BADGE_FX.fullmatch(fx_label(base, fx))]
+    words = [fx.name for fx in old_fx if fx.name not in badges
+             and not getattr((chart or {}).get(collapse(fx_label(base, fx)).lower()), "styled", False)]
+    return (badges, words)
+
+
 def _fx_engine() -> tuple:
     """The fork's text engine pieces that cut glyph pixels and make pixel layers; Refused("styled-word") without them."""
     try:
@@ -1073,12 +1093,14 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
     word would inherit its color: the edited words are reset to the body fill, then every status word in the text
-    takes its swatch (the chart is the authority, an off-swatch word is normalized). FX layers are derived state
-    (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status word in the new text
+    takes its swatch (the chart is the authority, an off-swatch word is normalized). A chart status's FX layers are
+    derived state (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status word in the new text
     ("Blazing", "Frozen#2" for a repeat), the word's glyph pixels cut from the new raster under a copy of the chart
     layer's effect blocks, directly above the top-level Text group as Effect Layers.jsx places them. A hand-made
     overlay word layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX
-    layer standing in for it; one naming anything else refuses (unsupported-card). styled-word now means only that
+    layer standing in for it; one naming anything else refuses (unsupported-card). Any other FX layer refuses too, before
+    anything changes (unsupported-card): a badge or token run's (queue A's gradient cards) or a word's the chart has no
+    style for; the edit would drop it and none of them can be made again exactly. styled-word now means only that
     this psd-tools cannot cut glyph pixels or make a pixel layer.
     """
     from psd_tools.composite.text import FontMap, MissingFontError
@@ -1103,10 +1125,17 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         # a token the edit typed takes the run before it: set it in the icon font, as the old ones are
         tokens = [match.span() for match in TOKEN.finditer(text) if match.start() < end and match.end() > start]
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)
+        badges, words = kept_fx(old_fx, layer, chart)
+        if badges:
+            raise Refused("unsupported-card", f"ability edit would drop the badge layer{'s' if len(badges) > 1 else ''} "
+                                              f"{', '.join(badges)}; edit in Photoshop")
         if not chart:
             if old_fx or overlays:
                 raise Refused("unsupported-card", "status word layers over the ability")
         else:
+            if words:
+                raise Refused("unsupported-card", f"ability edit would drop FX layers the chart has no style for: "
+                                                  f"{', '.join(words)}; edit in Photoshop")
             hide = [overlay for overlay in overlays if getattr(chart.get(collapse(overlay.text).lower()), "styled", False)]
             stray = sorted({collapse(overlay.text) for overlay in overlays if overlay not in hide})
             if stray:
@@ -1774,6 +1803,7 @@ __all__ = [
     'changed_region',
     'classify',
     'collapse',
+    'fx_label',
     'fx_layers',
     'fx_name',
     'gate_bytes',
@@ -1785,6 +1815,7 @@ __all__ = [
     'gate_stories',
     'icon_font',
     'keep_breaks',
+    'kept_fx',
     'layer_records',
     'merge_png',
     'merge_preview',

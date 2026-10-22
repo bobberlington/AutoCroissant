@@ -14,6 +14,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
 from subprocess import CalledProcessError, run
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -24,13 +25,15 @@ from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import bevel_textures, fork_reason, rounds_bytes, saves_preview, story_sync as _story_sync, text_engine as _text_engine
+from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, fork_reason, rounds_bytes, saves_preview, story_sync as _story_sync,
+                      text_engine as _text_engine)
 
 # ========================
 # Configuration
 # ========================
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                 # template rows, no digit effects (certified golden)
+MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, chart words and unstyled words on FX layers
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
@@ -134,8 +137,20 @@ def _card(clone, rel: str) -> tuple:
     return str(path), str(path)[:-4] + ".png"
 
 
-def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False):
-    psd, png = _card(clone, rel)
+def _plain(clone, tmp_path) -> tuple:
+    """Mini Doomer without its badge layer (PLAIN_DOOMER, the version ability edits were proven on): PSD and PNG paths."""
+    out = tmp_path / "plain"
+    out.mkdir(exist_ok=True)
+    paths = []
+    for ext in (".psd", ".png"):
+        rel = MINI_DOOMER[:len(MINI_DOOMER) - 4] + ext
+        (out / Path(rel).name).write_bytes(at_rev(clone, PLAIN_DOOMER, rel))
+        paths.append(str(out / Path(rel).name))
+    return tuple(paths)
+
+
+def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False, paths=None):
+    psd, png = paths or _card(clone, rel)
     parsed = pe.parse_card(parser, psd, rel)
     assert pe.classify(parsed, jobs, PSDImage.open(psd)).jobs == jobs
     return parsed, pe.apply_jobs(psd, png, rel, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
@@ -736,9 +751,9 @@ def test_long_title_refuses_overflow(clone, chart):
 
 @text_edit
 def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
-    psd_path = _card(clone, MINI_DOOMER)[0]
-    old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart)
+    paths = _plain(clone, tmp_path)
+    old = pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"]
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart, paths=paths)
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD)]
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(old + " Inflict Poison.")
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
@@ -749,11 +764,43 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
 
 
+def test_kept_fx_sorts_badge_runs_and_unstyled_words(chart):
+    """Only a chart-styled status word's FX layer is derived state; badge or token runs and other words are kept work."""
+    base = SimpleNamespace(name="Ability")
+    names = ["Ability FX: (1CD) | (3U) | (OYT) | (ENDT)", "Ability FX: [fire]", "Ability FX: Blazing", "Ability FX: Frozen#2",
+             "Ability FX: Smoldering", "Ability FX: +2/4/6 ATK", "Ability FX: 1#1"]
+    fx = [SimpleNamespace(name=name) for name in names]
+    assert [pe.fx_label(base, layer) for layer in fx] == ["(1CD) | (3U) | (OYT) | (ENDT)", "[fire]", "Blazing", "Frozen",
+                                                           "Smoldering", "+2/4/6 ATK", "1"]
+    assert pe.kept_fx(fx, base, chart) == (names[:2], names[4:])
+    assert pe.kept_fx(fx, base, None) == (names[:2], names[2:])
+
+
 @text_edit
-def test_inserted_text_takes_the_body_fill(clone, chart):
+@pytest.mark.parametrize("rel, badges", [(MINI_DOOMER, "the badge layer Ability FX: (BOT)"),
+                                         (MORPHO, "the badge layer Ability FX: (1CD) | (3U) | (OYT) | (ENDT)")])
+def test_ability_edit_refuses_to_drop_a_badge_layer(clone, parser, chart, rel, badges, tmp_path):
+    """Queue A's gradient cards keep their badge runs on "Ability FX: (BOT)"-style layers the bake cannot make again: an
+    ability edit refuses (unsupported-card) before anything changes, with or without the chart, and bakes nothing."""
+    psd_path = _card(clone, rel)[0]
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)
+    text, fx = layer.text, [f.name for f in pe.fx_layers(psd, layer)]
+    for table in (chart, None):
+        with pytest.raises(pe.Refused) as refused:
+            pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), table)
+        assert refused.value.code == "unsupported-card" and refused.value.why == f"ability edit would drop {badges}; edit in Photoshop"
+    assert layer.text == text and [f.name for f in pe.fx_layers(psd, layer)] == fx
+    with pytest.raises(pe.Refused, match="badge layer"):
+        _bake(clone, parser, rel, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
+    assert not list(tmp_path.iterdir())
+
+
+@text_edit
+def test_inserted_text_takes_the_body_fill(clone, chart, tmp_path):
     """set_text(keep="runs") gives inserted text the run before it; after a status word that is the swatch colour."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     old = pe.ability_layer(psd).text
     white, green = (1.0, 1.0, 1.0), tuple(round(v, 3) for v in chart["poison"].fill)
     pe.set_text_layer(psd, "ability", old + " Inflict Poison.", fonts, chart)
@@ -779,14 +826,14 @@ def test_replacing_a_status_word_drops_its_colour(clone, chart):
 
 
 @text_edit
-def test_styled_status_word_gets_an_fx_layer(clone, chart):
+def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     """Idea 14 in memory on Mini_Doomer: Blazing is styled on the chart, so the edit cuts "Ability FX: Blazing" from the new
     raster (the ability's own pixels under the word), directly above Text, carrying the chart layer's lfx2/lrFX bytes and a
     fresh layer id; the word keeps the swatch. FX layers are derived state: the next edit rebuilds them, a repeat is numbered
     and a removed word leaves nothing behind."""
     assert sorted(c.name for c in chart.values() if c.styled) == STYLED
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     count = len(list(psd.descendants()))
     white, red = (1.0, 1.0, 1.0), (1.0, 0.0, 0.0)
     edit = pe.set_text_layer(psd, "ability", "Inflict Blazing.", fonts, chart)
@@ -815,11 +862,11 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart):
 
 
 @text_edit
-def test_status_words_are_normalized_to_the_chart(clone, chart):
+def test_status_words_are_normalized_to_the_chart(clone, chart, tmp_path):
     """The chart is the authority (design 14 q6): a status word the edit leaves alone takes its swatch too (a grey Poison turns
     the chart's green), and an edit touching a styled word no longer refuses (round 1's styled-word)."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     layer = pe.ability_layer(psd)
     layer.set_text("Inflict Poison. Die.", keep="runs")
     layer.set_span_style(8, 14, fill=(0.5, 0.5, 0.5))
@@ -845,11 +892,11 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
 
 
 @text_edit
-def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
+def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch, tmp_path):
     """styled-word now means this psd-tools cannot cut glyph pixels: with the rasterizer gone a styled word refuses before
     anything changes, an unstyled one still bakes."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     before = pe.ability_layer(psd).text
     monkeypatch.setitem(sys.modules, "psd_tools.composite.text.raster", None)
     with pytest.raises(pe.Refused, match="cannot cut glyph pixels") as refused:
@@ -897,11 +944,12 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
     within the parity bar, the validator clean, nothing outside the region; a second bake on the result drops Frozen and
     numbers the repeated Blazing, the old layers removed and the new ones added in the record diff."""
-    psd_path, png_path = _card(clone, MINI_DOOMER)
+    psd_path, png_path = _plain(clone, tmp_path)
     old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
     one = tmp_path / "one"
     one.mkdir()
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Blazing and Frozen."}, one, chart)
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Blazing and Frozen."}, one, chart,
+                          paths=(psd_path, png_path))
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD), ("Ability FX: Blazing", ["added"]),
                                                                      ("Ability FX: Frozen", ["added"])]
     assert baked.fx == ["Ability FX: Blazing", "Ability FX: Frozen"] and (baked.flag_bytes, baked.block_bytes) == (0, 2 * 5916)
@@ -936,8 +984,8 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
 
 
 @text_edit
-def test_too_long_ability_refuses_overflow(clone, chart):
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+def test_too_long_ability_refuses_overflow(clone, chart, tmp_path):
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     text = pe.normalize_ability(pe.ability_layer(psd).text)
     with pytest.raises(pe.Refused) as refused:
         pe.set_text_layer(psd, "ability", " ".join([text] * 4), str(clone / pe.FONTS_DIR), chart)
@@ -1041,9 +1089,9 @@ def test_gate_stories_refuses_changes_beyond_the_edit(clone):
 
 
 @text_edit
-def test_ability_edit_keeps_a_forced_line_break(clone, chart):
+def test_ability_edit_keeps_a_forced_line_break(clone, chart, tmp_path):
     """Mini Doomer's "it. \x03(BOT) Die.": the website's newline there stays a soft break, its paragraph runs as they were."""
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     layer = pe.ability_layer(psd)
     old = layer.text
     assert "it. \x03(BOT) Die." in old

@@ -193,8 +193,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    gives the pixels (`numpy("color"/"shape")` after `rasterize`), `PixelLayer.fromarray` makes the layer with a unicode name
    and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
    it goes directly above the top-level `Text` group. A hand-made overlay word layer over the ability is hidden when it names a
-   styled chart status, else the card refuses `unsupported-card`. `styled-word` remains only for a psd-tools without the engine
-   pieces (`psd_edit._fx_engine`).
+   styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
+   layer holding a badge or token run (`Ability FX: (BOT)`, `Ability FX: (1CD) | (2U)`: queue A's gradient cards, 2026-10-22)
+   or a word the chart has no style for (Morpho Knight's `Smoldering`) cannot be made again exactly, so the edit refuses
+   `unsupported-card` before anything changes ("ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop",
+   `psd_edit.kept_fx`). `styled-word` remains only for a psd-tools without the engine pieces (`psd_edit._fx_engine`).
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
@@ -294,7 +297,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the recipe; no fork change: the glyph pixels come from the JSX's own key-copy technique over the engine's public `model`,
   `layout` and `raster` modules, `PlacedGlyph` still has no cluster index). Derived state: every `<Ability> FX: ...` layer goes
   and one comes back per styled status word (`Ability FX: Blazing`, `#n` for a repeat), above `Text`, the chart's `lfx2`/`lrFX`
-  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Proof
+  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Since
+  2026-10-22 an FX layer that is no styled chart status (a badge or token run, an unstyled word) refuses the edit too: it
+  would be dropped (19 queue A cards carry badge layers; the FX tests run on Mini Doomer from before its `Ability FX: (BOT)`). Proof
   against `Effect Layers.jsx` (Convert overlays, the 2026-10-20 trial copies under `/private/tmp/fontexplore/fx/mig/out/`) on the
   unchanged text: Gasoline `Ability FX: Blazing` IoU 0.966 with the JSX pixel cut, 99.9% of our ink on its ink, bbox equal but
   for one column (the fork's `g`), validator coverage 1.0 (the JSX's 3,422 ink pixels, ours 3,312); the chart's Blazing glow and
