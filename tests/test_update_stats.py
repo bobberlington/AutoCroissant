@@ -348,7 +348,7 @@ def test_details_follow_the_parsed_cards(github, psds):
     doomer = details[_file_sha(github, DOOMER)]
     assert (doomer["path"], doomer["name"], doomer["parser"]) == (DOOMER, "Mini Doomer", pa.PARSER_VERSION)
     assert doomer["stats"]["hp"] == "template" and doomer["icons"] == "images" and doomer["template"]["name_layer"] == "Text/Name"
-    assert {e["supplied"] for e in doomer["fonts"].values()} == {None}            # no /fonts cache on this machine
+    assert {e["supplied"] for e in doomer["fonts"].values()} == {True}            # judged by the checkout's MDW/Fonts (find_fonts)
     mtime = os.stat("psd_details.json").st_mtime_ns
     _run()                                                                      # 304
     assert os.stat("psd_details.json").st_mtime_ns == mtime

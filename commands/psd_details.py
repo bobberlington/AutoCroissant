@@ -4,12 +4,15 @@ style, stat-row encoding, status-word layers, template deviations and a compact 
 keyed by its git blob sha, in psd_details.json beside the pickles (committed; /push carries it with them).
 
     python -m commands.psd_details --clone <dir> [--out psd_details.json] [--fonts <dir>]
+    python -m commands.psd_details --refill [--out psd_details.json] [--fonts <dir>]
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load/save (tmp + fsync + replace under one lock), prune(cards, shas) to the tree. The traverser
-gathers every re-parsed card's record in /update_stats; the CLI backfills a clone in a process pool (the open is the
-whole cost, like font_check --all). No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC
-profile when it is built in.
+gathers every re-parsed card's record in /update_stats, its "supplied" flags from font_index() (font_check.find_fonts:
+the checkout's MDW/Fonts, else the fonts cache); the CLI backfills a clone in a process pool (the open is the whole
+cost, like font_check --all), or --refill sets every record's flags from the fonts (records gathered without them, or
+after MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when
+it is built in.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -28,11 +31,11 @@ from psd_tools import PSDImage
 from psd_tools.constants import Resource
 
 from commands.card_models import card_name
-from commands.font_check import CACHE_JSON, EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, cached_index, is_card_psd, layer_fonts
-from commands.github_api import blob_sha
+from commands.font_check import EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, find_fonts, is_card_psd, layer_fonts
+from commands.github_api import blob_sha, token_from_env
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
-from global_config import DETAILS_JSON, RULEBOOK_DIR, TYPES_DIR
+from global_config import CARD_REPO, DETAILS_JSON, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -310,17 +313,45 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
     return record
 
 
-def mark_supplied(record: dict, index: FontIndex) -> None:
-    """Set each font's "supplied" from the index (records gathered without one, as the CLI's pool workers do)."""
+def mark_supplied(record: dict, index: FontIndex) -> bool:
+    """Set each font's "supplied" from the index (records gathered without one, as the CLI's pool workers do). True when one changed."""
     fonts = record.get("fonts")
+    changed = False
     if isinstance(fonts, dict):
         for name, entry in fonts.items():
-            entry["supplied"] = index.resolve(name) is not None
+            supplied = index.resolve(name) is not None
+            if isinstance(entry, dict) and entry.get("supplied") is not supplied:
+                entry["supplied"] = supplied
+                changed = True
+    return changed
 
 
-def font_index(cache_path: str = CACHE_JSON) -> Optional[FontIndex]:
-    """The faces /fonts cached (the bot has no checkout), or None without that cache: "supplied" stays null."""
-    return cached_index(cache_path)
+def refill(cards: dict, index: FontIndex) -> int:
+    """mark_supplied over every record. Returns how many records changed."""
+    return sum(mark_supplied(record, index) for record in cards.values() if isinstance(record, dict))
+
+
+def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE) -> Optional[FontIndex]:
+    """
+    The faces the "supplied" flags are judged by: font_check.find_fonts (PSD_TOOLS_FONT_DIRS, the checkout's MDW/Fonts,
+    else the fonts cache refreshed by tree sha: 1 conditional request, the changed font blobs on top).
+
+    Returns:
+        FontIndex, or None (one console line) when the fonts can't be had or a file failed to download: "supplied" stays
+        null then, never a wrong False. A failed listing keeps the cache as the last refresh left it
+    """
+    try:
+        fonts = find_fonts(repository, directory=cache)
+    except Exception as e:                      # never fails an update
+        print(f"Fonts for the details: {e}")
+        return None
+    if fonts.failed:
+        print(f"Fonts for the details: {len(fonts.failed)} MDW/Fonts files failed to download; supplied stays null")
+        return None
+    if fonts.error:
+        print(f"Fonts for the details: {fonts.error}")
+    index = FontIndex(fonts.directory) if isdir(fonts.directory) else None
+    return index if index is not None and index.files else None
 
 
 def load(path: str = DETAILS_JSON) -> dict:
@@ -458,14 +489,21 @@ def record_sizes(cards: dict) -> list:
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """The backfill: every card PSD of a clone into the details file, one summary line, the errors below it."""
+    """The backfill (every card PSD of a clone into the details file) or the refill (the supplied flags); one summary line."""
     parser = ArgumentParser(prog="python -m commands.psd_details",
                             description="Gather every card PSD's details (fonts, text layers, effects, stats encoding, layer tree...) "
-                                        "from a local clone into psd_details.json, keyed by git blob sha.")
-    parser.add_argument("--clone", required=True, metavar="DIR", help="the card repo checkout")
+                                        "from a local clone into psd_details.json, keyed by git blob sha; or, with --refill, set "
+                                        "every record's supplied flags from the fonts.")
+    parser.add_argument("--clone", default="", metavar="DIR", help="the card repo checkout")
+    parser.add_argument("--refill", action="store_true", help="set the supplied flags of the records already in --out (no PSD is read)")
     parser.add_argument("--out", default=DETAILS_JSON, metavar="FILE", help=f"the details file (default: {DETAILS_JSON})")
-    parser.add_argument("--fonts", default="", metavar="DIR", help="the fonts folder for the supplied flags (default: the clone's MDW/Fonts when present)")
+    parser.add_argument("--fonts", default="", metavar="DIR", help="the fonts folder for the supplied flags (default: the clone's "
+                                                                   "MDW/Fonts when present; --refill: the checkout's, else the fonts cache)")
     options = parser.parse_args(args)
+    if options.refill == bool(options.clone):
+        parser.error("give --clone or --refill")
+    if options.refill:
+        return _refill_file(options.out, options.fonts)
     fonts_dir = options.fonts or (join(options.clone, FONTS_DIR) if isdir(join(options.clone, FONTS_DIR)) else "")
     index = FontIndex(fonts_dir) if fonts_dir else None
     started = perf_counter()
@@ -477,6 +515,25 @@ def main(args: Optional[list] = None) -> int:
     print(f"{len(cards)} cards into {options.out} in {perf_counter() - started:.1f} s ({len(errors)} errors); {stats}")
     for line in errors:
         print("  " + line)
+    return 0
+
+
+def _refill_file(path: str, fonts_dir: str) -> int:
+    """--refill: load, mark, save only when a flag changed (atomic, so the bot never reads half a file)."""
+    if fonts_dir:
+        index = FontIndex(fonts_dir)
+        index = index if index.files else None
+    else:
+        token_from_env()
+        index = font_index()
+    if index is None:
+        print(f"No fonts {'in ' + fonts_dir if fonts_dir else 'to judge by'}: {path} left as it is")
+        return 1
+    cards = load(path)
+    changed = refill(cards, index)
+    if changed:
+        save(cards, path)
+    print(f"{changed} of {len(cards)} records' supplied flags changed in {path} ({index.files} font files)")
     return 0
 
 
@@ -505,6 +562,7 @@ __all__ = [
     'mark_supplied',
     'prune',
     'record_sizes',
+    'refill',
     'save',
     'text_of',
 ]
