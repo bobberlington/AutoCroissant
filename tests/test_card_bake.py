@@ -577,7 +577,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer hp 5 -> 8"
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer hp 5 -> 8\n\nEdit-by: web"
     after = github.files_at(github.head)
     changed = sorted(p for p in after if after[p] != files.get(p))
     assert changed == [DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATHS[0]]

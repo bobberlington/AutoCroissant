@@ -26,9 +26,9 @@ NOTES = {                                       # what /update_stats printed on 
     "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
     "Auxiliary/Rulebook/20_Creature_Types.psd": ["MISSPELT TYPE: tornado"],
     "Creatures/Kirby/3 Stars/Computer_Virus.psd": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"],
-    "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd": [SEVERAL],
-    "Creatures/Kirby/3 Stars/Pix.psd": [SEVERAL],
-    "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd": [SEVERAL],
+    "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd": [],                # SEVERAL checked on the website (D7)
+    "Creatures/Kirby/3 Stars/Pix.psd": [],
+    "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd": [],
     "Auxiliary/Minions/Anubisath_Guardian.psd": [],                   # ABILITY_EXCLUSIONS since e4e0a58
     "Auxiliary/Minions/Qiraji_Soldier.psd": [],
     "Auxiliary/Minions/Silithid.psd": [],
