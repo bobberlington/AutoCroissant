@@ -36,6 +36,9 @@ class Reply:
         if self.status_code >= 400:
             raise RuntimeError(self.status_code)
 
+    def close(self):
+        pass
+
 
 class Commit:
     def __init__(self, n):

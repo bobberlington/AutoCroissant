@@ -1,8 +1,11 @@
-"""GitHub access for the card repo: the token, auth headers, tree and blob fetches (sha-verified), and the retry policy."""
+"""GitHub access for the card repo: the token, auth headers, a Session per thread, tree and blob fetches (sha-verified),
+and the retry policy."""
 from hashlib import sha1
+from http.cookiejar import DefaultCookiePolicy
 from os import environ
-from requests import get
+from requests import Session
 from requests.exceptions import RequestException
+from threading import local
 from time import sleep
 
 try:
@@ -19,6 +22,11 @@ HEADERS: dict = {"Authorization": f"token {GIT_TOKEN}"} if GIT_TOKEN else {}
 RAW_MEDIA = "application/vnd.github.raw"            # Accept: a blob's bytes instead of its JSON envelope
 RETRY_WAITS = (1, 2)                                # seconds between the 3 tries of get_with_retry
 
+# ========================
+# Global State
+# ========================
+_local = local()                                    # one requests.Session per thread, never shared
+
 
 # ========================
 # Public API Functions
@@ -33,6 +41,21 @@ def token_from_env() -> None:
     """The Actions' GITHUB_TOKEN when config.py supplied none (the bot's own token wins)."""
     if not GIT_TOKEN and environ.get("GITHUB_TOKEN"):
         HEADERS["Authorization"] = f"token {environ['GITHUB_TOKEN']}"
+
+
+def session() -> Session:
+    """This thread's Session: its connections are kept alive between requests. It keeps no cookies (like requests.get)."""
+    s = getattr(_local, "session", None)
+    if s is None:
+        s = Session()
+        s.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+        _local.session = s
+    return s
+
+
+def get(url: str, **kwargs):
+    """requests.get on this thread's Session: same headers, auth and timeouts, without a new connection each time."""
+    return session().get(url, **kwargs)
 
 
 def api_url(repository: str, path: str) -> str:
@@ -57,6 +80,7 @@ def get_with_retry(url: str, **kwargs):
         else:
             if wait is None or (reply.status_code != 429 and reply.status_code < 500):
                 return reply
+            _discard(reply)
         sleep(wait)
 
 
@@ -75,11 +99,28 @@ def fetch_tree(repository: str, etag: str = "", retry: bool = True, timeout: int
 
 
 def fetch_blob(repository: str, sha: str, stream: bool = False, timeout: int = 30):
-    """A file's exact bytes by blob sha (raw.githubusercontent can lag behind the tree). Raises on an error status."""
-    reply = get(api_url(repository, f"git/blobs/{sha}"), stream=stream, timeout=timeout,
-                headers={**HEADERS, "Accept": RAW_MEDIA})
+    """
+    A file's exact bytes by blob sha (raw.githubusercontent can lag behind the tree), tried 3 times on a 5xx, 429 or
+    connection error (get_with_retry).
+
+    Returns:
+        The response; raises HTTPError on an error status, or the last connection error
+    """
+    reply = get_with_retry(api_url(repository, f"git/blobs/{sha}"), stream=stream, timeout=timeout,
+                           headers={**HEADERS, "Accept": RAW_MEDIA})
+    if reply.status_code >= 400 and stream:
+        reply.close()                               # hand the connection back
     reply.raise_for_status()
     return reply
+
+
+def _discard(reply) -> None:
+    """Read and close a reply that gets retried, so a stream's connection goes back to the pool."""
+    try:
+        reply.content                               # a short error body
+    except RequestException:
+        pass
+    reply.close()
 
 
 def blob_sha(data: bytes) -> str:
@@ -114,7 +155,9 @@ __all__ = [
     'fetch_blob',
     'fetch_tree',
     'fetch_verified',
+    'get',
     'get_with_retry',
     'print_token_status',
+    'session',
     'token_from_env',
 ]

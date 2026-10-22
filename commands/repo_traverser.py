@@ -52,6 +52,7 @@ class RepositoryTraverser:
         self._lookups: dict = {}                 # repo path -> Future of its commit page
         self.edits: Optional[CardEdits] = None
         self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
+        self.failed = 0                          # failed downloads: the tree ETag is not kept, so the next run retries
         self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
         self.repository = ""
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
@@ -129,11 +130,17 @@ class RepositoryTraverser:
         return cached[1]
 
     def _download(self, path: str, sha: str) -> Optional[str]:
-        """A PSD into a temp file, or None; a broken connection gets one more try (a 15 MB stream breaks now and then)."""
+        """A PSD into a temp file, or None. fetch_blob retries a 5xx; a stream that breaks gets one more try (a 15 MB
+        stream breaks now and then)."""
         for last in (False, True):
+            try:
+                reply = self._blob(sha, stream=True)
+            except RequestException as e:                       # tried 3 times already
+                print(f"{path}: download failed ({e})")
+                return None
             name, done = None, False
             try:
-                with self._blob(sha, stream=True) as reply:
+                with reply:
                     fd, name = mkstemp(suffix=".psd")
                     with fdopen(fd, "wb") as fh:
                         for chunk in reply.iter_content(1 << 20):
@@ -166,7 +173,7 @@ class RepositoryTraverser:
         self.repository = repository
         stale = any(getattr(c, "parser_version", None) != PARSER_VERSION for c in self.db.stats.values())
         etag = _tree_etags.get(repository) if not force_update and not self.only and not stale else None
-        resp = fetch_tree(repository, etag or "", retry=False)      # 304 when nothing changed (free)
+        resp = fetch_tree(repository, etag or "")                   # 304 when nothing changed (free)
         if resp.status_code == 304:
             say(interaction, "Nothing changed in the card repo since the last update.")
             return ([], 0)
@@ -187,7 +194,12 @@ class RepositoryTraverser:
 
         # Update old_stats paths after processing all files
         self._update_old_stats_paths()
-        _tree_etags[repository] = resp.headers.get("ETag")
+        if self.failed:                                 # no 304 next time: the failed files are fetched again
+            _forget_tree(repository)
+            say(interaction, f"Could not download {self.failed} file{'' if self.failed == 1 else 's'} from the card repo; "
+                             "the next /update_stats tries again.")
+        else:
+            _tree_etags[repository] = resp.headers.get("ETag")
 
         return (problems, num_changed)
 
@@ -227,6 +239,8 @@ class RepositoryTraverser:
             try:
                 manifest = json_loads(self._repo_text(ICON_MANIFEST_PATH))
             except (RequestException, ValueError) as e:
+                if isinstance(e, RequestException):
+                    self.failed += 1
                 print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
@@ -239,6 +253,7 @@ class RepositoryTraverser:
         try:
             return CardAuthors.parse(self._repo_text(path))
         except RequestException as e:
+            self.failed += 1
             print(f"Could not read {path}; authors stay as they are: {e}")
             return None
 
@@ -265,6 +280,8 @@ class RepositoryTraverser:
         try:
             return CardEdits.parse(self._repo_text(path))
         except (RequestException, ValueError) as e:
+            if isinstance(e, RequestException):
+                self.failed += 1
             print(f"Could not read {path}; edits stay as they are: {e}")
             return None
 
@@ -363,6 +380,7 @@ class RepositoryTraverser:
             for (path, name, sha), download in zip(todo, downloads):
                 local_file = download.result()
                 if local_file is None:
+                    self.failed += 1
                     continue
                 try:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
@@ -476,6 +494,23 @@ class RepositoryTraverser:
 # ========================
 # Helper Functions
 # ========================
+def _gone_cards(db: StatsDatabase) -> list[str]:
+    """Cards whose PSD left the tree: the ones prune_clean_cards moves to old_stats."""
+    seen = set(db.seen_cards)
+    return sorted(n for n, c in db.stats.items() if n not in seen and not getattr(c, "duplicate_of", None))
+
+
+def _can_prune(traverser: RepositoryTraverser) -> bool:
+    """Whether the run saw the whole repo: no 304, no truncated tree, no failed download, at least one card."""
+    tree = traverser.tree
+    if tree is None or traverser.failed:
+        return False
+    if tree.get("truncated") or not traverser.db.seen_cards:
+        print("Card repo tree truncated or without cards; no card removed.")
+        return False
+    return True
+
+
 def _forget_tree(repository: str) -> None:
     """Drop the tree ETag so the next /update_stats refetches and retries."""
     _tree_etags.pop(repository, None)
@@ -533,11 +568,15 @@ def _update_stats(interaction: Optional[Interaction],
         output_problematic,
         force_update)
 
-    if num_changed > 0:
+    prunable = _can_prune(traverser)
+    gone = _gone_cards(stats_db) if prunable else []
+    if prunable and (num_changed > 0 or gone):
         stats_db.prune_clean_cards()
-    if num_changed > 0 or traverser.changed:
+    if gone:
+        say(interaction, "Removed (PSD deleted from the card repo): " + ", ".join(gone))
+    if num_changed > 0 or gone or traverser.changed:
         stats_db.save()
-    if traverser.tree is not None:                  # the records follow the tree: new blobs in, gone blobs out
+    if traverser.tree is not None and not traverser.tree.get("truncated"):    # new blobs in, gone blobs out
         if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed:
             psd_details.save(traverser.details)
 

@@ -52,17 +52,24 @@ class Reply:
     def __exit__(self, *exc):
         return False
 
+    def close(self):
+        pass
+
 
 class FakeGitHub:
     """files: repo path -> bytes. tree_status / broken blobs simulate outages. calls: what was requested."""
     def __init__(self, files: dict):
         self.files = dict(files)
         self.tree_status = 200
+        self.truncated = False
         self.broken: set = set()
+        self.flaky: dict = {}                   # blob sha -> how many more 503s before it answers
         self.calls: list = []
+        self.waits: list = []                   # get_with_retry's sleeps
 
     def tree(self) -> dict:
-        return {"tree": [{"path": p, "sha": _sha(d), "type": "blob"} for p, d in sorted(self.files.items())]}
+        return {"tree": [{"path": p, "sha": _sha(d), "type": "blob"} for p, d in sorted(self.files.items())],
+                "truncated": self.truncated}
 
     def get(self, url, headers=None, timeout=None, stream=False):
         headers = headers or {}
@@ -77,6 +84,9 @@ class FakeGitHub:
         path = next((p for p, d in self.files.items() if _sha(d) == sha), None)
         self.calls.append(("blob", path))
         if path is None or sha in self.broken:
+            return Reply(503)
+        if self.flaky.get(sha):
+            self.flaky[sha] -= 1
             return Reply(503)
         return Reply(200, self.files[path])
 
@@ -106,6 +116,7 @@ def github(monkeypatch, psds):
     files[DOOMER], files[FREEZER] = psds[DOOMER], psds[FREEZER]
     fake = FakeGitHub(files)
     monkeypatch.setattr(ga, "get", fake.get)
+    monkeypatch.setattr(ga, "sleep", fake.waits.append)
     monkeypatch.setattr(rt, "_tree_etags", {})
     monkeypatch.setattr(rt, "_file_cache", {})
     monkeypatch.setattr(pa.RepositoryTraverser, "_repo", lambda self: None)
@@ -239,26 +250,86 @@ def test_only_cards_reparsed(github):
     assert github.calls[0] == ("tree", None) and github.blobs() == [DOOMER]
 
 
-def test_tree_5xx_raises_and_saves_nothing(github):
-    """Current behaviour (BUGS B9): the error escapes update_stats."""
+def test_tree_5xx_retried_then_raises_and_saves_nothing(github):
+    """B9: the tree is tried 3 times (1 s, then 2 s apart); a lasting 5xx escapes update_stats and saves nothing."""
     github.tree_status = 502
     with pytest.raises(HTTPError):
         _run()
+    assert [kind for kind, _ in github.calls] == ["tree"] * 3 and github.waits == [1, 2]
     assert not os.path.exists("stats.pkl") and rt._tree_etags == {}
 
 
-def test_blob_5xx_skips_the_card(github, psds, capsys):
-    """Current behaviour (BUGS B9): the card keeps its old parse and the tree ETag is still recorded."""
+def test_tree_5xx_then_200_updates(github, monkeypatch):
+    github.tree_status = 503
+    real = github.get
+
+    def recover(url, **kw):
+        reply = real(url, **kw)
+        github.tree_status = 200
+        return reply
+    monkeypatch.setattr(ga, "get", recover)
+    _run()
+    assert set(_saved()[0]) == {"Mini Doomer", "The Freezer"} and github.waits == [1]
+
+
+def test_blob_5xx_skips_the_card_and_keeps_no_etag(github, psds, capsys):
+    """B9: a lasting blob 5xx (3 tries) leaves the card at its old parse, and the tree ETag is not recorded, so the next
+    run fetches the tree again and re-downloads the card instead of getting a 304."""
     _run()
     github.files[DOOMER] = psds[OTHER]
     github.broken.add(_sha(psds[OTHER]))
-    _run()
-    assert "download failed" in capsys.readouterr().out
-    stats, _ = _saved()
-    assert stats["Mini Doomer"].blob_sha == _sha(psds[DOOMER])
     github.calls.clear()
     _run()
-    assert github.blobs() == []                                       # 304: stays stale until the repo changes
+    out = capsys.readouterr().out
+    assert "download failed" in out and "trying once more" not in out           # a 5xx is not tried a 4th time
+    assert "Could not download 1 file from the card repo; the next /update_stats tries again." in out
+    assert github.blobs() == [DOOMER] * 3 and github.waits == [1, 2]
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[DOOMER]) and old == {}
+    assert rt._tree_etags == {}
+    github.broken.clear()
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None) and github.blobs() == [DOOMER]       # no 304: the card is fetched again
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER]) and [c.blob_sha for c in old["Mini Doomer"]] == [_sha(psds[DOOMER])]
+    assert rt._tree_etags
+    github.calls.clear()
+    _run()
+    assert github.blobs() == [] and github.calls[0][1]                          # 304 again once nothing failed
+
+
+def test_failed_card_keeps_the_rest_of_the_run(github, capsys):
+    """B9: the other cards of a run with a failed download are saved; only the failed one is fetched next time."""
+    github.broken.add(_file_sha(github, DOOMER))
+    _run()
+    assert set(_saved()[0]) == {"The Freezer"} and rt._tree_etags == {}
+    github.broken.clear()
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None) and github.blobs() == [DOOMER]
+    assert set(_saved()[0]) == {"Mini Doomer", "The Freezer"} and rt._tree_etags
+
+
+def test_blob_5xx_then_200_parses(github, psds):
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    github.flaky[_sha(psds[OTHER])] = 2
+    github.calls.clear()
+    _run()
+    assert github.blobs() == [DOOMER] * 3 and github.waits == [1, 2] and rt._tree_etags
+    assert _saved()[0]["Mini Doomer"].blob_sha == _sha(psds[OTHER])
+
+
+def test_failed_small_file_keeps_no_etag(github, capsys):
+    """An authors or edits file that could not be read is fetched again next run (it applies to every card)."""
+    github.broken.add(_file_sha(github, pa.EDITS_PATH))
+    _run()
+    assert "edits stay as they are" in capsys.readouterr().out and rt._tree_etags == {}
+    assert _saved()[0]["The Freezer"].note != "checked"
+    github.broken.clear()
+    _run()
+    assert _saved()[0]["The Freezer"].note == "checked" and rt._tree_etags
 
 
 def test_broken_download_is_tried_once_more(github, psds, capsys):
@@ -302,13 +373,61 @@ def test_broken_download_is_tried_once_more(github, psds, capsys):
     assert github.blobs().count(DOOMER) == 2
 
 
-def test_deleted_card_alone_is_kept(github):
-    """Current behaviour (BUGS B8): pruning needs a changed card, so a deletion alone leaves the card listed."""
+def test_deleted_card_alone_is_pruned(github, capsys):
+    """B8: a deletion with no other change prunes the card into old_stats, like the prune after a change."""
     _run()
+    freezer = _saved()[0]["The Freezer"]
     del github.files[FREEZER]
+    capsys.readouterr()
     _run()
     stats, old = _saved()
-    assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
+    assert set(stats) == {"Mini Doomer"} and [c.blob_sha for c in old["The Freezer"]] == [freezer.blob_sha]
+    out = capsys.readouterr().out
+    assert "Removed (PSD deleted from the card repo): The Freezer" in out
+    assert "0 cards changed or new, 1 unchanged, 0 moved." in out
+    _run()                                                            # 304: nothing pruned or saved again
+    assert _saved()[1]["The Freezer"] == old["The Freezer"] and len(_saved()[1]["The Freezer"]) == 1
+
+
+def test_rename_with_failed_download_keeps_the_old_card(github, capsys):
+    """A renamed PSD whose new blob fails: nothing is pruned, the old name stays listed until the retry lands."""
+    _run()
+    data = github.files.pop(DOOMER)
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = data
+    github.broken.add(_sha(data))
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {}
+    assert "Removed (PSD deleted" not in capsys.readouterr().out
+    github.broken.clear()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mega Doomer", "The Freezer"} and len(old["Mini Doomer"]) == 1
+    assert "Removed (PSD deleted from the card repo): Mini Doomer" in capsys.readouterr().out
+
+
+def test_truncated_tree_prunes_nothing(github, capsys):
+    _run()
+    details = _details()
+    del github.files[FREEZER]
+    github.truncated = True
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {} and _details() == details
+    assert "Card repo tree truncated or without cards; no card removed." in capsys.readouterr().out
+
+
+def test_tree_without_cards_prunes_nothing(github, capsys):
+    """A tree with no PSDs (say a /set_repo to another repo) moves no card to old_stats."""
+    _run()
+    del github.files[FREEZER], github.files[DOOMER]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {}
+    assert "no card removed" in capsys.readouterr().out
 
 
 def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):

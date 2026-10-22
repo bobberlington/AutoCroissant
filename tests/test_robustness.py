@@ -235,7 +235,7 @@ def test_init_vc_outside_voice_replies(channels, monkeypatch):
 class Reply:
     def __init__(self, status, body=None, etag=""):
         self.status_code, self._body, self.headers = status, body, {"ETag": etag} if etag else {}
-        self.ok = status < 400
+        self.ok, self.content = status < 400, b""
 
     def json(self):
         if self._body is None:
@@ -246,6 +246,9 @@ class Reply:
         if not self.ok:
             from requests.exceptions import HTTPError
             raise HTTPError(f"{self.status_code} Server Error")
+
+    def close(self):
+        pass
 
 
 TREE = {"tree": [{"path": "Items/Red_Bloon.png", "sha": "r1"}, {"path": "Types/Fire.png", "sha": "f1"}]}
