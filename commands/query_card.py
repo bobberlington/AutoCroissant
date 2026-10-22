@@ -722,7 +722,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     which = f"version {index + 1} of {len(versions)}"
     since = f"from {_day(card.timestamp)}{_approx(card)}"
     tag = None if current is not None else getattr(versions[len(versions) - 1], "archived", None)
-    if tag and end > (tag.get("at") or 0):
+    if tag and index + 1 == len(versions) and end > (tag.get("at") or 0):     # no at: archived after its last version
         line = f"{head}{_archived_text(tag)}. Its last version ({which}), {since}:"
     elif card is current:
         line = f"{head}the current card ({which}), {since}."

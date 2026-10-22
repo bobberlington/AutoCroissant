@@ -163,6 +163,15 @@ def test_a_backfilled_archive_says_by(db, monkeypatch):
     assert f"{HEAD}archived by 2026-06-18 (PSD deleted, renamed to Zoey). Its last" in _texts("ZOEY!!!!!", "2026-10-01")[0]
 
 
+def test_an_undated_archive_keeps_the_earlier_versions(db, monkeypatch):
+    old = _zoey(commit=None)
+    old[1].archived["at"] = None
+    monkeypatch.setitem(cm.stats_db.old_stats, "ZOEY!!!!!", old)
+    assert f"{HEAD}version 1 of 2, from 2026-01-30 (date approximate) until 2026-02-07." in _texts("ZOEY!!!!!", "2026-02-01")[0]
+    assert f"{HEAD}archived on an unknown date (PSD deleted). Its last version (version 2 of 2)" in \
+        _texts("ZOEY!!!!!", "2026-03-01")[0]
+
+
 def test_archived_cards_only_with_as_of(db):
     assert _texts("ZOEY!!!!!", None) == ["No card found!"]
 
