@@ -840,6 +840,9 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
          which calls `rec_of(key_of(by))`). `work/changes-tabs` does it for the Database edits tab.
 
      This works with the jetson's pipeline, which already applies `Card Edits.json`.
+   - *At landing,* regenerate the migration commit: `migrate` against the TTSCardMaker head of that moment and the jetson's
+     pickles, in the same sitting as the deploy. A field `Card Edits.json` already sets is not carried, and a live `/alias` or
+     `/mass_replace` since the branch's commit would otherwise be missed or clobbered.
    - *Verify:*
      - `test_metadata_edits.py`;
      - every one of the 60 aliases resolves to the same card in `/query` and in the site's `cards.json` aliases as before;
@@ -948,6 +951,9 @@ except 6, which is one day, not 14:
      that persist, show "PSD pending" and are baked by the next Card sync;
    - `del_entry` becomes `hidden: true`;
    - the Discord-only values found at step 5 are carried into `Card Edits.json`.
+   - *Not as answered, to put to the owner:* stars and types are refused from Discord until the bake prints them (§11;
+     psd_edit `NOT_YET` would refuse the card's whole bake), which drops a live Discord option. The carry is 596 series values
+     (`Card Edits.json` 43 entries to 632); confirm before TTSCardMaker lands.
 3. **Aliases move from aliases.pkl into `Card Edits.json` `aliases`** (60 today), and `/alias` commits there. Answered: yes (aliases too).
 4. **`ACTIONS_TOKEN` on the jetson** (fine-grained, TTSCardMaker only, Actions read and write), so that `/update_stats
    force_update` and `cards:` can start a Card sync run. Answered: yes; the owner creates it and puts it in the jetson's config.py. Without it those options reply with a link and the
