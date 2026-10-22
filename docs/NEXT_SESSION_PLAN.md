@@ -147,7 +147,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - card_bake: pass the merged PNG as the PSD preview once fork save(preview=) lands (card_bake still calls update_preview=True) [blocked: new tag] (PIPE §14 Q2; BUGS pass 2)
 - tests/test_card_bake.py cannot collect under the fork venv (no requests); pyyaml not installed, two workflow-shape tests skip [open] (BUGS pass 2)
 - /fonts cache from the local clone [open] (M:next-session-plan)
-- Round 4 bot follow-ups: flip test_moved_effect_paints_the_new_digit and test_cannon_rows_refuse_parity_at_the_baseline [blocked: round 4 tag] (R4 §3)
+- Round 4 bot follow-ups: test_moved_effect_paints_the_new_digit flipped, test_cannon_rows_refuse_parity_at_the_baseline now test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean; both skip on forks without rounding/bevel textures [done 2026-10-22, work/save-preview] (R4 §3)
 - Parity decision for lit cells above mean 1.0 at 0% bad: Cannon 1.579, Glaive_Main_Cannon 1.649; 28 raw-export cards refused by ICC in render_region [user] (R4 §3)
 - D3 remove stale Shadow Duelist from ABILITY_EXCLUSIONS after a golden-checked reparse [open] (BUGS 1.2; SK:autocroissant-psd-extraction-campaign)
 - D4 old_stats balloon 637698b cleanup (optional, diff_stats-gated) [open] (BUGS 1.2)

@@ -22,7 +22,7 @@ from psd_tools.constants import Resource
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import fork_reason, text_engine as _text_engine
+from conftest import bevel_textures, fork_reason, rounds_bytes, text_engine as _text_engine
 
 # ========================
 # Configuration
@@ -85,6 +85,10 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
 
 
 text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
+# round 4 (cards past tag cards-20261021): rounded bytes; textured bevels as well
+rounding = pytest.mark.skipif(not (_text_engine() and rounds_bytes()), reason="the fork truncates composite bytes (before round 4)")
+round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
+                            reason="the fork lacks round 4's byte rounding or bevel textures")
 
 
 # ========================
@@ -537,12 +541,14 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     differs = (old != new).any(axis=2)
     row = np.zeros_like(differs)
     row[HP_ROW[1]:HP_ROW[3], HP_ROW[0]:HP_ROW[2]] = True
-    assert int((differs & ~row).sum()) == 0 and int(differs.sum()) == baked.changed_pixels > 0
+    assert int((differs & ~row).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels   # a replaced pixel may equal the PNG's
     saved = PSDImage.open(baked.psd_path)
     assert saved.has_preview() and {d.name for d in pe.template_row(saved, "hp")[1].values() if d.visible} == {"8"}
     old_preview = PSDImage.open(_card(clone, MINI_DOOMER)[0]).topil(apply_icc=False)
     moved = (np.asarray(old_preview) != np.asarray(saved.topil(apply_icc=False))).any(axis=2)
-    assert moved.any() and int((moved & ~differs).sum()) == 0      # Photoshop's preview, the merge's pixels replaced
+    # Photoshop's preview, the merge's pixels replaced (outside the PNG's changes only where a replaced pixel kept its value)
+    assert moved.any() and int((moved & ~row).sum()) == 0
+    assert int((moved & ~differs).sum()) <= baked.changed_pixels - int(differs.sum())
     assert Image.open(baked.png_path).info.get("icc_profile") == Image.open(_card(clone, MINI_DOOMER)[1]).info.get("icc_profile")
     again = pe.classify(baked.reparse, {"hp": 8}, saved)
     assert again.jobs == {} and again.redundant == ["hp"]
@@ -563,7 +569,7 @@ def test_two_stats_gate_one_region_per_row(clone, parser, tmp_path):
     inside = np.zeros_like(differs)
     for x0, y0, x1, y1 in (HP_ROW, SPD_ROW):
         inside[y0:y1, x0:x1] = True
-    assert int((differs & ~inside).sum()) == 0 and int(differs.sum()) == baked.changed_pixels > 0
+    assert int((differs & ~inside).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels
     saved = PSDImage.open(baked.psd_path)
     assert stat_rows(saved)["spd"][0][1] == [3] and stat_rows(saved)["def"][0][1] == [2]
 
@@ -589,12 +595,11 @@ def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
     print("timings", {k: round(v, 2) for k, v in baked.timings.items()})
 
 
-@text_engine
+@rounding
 def test_moved_effect_paints_the_new_digit(clone):
     """hp 5 -> 2 in memory: the fork paints the moved GradientOverlay over cells 3-10, so the colour inside digit 2's mask
-    matches the official PNG inside digit 5's mask (the lit cells were bright before). Through apply_jobs this toggle still
-    refuses parity at the baseline: the lit cells' bar gradient renders at mean 1.03 against the 1.0 bar (max 7, 0% bad),
-    which is the bar's own GradientOverlay, not the digit's."""
+    matches the official PNG inside digit 5's mask (the lit cells were bright before). With rounded bytes the baseline
+    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22; truncated it was mean 1.03 and refused)."""
     psd_path, png_path = _card(clone, METTATON)
     png = Image.open(png_path)
     psd = PSDImage.open(psd_path)
@@ -610,21 +615,24 @@ def test_moved_effect_paints_the_new_digit(clone):
     new = inside(render, row.digits["2"], edit.region[:2])
     assert np.abs(new - inside(official, row.digits["5"], (0, 0))).max() < 3
     assert np.abs(new - inside(official, row.digits["2"], (0, 0))).max() > 20
+    _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
+    assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
+
+
+@round4
+def test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean(clone, parser, tmp_path):
+    """The Cannon's digits carry ColorOverlay + a textured BevelEmboss. With round 4 every row is 0% bad (2026-10-22):
+    the two-row atk passes (mean 0.51) and bakes, the one-row hp refuses on the mean alone (1.06 against the 1.0 bar)."""
+    for stat in ("atk", "hp"):
+        (tmp_path / stat).mkdir()
+    parsed, baked = _bake(clone, parser, CANNON, {"atk": 15}, tmp_path / "atk")
+    assert baked.reparse["card"]["atk"] == 15 and baked.reparse["validator"] == parsed["validator"]   # STATS TOO HIGH: atk 12 is
+    assert baked.parity["atk"]["bad_pct"] == 0 and baked.parity["atk"]["mean"] <= pe.PARITY_MEAN_MAX
     with pytest.raises(pe.Refused) as refused:
-        pe.baseline(PSDImage.open(psd_path), png, edit.region)
-    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.0")
-
-
-@text_engine
-def test_cannon_rows_refuse_parity_at_the_baseline(clone, parser, tmp_path):
-    """The Cannon's digits carry ColorOverlay + BevelEmboss, which the fork paints 5-7% wrong (max 110): apply_jobs refuses
-    parity before any pixel is pasted, for the two-row atk as for its one-row hp."""
-    for stat, value in (("atk", 15), ("hp", 2)):
-        with pytest.raises(pe.Refused) as refused:
-            _bake(clone, parser, CANNON, {stat: value}, tmp_path)
-        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad")
-        assert float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) > pe.PARITY_BAD_MAX
-    assert not list(tmp_path.iterdir())
+        _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
+    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.")
+    assert float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > pe.PARITY_MEAN_MAX
+    assert not list((tmp_path / "hp").iterdir())
 
 
 # ========================

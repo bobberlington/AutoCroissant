@@ -98,6 +98,25 @@ def text_engine() -> bool:
     return probe()
 
 
+def rounds_bytes() -> bool:
+    """The fork rounds composite bytes (round 4's fix/composite-byte-rounding): 3 at opacity 128 over black is 1.506."""
+    from PIL import Image
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (1, 1), color=(0, 0, 0))
+    psd.append(PixelLayer.frompil(Image.new("RGB", (1, 1)), psd))
+    top = PixelLayer.frompil(Image.new("RGB", (1, 1), (3, 3, 3)), psd)
+    top.opacity = 128
+    psd.append(top)
+    return psd.composite(force=True).getpixel((0, 0))[0] == 2
+
+
+def bevel_textures() -> bool:
+    """The fork draws a bevel's texture (round 4's fix/bevel-texture)."""
+    from psd_tools.api.effects import BevelEmboss
+    return hasattr(BevelEmboss, "texture_pattern")
+
+
 def fork_reason() -> str:
     """The skip reason of a test that needs the fork's text engine."""
     return FORK_WHY or f"the fork at {FORK_SRC} found, but psd_tools.composite.text does not import"
