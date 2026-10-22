@@ -25,7 +25,8 @@ BATCHES = Path(expanduser("~/Documents/Tools/psd-research"))     # std-batch-*/ 
 BATCH_LAG = {"std-batch-2026-10-22": {"Action"}}                 # started before the tag
 # near misses in any case, and tags one place may add first
 PROBES = ["Actions", "actions", "ACTIONS", "Actio", "OPT", "opt", "1 point", "0CD", "0cd", "10CD", "-1CD", "-2/1GCD",
-          "-2/1gcd", "1/0CD", "XX", "xx", "0U", "1PGX", "1pgx", "cd", "x cd", "1 cd"]
+          "-2/1gcd", "1/0CD", "XX", "xx", "0U", "1PGX", "1pgx", "cd", "x cd", "1 cd",
+          "oſ", "Actıon", "Actİon"]   # Unicode folds these to tags; ASCII case only (the font, JS /i, (?ai:))
 
 pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), reason=f"no card repo clone at {CLONE}")
 
@@ -40,16 +41,15 @@ def build_fns() -> dict:
 
 
 def spellings(tag: str) -> list:
-    """The tag, then lower, upper and title case and two alternating mixed cases of its letters, without repeats."""
+    """The tag, then every other upper/lower combination of its letters (2**letters in all)."""
     letters = [i for i, c in enumerate(tag) if c.isalpha()]
-
-    def alternate(first_upper: bool) -> str:
-        out = list(tag.lower())
+    out = [tag]
+    for mask in range(2 ** len(letters)):
+        s = list(tag)
         for k, i in enumerate(letters):
-            if (k % 2 == 0) == first_upper:
-                out[i] = out[i].upper()
-        return "".join(out)
-    return list(dict.fromkeys([tag, tag.lower(), tag.upper(), tag.title(), alternate(True), alternate(False)]))
+            s[i] = s[i].upper() if mask >> k & 1 else s[i].lower()
+        out.append("".join(s))
+    return list(dict.fromkeys(out))
 
 
 def node(tmp_path: Path, src: str) -> str:
@@ -69,7 +69,7 @@ def font() -> dict:
 
 @pytest.fixture(scope="module")
 def cased(font) -> dict:
-    """{spelling: tag} for every tag in every case (1540 for 341 tags)"""
+    """{spelling: tag} for every tag in every case (2530 for 341 tags)"""
     out = {s: t for t in font for s in spellings(t)}
     assert len(out) > 4 * len(font)
     return out
@@ -86,26 +86,47 @@ def expected(cased: dict, any_case: bool) -> dict:
     return {s: t for s, t in cased.items() if any_case or s == t}
 
 
+def shaper(order: list):
+    """texts -> {text: [glyph name]}: uharfbuzz, else the hb-shape tool, else skip."""
+    try:
+        import uharfbuzz as hb
+    except ImportError:
+        hb = None
+    if hb:
+        font = hb.Font(hb.Face(hb.Blob.from_file_path(str(FONT))))
+
+        def one(text: str) -> list:
+            buf = hb.Buffer()
+            buf.add_str(text)
+            buf.guess_segment_properties()
+            hb.shape(font, buf, {})
+            return [order[i.codepoint] for i in buf.glyph_infos]
+        return lambda texts: {t: one(t) for t in texts}
+    if not shutil.which("hb-shape"):
+        pytest.skip("needs uharfbuzz or hb-shape")
+
+    def tool(texts: list) -> dict:
+        lines = run_process(["hb-shape", "--no-glyph-names", "--no-positions", "--no-clusters", "--text-file=/dev/stdin",
+                             str(FONT)], input="\n".join(texts) + "\n", capture_output=True, text=True,
+                            check=True).stdout.splitlines()
+        assert len(lines) == len(texts)
+        return {t: [order[int(g)] for g in ln.strip("[]").split("|")] for t, ln in zip(texts, lines)}
+    return tool
+
+
 def test_font_draws_any_case(cased, any_case):
-    hb = pytest.importorskip("uharfbuzz")
     ttlib = pytest.importorskip("fontTools.ttLib")
     glyph = build_fns()["badge_glyph"]
     tt = ttlib.TTFont(FONT)
     order, cmap = tt.getGlyphOrder(), tt.getBestCmap()
-    shaper = hb.Font(hb.Face(hb.Blob.from_file_path(str(FONT))))
-
-    def shape(text: str) -> list:
-        buf = hb.Buffer()
-        buf.add_str(text)
-        buf.guess_segment_properties()
-        hb.shape(shaper, buf, {})
-        return [order[i.codepoint] for i in buf.glyph_infos]
-    got = {s: shape(f"({s})") for s in sorted(set(cased) | set(PROBES))}
-    badges = {s: g[0] for s, g in got.items() if any(x.startswith("badge_") for x in g)}
-    assert badges == {s: glyph(t) for s, t in expected(cased, any_case).items()}
-    assert all(len(got[s]) == 1 for s in badges)                      # one glyph for the whole "(tag)"
+    shape = shaper(order)
     plain = "(actions) (Action (cd) action (x cd) (ACTIONS)"
-    assert shape(plain) == [cmap[ord(c)] for c in plain]              # not a tag: its letters, as typed
+    cands = sorted(set(cased) | set(PROBES))
+    got = shape([f"({s})" for s in cands] + [plain])
+    badges = {s: got[f"({s})"][0] for s in cands if any(x.startswith("badge_") for x in got[f"({s})"])}
+    assert badges == {s: glyph(t) for s, t in expected(cased, any_case).items()}
+    assert all(len(got[f"({s})"]) == 1 for s in badges)                 # one glyph for the whole "(tag)"
+    assert got[plain] == [cmap[ord(c)] for c in plain]                  # not a tag: its letters, as typed
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs node")

@@ -133,13 +133,16 @@ left alone, feaLib would merge them into one Format 2. The build asserts that no
 Size: 5,736,204 bytes (+12,776). GSUB grew from 49,724 to 62,498 bytes; every other table is byte-identical, glyphs,
 SVG, cmap and name included.
 Proof, 2026-10-22, offline on the built font (scripts in /tmp/anycase-work, scratch):
-- HarfBuzz: 341 tags × lower/upper/title/2 mixed cases = 1540 spellings, each under default features, `liga` off and
+- HarfBuzz: 341 tags × every letter-case combination = 2530 spellings, each under default features, `liga` off and
   `rlig` off, all shape to their canonical badge glyph with its advance. The 341 canonical tags shape byte-identically
-  to the committed font. 10,809 non-tags (every spelling without one paren, with a `z` or a space added, in `[ ]`)
+  to the committed font. 17,739 non-tags (every spelling without one paren, with a `z` or a space added, in `[ ]`)
   draw no badge and shape as before.
 - Every ability, note and name in stats.pkl (1616 texts), plus `Card Edits.json`, shapes exactly as before except
   A P E X P R E D A T O R's ability. Its `(action)` is the only other-case tag on today's cards.
-- CoreText (a Swift tool loads the file, no install): the same 1540/1540, 7717 near misses unchanged.
+- CoreText (a Swift tool loads the file, no install): the same 2530/2530, 12,670 near misses unchanged.
+- Non-ASCII letters that Unicode folds to a tag (`(oſ)`, `(Actıon)`, `(Actİon)`) draw no badge: the case folding is ASCII only.
+- Short tags in prose: any case now badges `(os)`, `(od)`, `(Os)`, `(xu)`, `(e1t)`, `(1u)` and the like wherever they are
+  typed, as asked. None occur in today's cards or rulebook text; keep it in mind when writing card text.
 - Photoshop: **not confirmed yet** (another workflow owned Photoshop). Run `~/Documents/Tools/psd-research/std/case_badge_check.jsx`
   with the new font installed and Photoshop restarted. It writes `case_badge_check.log` and `.png` next to itself.
   A CoreText simulation of its rules passes on the new font and fails exactly the other-case rows on the old one.
@@ -189,7 +192,8 @@ after the last letter pushes the label off centre.
 
 **The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
 carry the same 341 since 2026-10-22 (TTSCardMaker f6ce500); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
-and every case of every tag (the font by HarfBuzz when `uharfbuzz` is importable, e.g. `~/.venvs/ac-py314-fork`; the walk
+and every case of every tag: all 2^letters combinations, 2530 spellings (the font by HarfBuzz: `uharfbuzz` where importable,
+e.g. `~/.venvs/ac-py314-fork`, else the `hb-shape` tool, so it runs in `ac-py314-psd125` too; the walk
 test skips "still exact-case" until the patch is applied, and "clone behind" for an any-case walk with an older font):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
@@ -197,7 +201,8 @@ test skips "still exact-case" until the patch is applied, and "clone behind" for
   73904db so it holds no `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
   `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U` and `Action`; not in git, pre-`Action` copies in
-  `std/pre-action-2026-10-22/`; any case once `std/case_insensitive_tag.patch` is applied (`/i`, and `(?i:...)` in l1_check.py)
+  `std/pre-action-2026-10-22/`; any case once `std/case_insensitive_tag.patch` is applied (`/i`, and `(?ai:...)` in l1_check.py: ASCII case only, like
+  JS `/i` and the font; plain `(?i:...)` would also take `(oſ)`, `(Actıon)`, `(Actİon)`, which the test probes)
 
 A **fourth copy** lives in each std batch folder (`~/Documents/Tools/psd-research/std-batch-*/`: `scripts/std_card.jsx`
 `STD_TAG` and `tools/std_driver.py` `TAG`). `test_batches_match_font` checks it, allowing `BATCH_LAG` (std-batch-2026-10-22
