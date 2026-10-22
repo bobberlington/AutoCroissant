@@ -55,7 +55,8 @@ class CardBuild:
         db: The database it updates in place
         report: One message (default print); /update_stats sends it to Discord
         progress: The running parse count (default: PROGRESS printed)
-        aliases: alias -> PNG file name (aliases.pkl), the duplicates' names
+        aliases: alias -> PNG file name (aliases.pkl), the duplicates' names until Card Edits.json has aliases_moved
+            (a duplicate's own Card Edits.json aliases count either way)
         etags: repository -> the last kept tree ETag (/update_stats keeps it between runs for a free 304)
         file_cache: repo path -> (blob sha, text) of the small files, kept between runs
         legacy: History as /update_stats keeps it (a version per changed blob or move; old paths follow the card)
@@ -387,19 +388,26 @@ class CardBuild:
         siblings: dict = {}
         for name, (original, number, _) in found.items():
             siblings.setdefault(original, []).append(number)
+        moved = self.edits is not None and self.edits.aliases_moved     # aliases.pkl moved into Card Edits.json
         for name, (original, number, png) in found.items():
             src = self.db.stats[original]
             card = deepcopy(src)
             card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
-            card.display_name = self._duplicate_name(png, src, number, sorted(siblings[original]), self.aliases)
+            own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
+            card.display_name = self._duplicate_name(png, src, number, sorted(siblings[original]),
+                                                     {} if moved else self.aliases, own)
             self.db.stats[name] = card
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n])) + sum(1 for n in before if n not in found)
 
     @staticmethod
-    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None) -> str:
-        """The /alias pointing at this PNG, else the PSD's hidden title in order, else the original's name."""
-        found = [a for a, target in (aliases or {}).items() if target.lower() == png]
+    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None,
+                        own: Optional[list] = None) -> str:
+        """
+        The longest alias of this PNG (aliases.pkl's pointing at it, and own: its Card Edits.json entry's), else the
+        PSD's hidden title in order, else the original's name.
+        """
+        found = [a for a, target in (aliases or {}).items() if target.lower() == png] + [a for a in own or [] if a.strip()]
         if found:
             return " ".join(w[:1].upper() + w[1:] for w in max(found, key=len).replace("_", " ").split())
         titles = getattr(original, "alt_names", None) or []
@@ -715,7 +723,7 @@ QUALITY_SLACK = 3                                                 # G5: cards th
 DETAILS_SHARE = 0.05                                              # G5: psd_details records that may go
 EXIT_OK, EXIT_ERROR, EXIT_GATE = 0, 1, 2
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}                              # a missing blob fails instead of being fetched
-ALIASES_REF = "main"                                              # aliases.pkl's AutoCroissant ref until step 5
+ALIASES_REF = "main"                                              # aliases.pkl's AutoCroissant ref (ignored once Card Edits.json has aliases_moved)
 
 
 def _git(repo: str, *args: str) -> str:

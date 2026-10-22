@@ -19,6 +19,7 @@ from commands.analytics import (
     set_reminder,
 )
 from commands.card_runner import bake_cards
+from commands.discord_edits import manage_alias, manual_metadata_entry, mass_replace_field
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
@@ -56,13 +57,10 @@ from commands.psd_analyzer import (
     export_stats_to_file,
     init_psd,
     list_orphans,
-    manual_metadata_entry,
     view_old_metadata,
     update_stats,
-    mass_replace_field,
 )
 from commands.query_card import (
-    manage_alias,
     init_query,
     query_ability,
     query_ability_num_occur,
@@ -358,10 +356,10 @@ async def slash_set_repo(interaction: Interaction,
 
 
 manage_alias = to_thread(manage_alias)
-@tree.command(name="alias", description="View, create, or delete card aliases (admin only).")
+@tree.command(name="alias", description="View, create, or delete card aliases: commits to the card repo's Card Edits.json (admin only).")
 @app_commands.describe(
     alias='The alias name. Leave empty to view all aliases, or provide without card name to delete.',
-    card='The card to alias. Omit to delete the alias.',
+    card='The card to alias (its image file name, or the end of it). Omit to delete the alias.',
 )
 async def slash_alias(interaction: Interaction,
                       alias: Optional[str] = None,
@@ -369,6 +367,7 @@ async def slash_alias(interaction: Interaction,
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
+    await interaction.response.defer()
     await manage_alias(interaction, alias, card)
 
 
@@ -455,12 +454,12 @@ async def slash_export_rulebook(interaction: Interaction):
 
 
 manual_metadata_entry = to_thread(manual_metadata_entry)
-@tree.command(name="update_metadata", description="Edit metadata for a card (admin only).")
+@tree.command(name="update_metadata", description="Edit a card's data: one commit to the card repo's Card Edits.json (admin only).")
 @app_commands.describe(
     query='The card to edit the metadata for.',
-    del_entry='Delete the entire metadata entry for this card. Default = False.',
-    author='The creator of the card.',
-    ability='Card ability text.',
+    del_entry='Hide this card on the website and in queries (hidden in Card Edits.json). Default = False.',
+    author='The creator of the card (a line in the card repo\'s Card Authors.txt).',
+    ability='Card ability text (printed on the card image by the next card bake).',
     stars='Star count (e.g., 1-7).',
     subtype='Card subtype.',
     series='Card series.',
@@ -526,7 +525,7 @@ async def slash_view_old_metadata(
 
 
 mass_replace_field = to_thread(mass_replace_field)
-@tree.command(name="mass_replace", description="Replace all instances of one field value with another (admin only).")
+@tree.command(name="mass_replace", description="Replace one field value with another on every card: one card repo commit (admin only).")
 @app_commands.describe(
     field='The field to modify (author, series, subseries, subtype, or card_type).',
     old_value='The value being replaced.',

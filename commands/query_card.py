@@ -47,6 +47,7 @@ class CardRepository:
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
+        self._edits = None                               # that file, parsed (CardEdits): /alias reads its aliases
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
@@ -95,9 +96,9 @@ class CardRepository:
             self.blobs[path] = item.get("sha", "")
             self._add_file_to_registry(path)
 
-        # Add aliases to registry
-        self._populate_aliases()
+        # Add aliases to registry: Card Edits.json's, then aliases.pkl's until they moved there (they win, as before)
         self._populate_edit_names()
+        self._populate_aliases()
         self._populate_titles()
         self._populate_site_ids()
 
@@ -170,8 +171,14 @@ class CardRepository:
         folder = path[:path.index('/')]
         return f"{folder}/{filename}".lower()
 
+    def aliases_moved(self) -> bool:
+        """Card Edits.json says aliases.pkl moved into it (ALIASES_MOVED): the pickle's aliases no longer count."""
+        return self._edits is not None and self._edits.aliases_moved
+
     def _populate_aliases(self) -> None:
-        """Populate aliases into the file registry."""
+        """Populate aliases.pkl's aliases into the file registry, until they moved into Card Edits.json."""
+        if self.aliases_moved():
+            return
         for alias, target in self.git_file_alias.items():
             alias_key = f"{alias.lower()}.png"
             target = target.lower()
@@ -411,10 +418,11 @@ class CardRepository:
         sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
             try:
-                self._edit_names = (sha, CardEdits.parse(blob_text(self.repository, sha)).names())
+                edits = CardEdits.parse(blob_text(self.repository, sha))
             except Exception as e:
                 print(f"Could not read {path}: {e}")
                 return
+            self._edits, self._edit_names = edits, (sha, edits.names())
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 
@@ -695,75 +703,6 @@ def query_rulebook(interaction: Interaction,
                   links=[("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(search_text.strip())}")])
 
 
-def print_all_aliases() -> list[str]:
-    """Get formatted chunks of all aliases."""
-    if not card_repo.git_file_alias:
-        return ["```No aliases defined.```"]
-
-    lines = []
-    for key, val in sorted(card_repo.git_file_alias.items()):
-        lines.append(f"{key:20s} -> {val}")
-
-    full_message = "```\n" + "\n".join(lines) + "\n```"
-    return split_long_message(full_message)
-
-
-async def manage_alias(interaction: Interaction, key: Optional[str], val: Optional[str]) -> None:
-    """
-    Manage aliases for card names.
-
-    Args:
-        interaction: Discord interaction
-        key: Alias name (for create/delete operations)
-        val: Target card name (for create), or None to delete
-    """
-    # View all aliases if no parameters provided
-    if not key:
-        if not card_repo.git_file_alias:
-            await interaction.response.send_message("```No aliases defined.```")
-            return
-
-        for chunk in print_all_aliases():
-            queue_message(interaction, chunk)
-        return
-
-    key = key.strip().lower()
-
-    # Delete alias if val is None or empty
-    if not val:
-        if key not in card_repo.git_file_alias:
-            await interaction.response.send_message(f"No alias exists for '{key}'.")
-            return
-
-        target = card_repo.git_file_alias.pop(key)
-        card_repo.git_files.pop(f"{key}.png", None)
-        card_repo.save_aliases()
-        await interaction.response.send_message(f"Deleted alias: {key} -> {target}")
-        return
-
-    # Create alias
-    val = val.strip().lower()
-    if not val.endswith(".png"):
-        val = f"{val}.png"
-
-    # Find target in git_files
-    target_path = None
-    for filename, path in card_repo.git_files.items():
-        if filename.lower() == val or filename.lower().endswith(val):
-            target_path = path
-            break
-
-    if not target_path:
-        await interaction.response.send_message(f"No card found matching '{val}'. Alias not created.")
-        return
-
-    # Create alias
-    card_repo.git_files[f"{key}.png"] = target_path
-    card_repo.git_file_alias[key] = val
-    card_repo.save_aliases()
-    await interaction.response.send_message(f"Created alias: {key} -> {val}")
-
-
 async def set_match_ratio(interaction: Interaction, value: Optional[float] = None) -> None:
     """
     Set or display the fuzzy match ratio.
@@ -823,7 +762,6 @@ def init_query() -> None:
 # ========================
 __all__ = [
     'card_repo',
-    'manage_alias',
     'init_query',
     'query_ability',
     'query_ability_num_occur',

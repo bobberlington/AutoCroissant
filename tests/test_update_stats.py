@@ -964,7 +964,9 @@ def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     who = utils.make_simple_fake_interaction(1)
     utils.dispatch_queue.clear()
     pa.list_orphans(who)
-    pa.mass_replace_field(who, "author", freezer.author, "Somebody")
+    import commands.discord_edits as de
+    monkeypatch.setattr(de, "commit", lambda subject, by, body, edits=None, authors=None: ("abc1234", {"authors": authors(None)}))
+    de.mass_replace_field(who, "author", freezer.author, "Somebody")
     assert pa.stats_db.old_stats["The Freezer"][0].author == freezer.author
     for csv in (True, False):
         pa.export_stats_to_file(who, as_csv=csv)

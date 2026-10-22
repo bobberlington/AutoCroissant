@@ -152,21 +152,32 @@ def test_quoted_values_keep_and_and_or(repo):
 # Commands
 # ========================
 def test_update_metadata_and_mass_replace(monkeypatch):
-    sent = []
-    monkeypatch.setattr(pa, "queue_message", lambda inter, text, **kw: sent.append(text))
+    """subseries goes into the card's Card Edits.json entry (the commit stood in for: test_metadata_edits has the real one)."""
+    import commands.discord_edits as de
+    import commands.utils as utils
+    sent, files = [], {"edits": '{"about": "x", "cards": {}}'}
+
+    def commit(subject, by, body, edits=None, authors=None):
+        files["edits"] = edits(files["edits"])
+        return "abc1234", {"edits": files["edits"]}
+    monkeypatch.setattr(de, "commit", commit)
+    monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
     monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": _card("Goombella", "mario")})
-    monkeypatch.setattr(cm.stats_db, "save", lambda: None)
+    monkeypatch.setattr(cm.stats_db, "save", lambda: pytest.fail("saved the pickles"))
     monkeypatch.setattr(qc.card_repo, "git_files", {"goombella.png": "Creatures/Mario/2 Stars/Goombella.png"})
     monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
+    monkeypatch.setattr(qc.card_repo, "prep_dataframes", lambda: None)
     inter = SimpleNamespace()
-    assert "subseries" in inspect.signature(pa.manual_metadata_entry).parameters
-    pa.manual_metadata_entry(inter, "Goombella", subseries="Paper Mario")
+    assert "subseries" in inspect.signature(de.manual_metadata_entry).parameters
+    de.manual_metadata_entry(inter, "Goombella", subseries="Paper Mario")
     card = cm.stats_db.stats["Goombella"]
     assert card.subseries == "Paper Mario" and "subseries: Paper Mario" in sent[len(sent) - 1]
-    pa.manual_metadata_entry(inter, "Goombella")
+    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario"
+    de.manual_metadata_entry(inter, "Goombella")
     assert "series: mario\nsubseries: Paper Mario```" in sent[len(sent) - 1]
-    pa.mass_replace_field(inter, "subseries", "paper mario", "Paper Mario 64")
-    assert card.subseries == "Paper Mario 64" and "Replaced 1 instances" in sent[len(sent) - 1]
+    de.mass_replace_field(inter, "subseries", "paper mario", "Paper Mario 64")
+    assert card.subseries == "Paper Mario 64" and "Replaced subseries='paper mario'" in sent[len(sent) - 1]
+    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario 64"
     assert 'subseries' in pa.COLUMN_ORDER and pa.COLUMN_ORDER.index("subseries") == pa.COLUMN_ORDER.index("series") + 1
 
 

@@ -527,8 +527,9 @@ team's record of who made each card.
 Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20) of the first
 commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
-survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` still works, but for a
-card listed in the file, the file wins at the next `/update_stats`. `/list_orphans` lists author-less cards.
+survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` writes the card's `[cards]`
+line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
+right-hand sides plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
 
 Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
 autocroissant-change-control):
@@ -590,12 +591,14 @@ these instead" list when the hit is ambiguous. Duplicated basenames in the repo 
 cardback.png, equip.png, field.png, fragile equip.png, nme.png, panda.png (mostly card-vs-Types
 icon collisions).
 
-**Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
-existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:695-748). At `populate_files` time each alias key is inserted into `git_files` as
-`<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
-Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
-`red_bloon -> pod01red_bloon.png`.
+**Aliases** (`aliases.pkl`, 60 today): At `populate_files` time each alias key is inserted into `git_files` as
+`<alias>.png` pointing at the target's path, so aliases work everywhere names do. Everything is lowercased on load.
+Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. Since branch
+work/discord-writers (2026-10-22) `/alias` (commands/discord_edits.py) writes `aliases` on the Card Edits.json entry of
+the card the PNG belongs to (one commit; target: an existing png, suffix match allowed), key alone deletes, no args
+lists. `python -m commands.discord_edits migrate-aliases` writes the 60 into Card Edits.json with the top-level
+`aliases_moved` key; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
+names), and before that `/alias` refuses to change an aliases.pkl alias.
 
 ### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:218-304)
 

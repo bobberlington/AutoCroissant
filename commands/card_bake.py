@@ -43,7 +43,6 @@ from tempfile import mkdtemp
 from time import perf_counter
 from traceback import format_exc
 from typing import Callable, Optional
-from unicodedata import combining, normalize
 
 from PIL import Image
 from psd_tools import PSDImage, __version__ as PSD_TOOLS_VERSION
@@ -51,13 +50,14 @@ from requests import RequestException
 
 import commands.github_api as github_api
 import commands.psd_edit as psd_edit
-from commands.card_edits import CardAuthors, CardEdits
+from commands.card_edits import ORDER, PUNCTUATION, CardAuthors, CardEdits, _collate, _json, dump_edits  # noqa: F401 (re-exported)
 from commands.card_models import card_name
 from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
+from global_config import (AUTHORS_PATHS, CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
+                           STARS_DIR, TYPES_DIR)
 
 # ========================
 # Configuration
@@ -74,13 +74,9 @@ TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again ref
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
-# edit.js FIELDS, in order: how a rewritten entry lists its fields
-ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
-FIELDS = frozenset(CardEdits.TYPES)
-# what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
-PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
+FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
+DISCORD = "discord:"                            # a Discord edit's _by (discord_edits): credited in no bake trailer
 
 
 # ========================
@@ -146,6 +142,7 @@ class Share:
     rewrite: Callable[[str], Optional[str]]     # edits file text -> new text, None when unchanged; raises Refused to stay out
     out: Optional[Refusal] = None               # why the last attempt left it out
     included: bool = False                      # in the last attempt's commit
+    authors: Optional[Callable] = None          # Card Authors.txt text (None when absent) -> new text, None when unchanged (a Discord edit)
 
 
 class Snapshot:
@@ -333,49 +330,8 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
 
 
 # ========================
-# Card Edits.json (the edit.js editsFile port)
+# Card Edits.json (the edit.js editsFile port: dump_edits is card_edits')
 # ========================
-def _json(value) -> str:
-    """JSON.stringify: compact, UTF-8 as is."""
-    return dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _collate(key: str) -> list:
-    """How localeCompare with sensitivity "base" orders keys: case and accents ignored; spaces, punctuation, symbols, digits, letters."""
-    out = []
-    for char in normalize("NFKD", key):
-        if combining(char):
-            continue
-        if char.isspace():
-            out.append((0, 0))
-        elif char in PUNCTUATION:
-            out.append((1, PUNCTUATION.index(char)))
-        elif char.isdigit():
-            out.append((3, ord(char)))
-        elif char.isalpha():
-            out.append((4, ord(char.lower())))
-        else:
-            out.append((2, ord(char)))
-    return out
-
-
-def dump_edits(data: dict) -> str:
-    """
-    Card Edits.json as edit.js editsFile writes it: the other top-level keys first, cards sorted, one line per card.
-
-    Args:
-        data: The parsed file
-
-    Returns:
-        The text (with its final newline)
-    """
-    cards = data.get("cards") or {}
-    rest = "".join(f"  {_json(k)}: {_json(v)},\n" for k, v in data.items() if k != "cards")
-    keys = sorted(cards, key=_collate)
-    body = ",\n".join(f"    {_json(k)}: {_json(cards[k])}" for k in keys)
-    return "{\n" + rest + '  "cards": {' + (f"\n{body}\n  " if keys else "") + "}\n}\n"
-
-
 def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None) -> Optional[dict]:
     """
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
@@ -466,8 +422,9 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
     """
     Step 10 for the whole run: one commit on the branch head H' with every share that still holds there. Re-read H'
     and its tree; a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite
-    raises (edit-changed); the others' rewrites apply in turn to the edits file at H'. On 409/422 or a rejected push,
-    all again from the new H', up to COMMIT_TRIES times.
+    raises (edit-changed); the others' rewrites apply in turn to the edits file at H', and their `authors` rewrites
+    to the authors file at H' (read only when a share has one). On 409/422 or a rejected push, all again from the new
+    H', up to COMMIT_TRIES times.
 
     Args:
         shares: [Share]; each attempt sets its `out` and `included`
@@ -489,6 +446,10 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
             raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
         text = tip.fetch(tree[edits_path][1]).decode("utf-8")
         new_text, files = text, {}
+        authors_path = next((p for p in AUTHORS_PATHS if p in tree), AUTHORS_PATHS[0])
+        authors = new_authors = None
+        if any(share.authors is not None for share in shares) and authors_path in tree:
+            authors = new_authors = tip.fetch(tree[authors_path][1]).decode("utf-8")
         for share in shares:
             share.out, share.included = None, False
             moved = [path for path, sha in share.expect.items() if tree.get(path, ("", ""))[1] != sha]
@@ -497,12 +458,14 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
                 continue
             try:
                 rewritten = share.rewrite(new_text)
+                authored = share.authors(new_authors) if share.authors is not None else None
             except Refused as refused:
                 share.out = refused.refusal
                 continue
-            if rewritten is None and not share.files:
+            if rewritten is None and authored is None and not share.files:
                 continue                        # nothing of its own to write (an unchanged verdict)
             new_text = new_text if rewritten is None else rewritten
+            new_authors = new_authors if authored is None else authored
             files.update(share.files)
             share.included = True
         included = [share for share in shares if share.included]
@@ -514,7 +477,10 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
                 fh.write(new_text)
         if dry_run:
             return None
-        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {})}
+        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {}),
+                   **({authors_path: new_authors.encode("utf-8")} if new_authors is not None and new_authors != authors else {})}
+        if not payload:
+            return None                         # the rewrites gave back the files as they are
         if local is not None:
             return local_commit(local.local, head, payload, message(included))
         modes = {path: tree[path][0] for path in payload if path in tree}
@@ -627,12 +593,16 @@ def _describe(card: Card) -> str:
 
 
 def editors(card: Card) -> list:
-    """The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated."""
+    """
+    The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated. A
+    Discord editor (DISCORD) is no GitHub login: build_site would give it a person page, so it gets no trailer.
+    """
     if not card.jobs:                           # nothing printed (redundant only): no credit
         return []
     by = card.by
     logins = [by.get(f) for f in card.jobs] if isinstance(by, dict) else [by]
-    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1})   # a login: one word
+    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1   # a login: one word
+                   and not x.strip().lower().startswith(DISCORD)})
 
 
 def _message(cards: list) -> str:
