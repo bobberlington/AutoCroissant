@@ -148,20 +148,21 @@ def _index_with(intros: dict, deletions: dict = None, pngs: dict = None) -> ch.G
 
 
 def test_refine_dedupes_dates_and_marks_legacy():
-    """[v0 legacy D1, v1 legacy D1, v2 blob D2] + current D2 (another blob): v0 equals v1 and v2 equals the current card,
-    so both go; their starts carry forward. The blob version is re-dated, the blob-less ones marked legacy."""
+    """[v0 legacy D1, v1 legacy D1, v2 blob D2] + current D2 (another blob): v1 repeats v0 and v2 equals the current card,
+    so both go (the first of a run stays, a run equal to the card goes into it, its start carried). The blob version is
+    re-dated, the blob-less ones marked legacy."""
     index = _index_with({"b2": ("c2", 2000.0), "b3": ("c3", 3000.0)}, pngs={"Items/A.png": [("p3", 3000.0), ("p1", 500.0)]})
     v0, v1 = _card(timestamp=100.0), _card(timestamp=200.0)
     v2 = _card(ability="New.", blob_sha="b2", timestamp=2500.0)
     current = _card(ability="New.", blob_sha="b3", timestamp=3500.0)
     stats, old = {"A": current}, defaultdict(list, {"A": [v0, v1, v2]})
     report = ch.refine(stats, old, index)
-    assert [n for n, _ in report.dropped] == ["A", "A"] and old["A"] == [v1]
+    assert report.dropped == [("A", 200.0), ("A", 2000.0)] and old["A"] == [v0]
     assert (report.legacy, report.legacy_kept, report.versions_with_blob, report.versions_dated) == (2, 1, 1, 1)
-    assert v1.version["from"] == 100.0 and v1.version["legacy"] and v1.version["to"] == 2000.0     # v0's start, ends at v2's
+    assert v0.version["from"] == 100.0 and v0.version["legacy"] and v0.version["to"] == 2000.0     # its start, ends at v2's
     assert current.timestamp == 3000.0 and report.cards_dated == ["A"]
     assert (current.version["from"], current.version["from_commit"], current.version["cause"]) == (2000.0, "c2", "psd")
-    assert v1.version["png_commit"] == "p1"                                                        # the PNG before v1 ended
+    assert v0.version["png_commit"] == "p1"                                                        # the PNG before v0 ended
     again = deepcopy((stats, old))
     assert not ch.refine(*again, index).changed() and cdb.record(again[0]["A"]) == cdb.record(stats["A"])
     assert [cdb.record(v) for v in again[1]["A"]] == [cdb.record(v) for v in old["A"]]          # idempotent
@@ -195,6 +196,61 @@ def test_refine_keeps_archived_tags_and_dates_them():
     assert report.tagged == ["Gone"] and report.renamed == [("Gone", "New")]
     assert old["Twin"] == [tagged_twin]                                       # equal to the card, but tagged: never dropped
     assert old["Gone"][len(old["Gone"]) - 1].version["to"] == 4000.0       # an archived version ends at its deletion
+
+
+def test_collapse_keeps_the_first_of_a_run_and_folds_the_last_into_the_card():
+    """/update_stats' cleanup (no records): [A 100, A 200 (another blob), B 300, B 400] + current B 500: the first A stays
+    with its date, both B versions go into the current card, which starts at 300 (a legacy record: no git here)."""
+    a1, a2 = _card(timestamp=100.0, blob_sha="b1"), _card(timestamp=200.0, blob_sha="b2", parser_version=2)
+    b1, b2 = _card(ability="B.", timestamp=300.0), _card(ability="B.", timestamp=400.0, parsed_values={"name": "a"})
+    current = _card(ability="B.", timestamp=500.0, blob_sha="b5")
+    kept, dropped = ch.collapse([a1, a2, b1, b2], current)
+    assert kept == [a1] and dropped == [a2, b1, b2] and a1.version is None
+    assert current.version == {"from": 300.0, "from_commit": None, "to": None, "to_commit": None, "cause": "legacy",
+                               "png_commit": None, "legacy": False}
+    assert ch.collapse(kept, current) == (kept, [])                              # idempotent
+    assert ch.start(current) == (300.0, None) and ch.start(a1) == (100.0, None)
+
+
+def test_collapse_never_drops_an_archived_record():
+    """An archived card's run goes into its tagged record; a tagged record equal to the listed card stays (a stale one)."""
+    early, tagged = _card(timestamp=100.0), _card(timestamp=200.0, archived={"at": 300.0, "path": "Items/A.psd"})
+    kept, dropped = ch.collapse([early, tagged], None)
+    assert (kept, dropped) == ([tagged], [early]) and ch.start(tagged) == (100.0, None)
+    stale = _card(timestamp=100.0, archived={"at": 300.0, "path": "Items/A.psd"})
+    assert ch.collapse([stale], _card(timestamp=400.0)) == ([stale], [])
+
+
+def test_dedupe_cleans_every_name_once():
+    stats = {"A": _card(timestamp=300.0), "B": _card("B", ability="B2.", timestamp=300.0)}
+    old = defaultdict(list, {"A": [_card(timestamp=100.0), _card(timestamp=200.0)],
+                             "B": [_card("B", ability="B1.", timestamp=100.0), _card("B", ability="B1.", timestamp=200.0)],
+                             "Gone": [_card("Gone", timestamp=50.0)]})
+    assert ch.dedupe(stats, old) == [("A", 100.0), ("A", 200.0), ("B", 200.0)]
+    assert "A" not in old and [v.timestamp for v in old["B"]] == [100.0] and len(old["Gone"]) == 1
+    assert ch.start(stats["A"]) == (100.0, None) and stats["B"].version is None
+    assert ch.dedupe(stats, old) == []
+
+
+def test_the_seed_after_the_cleanup_is_the_seed_alone():
+    """The same history either way: the seed pass on pickles with duplicates, or /update_stats' cleanup first and then the
+    seed (its legacy record dated from git, the earlier start kept; only that start's commit is unknown)."""
+    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0), "b3": ("c3", 3000.0)})
+    def pickles():
+        old = defaultdict(list, {"A": [_card(timestamp=500.0), _card(timestamp=600.0),
+                                       _card(ability="New.", blob_sha="b2", timestamp=2000.0)]})
+        return {"A": _card(ability="New.", blob_sha="b3", timestamp=3000.0)}, old
+    alone, cleaned = pickles(), pickles()
+    ch.refine(*alone, index)
+    assert len(ch.dedupe(*cleaned)) == 2
+    assert cleaned[0]["A"].version["cause"] == "legacy" and cleaned[0]["A"].version["from"] == 2000.0
+    ch.refine(*cleaned, index)
+    for stats, old in (alone, cleaned):
+        assert [(ch.data_of(v), v.version["from"], v.version["to"]) for v in old["A"]] == [(ch.data_of(_card()), 500.0, 2000.0)]
+        assert (stats["A"].version["from"], stats["A"].version["cause"]) == (2000.0, "psd")
+    assert (alone[0]["A"].version["from_commit"], cleaned[0]["A"].version["from_commit"]) == ("c2", None)
+    cleaned[0]["A"].version["from_commit"] = "c2"
+    assert cdb.record(alone[0]["A"]) == cdb.record(cleaned[0]["A"])
 
 
 def test_duplicates_follow_their_original_and_get_no_version():

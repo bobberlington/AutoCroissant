@@ -142,6 +142,93 @@ def same_data(a: CardInfo, b: CardInfo) -> bool:
     return data_of(a) == data_of(b)
 
 
+def start(card: CardInfo) -> tuple:
+    """(when, commit) a version starts: its `version` record's from, else its timestamp (/update_stats keeps none)."""
+    info = getattr(card, "version", None)
+    if info and info.get("from") is not None:
+        return (info["from"], info.get("from_commit"))
+    return (card.timestamp, None)
+
+
+def carry(dropped: CardInfo, holder: CardInfo) -> None:
+    """
+    A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date); the
+    cause and legacy flag stay the holder's own (a current card with a blob is no legacy version). A holder without a
+    record (/update_stats) gets one, cause legacy: the seed pass dates it from git and keeps the earlier start.
+    """
+    at, commit = start(dropped)
+    now = start(holder)[0]
+    if at is None or (now is not None and at >= now):
+        return
+    info = getattr(holder, "version", None)
+    if info is None:
+        holder.version = info = meta(None, at, "legacy", legacy=not getattr(holder, "blob_sha", None))
+    info["from"], info["from_commit"] = at, commit
+
+
+def collapse(versions: list, holder: Optional[CardInfo]) -> tuple:
+    """
+    One name's history without duplicates (design 7.4): of each run of consecutive versions with the same data
+    (same_data: the blob, path, dates and parse bookkeeping are no data) the first stays; a run with the data of the
+    card that follows it (the current card, or the archived record ending the list) goes into that card. Either way
+    the run's earliest start stays (carry). A version tagged `archived` is never dropped. Idempotent.
+
+    Args:
+        versions: The name's old_stats versions, oldest first (not changed)
+        holder: The current card, or None
+
+    Returns:
+        (kept versions, dropped versions), each oldest first
+    """
+    runs: list = []
+    for version in versions:
+        if runs and same_data(runs[len(runs) - 1][0], version):
+            runs[len(runs) - 1].append(version)
+        else:
+            runs.append([version])
+    kept, dropped = [], []
+    for i, run in enumerate(runs):
+        last = run[len(run) - 1]
+        if i + 1 == len(runs) and holder is not None and same_data(run[0], holder):
+            into = holder
+        elif getattr(last, "archived", None):
+            into = last
+        else:
+            into = run[0]
+        for version in run:
+            if version is into or getattr(version, "archived", None):
+                kept.append(version)
+            else:
+                carry(version, into)
+                dropped.append(version)
+    return (kept, dropped)
+
+
+def dedupe(stats: dict, old_stats: dict) -> list:
+    """
+    collapse() over every name, in place: the one-time cleanup of the duplicates /update_stats archived before
+    2026-10-22 (it runs at each /update_stats; with none left it changes nothing).
+
+    Args:
+        stats: {name: CardInfo}
+        old_stats: {name: [CardInfo]}, oldest first
+
+    Returns:
+        (name, timestamp) of each version dropped
+    """
+    gone = []
+    for name in list(old_stats):
+        kept, dropped = collapse(old_stats[name], stats.get(name))
+        if not dropped:
+            continue
+        gone += [(name, version.timestamp) for version in dropped]
+        if kept:
+            old_stats[name] = kept
+        else:
+            del old_stats[name]
+    return gone
+
+
 def meta(start: Optional[Commit], start_at: float, cause: str, legacy: bool = False) -> dict:
     """A version's `version` record, open-ended until close() sets its end."""
     return {"from": start.at if start else start_at, "from_commit": start.sha if start else None, "to": None,
@@ -252,27 +339,17 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined)
             report.renamed.append((name, tag["renamed_to"]))
 
 
-def _carry(dropped: CardInfo, following: CardInfo) -> None:
-    """A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date);
-    the cause and legacy flag stay the holder's own (a current card with a blob is no legacy version)."""
-    a, b = getattr(dropped, "version", None), getattr(following, "version", None)
-    if a and b and a.get("from") is not None and (b.get("from") is None or a["from"] < b["from"]):
-        for key in ("from", "from_commit"):
-            b[key] = a[key]
-
-
 def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, report: Refined) -> None:
     """
-    One name's versions: each one's `version` (kept when it has one: the seed decided once) and, with a blob, its
-    timestamp from the blob's intro; versions equal in data to the next one (or the current card) dropped, their start
-    carried forward; then each end set to the next start, the deleting commit, or open for the current card's.
+    One name's versions: each one's `version` (kept when the seed or a build decided it; dated again from git when
+    /update_stats made it) and, with a blob, its timestamp from the blob's intro; duplicates dropped (collapse), their
+    starts carried; then each end set to the next start, the deleting commit, or open for the current card's.
     """
     versions = old_stats[name]
     current = stats.get(name)
     previous = None
     for version in versions:
-        if getattr(version, "version", None) is None:
-            version.version = start_of(version, index, previous)
+        version.version = _dated(version, index, previous)
         info = version.version
         if info["legacy"] and not getattr(version, "blob_sha", None):
             report.legacy += 1
@@ -283,17 +360,11 @@ def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, repo
                 version.timestamp = intro.at
                 report.versions_dated += 1
         previous = version
-    if current is not None and getattr(current, "version", None) is None:
-        current.version = start_of(current, index, versions[len(versions) - 1] if versions else None)
+    if current is not None:
+        current.version = _dated(current, index, versions[len(versions) - 1] if versions else None)
 
-    kept = []
-    for i, version in enumerate(versions):
-        following = versions[i + 1] if i + 1 < len(versions) else current
-        if following is not None and not getattr(version, "archived", None) and same_data(version, following):
-            report.dropped.append((name, version.timestamp))
-            _carry(version, following)
-            continue
-        kept.append(version)
+    kept, dropped = collapse(versions, current)
+    report.dropped += [(name, version.timestamp) for version in dropped]
     report.legacy_kept += sum(1 for v in kept if v.version["legacy"] and not getattr(v, "blob_sha", None))
     for i, version in enumerate(kept):
         if i + 1 < len(kept):
@@ -310,9 +381,21 @@ def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, repo
         del old_stats[name]
 
 
+def _dated(card: CardInfo, index: GitIndex, previous: Optional[CardInfo]) -> dict:
+    """card's `version` for the seed: its own when the seed or a build decided it; else start_of(), keeping an earlier
+    start that /update_stats carried (its records are `legacy`, made without git)."""
+    info = getattr(card, "version", None)
+    if info is not None and info.get("cause") != "legacy":
+        return info
+    fresh = start_of(card, index, previous)
+    if info and info.get("from") is not None and (fresh["from"] is None or info["from"] < fresh["from"]):
+        fresh["from"], fresh["from_commit"] = info["from"], info.get("from_commit")
+    return fresh
+
+
 def refine(stats: dict, old_stats: dict, index: GitIndex) -> Refined:
     """
-    The seed pass, in place: cards and versions dated from git, versions equal to the next one dropped (never an
+    The seed pass, in place: cards and versions dated from git, duplicate versions dropped (collapse; never an
     archived one), blob-less versions marked legacy, archive tags added and dated, every version and current card given
     its `version` record. Idempotent: a second pass changes nothing.
 
@@ -327,11 +410,13 @@ def refine(stats: dict, old_stats: dict, index: GitIndex) -> Refined:
     report = Refined()
     date_cards(stats, index, report)
     date_archive(stats, old_stats, index, report)
-    for name in list(old_stats):
+    names = list(old_stats)
+    for name in names:
         date_versions(name, stats, old_stats, index, report)
+    names = set(names)
     for name, card in stats.items():
-        if not getattr(card, "duplicate_of", None) and getattr(card, "version", None) is None:
-            card.version = start_of(card, index, None)
+        if not getattr(card, "duplicate_of", None) and name not in names:
+            card.version = _dated(card, index, None)
     return report
 
 
@@ -460,17 +545,21 @@ __all__ = [
     'Commit',
     'GitIndex',
     'Refined',
+    'carry',
     'close',
     'close_archived',
+    'collapse',
     'data_of',
     'date_archive',
     'date_cards',
     'date_versions',
+    'dedupe',
     'main',
     'meta',
     'record_versions',
     'refine',
     'same_data',
+    'start',
     'start_of',
 ]
 

@@ -4,8 +4,9 @@ The card data build, without Discord, pandas or config: the card repo's tree, th
 of deleted cards.
 
 Two modes. Legacy (/update_stats, repo_traverser.update_stats): the GitHub API, the root pickles and psd_details.json,
-history as /update_stats always kept it. The build (`python -m commands.card_data`): a local clone's tree and history,
-db/ JSON through card_db, versions only on data changes (card_history), changelog events and the gates. Design:
+history as /update_stats kept it (a version per changed blob or move) but only on a data change. The build
+(`python -m commands.card_data`): a local clone's tree and history, db/ JSON through card_db, versions only on data
+changes (card_history), changelog events and the gates. Design:
 docs/Campaigns/DATA_BUILD_ACTION.md (sections 7 and 13).
 """
 from argparse import ArgumentParser
@@ -59,7 +60,8 @@ class CardBuild:
             (a duplicate's own Card Edits.json aliases count either way)
         etags: repository -> the last kept tree ETag (/update_stats keeps it between runs for a free 304)
         file_cache: repo path -> (blob sha, text) of the small files, kept between runs
-        legacy: History as /update_stats keeps it (a version per changed blob or move; old paths follow the card)
+        legacy: History as /update_stats keeps it (a version per changed blob or move whose data changed; old paths
+            follow the card)
     """
     def __init__(self, db: StatsDatabase, report: Optional[Callable] = None, progress: Optional[Callable] = None,
                  aliases: Optional[dict] = None, etags: Optional[dict] = None, file_cache: Optional[dict] = None,
@@ -94,6 +96,7 @@ class CardBuild:
         self.restored: list = []                 # archived cards whose PSD is back
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the build's history)
+        self.replaced: dict = {}                 # legacy: name -> its card before, when its PSD changed or moved (history)
 
     # ------------------------
     # The source: GitHub
@@ -269,6 +272,7 @@ class CardBuild:
         self.changed += self._apply_edits()             # the duplicates' own edits
 
         if self.legacy:                                 # the build keeps each version's own path
+            self._record_history()
             self._update_old_stats_paths()
         if self.failed:                                 # no 304 next time: the failed files are fetched again
             self.etags.pop(repository, None)
@@ -541,9 +545,24 @@ class CardBuild:
         return False
 
     def _history(self, name: str, old: CardInfo, path: str, sha: str) -> None:
-        """Legacy: the old card becomes history when its PSD changed or moved. The build decides after edits (card_history)."""
+        """Legacy: the card before, when its PSD changed or moved, is history if its data did (_record_history, after the
+        authors and edits). The build decides after edits too (card_history)."""
         if self.legacy and (old.path != path or getattr(old, "blob_sha", None) != sha):
-            self.db.add_history(name, old)
+            self.replaced.setdefault(name, old)
+
+    def _record_history(self) -> None:
+        """Legacy: each replaced card becomes a version when its data changed; the same data is no version (the blob,
+        path, date and parse bookkeeping are no data), the card keeping its start for as_of (card_history.carry)."""
+        from commands.card_history import carry, same_data
+        for name, old in self.replaced.items():
+            card = self.db.stats.get(name)
+            if card is None:
+                continue
+            if same_data(old, card):
+                carry(old, card)
+            else:
+                self.db.add_history(name, old)
+        self.replaced = {}
 
     def _archive_sources(self, names: list) -> None:
         """
@@ -680,16 +699,22 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
         The formatted problem card messages
     """
     from commands import psd_details                # lazy: fontTools loads here, not at startup
+    from commands.card_history import dedupe
     db = build.db
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     build.details = psd_details.load()
+    deduped = dedupe(db.stats, db.old_stats)         # versions archived twice before 2026-10-22 (none after once)
+    if deduped:
+        cards = len({name for name, _ in deduped})
+        build.report(f"History: {len(deduped)} duplicate version{'' if len(deduped) == 1 else 's'} removed "
+                     f"({cards} card{'' if cards == 1 else 's'}).")
     problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
 
     gone, backfilled = db.prune_clean_cards(at) if can_prune(build) else ([], [])
     if gone:
         build._archive_sources(gone)
     report_archive(build, gone, backfilled)
-    if num_changed > 0 or gone or backfilled or build.changed or db.stale_archives():
+    if num_changed > 0 or gone or backfilled or build.changed or deduped or db.stale_archives():
         db.save()
     if build.tree is not None:                      # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(build.details, build.font_index) if build.font_index is not None else 0

@@ -311,7 +311,7 @@ The three options (slash defaults in parentheses, main.py:382-384). (`use_local_
 | Option (default) | What it actually does |
 |---|---|
 | `output_problematic_cards` (True) | Run `CardValidator` on each re-parsed card and post the problems to the channel |
-| `force_update` (False) | Re-parse EVERY card and skip the 304 shortcut. The old version goes to old_stats only if the PSD's blob changed or the card moved, so a forced sweep of unchanged cards adds no history. (The Python-level default was True until 2026-10-19) |
+| `force_update` (False) | Re-parse EVERY card and skip the 304 shortcut. The old version goes to old_stats only if the PSD's blob changed or the card moved and its data changed, so a forced sweep of unchanged cards adds no history. (The Python-level default was True until 2026-10-19) |
 | `cards` ("") | Comma-separated card names to re-parse anyway (e.g. after a parser fix); also skips the 304 shortcut. Same archiving rule |
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's

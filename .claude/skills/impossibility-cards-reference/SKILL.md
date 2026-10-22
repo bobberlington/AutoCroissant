@@ -541,9 +541,12 @@ autocroissant-change-control):
 | `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
-`old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(`_history`, card_data.py:535-538; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when its PSD leaves the repo. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+`old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved and its data changed
+(`_history` and `_record_history`, card_data.py; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing, since 2026-10-22 neither does a new blob with the same data: `card_history.same_data` compares the
+data fields, not the blob, path, dates or parse bookkeeping; the card keeps its start in a `version` record that
+/query as_of reads), and when its PSD leaves the repo. The next /update_stats after 2026-10-22 removes the duplicates
+stored before once (`card_history.dedupe`: the first of a run stays, a run equal to the card goes into it). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": run epoch, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename) and `"backfill": True` on names that left

@@ -112,7 +112,8 @@ deleted, mass path changes, type counts shifting, hundreds of cards whose only c
 the archived traversal on branch `archive/local-update-stats` since local mode was archived on 2026-10-20), and old_stats.pkl
 growing more than about 10% in one run (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl` —
 diff_stats.py reads stats.pkl only). A version is archived only when its PSD blob changed or the
-card moved, so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all. Interpretation guide and the other
+card moved AND its data changed (2026-10-22: the same data from a new blob is no version, `card_history.same_data`),
+so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all, and a re-saved PSD neither. Interpretation guide and the other
 four scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance
 procedure for parser changes (goldens → sandbox sweep → diff review):
 **autocroissant-validation-and-qa**.

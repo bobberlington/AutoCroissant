@@ -234,12 +234,14 @@ class StatsDatabase:
 
     def drop_stale_archives(self) -> bool:
         """Each stale_archives() record: kept as history untagged when add_history kept it or it is another version,
-        else dropped (a copy of the listed card). Returns whether any."""
+        else dropped (a copy of the listed card, or its data again: card_history.same_data). Returns whether any."""
+        from commands.card_history import same_data          # lazy: card_history imports this module
         names = self.stale_archives()
         for name in names:
             versions = self.old_stats[name]
             last = versions[len(versions) - 1]
-            if name in self.kept_archives or not _tagged_copy(last, self.stats[name]):
+            listed = self.stats[name]
+            if name in self.kept_archives or not (_tagged_copy(last, listed) or same_data(last, listed)):
                 last.archived = None
             else:
                 versions.pop()

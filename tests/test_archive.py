@@ -179,12 +179,14 @@ def test_blobless_record_is_a_copy_only_when_equal():
 
 
 def test_listed_name_with_another_tagged_version_untags_it():
-    """A /pull mix (listed card, an older tagged version): the version stays as history, untagged."""
-    old = _card("Mixed", blob="0" * 40)
-    old.archived = {"at": AT, "path": old.path, "blob": old.blob_sha, "commit": None}
-    db = _db([_card("Mixed")], old=[old])
-    assert db.stale_archives() == ["Mixed"] and db.drop_stale_archives()
-    assert db.old_stats["Mixed"] == [old] and old.archived is None
+    """A /pull mix (listed card, an older tagged version): another version stays as history, untagged; the listed
+    card's data again (another blob) is no version, so it goes."""
+    old, same = _card("Mixed", blob="0" * 40, ability="Did a thing."), _card("Same", blob="0" * 40)
+    for card in (old, same):
+        card.archived = {"at": AT, "path": card.path, "blob": card.blob_sha, "commit": None}
+    db = _db([_card("Mixed"), _card("Same")], old=[old, same])
+    assert db.stale_archives() == ["Mixed", "Same"] and db.drop_stale_archives()
+    assert db.old_stats["Mixed"] == [old] and old.archived is None and "Same" not in db.old_stats
 
 
 # ========================

@@ -446,15 +446,22 @@ github_api reads it inside a try/except and takes the token from the environment
     the jetson.
 - **Art-only changes are not versions.** A blob change with identical data becomes an `art` changelog event and updates the
   current card's `blob_sha`.
+- **The same rules in legacy mode (2026-10-22, owner: "clean our history of dupes").** `/update_stats` archives the card
+  before only when its data changed too (`_record_history`, after the authors and edits); with the same data the card
+  takes the new blob, path and date and keeps its start in a `version` record (`card_history.carry`: cause `legacy`, no
+  git), which `/query as_of` reads (`from` before `timestamp`) and the seed pass dates again from git, keeping the earlier
+  start. Each `/update_stats` runs `card_history.dedupe` (the seed pass's collapse) first: one line, "History: N duplicate
+  versions removed (M cards)", the first time; nothing after.
 - **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
   every old path to the current one) is removed, so each version keeps the path it was parsed at. Both readers key history by
   name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
   version's own path.
 - **Duplicates** (`duplicate_of`) get no versions; they are copies of their original.
 - **Seed pass** (once; idempotent afterwards, so a later run changes nothing):
-  - drop versions whose data equals the next version or the current card (−10, re-counted at step 4), never one tagged
-    `archived`. A dropped version's earlier `from` moves to the version that holds its data; that version keeps its own
-    cause and `legacy` flag;
+  - drop the duplicates (`card_history.collapse`, never one tagged `archived`): of each run of consecutive versions with
+    the same data the first stays; a run with the current card's data (or ending in the archived record) goes into that
+    card. The run's earliest `from` moves to the version that holds its data; that version keeps its own cause and
+    `legacy` flag (−15 on the 2026-10-22 pickles: 5 repeats of the version before, 10 equal to the current card);
   - re-date the versions that have a blob (3 of 178 change);
   - mark the 291 blob-less versions `legacy: true` with their stored dates;
   - date ZOEY!!!!!'s archive tag: `at` 2026-06-18 and `commit` 35adb383. The merged archive code backfills the tag on the

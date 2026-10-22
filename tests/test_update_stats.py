@@ -195,6 +195,48 @@ def test_changed_blob(github, psds, capsys):
     assert "1 cards changed or new, 1 unchanged, 0 moved." in capsys.readouterr().out
 
 
+def test_same_data_from_a_new_blob_is_no_version(github, psds, monkeypatch):
+    """A re-saved PSD (new blob, newer commit) that parses the same: no history version; the card takes the blob and
+    the date, and keeps its start for as_of. Then a real change archives the card before, its start kept too."""
+    _run()
+    later = TIME + 86400
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (later, None))
+    github.files[DOOMER] = psds[DOOMER] + b"\0"                       # another blob, the same layers
+    _run()
+    stats, old = _saved()
+    doomer = stats["Mini Doomer"]
+    assert "Mini Doomer" not in old and doomer.blob_sha == _file_sha(github, DOOMER) and doomer.timestamp == later
+    assert (doomer.version["from"], doomer.version["cause"], doomer.version["legacy"]) == (TIME, "legacy", False)
+    github.files[DOOMER] = psds[OTHER]
+    _run()
+    stats, old = _saved()
+    assert [c.blob_sha for c in old["Mini Doomer"]] == [_sha(psds[DOOMER] + b"\0")]
+    assert old["Mini Doomer"][0].version["from"] == TIME and stats["Mini Doomer"].version is None
+
+
+def test_duplicate_versions_are_cleaned_once(github, capsys):
+    """The duplicates archived before 2026-10-22 go at the next /update_stats, even on a 304: the first of each run stays,
+    a run equal to the card goes into it (its start kept); one line says so, and the run after says nothing."""
+    _run()
+    stats, _ = _saved()
+    freezer = stats["The Freezer"]
+    older = [pickle.loads(pickle.dumps(freezer)) for _ in range(3)]
+    for card, when, blob in zip(older, (TIME - 300, TIME - 200, TIME - 100), ("1" * 40, "2" * 40, "3" * 40)):
+        card.timestamp, card.blob_sha = when, blob
+    older[0].ability = older[1].ability = "Before."
+    with open("old_stats.pkl", "wb") as f:
+        pickle.dump({"The Freezer": older}, f)
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert [c.blob_sha for c in old["The Freezer"]] == ["1" * 40]
+    assert stats["The Freezer"].version["from"] == TIME - 100
+    out = capsys.readouterr().out
+    assert "History: 2 duplicate versions removed (1 card)." in out and "Nothing changed in the card repo" in out
+    _run()
+    assert "History:" not in capsys.readouterr().out
+
+
 def test_moved_card(github, capsys):
     _run()
     github.files["Field/2 Stars/The_Freezer.psd"] = github.files.pop(FREEZER)

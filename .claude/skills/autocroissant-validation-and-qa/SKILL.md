@@ -301,7 +301,7 @@ with method A in section 4.1). Red flags = reject: unexplained `removed` rows (t
 files), mass `path` changes (the old removeprefix bug signature), mass `type → unknown`
 (classification broke), timestamp-only churn you can't account for. Also compare `old_stats` growth:
 `python3 $S/inspect_pickle.py` summary in the sandbox. A sweep archives a card only when its PSD
-blob changed or it moved (a forced re-parse of an unchanged PSD adds no history), so every
+blob changed or it moved and its data changed (a forced re-parse of an unchanged PSD adds no history), so every
 archived version above the pre-sweep count (run the same summary before step 2) must be one of
 those (unexplained ballooning is the eb9aa84 duplicate-archiving family; `diff_stats.py` cannot
 diff old_stats.pkl — it only handles stats-shaped pickles).

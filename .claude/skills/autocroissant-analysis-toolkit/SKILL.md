@@ -448,7 +448,8 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(`_history`, card_data.py:535-538 since 2026-10-22), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(`_history`, card_data.py), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing; since 2026-10-22 only
+when its data changed too (`_record_history`, `card_history.same_data`).
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned

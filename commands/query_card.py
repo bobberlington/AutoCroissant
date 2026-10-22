@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL, TIMEZONE
 from commands.card_edits import ALIASES_MOVED
+from commands.card_history import start as version_start
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
@@ -651,12 +652,18 @@ def parse_as_of(text: str, today: date) -> tuple:
 
 
 def version_at(versions: list, end: float) -> Optional[int]:
-    """Index of the latest version (oldest first) stamped before end; None when all are later."""
+    """Index of the latest version (oldest first) started before end (_since); None when all are later."""
     found = None
     for i, card in enumerate(versions):
-        if (getattr(card, "timestamp", 0.0) or 0.0) < end:
+        if _since(card) < end:
             found = i
     return found
+
+
+def _since(card) -> float:
+    """When a version starts: its `version` record's from (a duplicate dropped, its data kept: card_history.carry),
+    else its timestamp."""
+    return version_start(card)[0] or 0.0
 
 
 def _day(stamp) -> str:
@@ -702,7 +709,7 @@ def _as_of_match(query: str) -> Optional[tuple]:
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     """
     /query as_of: the card at the end of that day in TIMEZONE. Its versions are old_stats (oldest first) then the
-    current card; each runs from its timestamp to the next one's, the last of an archived card to its archive.
+    current card; each runs from its start (_since) to the next one's, the last of an archived card to its archive.
 
     Args:
         interaction: Discord interaction
@@ -736,12 +743,12 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     index = version_at(versions, end)
     if index is None:
         first = versions[0]
-        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(first.timestamp)}"
+        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(_since(first))}"
                                    f"{_approx(first)}.")
         return
     card = versions[index]
     which = f"version {index + 1} of {len(versions)}"
-    since = f"from {_day(card.timestamp)}{_approx(card)}"
+    since = f"from {_day(_since(card))}{_approx(card)}"
     tag = None if current is not None else getattr(versions[len(versions) - 1], "archived", None)
     if tag and index + 1 == len(versions) and end > (tag.get("at") or 0):     # no at: archived after its last version
         line = f"{head}{_archived_text(tag)}. Its last version ({which}), {since}:"
@@ -750,7 +757,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     else:
         until = ""
         if index + 1 < len(versions):
-            until = f" until {_day(versions[index + 1].timestamp)}"
+            until = f" until {_day(_since(versions[index + 1]))}"
         elif tag:
             until = f" until it was {_archived_text(tag)}"
         line = f"{head}{which}, {since}{until}."

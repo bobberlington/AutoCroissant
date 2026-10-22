@@ -164,7 +164,7 @@ WORKER THREAD: update_stats() (repo_traverser.py:59; the traversal is card_data.
 per picked PSD: one commit lookup (_get_remote_timestamp); PSDParser.parse; psd_details.gather on the same
   temp file (the website's Details record, by blob sha; a failure is one console line); remove temp file; a lookup
   or parse that raises fails that card only (it keeps its last version; no ETag kept, so the next run retries);
-  old CardInfo -> old_stats only if its blob changed or it moved; CardValidator
+  old CardInfo -> old_stats only if its blob changed or it moved and its data did (after edits); CardValidator
       v
 stats_db singleton (card_models.py:228) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
       |  (save only when something changed: num_changed, archives, build.changed; card_data.py:682)
