@@ -3,7 +3,8 @@ The edit pipeline's driver (docs/EDIT_PIPELINE_DESIGN.md sections 4, 5, 8-11): b
 TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per run.
 
     python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
-    run(repository, head, dry_run, card, pending_only) -> (markdown report, commit shas: one at most)
+                                 [--local <clone>]
+    run(repository, head, dry_run, card, pending_only, local) -> (markdown report, commit shas: one at most)
     pending(repository, head) -> the cards a live run has work for (card-edits.yml's schedule gate)
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
@@ -14,6 +15,9 @@ Then one commit on the branch's current head (land): every baked card's PSD and 
 baked and redundant fields removed and the `_psd` verdicts written (a Python port of edit.js editsFile), through
 git_commit (the GitHub API, or git objects in the history clone pushed over SSH when the token can't write). A card
 whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-again refusal; the others still land.
+--local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
+(blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
+checkout at head moves to B.
 Refusals are data: one bad card never blocks another. A run bakes at most MAX_BAKES cards and starts none after BUDGET
 (the rest are refused `capped` and wait for the next run). The report goes to stdout, the artifacts (edited PSD, merged
 PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
@@ -30,8 +34,9 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep
-from os.path import basename, dirname, expanduser, isdir, join, splitext
+from os.path import abspath, basename, dirname, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch
+from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
 from time import perf_counter
@@ -47,7 +52,8 @@ import commands.github_api as github_api
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import card_name
-from commands.git_commit import API_TIMEOUT, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
+from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, commit_files, commit_info,
+                                 git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
@@ -121,6 +127,7 @@ class Report:
     cards: list = field(default_factory=list)
     commit: Optional[str] = None                # the run's one commit
     subject: str = ""                           # its subject (a dry run's: what it would be)
+    local: str = ""                             # --local's clone: the commit is made there, not pushed
     traceback: str = ""                         # when the commit failed outside a card's steps
     commit_failed: bool = False                 # land raised: nothing committed although cards had shares
     text: str = ""                              # the rendered report
@@ -141,8 +148,8 @@ class Share:
 class Snapshot:
     """The card repo at one commit: the tree, the PSDs by card key and where the edits file is."""
 
-    def __init__(self, repository: str, head: str, info: dict, tree: dict):
-        self.repository, self.head, self.info, self.tree = repository, head, info, tree
+    def __init__(self, repository: str, head: str, info: dict, tree: dict, local: str = ""):
+        self.repository, self.head, self.info, self.tree, self.local = repository, head, info, tree, local
         self.lower = {path.lower() for path in tree}
         self.psds: dict = {}
         for path in tree:
@@ -153,6 +160,10 @@ class Snapshot:
     def sha(self, path: str) -> str:
         """The blob sha of a path in the tree."""
         return self.tree[path][1]
+
+    def fetch(self, sha: str, path: str = "") -> bytes:
+        """fetch_verified, from the local clone first."""
+        return fetch_verified(self.repository, sha, path, self.local)
 
     def fonts_key(self) -> str:
         """MDW/Fonts' top-level files (what the Action installs) as 8 hex digits: a `font` verdict holds while they do."""
@@ -223,7 +234,39 @@ def snapshot_at(repository: str, head: str) -> Snapshot:
     return Snapshot(repository, head, info, _tree(repository, info["tree"]["sha"]))
 
 
-def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
+def _git_local(clone: str, *args: str) -> str:
+    """git in a local clone, never a lazy fetch; raises Transient."""
+    try:
+        return git(clone, *args, env={**environ, **NO_LAZY}).decode("utf-8")
+    except CalledProcessError as error:
+        raise Transient(f"git {error.cmd[3]} in {clone} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git in {clone} failed: {error}") from error
+
+
+def _local_blob(clone: str, sha: str) -> Optional[bytes]:
+    """A blob from a clone's object store, None when it lacks it (a blobless clone)."""
+    try:
+        done = run_process(["git", "-C", clone, "cat-file", "blob", sha], capture_output=True, timeout=GIT_TIMEOUT,
+                           env={**environ, **NO_LAZY})
+    except (TimeoutExpired, OSError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def local_snapshot(repository: str, clone: str, head: str = "") -> Snapshot:
+    """The card repo at a commit of a local clone (head "" = its HEAD): git ls-tree, no API, never truncated."""
+    head = _git_local(clone, "rev-parse", "--verify", f"{head or 'HEAD'}^{{commit}}").strip()
+    tree = {}
+    for line in _git_local(clone, "ls-tree", "-r", "-z", head).split("\0"):
+        meta, _, path = line.partition("\t")
+        if path and meta.split(" ")[1] == "blob":
+            tree[path] = (meta.split(" ")[0], meta.split(" ")[2])
+    info = {"sha": head, "tree": {"sha": _git_local(clone, "rev-parse", f"{head}^{{tree}}").strip()}}
+    return Snapshot(repository, head, info, tree, clone)
+
+
+def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -> bytes:
     """
     A blob's bytes by sha, checked against the tree (gate blob) and written to path when given.
 
@@ -231,14 +274,19 @@ def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
         repository: owner/name of the card repo
         sha: The blob sha the tree lists
         path: Where to write the bytes ("" keeps them in memory only)
+        local: A clone whose object store is read first (never a lazy fetch)
 
     Returns:
         The bytes; raises Refused("blob") when they don't hash to sha
     """
-    try:
-        data = github_api.fetch_verified(repository, sha, timeout=API_TIMEOUT)
-    except ValueError as error:
-        raise Refused("blob", str(error)) from error
+    data = _local_blob(local, sha) if local else None
+    if data is not None and blob_sha(data) != sha:
+        raise Refused("blob", f"blob {sha[:8]} hashes to {blob_sha(data)[:8]} in {local}")
+    if data is None:
+        try:
+            data = github_api.fetch_verified(repository, sha, timeout=API_TIMEOUT)
+        except ValueError as error:
+            raise Refused("blob", str(error)) from error
     if path:
         makedirs(dirname(path), exist_ok=True)
         with open(path, "wb") as fh:
@@ -396,7 +444,8 @@ def _now() -> str:
 # ========================
 # Commits (steps 10-11)
 # ========================
-def land(repository: str, shares: list, message: Callable[[list], str], dry_run: bool, out_path: str = "") -> Optional[str]:
+def land(repository: str, shares: list, message: Callable[[list], str], dry_run: bool, out_path: str = "",
+         local: Optional[Snapshot] = None) -> Optional[str]:
     """
     Step 10 for the whole run: one commit on the branch head H' with every share that still holds there. Re-read H'
     and its tree; a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite
@@ -408,20 +457,20 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
         message: The included shares -> commit message (subject, then any trailers)
         dry_run: Write out_path, commit nothing
         out_path: Where the rewritten file goes for the artifacts
+        local: --local's snapshot: H' is its head and the commit is made in its clone (local_commit), one attempt
 
     Returns:
         The commit's sha, None when nothing was committed (dry run, or no share had anything to write);
         raises Refused("head-moved") after COMMIT_TRIES or when H' has no edits file
     """
     uploaded: set = set()                       # blob shas uploaded this run: a retry re-uploads only the rewritten file
-    for attempt in range(COMMIT_TRIES):
-        head = ref_head(repository)
-        info = commit_info(repository, head)
-        tree = _tree(repository, info["tree"]["sha"])
+    for attempt in range(COMMIT_TRIES if local is None else 1):
+        tip = local if local is not None else snapshot_at(repository, ref_head(repository))
+        head, tree = tip.head, tip.tree
         edits_path = next((p for p in EDITS_PATHS if p in tree), None)
         if edits_path is None:
             raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
-        text = fetch_verified(repository, tree[edits_path][1]).decode("utf-8")
+        text = tip.fetch(tree[edits_path][1]).decode("utf-8")
         new_text, files = text, {}
         for share in shares:
             share.out, share.included = None, False
@@ -449,8 +498,10 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
         if dry_run:
             return None
         payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {})}
+        if local is not None:
+            return local_commit(local.local, head, payload, message(included))
         modes = {path: tree[path][0] for path in payload if path in tree}
-        commit = commit_files(repository, head, info["tree"]["sha"], modes, payload, message(included), uploaded)
+        commit = commit_files(repository, head, tip.info["tree"]["sha"], modes, payload, message(included), uploaded)
         if commit:
             return commit
     raise Refused("head-moved", f"{CARD_BRANCH} kept moving: not committed after {COMMIT_TRIES} tries")
@@ -477,7 +528,7 @@ def _fonts_dir(snapshot: Optional[Snapshot] = None) -> str:
     dirs = environ.get(FONT_DIRS_ENV, "")
     if dirs:
         return dirs.split(pathsep)[0]
-    checkout = join(expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
+    checkout = join(snapshot.local if snapshot is not None and snapshot.local else expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
     if isdir(checkout) or snapshot is None:
         return checkout
     from commands.font_check import refresh_cache, tree_fonts      # lazy: not in the Action's files
@@ -496,7 +547,7 @@ def vocabulary(snapshot: Snapshot):
              if p.startswith(STARS_DIR + "/") and p.lower().endswith(".png")]
     manifest = None
     if ICON_MANIFEST_PATH in snapshot.tree:
-        manifest = loads(fetch_verified(snapshot.repository, snapshot.sha(ICON_MANIFEST_PATH)).decode("utf-8"))
+        manifest = loads(snapshot.fetch(snapshot.sha(ICON_MANIFEST_PATH)).decode("utf-8"))
     return psd_edit.offline_parser(all_types, stars, manifest)
 
 
@@ -628,8 +679,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
         card.png_sha = snapshot.sha(card.png)
         old_psd, old_png = join(folder, "old", basename(card.rel)), join(folder, "old", basename(card.png))
-        fetch_verified(snapshot.repository, card.psd_sha, old_psd)
-        fetch_verified(snapshot.repository, card.png_sha, old_png)
+        snapshot.fetch(card.psd_sha, old_psd)
+        snapshot.fetch(card.png_sha, old_png)
 
         parsed = psd_edit.parse_card(parser, old_psd, card.rel)
         classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd))
@@ -712,19 +763,19 @@ def share_of(card: Card) -> Optional[Share]:
     return Share(card, {}, {}, refuse)
 
 
-def land_cards(report: Report, dry_run: bool) -> None:
+def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) -> None:
     """
-    Land the run's cards in one commit (land) and record the outcome on them. A card left out at H' gets its
-    try-again refusal (a refused card a note); when the commit itself fails, the baked and redundant cards get that
-    failure, the refused ones a note that their verdict was not written, and the run is failed (main exits 1). Fenced like
-    a card's steps: the report always comes out.
+    Land the run's cards in one commit (land; with --local's snapshot, in its clone) and record the outcome on them. A
+    card left out at H' gets its try-again refusal (a refused card a note); when the commit itself fails, the baked and
+    redundant cards get that failure, the refused ones a note that their verdict was not written, and the run is failed
+    (main exits 1). Fenced like a card's steps: the report always comes out.
     """
     shares = [s for s in (share_of(c) for c in report.cards) if s]
     if not shares:
         return
     try:
         report.commit = land(report.repository, shares, lambda included: _message([s.card for s in included]), dry_run,
-                             join(report.work, basename(EDITS_PATHS[0])))
+                             join(report.work, basename(EDITS_PATHS[0])), local)
     except Exception as error:                  # noqa: BLE001
         if isinstance(error, Refused):
             failure = error.refusal
@@ -780,6 +831,8 @@ def render(report: Report) -> str:
     """The markdown report (tts_save._render style)."""
     lines = ["# Card edits", "",
              f"- Repo: `{report.repository}` {CARD_BRANCH} `{report.head[:8]}`" + (" (dry run)" if report.dry_run else "")]
+    if report.local:
+        lines.append(f"- Local: `{report.local}`: the commit is made there, nothing pushed")
     lines += report.lines
     if report.note:
         lines += ["", f"**{report.note}**"]
@@ -802,7 +855,9 @@ def render(report: Report) -> str:
     for card in errors:
         if card.traceback:
             lines += ["", f"<details><summary>{card.name}</summary>", "", "```", card.traceback.rstrip(), "```", "</details>"]
-    if report.commit:
+    if report.commit and report.local:
+        lines += ["", f"One local commit: `{report.commit}` {report.subject} (not pushed)."]
+    elif report.commit:
         lines += ["", f"One commit: `{report.commit[:8]}` {report.subject}."]
     elif report.subject and report.dry_run:
         lines += ["", f"Would commit: {report.subject}."]
@@ -824,19 +879,19 @@ def failure(report: Report) -> str:
 
 
 def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
-        pending_only: bool = False) -> tuple:
+        pending_only: bool = False, local: str = "") -> tuple:
     """
     Bake the PSD-kind edits at head and land everything in one commit on the branch's current head (run_report).
 
     Returns:
         (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
     """
-    report = run_report(repository, head, dry_run, card, pending_only)
+    report = run_report(repository, head, dry_run, card, pending_only, local)
     return report.text, [report.commit] if report.commit else []
 
 
 def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
-               pending_only: bool = False) -> Report:
+               pending_only: bool = False, local: str = "") -> Report:
     """
     run() as a Report: at most MAX_BAKES cards baked and none started after BUDGET; the rest are refused `capped`
     (try-again: pending next run).
@@ -848,6 +903,8 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
         card: Restrict the run to one card (matched like the authors file)
         pending_only: Skip the cards with a final verdict (the schedule: pending()'s cards only, so refused cards
             cost no time from BUDGET); a dispatch re-checks them
+        local: A clone of the card repo (blobless is enough): the tree and blobs from it, head "" = its HEAD, and the
+            commit B made there on head, not pushed (a checkout at head moves to it)
 
     Returns:
         The Report, its text rendered and written to the work dir's report.md
@@ -855,14 +912,15 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     started = perf_counter()
     token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
     work = _work_dir()
-    head = head or ref_head(repository)
-    report = Report(repository, head, dry_run, work)
+    local = abspath(expanduser(local)) if local else ""
+    snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
+    head = snapshot.head
+    report = Report(repository, head, dry_run, work, local=local)
     report.lines.append(f"- Work dir: `{work}`")
-    snapshot = snapshot_at(repository, head)
     if snapshot.edits_path is None:
         report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
     else:
-        text = fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8")
+        text = snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8")
         try:
             edits = CardEdits.parse(text)
         except ValueError as error:
@@ -893,7 +951,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                             colors.append(None)
                         else:
                             path = join(work, basename(psd_edit.STATUS_CHART))
-                            fetch_verified(repository, snapshot.sha(psd_edit.STATUS_CHART), path)
+                            snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                             colors.append(psd_edit.status_fills(PSDImage.open(path)))
                     return colors[0]
                 pushed: list = []               # recent_paths(), read once
@@ -913,7 +971,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                 if waiting:
                     report.lines.append(f"- Capped: {plural(waiting, 'card')} wait for the next run")
                 report.cards = cards
-                land_cards(report, dry_run)
+                land_cards(report, dry_run, snapshot if local else None)
     report.seconds = perf_counter() - started
     report.text = render(report)
     with open(join(work, "report.md"), "w", encoding="utf-8") as fh:
@@ -937,7 +995,7 @@ def pending(repository: str = CARD_REPO, head: str = "") -> list:
     snapshot = snapshot_at(repository, head or ref_head(repository))
     if snapshot.edits_path is None:
         return []
-    edits = CardEdits.parse(fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8"))
+    edits = CardEdits.parse(snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8"))
     return [card.name for card in select(edits, snapshot) if not final(edits, snapshot, card)]
 
 
@@ -951,8 +1009,11 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="write the artifacts, commit nothing")
     parser.add_argument("--card", default=None, help="only this card (matched like the authors file)")
     parser.add_argument("--pending", action="store_true", help="skip cards whose refused verdict still holds (the schedule)")
+    parser.add_argument("--local", default="", metavar="CLONE",
+                        help="read the tree and blobs from this clone of the card repo (--head default: its HEAD) and make "
+                             "the commit there, pushing nothing; a checkout at --head moves to it (the card sync)")
     options = parser.parse_args(args)
-    report = run_report(options.repo, options.head, options.dry_run, options.card, options.pending)
+    report = run_report(options.repo, options.head, options.dry_run, options.card, options.pending, options.local)
     print(report.text, end="")
     why = failure(report)
     if why:
@@ -982,6 +1043,7 @@ __all__ = [
     'final',
     'land',
     'land_cards',
+    'local_snapshot',
     'main',
     'pending',
     'psd_fields',

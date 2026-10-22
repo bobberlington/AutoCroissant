@@ -507,6 +507,9 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   edit without a refused verdict for exactly its values on the current PSD) finds work, bakes only those cards (`--pending`;
   a dispatch re-checks every card), at most 40 a run, and posts to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a streak of
   failed scheduled runs starts (once, not every tick); nothing in this repo triggers it.
+- **`--local <clone>`** (2026-10-22, for the planned card-sync.yml, docs/Campaigns/DATA_BUILD_ACTION.md §6.3 stage 1): the
+  tree and blobs come from that clone (blobless is enough; a missing blob by REST, never a lazy fetch) and the run's commit
+  B is made there on `--head` (default its HEAD) and pushed by nobody; a checkout at `--head` fast-forwards to B. Same gates.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -782,3 +785,4 @@ the entry point, summary, download, temp-file and re-parse citations and the re-
 saving bullet names the per-PSD failure messages (an unreadable PSD, a failed commit lookup) that replaced a whole-run
 abort.
 2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.
+2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.

@@ -55,7 +55,7 @@ committed (53db8ee).
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
 | PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:110, :120` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build and its requirements-card-data.txt need no PyGithub). **Brings PyNaCl transitively — load-bearing, see section 3.** |
-| requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:17`. |
+| requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:18`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
 ## 3. Transitive-dependency traps (load-bearing)
@@ -305,3 +305,5 @@ result without a PNG posts the name). Review: the uncompiled list names the five
 2026-10-22 (data build): the PyGithub citation re-pointed to commands/card_data.py (the traverser's code moved there,
 uncompiled); `requirements-card-data.txt` (psd-tools 1.25.0, fonttools, requests) is the Card sync build's own pin
 list, not the bot's.
+
+2026-10-22 (bake --local): git_commit.py requests citation re-pointed (:18).
