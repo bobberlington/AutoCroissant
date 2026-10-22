@@ -2,12 +2,12 @@
 The edit pipeline's driver (docs/EDIT_PIPELINE_DESIGN.md sections 4, 5, 8-11): bake the PSD-kind edits of
 TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per run.
 
-    python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>]
-    run(repository, head, dry_run, card) -> (markdown report, commit shas: one at most)
+    python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
+    run(repository, head, dry_run, card, pending_only) -> (markdown report, commit shas: one at most)
     pending(repository, head) -> the cards a live run has work for (card-edits.yml's schedule gate)
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
-file with a PSD-kind field: refuse `recent` (PSD pushed in the last 30 min), fetch its PSD and official PNG (gate
+file with a PSD-kind field: refuse `recent` (PSD or PNG pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
 (psd_edit.apply_jobs; an ability edit also regenerates the status words' FX layers from the chart, section 7 idea 14).
 Then one commit on the branch's current head (land): every baked card's PSD and PNG and the file rewritten with the
@@ -55,11 +55,12 @@ from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, IC
 # ========================
 # Configuration
 # ========================
-RECENT = timedelta(minutes=30)                  # a PSD pushed more recently is its author's: don't race them
+RECENT = timedelta(minutes=30)                  # a PSD or PNG pushed more recently is its author's: don't race them
 PUSHES = 100                                    # activity entries per request (GitHub's max)
 COMPARE_FILES = 300                             # a compare lists at most this many files
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
+NO_PNG = "no PNG beside the PSD"
 MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
 BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
 TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
@@ -102,6 +103,7 @@ class Card:
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # the _psd meta written for it (baked or refused)
     fonts: str = ""                             # a `font` refusal's Snapshot.fonts_key: final only while MDW/Fonts holds
+    pngs: str = ""                              # a PNG refusal's Snapshot.pngs_key: final only while the PNGs hold
     note: str = ""
     traceback: str = ""
     seconds: float = 0.0
@@ -158,6 +160,15 @@ class Snapshot:
         entries = sorted(f"{path} {sha}" for path, (_, sha) in self.tree.items()
                          if path.startswith(prefix) and "/" not in path[len(prefix):])
         return sha1("\n".join(entries).encode("utf-8")).hexdigest()[:8]
+
+    def pngs_key(self, rel: str, key: str) -> str:
+        """The PNGs a `duplicate` or no-PNG refusal rests on, by path, as 8 hex digits: the verdict holds while they do."""
+        if rel:
+            png, duplicates = self.png_for(rel)
+            paths = [png, *duplicates]
+        else:
+            paths = [self.duplicate_of(key)]
+        return sha1("\n".join(paths).encode("utf-8")).hexdigest()[:8]
 
     def duplicate_of(self, key: str) -> str:
         """The PSD a numbered PNG keyed like this card was exported from (A_Snack2.png -> A_Snack.psd), or ""."""
@@ -515,6 +526,24 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
     return cards
 
 
+def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
+    """
+    Whether the card's verdict is final (pending's rule): refused for exactly its PSD-kind values on the PSD blob the
+    tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do.
+    """
+    verdict = edits.meta.get(card.key, {}).get("_psd")
+    if not (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
+            and verdict.get("psd") == card.psd_sha[:8]):
+        return False
+    reason = str(verdict.get("reason", ""))
+    if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key():
+        return False
+    if (reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}") \
+            and verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key):
+        return False
+    return True
+
+
 def _describe(card: Card) -> str:
     """'hp 5 -> 8, name 'White CLot' -> 'White Clot'': the jobs for the commit subject and the report."""
     parts = []
@@ -577,6 +606,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if not card.rel:
             original = snapshot.duplicate_of(card.key)
             if original:
+                card.pngs = snapshot.pngs_key("", card.key)
                 raise Refused("duplicate", f"a numbered PNG exported from `{original}`")
             raise Refused("unsupported-card", "no PSD in the card repo")
         stats = [f for f in card.fields if f in psd_edit.STAT_FIELDS]
@@ -588,10 +618,14 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if card.rel in pushed:
             raise Refused("recent", f"PSD pushed in the last {RECENT.seconds // 60} min")
         card.png, duplicates = snapshot.png_for(card.rel)
+        if not card.png or duplicates:
+            card.pngs = snapshot.pngs_key(card.rel, card.key)
         if not card.png:
-            raise Refused("unsupported-card", "no PNG beside the PSD")
+            raise Refused("unsupported-card", NO_PNG)
         if duplicates:
             raise Refused("duplicate", "numbered PNGs share the PSD: " + ", ".join(basename(p) for p in duplicates))
+        if card.png in pushed:                  # a teammate's re-export: the merge would build on it unseen
+            raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
         card.png_sha = snapshot.sha(card.png)
         old_psd, old_png = join(folder, "old", basename(card.rel)), join(folder, "old", basename(card.png))
         fetch_verified(snapshot.repository, card.psd_sha, old_psd)
@@ -665,6 +699,7 @@ def share_of(card: Card) -> Optional[Share]:
     if card.refusal.code in TRANSIENT or card.transient:
         return None
     card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], **({"fonts": card.fonts} if card.fonts else {}),
+                    **({"pngs": card.pngs} if card.pngs else {}),
                     "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
     def refuse(text: str) -> Optional[str]:
@@ -788,18 +823,20 @@ def failure(report: Report) -> str:
     return f"{plural(len(errors), 'card')} with an error: {', '.join(errors)}" if errors else ""
 
 
-def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None) -> tuple:
+def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
+        pending_only: bool = False) -> tuple:
     """
     Bake the PSD-kind edits at head and land everything in one commit on the branch's current head (run_report).
 
     Returns:
         (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
     """
-    report = run_report(repository, head, dry_run, card)
+    report = run_report(repository, head, dry_run, card, pending_only)
     return report.text, [report.commit] if report.commit else []
 
 
-def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None) -> Report:
+def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
+               pending_only: bool = False) -> Report:
     """
     run() as a Report: at most MAX_BAKES cards baked and none started after BUDGET; the rest are refused `capped`
     (try-again: pending next run).
@@ -809,6 +846,8 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
         head: The commit whose tree and edits file are the snapshot ("" = the branch head)
         dry_run: Write the artifacts, commit nothing
         card: Restrict the run to one card (matched like the authors file)
+        pending_only: Skip the cards with a final verdict (the schedule: pending()'s cards only, so refused cards
+            cost no time from BUDGET); a dispatch re-checks them
 
     Returns:
         The Report, its text rendered and written to the work dir's report.md
@@ -831,9 +870,13 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             report.note = f"{snapshot.edits_path} isn't JSON: {error}"
         if edits is not None:
             cards = select(edits, snapshot, card)
+            named = len(cards)
+            if pending_only:
+                cards = [c for c in cards if not final(edits, snapshot, c)]
             report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
-                                f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
-                                + (f" (--card {card})" if card else ""))
+                                f"{plural(len(edits.cards), 'card')}, {named} with PSD fields"
+                                + (f" (--card {card})" if card else "")
+                                + (f", {named - len(cards)} refused before (not re-checked)" if named > len(cards) else ""))
             if card and not cards:
                 report.note = f"No entry with a PSD field for {card!r}."
             if cards:
@@ -881,29 +924,21 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
 def pending(repository: str = CARD_REPO, head: str = "") -> list:
     """
     The schedule's change gate (card-edits.yml): the cards a live run has work for at head, i.e. a PSD-kind edit
-    without a final verdict. Final = a refused `_psd` for exactly the entry's PSD-kind values on the PSD blob the tree
-    holds (build_site.apply_edits shows a refusal by the same rule); a baked field leaves the file. So new, changed
-    and redundant edits, try-again refusals (recent, head-moved, edit-changed, capped, runner errors), refused cards whose
-    PSD changed since and `font` refusals whose MDW/Fonts changed since are pending, and after a complete live run nothing is.
+    without a final verdict (final(); build_site.apply_edits shows a refusal by the same rule); a baked field leaves the
+    file. So new, changed and redundant edits, try-again refusals (recent, head-moved, edit-changed, capped, runner
+    errors), refused cards whose PSD changed since, `font` refusals whose MDW/Fonts changed and `duplicate` or no-PNG
+    refusals whose PNGs changed are pending, and after a complete live run nothing is.
 
     Returns:
-        Card names in the file's order ([] when nothing is pending, or the file is missing or isn't JSON)
+        Card names in the file's order ([] when nothing is pending or the file is missing); raises ValueError when the
+        file isn't JSON (the gate step fails and Discord is told)
     """
     token_from_env()
     snapshot = snapshot_at(repository, head or ref_head(repository))
     if snapshot.edits_path is None:
         return []
-    try:
-        edits = CardEdits.parse(fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8"))
-    except ValueError:
-        return []
-
-    def final(card: Card) -> bool:
-        verdict = edits.meta.get(card.key, {}).get("_psd")
-        return (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
-                and verdict.get("psd") == card.psd_sha[:8]
-                and (not str(verdict.get("reason", "")).startswith("font:") or verdict.get("fonts") == snapshot.fonts_key()))
-    return [card.name for card in select(edits, snapshot) if not final(card)]
+    edits = CardEdits.parse(fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8"))
+    return [card.name for card in select(edits, snapshot) if not final(edits, snapshot, card)]
 
 
 def main(args: Optional[list] = None) -> int:
@@ -915,8 +950,9 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--head", default="", help=f"commit to read the tree and edits file at (default: {CARD_BRANCH}'s head)")
     parser.add_argument("--dry-run", action="store_true", help="write the artifacts, commit nothing")
     parser.add_argument("--card", default=None, help="only this card (matched like the authors file)")
+    parser.add_argument("--pending", action="store_true", help="skip cards whose refused verdict still holds (the schedule)")
     options = parser.parse_args(args)
-    report = run_report(options.repo, options.head, options.dry_run, options.card)
+    report = run_report(options.repo, options.head, options.dry_run, options.card, options.pending)
     print(report.text, end="")
     why = failure(report)
     if why:
@@ -943,6 +979,7 @@ __all__ = [
     'editors',
     'failure',
     'fetch_verified',
+    'final',
     'land',
     'land_cards',
     'main',

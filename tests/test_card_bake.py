@@ -509,7 +509,48 @@ def test_pending_is_the_schedule_gate(github):
     assert "Mini Doomer" in cb.pending()                                    # only a refusal is final
     files[cb.EDITS_PATHS[0]] = b"not json"
     github.commit(files, "web", "Website edit: broken")
+    with pytest.raises(ValueError):                                         # the gate step fails: Discord is told
+        cb.pending()
+
+
+def test_pending_run_skips_final_verdicts(github):
+    """--pending (the schedule): a card whose refused verdict still holds is not looked at again; a dispatch re-checks it."""
+    cb.run()
+    files = github.files_at(github.head)
+    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data["cards"]["The Freezer"]["_psd"]["reason"] = "stars: changed by hand"   # a re-check would rewrite it
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: a verdict")
+    github.calls.clear()
+    text, commits = cb.run(pending_only=True)
+    assert commits == [] and "4 with PSD fields, 4 refused before (not re-checked)" in text
+    assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route != "git/blobs/" + _sha(files[cb.EDITS_PATHS[0]])]
+    text, commits = cb.run()
+    assert len(commits) == 1 and "not re-checked" not in text                # the dispatch rewrote The Freezer's verdict
+    assert _edits_at(github)["cards"]["The Freezer"]["_psd"]["reason"] != "stars: changed by hand"
+
+
+def test_png_verdicts_follow_the_pngs(github):
+    """A `duplicate` verdict rests on the PNGs by path: removing the numbered PNG reopens both cards, a re-export doesn't."""
+    cb.run()
+    data = _edits_at(github)
+    assert data["cards"]["A Snack"]["_psd"]["pngs"] and data["cards"]["A Snack2"]["_psd"]["pngs"]
+    assert "pngs" not in data["cards"]["Nobody"]["_psd"] and cb.pending() == []
+    files = github.files_at(github.head)
+    files["Items/Heal/2 Stars/A_Snack.png"] = b"re-exported"
+    github.commit(files, "web", "A Snack: re-export")
     assert cb.pending() == []
+    del files["Items/Heal/2 Stars/A_Snack2.png"]
+    github.commit(files, "web", "A Snack2: removed")
+    assert cb.pending() == ["A Snack", "A Snack2"]
+
+
+def test_recent_png_is_refused(github):
+    """A teammate's PNG re-export in the last 30 min is theirs too: refused `recent` before the PSD is fetched."""
+    github.recent.add(DOOMER[:len(DOOMER) - 4] + ".png")
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "recent: PNG pushed in the last 30 min" in text
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and "Mini Doomer" in cb.pending()
 
 
 def test_redundant_name_is_dropped(github):
@@ -806,7 +847,7 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     done = run_process([executable, "-m", "commands.card_bake", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     assert done.stdout.startswith("usage: python -m commands.card_bake") and "--dry-run" in done.stdout and "--card" in done.stdout
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--help"}   # no other flags
+    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--pending", "--help"}   # no other flags
     code = "import sys, commands.card_bake; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr      # the copy has no config.py, imports no discord
@@ -816,14 +857,15 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
 
 def test_workflow_shape():
     """card-edits.yml: live every 30 minutes behind the pending gate, dispatch with dry_run on by default, never on the
-    pipeline's own commits, one bake at a time in its own group (a running bake is never cancelled; sharing tts-save's
-    group would let a tick replace a pending TTS save), the report line it greps before running site.yml and
-    tts-save.yml, and a Discord message when a scheduled run fails (main exits 1)."""
+    pipeline's own commits, one scheduled bake at a time in its own group (a running bake is never cancelled; sharing
+    tts-save's group would let a tick replace a pending TTS save) and a group per dispatch (never replaced by a tick),
+    the schedule baking only pending cards, step timeouts, the report line it greps before running site.yml and
+    tts-save.yml, and one Discord message when a streak of failed scheduled runs starts (main exits 1)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
-    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text
+    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text and '[ "$EVENT" = schedule ] && args+=(--pending)' in text
     assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
     grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
     report = cb.Report("o/r", "h" * 40, False, "w")
@@ -837,7 +879,8 @@ def test_workflow_shape():
     assert on["schedule"] == [{"cron": "*/30 * * * *"}] and "push" not in on
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
     assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'"
-    assert doc["concurrency"] == {"group": "card-edits", "cancel-in-progress": False}
+    assert doc["concurrency"] == {"group": "${{ github.event_name == 'schedule' && 'card-edits' || format('card-edits-{0}', github.run_id) }}",
+                                  "cancel-in-progress": False}
     assert doc["permissions"] == {"contents": "write", "actions": "write"}
     steps = doc["jobs"]["bake"]["steps"]
     gate = next(i for i, step in enumerate(steps) if step.get("id") == "gate")
@@ -848,8 +891,11 @@ def test_workflow_shape():
     assert bake["env"]["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"   # the schedule is live
     after = next(step for step in steps if "grep -q" in step.get("run", ""))
     assert after["if"].startswith("${{ !cancelled() &&")                     # a card's error exits 1: a commit still runs them
-    assert alert["if"] == "failure() && github.event_name == 'schedule'"
+    assert alert["if"] == "(failure() || cancelled()) && github.event_name == 'schedule'"   # a job timeout is a cancel
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}" and "$RUN" in alert["run"]
+    assert "gh run list" in alert["run"] and '[ "$last" = failure ]' in alert["run"]       # once per streak
+    assert steps[gate]["timeout-minutes"] == 10 and bake["timeout-minutes"] == 50        # a step timeout fails the run
+    assert doc["jobs"]["bake"]["timeout-minutes"] == 60
 
 
 def test_workflow_gate_line_calls_pending(github, capsys, monkeypatch):
