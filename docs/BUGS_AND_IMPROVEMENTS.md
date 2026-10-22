@@ -50,7 +50,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
 |---|-----|-------|--------|---------------------------|--------------|
-| B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/repo_traverser.py` `traverse_remote` | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
+| B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/card_data.py` `traverse_remote` (moved from repo_traverser.py 2026-10-22) | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
 

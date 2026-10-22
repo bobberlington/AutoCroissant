@@ -35,7 +35,7 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
 | (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 74 s, 356 tests on 2026-10-21; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the 813-card old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:22): the next `/update_stats` re-parses every card once (~813 downloads; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
-| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by bot commands (`/update_stats`, `/update_metadata`, `/mass_replace` call `stats_db.save()`, `StatsDatabase` in card_models.py; `/alias` calls query_card's `save_aliases`; every save is atomic under its pickle's lock since 2026-10-21, `card_models.save_pickle`); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
+| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by `/update_stats` (`stats_db.save()`, `StatsDatabase` in card_models.py; every save is atomic under its pickle's lock since 2026-10-21, `card_models.save_pickle`). Since branch work/discord-writers (2026-10-22) `/update_metadata`, `/mass_replace` and `/alias` each make one commit to TTSCardMaker's `site/Card Edits.json` / `site/Card Authors.txt` (commands/discord_edits.py through `card_bake.land`; never a pickle in it), apply it in memory and save stats.pkl so a restart keeps it (the next `/update_stats` builds the same values); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker and push THERE; this repo only re-parses via `/update_stats` (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the pickle gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
@@ -161,7 +161,8 @@ deliberate change-control decision: either force-add it or (better) amend
 Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
-   query_card.py, parsing in psd_parser.py, the /update_stats traversal in repo_traverser.py, GitHub access in
+   query_card.py, parsing in psd_parser.py, the /update_stats command in repo_traverser.py (its traversal is
+   commands/card_data.py since 2026-10-22, shared with the Card sync Action's build), GitHub access in
    github_api.py, admin in management.py, etc.). Plain
    `def` is fine — it will be thread-wrapped. The body must follow the queue rules:
    never `await` Discord or call `interaction.followup` directly from worker code;
@@ -200,10 +201,11 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, and the Discord writers' `discord_edits` (2026-10-22: the jetson runs the same pure Python as the Action; tests/test_card_data.py checks they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
    sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: the last one's list is
-   `card_check.SPARSE_FILES`), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
+   `card_check.SPARSE_FILES`; the planned card-sync.yml will check out `card_data.SPARSE_FILES`, whose test runs `--help` on
+   the build, the bake and the save with exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py; tts-save.yml's has
    none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
@@ -350,3 +352,7 @@ and update this file.
 2026-10-21 (details): `psd_details.json` joins the pickle discipline (jargon bullet, the /push bullet, the reminder.pkl paragraph; `psd_details` named among the uncompiled modules in step 5). The never-commit list is unchanged: the file is a derived, committed artifact like the pickles, its `.tmp` gitignored. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): `card_check` named among the uncompiled modules in step 5, with the four TTSCardMaker Actions whose sparse lists pin bot file paths; the offline-suite row reads 417 passed, 24 skipped; the sparse-list test clause names the three Actions that have one (tts-save.yml has none).
+
+2026-10-22 (data build): the /update_stats traversal moved to the uncompiled commands/card_data.py (checklist step 1);
+`card_data`, `card_history`, `card_db` and `changelog` named among the uncompiled modules in step 5, with
+`card_data.SPARSE_FILES` (card-sync.yml, planned) beside the Actions' sparse lists.

@@ -530,19 +530,18 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | Treat above-midline icons as inline types (or lower/remove the midline) | `d0bb28c` (2026-01-30) replaced a top-400px rule with `TYPE_REGION_RATIO=0.5` because creature-type tags live in the top region | The Lich King carries `undead` twice: a tag at y=21 and an inline icon at y=2239. Erase the midline and every tag becomes a bogus injection candidate |
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
-| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:436 → `manual_metadata_entry`, psd_analyzer.py:169; 2026-10-20 lines). And know its verified semantics, below |
+| Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Use `/update_metadata` (main.py:457 → `manual_metadata_entry`, discord_edits.py:444; branch work/discord-writers, 2026-10-22 lines). And know its semantics, below |
 | Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
-**What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
-change — state no more than this): `manual_metadata_entry` creates a missing card as
-`CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:221) with `timestamp` 0.0 and no
-`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:77) re-parses a card that
-is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
-since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
-existing entry survive until the PSD's blob changes, `cards:` names the card, or `force_update:True`; a
-re-parse of an unchanged blob does not archive the manual version to old_stats. Conclusion the code
-supports: `/update_metadata` is a between-sweeps correction tool, not a durable fix. Durable fixes live
-in the parser, the source PSD, or `site/Card Edits.json` (re-applied after every re-parse).
+**What the code shows about manual entries vs the next sweep** (re-read 2026-10-22 on branch
+work/discord-writers; state no more than this): `manual_metadata_entry` (commands/discord_edits.py) makes one commit to
+the card repo: `author` as a `[cards]` line in `site/Card Authors.txt`, every other field as the card's entry in
+`site/Card Edits.json` (ability and hp/def/atk/spd are "psd" kind: pending until a card bake prints them; stars and types
+are refused for now). It then applies the edit in memory and saves stats.pkl. A missing card gets no stub row: a card
+with only a PNG gets the Card Edits.json entry (the website shows it) and no database row. Because every build and
+re-parse re-applies Card Edits.json and Card Authors.txt, the edit is durable: it survives a changed blob,
+`cards:` and `force_update:True`. Durable fixes still belong in the parser or the source PSD when the PSD is wrong;
+`/update_metadata` records the override in the card repo until then.
 
 ---
 
@@ -582,9 +581,9 @@ documented in autocroissant-failure-archaeology).
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:383):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
 - Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:473 on 2026-10-20):
-  `grep -n "force_update: bool = " commands/repo_traverser.py`
-- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
-  `grep -n -A9 "def _populate_types_from_local" commands/repo_traverser.py`
+  `grep -n "force_update: bool = " commands/repo_traverser.py commands/card_data.py`
+- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, card_data.py:294 since 2026-10-22, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+  `grep -n -A9 "def _populate_types_from_local" commands/card_data.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`
@@ -606,10 +605,9 @@ documented in autocroissant-failure-archaeology).
   `git show 081b1fd -- commands/psd_analyzer.py | grep -B2 -A8 MISMATCH` (removed).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
-- Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:87, `_psd_changed`
-  repo_traverser.py:77, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
-  psd_analyzer.py:221; /update_metadata at main.py:436):
-  `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
+- Manual-entry semantics (2026-10-22, branch work/discord-writers: `manual_metadata_entry` discord_edits.py:444,
+  /update_metadata at main.py:457):
+  `grep -n "def manual_metadata_entry\|def edits_file\|def refresh" commands/discord_edits.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.
 - Font adoption count (0 of 813 PSDs on 2026-10-19) and the migration backlog (45 PSDs / 81
@@ -624,3 +622,5 @@ documented in autocroissant-failure-archaeology).
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): `_psd_changed`, `_populate_types_from_local` and the force_update default's greps re-pointed to commands/card_data.py (the traverser's code moved there, uncompiled).

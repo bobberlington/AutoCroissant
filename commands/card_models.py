@@ -109,6 +109,7 @@ class CardInfo:
     subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
     archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
+    version = None                            # card_history's {from, to, cause...}; no field: parsed cards pickle as before
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""

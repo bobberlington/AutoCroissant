@@ -70,10 +70,11 @@ card_commands = {
                                                   "No argument shows current ratio. Higher = stricter matching.",
     "/set_repo [new_repo]:"                     : "View or set the GitHub repository, format USER/REPO (admin only). "
                                                   "No argument shows current repo.",
-    "/alias [alias] [card]:"                    : "Manage card aliases (admin only). Maps a short name (e.g., 'red') to a full card name for improved search accuracy.\n"
+    "/alias [alias] [card]:"                    : "Manage card aliases (admin only). Maps a short name (e.g., 'red') to a full card name for improved search accuracy. "
+                                                  "Each change is one commit to the card repo's site/Card Edits.json (the card's aliases, as the website edits them), working at once.\n"
                                                   "- No arguments: View all aliases\n"
                                                   "- One argument: Delete the specified alias\n"
-                                                  "- Two arguments: Create/update an alias",
+                                                  "- Two arguments: Create/update an alias (card: its image file name, or the end of it)",
     "/frankenstein <cards> [blend_mode]:"       : "Combines multiple cards into a single 'frankensteined' image.\n"
                                                   "- cards: Comma-separated list, e.g., 'Red Bloon, Blue Bloon'\n"
                                                   "- blend_mode: 'slice' (default) or 'average'",
@@ -99,16 +100,18 @@ stats_commands = {
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
     "/update_metadata <query> [del_entry] [author] [ability] [stars] [subtype] [series] [subseries] [hp] [defense] [attack] [speed] [card_type] [types]:" :
-                                                  "Edit metadata for a card (admin only). Provide query to find card, then any fields to update.\n"
-                                                  "- del_entry: Delete entire metadata entry\n"
-                                                  "- types: Comma-separated list, e.g., 'fire,water'\n"
+                                                  "Edit a card's data (admin only). Provide query to find card, then any fields to update: one commit to the card repo, "
+                                                  "as the website's Edit button makes, shown by /query at once.\n"
+                                                  "- author: a line in site/Card Authors.txt; every other field: the card's entry in site/Card Edits.json\n"
+                                                  "- ability, hp, defense, attack, speed: pending on the card image until the next card bake prints them\n"
+                                                  "- stars, types: not yet (the card bake can't print them); change them in the PSD\n"
+                                                  "- del_entry: Hide the card on the website and in queries\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
-                                                  "- author: cards listed in TTSCardMaker's site/Card Authors.txt get the author from that file again on the next /update_stats; fix those in the file\n"
-                                                  "- fields fixed on the website (site/Card Edits.json) are set from that file again on the next /update_stats\n"
                                                   "- No parameters (except query) shows current metadata",
     "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
-    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only).",
+    "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only). "
+                                                       "One commit to the card repo: author rewrites site/Card Authors.txt; the other fields write each card's entry in site/Card Edits.json.",
     "/list_orphans:"                            : "Lists all cards without a listed author.",
 }
 

@@ -10,12 +10,14 @@ requests skips this file:
     AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 """
 import ast
+import contextlib
 import hashlib
 import json
 import re
 import shutil
 from datetime import datetime, timedelta, timezone
 from io import StringIO
+from os import environ
 from subprocess import run as run_process
 from sys import executable
 from types import SimpleNamespace
@@ -695,13 +697,13 @@ def test_verdict_skipped_when_edit_changed_before_the_commit(github, monkeypatch
     """land re-reads the file at H': a refused card whose edit changed meanwhile keeps the new edit and gets no verdict; the others land."""
     real = cb.land
 
-    def land(repository, shares, message, dry_run, out_path=""):
+    def land(repository, shares, message, dry_run, out_path="", local=None):
         current = github.files_at(github.head)                  # before the commit: The Freezer's edit changes
         data = json.loads(current[cb.EDITS_PATHS[0]].decode("utf-8"))
         data["cards"]["The Freezer"]["stars"] = 3
         current[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
         github.commit(current, "web", "Website edit: The Freezer again")
-        return real(repository, shares, message, dry_run, out_path)
+        return real(repository, shares, message, dry_run, out_path, local)
     monkeypatch.setattr(cb, "land", land)
     text, commits = cb.run()
     assert len(commits) == 1 and "**The Freezer**" in text and "edit changed meanwhile: verdict not written" in text
@@ -804,6 +806,191 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
 
 
 # ========================
+# --local: the card sync's bake (one local commit B, nothing pushed)
+# ========================
+SPARSE = ("/site/Card Edits.json", "/" + cb.ICON_MANIFEST_PATH, "/TTS/")      # card-sync.yml's checkout
+
+
+def _git(where, *args, env=None) -> str:
+    done = run_process(["git", "-C", str(where), *args], capture_output=True, text=True, timeout=60,
+                       env={**environ, "GIT_CONFIG_GLOBAL": "/dev/null", **(env or {})})
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
+def _put(repo, files: dict) -> None:
+    for path, data in files.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_bytes(data)
+
+
+def _commit_in(repo, message, author="web") -> str:
+    who = {"GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": "w@x", "GIT_COMMITTER_NAME": author, "GIT_COMMITTER_EMAIL": "w@x"}
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", message, env=who)
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def _files_in(repo, sha) -> dict:
+    """{path: blob sha} at a commit."""
+    out = {}
+    for line in _git(repo, "ls-tree", "-r", sha).splitlines():
+        meta, path = line.split("\t", 1)
+        out[path] = meta.split()[2]
+    return out
+
+
+@pytest.fixture
+def local(github, files, tmp_path):
+    """The Action's shape: origin holds the card repo; the clone is blobless and sparse (PSDs and PNGs by REST)."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "-b", "main")
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    _put(origin, files)
+    _commit_in(origin, "Website edit: test")
+    clone = tmp_path / "clone"
+    _git(tmp_path, "clone", "-q", "--filter=blob:none", "--sparse", f"file://{origin}", str(clone))
+    _git(clone, "sparse-checkout", "set", "--no-cone", *SPARSE)
+    return SimpleNamespace(origin=origin, clone=clone, head=_git(clone, "rev-parse", "HEAD").strip())
+
+
+def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
+    """Pending edits -> one commit B on the clone's head, the checkout on it; origin and GitHub untouched; the small files
+    from the clone, only the PSDs and PNGs by REST; the same files as the live run's commit."""
+    lacks = run_process(["git", "-C", str(local.clone), "cat-file", "-e", _sha((local.origin / DOOMER).read_bytes())],
+                        capture_output=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    assert lacks.returncode != 0                                                                # blobless: no PSD here
+    text, commits = cb.run(local=str(local.clone))
+    assert len(commits) == 1
+    b = commits[0]
+    assert _git(local.clone, "rev-parse", "HEAD").strip() == b and _git(local.clone, "rev-parse", f"{b}^").strip() == local.head
+    assert _git(local.clone, "rev-list", "--count", "origin/main..HEAD").strip() == "1"
+    assert _git(local.origin, "rev-parse", "main").strip() == local.head                       # nothing pushed
+    assert _git(local.clone, "log", "-1", "--format=%an|%s", b).strip() == "AutoCroissant|Card edits: 1 redundant, 4 refused"
+    assert not [m for m, _ in github.calls if m != "GET"] and "activity" in [r for _, r in github.calls]   # the recent gate as ever
+    assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
+    rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
+    cards = {path: data for path, data in github.files_at(github.head).items() if path.startswith(("Auxiliary", "Field"))}
+    assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
+    assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
+    assert "The checkout is on it." in text
+    edits = (local.clone / cb.EDITS_PATHS[0]).read_bytes()
+    assert _sha(edits) == _files_in(local.clone, b)[cb.EDITS_PATHS[0]]                         # the checkout is on B
+
+    before = github.head                                                                        # the live run, for comparison
+    cb.run()
+    strip = lambda data: {k: {f: ({**x, "at": ""} if f == "_psd" else x) for f, x in v.items()} for k, v in data["cards"].items()}
+    assert strip(json.loads(edits)) == strip(_edits_at(github))
+    live = sorted(p for p, data in github.files_at(github.head).items() if github.files_at(before).get(p) != data)
+    ours = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
+    assert ours == live == [cb.EDITS_PATHS[0]]
+
+
+def test_local_with_nothing_pending_commits_nothing_and_keeps_verdicts(github, local):
+    """A rerun on B: nothing pending, no commit, HEAD stays; a new pending edit gets B2, the refused verdicts kept as they were."""
+    _, (b,) = cb.run(local=str(local.clone))
+    verdicts = {k: v["_psd"] for k, v in json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"].items() if "_psd" in v}
+    assert sorted(verdicts) == ["A Snack", "A Snack2", "Nobody", "The Freezer"] and all(v["state"] == "refused" for v in verdicts.values())
+    text, commits = cb.run(local=str(local.clone), pending_only=True)
+    assert commits == [] and "4 refused before (not re-checked)" in text and _git(local.clone, "rev-parse", "HEAD").strip() == b
+    text, commits = cb.run(local=str(local.clone))                                              # re-checked: the same verdicts
+    assert commits == [] and _git(local.clone, "rev-parse", "HEAD").strip() == b
+
+    data = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())                           # a website edit after B
+    data["cards"]["Mini Doomer"]["hp"] = 5
+    _put(local.clone, {cb.EDITS_PATHS[0]: cb.dump_edits(data).encode("utf-8")})
+    c = _commit_in(local.clone, "Website edit: Mini Doomer")
+    text, commits = cb.run(local=str(local.clone), pending_only=True)
+    assert len(commits) == 1 and _git(local.clone, "rev-parse", f"{commits[0]}^").strip() == c
+    after = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"]
+    assert after["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
+    assert {k: v["_psd"] for k, v in after.items() if "_psd" in v} == verdicts                    # byte for byte, dates too
+    assert _git(local.origin, "rev-parse", "main").strip() == local.head
+
+
+def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
+    """--dry-run makes no B; a local change in B's way fails the run (exit 1) and leaves the checkout as it was."""
+    text, commits = cb.run(dry_run=True, local=str(local.clone))
+    assert commits == [] and "Would commit: Card edits: 1 redundant, 4 refused." in text
+    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and not _git(local.clone, "status", "--porcelain")
+    path = local.clone / cb.EDITS_PATHS[0]
+    path.write_bytes(path.read_bytes() + b" ")
+    out = StringIO()
+    with contextlib.redirect_stdout(out):
+        assert cb.main(["--local", str(local.clone)]) == 1
+    assert "Nothing committed: error: git merge in" in out.getvalue() and "left unreferenced)" in out.getvalue()
+    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and path.read_bytes().endswith(b"}\n ")
+
+
+def test_local_head_elsewhere_leaves_the_checkout(github, local):
+    """--head another commit than the checkout's HEAD: B is made on it, the checkout doesn't move."""
+    _put(local.clone, {"TTS/notes.txt": b"x"})
+    newer = _commit_in(local.clone, "elsewhere")
+    text, (b,) = cb.run(head=local.head, local=str(local.clone))
+    assert _git(local.clone, "rev-parse", f"{b}^").strip() == local.head and _git(local.clone, "rev-parse", "HEAD").strip() == newer
+    assert f"main `{local.head[:8]}`" in text
+    assert f"**The checkout is not on it:** HEAD is `{newer[:8]}` (not --head), so check out `{b[:8]}`" in text
+
+
+def test_local_bare_or_unborn_head_still_makes_b(github, local, tmp_path):
+    """A bare clone, or one whose HEAD is unborn: B is made on --head, nothing to move, and the report says so."""
+    bare = tmp_path / "bare.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))                           # HEAD -> main, unborn
+    _git(bare, "fetch", "-q", "--filter=blob:none", f"file://{local.origin}", "main:refs/remotes/origin/main")
+    text, (b,) = cb.run(head=local.head, local=str(bare))
+    assert _git(bare, "rev-parse", f"{b}^").strip() == local.head and "No checkout moved (a bare clone or an unborn HEAD)." in text
+    assert gc.checkout_head(str(bare)) == ""
+
+
+def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
+    """--head main moved past the checkout: a report and exit 1, no B and no traceback (card-sync goes on from main)."""
+    out, err = StringIO(), StringIO()
+    monkeypatch.setattr(cb, "stderr", err)
+    with contextlib.redirect_stdout(out):
+        assert cb.main(["--local", str(local.clone), "--head", "f" * 40]) == 1
+    out, err = out.getvalue(), err.getvalue()
+    assert "**Nothing baked: git rev-parse in" in out and "card_bake: Nothing baked:" in err and "Traceback" not in out + err
+    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
+
+
+def test_local_recent_gate_reads_the_clone(local, monkeypatch):
+    """--local: a head GitHub lacks (a previous B) is diffed in the clone, renames as both paths; else the compare API."""
+    _put(local.clone, {"TTS/a.txt": b"a"})
+    base = _commit_in(local.clone, "add")
+    _git(local.clone, "mv", "TTS/a.txt", "TTS/b.txt")
+    head = _commit_in(local.clone, "rename")
+    now = datetime.now(timezone.utc)
+    pushes = [{"before": base, "after": "x" * 40, "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ")}]
+    asked = []
+
+    def api(repository, method, path, **kwargs):
+        asked.append(path)
+        return Reply(body=pushes) if path == "activity" else Reply(body={"files": [{"filename": "c.psd"}]})
+    monkeypatch.setattr(cb, "api", api)
+    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"TTS/a.txt", "TTS/b.txt"} and asked == ["activity"]
+    pushes[0]["before"] = "e" * 40                                                      # a base the clone lacks: the API
+    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"c.psd"} and asked[1:] == ["activity", f"compare/{'e' * 40}...{head}"]
+
+
+@fork
+def test_local_bake_lands_psd_png_and_file_in_b(github, local):
+    """A real bake with --local: B holds the PSD, the PNG and the file; the verdict names B's PSD blob."""
+    data = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())
+    data["cards"] = {"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}}
+    _put(local.clone, {cb.EDITS_PATHS[0]: cb.dump_edits(data).encode("utf-8")})
+    _commit_in(local.clone, "Website edit: Mini Doomer")
+    text, (b,) = cb.run(local=str(local.clone))
+    assert _git(local.clone, "log", "-1", "--format=%B", b).strip() == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
+    changed = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
+    assert changed == sorted([DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATHS[0]])
+    verdict = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"]["Mini Doomer"]["_psd"]
+    assert verdict["state"] == "baked" and verdict["psd"] == _files_in(local.clone, b)[DOOMER][:8]
+    assert not (local.clone / DOOMER).exists()                                                  # sparse: not checked out
+    assert not [m for m, _ in github.calls if m != "GET"]
+
+
+# ========================
 # The Action's sparse copy
 # ========================
 def _bot_files_in_workflow() -> list:
@@ -847,7 +1034,8 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     done = run_process([executable, "-m", "commands.card_bake", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     assert done.stdout.startswith("usage: python -m commands.card_bake") and "--dry-run" in done.stdout and "--card" in done.stdout
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--pending", "--help"}   # no other flags
+    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--pending", "--local",
+                                                          "--help"}   # no other flags
     code = "import sys, commands.card_bake; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr      # the copy has no config.py, imports no discord

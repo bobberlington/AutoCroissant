@@ -190,7 +190,7 @@ validator problems: NONE
   `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
   Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
   GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
-  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived (RepositoryTraverser in repo_traverser.py since the split, re-exported), for these scripts. gap_trace.py calls `_process_layer`, whose signature did
+  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived (RepositoryTraverser in repo_traverser.py since the split, re-exported; its body is card_data.CardBuild since 2026-10-22, and it still gets the bot's /alias names by default), for these scripts. gap_trace.py calls `_process_layer`, whose signature did
   not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
@@ -680,3 +680,5 @@ If a script is added, this document must gain a routing row, a section, and a pr
 
 2026-10-20 (later): the optimization-pass scripts and their JSON moved from `~/Documents/ac-optimization/` into
 `scripts/optimization/` (byte-identical, described above); the reports and `bench/` went to `docs/Finished/optimization-pass-2026-10-20/`.
+
+2026-10-22 (data build): RepositoryTraverser's body moved to commands/card_data.py (`CardBuild`); the `*_from_local` helpers the scripts call are there, unchanged.

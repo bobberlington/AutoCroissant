@@ -63,7 +63,7 @@ Mechanics you must know:
   `ThreadPoolExecutor` (music_player.py:35, used at music_player.py:264 and 277) so a playlist can't
   spawn unbounded yt-dlp threads.
 - **Queued commands run concurrently** (one `create_task` + thread per entry), so two long workers that must not overlap
-  need their own lock: `card_runner.bake_lock` (2026-10-21) is held by `update_stats` for its whole run (repo_traverser.py:506-509)
+  need their own lock: `card_runner.bake_lock` (2026-10-21) is held by `update_stats` for its whole run (repo_traverser.py:79-82)
   and by the card bake around `card_bake.run`; the one that finds it held says so and blocks only its own thread. Nothing
   queues a bake on its own: the `notice_edits` hook at the end of `update_stats` was removed 2026-10-21 (the user: the Action is
   the one live runner, `/bake_cards` the fallback by hand).
@@ -116,7 +116,7 @@ Mechanics you must know:
 | 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:874-876, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:180-182). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
-| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21). `update_stats` wraps its whole run in it (repo_traverser.py:506-509); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
+| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
 
 ## Data-flow diagrams
 
@@ -150,30 +150,31 @@ Discord
 ```
 /update_stats  (wrapper defers, main.py:385)
       v
-WORKER THREAD: update_stats() (repo_traverser.py:486)
+WORKER THREAD: update_stats() (repo_traverser.py:59; the traversal is card_data.update, card_data.py:658, since 2026-10-22)
       |  GitHub trees API with If-None-Match: 304 -> "Nothing changed in the card repo since the
-      |    last update." and the run ends (ETag cache in memory only; repo_traverser.py:166-169)
+      |    last update." and the run ends (ETag cache in memory only; card_data.py:247-252)
       |  build the icon vocabulary: Types/ + Types/Stars/ names + the stoogedings manifest
       |    (MDW/Fonts/stoogedings-src/stoogedings.json; impossibility-cards-reference §4.1)
       |  pick PSDs (GitHub only; local mode archived 2026-10-20, weak point 5): new, moved, blob sha
-      |    != card.blob_sha (_psd_changed, repo_traverser.py:77-89; commits-since fallback for
+      |    != card.blob_sha (_psd_changed, card_data.py:217-229; commits-since fallback for
       |    cards without blob_sha), named in cards:, or force_update
       |  DOWNLOAD_WORKERS=4 stream blobs (git/blobs API) into mkstemp files ahead of parsing
-      |    (repo_traverser.py:131-144, 356-405)
+      |    (card_data.py:144-167, 452-529)
       v
 per picked PSD: one commit lookup (_get_remote_timestamp); PSDParser.parse; psd_details.gather on the same
-  temp file (the website's Details record, by blob sha; a failure is one console line); remove temp file;
+  temp file (the website's Details record, by blob sha; a failure is one console line); remove temp file; a lookup
+  or parse that raises fails that card only (it keeps its last version; no ETag kept, so the next run retries);
   old CardInfo -> old_stats only if its blob changed or it moved; CardValidator
       v
 stats_db singleton (card_models.py:228) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
-      |  (save only when num_changed > 0 or traverser.changed)
+      |  (save only when something changed: num_changed, archives, build.changed; card_data.py:682)
       |  psd_details.json: pruned to the tree's blobs and saved when a record was gathered or pruned
       |    (loaded at the start of the run; a 304 touches neither file)
       v
 changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a TTS save run when images, the
       |   rules, Card Edits.json or the save changed; TTSCardMaker's tts-save.yml Action does that now)
 queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
-      |                                            (repo_traverser.py:550-559)
+      |                                            (repo_traverser.py:111-117)
       |   (no bake is queued here: the edits-file notice was removed 2026-10-21; /bake_cards is by hand, the Action the live runner)
       v  (subsequent command-queue ticks, pool threads)
 card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new data
@@ -233,7 +234,7 @@ config.py  (SECRET - tokens; names only)      global_config.py  (paths, pickle n
      | import config (module level)                 |
      |  utils, music_player                         |  main, analytics, card_models, github_api,
      |  (github_api: try/except, getattr defaults;  |  psd_analyzer, psd_parser, query_card,
-     |   everyone else reads it through github_api) |  repo_history, repo_traverser, tts_save,
+     |   everyone else reads it through github_api) |  repo_history, card_data, tts_save,
      |                                              |  type_emojis, update_bot
      |
 main.py  (registration + queue loops; imports every commands module)
@@ -264,10 +265,14 @@ main.py  (registration + queue loops; imports every commands module)
  |                            IconVocabulary  [compiled; no Discord, network or pandas]
  |- commands.psd_details   -> font_check, psd_regions, psd_parser, card_models, github_api, global_config, psd_tools (Pillow's ImageCms
  |                            optional): gather, load/save/prune, the backfill CLI  [2026-10-21; NOT compiled; no discord or config;
- |                            repo_traverser imports it LAZILY inside update_stats so fontTools stays off the startup path]
- |- commands.repo_traverser -> card_models, card_edits, card_runner (bake_lock), psd_parser, github_api, utils, query_card, repo_history,
- |                            type_emojis (module level!; tts_save no longer, 2026-10-20); psd_details LAZILY (2026-10-21): RepositoryTraverser,
- |                            update_stats, _tree_etags  [compiled]
+ |                            card_data imports it LAZILY inside its functions so fontTools stays off the startup path]
+ |- commands.card_data     -> card_models, card_edits, psd_parser, github_api, global_config; psd_details, card_history, card_db,
+ |                            changelog LAZILY: CardBuild (the traversal), update (legacy /update_stats), build (the Card sync
+ |                            Action's db/ JSON)  [2026-10-22; NOT compiled; no discord, pandas, config or utils: card-sync.yml
+ |                            checks out card_data.SPARSE_FILES alone]
+ |- commands.repo_traverser -> card_data, card_edits, card_models, card_runner (bake_lock), utils, query_card, repo_history,
+ |                            type_emojis (module level!; tts_save no longer, 2026-10-20): RepositoryTraverser (CardBuild with the
+ |                            bot's aliases), update_stats, _tree_etags  [compiled; a thin Discord wrapper since 2026-10-22]
  |- commands.psd_analyzer  -> the four above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
  |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
  |- commands.frankenstein  -> utils, query_card (card_repo)
@@ -328,7 +333,7 @@ optimization pass.
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
 4. **(Fixed 2026-10-19) Remote traversal used to leak temp files.** Each downloaded temp file is now
-   removed in a `finally` right after parsing, and files left by an error at the end (repo_traverser.py:371-372, 399-407). Kept here as a pointer:
+   removed in a `finally` right after parsing (card_data.py:481-488; :478 when its commit lookup fails), and files left by an error at the end (:524-526). Kept here as a pointer:
    archaeology Entry 10.2.
 5. **(Retired 2026-10-20) Local mode's change signal did not match the stored data.** The local-mode PATH
    bug (removeprefix, 2025-12-02 → 2026-10-19) was fixed with `relpath` (story:
@@ -451,7 +456,7 @@ Re-find before citing:
 | Unique handler names (was duplicate defs) | `grep -n -e "async def slash_set_re" -e "async def slash_delete_" main.py` (4 distinct names) |
 | Deque shuffle | `grep -n "shuffle(music_queue)" commands/music_player.py` (338) |
 | Ephemeral dropped in fallback; get_channel None guarded | `grep -n 'pop("ephemeral"\|def _fallback_send\|not found")' main.py` |
-| Temp files removed after parse (weak point 4 fixed) | `grep -n "mkstemp(\|remove(local_file)" commands/repo_traverser.py` |
+| Temp files removed after parse (weak point 4 fixed) | `grep -n "mkstemp(\|remove(local_file)" commands/card_data.py` |
 | Local mode archived 2026-10-20 (weak point 5) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44) |
 | Module-level cycles + lazy breaks | `grep -n "from commands.query_card import card_repo" commands/repo_traverser.py commands/psd_analyzer.py commands/type_emojis.py` (module level in the first two; inside a function in type_emojis); `grep -n "from commands.psd_analyzer import" commands/query_card.py` (all inside functions) |
 | Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (227); `grep -n "card_repo = CardRepository()" commands/query_card.py` (796); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
@@ -480,3 +485,8 @@ twice); tts_save's dependency line re-pointed (github_api now reached through gi
 2026-10-21 (hook removed): `notice_edits` and `_last_edits_sha` deleted from card_runner.py, the call at repo_traverser.py:541-542 with them (the user: the Action is the one live runner, the jetson a manual fallback). Data flow (b) now ends with the dataframe refresh; the queue-trio bullet, invariant 10 (bake_lock stays), the module map and the re-verification row updated; no other cited line moved.
 
 2026-10-21 (details): commands/psd_details.py in the module map (lazy from repo_traverser); data flow (b) gathers the Details record per parsed card and saves psd_details.json beside the pickles; the downstream line names the file. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): /update_stats' traversal moved to the uncompiled commands/card_data.py (`CardBuild`,
+`card_data.update`); repo_traverser.py is the Discord wrapper (bake lock, messages, follow-ups). The /update_stats data
+flow, the bake-lock and temp-file citations and the module map re-pointed; card_data's own entry (no discord, pandas,
+config or utils) added. The lazy-import cycle break is unchanged (repo_traverser still imports card_repo at module level).

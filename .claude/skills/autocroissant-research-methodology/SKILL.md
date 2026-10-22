@@ -152,7 +152,7 @@ write pickles when something changed". Predict-then-check question: *what value 
 `num_updated` take on a no-change run?* Answer, from the code: it increments once per traversed
 PSD (psd_analyzer.py:1046 on 2026-07-11 — it is the progress counter), so the gate is always true — a no-op.
 The owner caught it within 20 minutes: **4e03190** (17:43, message "am forehead") switched the
-gate to `num_new` (now `if num_changed > 0 or traverser.changed:` in commands/repo_traverser.py; the counter was renamed on 2026-10-20). Two morals: (a) before shipping any
+gate to `num_new` (now `if num_changed > 0 or gone or backfilled or build.changed ...:` in commands/card_data.py since 2026-10-22; the counter was renamed on 2026-10-20). Two morals: (a) before shipping any
 gate/threshold, state the value you expect the variable to hold in the boring case — if you
 can't, you don't know what it counts; (b) commit messages here are sometimes jokes ("am
 forehead") — verify diffs, not messages.
@@ -193,7 +193,7 @@ safe/read-only and run from the repo root; `$S` = `.claude/skills/autocroissant-
 | 3 | The Lich King (golden) | Single small gap + bbox prune threshold | `python3 $S/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"` |
 | 4 | The 21 exclusion-list cards (ABILITY_EXCLUSIONS, psd_parser.py:950-972; the 5 EXCESSIVE_STAT_EXCLUSIONS went on 2026-10-21, replaced by `allow_high_stats` in Card Edits.json) | Each is a documented rule-breaker; "cleaner" mechanisms reliably re-break one | Sandbox sweep; problem output must not grow (procedure: validation-and-qa) |
 | 5 | One rulebook page | Rulebook takes ANY text layer as ability (no layer named "ability"); also "20 Creature Types" (MISSPELT TYPE: tornado) must remain the ONLY *pickled* (parse-time) problem — the full-validation baseline is 5, per autocroissant-validation-and-qa §2's two-surface distinction | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` — expect type rulebook, ability starting "TABLE OF CONTENTS" |
-| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:257) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, repo_traverser.py:37), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
+| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:257) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, card_data.py:42), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
 
 If a proposed mechanism survives all six rows AND a sandbox sweep whose diff_stats output
 matches a written prediction (section 2), it has met the bar. Promotion itself (commit/push)
@@ -315,7 +315,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | f7c915c introduced BOTH the dirname-classify and removeprefix bugs (2025-12-02) | `git show f7c915c -- commands/psd_analyzer.py` — read the hunks touching `dirname` and `removeprefix` |
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |
-| `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_changed > 0 or traverser.changed` (repo_traverser.py since the 2026-10-20 split; counter renamed from num_new) | `grep -n -e 'num_updated += 1' -e 'num_changed > 0' commands/repo_traverser.py` |
+| `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_changed > 0 or gone or backfilled or build.changed ...` (card_data.py since 2026-10-22; counter renamed from num_new) | `grep -n -e 'num_updated += 1' -e 'num_changed > 0' commands/card_data.py` |
 | stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 | Timestamp clustering confirms remote-mode attribution | the Counter one-liner and its expected numbers live in autocroissant-analysis-toolkit Recipe 2 |
 | Balloon 1: cca0aaf old_stats 3196→12041; reverted same day by eb9aa84 | `git show --stat cca0aaf` then `git show -s --format='%ci %s' eb9aa84` |
@@ -324,7 +324,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | First collapsing exception (`\s{2,}`→`[ \t]{2,}`) in d6d1278 | `git show d6d1278 -- commands/psd_analyzer.py` |
 | MISMATCH validator added fed8a83, removed 081b1fd | `git log -S 'WHITESPACE MISMATCH' --format='%h %ad %s' --date=short` (returns exactly those two commits) |
 | Exclusion-list size (21 as of 2026-10-21 14:30; no stat list) | `grep -n -A20 'ABILITY_EXCLUSIONS: set' commands/psd_parser.py` (count the quoted names) |
-| MDW classify branch (`ability: None`, was :282) and EXCLUDE_FOLDERS (was :31) | `grep -n -e '"MDW"' commands/psd_parser.py; grep -n 'EXCLUDE_FOLDERS =' commands/repo_traverser.py` |
+| MDW classify branch (`ability: None`, was :282) and EXCLUDE_FOLDERS (was :31) | `grep -n -e '"MDW"' commands/psd_parser.py; grep -n 'EXCLUDE_FOLDERS =' commands/card_data.py` |
 | getattr(config, ..., default) is the only flag mechanism | `grep -rn 'getattr(config' commands/ main.py` |
 | Retirements: Text_Export.jsx (7fc6f63), descriptions.pkl (bb58387), requirements-linux* (3f9a96d) | `git log --all --diff-filter=D --format='%h %ad %s' --date=short -- '*Text_Export.jsx' descriptions.pkl 'requirements-linux*'` |
 | Idea provenance commits: 0490195, d699b3f, bf9478e, 105198f | `git show -s --format='%h %ad %s' 0490195 d699b3f bf9478e 105198f` |
@@ -349,3 +349,5 @@ Maintenance rules:
 2026-10-21 (review): psd_parser.py `ABILITY_EXCLUSIONS` citation re-pointed (:950-969) after the WX-78 title fix.
 
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
+
+2026-10-22 (data build): the save-gate, counter and EXCLUDE_FOLDERS citations re-pointed to commands/card_data.py (the traverser's code moved there).

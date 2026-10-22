@@ -1,7 +1,8 @@
 # Data build Action: the card data built on GitHub (2026-10-22)
 
-**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below); not scheduled; not yet a plan
-item (add one to `docs/NEXT_SESSION_PLAN.md`). The owner's goal, 2026-10-22: "let's work on the data build action". The
+**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below). In progress: step 2 is on
+main; steps 4 and 5 are built on `work/data-build` and `work/discord-writers`, not yet landed (`docs/NEXT_SESSION_PLAN.md`
+tracks it). The owner's goal, 2026-10-22: "let's work on the data build action". The
 website and the TTS save must not depend on the jetson; a GitHub Action builds the card data. This design also covers:
 - the changelog in Discord (one post per push) and on the website (a Changelog tab and a Database edits tab on the Changes
   page);
@@ -21,7 +22,7 @@ website and the TTS save must not depend on the jetson; a GitHub Action builds t
 - **The PSD hold is lifted** (2026-10-22 ~02:40), so the bake runs live in Card sync after a fresh dry run (step 8).
 
 Numbers were measured read-only on 2026-10-22 at AutoCroissant main cae1f2f (last PICKLE 3888392, 00:23) and TTSCardMaker main
-5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". Nothing here is built yet.
+5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". They predate the build (§14 says what is built).
 
 **The choice.** Two designs were judged, "minimal" (the Action pushes PICKLE commits to AutoCroissant) and "data-with-cards"
 (the data lives in TTSCardMaker). The robustness judge scored data-with-cards 8.4 and minimal 6.4. The simplicity judge scored
@@ -576,12 +577,18 @@ github_api reads it inside a try/except and takes the token from the environment
   /update_metadata Tainted Bethany (hp, ability)`, with an `Edit-by` trailer and `_by`/`_at` on the entry. Fields map like this:
   - `author` → a `[cards]` line in `site/Card Authors.txt`;
   - `ability`, `stars`, `types`, `hp`/`def`/`atk`/`spd` → `Card Edits.json` fields of the "psd" kind. They persist, show
-    "PSD pending" like a website edit, and the next Card sync bakes them into the PSD;
+    "PSD pending" like a website edit, and the next Card sync bakes them into the PSD. Until the bake prints stars and
+    types (psd_edit `NOT_YET`), `/update_metadata` refuses them: a pending one makes the bake refuse the card's every
+    other PSD edit;
   - `subtype`, `series`, `card_type` → `subtype`, `series`, `type` (the "folder" kind);
   - `subseries` → `subseries`;
   - `del_entry` → `hidden: true`.
 
-  The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands. A card with only
+  A value the head's entry (or `[cards]` line) already has is no change: no op, no restamp of `_by`, no commit. An entry
+  holding PSD fields keeps its `_by`/`_at` when a Discord edit sets none of them (an alias, a folder field): the bake
+  credits the entry's `_by`, and a `discord:` one gets no `Edit-by` trailer, so the PSD field's editor keeps the credit.
+  The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands, and
+  until step 10 saves stats.pkl so a restart keeps it. A card with only
   a PNG gets the entry in the file (the website shows it) but no database row.
 - **`/mass_replace`:**
   - `author` → right-hand sides rewritten in Card Authors.txt plus a `[people] old = new` line;
@@ -810,9 +817,32 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
    - *What:*
      - `/update_metadata`, `/mass_replace` and `/alias` commit to the card repo (§11);
      - one migration commit moves the 60 aliases into `Card Edits.json` `aliases`, and carries the Discord-only values the
-       re-parse listed, so nothing typed in Discord is lost.
+       re-parse listed, so nothing typed in Discord is lost. `python -m commands.discord_edits migrate --clone <full clone>
+       --ref <main> --aliases aliases.pkl --stats stats.pkl --out-dir DIR` writes that commit's files (it has no alias-only
+       mode): the aliases, the values a re-parse keeps from the database (series, subseries, author) that no card-repo input
+       gives (a field `Card Edits.json` already sets is not carried), and the top-level key `aliases_moved`, after which the
+       bot ignores aliases.pkl. Measured 2026-10-22 on the parity seed at af826714: 60 aliases onto 53 cards, 596 series
+       values (the parity's 624 minus the 28 that `Card Edits.json` already overrides), 0 authors.
+     - *Consumers* (TTSCardMaker), in the same sitting as the migration commit; the `discord:<user>` display (the third
+       item) lands before, or with, the jetson deploy of the writers, which stamp `_by: discord:<user>` from the first
+       `/update_metadata` or `/alias` on:
+       - build_site skips aliases.pkl when `aliases_moved` is set; otherwise the site keeps the pickle's 60 aliases (the
+         bot never rewrites aliases.pkl) and drifts with the first `/alias` move (TTSCardMaker `work/alias-migration`
+         4c728f15 on 5dd2a408 has this, with the migration commit itself);
+       - the site's "edited" marks leave out every `_by: AutoCroissant` entry, not only alias-only ones (the 596 carried
+         series values are no website edits; nor are the two `allow_high_stats` entries of 2026-10-21). The migration
+         commit is authored `AutoCroissant <autocroissant@gmail.com>` (`migrate` prints the `git commit --author` to use),
+         so build_site's history counts it for nobody. A carried value merged into an entry a website editor made (14 entries at
+         5dd2a408: 12 series, 5 alias lists) keeps that entry's `_by`/`_at` (an entry has one stamp), so the site credits
+         it to that editor;
+       - a `_by` or `Edit-by` of `discord:<user>` is shown "via Discord", never linked as a person (`#/u/discord%3A…`;
+         app.js's "Edited on the website" panel and Edited tip, and build_site's shallow-clone contributions fallback,
+         which calls `rec_of(key_of(by))`). `work/changes-tabs` does it for the Database edits tab.
 
      This works with the jetson's pipeline, which already applies `Card Edits.json`.
+   - *At landing,* regenerate the migration commit: `migrate` against the TTSCardMaker head of that moment and the jetson's
+     pickles, in the same sitting as the deploy. A field `Card Edits.json` already sets is not carried, and a live `/alias` or
+     `/mass_replace` since the branch's commit would otherwise be missed or clobbered.
    - *Verify:*
      - `test_metadata_edits.py`;
      - every one of the 60 aliases resolves to the same card in `/query` and in the site's `cards.json` aliases as before;
@@ -921,6 +951,9 @@ except 6, which is one day, not 14:
      that persist, show "PSD pending" and are baked by the next Card sync;
    - `del_entry` becomes `hidden: true`;
    - the Discord-only values found at step 5 are carried into `Card Edits.json`.
+   - *Not as answered, to put to the owner:* stars and types are refused from Discord until the bake prints them (§11;
+     psd_edit `NOT_YET` would refuse the card's whole bake), which drops a live Discord option. The carry is 596 series values
+     (`Card Edits.json` 43 entries to 632); confirm before TTSCardMaker lands.
 3. **Aliases move from aliases.pkl into `Card Edits.json` `aliases`** (60 today), and `/alias` commits there. Answered: yes (aliases too).
 4. **`ACTIONS_TOKEN` on the jetson** (fine-grained, TTSCardMaker only, Actions read and write), so that `/update_stats
    force_update` and `cards:` can start a Card sync run. Answered: yes; the owner creates it and puts it in the jetson's config.py. Without it those options reply with a link and the

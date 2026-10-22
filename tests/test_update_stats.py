@@ -314,6 +314,64 @@ def test_failed_card_keeps_the_rest_of_the_run(github, capsys):
     assert set(_saved()[0]) == {"Mini Doomer", "The Freezer"} and rt._tree_etags
 
 
+# ========================
+# A PSD that raises: its card keeps its data, the run goes on
+# ========================
+BROKEN = b"8BPS" + b"\0" * 30                                         # a PSD header psd-tools refuses
+
+
+def test_unreadable_psd_among_good_ones(github, psds, capsys):
+    """An unreadable new PSD beside two good ones: 2 parsed, 1 failed, nothing archived, no ETag kept; fixed, it is read."""
+    _seed_old_stats(_gone_card())                                     # a leftover the backfill would tag
+    github.files["Items/Broken_Card.psd"] = BROKEN
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old["Gone Card"][0].archived is None
+    out = capsys.readouterr().out
+    assert "Items/Broken_Card.psd: not read (" in out and "Archived" not in out
+    assert ("Could not read 1 PSD from the card repo (Items/Broken_Card.psd); its card keeps its last version and the next "
+            "/update_stats tries again.") in out and "Could not download" not in out
+    assert "2 cards changed or new, 0 unchanged, 0 moved." in out and rt._tree_etags == {}
+    github.files["Items/Broken_Card.psd"] = psds[OTHER]
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None) and github.blobs() == ["Items/Broken_Card.psd"]
+    assert "Broken Card" in _saved()[0] and rt._tree_etags
+
+
+def test_unreadable_change_keeps_the_card_and_its_details(github, psds, capsys):
+    """A listed card's new blob raises: its last version stays (no history), its details too; a deletion beside it is
+    still archived (a listed name is no rename)."""
+    _run()
+    before, details = _saved()[0]["Mini Doomer"], _details()
+    github.files[DOOMER] = BROKEN
+    del github.files[FREEZER]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer"} and stats["Mini Doomer"] == before and "Mini Doomer" not in old
+    assert old["The Freezer"][0].archived and _details() == details
+    assert f"Could not read 1 PSD from the card repo ({DOOMER})" in capsys.readouterr().out
+    github.files[DOOMER] = psds[OTHER]
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER]) and [c.blob_sha for c in old["Mini Doomer"]] == [before.blob_sha]
+
+
+def test_failed_commit_lookup_fails_only_its_card(github, monkeypatch, capsys):
+    """A commit lookup that raises for one PSD fails that card alone; the others are saved."""
+    def lookup(self, repo, path, name):
+        if path == DOOMER:
+            raise HTTPError("502 Server Error")
+        return (TIME, "Tester")
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lookup)
+    _run()
+    assert set(_saved()[0]) == {"The Freezer"} and rt._tree_etags == {}
+    out = capsys.readouterr().out
+    assert f"{DOOMER}: commits not looked up (502 Server Error)" in out and "Could not read" not in out
+    assert f"Could not look up the commits of 1 PSD ({DOOMER}); its card keeps its last version" in out
+
+
 def test_blob_5xx_then_200_parses(github, psds):
     _run()
     github.files[DOOMER] = psds[OTHER]
@@ -906,7 +964,9 @@ def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     who = utils.make_simple_fake_interaction(1)
     utils.dispatch_queue.clear()
     pa.list_orphans(who)
-    pa.mass_replace_field(who, "author", freezer.author, "Somebody")
+    import commands.discord_edits as de
+    monkeypatch.setattr(de, "commit", lambda subject, by, body, edits=None, authors=None: ("abc1234", {"authors": authors(None)}))
+    de.mass_replace_field(who, "author", freezer.author, "Somebody")
     assert pa.stats_db.old_stats["The Freezer"][0].author == freezer.author
     for csv in (True, False):
         pa.export_stats_to_file(who, as_csv=csv)
