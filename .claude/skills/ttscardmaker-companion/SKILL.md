@@ -25,7 +25,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 85a2804, 2026-10-21; 5,136,060 before, PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before, PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
@@ -109,10 +109,10 @@ build_stoogedings.py defines two vocabularies:
   with a in -1, 0–9, X (12) and b in 1–9, X (10) = 240. The a/b range covers every two-number tag on the cards:
   `(1/2CD)` (15 PSDs) and `(-1/1GCD)` (The Temple of Ahn'Qiraj).
 
-Size of the 340 (committed in TTSCardMaker 85a2804, 2026-10-21): 340 `badge_*` glyphs, 522 SVG documents,
+Size of the 340 (committed in TTSCardMaker 8ec1b92, 2026-10-21): 340 `badge_*` glyphs, 522 SVG documents,
 5,721,356 bytes ("5.7 MB") vs 5,136,060 with 70 badges (+585,296 bytes, +11.4%), build about 15 s. The /tmp trial
 before it was 6,021,116 bytes; the shipped build rounds SVG path numbers to 0.1 unit (`num()`), which saves 300 KB.
-That is not unreasonable, so the a/b range was not narrowed. Widest badges (1000 units per em): `badge_m1_nGCD`
+That is not unreasonable, so the a/b range was not narrowed. Widest badges (1000 units per em): `badge_m1_1GCD`…`badge_m1_9GCD`
 4133, `badge_X_XGCD` 3575; widest old one `badge_ENDGT` 3116. Wider, as expected, not a defect.
 Glyph names: `badge_` + the tag with `/` → `_` and `-` → `m` (`badge_1_2CD`, `badge_m1_1GCD`; `badge_glyph()`).
 The label draws `-` as a real minus sign U+2212 (`BADGE_LABEL`); the website does the same. `(OPT)` (Bobberlington, Michael) is in neither vocabulary
@@ -146,10 +146,10 @@ after changing them. Centring pitfall fixed on 2026-10-20: tracking must go betw
 after the last letter pushes the label off centre.
 
 **The tag vocabulary is defined in three places that must change together** (all three carry the same 340 since
-2026-10-21: TTSCardMaker 85a2804 and b40caa9, checked with `/tmp/cdverify/proto.py`):
+2026-10-21: TTSCardMaker 8ec1b92 and c3f9d68, checked with `/tmp/cdverify/proto.py`):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
-  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6})\)/`, no /g flag since a95117d so it holds no
+  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6})\)/`, no /g flag since 73904db so it holds no
   `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
   `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U`
@@ -183,7 +183,7 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 3. Rebuilds are **byte-identical** (`recalcTimestamp = False`, :514), so `git status` shows the font as changed only
    when something really changed. Verified 2026-10-19: a rebuild of a /tmp copy matched both the committed TTF and
    the JSON byte for byte. Byte equality depends on the fontTools version: on 2026-10-21 `~/.venvs/ac-py314-psd125`
-   reproduced 85a2804's TTF exactly, while `/tmp/fontexplore/venv` packed GSUB differently (same lookups, old script
+   reproduced 8ec1b92's TTF exactly, while `/tmp/fontexplore/venv` packed GSUB differently (same lookups, old script
    too). The write is atomic (`.tmp` + `os.replace`).
 4. Install: copy the TTF to `~/Library/Fonts/` (or open it in Font Book), replacing the old copy. Photoshop pitfalls
    are in §4.
@@ -785,4 +785,4 @@ Maintenance rules:
 - When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 340 / 126 /
   U+E05A).
 2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").
-2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 85a2804 (font), b40caa9 and a95117d (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
+2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.

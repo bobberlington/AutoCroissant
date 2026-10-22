@@ -228,7 +228,8 @@ for name, rel in goldens:
 EOF
 ```
 
-**EXPECTED (2026-07-11):** three lines, every flag `True`. Pinned golden values (snapshot of
+**EXPECTED (2026-10-22):** three lines, every flag `True`. (A stats.pkl older than PICKLE 3888392 still holds The
+Freezer's `(1PGT)` and prints its `ability_byte_equal=False`: pull the pickles first.) Pinned golden values (snapshot of
 2026-07-11 from `parse_one.py`, re-runnable — see Provenance; canonical current expected values
 live in autocroissant-validation-and-qa §3 — if these stop matching, check there before assuming
 a regression):
@@ -237,8 +238,8 @@ a regression):
   hp=5 def=2 atk=5 spd=5, ability ends `(BOT) Die.`, problems NONE.
 - **The Freezer** → type=field, stars=1, types=['field'], problems NONE, ability
   character-for-character:
-  `For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`
-  (Note: the PSD reads `(1GCD)` since 2026-10-21 (cooldown update, impossibility-simulator-rules §3); stats.pkl keeps `(1PGT)` until the next `/update_stats`, after which this golden's line reads `(1GCD) Choose …`.)
+  `For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`
+  (`(1PGT)` before the 2026-10-21 cooldown update, impossibility-simulator-rules §3; stats.pkl reads `(1GCD)` from PICKLE 3888392.)
 - **The Lich King** → ability's last line `Minions inherit [undead].` (full trace in Phase 2).
 
 Any `False` → the parser in your working tree no longer reproduces the database. Either you changed

@@ -13,7 +13,7 @@ day must first rebuild the manifest at its own HEAD and re-run the rehearsal on 
 | Copies | 425 PSDs and 433 PNGs: every path in the manifest, each with its PNG. They went to `/private/tmp/rehearsal/cards/` and to a pristine set in `orig/`. Each copy's git blob equals `git ls-tree HEAD` and the manifest's `blob`: 0 mismatches. The per-file sha list is in `inputs.json`. |
 | Manifest | `~/Documents/Tools/psd-research/std/rehearsal_manifest.json` (blob `e7679c70`) |
 | Fork scripts | `std_common.py d9bb67dc`, `l2_template_rows.py e3b400a2`, `l3_sonic.py 42b24a94`, `l5_ability.py 3bad1883`, `l6_name.py 622c7b70`, `l11_pages.py 65158533`, `l14_stars.py d36b601e` (git blob shas) |
-| Photoshop scripts | `std_l1.jsx 5d7c5402`. `Effect Layers.jsx f01a683d` and `Effect Layers - All Cards.jsx ee432d80` were copied to `/private/tmp/rehearsal/scripts/`. Next to them sit copies of the chart (`Satus Effect Colors.psd 98a6b65a`) and the two `.aco` files. |
+| Photoshop scripts | `std_l1.jsx 084efade` (kept as `scripts/std_l1.orig.jsx`; updated to `5d7c5402` after the L1 step, section 6, item 7). `Effect Layers.jsx f01a683d` and `Effect Layers - All Cards.jsx ee432d80` were copied to `/private/tmp/rehearsal/scripts/`. Next to them sit copies of the chart (`Satus Effect Colors.psd 98a6b65a`) and the two `.aco` files. |
 | Fork | `/tmp/wt-layer-edit` `feat/layer-edit` `26ed79c8`, clean. A snapshot (`/private/tmp/rehearsal/fork-src`) ran both the scripts and every render. |
 | Parser | AutoCroissant `commands/` at `7d6c512` (unchanged through `39da9ed`), stock psd-tools 1.25 (`~/.venvs/ac-py314-psd125`). The vocabulary came from the clone: `Types/`, `Types/Stars/` and `stoogedings.json`, none of which changed during the run. |
 | Photoshop | 2023 (24.0.0). The ping showed 0 documents open before every step, and every card script found 0 open at its start. |
@@ -70,14 +70,15 @@ reads those logs, so it accepts the cards Photoshop rewrote.
 - **L2.** 79 written:
   - 7 slider cards got template rows; their pixels change (Dark_Esau and 6 Tainted cards).
   - 8 deco cards got `art <n>` renames.
-  - 4 L2b cards and 61 L2c cards had their bars renamed.
+  - 4 L2b cards and 61 L2c cards had their bars renamed (Whispy_Woods and Spinni are both).
   - Sans had its hazard renames.
 
   hp, def, atk and spd are unchanged everywhere. The pipeline now accepts the rows on the slider and L2b cards. Of the 36 L2a
-  cards, 19 are not done by the script:
+  cards, 21 are not done by the script:
   - Grimora and Skeleton_Mate: Photoshop by hand.
   - Tainted_Isaac and Tainted_Eden: the owner.
-  - 17 "drawn bar art this script cannot rebuild" (Photoshop per card, though the manifest says fork): Chef_Saltbaker, Zigg,
+  - 17 "drawn bar art this script cannot rebuild" (Photoshop per card, though the manifest says fork; Chef_Saltbaker got only its L2c
+    renames): Chef_Saltbaker, Zigg,
     Chris_&_Jordi, Ze'mer, Slugcat, Pizza, the 5 Clots, False_Knight, Minecraft_Panda, Bulborb Larva, Empress Bulblax,
     Dirty_Bed, Blank_Card.
 - **L3.** Sonic became Top + Bottom with markers. It still parses spd 20, STATS TOO HIGH stays, and the pipeline now reads
@@ -101,8 +102,8 @@ reads those logs, so it accepts the cards Photoshop rewrote.
 ## 4. Gates
 
 - **Parser gate: green.**
-  - Copies, after vs before: 425 cards and 264 written. There are 20 field differences on 14 cards, all of them expected (section
-    5), and 0 unexpected.
+  - Copies, after vs before: 425 cards and 264 written. There are 20 field differences on 14 cards, all of them listed in section 5
+    (two as pending or held), and 0 unexpected.
   - Every manifest check holds: the stat values, `display_name`, 0 icon-token problems on L1 and 0 `EFFECT LAYER` problems on L7.
   - The copies parse equal to the live 813-card pre-batch parse at 9f0c9ec. So the 813-card gate equals the same 20 differences,
     with every other field of all 813 cards unchanged.
@@ -151,12 +152,11 @@ reads those logs, so it accepts the cards Photoshop rewrote.
 ## 5. Expected per-card diff list (the day's live gate must equal this)
 
 Basis: TTSCardMaker 9f0c9ec. On the live tree, all 813 cards must keep every other field (`card`, `alt_names`, `validator`).
-There are 26 rows on 20 cards: 20 rows on 14 cards were rehearsed and 6 come from the manifest. Machine-readable:
-`gates/expected_diff.json`.
+There are 24 rows on 19 cards: 18 rows on 13 cards were rehearsed and 6 come from the manifest. Two more rehearsed rows wait
+on the owner (below). Machine-readable: `gates/expected_diff.json` (`diffs`, and `conditional` for those two).
 
 | Card | Field | Before | After | Entry |
 |---|---|---|---|---|
-| Auxiliary/Minions/God_Tamer.psd | stars | 0 | 3 (PENDING: the card prints 5) | L14 |
 | Auxiliary/Minions/God_Tamer.psd | problem | NO STARS FOUND (…) | none | L14 |
 | Auxiliary/Minions/God_Tamer.psd | validator | NO STARS FOUND (…) | [] | L14 |
 | N.M.E/Bubble.psd | stars | 0 | 1 | L14 |
@@ -169,7 +169,6 @@ There are 26 rows on 20 cards: 20 rows on 14 cards were rehearsed and 6 come fro
 | Auxiliary/Rulebook/11_Abilities.psd | ability | 1119 characters | 869: loses "PASSIVES / Passive abilities are abilites that are in constant effect…" (250) | L11 |
 | Auxiliary/Rulebook/12_Reactions2.psd | ability | 1665 characters | 850: loses "Although reactions happen in reverse order, anything that deals damage…" (815) | L11 |
 | Auxiliary/Rulebook/22_Negation.psd | ability | 2690 characters | 2128: loses "- If an item is negated, it means it cannot be played or is taken out…" (562) | L11 |
-| Creatures/Hollow Knight/4 Stars/Grey_Prince_Zote.psd | display_name | none | "Invincible Fearless Sensual Mysterious Enchanting Vigorous Diligent Overwhelming gorgeous Passionate Terrifying Beautiful Powerful" (HELD: epithet only; the title "GREY PRINCE ZOTE" is two more layers) | L6a |
 | Creatures/Mario/2 Stars/Ms_Mowz.psd | display_name | none | "Ms. Mowz" | L6a |
 | Creatures/Omori/3 Stars/Mr_Jawsum.psd | display_name | none | "Mr. Jawsum" | L6a |
 | Creatures/Undertale/3 Stars/Papyrus.psd | display_name | none | "The Great Papyrus" | L6a |
@@ -182,6 +181,13 @@ There are 26 rows on 20 cards: 20 rows on 14 cards were rehearsed and 6 come fro
 | Auxiliary/Minions/PoD10BFB.psd | display_name | "B.F.B" | "B.F.B." | L8 (pipeline, not rehearsed) |
 | Auxiliary/Minions/PoD11ZOMG.psd | display_name | "Z.O.M.G" | "Z.O.M.G." | L8 (pipeline, not rehearsed) |
 | Auxiliary/Minions/PoD12BAD.psd | display_name | "B.A.D" | "B.A.D." | L8 (pipeline, not rehearsed) |
+
+Not in the gate until answered (section 7): add the row as answered, or hold the card's entry.
+
+| Card | Field | Before | After (rehearsed) | Entry | Status |
+|---|---|---|---|---|---|
+| Auxiliary/Minions/God_Tamer.psd | stars | 0 | 3 (the card prints 5) | L14 | pending |
+| Creatures/Hollow Knight/4 Stars/Grey_Prince_Zote.psd | display_name | none | "Invincible Fearless Sensual Mysterious Enchanting Vigorous Diligent Overwhelming gorgeous Passionate Terrifying Beautiful Powerful" (epithet only; the title "GREY PRINCE ZOTE" is two more layers) | L6a | held |
 
 Three kinds of item add rows of their own once decided: the owner's items (L6c retypes, L6e, L5 blank and hidden, the L11 owner
 pages, the by-hand L2a cards), the held ones (Knight_Lost_A_Lot, L6b with Wigfrid) and the L1 additions of section 6, item 5. The
@@ -214,10 +220,11 @@ parse is unchanged on all 41 L1 cards and all 43 L7 cards, and hp, def, atk and 
    (`[machine]`, `[machine]`) are inline icons. The L2 script says so, and the parser injects them. A probe on scratch copies
    (`smoke/l1extra/`) migrated both with a byte-identical parse. Add them to L1 (43 cards).
 6. **17 L2a cards are not done by the script** although the manifest marks them fork (section 3).
-7. **The font has new badges that `std_l1.jsx` does not know.** stoogedings `8ec1b925` (cooldown and uses badges) landed during
-   the run. `std_l1.jsx` and `l1_check.py` still match only the old tags in `TAG`. Four L1 cards already carry the new tags: The
-   Freezer, Nebulous Precipice, Dark Bramble and Error Room use (1GCD). Before the day, `TAG` needs
-   `[1-9X]G?CD|[1-9X]U|(?:-1|[0-9X])\/[1-9X]G?CD`, and Photoshop needs the rebuilt font installed and a restart.
+7. **The font has new badges that the rehearsal's `std_l1.jsx` did not know.** stoogedings `8ec1b925` (cooldown and uses badges)
+   landed during the run. The L1 step ran `084efade`, whose `TAG` matches only the old tags. Four L1 cards already carry the new
+   tags: The Freezer, Nebulous Precipice, Dark Bramble and Error Room use (1GCD). Done at 23:44: `std_l1.jsx` (`5d7c5402`) and
+   `l1_check.py` gained `[1-9X]G?CD|[1-9X]U|(?:-1|[0-9X])\/[1-9X]G?CD` (ttscardmaker-companion §1.2). Still needed before the day:
+   the rebuilt font installed in Photoshop and a restart.
 
 ## 7. What the day still needs from the owner
 
