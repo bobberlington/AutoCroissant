@@ -182,6 +182,9 @@ both now say "fetches and merges"). Actual behavior:
    (`checkout --ours`), everything else gets "Accepting remote version of X" (`checkout --theirs`).
    Committed as "AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)",
    then "Merge conflict resolved automatically!". **Rule: LOCAL PICKLES WIN, REMOTE CODE WINS.**
+   After either merge, a card the file-by-file merge dropped from both pickles (stats.pkl from one side,
+   old_stats.pkl from the other) goes back into old_stats.pkl from the side that had it, committed as PICKLE:
+   "Kept in old_stats (the merge dropped them): ..." (a failed check says so and the pull goes on).
 4. Final `git pull origin main` -> "Pull complete:" with the git output in a code block.
 5. On `GitCommandError`: "Git pull failed: <err>"; if the error mentions divergent branches it tries
    `git pull --rebase` ("Attempting to reconcile divergent branches..." -> "Rebase successful!" or
@@ -318,11 +321,15 @@ N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (repo_traverser.py:533-536): `N + K > 0` runs `prune_clean_cards()` (the deletion mechanism: cards
-  not seen this traversal move to `old_stats`) and saves; a run that only changed authors, edits, duplicates or
-  stored blob shas (`traverser.changed`) saves too. Moves-only runs are saved. Open: a deletion alone does
-  not prune (docs/BUGS_AND_IMPROVEMENTS.md B8), and a GitHub 5xx mid-run either raises out of the run (tree) or
-  leaves that card stale with the ETag recorded (blob) (B9).
+- Saving (`_update_stats`, repo_traverser.py): every full run (`_can_prune`: no 304, tree not truncated, no
+  failed new-name download, some cards) runs `prune_clean_cards(at)`, which archives the cards whose PSD left the
+  tree (moved to the end of their old_stats list, tagged `archived`; a deletion alone is enough since 2026-10-22, was
+  B8) and tags names that left stats.pkl before archiving existed. Messages: "Archived (PSD deleted from the card
+  repo): A, B (now C)" (C: the rename's new name), "Archived N cards deleted before this update: ..." (backfill, once),
+  "Restored (PSD back in the card repo): ..." (a PSD back under an archived name: the record returns, no download for
+  the same blob), "Card repo tree truncated or without cards; no card archived." The run saves when anything changed
+  (cards, archives, authors, edits, duplicates, blob shas, a stale archived copy). Archived cards: read them with
+  `StatsDatabase.archived()`; no query or export sees them. Open: a GitHub 5xx mid-run (B9).
 - Then "Card statistics update complete!" and, if enabled, the problem cards: full detail first
   (path + fenced problem list, split into <=1950-char chunks), then a names-only line per card —
   all posted to the invoking channel. There are TWO problem baselines (surface distinction owned

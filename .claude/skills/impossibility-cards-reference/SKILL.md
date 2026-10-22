@@ -478,9 +478,10 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `duplicate_of` | same | the original card, for another PNG of the same PSD; omitted when falsy |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
-`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha` and `parser_version` (the `PARSER_VERSION`
-that parsed the card, 2026-10-21; None in older pickles, which makes `/update_stats` re-parse them once) live only in the
-pickle (stats.pkl stores CardInfo objects); they are not `to_dict` keys.
+`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha`, `parser_version` (the `PARSER_VERSION`
+that parsed the card, 2026-10-21; None in older pickles, which makes `/update_stats` re-parse them once) and `archived`
+(2026-10-22, set only on an archived card's record in old_stats.pkl, below) live only in the pickle (stats.pkl stores
+CardInfo objects); they are not `to_dict` keys.
 
 **Two kinds of Card Edits.json edits, PSD-backed or not** (`CardEdits.KIND`, card_edits.py, 2026-10-20, splits the second into folder and database; the same table is `PSD_FIELDS`
 in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`def`/`atk`/`spd`, `ability` are printed
@@ -541,8 +542,24 @@ autocroissant-change-control):
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
 (repo_traverser.py:376-377; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when it disappears from the repo (`prune_clean_cards`, card_models.py:194-203 —
-deletion means "moved to history", never hard-deleted). Quirk: after each traversal,
+archives nothing), and when its PSD leaves the repo. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+(card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
+`archived = {"at": run epoch, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
+plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename) and `"backfill": True` on names that left
+stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind
+`_can_prune` (a full tree, not truncated, no failed new-name download, some cards). An archived card is a name not in
+stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
+means current cards, so no query, export, alias or website reader sees them. A PSD back under the name is restored
+(`restore()` copies the record into stats, tag cleared, no download when the blob is the same); duplicates are never
+archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
+still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
+is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
+re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
+the next run cleans up. `add_history` keeps a tagged copy as is (the save untags it) and replaces a last version equal
+but for the path (a kill after an edit or a same-blob move) instead of appending. `/update_metadata` never makes a stats
+entry for an archived name (it shows the archived record and refuses edits), and `/pull` puts back into old_stats.pkl a
+card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE).
+Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 

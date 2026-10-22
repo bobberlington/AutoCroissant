@@ -216,6 +216,17 @@ def manual_metadata_entry(interaction: Interaction,
         queue_message(interaction, f"Deleted metadata for **{name}**.")
         return
 
+    archived = stats_db.archived().get(name) if name not in stats_db.stats else None
+    if archived is not None:                     # no stub: the next run would archive it over the real card
+        if all(v is None for v in (author, ability, stars, subtype, series, subseries, hp, defense, attack, speed,
+                                   card_type, types)):
+            queue_message(interaction, f"**{name}** is archived (its PSD was deleted from the card repo):\n"
+                                       f"```{_format_metadata(archived, name)}```")
+        else:
+            queue_message(interaction, f"**{name}** is archived (its PSD was deleted from the card repo); "
+                                       "its metadata can't be edited.")
+        return
+
     # Initialize metadata entry if it doesn't exist
     if name not in stats_db.stats:
         stats_db.stats[name] = CardInfo(

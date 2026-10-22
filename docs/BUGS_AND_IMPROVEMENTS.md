@@ -39,6 +39,8 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-21 (push guard, rule 2): `commands/card_check.py` (uncompiled, CLI only) reports a pushed card's parser and validator notes
   (what /update_stats prints; the parser's own notes among them are also the website's Parser notes) from TTSCardMaker's `card-check.yml` (landed 2026-10-21: AutoCroissant df4a439,
   TTSCardMaker a3451c8; the first whole-repo dispatch, run 39690899334, succeeded, job summary only; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
+- 2026-10-22: B8, a deleted PSD stays listed: every full run archives it in old_stats.pkl (tagged `archived`, restorable;
+  never deleted, the owner's call) (10.31).
 
 ---
 
@@ -48,7 +50,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
 |---|-----|-------|--------|---------------------------|--------------|
-| B8 | **A deleted PSD stays in stats.pkl.** `update_stats` calls `prune_clean_cards()` only when `num_changed > 0`, so a deletion alone leaves the card listed until some other card changes. Pinned by `tests/test_update_stats.py::test_deleted_card_alone_is_kept` (update it with the fix). | `commands/repo_traverser.py` `update_stats` | Removed cards still answer /query | Also prune when the tree lost a path | `autocroissant-architecture-contract` |
 | B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/repo_traverser.py` `traverse_remote` | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
@@ -117,7 +118,7 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 
 ### 2.3 Operational hardening (small, high-value)
 
-Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29), B11 2026-10-21. Open: B8, B9.
+Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29), B11 2026-10-21, B8 2026-10-22 (10.31). Open: B9.
 - **B11 (done 2026-10-21): fonts on the jetson.** Without `PSD_TOOLS_FONT_DIRS` or a checkout, the bake and the details gather's
   `supplied` flags use `fonts_cache/` (gitignored; `font_check.refresh_cache`): MDW/Fonts' font files, brought to the tree
   `/update_stats` or the bake already fetched (no extra request; a 304 update touches no fonts; then only the missing blobs,

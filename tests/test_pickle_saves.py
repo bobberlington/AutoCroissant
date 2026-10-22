@@ -91,7 +91,7 @@ def test_save_holds_the_pickles_own_lock(paths, monkeypatch):
     held = []
     monkeypatch.setattr(cm, "dump", lambda obj, f: held.append((f.name, cm._stats_lock.locked(), cm._old_stats_lock.locked())))
     _db().save()
-    assert held == [(f"{paths}/stats.pkl.tmp", True, False), (f"{paths}/old_stats.pkl.tmp", False, True)]
+    assert held == [(f"{paths}/old_stats.pkl.tmp", False, True), (f"{paths}/stats.pkl.tmp", True, False)]   # old_stats first
 
 
 # ========================
