@@ -16,8 +16,8 @@ no Discord, network or config.
 """
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
-from os import makedirs, replace
-from os.path import basename, dirname, join
+from os import makedirs, remove, replace
+from os.path import basename, dirname, exists, join
 from sys import stderr
 from typing import Optional
 
@@ -96,8 +96,13 @@ def repair(path: str, out_path: str) -> Repair:
         raise ImportError("this psd-tools has no TypeLayer.sync_story (the fork's fix/txt2-sync)")
     synced = {psd_edit.story_index(layer) for layer in psd.descendants() if layer.kind == "type" and layer.sync_story()}
     temp = join(dirname(out_path) or ".", f".{basename(out_path)}.repair")
-    psd_edit.save_psd(psd, temp, update_preview=False)
-    found.stories = verify(path, temp, synced)
+    try:
+        psd_edit.save_psd(psd, temp, update_preview=False)
+        found.stories = verify(path, temp, synced)
+    except BaseException:
+        if exists(temp):
+            remove(temp)
+        raise
     replace(temp, out_path)
     found.out = out_path
     return found

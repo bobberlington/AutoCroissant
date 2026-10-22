@@ -99,3 +99,13 @@ def test_baked_titles_of_2026_10_22(clone, rel, tmp_path):
     result = tr.repair(str(path), str(out))
     assert [name for name, _, _ in result.stale] == ["Name"] and len(result.stories) == 1
     assert pe.stale_stories(PSDImage.open(str(out))) == [] and _outside_txt2(out) == _outside_txt2(path)
+
+
+def test_failed_check_writes_nothing(clone, tmp_path, monkeypatch):
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    stale, _ = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    monkeypatch.setattr(tr, "verify", lambda *args: (_ for _ in ()).throw(pe.Refused("bytes", "a layer record changed")))
+    out = tmp_path / "out"
+    out.mkdir()
+    assert tr.main(["--out", str(out), stale]) == 2
+    assert not any(out.iterdir())
