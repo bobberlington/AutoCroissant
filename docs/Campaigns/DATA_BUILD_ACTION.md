@@ -1,7 +1,7 @@
 # Data build Action: the card data built on GitHub (2026-10-22)
 
-**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below); not scheduled; not yet a plan
-item (add one to `docs/NEXT_SESSION_PLAN.md`). The owner's goal, 2026-10-22: "let's work on the data build action". The
+**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below) and again for what was built
+(the status note below). The owner's goal, 2026-10-22: "let's work on the data build action". The
 website and the TTS save must not depend on the jetson; a GitHub Action builds the card data. This design also covers:
 - the changelog in Discord (one post per push) and on the website (a Changelog tab and a Database edits tab on the Changes
   page);
@@ -21,7 +21,7 @@ website and the TTS save must not depend on the jetson; a GitHub Action builds t
 - **The PSD hold is lifted** (2026-10-22 ~02:40), so the bake runs live in Card sync after a fresh dry run (step 8).
 
 Numbers were measured read-only on 2026-10-22 at AutoCroissant main cae1f2f (last PICKLE 3888392, 00:23) and TTSCardMaker main
-5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". Nothing here is built yet.
+5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". What is built is in the status note below.
 
 **The choice.** Two designs were judged, "minimal" (the Action pushes PICKLE commits to AutoCroissant) and "data-with-cards"
 (the data lives in TTSCardMaker). The robustness judge scored data-with-cards 8.4 and minimal 6.4. The simplicity judge scored
@@ -32,6 +32,20 @@ exactly one writer. Grafted onto it:
 - the hybrid's order, which ships value before the move.
 
 §3 lists every graft.
+
+**Status 2026-10-22 (as built).**
+- **Steps 1-4 done and gated.** The builder is AutoCroissant work/data-build (ff47ad6). It passed both parity gates: legacy
+  mode writes byte-identical pickles, and a full re-parse on the Mac shows 0 data-field differences.
+- **Steps 5, 6 and 9 built and reviewed, not landed.** AutoCroissant work/discord-writers (on work/data-build): /update_metadata,
+  /mass_replace and /alias commit to the card repo. TTSCardMaker work/alias-migration (the 60 aliases into `Card Edits.json`
+  `aliases` plus `aliases_moved`; build_site honours it), work/card-sync (card-sync.yml, dispatch only, `dry_run` true by
+  default; §6 describes it as built) and work/changes-tabs (the Changelog and Database edits tabs).
+- **Step 7, the shadow, is next.** Step 8, the cutover, waits on `ACTIONS_TOKEN` in the jetson's config.py and the owner's
+  reminder swap. Step 10 follows within a day of clean runs.
+- **Owner decision: 624 database-only series values.** They were typed in Discord (`/update_metadata series`, `/mass_replace
+  series`, 2025-10-29 to 2026-06-20; 86 distinct values) and no card-repo file holds them. The parser keeps them from the
+  database, so no re-parse loses them, but a build from scratch without a seed would. 28 sit under a `Card Edits.json` series
+  edit. work/alias-migration does not carry them; carrying the other 596 into `Card Edits.json` is the owner's call.
 
 ## 1. Goal and non-goals
 
@@ -187,11 +201,12 @@ It replaces `tts-save.yml` and `card-edits.yml`, which are deleted at the cutove
 ### 6.1 Triggers
 
 ```yaml
+run-name: "Card sync", or "Card sync (dry run)" for a dry dispatch   # the alert's streak check skips dry runs
 on:
-  schedule:
+  schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
     - cron: "4,34 * * * *"   # every 30 minutes; "4 * * * *" for hourly (decision 5)
   workflow_dispatch:
-    inputs:                  # all optional; 9 of GitHub's 10
+    inputs:                  # all optional; all 10 of GitHub's 10
       force: boolean         # run every stage even when the gate finds nothing
       cards: string          # re-parse these cards (comma separated, matched like Card Authors.txt)
       full: boolean          # re-parse every card; also the approval gate G4 asks for
@@ -201,11 +216,17 @@ on:
       restore: string        # a data commit: write its db/ back as a new commit
       seed: string           # an AutoCroissant commit: start from its pickles (first run; re-seed after a rollback)
       builder_ref: string    # AutoCroissant ref for this run (else vars.CARD_DATA_BUILDER_REF, else main)
+      retry: string          # set by Card sync itself when main moved: the rejected run's event (§6.3, stage 4)
+env: {POSTS: "off", MAIN_COMMIT: "off"}            # step 8 turns both on (§14)
 permissions: {contents: write, actions: write}     # push to main and data; gh workflow run site.yml; gh run list
 concurrency: {group: card-sync, cancel-in-progress: false}
 ```
 
 There is no push trigger. Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs most.
+- A dispatch runs dry unless `dry_run` is off; a scheduled run is live. Two file-level switches say what a live run writes:
+  `MAIN_COMMIT` (the bake and the main commit M; while off, only a dry run bakes) and `POSTS` (sending to Discord; while off,
+  `discord.json` goes to the artifact only). With both off, a live run writes only `data`.
+- No input slot is left: a new option must replace one or ride in an existing one.
 
 ### 6.2 Batching and the change gate
 
@@ -246,8 +267,9 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    `cache-dependency-path: bot/requirements-card-data.txt`. Two virtual environments until one pin serves both:
    - the builder's: `pip install -r bot/requirements-card-data.txt`, which pins `psd-tools==1.25.0` (the jetson's and the
      goldens' version) plus fonttools and requests;
-   - the bake's: the psd-tools fork tag card-edits.yml installs today (`cards-20261021`). The builder moves to the fork with
-     the goldens when the fork tag is installed on the jetson, and the second environment goes.
+   - the bake's: Python 3.12 with the psd-tools fork tag card-edits.yml installs today (`cards-20261022`), set up only when the
+     run bakes. The builder moves to the fork with the goldens when the fork tag is installed on the jetson, and the second
+     environment goes. Each environment's import closure is proven with `--help` before any stage.
 5. **Fonts:** the cache key is `card-fonts-$(git rev-parse HEAD:MDW/Fonts)`, the key card-edits.yml uses today, so the
    entries carry over. On a miss, run `git sparse-checkout add '/MDW/Fonts/*' '!/MDW/Fonts/stoogedings-src/'`. This step runs
    without `GIT_NO_LAZY_FETCH`.
@@ -256,7 +278,8 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
 1. **Bake** (unless `bake: none`). `python -m commands.card_bake --repo "$GITHUB_REPOSITORY" --head <main> --local "$GITHUB_WORKSPACE"
    [--card <name>] [--dry-run]`. The new `--local` mode writes every baked PSD and PNG and the rewritten `Card Edits.json`
    (verdicts) into the clone's object store as one local commit B on main's head, and pushes nothing. The bake's checks are
-   unchanged. A bake failure leaves no B; the run goes on from main's head, and the report says so.
+   unchanged. A scheduled run (or its retry) bakes with `--pending`. A card's error fails the step but keeps B for the cards
+   that baked (card-edits.yml's per-card rule); with no B the run goes on from main's head, and the report says so.
 2. **Build** on B, or main's head without a bake, with env `GIT_NO_LAZY_FETCH=1`, `GITHUB_TOKEN` and
    `PSD_TOOLS_FONT_DIRS=$GITHUB_WORKSPACE/MDW/Fonts`:
    ```
@@ -280,10 +303,21 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    - Subject: `Card sync: 2 cards baked, TTS save updated`. Body: the bake report's card lines and the save's message.
    - M holds the same card files as B, so the builder's references to B (version dates, events) are rewritten to M before
      the data is written.
-   - **Main moved during the run** (the push is rejected): M and the data are dropped, and the run starts over once from the
-     new head. A second rejection ends the run with a warning; the next run does the work, since the bake and the build
-     are both idempotent.
-5. **Post** (`if: always()`, unless `dry_run`). `python -m commands.changelog post --db carddata/db --site
+   - **A save-only M** (no bake) sets `manifest.main_commit` to M, and `card_commit` too when it was main's head.
+   - **Main moved during the run** (the push is rejected): M, the posts and the data are all dropped; `card_commit` and
+     `pending.repin` do not advance, so the next run's gate finds the work again. If `git push` failed but `ls-remote`
+     shows main at M, M counts as pushed.
+     - The run then dispatches one retry of itself on the new head: `dry_run=false`, `force`, `retry=<its event>`, the
+       builder's sha as `builder_ref`, and its `bake`, `cards`, `seed` and `restore`. It never carries `full` or
+       `allow_archive`, which approved the old head only (a warning says so).
+     - It dispatches nothing when a Card sync run is already queued or pending (`gh run list`), since that run does the work
+       and a new dispatch would replace it. A run with `retry` set only warns on a second rejection.
+   - **Deadline.** M is pushed only before minute 60 of the job's 90. The 30-minute reserve is the sum of the caps of this
+     step (10) and every later one (posts, send and data commit 3 each; artifact 2 + 5; site build 2; alert 2), and a check
+     in `TTS/checks/card_sync_steps.py` holds it there. Past minute 60 the step fails red, so M and the data are skipped
+     together and the next run does both.
+5. **Post** (unless `dry_run`; sending also needs `POSTS` on, a successful build and an M that was not rejected, so the
+   cursor never moves without its data commit). `python -m commands.changelog post --db carddata/db --site
    https://michaeljsr.github.io/TTSCardMaker --out discord.json`, then curl, following card-check's pattern. One message per push
    with events, oldest first (§12.1). The card ids come from the live site's `cards.json`. A missing secret or a failed call is
    a `::warning::`; the URL is never printed. `posted.json` advances after each accepted message.
@@ -294,12 +328,17 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    - Body: one line per card, then `Builder: bobberlington/AutoCroissant@<sha>` and `Build: <run url>`.
    - The cursor is in the same commit, so a run makes one data commit at most. The cost: if this push fails after the posts
      went out, the next run posts the same pushes again (only possible when another writer moved `data`, gate G6).
-7. **Upload an artifact** (on failure, gate refusal or dry run): the would-be `db/`, the bake's crops and report, the save
-   report, the diff and the summary.
-8. **Dispatch the site build** (`if: always() && !cancelled()`): `gh workflow run site.yml` when stage 4 or 6 committed.
-9. **Failure alert** (`if: failure()`): one Discord message to `DISCORD_CHANGELOG_WEBHOOK`, for example "Card sync failed:
-   <run>; the website and the bot keep the data of <time>". It names the stage that failed. It is sent only when the previous
-   completed run succeeded, so a failing streak sends one message.
+   The manifest is rewritten only when the build actually changed `db/`, so an unchanged build makes no data commit.
+7. **Upload an artifact** (whenever the gate says go, live runs included, since the shadow reads `discord.json` from it):
+   `db/`, the bake's crops and report, the save report, the diff, the posts and the commit messages. On a gate refusal
+   (exit 2) the builder stops before writing, so the artifact holds the previous `db/` and the summary, not the would-be
+   `db/` (a G3 refusal found after writing is the exception); that needs a builder change.
+8. **Dispatch the site build** (`if: !cancelled()`): `gh workflow run site.yml` after M was pushed, or after a data commit
+   with `MAIN_COMMIT` on (in the shadow the site does not read the data yet).
+9. **Failure alert** (`if: failure()`, `POSTS` on, not a dry run): one Discord message to `DISCORD_CHANGELOG_WEBHOOK`, for
+   example "Card sync failed (build): <run>; the website and the bot keep the last good data". It names the stages that
+   failed. Any failed live run alerts (scheduled, a retry, the bot's or the owner's dispatch). It is sent only when the
+   previous completed live run did not fail; dry runs, cancelled and skipped runs are left out of that streak (by run name).
 
 ### 6.4 The builder ref
 
@@ -318,7 +357,7 @@ commit of every build. The pin also pins the bake and the save, which come from 
 | `commands/card_history.py` | The git index from one `git log --raw`, the version rules, re-dating, dedupe, archive dates and renames |
 | `commands/card_db.py` | JSON records (`record(card)`, `card(record)`), reading and writing `db/` files atomically one record per line, the manifest with sha256 per file, the one-time seed from pickles (an allow-list unpickler mapping `commands.psd_analyzer`/`commands.card_models` CardInfo and CardStats to card_models), `export-pickles`, and the bot's `sync()` |
 | `commands/changelog.py` | Events from before/after plus the index, each with its push; the CLI `post` (Discord payloads, one per push; the cursor) |
-| `commands/card_bake.py` (changed) | Gains `--local`: all baked cards and the verdicts as one local commit, nothing pushed (§6.3, stage 1). The bot's `/bake_cards` keeps its one commit per card. |
+| `commands/card_bake.py` (changed) | Gains `--local`: all baked cards and the verdicts as one local commit, nothing pushed (§6.3, stage 1). The bot's `/bake_cards` keeps its one commit per run. |
 | `commands/tts_save.py` (changed) | Gains `--names <stats.json>`: names from a `db/` instead of the website's `cards.json`, with the same rule build_site uses for `cards.json` names |
 | `commands/repo_traverser.py` (changed) | Becomes the bot's /update_stats. Until step 8 it calls `card_data.build` with the GitHub-API source and writes the root pickles as today (legacy mode, for the jetson). From step 8 it is sync and dispatch (§11). |
 | `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. |
@@ -512,7 +551,7 @@ github_api reads it inside a try/except and takes the token from the environment
   covers its inputs (`*.png`, `TTS/decks.json`, `Card Edits.json`, the save); its card-browser names check goes, because the
   names come from the run's own data. tts_save.py gains `--names` (§7).
 - **card-edits.yml:** folded into Card sync (stage 1) and deleted at the cutover. Its `card` and `dry_run` inputs become
-  `bake` and `dry_run`; its one commit per card becomes the run's one main commit.
+  `bake` and `dry_run`; its commit becomes part of the run's one main commit.
 - **card-check.yml, font-check.yml:** unchanged. card-check keeps reporting on each push's PSDs at once, so card makers still
   hear about a broken PSD in minutes; merging it into Card sync is a later, separate idea.
 - **The bot:** §11.
@@ -722,13 +761,13 @@ the save then waits too. Without a bake, the save still commits on the last good
 | Case | What happens | Recovery |
 |---|---|---|
 | Build error (exception, API 5xx, a rate limit early in the run) | Red; no data commit; the last good data keeps being served; the save still runs on it; one failure alert per streak | The next run (gate a), or a dispatch |
-| Bake error | The run goes on from main's head without the bake; the report and crops are in the artifact; alert | Fix, then the next run bakes |
+| Bake error | A card's error keeps B for the cards that baked; with no B the run goes on from main's head; the report and crops are in the artifact; alert | Fix, then the next run bakes |
 | One unreadable PSD | Hook (c): counted in `pending.failed`; old data kept; no archiving that run if it was a new name; card-check already pinged the card makers | Fix the PSD; the next run builds it |
 | Gate refusal | Red; artifact holds the would-be db/ and the diff; alert | Review, then dispatch with the gate's input, or fix |
 | Wrong text that passes the gates | Visible in the commit's per-card lines and the job summary | `restore` (below) |
 | A parser regression pushed to AutoCroissant | G4 blocks a mass re-parse; per-card damage on newly pushed PSDs is possible | Pin `CARD_DATA_BUILDER_REF`; `restore`; dispatch `cards` after the fix |
 | The builder's import closure broken (a new top-level import) | Red at `--help` time; nothing committed | `test_card_data.py` catches it before the push; pin the ref meanwhile |
-| Main moved during the run | The run starts over once from the new head; then a warning, nothing committed | The next run |
+| Main moved during the run | M, the posts and the data are dropped; one retry is dispatched unless a run is pending (§6.3, stage 4); a second rejection only warns | The retry, else the next run |
 | Push to `data` rejected | Red; posts already sent may repeat on the next run | The next run rebuilds on the new tip |
 | Webhook down | Warning; cursor kept | The next run posts the waiting pushes |
 | A scheduled run late or skipped (GitHub delays crons under load) | The next run does the work; nothing is lost because the gate diffs against the last success | None needed; a dispatch if urgent |
@@ -827,18 +866,20 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
      - (b) `cards: Mini Doomer, The Freezer, The Lich King` (the certified goldens), to prove the runner parses as the Mac does;
      - (c) a bake dry run (the fresh dry run the lifted hold asks for), compared with card-edits.yml's dry run at the same head.
    - *Predicted before running:*
-     - (a) 0 PSDs to re-parse when the jetson is current; seed pass −10 duplicate versions (re-counted), 31 cards re-dated, 3
+     - (a) 0 PSDs to re-parse when the jetson is current; seed pass −10 duplicate versions at 3888392 (−15 on PICKLE 077337a, which holds 475 versions), 31 cards re-dated, 3
        versions re-dated, 291 marked legacy, archive tags dated; 0 data-field differences; 0 `supplied` changes; the save
-       report equal to tts-save.yml's at the same head; one post per push of the last day in `discord.json`, nothing sent.
+       report equal to tts-save.yml's at the same head; `discord.json` empty, because the seed build writes no events (§8).
      - (b) the three cards equal their goldens field for field.
      - (c) the same cards, verdicts and crops as card-edits.yml's dry run.
    - *Verify:* each prediction against the job summary and `diff_stats.py` (JSON input) vs main's stats.pkl. Any other difference
      stops the migration until it is explained.
    - *Undo:* delete the workflow file.
 7. **Shadow** [owner: decisions 1 and 5].
-   - *What:* create the `data` branch from run (a)'s output and add the schedule. The bake, the main commit and the posts stay
-     off in the workflow file until step 8 (the post stage writes `discord.json` to the artifact only), so tts-save.yml and
-     card-edits.yml stay the only main writers and nothing posts twice. The jetson keeps building and pushing pickles; the
+   - *What:* create the `data` branch with one fresh live dispatch (`dry_run=false`; with no branch yet the workflow starts an
+     empty orphan and seeds from AutoCroissant's latest PICKLE, or `seed`), then add the schedule. The workflow cannot seed
+     from an artifact, so the live run's `db/` is checked against run (a)'s artifact instead (same seed, same counts; only
+     PSDs pushed in between may differ). `MAIN_COMMIT` and `POSTS` stay off until step 8 (`discord.json` goes to the artifact
+     only), so tts-save.yml and card-edits.yml stay the only main writers and nothing posts twice. The jetson keeps building and pushing pickles; the
      site still reads AutoCroissant.
    - *Verify, daily, for 3 days or 10 card pushes, whichever is later:*
      - `diff_stats.py` between the `data` tip's stats.json and AutoCroissant main's stats.pkl, after the jetson's /push, shows
@@ -855,7 +896,7 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
      (decision 4).
    - *Then:*
      - site.yml: the data checkout, `CARD_DATA_DIR`, the daily cron;
-     - card-sync.yml: the bake, the main commit and the post on; `dry_run` defaults to false; `posted.json` set to the last
+     - card-sync.yml: `MAIN_COMMIT` and `POSTS` on (the bake, the main commit, the posts and the failure alert); `dry_run` defaults to false; `posted.json` set to the last
        shadow event, so Discord starts with the pushes after the cutover (the shadow period stays on the website's
        Changelog);
      - delete tts-save.yml and card-edits.yml in the same TTSCardMaker commit;
