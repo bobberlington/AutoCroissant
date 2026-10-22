@@ -485,6 +485,29 @@ def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
     assert "Reconnected: inits skipped, revived commands" in capsys.readouterr().out
 
 
+def test_on_ready_repeat_skips_a_loop_still_winding_down(monkeypatch, capsys):
+    loops = [FakeLoop(n) for n in "abcd"]
+    monkeypatch.setattr(main, "_loops", lambda: loops)
+    monkeypatch.setattr(main, "queue_command", lambda func, *a: None)
+    monkeypatch.setattr(main, "client", SimpleNamespace(user="bot", guilds=[]))
+    monkeypatch.setattr(main, "_started", False)
+    monkeypatch.setattr(main, "_synced_guilds", set())
+    monkeypatch.setattr(main, "slash_registry", {})
+
+    async def go():
+        await main.on_ready()
+        assert main._started
+        loops[0].dead = True                                            # crashed, error handler still running
+        loops[0].failed = lambda: True
+        loops[0].start = lambda: (_ for _ in ()).throw(RuntimeError("Task is already launched"))
+        loops[1].dead = True                                            # crashed and done
+        await main.on_ready()                                           # no RuntimeError out of on_ready
+    asyncio.run(go())
+    assert [loop.starts for loop in loops] == [1, 2, 1, 1]
+    out = capsys.readouterr().out
+    assert "Loop a not started" in out and "revived b" in out
+
+
 def test_on_ready_repeat_before_the_sync_runs_syncs_once(monkeypatch):
     synced, fail = [], [True]
     async def sync(guild, **kw):

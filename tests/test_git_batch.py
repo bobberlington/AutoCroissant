@@ -85,8 +85,28 @@ def test_plink_and_explicit_batch_mode_are_left_alone(clean_git, monkeypatch):
     for command in ("plink -batch", "C:\\PuTTY\\TortoisePlink.exe", "ssh -oBatchMode=no", "ssh -o 'BatchMode yes'"):
         monkeypatch.setenv("GIT_SSH_COMMAND", command)
         assert rh.ssh_command() == command
+    for command in ('"C:\\Program Files\\PuTTY\\plink.exe" -batch', "'/opt/my tools/plink'"):
+        monkeypatch.setenv("GIT_SSH_COMMAND", command)                 # quoted paths with spaces
+        assert rh.ssh_command() == command
+    monkeypatch.setenv("GIT_SSH_COMMAND", '"/opt/my tools/ssh" -i k')
+    assert rh.ssh_command() == '"/opt/my tools/ssh" -i k -o BatchMode=yes'
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -F /home/batchmode/config")    # only the word: still added
     assert rh.ssh_command() == "ssh -F /home/batchmode/config -o BatchMode=yes"
+
+
+def test_failed_lookup_sets_no_ssh_command(clean_git, monkeypatch):
+    repo = _repo(clean_git / "r", ("core.sshCommand", "ssh -i /keys/bot"))
+    real = rh.run
+    def hang(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 10)
+    monkeypatch.setattr(rh, "run", hang)
+    assert rh.ssh_command(str(repo)) is None                            # git keeps its -i key
+    assert rh.batch_overrides(str(repo)) == {"GIT_TERMINAL_PROMPT": "0"}
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i /keys/env")           # env wins without a lookup
+    assert rh.ssh_command(str(repo)) == "ssh -i /keys/env -o BatchMode=yes"
+    monkeypatch.delenv("GIT_SSH_COMMAND")
+    monkeypatch.setattr(rh, "run", real)                                # the failure wasn't cached
+    assert rh.ssh_command(str(repo)) == "ssh -i /keys/bot -o BatchMode=yes"
 
 
 def test_lookup_is_refreshed_and_a_missing_dir_not_cached(clean_git, monkeypatch):

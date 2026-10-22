@@ -18,7 +18,7 @@ REPOSITORY = CARD_REPO                          # the card repo the history clon
 GIT_TIMEOUT = 300                               # seconds per git call
 BATCH_MODE = "-o BatchMode=yes"                 # ssh fails at once instead of prompting for a key or host
 SSH_CACHE_SECONDS = 60                          # core.sshCommand lookups reused this long
-_PLINK = re_compile(r"^(\S*[/\\])?(tortoise)?plink(\.exe)?(\s|$)", IGNORECASE)    # takes no -o
+_PLINK = re_compile(r"^(\"[^\"]*[/\\]|'[^']*[/\\]|\S*[/\\])?(tortoise)?plink(\.exe)?[\"']?(\s|$)", IGNORECASE)   # takes no -o
 _HAS_BATCH = re_compile(r"batchmode(\s*=|\s+(yes|no)\b)", IGNORECASE)     # BatchMode set on purpose
 
 # ========================
@@ -34,8 +34,8 @@ _ssh_cache: dict = {}                           # dir -> (time, core.sshCommand)
 # ========================
 # Non-interactive git (every git call the bot makes)
 # ========================
-def _configured_ssh(where: str) -> str:
-    """core.sshCommand as git reads it in where (repo, global, system); '' when unset. Cached SSH_CACHE_SECONDS."""
+def _configured_ssh(where: str) -> Optional[str]:
+    """core.sshCommand as git reads it in where (repo, global, system); '' when unset, None when git config fails."""
     now = monotonic()
     hit = _ssh_cache.get(where)
     if hit and now - hit[0] < SSH_CACHE_SECONDS:
@@ -45,7 +45,7 @@ def _configured_ssh(where: str) -> str:
         out = run(["git", *(["-C", where] if exists_dir else []), "config", "--get", "core.sshCommand"],
                   capture_output=True, encoding="utf-8", timeout=10, env={**environ, "GIT_TERMINAL_PROMPT": "0"})
     except (OSError, SubprocessError):
-        return ""
+        return None                             # unknown: not cached
     command = out.stdout.strip() if out.returncode == 0 else ""
     if exists_dir or not where:                 # a missing dir isn't cached: its repo config comes later
         _ssh_cache[where] = (now, command)
@@ -62,10 +62,13 @@ def ssh_command(where: str = "", env: Optional[dict] = None) -> Optional[str]:
 
     Returns:
         Git's order: GIT_SSH_COMMAND, else core.sshCommand, else GIT_SSH, else ssh, keeping their options (-i keys);
-        None for a GIT_SSH program (takes no options); a plink command or an explicit BatchMode is left as is
+        None for a GIT_SSH program (takes no options) or a failed config lookup;
+        a plink command or an explicit BatchMode is left as is
     """
     env = environ if env is None else env
     command = env.get("GIT_SSH_COMMAND", "").strip() or _configured_ssh(abspath(where) if where else "")
+    if command is None:                         # lookup failed: git keeps its own config
+        return None
     if not command:
         if env.get("GIT_SSH"):
             return None

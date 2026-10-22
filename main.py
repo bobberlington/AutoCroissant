@@ -124,12 +124,9 @@ async def on_ready():
             create_task(sync_guild_commands(guild))
 
     if _started:
-        revived = [loop for loop in _loops() if loop.failed()]    # stopped ones stay stopped (/update)
-        for loop in revived:
-            loop.start()
-        print(f"Reconnected: inits skipped, revived {', '.join(l.coro.__name__ for l in revived) or 'no loops'}")
+        revived = [loop for loop in _loops() if loop.failed() and _start(loop)]   # stopped ones stay stopped (/update)
+        print(f"Reconnected: inits skipped, revived {', '.join(loop.coro.__name__ for loop in revived) or 'no loops'}")
         return
-    _started = True
 
     for cmd in tree.get_commands():
         slash_registry[cmd.name] = cmd.callback
@@ -142,7 +139,8 @@ async def on_ready():
     queue_command(init_type_emojis, client)
 
     for loop in _loops():
-        loop.start()
+        _start(loop)
+    _started = True
     print("Bot initialization complete")
 
 
@@ -933,6 +931,16 @@ async def process_edit_queue():
 def _loops() -> tuple:
     """The four loops on_ready starts."""
     return (process_reminders, process_command_queue, process_dispatch_queue, process_edit_queue)
+
+
+def _start(loop) -> bool:
+    """Start loop; False when its task is still winding down."""
+    try:
+        loop.start()
+        return True
+    except RuntimeError as e:
+        print(f"Loop {loop.coro.__name__} not started: {e}")
+        return False
 
 
 # ========================
