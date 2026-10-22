@@ -75,7 +75,7 @@ In order. A line is struck when it lands; the docs it closes move to `docs/Finis
    on the fork (layer-move API to confirm); D7 Twin Emperors second creature's DEF on the website (per-creature edit, then tick
    problems checked); D3 Shadow Duelist out of ABILITY_EXCLUSIONS after a golden-checked re-parse; idea 14's orphaned-FX validator
    check (does EFFECT LAYER OUT OF DATE cover it?); the companion skill §5 L1 questions (`[fire]/ [machine]` spacing, token order).
-6. [ ] **Bot small items:** B8 (a deleted PSD stays in stats.pkl: prune when the tree lost it, not only when num_changed > 0);
+6. [ ] **Bot small items:** B8 done 2026-10-22 (deleted PSDs archived in old_stats, restorable);
    B9 (a blob 5xx must not record the tree ETag); GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls; lazy GitPython in update_bot;
    a requests.Session per download thread; on_ready re-running inits after a failed RESUME; [user] admin gates on /purge,
    /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music; the parser skipping hidden text layers on
@@ -137,7 +137,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - Cleanup candidates (do not remove yet): 29 worktrees under /private/tmp/wt-* incl. /tmp/wt-r4-{bevel,blur,gradshade}, /tmp/wt-review-r2, /tmp/wt-pipeline-dev; local branches pipeline-dev 25fcf2e1 (not in cards) and pr-679 [open] (GIT)
 
 ##### B2. Bot (AutoCroissant)
-- B8 a deleted PSD stays in stats.pkl (prune only when num_changed > 0) [open] (BUGS 1.1)
+- B8 a deleted PSD stays in stats.pkl [done 2026-10-22: archived in old_stats, restorable] (BUGS retired; archaeology 10.31)
 - B9 blob 5xx records the tree ETag; card stays stale [open] (BUGS 1.1, 2.5)
 - B11 fonts on the jetson: font cache keyed by MDW/Fonts tree sha for bake + details gather [open] (BUGS 2.3; PLAN checklist 6)
 - Repeat on_ready after a failed RESUME re-runs inits [open] (BUGS 2.5 "Not done")
@@ -665,7 +665,7 @@ Discord. First prove it on all cards against the JSX batch's output.
   `psd_analyzer` facade (pickles unchanged), `github_api.py`, repo paths in `global_config.py`; 11 compiled modules, so a
   deploy MUST rebuild (`setup.py build_ext --inplace`).
 - Docs: help.py and describe strings match all 50 commands; skills' line references and module map refreshed.
-- Open (owner decisions or later): B8 (deletion alone doesn't prune), B9 (blob 5xx still records the tree ETag),
+- Open (owner decisions or later): B9 (blob 5xx still records the tree ETag),
   admin gates on /purge etc. (B10, the 1 s queue tick and the one message per search result were done 2026-10-21).
 
 ## Order

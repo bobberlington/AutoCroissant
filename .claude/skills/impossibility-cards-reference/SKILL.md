@@ -550,8 +550,11 @@ stats.pkl before archiving existed (tagged by the first full run; one on 2026-10
 `_can_prune` (a full tree, not truncated, no failed new-name download, some cards). An archived card is a name not in
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
 means current cards, so no query, export, alias or website reader sees them. A PSD back under the name is restored
-(`restore()`, tag cleared, no download when the blob is the same); duplicates are never archived. `save()` writes
-old_stats.pkl first, so a kill between the two saves leaves the card in both, and the next archive replaces that copy.
+(`restore()` copies the record into stats, tag cleared, no download when the blob is the same); duplicates are never
+archived. `save()` writes old_stats.pkl, then stats.pkl, then drops each tagged last version that is a copy of its listed
+card (same path and blob: a restore, or a kill's leftover) and writes old_stats.pkl again, so a kill at any point leaves
+the card in one file or both, never neither; a leftover is dropped or replaced by the next run. `add_history` replaces
+such a copy, or an equal last version (a kill after an edit), instead of appending.
 Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.

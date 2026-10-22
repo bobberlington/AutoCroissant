@@ -774,6 +774,22 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image, alone or listed).
 - **Status**: done 2026-10-21 (uncommitted when written).
 
+### 10.31 Deleted PSDs archived, not deleted (was B8, 2026-10-22)
+
+- **Symptom**: a card whose PSD was deleted stayed in stats.pkl until some other card changed (`prune_clean_cards`
+  ran only when `num_changed > 0`); once pruned, its record sat in old_stats untagged, indistinguishable from history.
+- **Root cause**: the prune sat behind the change gate; nothing marked a record as "deleted".
+- **Evidence**: 0166948 and f50f0a2 prune on every full run (`_can_prune`: no failed new-name download, truncated or
+  empty tree). The owner then asked to archive rather than delete ("to preserve history for potential future features
+  or views"): `CardInfo.archived` (plain-dict tag: at, path, blob, commit, renamed_to, backfill), `StatsDatabase.archived()`
+  the one read filter, `restore()` for a PSD back, psd_details records of archived blobs kept. A review found a kill between
+  the saves after a same-blob restore lost the record (restore popped it, old_stats.pkl was written first); fixed by
+  restoring a copy and dropping the tagged copy only after stats.pkl is written (`save()`, `drop_stale_archives`), and by
+  `add_history` replacing an equal last version (a kill after an edit doubled history). Tests: `tests/test_archive.py`,
+  the archive and kill cases in `tests/test_update_stats.py`.
+- **Status**: done 2026-10-22 on branch work/archive-deleted (not yet on main when written). TTSCardMaker 1acc2862 (the
+  site build knows the `archived` field) lands before the first pickle push, else each build warns of an unknown field.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
