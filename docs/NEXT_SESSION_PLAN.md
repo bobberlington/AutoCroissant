@@ -1,5 +1,9 @@
 # Next session plan (written 2026-10-22 06:00, Opus 5.5)
 
+> **Resume note (2026-10-22 09:50):** a second session (05:51-) resumed this plan after the first hit its usage limit.
+> Its running state, every landing and the owner's new answers are in
+> `~/Documents/Tools/session-rescue-2026-10-22/resume/SESSION2_NOTES.md` (read it first; this plan is rewritten at its end).
+
 Start in `~/Desktop/AutoCroissant`. Read memories `next-session-plan`, `jetson-server`, `ttscardmaker-integration`,
 `psd-edits-hold`, `fork-no-upstream` and `agent-model-preference` first. Agents run on Opus or lower. Commit to main.
 Report of the session that wrote this: `docs/Finished/session-2026-10-22/README.md`. The plan it replaced (with the

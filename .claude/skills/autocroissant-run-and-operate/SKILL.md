@@ -458,7 +458,8 @@ network, a truncated tree) is one error line.
   `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree]`, `--json <out>`, `--discord <out>`. On the clone at e4e0a58 the notes
   are Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors
   `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`; Anubisath Guardian, Qiraji Soldier, Silithid, Mini Doomer and Royal
-  Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these).
+  Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these). On TTSCardMaker 07589cc7
+  (2026-10-22) only Computer Virus has notes (812 PSDs); the test reads the three fixed cards' old versions from the clone's history.
 
 ### PSD details (psd_details.json, added 2026-10-21; the data behind the website's card Details dropdown, plan item 23)
 

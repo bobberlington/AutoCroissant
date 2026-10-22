@@ -7,7 +7,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from subprocess import run as run_process
+from subprocess import CalledProcessError, run as run_process
 from sys import executable
 
 import pytest
@@ -22,9 +22,9 @@ ROLE = "546427268751294475"
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
 SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"
 NOTES = {                                       # what /update_stats printed on 2026-10-21 (e4e0a58) for these cards
-    "N.M.E/Bubble.psd": [NO_STARS],
-    "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
-    "Auxiliary/Rulebook/20_Creature_Types.psd": ["MISSPELT TYPE: tornado"],
+    "N.M.E/Bubble.psd": [],                                           # fixed upstream 2026-10-22: OLD
+    "Auxiliary/Minions/God_Tamer.psd": [],
+    "Auxiliary/Rulebook/20_Creature_Types.psd": [],
     "Creatures/Kirby/3 Stars/Computer_Virus.psd": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"],
     "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd": [],                # SEVERAL checked on the website (D7)
     "Creatures/Kirby/3 Stars/Pix.psd": [],
@@ -34,6 +34,11 @@ NOTES = {                                       # what /update_stats printed on 
     "Auxiliary/Minions/Silithid.psd": [],
     "Auxiliary/Minions/Mini_Doomer.psd": [],
     "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": [],     # STATS TOO HIGH allowed by the clone's Card Edits.json
+}
+OLD = {                                         # the clone's last versions with notes (fixed by these commits' children)
+    "N.M.E/Bubble.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),          # L14 star groups
+    "Auxiliary/Minions/God_Tamer.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),
+    "Auxiliary/Rulebook/20_Creature_Types.psd": ("100511d37848773bb8e948ba29625397f6ce5216^", ["MISSPELT TYPE: tornado"]),   # L11
 }
 
 
@@ -62,6 +67,24 @@ def fake_root(root: Path, files: dict, types=("fire.png", "active.png"), edits_t
     if edits_text is not None:
         (root / "site").mkdir(exist_ok=True)
         (root / "site" / "Card Edits.json").write_text(edits_text, encoding="utf-8")
+    return root
+
+
+def old_blob(clone, rel: str) -> bytes:
+    """OLD[rel]'s PSD from the clone's history."""
+    try:
+        return run_process(["git", "-C", str(clone), "show", f"{OLD[rel][0]}:{rel}"], capture_output=True, check=True).stdout
+    except (CalledProcessError, OSError):
+        pytest.skip(f"the clone's history lacks {OLD[rel][0]}:{rel}")
+
+
+def old_checkout(clone, root: Path) -> Path:
+    """The OLD PSDs beside the clone's Types/, MDW/ (the manifest) and site/ (the edits file)."""
+    for rel in OLD:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(old_blob(clone, rel))
+    for top in ("Types", "MDW", "site"):
+        (root / top).symlink_to(clone / top)
     return root
 
 
@@ -174,10 +197,20 @@ def test_clone_cards_match_update_stats(clone):
     assert [c.path for c in report.cards] == [rel for rel, notes in NOTES.items() if notes]     # command-line order
 
 
+def test_old_clone_cards(clone, tmp_path):
+    """NO STARS FOUND and MISSPELT TYPE: tornado on the clone's last versions that had them."""
+    root = old_checkout(clone, tmp_path / "repo")
+    report = cc.check_files([str(root / rel) for rel in OLD], "tester")
+    assert report.checked == len(OLD) and report.errors == []
+    assert [(c.path, c.notes) for c in report.cards] == [(rel, notes) for rel, (_, notes) in OLD.items()]   # command-line order
+
+
 def test_cli_psd_mode(clone, tmp_path, capsys):
     out, disc = tmp_path / "r.json", tmp_path / "d.json"
-    cards = ["Auxiliary/Minions/God_Tamer.psd", "Auxiliary/Minions/Mini_Doomer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd"]
-    assert cc.main(["--psd", *(str(clone / rel) for rel in cards), "--author", "bobber", "--json", str(out), "--discord", str(disc)]) == 0
+    old = old_checkout(clone, tmp_path / "repo")                                 # God Tamer's NO STARS FOUND
+    psds = [old / "Auxiliary/Minions/God_Tamer.psd", clone / "Auxiliary/Minions/Mini_Doomer.psd",
+            clone / "Creatures/Kirby/3 Stars/Computer_Virus.psd"]
+    assert cc.main(["--psd", *map(str, psds), "--author", "bobber", "--json", str(out), "--discord", str(disc)]) == 0
     text = capsys.readouterr().out
     assert text.startswith("## Card check\n\n3 card PSDs read.\n\n")
     assert f"- `Auxiliary/Minions/God_Tamer.psd` (bobber): {NO_STARS}\n" in text
@@ -201,14 +234,17 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
 
 
 def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
-    """Six real cards in a tmp checkout: the edits file answers four of their notes; MDW/, Markers/ and .git/ are skipped."""
+    """Six real cards (two from the clone's history) in a tmp checkout: the edits file answers four of their notes; MDW/, Markers/ and .git/ are skipped."""
     root = tmp_path / "repo"
     cards = ["Auxiliary/Minions/God_Tamer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd", "Creatures/Kirby/3 Stars/Pix.psd",
              "Auxiliary/Rulebook/20_Creature_Types.psd", "Auxiliary/Minions/Mini_Doomer.psd",
              "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"]
     for rel in cards:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).symlink_to(clone / rel)
+        if rel in OLD:                                                          # God Tamer and 20_Creature_Types with their notes
+            (root / rel).write_bytes(old_blob(clone, rel))
+        else:
+            (root / rel).symlink_to(clone / rel)
     names = [p.name for p in (clone / "Types").iterdir() if p.is_file() and not p.name.startswith(".")]
     text = edits({"Computer Virus": {"problems_ok": True},
                   "Pix": {"creatures": [{"hp": 3, "def": 3, "atk": 3, "spd": 3}] * 3},
