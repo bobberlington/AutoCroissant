@@ -259,7 +259,7 @@ def commit_files(repository: str, head: str, base_tree: str, modes: dict, files:
         head: The branch commit to build on (its tree is base_tree)
         modes: {repo path: mode} as the tree has them
         files: {repo path: bytes}
-        message: Commit subject
+        message: Commit message (subject, then any trailers): both paths keep it whole
         uploaded: Blob shas already uploaded this run (filled here): a retry re-uploads only what changed
         ssh_on_limit: A rate-limited API falls to SSH (the bot's choice) instead of raising (the Action's); `limited` then
             keeps the run on SSH until the caller resets it

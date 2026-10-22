@@ -53,6 +53,7 @@ RECENT = timedelta(minutes=30)                  # a PSD pushed more recently is 
 PUSHES = 100                                    # activity entries per request (GitHub's max)
 COMPARE_FILES = 300                             # a compare lists at most this many files
 OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
+EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
@@ -88,6 +89,7 @@ class Card:
     commit: Optional[str] = None
     dropped: list = field(default_factory=list)     # fields removed from the file
     creatures: bool = False                     # the entry has a creatures list (it sets the stats)
+    by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # the _psd meta written for it (refused cards)
     note: str = ""
     traceback: str = ""
@@ -360,7 +362,7 @@ def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Op
         files: {repo path: bytes} the PSD and PNG to commit ({} for a file-only commit)
         expect: {repo path: blob sha} what those paths must still hold at H'
         rewrite: edits file text at H' -> new text, or None when nothing is left to write
-        message: Commit subject
+        message: Commit message (subject, then any trailers)
         dry_run: Write out_path, commit nothing
         out_path: Where the rewritten file goes for the artifacts
 
@@ -462,7 +464,8 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
             continue
         rel = snapshot.psds.get(key, "")
         name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
-        cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures"))))
+        cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
+                          by=edits.meta.get(key, {}).get("_by")))
     return cards
 
 
@@ -484,6 +487,21 @@ def _subject(card: Card) -> str:
     if card.jobs:
         return f"{OWN_SUBJECT}: {card.name} {_describe(card)}"
     return f"{OWN_SUBJECT}: {card.name} " + ", ".join(f"{f} {card.fields[f]!r}" for f in card.redundant) + " already on the card"
+
+
+def editors(card: Card) -> list:
+    """The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated."""
+    if not card.jobs:                           # nothing printed (redundant only): no credit
+        return []
+    by = card.by
+    logins = [by.get(f) for f in card.jobs] if isinstance(by, dict) else [by]
+    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1})   # a login: one word
+
+
+def _message(card: Card) -> str:
+    """The subject, then one "Edit-by: <login>" trailer per editor (build_site.EDIT_BY reads them)."""
+    trailers = "".join(f"\n{EDIT_BY}: {login}" for login in editors(card))
+    return _subject(card) + ("\n" + trailers if trailers else "")
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
@@ -572,7 +590,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             new_text = rewrite_edits(text, card.name, card.dropped, verdict)
             return new_text if new_text is not None or not files else text
 
-        card.commit = land(snapshot.repository, files, expect, rewrite, _subject(card), dry_run,
+        card.commit = land(snapshot.repository, files, expect, rewrite, _message(card), dry_run,
                            join(folder, basename(EDITS_PATHS[0])))
     except Refused as refused:
         card.refusal = refused.refusal
@@ -802,6 +820,7 @@ __all__ = [
     'Transient',
     'bake_card',
     'dump_edits',
+    'editors',
     'fetch_verified',
     'land',
     'land_verdicts',
