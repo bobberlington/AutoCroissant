@@ -347,12 +347,16 @@ from the clone. If it is missing, icon tokens still parse by plain names (imposs
 
 The Tabletop Simulator save lives in the card repo at `TTS/Impossibility Simulator.json` (`TTS_SAVE_PATH`).
 commands/tts_save.py updates it: image links pinned to commit shas, renames followed, missing cards added to
-complete decks, Nicknames set to the website's names, role tags cleared, the Lua resizeTargets table regenerated.
+complete decks (an empty one filled from a template card at its own Transform), new cards added once to hand-picked decks
+with `add_new_since`, Nicknames set to the website's names, the Lua resizeTargets table regenerated. An existing card's
+Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role tags were cleared once, until
+2026-10-22); new cards start with them empty.
 Two ways to run it:
 
 - **Automatic: TTSCardMaker's GitHub Action** `.github/workflows/tts-save.yml` (details: ttscardmaker-companion
   §2.6). Daily at 11:41 UTC when its inputs changed since the last successful run (a PNG, `TTS/decks.json`,
-  `site/Card Edits.json`, the save, or this repo's `stats.pkl`/`aliases.pkl`, the website's names, 2026-10-22), or
+  `site/Card Edits.json`, the save, or the card browser's names: a hash of cards.json's png -> name map, cached per set
+the updater ran with; TTSCardMaker 075e6c43, 2026-10-22), or
   by hand (`workflow_dispatch`), it sparse-checks out the updater and its imports from `bobberlington/AutoCroissant`
   main (no config.py: github_api reads it in a try/except), runs `python -m commands.tts_save` on the checkout's save
   with the two env overrides `AUTOCROISSANT_LOCAL_DIR=$GITHUB_WORKSPACE` (where it reads `TTS/decks.json` and
@@ -378,7 +382,9 @@ Two ways to run it:
 - **Players' download link:** `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<commit>/TTS/Impossibility%20Simulator.json`
   (the commit just made; with no change, the `main` link). The 5.5 MB save is never attached in Discord.
 - **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
-  `partial` for hand-picked decks). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
+  `partial` for hand-picked decks; `add_new_since: <sha>` on a hand-picked rule adds, once, every rule card the save at
+  that commit lacked, renames followed: the four "Creatures Developer Version" decks since 318001ea, 2026-10-22; a rule
+  without `count` leaves its deck alone). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
   picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
   under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.
 - **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a

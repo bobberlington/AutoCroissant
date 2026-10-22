@@ -6,11 +6,12 @@ Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Sim
     update_repo_save() -> (report text, commit sha or None)    (the bot: the save on the card repo's main)
 
 Pins every repo image link to the commit that last changed the file, follows renames, syncs complete decks with
-their rules (TTS/decks.json: missing repo cards added, cards outside the rule removed; a rule matching nothing leaves
-its deck alone), sets card Nicknames to the
-card browser's names, clears role tags, regenerates the Lua resizeTargets table. When something changed it writes
-<stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt (the commit subject) next to the save. The shas in the
-links are the only state.
+their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
+matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
+save at that commit lacked), sets card Nicknames to the card browser's names, regenerates the Lua resizeTargets table.
+An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
+with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
+(the commit subject) next to the save. The shas in the links are the only state.
 The bot updates a temp copy of main's save and commits it with git_commit (the GitHub API; when the token can't write:
 git objects in the history clone, pushed over SSH); it never writes a checkout.
 """
@@ -19,7 +20,7 @@ from datetime import datetime
 from json import dumps, load, loads
 from os import remove, replace
 from os.path import basename, dirname, exists, expanduser, join, splitext
-from re import DOTALL, IGNORECASE, MULTILINE, compile as regex, escape, sub
+from re import DOTALL, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
 from subprocess import CalledProcessError
 from sys import argv, exit
@@ -51,13 +52,12 @@ SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when t
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/")   # page and marker cards keep their Nicknames
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
-ROLE_TAG = regex(r"(turbo-)?(damage|crippler|cripler|support|stacker|jack|summoner|berserker|consumer|tank|devourer|glass)",
-                 IGNORECASE)
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
 JSON_ESCAPED = {"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"}   # TTS (Newtonsoft) escapes these
-CARD_EXTRAS = ("States", "AttachedDecals", "ChildObjects", "Tags")       # not copied onto new cards
-CARD_SCRIPTS = ("LuaScript", "LuaScriptState", "XmlUI", "GMNotes")
+CARD_EXTRAS = ("States", "AttachedDecals", "ChildObjects", "Tags", "Memo")      # not copied onto new cards
+CARD_SCRIPTS = ("LuaScript", "LuaScriptState", "XmlUI", "GMNotes")          # emptied on new cards
+TEAM_FIELDS = ("Description", "GMNotes", "Memo", "Tags", "LuaScript", "LuaScriptState", "XmlUI")   # cards: never touched
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
               "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
 HTTP_TIMEOUT = 30
@@ -127,10 +127,12 @@ def _walk(objects, parents=()):
 
 
 def _strings(value, fn):
-    """Apply fn to every string holding a repo link, in place inside containers."""
+    """Apply fn to every string holding a repo link, in place inside containers (a card's TEAM_FIELDS skipped)."""
     if isinstance(value, dict):
+        card = value.get("Name") in CARD_NAMES
         for k, v in value.items():
-            value[k] = _strings(v, fn)
+            if not (card and k in TEAM_FIELDS):
+                value[k] = _strings(v, fn)
     elif isinstance(value, list):
         for i, v in enumerate(value):
             value[i] = _strings(v, fn)
@@ -212,6 +214,7 @@ class _Repo:
             self.by_blob.setdefault(blob, []).append(path)
         self.by_lower = {p.lower(): p for p in self.tree}
         self._at: dict = {}                                 # (sha, path) -> blob there, or None
+        self._carried: dict = {}                            # sha -> carried()
 
     def sha(self, path: str):
         """Commit that last changed path, or None when history doesn't know it."""
@@ -242,6 +245,33 @@ class _Repo:
         except CalledProcessError:
             full = ""
         return next((s for s in shas if full.startswith(s)), sorted(shas)[0])
+
+    def carried(self, sha: str):
+        """Today's paths of the card images the save had at sha, renames followed (as _pin_links: by blob, the PSD's
+        too); None when that save can't be read. Its blob is fetched once into the history clone."""
+        if sha in self._carried:
+            return self._carried[sha]
+        found = None
+        if self.history and exists(self.clone):
+            try:
+                old = loads(_git(self.clone, "cat-file", "blob", f"{sha}:{TTS_SAVE_PATH}").decode("utf-8"))
+                found = {_face_path(c) for c, _ in _walk(old.get("ObjectStates")) if c.get("Name") in CARD_NAMES} - {None}
+                gone = sorted(p for p in found if p not in self.tree)
+                if gone:
+                    then = {p.lower(): p for p in _ls_tree(self.clone, sha)}
+                    psds = {p: then.get(splitext(p)[0].lower() + ".psd") for p in gone}
+                    seen = self.last_seen(sorted(set(gone) | {q for q in psds.values() if q}))
+                    for p in gone:
+                        for q in (p, psds[p]):
+                            targets = self.by_blob.get(seen.get(q, ("", None))[1], [])
+                            if len(targets) == 1:
+                                png = self.by_lower.get(splitext(targets[0])[0].lower() + ".png")
+                                if png:
+                                    found.add(png)
+            except (CalledProcessError, OSError, ValueError, AttributeError):
+                found = None
+        self._carried[sha] = found
+        return found
 
     def last_seen(self, paths: list) -> dict:
         """Paths gone from main -> (newest commit that still had them, blob then), walking main's trees."""
@@ -332,12 +362,11 @@ class _Report:
         self.renamed: dict = {}         # old path -> (new path, links)
         self.gone: dict = {}            # path -> (refs, links, note)
         self.added: list = []           # (deck label, [(name, path, copies)])
+        self.new: list = []             # the same, hand-picked decks (add_new_since)
         self.removed: list = []         # (deck label, [(name, path, copies)]): cards outside the deck's rule
         self.names_real: dict = {}      # (path, old, new) -> objects
         self.names_case: dict = {}
         self.unnamed: dict = {}         # (path, Nickname) -> objects: not on the website, kept
-        self.cleared = 0
-        self.kept: dict = {}            # description -> cards
         self.stale: list = []
         self.lua_added: list = []
         self.lua_removed: list = []
@@ -422,8 +451,20 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
         _strings(save, apply)
 
 
+def _template(everything: list, deck: dict, back: str):
+    """A card to copy into an empty deck: from a deck of its scale and back, else of its scale, else any deck's."""
+    scale = (deck.get("Transform") or {}).get("scaleX")
+    found = [(o, parents[len(parents) - 1]) for o, parents in everything
+             if o.get("Name") in CARD_NAMES and parents and parents[len(parents) - 1].get("Name") == "Deck"]
+    same = [o for o, d in found if (d.get("Transform") or {}).get("scaleX") == scale]
+    backed = [o for o in same if ((_entry(o) or {}).get("BackURL") or "").endswith("/" + _encode(back))] if back else []
+    return next(iter(backed + same + [o for o, _ in found]), None)
+
+
 def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Report) -> None:
-    """Complete decks follow their rule: missing repo cards join (at the rule's usual count), cards outside it leave."""
+    """Complete decks follow their rule: missing repo cards join (at the rule's usual count; an empty deck from a
+    template card, at the deck's Transform), cards outside it leave. Hand-picked decks with add_new_since only gain
+    the rule's cards the save at that commit lacked."""
     everything = list(_walk(save.get("ObjectStates")))
     guids = {o.get("GUID") for o, _ in everything}
     top = 0
@@ -445,11 +486,12 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
                 continue
             label += f" ({_rule_text(rule)})"
             cards = deck.get("ContainedObjects") or []
-            if rule.get("partial"):
+            since = rule.get("add_new_since") if rule.get("partial") else None
+            if rule.get("partial") and not since:
                 report.left.append(f"{label}: hand-picked, {len(cards)} cards kept as they are")
                 continue
-            if not cards or not rule.get("count"):
-                report.left.append(f"{label}: empty, left empty")
+            if not rule.get("count"):
+                report.left.append(f"{label}: no count in its rule, {len(cards)} cards kept as they are")
                 continue
             wanted = _rule_cards(rule, repo.pngs)
             count = int(rule["count"])
@@ -463,12 +505,27 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
             report.errors.append(f"{label}: its rule matches no repo image; deck left alone.")
             continue
         present = {_face_path(c) for c in cards}
-        missing = [p for p in wanted if p not in present]
-        outside = [c for c in cards if (_face_path(c) or "").lower().endswith(".png")    # rules only cover PNGs
-                   and _face_path(c) in repo.tree and _face_path(c) not in wanted]
+        if since:
+            had = repo.carried(str(since))
+            if had is None:
+                report.errors.append(f"{label}: the save at `{since}` (add_new_since) can't be read; no new cards added.")
+                continue
+            missing = [p for p in wanted if p not in present and p not in had]
+            outside = []
+            if not missing:
+                report.left.append(f"{label}: hand-picked, {len(cards)} cards kept, no new cards since `{str(since)[:8]}`")
+                continue
+        else:
+            missing = [p for p in wanted if p not in present]
+            outside = [c for c in cards if (_face_path(c) or "").lower().endswith(".png")    # rules only cover PNGs
+                       and _face_path(c) in repo.tree and _face_path(c) not in wanted]
         if not missing and not outside:
             continue
-        sibling = cards[len(cards) - 1]
+        empty = not cards
+        sibling = cards[len(cards) - 1] if cards else _template(everything, deck, back or "")
+        if sibling is None:
+            report.errors.append(f"{label}: empty, and no card in the save to copy; deck left empty.")
+            continue
         base = _entry(sibling) or {}
         back_url = repo.url(back) if back else base.get("BackURL", "")
         added = []
@@ -493,11 +550,18 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
                 card.update({k: "" for k in CARD_SCRIPTS if k in card})
                 for k in CARD_EXTRAS:
                     card.pop(k, None)
+                if empty and "Transform" in deck:           # template from another deck: this deck's own
+                    card["Transform"] = deepcopy(deck["Transform"])
                 cards.append(card)
-            deck.setdefault("CustomDeck", {})[str(ids[path])] = deepcopy(face)
+            if "CustomDeck" not in deck:                    # TTS's place for it: after DeckIDs
+                items = list(deck.items())
+                at = next((i + 1 for i, (k, _) in enumerate(items) if k == "DeckIDs"), len(items))
+                deck.clear()
+                deck.update(items[:at] + [("CustomDeck", {})] + items[at:])
+            deck["CustomDeck"][str(ids[path])] = deepcopy(face)
             added.append((name, path, copies))
         if added:
-            report.added.append((label, added))
+            (report.new if since else report.added).append((label, added))
         if outside:
             gone = {id(c) for c in outside}
             cards = [c for c in cards if id(c) not in gone]
@@ -527,20 +591,13 @@ def _fix_keys(save: dict, report: _Report) -> None:
 
 
 def _fix_cards(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
-    """Nickname = website name, role tags cleared."""
+    """Nickname = website name (nothing else: TEAM_FIELDS are the team's)."""
     for card, _ in _walk(save.get("ObjectStates")):
         if card.get("Name") not in CARD_NAMES:
             continue
         path = _face_path(card)
         if not path or path.startswith(HAND_NAMED):
             continue
-        description = card.get("Description") or ""
-        if description:
-            if all(ROLE_TAG.fullmatch(w) for w in description.split()):
-                card["Description"] = ""
-                report.cleared += 1
-            else:
-                report.kept[description] = report.kept.get(description, 0) + 1
         if path not in repo.tree or not names.site:
             continue                                        # gone image, or no website data: name left alone
         old = card.get("Nickname") or ""
@@ -631,20 +688,18 @@ def _render(report: _Report, head: list) -> str:
     section("Links re-pinned (changed files)", pins(report.repinned))
     section("Links not pinned (history doesn't know the file)", [f"`{p}`" for p in sorted(report.unpinned)])
     section("Renamed images", [f"`{old}` -> `{new}` ({n} links)" for old, (new, n) in sorted(report.renamed.items())])
-    section("Cards added", [f"{label}: " + ", ".join(f"{name} `{path}`" + (f" x{c}" if c != 1 else "") for name, path, c in cards)
-                            for label, cards in report.added])
-    section("Cards removed (outside the deck's rule)",
-            [f"{label}: " + ", ".join(f"{name} `{path}`" + (f" x{c}" if c != 1 else "") for name, path, c in cards)
-             for label, cards in report.removed])
+    def listed(found):
+        return [f"{label}: " + ", ".join(f"{name} `{path}`" + (f" x{c}" if c != 1 else "") for name, path, c in cards)
+                for label, cards in found]
+    section("Cards added", listed(report.added))
+    section("New cards added (hand-picked decks, add_new_since)", listed(report.new))
+    section("Cards removed (outside the deck's rule)", listed(report.removed))
     section("Nicknames changed", [f"`{p}`: '{old}' -> '{new}' ({n} card{'s' if n != 1 else ''})"
                                   for (p, old, new), n in sorted(report.names_real.items())])
     section("Nicknames changed (case/spacing only)", [f"`{p}`: '{old}' -> '{new}' ({n} card{'s' if n != 1 else ''})"
                                                       for (p, old, new), n in sorted(report.names_case.items())])
     section("Nicknames kept (not on the website)", [f"`{p}`: '{old}' ({n} card{'s' if n != 1 else ''})"
                                                     for (p, old), n in sorted(report.unnamed.items())])
-    if report.cleared:
-        lines += ["", f"## Descriptions: {report.cleared} role tags cleared"]
-        lines += [f"- kept on {n} card{'s' if n != 1 else ''}: {dumps(d)[:80]}" for d, n in sorted(report.kept.items(), key=lambda kv: -kv[1])]
     section("CustomDeck keys fixed", report.stale)
     section("resizeTargets", [f"added `{k}`" for k in report.lua_added] + [f"removed `{k}`" for k in report.lua_removed])
     section("Images gone from the repo (report only)",
@@ -657,7 +712,7 @@ def _render(report: _Report, head: list) -> str:
 def _commit_message(report: _Report) -> str:
     """'TTS save: 812 links pinned, 3 cards added', from the report."""
     links = sum(n for _, _, n in report.pinned.values()) + sum(n for _, _, n in report.repinned.values())
-    added = sum(len(cards) for _, cards in report.added)
+    added = sum(len(cards) for _, cards in report.added + report.new)
     removed = sum(len(cards) for _, cards in report.removed)
     names = len(report.names_real) + len(report.names_case)              # distinct names, not cards
     parts = [f"{_plural(links, 'link')} pinned" if links else "",

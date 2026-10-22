@@ -253,3 +253,95 @@ def test_files_at_lists_the_edits_path(monkeypatch):
     files = tts._files_at("r2", wanted)
     assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d"}
     assert next((p for p in tts.EDITS_PATHS if p in files), None) is None
+
+
+# ========================
+# Empty decks, add_new_since, team fields
+# ========================
+def test_sync_decks_fills_an_empty_deck(save, repo):
+    """An empty deck with a counted rule is filled from another deck's card, at its own Transform, keys after DeckIDs."""
+    empty = {"GUID": "ffffff", "Name": "Deck", "Transform": {"posX": 9.0, "scaleX": 2.0}, "Nickname": "Heals",
+             "DeckIDs": [], "LuaScript": "", "ContainedObjects": []}
+    save["ObjectStates"][0]["ContainedObjects"][0]["Memo"] = "team note"
+    save["ObjectStates"].append({"GUID": "bag001", "Name": "Bag", "ContainedObjects": [empty]})
+    rules = {"decks": {"ffffff": {"rule": {"kind": "items", "folders": [HEAL + "*.png"], "count": 1}, "back": BACK}}}
+    report = tts._Report()
+    tts._sync_decks(save, rules, repo, Names(), report)
+    cards = empty["ContainedObjects"]
+    assert [tts._face_path(c) for c in cards] == [A, B, C]
+    assert all(c["Transform"] == {"posX": 9.0, "scaleX": 2.0} for c in cards)
+    assert all(c["Description"] == "" and c["LuaScript"] == "" and "Tags" not in c and "Memo" not in c for c in cards)
+    assert empty["DeckIDs"] == [c["CardID"] for c in cards] == [700, 800, 900]
+    assert list(empty)[list(empty).index("DeckIDs") + 1] == "CustomDeck" and sorted(empty["CustomDeck"]) == ["7", "8", "9"]
+    assert all(c["CustomDeck"][str(c["CardID"] // 100)]["BackURL"] == f"{RAW}bac0001/{BACK}" for c in cards)
+    assert report.added and not any("ffffff" in x for x in report.left)
+
+
+def test_new_cards_reach_full_and_developer_decks(repo):
+    """A new card joins the complete deck and, once, the hand-picked add_new_since deck; an old missing one only the
+    complete deck; the hand-picked deck never loses cards."""
+    full = _deck("aaaaaa", [_card("000001", A, 100)])
+    dev = _deck("bbbbbb", [_card("000002", A, 200), _card("000003", X, 300)])
+    save = {"ObjectStates": [full, dev]}
+    repo.carried = lambda sha: {A, B} if sha == "base" else None      # B was in the save at base, C is new
+    rules = {"decks": {
+        "aaaaaa": {"rule": {"kind": "items", "folders": [HEAL + "*.png"], "count": 1}},
+        "bbbbbb": {"rule": {"kind": "items", "folders": [HEAL + "*.png"], "count": 1, "partial": True,
+                            "add_new_since": "base"}}}}
+    report = tts._Report()
+    tts._sync_decks(save, rules, repo, Names(), report)
+    assert [tts._face_path(c) for c in full["ContainedObjects"]] == [A, B, C]
+    assert [tts._face_path(c) for c in dev["ContainedObjects"]] == [A, X, C]
+    assert dev["ContainedObjects"][2]["CardID"] == full["ContainedObjects"][2]["CardID"]   # one key per image
+    assert [(p, k) for _, added in report.new for _, p, k in added] == [(C, 1)]
+    assert "New cards added (hand-picked decks, add_new_since) (1)" in tts._render(report, [])
+    again = deepcopy(save)
+    tts._sync_decks(again, rules, repo, Names(), tts._Report())
+    assert again == save
+    repo.carried = lambda sha: None                                   # that save unreadable: deck left alone
+    report = tts._Report()
+    tts._sync_decks(deepcopy(save), rules, repo, Names(), report)
+    assert any("can't be read" in x for x in report.errors)
+
+
+def test_carried_follows_renames(tmp_path, monkeypatch):
+    """The save's cards at a commit, carried to today's paths through a rename (by blob)."""
+    git = lambda *a: run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)
+    git("init", "-q", "-b", tts.CARD_BRANCH)
+    git("config", "user.email", "t@t"), git("config", "user.name", "t")
+    (tmp_path / "TTS").mkdir()
+    (tmp_path / "Old").mkdir()
+    (tmp_path / "Old" / "Moved.png").write_bytes(b"moved")
+    (tmp_path / "Old" / "Kept.png").write_bytes(b"kept")
+    save = {"ObjectStates": [_deck("aaaaaa", [_card("000001", "Old/Moved.png", 100), _card("000002", "Old/Kept.png", 200)])]}
+    (tmp_path / tts.TTS_SAVE_PATH).write_text(dumps(save), encoding="utf-8")
+    git("add", "-A"), git("commit", "-q", "-m", "base")
+    base = git("rev-parse", "HEAD").stdout.decode().strip()
+    (tmp_path / "New").mkdir()
+    git("mv", "Old/Moved.png", "New/Moved.png")
+    (tmp_path / "New" / "Fresh.png").write_bytes(b"fresh")
+    git("add", "-A"), git("commit", "-q", "-m", "move")
+    monkeypatch.setattr(tts, "HISTORY_CLONE", str(tmp_path))
+    monkeypatch.setattr(tts, "LOCAL_DIR_LOC", "/nonexistent")
+    monkeypatch.setattr(tts, "refresh", lambda: True)
+    repo = tts._Repo([])
+    assert repo.carried(base) == {"Old/Moved.png", "New/Moved.png", "Old/Kept.png"}
+    assert repo.carried("0" * 40) is None
+
+
+def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
+    """An existing card's Description (role tags too), GMNotes, Memo, Tags and scripts stay, repo links in them too."""
+    card = save["ObjectStates"][0]["ContainedObjects"][0]
+    card.update(Description="Tank damage", GMNotes=f"see {RAW}main/{tts._encode(B)}", Memo="m", LuaScript="x()")
+    kept = {k: deepcopy(card.get(k)) for k in tts.TEAM_FIELDS}
+    names = Names()
+    names.source, names.site = "test", {}
+    monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None: names)
+    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
+    path = tmp_path / "save.json"
+    path.write_text(tts._dump(save), encoding="utf-8")
+    text, report = tts._update(str(path), extras=False)
+    after = loads(path.read_text(encoding="utf-8"))["ObjectStates"][0]["ContainedObjects"][0]
+    assert report.changed and {k: after.get(k) for k in tts.TEAM_FIELDS} == kept
+    assert "role tags" not in text

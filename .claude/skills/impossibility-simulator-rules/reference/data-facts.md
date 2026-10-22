@@ -514,7 +514,9 @@ Save totals (a copy of `TTS/audit.py` writing to /tmp, run 2026-10-22 against HE
 `TTS/AUDIT.md` is the 2026-10-20 run against `9fbe683`, before `dceef8eb` added 23 cards): 228 top-level objects; 57
 decks (49 on the table + 8 in the bag "Specific Item Decks", 7 of them empty); 2417 card objects (CardCustom 2411 + 6
 "Card"); by place: marker 8, deck 2362, rulebook 46, loose 1. 876 distinct repo images. Repo cards missing from the
-complete decks: none. Nicknames match the website names (773 pairs, 0 mismatches). Since 2026-10-21 the links are pinned
+complete decks: none. Nicknames match the website names (773 pairs, 0 mismatches). After the updater run of 2026-10-22
+(TTSCardMaker, on b6330730): 2513 card objects (2458 in decks), no empty deck, 131 Nicknames (398 cards) set to the
+printed titles of PICKLE 3888392. Since 2026-10-21 the links are pinned
 to commits and re-pinned when a file changes (after the cooldown commits, four runs re-pinned 50, 50, 50 and 29 links).
 
 ### 7.1 Decks (57) by group and copies
@@ -522,17 +524,17 @@ to commits and re-pinned when a file changes (after the cooldown commits, four r
 | Group (tile) | Decks | Cards per deck | Copies |
 |---|---|---|---|
 | Creatures (complete) | 5★ 56, 4★ 93, 3★ 103, 2★ 45 (Stubborn Queen sits in Minions instead) | 1 copy each card | twin set at "Creatures Copy" |
-| Creatures Developer Version | 5★ 14, 4★ 14, 3★ 19, 2★ 18 (hand-picked, unnamed decks) | 1 | none |
+| Creatures Developer Version | 5★ 14, 4★ 14, 3★ 21, 2★ 18 (hand-picked, unnamed decks; new cards join, `add_new_since` 318001ea: Z!!!!!, Tainted Lazarus, John Ward) | 1 | none |
 | Baseline Creatures | 4★ 25, 3★ 22 (hand-picked) | 1 | none |
 | Creatures Simple Version | 5★ 26, 4★ 42, 3★ 47, 2★ 17 (hand-picked) | 1 | none |
-| Items (complete) | 4★ 30, 3★ 88, 2★ 96, 1★ 39 | usual count 1 (1★: 2); 3★: 18 cards at 2-3 copies; 2★: 21 cards at 2-5 copies (Metronome, Stopwatch ×5; Bomb, Basic Shield, Pep Drink ×3); 1★: 9 cards at 1 | twin set at "Items Copy" |
+| Items (complete) | 4★ 30, 3★ 89 (Piko Piko Hammer since 2026-10-22), 2★ 96, 1★ 39 | usual count 1 (1★: 2); 3★: 18 cards at 2-3 copies; 2★: 21 cards at 2-5 copies (Metronome, Stopwatch ×5; Bomb, Basic Shield, Pep Drink ×3); 1★: 9 cards at 1 | twin set at "Items Copy" |
 | Items Simple Version | 4★ 17, 3★ 68, 2★ 75, 1★ 30 (hand-picked) | same pattern (Metronome, Stopwatch ×4) | none |
-| Field Items | 4★ 11, 3★ 12, 2★ 18, 1★ 9 | 1 | twin set at "Field Items Copy" |
+| Field Items | 4★ 10 (White Palace to The Morgue, b6330730), 3★ 12, 2★ 18, 1★ 9 | 1 | twin set at "Field Items Copy" |
 | N.M.E Items | 26 | 1 | "N.M.E. Items Copy" |
 | All Status Effects | 64 (12 buffs + 52 debuffs) | 1 | 3 decks (2 on "All Status Effects", 1 "Status Effects Copy"); back `MDW/cardback_statuseffect.png` |
 | Minions | 99 = Auxiliary/Minions 91 + Auxiliary/Creatures 7 + Stubborn Queen | 1 | 3 decks (2 + "Minions Copy") |
 | Auxiliary Items | 60 = Auxiliary/Items 48 + 12 main-pool items summoned by abilities (Bomb, Poison Circle, Holy Card, Piko Piko Hammer, the 5 Ingredients, Pepperoni Pizza, Gasoline, N.M.E Rope) | 1 | 3 decks (2 + "Auxiliary Items Copy") |
-| Bag "Specific Item Decks" | Deck of Rejects 7 (The Morgue), and empty: 1/2/3/4 Star Equips, 2/4 Star Attack Items, 2 Star Healing Items | - | - |
+| Bag "Specific Item Decks" | Deck of Rejects 7 (The Morgue, hand-picked, names kept), 1/2/3/4 Star Equips 9/17/23/16, 2/4 Star Attack Items 5/2, 2 Star Healing Items 22 (complete since 2026-10-22, back `MDW/cardback_item.png`) | 1 | none |
 
 Backs: creatures and minions `MDW/cardback.png`; items, field cards, N.M.E. and auxiliary items `MDW/cardback_item.png`.
 Repo cards missing from the complete decks: none. The 2026-10-20 gaps were filled by `dceef8eb` that day: The Gates of

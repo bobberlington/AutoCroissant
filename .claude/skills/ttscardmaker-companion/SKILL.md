@@ -418,18 +418,24 @@ Keeps `TTS/Impossibility Simulator.json` current with AutoCroissant's updater `c
 changes, and the bot's manual `/update_tts_save`: autocroissant-run-and-operate §7 "TTS save"). Until 2026-10-20 the
 bot ran the updater itself after `/update_stats`; this Action replaced that.
 
+- **Team fields:** a card's Description, GMNotes, Memo, Tags and scripts (LuaScript, LuaScriptState, XmlUI) are
+  left to the team (custom fields, descriptions: 2026-10-22): the updater never changes them on an existing card
+  (links in them are not re-pinned) and new cards start with them empty. The one-time role-tag clearing is retired.
+- **Deck rules** (`TTS/decks.json`, 2026-10-22): the 7 "Specific Item Decks" are complete rules (count 1, back
+  `MDW/cardback_item.png`, 94 cards); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
+  Version" decks have `add_new_since: 318001ea` (the save's first commit): each gains, once, every creature of its
+  stars the save then lacked (renames followed by blob). `TTS/audit.py` keeps both when it rewrites the file.
 - **Triggers:** cron `41 11 * * *` and `workflow_dispatch` (input `force`, default true). No push trigger since 2911a8c.
-- **Daily gate** (step "Changes since the last run"; `actions: read`): from the last successful run (`gh run list
-  --status success`: its `headSha` and `startedAt`) it runs when (a) a commit not made by the Action itself
-  (`AutoCroissant|TTS save:`) touched `*.png`, `TTS/decks.json`, `site/Card Edits.json` or the save (`git log
-  last..HEAD`; the checkout has full history, `filter: blob:none`), or (b) the bot's main has commits touching
-  `stats.pkl` or `aliases.pkl` (the website's names; GitHub API `commits?path=...&since=...`) since 7 h before that
-  run's start: the website picks up the bot's data within 6 h (site.yml's cron), so a pickle pushed just before a run
-  reaches the names only by the next one. A forced run, no earlier run, an unknown last sha or a failed API call all
-  run. Edges: `since=` filters on the commit date, not the push date (a pickle committed over 7 h before a run but
-  pushed after it is missed; /push commits at push time); the 7 h leaves about 1 h over site.yml's `17 */6` cron, so a
-  late scheduled site build moves a name change one more day; a pickle inside the window counts on two days running
-  (one no-op run). Not watched: the updater's own code (dispatch by hand after changing `commands/tts_save.py`).
+- **Daily gate** (the owner's, 075e6c43, 2026-10-22; `actions: read`): step "Card browser names" downloads the live
+  `cards.json` (also the updater's `site/dist` fallback) and hashes its png -> name map; `actions/cache/restore`
+  (`lookup-only`) looks for `tts-save-names-<hash>`, saved after each run that ran with new names. Step "Changes since
+  the last run" runs when forced, when that cache entry is missing (the bot's pickle push renamed cards: PICKLE 3888392
+  did, once site.yml rebuilt the site), when there is no earlier successful run on this branch (`gh run list --branch`;
+  a failed lookup also runs), or when a commit not made by the Action itself (`AutoCroissant|TTS save:`) touched
+  `*.png`, `TTS/decks.json`, `site/Card Edits.json` or the save (`git log last..HEAD`; full history, `filter:
+  blob:none`). A bot commit that changes no name (docs) changes no hash and runs nothing. Our time-window version
+  (bot pickle commits within 7 h of the last run, 75ce18cc) was dropped in the rebase: the hash covers it. Not watched:
+  the updater's own code and build_site's name logic (dispatch by hand after changing them; owner's call).
 - **Checkout:** this repo, non-cone sparse `/TTS/` + `/site/Card Edits.json`; the bot (`bobberlington/AutoCroissant`
   main) into `bot/`, sparse `commands/tts_save.py`, `git_commit.py` (the shared commit path, 2026-10-21), `repo_history.py`,
   `card_models.py`, `card_edits.py`, `github_api.py` and `global_config.py` (everything the updater imports; `commands/` is a namespace package, no
@@ -457,9 +463,11 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
   save in about 2 minutes: structure, serializer, CustomDeck collisions, drift against c9873ddf, deck contents, names,
   backs, rules, the Lua (lupa mock of the TTS API), link pins and HTTP, the updater run as the Action runs it, its
-  report and commit subject, and the daily gate against real history. Any Python with `requests` and `Pillow`; the
+  report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
+  3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
+  on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
   Lua checks need `lupa`. The names checks follow the live website, so between a pickle push and the next run they fail
-  (`contents_names`, `final_spot`, `updater_idempotent`: 21 of 24 on 2026-10-22, 131 names behind PICKLE 3888392).
+  (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 after the 2026-10-22 update).
   `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
   updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
 
