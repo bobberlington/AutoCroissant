@@ -59,7 +59,8 @@ def test_record_shape_and_size(records, clone):
         assert all(set(t) == {"layer", "text", "font", "size", "color", "visible"} for t in record["text"])
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
-        assert record["icons"] == "images" and set(record["stats"]) == {"hp", "def", "atk", "spd"}
+        assert record["icons"] == ("mixed" if rel == CANNON else "images")             # Cannon: image types, badge runs
+        assert set(record["stats"]) == {"hp", "def", "atk", "spd"}
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
     assert _size(records[DOOMER]) < 8_000 and _size(records[CANNON]) < 8_000
     assert _size(records[LAZARUS]) < 20_000                                         # 234 layers, 93 with effects
@@ -81,13 +82,15 @@ def test_text_layers_and_template(records):
     assert doomer["smart_objects"][:2] == ["images/Background (1)", "Stars/Warpstar"] and doomer["fx"] == [] and doomer["overlays"] == []
     assert doomer["effects"]["Creature Types"] == ["Stroke (off)"] and doomer["effects"]["Creature Types/Light"] == ["DropShadow", "OuterGlow"]
     cannon = records[CANNON]
-    assert cannon["overlays"] == ["Blazing"] and "overlay word layers" in cannon["template"]["deviations"]
+    assert cannon["overlays"] == [] and cannon["fx"] == ["Ability FX: Blazing"] and cannon["template"]["deviations"] == ["icons as images"]
+    assert cannon["effects"]["Ability FX: Blazing"] == ["OuterGlow"] and set(cannon["fonts"]["stoogedings-Regular"]["layers"]) == {"Text/Ability"}
     assert cannon["effects"]["Stars/stars"] == ["GradientOverlay", "BevelEmboss"]
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
     assert virus["template"]["name_layer"] is None and "no Name layer" in virus["template"]["deviations"]
     assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
+    assert "overlay word layers" in virus["template"]["deviations"]
     lazarus = records[LAZARUS]
     assert lazarus["template"]["ability_layers"] == ["Laz/Laz/Ability", "Dead Laz/Dead Laz/Ability"]
     assert lazarus["template"]["deviations"] == ["no Name layer", "several visible Ability layers", "ability layer outside Text",
