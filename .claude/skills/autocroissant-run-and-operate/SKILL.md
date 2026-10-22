@@ -391,7 +391,8 @@ Two ways to run it:
 - **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
   `partial` for hand-picked decks; `add_new_since: <sha>` on a hand-picked rule adds every rule card the save at
   that commit lacked, renames followed (nothing is recorded: a card taken out by hand comes back unless the rule
-  excludes it; a card moved to other stars moves to that stars' `add_new_since` deck): the four "Creatures Developer Version" decks since 318001ea, 2026-10-22; a rule
+  excludes it; a card moved to other stars moves to that stars' `add_new_since` deck, a fresh CustomDeck id if its key
+  shows another image there; other hand-picked cards stay): the four "Creatures Developer Version" decks since 318001ea, 2026-10-22; a rule
   without `count` leaves its deck alone). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
   picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
   under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.

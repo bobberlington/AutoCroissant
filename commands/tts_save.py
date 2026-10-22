@@ -55,6 +55,7 @@ HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/")   # page and marker c
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
+STARS_FOLDER = regex(r"(?<=/)\d+ Stars(?=/)")
 JSON_ESCAPED = {"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"}   # TTS (Newtonsoft) escapes these
 CARD_EXTRAS = ("States", "AttachedDecals", "ChildObjects", "Tags", "Memo")      # not copied onto new cards
 CARD_SCRIPTS = ("LuaScript", "LuaScriptState", "XmlUI", "GMNotes")          # emptied on new cards
@@ -111,6 +112,20 @@ def _rule_cards(rule: dict, pngs: list) -> list:
     globs = [_glob(g) for g in rule.get("folders", [])]
     include, exclude = set(rule.get("include", [])), set(rule.get("exclude", []))
     return [p for p in pngs if p in include or (p not in exclude and any(g.match(p) for g in globs))]
+
+
+def _other_stars(rule: dict, path: str, stars: set) -> bool:
+    """Whether rule covers path under another stars folder but not as it is (the card changed stars)."""
+    globs = [_glob(g) for g in rule.get("folders", [])]
+    include, exclude = set(rule.get("include", [])), set(rule.get("exclude", []))
+    m = STARS_FOLDER.search(path)
+    if not m or any(g.match(path) for g in globs):          # outside stars folders, or excluded on purpose
+        return False
+    for folder in stars - {m.group(0)}:
+        other = path[:m.start()] + folder + path[m.end():]
+        if other in include or (other not in exclude and any(g.match(other) for g in globs)):
+            return True
+    return False
 
 
 def _rule_text(rule: dict) -> str:
@@ -474,7 +489,7 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         top = max([top, o.get("CardID", 0) // 100 if isinstance(o.get("CardID"), int) else 0]
                   + [int(k) for k in (o.get("CustomDeck") or {}) if k.isdigit()])
     ids: dict = {}                                          # new image path -> its new CustomDeck id
-    _move_between(everything, rules, repo, report)
+    top = _move_between(everything, rules, repo, report, top)
     for deck, parents in everything:
         if deck.get("Name") != "Deck":
             continue
@@ -579,30 +594,34 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         deck["DeckIDs"] = [c.get("CardID", 0) for c in cards]
 
 
-def _move_between(everything: list, rules: dict, repo: _Repo, report: _Report) -> None:
-    """A card in an add_new_since deck whose image left that rule (moved to other stars) moves, object and all, to
-    the one other add_new_since deck whose rule now covers it."""
-    since: dict = {}                                        # guid -> (deck, label, rule cards)
+def _move_between(everything: list, rules: dict, repo: _Repo, report: _Report, top: int) -> int:
+    """A card in an add_new_since deck whose image moved to other stars (its rule covers it only under its old ones)
+    moves, object and all, to the one other add_new_since deck whose rule now covers it. Decks whose rule matches
+    nothing or whose since save can't be read stay (_sync_decks reports them). A CustomDeck key the target uses for
+    another face: the target's key for this face, else a fresh id above top. Returns top."""
+    stars = {m.group(0) for m in map(STARS_FOLDER.search, repo.pngs) if m}
+    since: dict = {}                                        # guid -> (deck, label, rule, rule cards)
     for deck, _ in everything:
         try:
             entry = rules.get("decks", {}).get(deck.get("GUID", "")) or {}
             rule = entry.get("rule") or {}
             if deck.get("Name") == "Deck" and rule.get("partial") and rule.get("add_new_since") and rule.get("count"):
-                since[deck["GUID"]] = (deck, f"`{deck['GUID']}` {deck.get('Nickname') or '(unnamed)'}",
-                                       set(_rule_cards(rule, repo.pngs)))
+                wanted = set(_rule_cards(rule, repo.pngs))
+                if wanted and repo.carried(str(rule["add_new_since"])) is not None:
+                    since[deck["GUID"]] = (deck, f"`{deck['GUID']}` {deck.get('Nickname') or '(unnamed)'}", rule, wanted)
         except (AttributeError, KeyError, TypeError, ValueError):
             continue                                        # _sync_decks reports it
     touched: set = set()
-    for guid, (deck, label, wanted) in since.items():
+    for guid, (deck, label, rule, wanted) in since.items():
         cards = deck.get("ContainedObjects") or []
         for card in list(cards):
             path = _face_path(card)
-            if not path or path not in repo.tree or path in wanted:
+            if not path or path not in repo.tree or path in wanted or not _other_stars(rule, path, stars):
                 continue
-            to = [g for g, (_, _, w) in since.items() if g != guid and path in w]
+            to = [g for g, (_, _, _, w) in since.items() if g != guid and path in w]
             if len(to) != 1:
                 continue
-            target, to_label, _ = since[to[0]]
+            target, to_label, _, _ = since[to[0]]
             held = target.setdefault("ContainedObjects", [])
             place = held[len(held) - 1].get("Transform") if held else target.get("Transform")
             cards.remove(card)
@@ -611,8 +630,16 @@ def _move_between(everything: list, rules: dict, repo: _Repo, report: _Report) -
             held.append(card)
             key = str(card.get("CardID", 0) // 100)
             face = (card.get("CustomDeck") or {}).get(key) or (deck.get("CustomDeck") or {}).get(key)
+            faces = target.setdefault("CustomDeck", {})
+            if face is not None and faces.get(key, face) != face:   # the key shows another image there
+                key = next((k for k, v in faces.items() if v == face and k.isdigit()), None)
+                if key is None:
+                    top += 1
+                    key = str(top)
+                card["CardID"] = int(key) * 100 + card.get("CardID", 0) % 100
+                card["CustomDeck"] = {key: deepcopy(face)}
             if face is not None:
-                target.setdefault("CustomDeck", {})[key] = deepcopy(face)
+                faces[key] = deepcopy(face)
             report.moved.append(f"{card.get('Nickname') or '?'} `{path}`: {label} -> {to_label}")
             touched.update((guid, to[0]))
     for guid in touched:
@@ -621,6 +648,7 @@ def _move_between(everything: list, rules: dict, repo: _Repo, report: _Report) -
         used = {str(c.get("CardID", 0) // 100) for c in held}
         d["CustomDeck"] = {k: v for k, v in (d.get("CustomDeck") or {}).items() if k in used}
         d["DeckIDs"] = [c.get("CardID", 0) for c in held]
+    return top
 
 
 def _fix_keys(save: dict, report: _Report) -> None:

@@ -549,16 +549,18 @@ plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename)
 stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind
 `_can_prune` (a full tree, not truncated, no failed new-name download, some cards). An archived card is a name not in
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
-means current cards, so no query, export, alias or website reader sees them. A PSD back under the name is restored
-(`restore()` copies the record into stats, tag cleared, no download when the blob is the same); duplicates are never
-archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
+means current cards, so no query, export, alias or website reader sees them. A PSD back under the name at the tag's
+path or with its blob is restored (`restore()` copies the record into stats, tag cleared, no download when the blob is
+the same); another PSD under the name is a new card (its own author), the record staying as history. Duplicates are
+never archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
 still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
 re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
 the next run cleans up. `add_history` keeps a tagged copy as is (the save untags it) and replaces a last version equal
 but for the path (a kill after an edit or a same-blob move) instead of appending. `/update_metadata` never makes a stats
 entry for an archived name (it shows the archived record and refuses edits), and `/pull` puts back into old_stats.pkl a
-card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE).
+card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE; a rescued listed card
+comes back tagged, so the next run restores it).
 Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
