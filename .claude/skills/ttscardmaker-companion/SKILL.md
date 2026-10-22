@@ -443,8 +443,8 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Commit:** only when the save changed: identity `AutoCroissant <autocroissant@gmail.com>` (the bot's PICKLE
   identity), message = the first line of `TTS/Impossibility Simulator.message.txt`, the updater's own
   `_commit_message` (as the bot's commits: "TTS save: 29 links pinned"; fallback "TTS save: updated"; until 2026-10-22
-  the first four report headings, informational ones included; it counts cards, not names: "398 Nicknames fixed" for
-  131 distinct names, and says nothing of `resizeTargets`), `git push`. `permissions: contents: write`,
+  the first four report headings, informational ones included; Nicknames counted by name, not card, and "resizeTargets
+  updated" added, since 2026-10-22: before, 131 names read "398 Nicknames fixed"), `git push`. `permissions: contents: write`,
   `concurrency: tts-save` (no cancel), `timeout-minutes: 20`. The `.bak.json`, `.report.md` and `.message.txt` the
   updater writes beside the save stay on the runner (and are git-ignored).
 - **The save's Lua** (TTSCardMaker c9873ddf, 48 lines): `TEAMS` puts Red, Orange and Green on the TTS team Hearts and

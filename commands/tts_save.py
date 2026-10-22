@@ -659,12 +659,13 @@ def _commit_message(report: _Report) -> str:
     links = sum(n for _, _, n in report.pinned.values()) + sum(n for _, _, n in report.repinned.values())
     added = sum(len(cards) for _, cards in report.added)
     removed = sum(len(cards) for _, cards in report.removed)
-    names = sum(report.names_real.values()) + sum(report.names_case.values())
+    names = len(report.names_real) + len(report.names_case)              # distinct names, not cards
     parts = [f"{_plural(links, 'link')} pinned" if links else "",
              f"{_plural(added, 'card')} added" if added else "",
              f"{_plural(removed, 'card')} removed" if removed else "",
              f"{_plural(len(report.renamed), 'rename')} followed" if report.renamed else "",
-             f"{_plural(names, 'Nickname')} fixed" if names else ""]
+             f"{_plural(names, 'Nickname')} fixed" if names else "",
+             "resizeTargets updated" if report.lua_added or report.lua_removed else ""]
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 

@@ -156,6 +156,15 @@ def test_pin_links_reports_pinned_and_repinned(repo):
     assert tts._commit_message(report) == "TTS save: 2 links pinned"
 
 
+def test_commit_message_counts_names_and_lua():
+    """Distinct names, not cards; a resizeTargets change is named."""
+    report = tts._Report()
+    report.names_real[("a.png", "Old", "New")] = 3
+    report.names_case[("b.png", "chuckya", "Chuckya")] = 2
+    report.lua_added.append("New")
+    assert tts._commit_message(report) == "TTS save: 2 Nicknames fixed, resizeTargets updated"
+
+
 def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
     """A changed save gets <stem>.message.txt, _commit_message's line, for tts-save.yml's commit (UPD-2)."""
     names = Names()
