@@ -785,10 +785,17 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   the one read filter, `restore()` for a PSD back, psd_details records of archived blobs kept. A review found a kill between
   the saves after a same-blob restore lost the record (restore popped it, old_stats.pkl was written first); fixed by
   restoring a copy and dropping the tagged copy only after stats.pkl is written (`save()`, `drop_stale_archives`), and by
-  `add_history` replacing an equal last version (a kill after an edit doubled history). Tests: `tests/test_archive.py`,
-  the archive and kill cases in `tests/test_update_stats.py`.
-- **Status**: done 2026-10-22 on branch work/archive-deleted (not yet on main when written). TTSCardMaker 1acc2862 (the
-  site build knows the `archived` field) lands before the first pickle push, else each build warns of an unknown field.
+  `add_history` replacing an equal last version (a kill after an edit doubled history). A second review found: a kill
+  after a same-blob move doubled history (the old record's path already followed the card), a kill during a re-parsed
+  restore left the card untagged in old_stats only, a `/update_metadata` stub under an archived name was archived over the
+  real card, and a blobless record matched any stub at its path. Fixed: `add_history` compares all but the path and keeps
+  a tagged copy for `save()` to untag; `_tagged_copy` needs full equality without a blob; `/update_metadata` refuses
+  archived names. Also `/pull` (as before this work) could drop a card from both pickles (stats.pkl from the archiving
+  side, old_stats.pkl from the other); `update_bot._rescue_merged_cards` now restores it after the merge. Tests:
+  `tests/test_archive.py`, the archive and kill cases in `tests/test_update_stats.py`.
+- **Status**: done 2026-10-22 on branch work/archive-deleted (not yet on main when written). TTSCardMaker e0e26b2f on
+  branch work/archived-field (the site build knows the `archived` field; was 1acc2862) lands first, before the first
+  pickle push: every re-parsed card carries `archived = None`, so each build would warn of an unknown field.
 
 ## How to add an entry
 

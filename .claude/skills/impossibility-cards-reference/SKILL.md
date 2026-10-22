@@ -551,10 +551,14 @@ stats.pkl before archiving existed (tagged by the first full run; one on 2026-10
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
 means current cards, so no query, export, alias or website reader sees them. A PSD back under the name is restored
 (`restore()` copies the record into stats, tag cleared, no download when the blob is the same); duplicates are never
-archived. `save()` writes old_stats.pkl, then stats.pkl, then drops each tagged last version that is a copy of its listed
-card (same path and blob: a restore, or a kill's leftover) and writes old_stats.pkl again, so a kill at any point leaves
-the card in one file or both, never neither; a leftover is dropped or replaced by the next run. `add_history` replaces
-such a copy, or an equal last version (a kill after an edit), instead of appending.
+archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
+still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
+is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
+re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
+the next run cleans up. `add_history` keeps a tagged copy as is (the save untags it) and replaces a last version equal
+but for the path (a kill after an edit or a same-blob move) instead of appending. `/update_metadata` never makes a stats
+entry for an archived name (it shows the archived record and refuses edits), and `/pull` puts back into old_stats.pkl a
+card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE).
 Quirk: after each traversal,
 `_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.

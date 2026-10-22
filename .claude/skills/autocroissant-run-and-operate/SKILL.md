@@ -182,6 +182,9 @@ both now say "fetches and merges"). Actual behavior:
    (`checkout --ours`), everything else gets "Accepting remote version of X" (`checkout --theirs`).
    Committed as "AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)",
    then "Merge conflict resolved automatically!". **Rule: LOCAL PICKLES WIN, REMOTE CODE WINS.**
+   After either merge, a card the file-by-file merge dropped from both pickles (stats.pkl from one side,
+   old_stats.pkl from the other) goes back into old_stats.pkl from the side that had it, committed as PICKLE:
+   "Kept in old_stats (the merge dropped them): ..." (a failed check says so and the pull goes on).
 4. Final `git pull origin main` -> "Pull complete:" with the git output in a code block.
 5. On `GitCommandError`: "Git pull failed: <err>"; if the error mentions divergent branches it tries
    `git pull --rebase` ("Attempting to reconcile divergent branches..." -> "Rebase successful!" or
