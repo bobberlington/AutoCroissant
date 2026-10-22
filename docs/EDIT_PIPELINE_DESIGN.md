@@ -351,11 +351,9 @@ reminder's cadence (daily `/update_stats` at 5AM).
 
 - `build_site.py`: `PSD_FIELDS = {name, stars, types, hp, def, atk, spd, ability}` (no `creatures`: database-only, section 3;
   `edit.js FROM` :22 marks it "PSD" today and S1 changes that to no entry, so the editor stops calling it a PSD field); per
-  entry `pending = [f for f in edited if f in PSD_FIELDS and f != "name" and entry[f] != orig.get(f)]`; duplicates inherit
-  the original's. Known hole: a `name` the pipeline will bake (value != printed title) never shows "PSD pending": since 2026-10-21
-  `stats.pkl` holds the title (`display_name`, in `parsed_values` under an edit), but a title the bot can't read and one equal
-  to the file name both arrive as no `display_name`, so the site keeps `name` out of `pending`; the 7 names of section 2 show
-  only "Edited". The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
+  entry `pending` = the set PSD fields `psd_edit.classify` would try (a name against the bot's title, else the file name, via
+  `title_text`, only for `parser_version` >= 2 pickles; an ability via `normalize_ability`); duplicates copy the original's but
+  `name`. Since 2026-10-21 (TTSCardMaker 98337b7) a name to bake shows "PSD pending"; refusals are not predicted (site NOTES §5). The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
   `reparsePending = tree PSD blob sha != card.blob_sha` covers the gap between the bake commit and the next PICKLE push.
 - `_psd` lives in Card Edits.json, written only by the pipeline: `{"state": "baked" | "refused", "for": {field: value},
   "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
