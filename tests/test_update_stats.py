@@ -504,6 +504,24 @@ def test_details_flags_are_refilled_on_a_changed_tree(github, monkeypatch):
     assert {e["supplied"] for e in _details()[doomer]["fonts"].values()} == {True}
 
 
+def test_truncated_tree_refills_nothing(github, monkeypatch):
+    """A truncated tree leaves psd_details.json alone: no prune, no refill."""
+    import commands.psd_details as pd
+
+    class Everything:
+        def resolve(self, name):
+            return "exact"
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
+    _run()
+    mtime = os.stat("psd_details.json").st_mtime_ns
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: Everything())
+    github.files["notes.txt"] = b"not a card"
+    github.truncated = True
+    _run()
+    assert os.stat("psd_details.json").st_mtime_ns == mtime
+    assert {e["supplied"] for e in _details()[_file_sha(github, DOOMER)]["fonts"].values()} == {None}
+
+
 def test_details_gather_error_never_fails_the_update(github, monkeypatch, capsys):
     import commands.psd_details as pd
     monkeypatch.setattr(pd, "gather", lambda *a, **kw: (_ for _ in ()).throw(ValueError("odd effects block")))
