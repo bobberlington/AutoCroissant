@@ -3,10 +3,10 @@ card_bake: the edit.js editsFile port (today's file round-trips byte-identically
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
 sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), own commits, the SSH fallback
 for a token that can't write, --dry-run, --card. A real bake (a stat, and an ability with an FX layer) needs the fork's
-renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs
---help there without config.py, with an allowlist of third-party imports.
-    PYTHONPATH=/tmp/wt-pipeline-dev/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
-    (the fork venv needs requests for this file)
+renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml
+checks out of this repo and runs --help there without config.py, with an allowlist of third-party imports. Fork as
+conftest.find_fork finds it; a Python without requests skips this file:
+    AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 """
 import ast
 import hashlib
@@ -19,12 +19,13 @@ from sys import executable
 
 import pytest
 
-import commands.card_bake as cb
-import commands.git_commit as gc
-import commands.github_api as ga
-import commands.psd_edit as pe
-from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, text_engine as _text_engine
-from golden_cards import VOCAB
+pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
+import commands.card_bake as cb  # noqa: E402
+import commands.git_commit as gc  # noqa: E402
+import commands.github_api as ga  # noqa: E402
+import commands.psd_edit as pe  # noqa: E402
+from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
+from golden_cards import VOCAB  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
@@ -37,7 +38,7 @@ ABOUT = "Card data fixes from the website's Edit button."
 TOKEN = "test-token"
 
 
-fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: run under psd-tools[text]")
+fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: " + fork_reason())
 
 
 # ========================

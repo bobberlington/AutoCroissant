@@ -3,9 +3,13 @@ psd_edit and psd_regions: the edit pipeline's stat toggle, text edits, delta mer
 sections 5, 6, 10; steps S2 and S3). The fixture is the real card repo (MDW/Templates/Creature_Template.psd is 30 MB,
 too big to ship): tests that need a PSD read it from the clone and skip without it; tests that render or edit text
 skip without the fork's text engine (psd_tools.composite.text), so the suite stays green under stock psd-tools.
-    PYTHONPATH=/tmp/wt-cards/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py
+conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, else ~/Documents/Tools/psd-tools/src or
+/tmp/wt-cards/src when they have its API); the fork venv has psd-tools[text]:
+    AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py
 """
 import json
+import sys
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
 
@@ -16,7 +20,7 @@ from psd_tools import PSDImage
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import text_engine as _text_engine
+from conftest import fork_reason, text_engine as _text_engine
 
 # ========================
 # Configuration
@@ -35,10 +39,9 @@ NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
 GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay "Blazing" type layer over the ability (OuterGlow)
 FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay "Smoldering": unstyled on the chart, nothing to cut
-# Effect Layers - All Cards.jsx's 2026-10-20 trial output (Convert overlays), the JSX-made FX layers to compare with; /private/tmp
-# vanishes on reboot, so the comparison skips without them
-JSX_FX = {GASOLINE: "/private/tmp/fontexplore/fx/mig/out/Items__Support__2 Stars__Gasoline.psd",
-          CANNON: "/private/tmp/fontexplore/fx/mig/out/Creatures__FTL__5 Stars__Royal_Eradicator_Main_Cannon.psd"}
+# the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
+# tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
+JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
 STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted Blood", "Curse", "Cursed Inferno", "Frozen",
           "Frozen In Time", "Glued", "Hemorrhaging", "Hexed", "Infected", "Spirit Flame", "Withering"]   # the chart's styled statuses
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
@@ -63,13 +66,23 @@ def _ink(layer, psd) -> np.ndarray:
     return out
 
 
+def _jsx_ink(rel: str) -> tuple:
+    """The JSX FX layer of a trial copy: its name, bbox and ink on the canvas (the fixture of make_jsx_fx.py)."""
+    entry = json.loads((JSX_FX / "index.json").read_text(encoding="utf-8"))[rel]
+    out = np.zeros(tuple(reversed(entry["canvas"])), bool)
+    x0, y0, x1, y1 = entry["bbox"]
+    out[y0:y1, x0:x1] = np.asarray(Image.open(JSX_FX / (entry["source"][:-4] + ".png")).convert("L")) > 127
+    assert int(out.sum()) == entry["ink"]
+    return entry["name"], tuple(entry["bbox"]), out
+
+
 def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)), blocks=(), rect=(0, 0, 1, 1)) -> dict:
     """A layer_records() fingerprint."""
     return {"name": name, "flags": flags, "rect": rect, "channels": tuple(channels), "mask": b"", "blend": (0, 255, 0),
             "blocks": tuple(blocks)}
 
 
-text_engine = pytest.mark.skipif(not _text_engine(), reason="no text engine: run under the fork (psd-tools[text])")
+text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
 
 
 # ========================
@@ -107,6 +120,46 @@ def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False):
 # ========================
 # Pure functions (any psd-tools)
 # ========================
+def test_jsx_fx_fixture_is_vendored_and_small():
+    """The comparison's fixture ships in tests/ (no /tmp, no 20 MB trial copies): both cards, ink counts intact."""
+    assert sorted(json.loads((JSX_FX / "index.json").read_text(encoding="utf-8"))) == sorted([CANNON, GASOLINE])
+    for rel in (GASOLINE, CANNON):
+        name, (x0, y0, x1, y1), ink = _jsx_ink(rel)
+        assert name == "Ability FX: Blazing" and ink.any() and not ink[:y0].any() and not ink[:, x1:].any()
+    assert sum(f.stat().st_size for f in JSX_FX.rglob("*") if f.is_file()) < 64 * 1024
+
+
+def test_make_jsx_fx_refuses_without_psds(monkeypatch, tmp_path):
+    """No trial copies (wiped, other machine): exit non-zero, vendored fixture untouched."""
+    spec = spec_from_file_location("make_jsx_fx", JSX_FX.parent / "make_jsx_fx.py")
+    script = module_from_spec(spec)
+    spec.loader.exec_module(script)
+    before = {f.name: f.read_bytes() for f in JSX_FX.iterdir()}
+    monkeypatch.setattr(script, "SOURCE", tmp_path)
+    with pytest.raises(SystemExit, match="no PSDs"):
+        script.main()
+    assert {f.name: f.read_bytes() for f in JSX_FX.iterdir()} == before
+
+
+def test_find_fork_explains_a_skip(monkeypatch, tmp_path):
+    """$AC_PSD_TOOLS_SRC wins; without the fork API or psd-tools[text] (or too late to switch) the reason says so."""
+    import conftest
+    monkeypatch.setenv(conftest.FORK_ENV, str(tmp_path))
+    assert conftest.find_fork() == ("", f"{conftest.FORK_ENV}={tmp_path.resolve()} has no {conftest.FORK_API}")
+    (tmp_path / conftest.FORK_API).parent.mkdir(parents=True)
+    (tmp_path / conftest.FORK_API).write_text("")
+    path = list(sys.path)
+    for module in conftest.FORK_DEPS:                   # deps missing
+        monkeypatch.setattr(conftest, "find_spec", lambda name, real=conftest.find_spec, gone=module:
+                            None if name == gone else object() if name in conftest.FORK_DEPS else real(name))
+        src, why = conftest.find_fork()
+        assert src == "" and "this Python lacks " + conftest.FORK_DEPS[module] in why and sys.path == path
+    monkeypatch.setattr(conftest, "find_spec", lambda name: object() if name in conftest.FORK_DEPS else None)
+    monkeypatch.setitem(sys.modules, "psd_tools", sys.modules.get("psd_tools", object()))
+    assert conftest.find_fork() == ("", f"psd_tools was imported before conftest could put {tmp_path.resolve()} first")
+    assert sys.path == path
+
+
 def test_codes_are_the_closed_list():
     assert pe.CODES == ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font",
                         "overflow", "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed",
@@ -679,7 +732,6 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
 def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
     """styled-word now means this psd-tools cannot cut glyph pixels: with the rasterizer gone a styled word refuses before
     anything changes, an unstyled one still bakes."""
-    import sys
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     before = pe.ability_layer(psd).text
@@ -697,8 +749,6 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     the unchanged text cuts the same word (IoU 0.966 / 0.937 with the JSX pixel cut, 99.9% / 100% of our ink on its ink: the
     rest is the fork's raster against Photoshop's), hides the overlay, passes the validator's coverage (1.0) and the bytes
     and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline."""
-    if not Path(JSX_FX[rel]).exists():
-        pytest.skip("the JSX trial output is gone (/private/tmp)")
     psd_path = _card(clone, rel)[0]
     psd = PSDImage.open(psd_path)
     text = pe.ability_layer(psd).text
@@ -709,10 +759,11 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     pe.save_psd(psd, saved, update_preview=False)
     reopened = PSDImage.open(saved)
     mine, = pe.fx_layers(reopened, pe.ability_layer(reopened))
-    jsx, = [layer for layer in PSDImage.open(JSX_FX[rel]).descendants() if " FX: " in layer.name]
-    ours, theirs = _ink(mine, reopened), _ink(jsx, reopened)
+    name, box, theirs = _jsx_ink(rel)
+    ours = _ink(mine, reopened)
+    assert name == mine.name and theirs.shape == ours.shape
     assert (ours & theirs).sum() / (ours | theirs).sum() >= floor and (ours & theirs).sum() / ours.sum() >= 0.99
-    assert abs(mine.bbox[0] - jsx.bbox[0]) <= 1 and abs(mine.bbox[1] - jsx.bbox[1]) <= 1 and mine.bbox[3] == jsx.bbox[3]
+    assert abs(mine.bbox[0] - box[0]) <= 1 and abs(mine.bbox[1] - box[1]) <= 1 and mine.bbox[3] == box[3]
     assert pe.overlay_words(reopened) == [] and pe._enabled_effects(mine) == ["OuterGlow"]
     assert pe.PSDParser._pixel_coverage(mine, pe.ability_layer(reopened)) == 1.0
     old, new = pe.parse_card(parser, psd_path, rel), pe.parse_card(parser, saved, rel)
