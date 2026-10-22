@@ -27,7 +27,7 @@ By chapter (book numbering):
 ## Summary: what the rulebook leaves implicit, inconsistent or undefined
 
 Undefined terms and tags:
-- Card texts use timing tags the rulebook never defines (counts from cards.json, 2026-10-20). (XCD) appears 27 times ("(2CD) Attacks hit 2 separate creatures."), (XGCD) 24 times ("(1GCD) Increase a friendly creature's ATK by 1.") and (XU) 8 times ("(1CD)(2U) Draw one ingredient:"). By context these mean an X-turn cooldown, an X-global-turn cooldown and X uses; that reading is an inference. Old Rules defined "(CD) = Counter damage", which today is CDMG.
+- Card texts use timing tags the rulebook never defines. Since the cooldown update of 2026-10-21 the cards print (nCD) cooldowns (159 uses on 138 cards, e.g. "(2CD) Attacks inflict 2T Afraid."), (nGCD) global cooldowns (106 on 93), the pairs (1/2CD) (15 creatures) and (-1/1GCD) (once), and (nU) uses (24 on 22, e.g. "(1CD)(2U) Draw one ingredient:"), in place of (XPT), (XPGT), (EXT), (FTEXT) and (EXGT); counts from the parse of 2026-10-22. The pages above still define only the old tags. Card text suggests an n-turn cooldown, an n-global-turn cooldown and n uses per cooldown; that reading is an inference (SKILL.md §3 lists the card evidence). Old Rules defined "(CD) = Counter damage", which today is CDMG.
 - "Prime creature" (15, 18) is never defined. By context it is a non-minion creature, the one minions attach to.
 - "Tier" of a debuff (11) is never defined. Debuff cards have star levels (1-4), which is what tier means; buffs have no stars.
 - "Proc", "instance", "on-hit", "reactively", "cleanse" and "innate actions" are used, not defined.

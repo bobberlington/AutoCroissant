@@ -1,6 +1,6 @@
 # Impossibility Simulator rulebook glossary
 
-Every abbreviation and defined term in the current rulebook (`TTSCardMaker/Auxiliary/Rulebook`, text from `site/dist/data/rules.json`, 2026-10-20), with the page that defines it. Pages are given as rules.json names plus the printed page number. Definitions are quoted where the book gives one sentence; "≈" marks a close summary of a longer rule. A third section lists terms the book uses but never defines.
+Every abbreviation and defined term in the current rulebook (`TTSCardMaker/Auxiliary/Rulebook`, text from `site/dist/data/rules.json`, 2026-10-20; re-checked 2026-10-22, the pages are unchanged), with the page that defines it. Pages are given as rules.json names plus the printed page number. Definitions are quoted where the book gives one sentence; "≈" marks a close summary of a longer rule. A third section lists terms the book uses but never defines.
 
 ## 1. Abbreviations (02 Abbreviations, p.2)
 
@@ -29,13 +29,13 @@ Every abbreviation and defined term in the current rulebook (`TTSCardMaker/Auxil
 | (OFS) | On first summon | FORCED | 11 Abilities5 (p.11.5): cannot be negated or true negated, counts as (1PG); 22 Negation: true negation immunity |
 | (OS) | On summon | FORCED | 11 Abilities5: "can happen an unlimited number of times" |
 | (OD) | On death | FORCED | 11 Abilities5 ("also forced"), 17 Death |
-| (WOF) | While on field | FORCED | 11 Abilities7 (p.11.7): passives |
+| (WOF) | While on field | FORCED | 11 Abilities7 (p.11.7): passives; often written only when the ability affects other creatures, to show it ends when the creature exits the field |
 | (XPG) | "Ability can only be activated X time(s) per game." | PER GAME | 11 Abilities2: "always either (AAT) or (OYT)" |
 | ⏳ | "Abilities marked with ⏳ are considered "multi turn" abilities." | footer | 11 Abilities4 |
 | 🕐 | "Abilites marked with 🕐 are considered "time based"." | footer | 11 Abilities4 tip |
 | refreshed | "Time based abilities are considered "refreshed" and become usable again in the specified timeframe." | footer | 11 Abilities4 |
 
-On cards, X is replaced by the number: (1PT), (2PGT), (3PG), (E2T), (FTE2T), (E2GT) (examples on 11 Abilities2 and 11 Abilities4).
+On the pages, X is replaced by the number: (1PT), (2PGT), (3PG), (E2T), (FTE2T), (E2GT) (examples on 11 Abilities2 and 11 Abilities4). Since 2026-10-21 the cards print the cooldown and uses tags of section 3 instead of (XPT), (XPGT), (EXT), (FTEXT) and (EXGT); the rest of this table still appears on cards.
 
 ## 2. Defined terms, by page
 
@@ -114,7 +114,7 @@ On cards, X is replaced by the number: (1PT), (2PGT), (3PG), (E2T), (FTE2T), (E2
 | passive abilities | "abilites that happen automatically, without the player actively choosing to use it"; most are (WOF) | 11 Abilities7 (p.11.7) |
 | basic abilities | the (XPT)/(XPGT)/(XPG) family | 11 Abilities2 (p.11.2) |
 | automatic abilities | "non-optional and assumed to happen automatically" ((BOGT), (BOT), (ENDT)) | 11 Abilities3 (p.11.3) |
-| multi-turn | (EXT)/(FTEXT)/(EXGT): refreshed on the Xth turn after the start of the game or the last use; unused uses are saved, but "its cooldown doesn’t reset until it’s used"; no time passes in the hand | 11 Abilities4 (p.11.4) |
+| multi-turn | (EXT)/(FTEXT)/(EXGT): refreshed on the Xth turn after the start of the game or the last use; unused uses are saved, but "its cooldown doesn’t reset until it’s used"; no time passes in the hand. The page's word "cooldown" is the timer of a time based ability | 11 Abilities4 (p.11.4) |
 | life and death | (OFS)/(OS)/(OD) | 11 Abilities5 (p.11.5) |
 | SAME TIME | simultaneous effects: higher SPD creature first, then active items of the team with the highest cumulative SPD, then field cards; ties use the turn order tie-breakers; the owner orders own-side conflicts | 11 Abilities6 (p.11.6) |
 | CONFLICTION | both teams setting the same value: "it remains random"; simultaneous revives that set HP add together (up to Max); directly conflicting effects: player chooses | 11 Abilities6 |
@@ -202,7 +202,7 @@ HEALING = Food (tomato), ATTACK = Attack (bomb), NEGATION = Negation (metronome)
 
 ### 2c. Status effects named in the rulebook
 
-The rulebook names these but does not define them, except as noted. The effect text is from the status effect cards in `Auxiliary/Status Effects` (cards.json, 2026-10-20). It is supporting data, not rulebook text.
+The rulebook names these but does not define them, except as noted. The effect text is from the status effect cards in `Auxiliary/Status Effects` (cards.json, 2026-10-20; unchanged on 2026-10-22). It is supporting data, not rulebook text.
 
 | Status effect | Kind, stars (card) | Card text | Named on |
 |---|---|---|---|
@@ -233,9 +233,13 @@ The rulebook names these but does not define them, except as noted. The effect t
 
 | Term | Where used | Meaning from context (inference) |
 |---|---|---|
-| (XCD) | 27 card abilities, e.g. "(2CD) Attacks hit 2 separate creatures." | cooldown of X turns. Not in the rulebook. Old Rules used "(CD)" for counter damage |
-| (XGCD) | 24 card abilities, e.g. "(1GCD) Increase a friendly creature's ATK by 1." | cooldown of X global turns |
-| (XU) | 8 card abilities, e.g. "(1CD)(2U) Draw one ingredient:" | X uses |
+| (nCD) cooldown | 159 uses on 138 cards (2026-10-22), e.g. "(2CD) Attacks inflict 2T Afraid." | reading, not a rule: turns before the ability is usable again (cards; website tooltip "Cooldown: 2 turns", written in the same update). How a cooldown counts is open (SKILL.md Known gaps). Replaced (1PT) and (EnT). Card evidence: Time Riddle "(2CD) -> (1CD)" when usage doubles. Old Rules used "(CD)" for counter damage |
+| (nGCD) global cooldown | 106 uses on 93 cards, e.g. "(1GCD) Increase a friendly creature's ATK by 1." | reading: the same in global turns (website: "Global cooldown: 1 global turn"). Replaced (1PGT) and (EnGT) |
+| (a/bCD), (a/bGCD) a/b cooldown | (1/2CD) on 15 creatures; (-1/1GCD) on The Temple of Ahn'Qiraj | a first wait, then a repeating wait (website: "Cooldown: 1 turn, then 2"). (1/2CD) replaced (FTE2T); the -1 is unexplained |
+| (nU) uses | 24 uses on 22 cards, always right after (1CD) or (1GCD), e.g. "(1CD)(2U) Draw one ingredient:" | reading, not a rule: n uses per cooldown (Time Riddle "(1CD) -> (1CD)(2U)"); the website groups it under "Per game & triggers"; when uses refill is open; carries the n of an old (nPT)/(nPGT). Items that say "3 uses:" or "Uses: ∞" are multi-use items (13 Items), not this tag |
+| charge, recharge, usages | Michael "(2GCD) Recharge 1 turn of charge to another creature's ability."; Energy Ritual "fully recharges and restores all usages"; The Bank | the cards' words for cooldown progress and remaining uses |
+| time based (on cards) | Time Riddle (cooldown tags as examples), Energy Ritual "time-based and (XPG) abilities" (no tag named); Cave Of The Past "All 🕐time-based effects and abilities do not refresh." | the book's 🕐 tags (02 Abbreviations); Time Riddle also applies it to the cooldown tags (for Energy Ritual an inference) |
+| cooldown (the word) | 11 Abilities4 "its cooldown doesn’t reset until it’s used"; 14 Item Types2 an equip "on cooldown" | the wait before a time based ability is usable again (11 Abilities4); 14 Item Types2 does not say what an equip's cooldown is; never defined |
 | prime creature | 15 Minions, 16 The Field2, 18 Field Cards | a non-minion creature; the slot's main creature |
 | tier (of a debuff) | 11 Abilities ("cure a tier 2 debuff") | the debuff card's star level |
 | proc | 10.2, 11.6, 11.7, 17, 19 | to trigger or activate |

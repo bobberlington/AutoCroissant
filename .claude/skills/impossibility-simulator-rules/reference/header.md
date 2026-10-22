@@ -1,6 +1,9 @@
 # Impossibility Simulator rulebook: verbatim extract
 
-Extracted 2026-10-20 from `TTSCardMaker/site/dist/data/rules.json` (built locally that day). Checks:
+Extracted 2026-10-20 from `TTSCardMaker/site/dist/data/rules.json` (built locally that day). Re-checked 2026-10-22: the
+rules.json (rebuilt 2026-10-22 00:43), AutoCroissant `stats.pkl` at PICKLE `3888392` and a fresh parse of TTSCardMaker
+`73904dbd` hold the same 48 page texts, and the cooldown update
+of 2026-10-21 touched no rulebook PSD, so the text below is unchanged; only notes and the summary were updated. Checks:
 - rules.json has 48 entries, and `Auxiliary/Rulebook/` has 48 PSDs with 48 PNGs, one-to-one.
 - AutoCroissant `stats.pkl` holds the same 48 `rulebook` entries. Their `ability` strings are byte-identical to rules.json (compared that day).
 - Every page PNG was looked at. Every PSD was scanned with psd-tools for hidden text layers.

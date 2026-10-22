@@ -1,5 +1,8 @@
-import json, collections, sys, os
-d=json.load(open(sys.argv[1])); cards=d['cards']
+"""Kinds by stars, series folders, subtypes, types and copies. Usage: python3 -I agg.py <cards.json | loadpkl.py dump>"""
+import collections, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
+import rows
+cards = rows.load(sys.argv[1])
 C=collections.Counter
 cr=[c for c in cards if c['type']=='creature']
 print('creatures by stars', sorted(C(c.get('stars') for c in cr).items(), key=str))

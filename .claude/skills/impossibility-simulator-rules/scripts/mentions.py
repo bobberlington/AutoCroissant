@@ -1,5 +1,9 @@
-import json, re, sys
-d = json.load(open(sys.argv[1]))['cards']
+"""Status effect cards and how many other cards name each one. Usage: python3 -I mentions.py <cards.json | loadpkl.py dump>"""
+import os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
+import rows
+
+d = rows.load(sys.argv[1])
 se = [c for c in d if c['type'] in ('buff', 'debuff')]
 others = {}
 for c in d:

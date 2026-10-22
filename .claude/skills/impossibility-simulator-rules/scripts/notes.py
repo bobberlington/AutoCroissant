@@ -12,7 +12,8 @@ Icons: sleepy Kirby (the 8-space gap before "If you see sleepy Kirby"). It is a 
 Notes: sleepy Kirby sits beside, for example, 10 Attacking2 REDIRECTIONS, the 11 Abilities6, 11 Abilities7 and 12 Reactions5 titles, 13 Items MISC, 17 Death SPECIFICS and 22 Negation CREATURES; those boxes are the technical rules. Other Kirby poses (open-mouthed, waving, starry) are just decoration or a speaker for tips.
 """
 N["01 Getting Started"] = """
-Diagram: three example creature cards (one of them Grey Prince Zote) beside the CREATURES box. A Dr. Eggman-style face speaks the "Don't be stupid" line. The final "1" is the page number.
+Diagram: three example creature cards (Computer Virus, Grey Prince Zote and OMORI) beside the CREATURES box. A Dr. Eggman-style face speaks the "Don't be stupid" line. The final "1" is the page number.
+Notes: the pictured cards show old text. Computer Virus: "attacks inflict Poison for 5 turns and deal 2 piercing (CD) to itself", where (CD) is the old counter damage (today "2 piercing CDMG"), not the cooldown tag. OMORI: "2+ counters: +1 SPD, first turn and (EOT) attacks inflict 2 turns of Afraid." (today "(1/2CD) Attacks inflict 2T Afraid.").
 """
 N["02 Abbreviations"] = """
 Icons: 🕐 (clock, "time based") and ⏳ (hourglass, "multi turn") are real characters in the text and on the page. Kirby faces mark the notes "These imply (OYT).", "These imply (AAT)." and "All of these must happen automatically.".
@@ -25,6 +26,7 @@ Diagram: the page is a grid of boxes, which the extracted text runs together:
 - FORCED (no clock): (OFS), (OS), (OD), (WOF).
 - PER GAME: (XPG).
 The X in each tag is bold italic: it stands for the number printed on the card, e.g. (1PT), (2PGT), (E2T), (FTE2T), (E2GT), (3PG).
+Since 2026-10-21 the cards print cooldown and uses tags instead, such as (1CD), (1GCD), (1/2CD) and (2U) (SKILL.md §3); this page still lists only the old ones.
 Notes: in the extracted text the second FORCED heading and PER GAME are run together before (OFS). On the page they are two boxes: FORCED holds OFS/OS/OD/WOF, PER GAME holds XPG.
 """
 N["03 Setting Up"] = """
@@ -155,19 +157,19 @@ N["11 Abilities7"] = """
 Diagram: the PASSIVES example box shows "(WOF) Friendly creatures gain +1 DEF.", "This creature attacks inflict Burning.", "This creature is immune to Poison." and "This creature has 2 innate actions.". The MISC healing-item sentence is a side note by an Alphys-style face. Sleepy Kirby sits in the title.
 """
 N["12 Reactions"] = """
-Diagram: (1) the Mighty Pebble item ("Deal 5 damage") and (2) Toy Bonnie (2★, machine type). Toy Bonnie's stats go from "Stats before" HP 8, DEF 0, ATK 5, SPD 5 to "Stats after" HP 6, DEF 3, ATK 5, SPD 5. Six Hardened markers sit above it.
+Diagram: (1) the Mighty Pebble item ("Deal 5 damage") and (2) Toy Bonnie (2★, machine type). Toy Bonnie's stats go from "Stats before" HP 8, DEF 0, ATK 5, SPD 5 to "Stats after" HP 6, DEF 3, ATK 5, SPD 5. Six Hardened markers sit above it. Toy Bonnie's pictured card reads "(OPGT) Inflict up to 6 stacks of Softened for 1 turn ..." (an O, not a 1; a pre-rulebook tag in neither system); the card today reads (1GCD), as it did before the cooldown update.
 Notes: the trailing "of 5." in rules.json overflows its text box and is not drawn.
 """
 N["12 Reactions2"] = """
-Diagram: (1) Mighty Pebble, (2) Toy Bonnie, (3) Metronome (a negation item) and (4) Stopwatch. Toy Bonnie goes from HP 8/DEF 0/ATK 5/SPD 5 to HP 6/DEF 3/ATK 5/SPD 5.
+Diagram: (1) Mighty Pebble, (2) Toy Bonnie, (3) Metronome (a negation item) and (4) Stopwatch. Toy Bonnie goes from HP 8/DEF 0/ATK 5/SPD 5 to HP 6/DEF 3/ATK 5/SPD 5. Toy Bonnie's pictured card reads "(OPGT) Inflict up to 6 stacks of Softened for 1 turn ..." (an O, not a 1; a pre-rulebook tag in neither system); the card today reads (1GCD), as it did before the cooldown update.
 Notes: rules.json also contains a second block, a HIDDEN layer ("INTRODUCTION/Item shop copy"), shown above for reference. It is an older draft of 12 Reactions3 that adds "Attacks also resolve forward, meaning the first damage item played resolves first", and so gets the order 4>2>1>3 (pebble 0.5, then bomb 2.5). The visible 12 Reactions3 gets 4>2>3>1 instead: the later damage resolves first, i.e. damage also resolves in reverse. The visible page wins.
 """
 N["12 Reactions3"] = """
-Diagram: (1) Mighty Pebble, (2) Toy Bonnie, (3) Bomb ("Deal 7 damage") and (4) Metal Shield, whose card reads "+1.5 DEF -.5 SPD". Toy Bonnie goes from HP 8, DEF 0, ATK 5, SPD 5 to HP 5, DEF 4 + 0.5 chip (4.5), ATK 5, SPD 4 + 0.5 chip (4.5). The SPD drop comes from Metal Shield's card; the text does not mention it.
+Diagram: (1) Mighty Pebble, (2) Toy Bonnie, (3) Bomb ("Deal 7 damage") and (4) Metal Shield, whose card reads "+1.5 DEF -.5 SPD". Toy Bonnie goes from HP 8, DEF 0, ATK 5, SPD 5 to HP 5, DEF 4 + 0.5 chip (4.5), ATK 5, SPD 4 + 0.5 chip (4.5). The SPD drop comes from Metal Shield's card; the text does not mention it. Toy Bonnie's pictured card reads "(OPGT) Inflict up to 6 stacks of Softened for 1 turn ..." (an O, not a 1; a pre-rulebook tag in neither system); the card today reads (1GCD), as it did before the cooldown update.
 Notes: the text says "5 stacks of hardened, giving it 3 defense". Hardened is +0.5 DEF per stack (Auxiliary buff card), so 3 DEF needs 6 stacks, as on 12 Reactions/12 Reactions2. The 4.5 total = 3 + 1.5 also needs 6 stacks. The page number is printed "123" (meaning 12.3).
 """
 N["12 Reactions4"] = """
-Diagram: (1) Whispy Woods (counters HP 21, DEF 2, ATK 4, SPD 3; ability upside-down "(OPT) You can spend 2 points to heal all friendly creatures by 3 HP"), (2) Toy Bonnie (HP 2, DEF 0, ATK 5, SPD 5), (3) Bomb, (4) Pep Drink ("Heal a creature by 2.5 HP and give it 3 turns of 1 Peppy, or heal [icon] a by 4 HP") and (5) Amy Rose's Hammer. Softened (-0.5 DEF, counter 2) and Hardened (+0.5 DEF) markers are shown. Three "after" columns of counters show HP -2/DEF 3, then HP 2/DEF 3, then HP 0/DEF 2: the state if the chain ended after step 3, after step 4, and the final result. Toy Bonnie's card ability reads "(1PGT) Inflict up to 6 stacks of Softened for 1 turn distributed across any creatures, and this creature inflicts an equal number of stacks of Hardened on itself for 1 turn." (small print; the tag may read (OPGT)). The page number is printed "124" (12.4).
+Diagram: (1) Whispy Woods (counters HP 21, DEF 2, ATK 4, SPD 3; ability upside-down "(OPT) You can spend 2 points to heal all friendly creatures by 3 HP"), (2) Toy Bonnie (HP 2, DEF 0, ATK 5, SPD 5), (3) Bomb, (4) Pep Drink ("Heal a creature by 2.5 HP and give it 3 turns of 1 Peppy, or heal [icon] a by 4 HP") and (5) Amy Rose's Hammer. Softened (-0.5 DEF, counter 2) and Hardened (+0.5 DEF) markers are shown. Three "after" columns of counters show HP -2/DEF 3, then HP 2/DEF 3, then HP 0/DEF 2: the state if the chain ended after step 3, after step 4, and the final result. Toy Bonnie's card ability reads "(OPGT) Inflict up to 6 stacks of Softened for 1 turn distributed across any creatures, and this creature inflicts an equal number of stacks of Hardened on itself for 1 turn." (small print; clearly (OPGT) on 12 Reactions, the same card). (OPGT) and (OPT) are pre-rulebook tags in neither system. On the cards today Toy Bonnie reads (1GCD) (as before the cooldown update) and Whispy Woods "(1CD)(2 points) Heal all friendly creatures by 3 HP.". The page number is printed "124" (12.4).
 """
 N["12 Reactions5"] = """
 Notes: sleepy Kirby sits in the title, so this is "technical rules". The page number is printed "125" (12.5).

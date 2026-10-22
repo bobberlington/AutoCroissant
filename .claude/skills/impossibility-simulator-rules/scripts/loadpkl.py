@@ -12,8 +12,10 @@ with open(sys.argv[1], 'rb') as f: s = U(f).load()
 print(type(s), len(s))
 k = next(iter(s)); print(k, vars(s[k]))
 C = collections.Counter(getattr(v, 'card_type', None) for v in s.values()); print(C)
-out = {}
-for n, v in s.items():
-    d = {a: b for a, b in vars(v).items() if isinstance(b, (str, int, float, list, type(None), dict))}
-    out[n] = d
+def plain(x):  # stat lines (CardStats) as dicts
+    if isinstance(x, Stub): return {a: plain(b) for a, b in vars(x).items()}
+    if isinstance(x, (list, tuple)): return [plain(y) for y in x]
+    if isinstance(x, dict): return {a: plain(b) for a, b in x.items()}
+    return x
+out = {n: {a: plain(b) for a, b in vars(v).items() if isinstance(b, (str, int, float, list, type(None), dict, Stub))} for n, v in s.items()}
 json.dump(out, open(sys.argv[2], 'w'), default=str, indent=0)
