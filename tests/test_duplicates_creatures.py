@@ -98,8 +98,7 @@ def test_duplicate_name_order(monkeypatch):
 # Multi-creature split
 # ========================
 def test_real_creature_split(real_stats, clone):
-    multi = {n: c for n, c in real_stats.stats.items()
-             if getattr(c, "creatures", None) and not getattr(c, "parsed_values", None)}
+    multi = {n: c for n, c in real_stats.stats.items() if getattr(c, "creatures", None)}
     assert len(multi) >= 3, "Tainted Lazarus, Pix and Twin Emperors split into creatures"
     p, stale = parser(), []
     for name, stored in sorted(multi.items()):
@@ -108,7 +107,8 @@ def test_real_creature_split(real_stats, clone):
             stale.append(name)                                    # PSD edited since the last /update_stats
             continue
         card = p.parse(str(psd), stored.path)
-        assert [c.to_dict() for c in card.creatures] == [c.to_dict() for c in stored.creatures], name
+        from_psd = (getattr(stored, "parsed_values", None) or {}).get("creatures")   # the PSD's values under a website edit
+        assert [c.to_dict() for c in card.creatures] == (from_psd or [c.to_dict() for c in stored.creatures]), name
         assert card.stats.to_dict() == card.creatures[0].to_dict()
         assert any(x.startswith("SEVERAL CREATURES") for x in card.problems)
         assert pa.CardValidator.validate(card) == card.problems   # creature 1 stays within 10: no STATS TOO HIGH
