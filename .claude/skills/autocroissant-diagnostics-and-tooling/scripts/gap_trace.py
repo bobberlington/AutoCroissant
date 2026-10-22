@@ -86,6 +86,8 @@ def main() -> int:
         for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
     )
     for layer in psd.descendants():
+        if is_rulepage and layer.kind == "type" and not layer.is_visible():
+            continue        # rule pages skip hidden text
         parser._process_layer(layer, card, num_stars, stat_trackers,
                               type_bboxes, abilities, is_rulepage,
                               get_stars_from_psd, card_mid_y)
