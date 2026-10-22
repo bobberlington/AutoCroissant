@@ -342,7 +342,6 @@ class _Report:
         self.lua_removed: list = []
         self.left: list = []
         self.errors: list = []
-        self.first_run = False
         self.changed = False
         self.head = ""                  # main's commit the repo data came from
 
@@ -361,7 +360,6 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
     _strings(save, collect)
     if not repo.tree or not repo.history:
         return
-    report.first_run = all(ref in MAIN_REFS for ref, _ in links)
     check: dict = {}                                        # sha -> paths whose pin differs from the current one
     lost: dict = {}                                         # gone path -> refs
     for ref, enc in links:
@@ -624,9 +622,12 @@ def _render(report: _Report, head: list) -> str:
 
     def shas(refs):
         return ", ".join(r if r in MAIN_REFS else f"`{r[:8]}`" for r in sorted(refs))
-    section("Links pinned" if report.first_run else "Links re-pinned (changed files)",
-            [f"`{p}`: {shas(refs)} -> `{sha[:8]}` ({n} link{'s' if n != 1 else ''})"
-             for p, (refs, sha, n) in sorted({**report.pinned, **report.repinned}.items())])
+
+    def pins(found):
+        return [f"`{p}`: {shas(refs)} -> `{sha[:8]}` ({n} link{'s' if n != 1 else ''})"
+                for p, (refs, sha, n) in sorted(found.items())]
+    section("Links pinned", pins(report.pinned))
+    section("Links re-pinned (changed files)", pins(report.repinned))
     section("Links not pinned (history doesn't know the file)", [f"`{p}`" for p in sorted(report.unpinned)])
     section("Renamed images", [f"`{old}` -> `{new}` ({n} links)" for old, (new, n) in sorted(report.renamed.items())])
     section("Cards added", [f"{label}: " + ", ".join(f"{name} `{path}`" + (f" x{c}" if c != 1 else "") for name, path, c in cards)

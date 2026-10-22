@@ -141,6 +141,21 @@ def test_sync_decks_drops_unused_keys(repo):
     assert set(deck["CustomDeck"]) == {str(c["CardID"] // 100) for c in deck["ContainedObjects"]}
 
 
+def test_pin_links_reports_pinned_and_repinned(repo):
+    """Links on main are 'Links pinned', links on an older sha 'Links re-pinned (changed files)' (UPD-3)."""
+    tile = {"Name": "Custom_Tile", "CustomImage": {"ImageURL": f"{RAW}main/{tts._encode(B)}",
+                                                   "ImageSecondaryURL": f"{RAW}0dd0001/{BACK}"}}
+    save = {"ObjectStates": [tile]}
+    report = tts._Report()
+    tts._pin_links(save, repo, report)
+    assert tile["CustomImage"] == {"ImageURL": f"{RAW}c0ffee1/Items/Heal/2%20Stars/B.png",
+                                   "ImageSecondaryURL": f"{RAW}bac0001/{BACK}"}
+    text = tts._render(report, [])
+    assert f"## Links pinned (1)\n- `{B}`: main -> `c0ffee1` (1 link)" in text
+    assert f"## Links re-pinned (changed files) (1)\n- `{BACK}`: `0dd0001` -> `bac0001` (1 link)" in text
+    assert tts._commit_message(report) == "TTS save: 2 links pinned"
+
+
 def test_fix_keys(repo):
     shown = {"FaceURL": f"{RAW}main/{tts._encode(A)}"}
     own = {"FaceURL": f"{RAW}main/{tts._encode(B)}"}
