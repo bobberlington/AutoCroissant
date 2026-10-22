@@ -118,6 +118,18 @@ def test_save_drops_the_restored_copy_after_stats(monkeypatch):
     assert saved == [(cm.OLD_STATS_PKL, False), (cm.STATS_PKL, True)]          # nothing stale: two writes
 
 
+def test_save_untag_only_skips_the_second_stats_write(monkeypatch):
+    """A record kept as history (untagged, nothing carried) needs no second stats.pkl write."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    _restore(db, "Gone")
+    db.add_history("Gone", db.stats["Gone"])
+    order = []
+    monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: order.append(path))
+    db.save()
+    assert order == [cm.OLD_STATS_PKL, cm.STATS_PKL, cm.OLD_STATS_PKL] and db.old_stats["Gone"][0].archived is None
+
+
 def test_restored_copy_matches_after_a_reparse():
     """A re-parse of the same blob (new parser, new timestamp) still drops the copy: same path and blob."""
     db = _db([_card("Gone")], seen=["Other"])
