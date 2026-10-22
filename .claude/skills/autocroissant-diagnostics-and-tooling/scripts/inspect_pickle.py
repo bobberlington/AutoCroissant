@@ -23,6 +23,10 @@ from commands.psd_analyzer import stats_db  # noqa: E402
 
 def show_card(name: str) -> int:
     card = stats_db.stats.get(name)
+    archived = stats_db.archived()
+    if card is None and name in archived:                    # PSD deleted: its last version, tagged
+        card = archived[name]
+        print(f"archived: {card.archived}")
     if card is None:
         # case-insensitive fallback
         lowered = {k.lower(): k for k in stats_db.stats}
@@ -54,6 +58,9 @@ def summary() -> int:
     print(f"stats.pkl     : {len(s)} cards")
     print(f"old_stats.pkl : {len(stats_db.old_stats)} cards with history, "
           f"{sum(len(v) for v in stats_db.old_stats.values())} archived versions total")
+    archived = stats_db.archived()
+    print(f"archived cards (PSD deleted): {len(archived)}"
+          + (f" ({sum(1 for c in archived.values() if c.archived.get('backfill'))} backfilled)" if archived else ""))
     print("\ncard_type distribution:")
     for t, n in Counter(c.card_type for c in s.values()).most_common():
         print(f"  {t:12s} {n}")
