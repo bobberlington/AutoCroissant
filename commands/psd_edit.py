@@ -36,7 +36,7 @@ from global_config import FONT_ALIASES
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"   # one text layer per status; its fill is the color
 FONTS_DIR = "MDW/Fonts"
 CODES = ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font", "overflow",
-         "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "error")
+         "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error")
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 NOT_YET = ("stars", "types")                    # PSD-kind, refused in round 1 (section 3)
