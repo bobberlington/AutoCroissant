@@ -644,6 +644,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if card.jobs:
             if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
+            if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.story_sync():
+                raise Transient("this runner's psd-tools fork predates Txt2 story sync: Photoshop would undo the text")
             colors = chart() if "ability" in card.jobs else None
             if "ability" in card.jobs and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
@@ -881,7 +883,8 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                 report.note = f"No entry with a PSD field for {card!r}."
             if cards:
                 fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
-                engine = "text engine" if psd_edit.text_engine() else "no text engine"
+                engine = ("no text engine" if not psd_edit.text_engine()
+                          else "text engine" if psd_edit.story_sync() else "text engine without Txt2 story sync")
                 report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
                                     + ("" if isdir(fonts) else " (missing)"))
                 parser = vocabulary(snapshot)

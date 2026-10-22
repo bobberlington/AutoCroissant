@@ -207,6 +207,13 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    channel first, carrying the chart's `lfx2`/`lrFX` bytes), one flag byte per hidden overlay; records are paired in file order
    once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
+   Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
+   `TextIndex` is the story's index) and rebuilds the layer's TySh from it on save, so the five titles baked that morning
+   (TySh only) reverted when the card was opened (`B.F.B.` -> `B.F.B`). The fork's `set_text`/`set_span_style` now write the
+   story too (`fix/txt2-sync`; Photoshop redoes the story's glyph layout itself); gate `bytes` also holds `gate_stories`:
+   every story holds its layer's text, only the edited layers' stories changed, the rest of Txt2 and every other
+   document-wide block are the old bytes. A card that already has a stale story is refused `unsupported-card` until
+   `python -m commands.txt2_repair` rewrites it; a fork without `TypeLayer.sync_story` edits no text (transient error).
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields

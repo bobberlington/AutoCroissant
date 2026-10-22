@@ -98,6 +98,12 @@ def text_engine() -> bool:
     return probe()
 
 
+def story_sync() -> bool:
+    """The fork's text edits write the Txt2 story too (fix/txt2-sync): psd_edit's probe."""
+    from commands.psd_edit import story_sync as probe
+    return probe()
+
+
 def rounds_bytes() -> bool:
     """The fork rounds composite bytes (round 4's fix/composite-byte-rounding): 3 at opacity 128 over black is 1.506."""
     from PIL import Image

@@ -9,6 +9,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 """
 import json
 import sys
+from copy import deepcopy
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
@@ -17,11 +18,12 @@ import numpy as np
 import pytest
 from PIL import Image
 from psd_tools import PSDImage
-from psd_tools.constants import Resource
+from psd_tools.constants import Resource, Tag
+from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import bevel_textures, fork_reason, rounds_bytes, saves_preview, text_engine as _text_engine
+from conftest import bevel_textures, fork_reason, rounds_bytes, saves_preview, story_sync as _story_sync, text_engine as _text_engine
 
 # ========================
 # Configuration
@@ -84,6 +86,9 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
 
 
 text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
+# a text edit: the fork's set_text also writes the layer's Txt2 story (Photoshop reads that one)
+text_edit = pytest.mark.skipif(not (_text_engine() and _story_sync()),
+                               reason=fork_reason() if not _text_engine() else "the fork's text edits leave the Txt2 story stale")
 # round 4 (tag cards-20261022): rounded bytes and textured bevels
 round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
                             reason="the fork lacks round 4's byte rounding or bevel textures")
@@ -660,7 +665,7 @@ def test_cannon_rows_refuse_parity_without_bevel_textures(clone, parser, tmp_pat
 # ========================
 # Text (the fork: text engine)
 # ========================
-@text_engine
+@text_edit
 @pytest.mark.parametrize("rel", NAMED)
 def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     psd_path = _card(clone, rel)[0]
@@ -672,11 +677,13 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert baked.reparse["card"] == {**without, "display_name": new}      # the parser reads the new title
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved) == new
+    assert pe.stories(saved)[pe.story_index(pe.name_layer(saved))] == new + "\r"   # what Photoshop reads
+    assert pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
 
 
-@text_engine
+@text_edit
 def test_long_title_refuses_overflow(clone, chart):
     """Point text has no box: a title that runs off the canvas or onto a star badge refuses overflow (Q5's gate)."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -694,7 +701,7 @@ def test_long_title_refuses_overflow(clone, chart):
     assert edit.field == "name" and tuple(pe.name_layer(psd).bbox)[2] < 936
 
 
-@text_engine
+@text_edit
 def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     psd_path = _card(clone, MINI_DOOMER)[0]
     old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
@@ -709,7 +716,7 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
 
 
-@text_engine
+@text_edit
 def test_inserted_text_takes_the_body_fill(clone, chart):
     """set_text(keep="runs") gives inserted text the run before it; after a status word that is the swatch colour."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -725,7 +732,7 @@ def test_inserted_text_takes_the_body_fill(clone, chart):
     assert pe.body_fill(layer, chart) == white
 
 
-@text_engine
+@text_edit
 def test_replacing_a_status_word_drops_its_colour(clone, chart):
     path = _card(clone, ASTR)[0]
     fonts = str(clone / pe.FONTS_DIR)
@@ -738,7 +745,7 @@ def test_replacing_a_status_word_drops_its_colour(clone, chart):
         assert _fills(pe.ability_layer(psd))[-len(tail):] == tail
 
 
-@text_engine
+@text_edit
 def test_styled_status_word_gets_an_fx_layer(clone, chart):
     """Idea 14 in memory on Mini_Doomer: Blazing is styled on the chart, so the edit cuts "Ability FX: Blazing" from the new
     raster (the ability's own pixels under the word), directly above Text, carrying the chart layer's lfx2/lrFX bytes and a
@@ -774,7 +781,7 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart):
     assert len(list(psd.descendants())) == count
 
 
-@text_engine
+@text_edit
 def test_status_words_are_normalized_to_the_chart(clone, chart):
     """The chart is the authority (design 14 q6): a status word the edit leaves alone takes its swatch too (a grey Poison turns
     the chart's green), and an edit touching a styled word no longer refuses (round 1's styled-word)."""
@@ -791,7 +798,7 @@ def test_status_words_are_normalized_to_the_chart(clone, chart):
     assert _fills(pe.ability_layer(psd))[1][0] == "Blazing" and [fx.name for fx in pe.fx_layers(psd, pe.ability_layer(psd))] == ["Ability FX: Blazing"]
 
 
-@text_engine
+@text_edit
 def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
     """Fire Staff's hand-made "Smoldering" overlay carries a Stroke the chart knows nothing about: nothing could stand in for it."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -804,7 +811,7 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
         pe.set_text_layer(psd, "ability", text + " Die.", fonts, None)
 
 
-@text_engine
+@text_edit
 def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
     """styled-word now means this psd-tools cannot cut glyph pixels: with the rasterizer gone a styled word refuses before
     anything changes, an unstyled one still bakes."""
@@ -818,7 +825,7 @@ def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
     assert pe.set_text_layer(psd, "ability", "Inflict Poison.", fonts, chart).fx == []
 
 
-@text_engine
+@text_edit
 @pytest.mark.parametrize("rel, floor", [(GASOLINE, 0.95), (CANNON, 0.9)])
 def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_path):
     """The proof against Effect Layers.jsx (Convert overlays on the 2026-10-20 trial copies): regenerating the FX layer for
@@ -851,7 +858,7 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     pe.gate_reparse(parser, old, saved, rel, {}, reopened, [edit])
 
 
-@text_engine
+@text_edit
 def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, chart, tmp_path):
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
     within the parity bar, the validator clean, nothing outside the region; a second bake on the result drops Frozen and
@@ -890,10 +897,11 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
         ("Ability FX: Blazing#1", ["added"]), ("Ability FX: Blazing#2", ["added"])]
     assert again.fx == ["Ability FX: Blazing#1", "Ability FX: Blazing#2"] and again.reparse["validator"] == []
     assert again.edits[0].dropped == ["Ability FX: Blazing", "Ability FX: Frozen"]
+    assert pe.stale_stories(PSDImage.open(again.psd_path)) == []
     print("timings", {k: round(v, 2) for k, v in baked.timings.items()}, {k: round(v, 2) for k, v in again.timings.items()})
 
 
-@text_engine
+@text_edit
 def test_too_long_ability_refuses_overflow(clone, chart):
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     text = pe.normalize_ability(pe.ability_layer(psd).text)
@@ -902,7 +910,7 @@ def test_too_long_ability_refuses_overflow(clone, chart):
     assert refused.value.code == "overflow"
 
 
-@text_engine
+@text_edit
 def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
     """Both `font` refusals, whatever this machine has installed: the fork's lookup is made to miss Termination Shock's
     OCR A Extended (Q5), then to find Anubisath's title face only loosely."""
@@ -929,3 +937,90 @@ def test_baseline_refuses_a_region_the_fork_renders_wrong(clone, parser, tmp_pat
     with pytest.raises(pe.Refused) as refused:
         _bake(clone, parser, rel, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
     assert refused.value.code == "parity" and not list(tmp_path.iterdir())
+
+
+# ========================
+# Txt2 stories (the copy of the text Photoshop reads)
+# ========================
+def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:
+    """A pre-fix bake's PSD: the title set in TySh alone (the fork's set_text, then the old story put back)."""
+    psd = PSDImage.open(_card(clone, rel)[0])
+    layer = pe.name_layer(psd)
+    index = pe.story_index(layer)
+    items = pe._story_list(pe._txt2(psd))[2]
+    old = deepcopy(items[index])
+    layer.set_text(title)
+    items[index] = old
+    path = tmp_path / Path(rel).name
+    pe.save_psd(psd, str(path), update_preview=False)
+    return str(path), index
+
+
+@text_edit
+@pytest.mark.parametrize("rel", NAMED)
+def test_story_reader_agrees_with_the_fork(clone, rel):
+    """psd_edit reads Txt2 itself (the gates check the fork): its story per layer is the fork's story_text."""
+    psd = PSDImage.open(_card(clone, rel)[0])
+    texts = pe.stories(psd)
+    layers = [layer for layer in psd.descendants() if layer.kind == "type"]
+    assert layers and [texts[pe.story_index(layer)] for layer in layers] == [layer.story_text for layer in layers]
+    assert pe.stale_stories(psd) == []
+
+
+@text_edit
+def test_gate_stories_refuses_a_tysh_only_edit(clone, tmp_path):
+    """The 2026-10-22 flaw: the title changed in TySh, its story did not; Photoshop would show the old title."""
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    path, index = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    stale = PSDImage.open(path)
+    assert pe.stale_stories(stale) == [("Name", title + "\r", _typo_fix(title) + "\r")]
+    with pytest.raises(pe.Refused, match="Name's Txt2 story holds") as refused:
+        pe.gate_stories(PSDImage.open(_card(clone, MINI_DOOMER)[0]), stale, {index})
+    assert refused.value.code == "bytes"
+
+
+@text_edit
+def test_gate_stories_refuses_changes_beyond_the_edit(clone):
+    """Another layer's story, Txt2 outside the stories, or another document block: refused."""
+    path = _card(clone, MINI_DOOMER)[0]
+    old, new = PSDImage.open(path), PSDImage.open(path)
+    assert pe.gate_stories(old, new, set()) == []
+    ability = pe.story_index(pe.ability_layer(new))
+    features = pe._story_list(pe._txt2(new))[2][ability]["0"]["6"]["0"][0]["0"]["0"]["6"]
+    features["1"] = engine_data.Float(99.0)                     # the ability's font size, in its story alone
+    with pytest.raises(pe.Refused, match=rf"stories \[{ability}\] changed: no edit there"):
+        pe.gate_stories(old, new, {pe.story_index(pe.name_layer(new))})
+    assert pe.gate_stories(old, new, {ability}) == [ability]
+    new = PSDImage.open(path)
+    pe._txt2(new)["1"]["0"]["99"] = engine_data.Integer(1)      # DocumentSettings gains a key
+    with pytest.raises(pe.Refused, match="outside its stories"):
+        pe.gate_stories(old, new, set())
+    new = PSDImage.open(path)
+    blocks = new._record.layer_and_mask_information.tagged_blocks
+    del blocks[next(key for key in blocks.keys() if key != Tag.TEXT_ENGINE_DATA)]
+    with pytest.raises(pe.Refused, match="document blocks changed"):
+        pe.gate_stories(old, new, set())
+
+
+@text_edit
+def test_bake_refuses_a_card_with_a_stale_story(clone, parser, tmp_path):
+    """A pre-fix bake's PSD is refused until txt2_repair has run on it, whatever the job."""
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    path, _ = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    parsed = pe.parse_card(parser, path, MINI_DOOMER)
+    with pytest.raises(pe.Refused, match="Txt2 story is stale") as refused:
+        pe.apply_jobs(path, _card(clone, MINI_DOOMER)[1], MINI_DOOMER, {"hp": 8}, parsed, parser, str(out),
+                      str(clone / pe.FONTS_DIR))
+    assert refused.value.code == "unsupported-card" and not any(out.iterdir())
+
+
+@text_engine
+def test_text_edit_needs_the_story_sync(clone, chart, monkeypatch):
+    """A fork whose set_text writes TySh alone never edits a card: ImportError, which the bake reports as transient."""
+    monkeypatch.setattr(pe, "story_sync", lambda: False)
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    with pytest.raises(ImportError, match="Txt2 story stale"):
+        pe.set_text_layer(psd, "name", "Mini Doomer II", str(clone / pe.FONTS_DIR), chart)
+    assert pe.read_name(psd) == "Mini Doomer"

@@ -11,6 +11,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from inspect import signature
+from io import BytesIO
 from os.path import basename, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, sub
 from struct import pack
@@ -58,6 +59,8 @@ FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixel
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
                          "overlay": {"flags"}}  # what an edit may change per record (overlay: a hidden hand-made word layer)
+STORY_KEYS = (("1", "1", "0", "0"), ("DocumentObjects", "TextObjects", "Model", "Text"))   # Txt2's stories and their
+#   text: Photoshop CC numbers the keys, older versions name them
 
 
 # ========================
@@ -327,6 +330,64 @@ def read_name(psd: PSDImage) -> Optional[str]:
         return collapse(name_layer(psd).text)
     except Refused:
         return None
+
+
+def story_sync() -> bool:
+    """Does the fork's set_text also write the layer's Txt2 story (TypeLayer.sync_story): the text Photoshop reads."""
+    from psd_tools.api.layers import TypeLayer
+    return hasattr(TypeLayer, "sync_story")
+
+
+def _txt2(psd: PSDImage):
+    blocks = psd._record.layer_and_mask_information.tagged_blocks
+    return blocks.get_data(Tag.TEXT_ENGINE_DATA) if blocks is not None and Tag.TEXT_ENGINE_DATA in blocks else None
+
+
+def _story_list(root) -> tuple:
+    """(Txt2 DocumentObjects, its TextObjects key, the stories, the Model and Text keys) in either spelling."""
+    for objects_key, items_key, model, text in STORY_KEYS:
+        objects = root.get(objects_key)
+        items = objects.get(items_key) if hasattr(objects, "get") else None
+        if items is not None:
+            return objects, items_key, items, model, text
+    raise Refused("unsupported-card", "a Txt2 block without text objects")
+
+
+def stories(psd: PSDImage) -> Optional[list]:
+    """
+    The texts of the document's Txt2 stories by TextIndex, final \\r included; None without a Txt2 block.
+
+    Photoshop reads a type layer's text from its story, not from the layer's own TySh, and rebuilds TySh from it on
+    save. Read here, not through the fork, so the gates check the fork.
+    """
+    root = _txt2(psd)
+    if root is None:
+        return None
+    _, _, items, model, text = _story_list(root)
+    return [str(story[model][text].value) for story in items]
+
+
+def story_index(layer) -> Optional[int]:
+    """The type layer's TextIndex: its story's index in Txt2."""
+    index = layer._data.text_data.get(b"TextIndex")
+    return None if index is None else int(getattr(index, "value", index))
+
+
+def stale_stories(psd: PSDImage) -> list:
+    """(layer name, story text, layer text) per type layer whose Txt2 story lacks its text: Photoshop shows the story's."""
+    texts = stories(psd)
+    if texts is None:
+        return []
+    out = []
+    for layer in psd.descendants():
+        index = story_index(layer) if _is_text_layer(layer) else None
+        if index is None:
+            continue
+        own = str(layer.engine_dict["Editor"]["Text"].value)
+        story = texts[index] if 0 <= index < len(texts) else None
+        if story != own:
+            out.append((layer.name, story, own))
+    return out
 
 
 def ability_layer(psd: PSDImage):
@@ -874,7 +935,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font, overflow
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font, overflow; ImportError
+        when the fork edits TySh alone (no story_sync: Photoshop would show the Txt2 story's old text)
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
     word would inherit its color: the edited words are reset to the body fill, then every status word in the text
@@ -887,6 +949,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     this psd-tools cannot cut glyph pixels or make a pixel layer.
     """
     from psd_tools.composite.text import FontMap, MissingFontError
+    if not story_sync():
+        raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
     layer = name_layer(psd) if which == "name" else ability_layer(psd)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
     old_text, old_bbox = layer.text, tuple(layer.bbox)
@@ -1241,6 +1305,58 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
     return changed, flag_bytes, block_bytes + sum(len(data) for data in landed.values())
 
 
+def _raw(element) -> bytes:
+    buf = BytesIO()
+    element.write(buf)
+    return buf.getvalue()
+
+
+def _document_blocks(psd: PSDImage) -> dict:
+    return {bytes(key): block.tobytes() for key, block in (psd._record.layer_and_mask_information.tagged_blocks or {}).items()}
+
+
+def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
+    """
+    Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
+    to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
+    layer's story holds its layer's text, only the edited layers' stories changed, and the rest of Txt2 and every
+    other document-wide block are the old bytes.
+
+    Args:
+        old: The card as opened
+        new: The saved card, reopened
+        edited: TextIndex of each layer whose story may change
+
+    Returns:
+        The changed stories' indices, sorted; raises Refused("bytes")
+    """
+    before, after = _document_blocks(old), _document_blocks(new)
+    txt2 = bytes(Tag.TEXT_ENGINE_DATA)
+    moved = sorted(key.decode("latin-1") for key in set(before) | set(after)
+                   if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key))
+    if moved:
+        raise Refused("bytes", f"document blocks changed: {', '.join(moved)}")
+    stale = stale_stories(new)
+    if stale:
+        name, story, own = stale[0]
+        raise Refused("bytes", f"{name}'s Txt2 story holds {collapse(story)!r}, the layer {collapse(own)!r}")
+    if txt2 not in before:
+        return []
+    (objects_a, _, items_a, _, _), (objects_b, _, items_b, _, _) = _story_list(_txt2(old)), _story_list(_txt2(new))
+    if len(items_a) != len(items_b):
+        raise Refused("bytes", f"Txt2 stories {len(items_a)} -> {len(items_b)}")
+    changed = [i for i, (a, b) in enumerate(zip(items_a, items_b)) if _raw(a) != _raw(b)]
+    beyond = sorted(set(changed) - set(edited))
+    if beyond:
+        raise Refused("bytes", f"Txt2 stories {beyond} changed: no edit there")
+    rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
+            + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
+            for root, objects, items in ((_txt2(old), objects_a, items_a), (_txt2(new), objects_b, items_b))]
+    if rest[0] != rest[1]:
+        raise Refused("bytes", "Txt2 changed outside its stories")
+    return changed
+
+
 def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs: dict, psd: PSDImage, edits=()) -> dict:
     """
     Re-parse the new PSD: the old parse with exactly the edited fields replaced, no new problems (a stat above 10
@@ -1416,6 +1532,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     timings["open"] = perf_counter() - start
     if png.size != (new.width, new.height) or png.mode not in ("RGB", "RGBA"):
         raise Refused("shape", f"PNG {png.mode} {png.size} against a {new.width}x{new.height} canvas")
+    stale = stale_stories(new)
+    if stale:                                   # a pre-fix bake's PSD: Photoshop already shows the old text
+        raise Refused("unsupported-card", f"{stale[0][0]}'s Txt2 story is stale: run commands.txt2_repair on it")
 
     edits = []                                  # text first: an ability's FX records shift the digits' record indices
     for name, value in sorted(jobs.items(), key=lambda job: job[0] in STAT_FIELDS):
@@ -1461,6 +1580,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     start = perf_counter()
     reopened = PSDImage.open(new_psd)
+    gate_stories(old, reopened, {story_index(edit.layers[0]) for edit in edits if edit.field in TEXT_FIELDS})
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
@@ -1485,6 +1605,7 @@ __all__ = [
     'Refusal',
     'Refused',
     'STATUS_CHART',
+    'STORY_KEYS',
     'STAT_FIELDS',
     'STAT_MAX',
     'StatusColor',
@@ -1507,6 +1628,7 @@ __all__ = [
     'gate_reparse',
     'gate_shape',
     'gate_size',
+    'gate_stories',
     'layer_records',
     'merge_png',
     'merge_preview',
@@ -1522,12 +1644,16 @@ __all__ = [
     'save_png',
     'save_psd',
     'set_stat',
+    'stale_stories',
     'stat_value',
     'text_engine',
     'set_text_layer',
     'status_fills',
     'status_spans',
     'stored_preview',
+    'stories',
+    'story_index',
+    'story_sync',
     'template_row',
     'template_rows',
     'uses_icon_font',
