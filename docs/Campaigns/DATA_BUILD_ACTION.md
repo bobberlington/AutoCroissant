@@ -833,8 +833,10 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
          series values are no website edits; nor are the two `allow_high_stats` entries of 2026-10-21). The migration
          commit is authored `AutoCroissant <autocroissant@gmail.com>` (`migrate` prints the `git commit --author` to use),
          so build_site's history counts it for nobody. A carried value merged into an entry a website editor made (14 entries at
-         5dd2a408: 12 series, 5 alias lists) keeps that entry's `_by`/`_at` (an entry has one stamp), so the site credits
-         it to that editor;
+         5dd2a408: 12 series, 5 alias lists) keeps that entry's `_by`/`_at` (an entry has one stamp; the bake credits
+         it) and is listed in the entry's `_bot`, so the site credits it to nobody. An edit that sets or unsets a field
+         takes it out of `_bot`, and an editor's edit to a `_by: AutoCroissant` entry first lists that entry's fields
+         in `_bot` (edit.js `editsFile`, `discord_edits.edits_file`), so the editor gets only what they change;
        - a `_by` or `Edit-by` of `discord:<user>` is shown "via Discord", never linked as a person (`#/u/discord%3A…`;
          app.js's "Edited on the website" panel and Edited tip, and build_site's shallow-clone contributions fallback,
          which calls `rec_of(key_of(by))`). `work/changes-tabs` does it for the Database edits tab.

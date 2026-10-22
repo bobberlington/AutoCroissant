@@ -83,11 +83,17 @@ def editor(interaction) -> str:
     return DISCORD + "_".join(name.split())
 
 
+def _is_bot(by) -> bool:
+    """A _by of the bot (any case), as changes.js isBot."""
+    return isinstance(by, str) and by.lower() == BOT.lower()
+
+
 def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edit.js editsFile: Card Edits.json with ops applied. A touched entry is matched like the authors file, lists its
     fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets), then _by and _at
-    (replaced); an entry left without keys goes.
+    (replaced); an entry left without keys goes. An entry the bot stamped lists its fields in _bot first, when another
+    editor edits it.
 
     Args:
         text: The file ("" or None: a new one)
@@ -109,6 +115,8 @@ def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
             continue
         key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(op["key"])), op["key"])
         current = dict(cards[key]) if isinstance(cards.get(key), dict) else {}
+        if _is_bot(current.get("_by")) and not _is_bot(by):     # the bot's entry: its fields stay nobody's edit
+            current[BOT_FIELDS] = [f for f in ORDER if f in current]
         for name in op.get("unset") or ():
             current.pop(name, None)
         current.update(op.get("set") or {})
@@ -826,7 +834,7 @@ def _bot_edits(text: str, ops: list, at: str) -> dict:
         if not (isinstance(old, dict) and old.get("_by")):
             continue
         bot = []
-        if str(old["_by"]).lower() != BOT.lower():                 # the bot's fields before, then the ones it adds
+        if not _is_bot(old["_by"]):                                 # the bot's fields before, then the ones it adds
             was = old.get(BOT_FIELDS) if isinstance(old.get(BOT_FIELDS), list) else []
             bot = [f for f in was if f in fields] + [f for f in fields if f in FIELDS and f not in old and f not in was]
         stamps = {k: old[k] for k in ("_by", "_at") if k in old}
