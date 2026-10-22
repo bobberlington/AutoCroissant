@@ -874,6 +874,7 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     cards = {path: data for path, data in github.files_at(github.head).items() if path.startswith(("Auxiliary", "Field"))}
     assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
     assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
+    assert "The checkout is on it." in text
     edits = (local.clone / cb.EDITS_PATHS[0]).read_bytes()
     assert _sha(edits) == _files_in(local.clone, b)[cb.EDITS_PATHS[0]]                         # the checkout is on B
 
@@ -918,7 +919,7 @@ def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
     out = StringIO()
     with contextlib.redirect_stdout(out):
         assert cb.main(["--local", str(local.clone)]) == 1
-    assert "Nothing committed: error: git merge in" in out.getvalue()
+    assert "Nothing committed: error: git merge in" in out.getvalue() and "left unreferenced)" in out.getvalue()
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and path.read_bytes().endswith(b"}\n ")
 
 
@@ -929,6 +930,47 @@ def test_local_head_elsewhere_leaves_the_checkout(github, local):
     text, (b,) = cb.run(head=local.head, local=str(local.clone))
     assert _git(local.clone, "rev-parse", f"{b}^").strip() == local.head and _git(local.clone, "rev-parse", "HEAD").strip() == newer
     assert f"main `{local.head[:8]}`" in text
+    assert f"**The checkout is not on it:** HEAD is `{newer[:8]}` (not --head), so check out `{b[:8]}`" in text
+
+
+def test_local_bare_or_unborn_head_still_makes_b(github, local, tmp_path):
+    """A bare clone, or one whose HEAD is unborn: B is made on --head, nothing to move, and the report says so."""
+    bare = tmp_path / "bare.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))                           # HEAD -> main, unborn
+    _git(bare, "fetch", "-q", "--filter=blob:none", f"file://{local.origin}", "main:refs/remotes/origin/main")
+    text, (b,) = cb.run(head=local.head, local=str(bare))
+    assert _git(bare, "rev-parse", f"{b}^").strip() == local.head and "No checkout moved (a bare clone or an unborn HEAD)." in text
+    assert gc.checkout_head(str(bare)) == ""
+
+
+def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
+    """--head main moved past the checkout: a report and exit 1, no B and no traceback (card-sync goes on from main)."""
+    out, err = StringIO(), StringIO()
+    monkeypatch.setattr(cb, "stderr", err)
+    with contextlib.redirect_stdout(out):
+        assert cb.main(["--local", str(local.clone), "--head", "f" * 40]) == 1
+    out, err = out.getvalue(), err.getvalue()
+    assert "**Nothing baked: git rev-parse in" in out and "card_bake: Nothing baked:" in err and "Traceback" not in out + err
+    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
+
+
+def test_local_recent_gate_reads_the_clone(local, monkeypatch):
+    """--local: a head GitHub lacks (a previous B) is diffed in the clone, renames as both paths; else the compare API."""
+    _put(local.clone, {"TTS/a.txt": b"a"})
+    base = _commit_in(local.clone, "add")
+    _git(local.clone, "mv", "TTS/a.txt", "TTS/b.txt")
+    head = _commit_in(local.clone, "rename")
+    now = datetime.now(timezone.utc)
+    pushes = [{"before": base, "after": "x" * 40, "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ")}]
+    asked = []
+
+    def api(repository, method, path, **kwargs):
+        asked.append(path)
+        return Reply(body=pushes) if path == "activity" else Reply(body={"files": [{"filename": "c.psd"}]})
+    monkeypatch.setattr(cb, "api", api)
+    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"TTS/a.txt", "TTS/b.txt"} and asked == ["activity"]
+    pushes[0]["before"] = "e" * 40                                                      # a base the clone lacks: the API
+    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"c.psd"} and asked[1:] == ["activity", f"compare/{'e' * 40}...{head}"]
 
 
 @fork

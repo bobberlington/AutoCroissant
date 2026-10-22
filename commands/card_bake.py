@@ -17,7 +17,8 @@ git_commit (the GitHub API, or git objects in the history clone pushed over SSH 
 whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-again refusal; the others still land.
 --local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
-checkout at head moves to B.
+checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
+exit 1, no B). The recent gate diffs the clone's trees when it has the pushes' base (head may be a previous B).
 Refusals are data: one bad card never blocks another. A run bakes at most MAX_BAKES cards and starts none after BUDGET
 (the rest are refused `capped` and wait for the next run). The report goes to stdout, the artifacts (edited PSD, merged
 PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
@@ -52,8 +53,8 @@ import commands.github_api as github_api
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import card_name
-from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, commit_files, commit_info,
-                                 git, local_commit, plural, ref_head)
+from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
+                                 commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
@@ -130,6 +131,8 @@ class Report:
     local: str = ""                             # --local's clone: the commit is made there, not pushed
     traceback: str = ""                         # when the commit failed outside a card's steps
     commit_failed: bool = False                 # land raised: nothing committed although cards had shares
+    error: str = ""                             # the run stopped before any card (--local: a --head the clone lacks)
+    checkout: Optional[str] = None              # --local, after B: the clone's HEAD ("" bare or unborn, "?" unreadable)
     text: str = ""                              # the rendered report
     seconds: float = 0.0
 
@@ -254,6 +257,14 @@ def _local_blob(clone: str, sha: str) -> Optional[bytes]:
     return done.stdout if done.returncode == 0 else None
 
 
+def _local_commit_exists(clone: str, sha: str) -> bool:
+    try:
+        return run_process(["git", "-C", clone, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
+                           timeout=GIT_TIMEOUT, env={**environ, **NO_LAZY}).returncode == 0
+    except (TimeoutExpired, OSError):
+        return False
+
+
 def local_snapshot(repository: str, clone: str, head: str = "") -> Snapshot:
     """The card repo at a commit of a local clone (head "" = its HEAD): git ls-tree, no API, never truncated."""
     head = _git_local(clone, "rev-parse", "--verify", f"{head or 'HEAD'}^{{commit}}").strip()
@@ -294,9 +305,13 @@ def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -
     return data
 
 
-def recent_paths(repository: str, head: str, now: datetime) -> Optional[set]:
+def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> Optional[set]:
     """
     The paths that pushes within RECENT of now changed, up to head: by push time, not commit date (two requests at most).
+
+    Args:
+        local: --local's clone: the paths from its trees when it has the window's base (head may be a commit GitHub
+            lacks, a previous B), else by the compare API
 
     Returns:
         The paths, or None when there were too many pushes or files to tell
@@ -309,6 +324,8 @@ def recent_paths(repository: str, head: str, now: datetime) -> Optional[set]:
     base = min(window, key=lambda push: push["timestamp"]).get("before") or ""
     if len(window) >= PUSHES or not base.strip("0"):  # a new branch has no before
         return None
+    if local and _local_commit_exists(local, base):
+        return {p for p in _git_local(local, "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}").split("\0") if p}
     files = api(repository, "GET", f"compare/{base}...{head}", params={"per_page": 1}).json().get("files") or []
     if len(files) >= COMPARE_FILES:
         return None
@@ -790,6 +807,12 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
             else:
                 s.card.note = "verdict not written: nothing committed"
         return
+    if local is not None and report.commit:
+        try:
+            bare = git(local.local, "rev-parse", "--is-bare-repository", env={**environ, **NO_LAZY}).decode().strip() == "true"
+            report.checkout = "" if bare else checkout_head(local.local, {**environ, **NO_LAZY})
+        except (CalledProcessError, TimeoutExpired, OSError):
+            report.checkout = "?"
     included = [s for s in shares if s.included]
     if included:
         report.subject = _message([s.card for s in included]).split("\n", 1)[0]
@@ -857,6 +880,15 @@ def render(report: Report) -> str:
             lines += ["", f"<details><summary>{card.name}</summary>", "", "```", card.traceback.rstrip(), "```", "</details>"]
     if report.commit and report.local:
         lines += ["", f"One local commit: `{report.commit}` {report.subject} (not pushed)."]
+        if report.checkout == report.commit:
+            lines.append("The checkout is on it.")
+        elif report.checkout == "?":
+            lines.append("**The checkout's HEAD couldn't be read.**")
+        elif report.checkout:
+            lines.append(f"**The checkout is not on it:** HEAD is `{report.checkout[:8]}` (not --head), so check out "
+                         f"`{report.commit[:8]}` before reading its tree.")
+        else:
+            lines.append("No checkout moved (a bare clone or an unborn HEAD).")
     elif report.commit:
         lines += ["", f"One commit: `{report.commit[:8]}` {report.subject}."]
     elif report.subject and report.dry_run:
@@ -872,8 +904,8 @@ def render(report: Report) -> str:
 # ========================
 def failure(report: Report) -> str:
     """Why the run needs a person (main exits 1; card-edits.yml tells Discord): the commit failed, or a card errored."""
-    if report.commit_failed:
-        return report.note
+    if report.error or report.commit_failed:
+        return report.error or report.note
     errors = [c.name for c in report.cards if c.refusal and c.refusal.code == "error"]
     return f"{plural(len(errors), 'card')} with an error: {', '.join(errors)}" if errors else ""
 
@@ -913,11 +945,21 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
     work = _work_dir()
     local = abspath(expanduser(local)) if local else ""
-    snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
-    head = snapshot.head
-    report = Report(repository, head, dry_run, work, local=local)
+    try:
+        snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
+    except Transient as error:
+        if not local:
+            raise
+        snapshot = None                         # card-sync goes on from main's head: no B
+        report = Report(repository, head, dry_run, work, local=local)
+        report.error = report.note = f"Nothing baked: {error}"
+    if snapshot is not None:
+        head = snapshot.head
+        report = Report(repository, head, dry_run, work, local=local)
     report.lines.append(f"- Work dir: `{work}`")
-    if snapshot.edits_path is None:
+    if snapshot is None:
+        pass
+    elif snapshot.edits_path is None:
         report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
     else:
         text = snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8")
@@ -958,7 +1000,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
 
                 def recent() -> Optional[set]:
                     if not pushed:
-                        pushed.append(recent_paths(repository, head, datetime.now(timezone.utc)))
+                        pushed.append(recent_paths(repository, head, datetime.now(timezone.utc), local))
                     return pushed[0]
                 for one in cards:
                     baked = sum(1 for c in cards if c.baked)

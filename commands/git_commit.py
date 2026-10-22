@@ -5,6 +5,7 @@ POST git/blobs, or no token) the same objects are written into the blobless hist
 
     commit_files(repository, head, base_tree, modes, {path: bytes}, message) -> sha, or None when the branch moved
     local_commit(clone, head, {path: bytes}, message) -> sha: the same objects in a local clone, nothing pushed
+    checkout_head(clone) -> the commit its HEAD is at ("" when unborn)
 
 A rate-limited 403 is this run's, not the token's: it raises Transient (ssh_on_limit: SSH for the rest of the run). No Discord or
 config imports (the token: config through github_api, else GITHUB_TOKEN); never the pickles.
@@ -257,22 +258,42 @@ def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, w
 def local_commit(clone: str, head: str, files: dict, message: str) -> str:
     """
     One commit of files on head in a local clone (blobless is enough), nothing pushed. A checkout whose HEAD is head
-    moves to it (a fast forward; its local changes stay, and one in the way fails the commit); a bare clone doesn't.
+    moves to it (a fast forward; its local changes stay, and one in the way fails the commit); a bare clone, an unborn
+    HEAD or a HEAD elsewhere doesn't (the caller checks where HEAD is). A failed fast forward leaves the commit's objects
+    unreferenced in the clone (git gc drops them).
 
     Returns:
         The commit's sha; raises Transient on a git failure
     """
     env = batch_env(clone, **GIT_IDENTITY, **NO_LAZY)
-    commit = _write_commit(clone, head, files, message, env, clone)
     try:
-        bare, at = git(clone, "rev-parse", "--is-bare-repository", "HEAD", env=env).decode().split()
-        if bare == "false" and at == head:
-            git(clone, "merge", "--ff-only", "-q", commit, env=env)
+        bare = git(clone, "rev-parse", "--is-bare-repository", env=env).decode().strip() == "true"
+        at = "" if bare else checkout_head(clone, env)
     except CalledProcessError as error:
         raise Transient(f"git {error.cmd[3]} in {clone} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
     except (TimeoutExpired, OSError) as error:
         raise Transient(f"git in {clone} failed: {error}") from error
+    commit = _write_commit(clone, head, files, message, env, clone)
+    if at != head:
+        return commit
+    try:
+        git(clone, "merge", "--ff-only", "-q", commit, env=env)
+    except CalledProcessError as error:
+        raise Transient(f"git merge in {clone} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()} "
+                        f"(commit {commit[:8]} left unreferenced)") from error
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git merge in {clone} failed: {error} (commit {commit[:8]} left unreferenced)") from error
     return commit
+
+
+def checkout_head(clone: str, env: Optional[dict] = None) -> str:
+    """The commit a clone's HEAD is at, "" when unborn; raises CalledProcessError when clone isn't a repo."""
+    done = run_process(["git", "-C", clone, "rev-parse", "-q", "--verify", "HEAD^{commit}"], capture_output=True,
+                       timeout=GIT_TIMEOUT, env=batch_env(clone) if env is None else env)
+    if done.returncode and not done.stdout:
+        git(clone, "rev-parse", "--git-dir", env=env)   # not a repo: raises
+        return ""
+    return done.stdout.decode().strip()
 
 
 # ========================
@@ -328,6 +349,7 @@ __all__ = [
     'Transient',
     'api',
     'api_commit',
+    'checkout_head',
     'commit_files',
     'commit_info',
     'git',
