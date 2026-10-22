@@ -347,17 +347,20 @@ async def slash_set_ratio(interaction: Interaction,
 
 
 set_repository = to_thread(set_repository)
-@tree.command(name="set_repo", description="View/set the repo that the bot looks at for cards.")
+@tree.command(name="set_repo", description="View/set the repo that the bot looks at for cards (admin only).")
 @app_commands.describe(
     new_repo='If empty, posts the current repository. Otherwise sets it to this.',
 )
 async def slash_set_repo(interaction: Interaction,
                          new_repo: Optional[str]):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await set_repository(interaction, new_repo)
 
 
 manage_alias = to_thread(manage_alias)
-@tree.command(name="alias", description="View, create, or delete card aliases.")
+@tree.command(name="alias", description="View, create, or delete card aliases (admin only).")
 @app_commands.describe(
     alias='The alias name. Leave empty to view all aliases, or provide without card name to delete.',
     card='The card to alias. Omit to delete the alias.',
@@ -365,6 +368,9 @@ manage_alias = to_thread(manage_alias)
 async def slash_alias(interaction: Interaction,
                       alias: Optional[str] = None,
                       card: Optional[str] = None):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await manage_alias(interaction, alias, card)
 
 
@@ -451,7 +457,7 @@ async def slash_export_rulebook(interaction: Interaction):
 
 
 manual_metadata_entry = to_thread(manual_metadata_entry)
-@tree.command(name="update_metadata", description="Edit metadata for a card.")
+@tree.command(name="update_metadata", description="Edit metadata for a card (admin only).")
 @app_commands.describe(
     query='The card to edit the metadata for.',
     del_entry='Delete the entire metadata entry for this card. Default = False.',
@@ -484,6 +490,9 @@ async def slash_update_metadata(
     speed: Optional[int] = None,
     card_type: Optional[str] = None,
     types: Optional[str] = None):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await interaction.response.defer()
     await manual_metadata_entry(
         interaction,
@@ -519,7 +528,7 @@ async def slash_view_old_metadata(
 
 
 mass_replace_field = to_thread(mass_replace_field)
-@tree.command(name="mass_replace", description="Replace all instances of one field value with another.")
+@tree.command(name="mass_replace", description="Replace all instances of one field value with another (admin only).")
 @app_commands.describe(
     field='The field to modify (author, series, subseries, subtype, or card_type).',
     old_value='The value being replaced.',
@@ -536,6 +545,9 @@ async def slash_replace_field(interaction: Interaction,
                               field: Choice[str],
                               old_value: str,
                               new_value: str):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await interaction.response.defer()
     await mass_replace_field(interaction, field.value, old_value, new_value)
 
@@ -662,18 +674,24 @@ async def slash_disconnect(interaction: Interaction):
 
 
 delete_song = to_thread(delete_song)
-@tree.command(name="delete_song", description="Delete a song/folder.")
+@tree.command(name="delete_song", description="Delete a song/folder (admin only).")
 @app_commands.describe(
     song_name='The name of the song or folder to delete.',
 )
 async def slash_delete_song(interaction: Interaction,
                             song_name: str):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await delete_song(interaction, song_name)
 
 
 delete_all_music = to_thread(delete_all_music)
-@tree.command(name="delete_all_music", description="Delete all music under the music directory.")
+@tree.command(name="delete_all_music", description="Delete all music under the music directory (admin only).")
 async def slash_delete_all_music(interaction: Interaction):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await delete_all_music(interaction)
 
 
@@ -681,7 +699,7 @@ async def slash_delete_all_music(interaction: Interaction):
 #  MANAGEMENT COMMANDS  #
 #########################
 purge = to_thread(purge)
-@tree.command(name="purge", description="Deletes messages.")
+@tree.command(name="purge", description="Deletes messages (admin only).")
 @app_commands.describe(
     user='The user whose messages to delete. Default is the bot\'s own messages.',
     num='How many recent messages to search (-1 = all). Default = 100.',
@@ -691,6 +709,9 @@ async def slash_purge(interaction: Interaction,
                       user: Optional[Member],
                       num: Optional[int] = 100,
                       bulk: Optional[bool] = False):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
     await interaction.response.defer(ephemeral=True, thinking=False)
     await purge(interaction, num, user.id if user else client.user.id, bulk)
 

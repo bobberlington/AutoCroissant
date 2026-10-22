@@ -25,7 +25,7 @@ grep -rn "getattr(config" --include="*.py" .
 | Secrets + per-machine knobs | `config.py` (repo root) | NO — gitignored, mode 0700 | on restart only (read once at import) |
 | Shared constants | `global_config.py` | yes | on restart (code edit) |
 | Module constants | the `# Configuration` block at the top of each `commands/*.py` | yes | on restart (code edit) |
-| Runtime setters | `/set_ratio`, `/set_repo` (the four AI setters are on branch `archive/ai-generation`) | n/a | immediately — and LOST on restart |
+| Runtime setters | `/set_ratio`, `/set_repo` (admin only since 2026-10-22; the four AI setters are on branch `archive/ai-generation`) | n/a | immediately — and LOST on restart |
 
 Mental model: `config.py` is read ONCE, at import time, into module-level constants via
 `getattr(config, "field", default)`. Nothing in the codebase ever re-reads it, and nothing ever
@@ -99,24 +99,34 @@ user is NOT an admin** (`interaction.user.id not in ADMINS`). Every call site re
 `if lacks_admin(...): send "You do not have permission"; return`. The invariant is owned by
 **autocroissant-architecture-contract**.
 
-Commands gated by `lacks_admin` in main.py (all 13 call sites, verified 2026-10-21 after `/bake_cards`; line numbers
+Commands gated by `lacks_admin` in main.py (all 20 call sites, verified 2026-10-22 after the owner's admin-only batch; line numbers
 drift — re-derive with `grep -n "lacks_admin" main.py`):
 
 | Slash command | main.py line |
 |---|---|
-| `/stop_bot` | 164 |
-| `/pull` | 179 |
-| `/push` | 189 |
-| `/update` | 202 |
-| `/set_reminder` | 232 |
-| `/update_tts_save` (added 2026-10-20) | 392 |
-| `/bake_cards` (added 2026-10-21) | 408 |
-| `/list_guilds` | 683 |
-| `/leave_guild` | 698 |
-| `/sync_global` | 707 |
-| `/sync_emojis` (added 2026-10-19) | 722 |
-| `/list_guild_channels` | 738 |
-| `/get_channel_messages` | 758 |
+| `/stop_bot` | 180 |
+| `/pull` | 195 |
+| `/push` | 205 |
+| `/update` | 218 |
+| `/set_reminder` | 248 |
+| `/set_repo` (added 2026-10-22) | 354 |
+| `/alias` (added 2026-10-22) | 369 |
+| `/update_tts_save` (added 2026-10-20) | 414 |
+| `/bake_cards` (added 2026-10-21) | 430 |
+| `/update_metadata` (added 2026-10-22) | 491 |
+| `/mass_replace` (added 2026-10-22) | 546 |
+| `/delete_song` (added 2026-10-22) | 681 |
+| `/delete_all_music` (added 2026-10-22) | 690 |
+| `/purge` (added 2026-10-22) | 710 |
+| `/list_guilds` | 720 |
+| `/leave_guild` | 735 |
+| `/sync_global` | 744 |
+| `/sync_emojis` (added 2026-10-19) | 759 |
+| `/list_guild_channels` | 775 |
+| `/get_channel_messages` | 795 |
+
+The 2026-10-22 seven are gated whole, view modes included (`/set_repo` and `/alias` with no arguments).
+`/purge` cannot be scheduled by a reminder: its `user` option has no default. Tests: `tests/test_admin_gates.py`.
 
 `/list_guild_members` was removed 2026-10-20 (C6: it needed the privileged members intent, which the bot
 does not enable).
@@ -559,3 +569,5 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (details): `DETAILS_JSON` row; commands/psd_details.py's constants catalogued; no flag or default changed. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): commands/card_check.py's constants catalogued (`SPARSE_FILES`, `LINE`, `CLOSING`, `UNREADABLE`; the rest imported from font_check); no flag or default changed. Same day: `CLOSING` reworded (the validator's notes never reach the website's Parser notes).
+
+2026-10-22 (admin gates): the ADMINS gate table re-derived (20 call sites): /purge, /update_metadata, /mass_replace, /alias, /set_repo, /delete_song and /delete_all_music are admin only (owner decision).

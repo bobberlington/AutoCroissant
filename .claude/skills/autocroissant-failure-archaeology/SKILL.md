@@ -791,7 +791,10 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   real card, and a blobless record matched any stub at its path. Fixed: `add_history` compares all but the path and keeps
   a tagged copy for `save()` to untag; `_tagged_copy` needs full equality without a blob; `/update_metadata` refuses
   archived names. Also `/pull` (as before this work) could drop a card from both pickles (stats.pkl from the archiving
-  side, old_stats.pkl from the other); `update_bot._rescue_merged_cards` now restores it after the merge. Tests:
+  side, old_stats.pkl from the other); `update_bot._rescue_merged_cards` now restores it after the merge. A third
+  review: a rescued listed card sat untagged (a permanent fake old version), so it is tagged now; another PSD under an
+  archived name took the old author (restore needs the tag's path or blob); star moves moved any off-rule card and
+  could clobber a CustomDeck key. Tests:
   `tests/test_archive.py`, the archive and kill cases in `tests/test_update_stats.py`.
 - **Status**: done 2026-10-22 on branch work/archive-deleted (not yet on main when written). TTSCardMaker e0e26b2f on
   branch work/archived-field (the site build knows the `archived` field; was 1acc2862) lands first, before the first

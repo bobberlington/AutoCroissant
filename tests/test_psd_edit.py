@@ -17,10 +17,11 @@ import numpy as np
 import pytest
 from PIL import Image
 from psd_tools import PSDImage
+from psd_tools.constants import Resource
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import fork_reason, text_engine as _text_engine
+from conftest import bevel_textures, fork_reason, rounds_bytes, saves_preview, text_engine as _text_engine
 
 # ========================
 # Configuration
@@ -83,6 +84,10 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
 
 
 text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
+# round 4 (tag cards-20261022): rounded bytes and textured bevels
+round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
+                            reason="the fork lacks round 4's byte rounding or bevel textures")
+before_textures = pytest.mark.skipif(not _text_engine() or bevel_textures(), reason="the fork draws bevel textures (round 4)")
 
 
 # ========================
@@ -163,7 +168,7 @@ def test_find_fork_explains_a_skip(monkeypatch, tmp_path):
 def test_codes_are_the_closed_list():
     assert pe.CODES == ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font",
                         "overflow", "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed",
-                        "head-moved", "error")
+                        "head-moved", "capped", "error")
     assert PAINT_ORDER[-1] == "ability_fx" and clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
 
 
@@ -261,7 +266,7 @@ def test_merge_png_is_a_pixel_delta():
     base.putpixel((0, 0), (11, 20, 30, 255))                  # baseline noise: the render agrees, so the PNG keeps its pixel
     render.putpixel((0, 0), (11, 20, 30, 255))
     merged, changed = pe.merge_png(png, base, render, (2, 2, 6, 6))
-    assert changed == 2 and merged.mode == "RGBA" and merged.size == (10, 10)
+    assert changed.shape == (4, 4) and changed.sum() == 2 and merged.mode == "RGBA" and merged.size == (10, 10)
     assert merged.getpixel((3, 3)) == (200, 0, 0, 255) and merged.getpixel((5, 4)) == (0, 200, 0, 255)
     assert merged.getpixel((2, 2)) == (10, 20, 30, 255)
     assert pe.gate_region(png, merged, (2, 2, 6, 6)) == 2
@@ -271,6 +276,40 @@ def test_merge_png_is_a_pixel_delta():
     with pytest.raises(pe.Refused) as refused:
         pe.merge_png(png.convert("P"), base, render, (2, 2, 6, 6))
     assert refused.value.code == "shape"
+
+
+def test_merge_preview_takes_the_raw_render():
+    """merge_png()'s pixels, in the PSD's own values; an RGB preview takes them over white. One pass for every edit."""
+    base = Image.new("RGBA", (4, 4), (10, 20, 30, 255))
+    render, raw = base.copy(), Image.new("RGBA", (4, 4), (9, 9, 9, 255))
+    render.putpixel((1, 1), (200, 0, 0, 255))
+    raw.putpixel((1, 1), (190, 4, 2, 255))
+    render.putpixel((3, 2), (0, 200, 0, 51))
+    raw.putpixel((3, 2), (0, 190, 0, 51))
+    changed = pe.merge_png(Image.new("RGBA", (10, 10)), base, render, (2, 2, 6, 6))[1]
+    second = np.zeros((4, 4), bool)
+    second[0, 0] = True
+    for mode, fill in (("RGBA", (1, 2, 3, 255)), ("RGB", (1, 2, 3))):
+        patches = [(changed, raw, (2, 2, 6, 6)), (second, Image.new("RGBA", (4, 4), (7, 8, 9, 255)), (6, 6, 10, 10))]
+        preview = pe.merge_preview(Image.new(mode, (10, 10), fill), patches)
+        assert preview.mode == mode and preview.size == (10, 10)
+        assert preview.getpixel((3, 3))[:3] == (190, 4, 2) and preview.getpixel((2, 2)) == fill
+        assert preview.getpixel((5, 4)) == ((0, 190, 0, 51) if mode == "RGBA" else (204, 242, 204))
+        assert preview.getpixel((6, 6))[:3] == (7, 8, 9) and preview.getpixel((7, 7)) == fill
+
+
+def test_save_psd_stores_the_merged_preview(tmp_path):
+    """The fork stores stored_preview()'s image as given; stock psd-tools has no save(preview=): None, regenerate."""
+    psd = PSDImage.new("RGB", (4, 4), (10, 20, 30))
+    if not saves_preview():
+        assert pe.stored_preview(psd) is None
+        return
+    preview = pe.stored_preview(psd)
+    assert preview.mode == "RGB" and preview.getpixel((0, 0)) == (10, 20, 30)
+    preview.putpixel((1, 1), (200, 0, 0))
+    pe.save_psd(psd, str(tmp_path / "x.psd"), True, preview)
+    saved = PSDImage.open(str(tmp_path / "x.psd"))
+    assert saved.has_preview() and np.array_equal(np.asarray(saved.topil(apply_icc=False)), np.asarray(preview))
 
 
 def test_save_png_keeps_the_official_colour_chunks(tmp_path):
@@ -481,6 +520,18 @@ def test_layer_records_fingerprint(clone):
 # Stats (the fork: viewport renders)
 # ========================
 @text_engine
+def test_render_pair_is_render_region_and_its_raw_values(clone):
+    """One unconverted render gives render_region()'s image byte for byte, and the preview's values beside it."""
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    assert Resource.ICC_PROFILE in psd.image_resources                # a non-sRGB profile: the two differ
+    box = (763, 1199, 863, 1285)
+    render, raw = pe.render_pair(psd, box)
+    assert np.array_equal(np.asarray(render), np.asarray(pe.render_region(psd, box)))
+    assert not np.array_equal(np.asarray(render), np.asarray(raw))
+    assert pe.stored_preview(psd).mode == "RGB" if saves_preview() else pe.stored_preview(psd) is None
+
+
+@text_engine
 def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     """S2's gate: 2 flag bytes, the parser reads 8, 0 pixels differ outside the row mask, a rerun does nothing."""
     parsed, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path, update_preview=True)
@@ -494,9 +545,15 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     differs = (old != new).any(axis=2)
     row = np.zeros_like(differs)
     row[HP_ROW[1]:HP_ROW[3], HP_ROW[0]:HP_ROW[2]] = True
-    assert int((differs & ~row).sum()) == 0 and int(differs.sum()) == baked.changed_pixels > 0
+    assert int((differs & ~row).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels   # a replaced pixel may equal the PNG's
     saved = PSDImage.open(baked.psd_path)
     assert saved.has_preview() and {d.name for d in pe.template_row(saved, "hp")[1].values() if d.visible} == {"8"}
+    if saves_preview():                 # else save() regenerated it
+        old_preview = PSDImage.open(_card(clone, MINI_DOOMER)[0]).topil(apply_icc=False)
+        moved = (np.asarray(old_preview) != np.asarray(saved.topil(apply_icc=False))).any(axis=2)
+        # Photoshop's preview, the merge's pixels replaced (outside the PNG's changes only where a replaced pixel kept its value)
+        assert moved.any() and int((moved & ~row).sum()) == 0
+        assert int((moved & ~differs).sum()) <= baked.changed_pixels - int(differs.sum())
     assert Image.open(baked.png_path).info.get("icc_profile") == Image.open(_card(clone, MINI_DOOMER)[1]).info.get("icc_profile")
     again = pe.classify(baked.reparse, {"hp": 8}, saved)
     assert again.jobs == {} and again.redundant == ["hp"]
@@ -517,7 +574,7 @@ def test_two_stats_gate_one_region_per_row(clone, parser, tmp_path):
     inside = np.zeros_like(differs)
     for x0, y0, x1, y1 in (HP_ROW, SPD_ROW):
         inside[y0:y1, x0:x1] = True
-    assert int((differs & ~inside).sum()) == 0 and int(differs.sum()) == baked.changed_pixels > 0
+    assert int((differs & ~inside).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels
     saved = PSDImage.open(baked.psd_path)
     assert stat_rows(saved)["spd"][0][1] == [3] and stat_rows(saved)["def"][0][1] == [2]
 
@@ -546,9 +603,8 @@ def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
 @text_engine
 def test_moved_effect_paints_the_new_digit(clone):
     """hp 5 -> 2 in memory: the fork paints the moved GradientOverlay over cells 3-10, so the colour inside digit 2's mask
-    matches the official PNG inside digit 5's mask (the lit cells were bright before). Through apply_jobs this toggle still
-    refuses parity at the baseline: the lit cells' bar gradient renders at mean 1.03 against the 1.0 bar (max 7, 0% bad),
-    which is the bar's own GradientOverlay, not the digit's."""
+    matches the official PNG inside digit 5's mask (the lit cells were bright before). With rounded bytes the baseline
+    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22); truncated it refuses on the mean (1.03)."""
     psd_path, png_path = _card(clone, METTATON)
     png = Image.open(png_path)
     psd = PSDImage.open(psd_path)
@@ -564,15 +620,35 @@ def test_moved_effect_paints_the_new_digit(clone):
     new = inside(render, row.digits["2"], edit.region[:2])
     assert np.abs(new - inside(official, row.digits["5"], (0, 0))).max() < 3
     assert np.abs(new - inside(official, row.digits["2"], (0, 0))).max() > 20
+    if rounds_bytes():
+        _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
+        assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
+    else:
+        with pytest.raises(pe.Refused) as refused:
+            pe.baseline(PSDImage.open(psd_path), png, edit.region)
+        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.0")
+
+
+@round4
+def test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean(clone, parser, tmp_path):
+    """The Cannon's digits carry ColorOverlay + a textured BevelEmboss. With round 4 every row is 0% bad (2026-10-22):
+    the two-row atk passes (mean 0.51) and bakes, the one-row hp refuses on the mean alone (1.06 against the 1.0 bar)."""
+    for stat in ("atk", "hp"):
+        (tmp_path / stat).mkdir()
+    parsed, baked = _bake(clone, parser, CANNON, {"atk": 15}, tmp_path / "atk")
+    assert baked.reparse["card"]["atk"] == 15 and baked.reparse["validator"] == parsed["validator"]   # STATS TOO HIGH: atk 12 is
+    assert baked.parity["atk"]["bad_pct"] == 0 and baked.parity["atk"]["mean"] <= pe.PARITY_MEAN_MAX
     with pytest.raises(pe.Refused) as refused:
-        pe.baseline(PSDImage.open(psd_path), png, edit.region)
-    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.0")
+        _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
+    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.")
+    assert float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > pe.PARITY_MEAN_MAX
+    assert not list((tmp_path / "hp").iterdir())
 
 
-@text_engine
-def test_cannon_rows_refuse_parity_at_the_baseline(clone, parser, tmp_path):
-    """The Cannon's digits carry ColorOverlay + BevelEmboss, which the fork paints 5-7% wrong (max 110): apply_jobs refuses
-    parity before any pixel is pasted, for the two-row atk as for its one-row hp."""
+@before_textures
+def test_cannon_rows_refuse_parity_without_bevel_textures(clone, parser, tmp_path):
+    """Before round 4 the fork skips the digits' BevelEmboss texture (5-7% wrong, max 110): apply_jobs refuses parity before
+    any pixel is pasted, for the two-row atk as for its one-row hp."""
     for stat, value in (("atk", 15), ("hp", 2)):
         with pytest.raises(pe.Refused) as refused:
             _bake(clone, parser, CANNON, {stat: value}, tmp_path)
