@@ -220,14 +220,14 @@ def test_update_metadata_makes_one_commit(repo):
     start = repo.github.head
     de.manual_metadata_entry(repo.who, "Mini Doomer", del_entry=True, author="Zomoroko", ability="Explodes.  [fire] then.",
                              subtype="Bomb", series="Doom", subseries="Mini", hp=6, defense=0, attack=7, speed=1,
-                             card_type="minion")
+                             card_type="item")
     (message,) = _commits(repo.github, start)
     subject, _, rest = message.partition("\n\n")
     assert subject == "Discord: /update_metadata Mini Doomer (ability, subtype, series, subseries, hp, def, atk, spd, type, hidden, author)"
     assert rest.endswith(f"\n\nEdit-by: {BY}") and "- hp: 6" in rest
     entry = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]
     at = entry["_at"]
-    assert entry == {"type": "minion", "subtype": "Bomb", "series": "Doom", "subseries": "Mini",
+    assert entry == {"type": "item", "subtype": "Bomb", "series": "Doom", "subseries": "Mini",
                      "hp": 6, "def": 0, "atk": 7, "spd": 1, "ability": "Explodes.  [fire] then.", "hidden": True, "_by": BY, "_at": at}
     given = {k: v for k, v in entry.items() if not k.startswith("_")}
     before = dump_edits({"about": ABOUT, "cards": EDITS})
@@ -286,7 +286,19 @@ def test_update_metadata_skips_values_the_card_repo_has(repo, monkeypatch):
     assert "- author: Zomo roko" in rest and "Goombella = Zomo roko" in _at_head(repo.github, AUTHORS_PATH)
     assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"] == {"series": "Mario", "hp": 6, "_by": BY,
                                                                                   "_at": "2026-10-22T10:00:04Z"}
-    assert "Already so in the card repo: series." in repo.sent[4]
+    assert "Already so: series." in repo.sent[4]
+
+
+def test_update_metadata_skips_values_the_card_has(repo):
+    """No entry and the card already so (edit.js same(v, pub)): no override, no [cards] line."""
+    start = repo.github.head
+    de.manual_metadata_entry(repo.who, "Mini Doomer", hp=5)                      # the PSD prints 5
+    de.manual_metadata_entry(repo.who, "The Freezer", series="mario", card_type="field")
+    de.manual_metadata_entry(repo.who, "Goombella", author="Michael")            # from git history, no [cards] line
+    assert repo.github.head == start and all("nothing committed" in t for t in repo.sent)
+    de.manual_metadata_entry(repo.who, "Mini Doomer", hp=5, attack=6)
+    entry = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]
+    assert {k: v for k, v in entry.items() if not k.startswith("_")} == {"atk": 6} and "Already so: hp." in repo.sent[3]
 
 
 def test_update_metadata_on_a_duplicate_and_failure(repo, monkeypatch):

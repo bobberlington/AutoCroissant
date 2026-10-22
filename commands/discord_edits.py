@@ -441,6 +441,15 @@ def _failed(interaction, what: str, error: Exception) -> None:
 # ========================
 # /update_metadata
 # ========================
+def _already(card, field: str, value) -> bool:
+    """The card's data already has this value (a Card Edits.json field)."""
+    if card is None:
+        return False
+    stat = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}.get(field)
+    have = getattr(card.stats, stat) if stat else getattr(card, "card_type" if field == "type" else field, None)
+    return have == value and type(have) is type(value)
+
+
 def manual_metadata_entry(interaction,
                           query: str,
                           del_entry: bool = False,
@@ -528,12 +537,14 @@ def manual_metadata_entry(interaction,
     done: dict = {"fields": {}, "author": False}
 
     def edit(text):                             # only the fields the head's entry doesn't already have
-        entry = entry_of(text, name)[1]
-        done["fields"] = {f: v for f, v in given.items() if f not in entry or entry[f] != v or type(entry[f]) is not type(v)}
+        entry = entry_of(text, name)[1]         # no entry and the card already so: none (edit.js same(v, pub))
+        done["fields"] = {f: v for f, v in given.items() if (f in entry or not _already(card, f, v))
+                          and (f not in entry or entry[f] != v or type(entry[f]) is not type(v))}
         return _stamped(text, [{"key": name, "set": done["fields"], "unset": []}], at, by)
 
     def credit(text):                           # only when the card's [cards] line credits someone else
-        done["author"] = card_line(text, name) != author
+        line = card_line(text, name)
+        done["author"] = line != author and (line is not None or getattr(card, "author", None) != author)
         return authors_file(text, [{"key": name, "author": author}], {}) if done["author"] else text
 
     def fields() -> list:
@@ -548,7 +559,7 @@ def manual_metadata_entry(interaction,
         _failed(interaction, f"/update_metadata {name}", error)
         return
     if not sha:
-        say(interaction, f"**{name}**: the card repo already has those values; nothing committed.")
+        say(interaction, f"**{name}**: already has those values; nothing committed.")
         return
     refresh([name], written.get("edits"), written.get("authors"))
     set_now = done["fields"]
@@ -559,7 +570,7 @@ def manual_metadata_entry(interaction,
                "change the PSD to show it on the card image.")
     lines = [f"  • {f}: {_short(v)}" for f, v in set_now.items()] + ([f"  • author: {author}"] if done["author"] else [])
     say(interaction, f"Updated **{name}** in the card repo ({_link(sha)}):\n" + "\n".join(lines)
-        + (f"\nAlready so in the card repo: {', '.join(same)}." if same else "")
+        + (f"\nAlready so: {', '.join(same)}." if same else "")
         + (f"\n{', '.join(psd)}: {unbaked if shared else 'pending on the card image until the next card bake prints it.'}"
            if psd else "")
         + ("" if card is not None else "\nNo data for this card yet (its PSD isn't parsed): the website shows the edit."))
