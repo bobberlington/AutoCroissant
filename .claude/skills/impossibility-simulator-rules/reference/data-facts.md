@@ -564,7 +564,8 @@ items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (m
   Determinator". Also 2 go bowls "Pebbles", 16 HandTriggers, a Custom_Board (`MDW/Raid_Boss_Table_Top.png`), "Flex Table
   Control".
 - Large cards: Lua `resizeTargets` keyed by Nickname (case-sensitive): Azamoth the Possessed Vessel, Igor Roballtowski,
-  Mettaton EX, Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen: exactly the 7 Auxiliary/Creatures cards.
+  Mettaton EX, Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen: exactly the 7 Auxiliary/Creatures cards,
+  resized to 3,1,3 out of a container; the updater keeps the table in step with the website Nicknames.
 
 ## 8. How the bot and the website expose the rules
 

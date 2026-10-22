@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
+description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -412,28 +412,56 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.
 
-### 2.6 TTS save workflow (.github/workflows/tts-save.yml, 2026-10-20)
+### 2.6 TTS save workflow (.github/workflows/tts-save.yml, 2026-10-20; daily gate 2026-10-21, bot data 2026-10-22)
 
 Keeps `TTS/Impossibility Simulator.json` current with AutoCroissant's updater `commands/tts_save.py` (what it
 changes, and the bot's manual `/update_tts_save`: autocroissant-run-and-operate §7 "TTS save"). Until 2026-10-20 the
 bot ran the updater itself after `/update_stats`; this Action replaced that.
 
-- **Triggers:** push to `main` touching `**/*.png`, `TTS/decks.json` or `site/Card Edits.json`; cron `41 11 * * *`;
-  `workflow_dispatch`. The save's own commit matches none of them, so a run never triggers the next.
+- **Triggers:** cron `41 11 * * *` and `workflow_dispatch` (input `force`, default true). No push trigger since 2911a8c.
+- **Daily gate** (step "Changes since the last run"; `actions: read`): from the last successful run (`gh run list
+  --status success`: its `headSha` and `startedAt`) it runs when (a) a commit not made by the Action itself
+  (`AutoCroissant|TTS save:`) touched `*.png`, `TTS/decks.json`, `site/Card Edits.json` or the save (`git log
+  last..HEAD`; the checkout has full history, `filter: blob:none`), or (b) the bot's main has commits touching
+  `stats.pkl` or `aliases.pkl` (the website's names; GitHub API `commits?path=...&since=...`) since 7 h before that
+  run's start: the website picks up the bot's data within 6 h (site.yml's cron), so a pickle pushed just before a run
+  reaches the names only by the next one. A forced run, no earlier run, an unknown last sha or a failed API call all
+  run. Edges: `since=` filters on the commit date, not the push date (a pickle committed over 7 h before a run but
+  pushed after it is missed; /push commits at push time); the 7 h leaves about 1 h over site.yml's `17 */6` cron, so a
+  late scheduled site build moves a name change one more day; a pickle inside the window counts on two days running
+  (one no-op run). Not watched: the updater's own code (dispatch by hand after changing `commands/tts_save.py`).
 - **Checkout:** this repo, non-cone sparse `/TTS/` + `/site/Card Edits.json`; the bot (`bobberlington/AutoCroissant`
   main) into `bot/`, sparse `commands/tts_save.py`, `git_commit.py` (the shared commit path, 2026-10-21), `repo_history.py`,
   `card_models.py`, `card_edits.py`, `github_api.py` and `global_config.py` (everything the updater imports; `commands/` is a namespace package, no
   `__init__.py`; no config.py: github_api reads it in a try/except).
 - **Run:** `setup-python@v7` (3.12), `pip install requests`, then in `bot/`
-  `python -m commands.tts_save "$GITHUB_WORKSPACE/TTS/Impossibility Simulator.json" | tee tts-save-report.md` with
+  `python -m commands.tts_save "$GITHUB_WORKSPACE/TTS/Impossibility Simulator.json"` (the report is the job log) with
   `AUTOCROISSANT_LOCAL_DIR=${{ github.workspace }}` (the updater reads `TTS/decks.json` and `site/Card Edits.json`
   there) and `AUTOCROISSANT_HISTORY_CLONE=~/TTSCardMaker-history.git` (its bare blobless clone, made on each run;
   `expanduser` resolves the `~`). Both are read by AutoCroissant's global_config.py (`environ.get`). The first
   version symlinked the workspace to `~/Desktop/TTSCardMaker` instead; the overrides removed that step.
 - **Commit:** only when the save changed: identity `AutoCroissant <autocroissant@gmail.com>` (the bot's PICKLE
-  identity), message `TTS save: <first four "## " report sections>`, `git push`. `permissions: contents: write`,
-  `concurrency: tts-save` (no cancel), `timeout-minutes: 20`. The `.bak.json` and `.report.md` the updater writes
-  beside the save stay on the runner.
+  identity), message = the first line of `TTS/Impossibility Simulator.message.txt`, the updater's own
+  `_commit_message` (as the bot's commits: "TTS save: 29 links pinned"; fallback "TTS save: updated"; until 2026-10-22
+  the first four report headings, informational ones included; it counts cards, not names: "398 Nicknames fixed" for
+  131 distinct names, and says nothing of `resizeTargets`), `git push`. `permissions: contents: write`,
+  `concurrency: tts-save` (no cancel), `timeout-minutes: 20`. The `.bak.json`, `.report.md` and `.message.txt` the
+  updater writes beside the save stay on the runner (and are git-ignored).
+- **The save's Lua** (TTSCardMaker c9873ddf, 48 lines): `TEAMS` puts Red, Orange and Green on the TTS team Hearts and
+  Blue, Purple and Pink on Clubs (other seats None; Grey and Black untouched), on each seat change and once after load;
+  the large cards in `resizeTargets` go to scale 3,1,3 three frames after they leave a container. The updater rewrites
+  that table (one `["Nickname"] = true,` row per line, `}` at column 0, no comments in it; any other shape is an
+  Errors line and the table is left alone). No zone claiming any more: every hand zone keeps its saved owner, and a
+  TTS team lets teammates see each other's hand zones (TTS knowledge base, "Teams"), so the facedown item holders owned
+  by Red and Blue show to their whole side (not verified with that seat empty).
+- **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
+  save in about 2 minutes: structure, serializer, CustomDeck collisions, drift against c9873ddf, deck contents, names,
+  backs, rules, the Lua (lupa mock of the TTS API), link pins and HTTP, the updater run as the Action runs it, its
+  report and commit subject, and the daily gate against real history. Any Python with `requests` and `Pillow`; the
+  Lua checks need `lupa`. The names checks follow the live website, so between a pickle push and the next run they fail
+  (`contents_names`, `final_spot`, `updater_idempotent`: 21 of 24 on 2026-10-22, 131 names behind PICKLE 3888392).
+  `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
+  updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
 
 ## 3. Missing-fonts audit (2026-10-19, re-checked 2026-10-20)
 
@@ -745,7 +773,10 @@ uncommitted font-check.yml on 8393b3b (that day's `--all` numbers; step order, F
 `commands/git_commit.py` 2026-10-21 against the uncommitted tts-save.yml on f5a0e50 (review: tts_save.py:33,37 import it); §6 step 4's
 pipeline bullet written 2026-10-21 against AutoCroissant's uncommitted `commands/psd_edit.py` (`fx_name`, `set_text_layer`) on ac3ae57 and the
 JSX trial copies under `/private/tmp/fontexplore/fx/mig/out/`. §0's module list, §2.4's four website rows (profiles/People, inline editing, Details dropdown, published decks), §0's card-check row and §3's rule 2 written 2026-10-21 against TTSCardMaker a3451c8 and AutoCroissant df4a439. Run the commands from
-`~/Desktop/TTSCardMaker` unless they say otherwise. Refresh the date-stamps whenever you touch this file.
+`~/Desktop/TTSCardMaker` unless they say otherwise. §2.6 rewritten 2026-10-22 (gate with the bot's data, commit subject, the
+save's Lua, `TTS/checks/`) against tts-save.yml and TTS/checks as committed that day ("TTS save: daily gate also counts the bot's pickle
+pushes", "TTS checks: the audit's checks, re-runnable"). Refresh the
+date-stamps whenever you touch this file.
 
 ```bash
 # Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 340 badges, [1, 6, 4, 2, 4], 522 SVG docs; 70 / 252 before 2026-10-21)
@@ -762,8 +793,10 @@ grep -n "multi::after" site/assets/style.css
 git check-ignore -v MDW/Fonts/stoogedings-src/.venv site/dist site/.cache          # three hits
 # Workflow triggers and sparse paths
 grep -n "cron\|workflow_dispatch\|branches\|sparse-checkout:\|filter:" .github/workflows/site.yml
-# TTS save workflow: triggers, the six bot files, the two env overrides, no symlink (expect no "ln -s")
-grep -n "cron\|paths:\|/commands/\|/global_config.py\|AUTOCROISSANT_\|ln -s" .github/workflows/tts-save.yml
+# TTS save workflow: cron, the seven bot files, the two env overrides, the bot-data gate, the commit subject (expect no "ln -s")
+grep -n "cron\|/commands/\|/global_config.py\|AUTOCROISSANT_\|stats.pkl\|message.txt\|ln -s" .github/workflows/tts-save.yml
+# TTS save checks: all 24 pass once tts-save.yml has run since the last name change (TTS/checks/README.md)
+python3 TTS/checks/run_all.py
 # Font check workflow: triggers, the three bot files, the secret by name only, the comment permission (expect no "discord.com" hit)
 grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_FONT_WEBHOOK\|contents: write\|discord.com" .github/workflows/font-check.yml
 # Card check workflow: the same, seven bot files (expect no "discord.com" hit; the sparse list equals card_check.SPARSE_FILES)

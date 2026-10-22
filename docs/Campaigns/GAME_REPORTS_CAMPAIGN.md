@@ -3,7 +3,7 @@
 **Status:** designed 2026-10-20, not scheduled; plan item 17 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; where the rulebook is silent this document says so. Save facts
 come from a scan of `~/Desktop/TTSCardMaker/TTS/Impossibility Simulator.json` (TTS v14.2.2, 5.9 MB, 228 top-level objects, Hands
-enabled) and its Lua on 2026-10-20. TTS Lua API names not seen in that Lua are marked "to confirm" (against the TTS API docs).
+enabled) and its Lua on 2026-10-20 (hands and Lua re-checked 2026-10-22 against TTSCardMaker c9873ddf). TTS Lua API names not seen in that Lua are marked "to confirm" (against the TTS API docs).
 This file is the home of the report schema (§4); `docs/Campaigns/SIMULATOR_CAMPAIGN.md` §4 (the browser Play tab) points here and
 keeps no copy, and both name the bot command `/report_game`. Its naming proposals are open question 6.
 
@@ -28,21 +28,22 @@ the host decides and the report records that it was the host.
 ## 2. What the save has, what is missing
 
 The save is rebuilt by `commands/tts_save.py` (`_update`: `_pin_links` -> `_fix_keys` -> `_sync_decks` -> `_fix_cards` ->
-`_resize_targets`; `_dump` writes TTS-style JSON byte for byte) from `TTS/decks.json` (keys `about`, `generated`, `repo_head`,
-`decks` (57), `bags` (15), `objects` (56), `large_cards`) and the card PNGs; run by TTSCardMaker's `tts-save.yml` (pushes of PNGs,
-`TTS/decks.json`, `site/Card Edits.json`; daily) and by `/update_tts_save`. The bot commits through the GitHub API
+`_resize_targets`; `_dump` writes TTS-style JSON byte for byte) from `TTS/decks.json` (keys `about`, `generated`,
+`decks` (57), `bags` (15), `objects` (56), `large_cards`; `repo_head` and the per-deck `cards` counts dropped 2026-10-22) and the
+card PNGs; run by TTSCardMaker's `tts-save.yml` (once a day when the PNGs, `TTS/decks.json`, `site/Card Edits.json`, the save or
+the bot's `stats.pkl`/`aliases.pkl` changed; by hand) and by `/update_tts_save`. The bot commits through the GitHub API
 (`update_repo_save`: blob -> tree -> commit -> `PATCH git/refs/heads/main`, 3 tries when main moves) and, when the token can't
 write (POST git/blobs 403: the jetson's case), through git objects in the history clone pushed over SSH (`_git_commit`; the path is
 the hard-coded `TTS_SAVE_PATH` and its tree entry must already exist).
 
 Has (verified in the JSON and its Lua):
-- **Hands:** 16 `HandTrigger` zones. 10 seat hands (`scaleX` 20) at z = +-35: Team 1 Red/Orange/Green (z < 0), Team 2
-  Blue/Purple/Pink (global Lua `TEAMS`, `HAND_ZONE_GUIDS`); 6 small ones (`scaleX` 4) over the "Item Holder" tiles at z = +-23.8,
-  `FogColor` Red (z < 0) and Blue: the facedown item holders (13_Items). 03_Setting_Up says only your side sees them; a TTS hand
-  zone hides its cards from every colour but its own, so until the global Lua hands a zone over (below) the holder's teammates
-  (Orange/Green, Purple/Pink) cannot see them either. P1's gate reads these zones as they are. The global Lua sets
-  `Player[color].team` on a seat change and hands a zone to a teammate who drops a card in it (`onObjectEnterZone`, respawn by
-  `spawnObjectJSON` with a new `FogColor`).
+- **Hands:** 16 `HandTrigger` zones. 10 seat hands (`scaleX` 20) at z = +-35: Hearts Red/Orange/Green (z < 0), Clubs
+  Blue/Purple/Pink (TTS teams, set by the global Lua's `TEAMS`); 6 small ones (`scaleX` 4) over the "Item Holder" tiles at z =
+  +-23.8, `FogColor` Red (z < 0) and Blue: the facedown item holders (13_Items). 03_Setting_Up says only your side sees them; a
+  TTS hand zone hides its cards from every colour but its own and its teammates' (TTS knowledge base, Teams), so the whole side
+  sees them (not verified with the Red or Blue seat empty). P1's gate reads these zones as they are. The global Lua sets
+  `Player[color].team` on a seat change; since 2026-10-22 (TTSCardMaker c9873ddf) zones keep their saved owner (the old
+  `HAND_ZONE_GUIDS` claim through `onObjectEnterZone` and a `spawnObjectJSON` respawn is gone).
 - **Counters:** 43 `Counter` objects, CURRENT values (06_Reading_Cards): per team "Star Points" (7), "Bricks" (0), "Points" (2) and
   one "Global Turn" (0; 04_Table2 says it starts at 1) at x = -64; HP/DEF/ATK/SPD beside each of the 6 "Creature Holder" tiles (the
   slots, x = -13/18/49, z = +-13), beside the 2 "Minion Holder" tiles (x = 95, z = +-10) and HP/DEF beside the 2 "Active Holder" tokens.
@@ -53,12 +54,14 @@ Has (verified in the JSON and its Lua):
   (85.2, -0.1; 13_Items), Item/Field/N.M.E. Shop (x = -43..-58), deck tiles. 49 top-level `Deck` objects (57 with the 8 in the
   "Specific Item Decks" bag): creatures and items by stars, "N.M.E. Deck" x2, "Status Effects" x3 (64), "Minions" x3 (99),
   "Auxiliary Items" x3 (60), developer/baseline/simple sets.
-- **Lua:** global 8.3k chars (large-card resize on leaving a container, teams, hand-zone ownership); "Flex Table Control"
+- **Lua:** global 48 lines since 2026-10-22 (c9873ddf; 8.3k chars with the zone claiming before): teams Hearts/Clubs and the
+  large-card resize (`resizeTargets`, kept by the updater, to 3,1,3 on leaving a container); "Flex Table Control"
   (`Chinese_Checkers_Piece` bd69bd, 16k chars): a stock table-surface and table-scale panel gated by `permissionCheck`
-  (`Player[color].host or .promoted`). Seen in the save's Lua and reusable. Global Lua: `onLoad`, `getSeatedPlayers`,
-  `Player[color].steam_name`, `broadcastToColor`, `obj.getName`/`getGUID`/`getJSON`/`getPosition`, `Wait.frames`/`Wait.time`,
-  `onObjectEnterZone`, `spawnObjectJSON`. Flex script: `onSave`/`onload`, `createButton`/`createInput`/`editButton`/`getInputs`,
-  `Player[color].host`/`.promoted`. Both: `JSON.encode`/`JSON.decode`, `getObjectFromGUID`, `broadcastToAll`.
+  (`Player[color].host or .promoted`). Seen in the save's Lua and reusable. Global Lua: `onLoad`, `onPlayerChangeColor`,
+  `onObjectLeaveContainer`, `getSeatedPlayers`, `Player[color].seated`/`.team`/`.steam_name`, `broadcastToAll`,
+  `obj.type`/`getName`/`isDestroyed`/`setScale`, `Wait.frames`/`Wait.time`. Flex script: `onSave`/`onload`,
+  `createButton`/`createInput`/`editButton`/`getInputs`, `Player[color].host`/`.promoted`, `getHandTransform(i)`/`setHandTransform`,
+  `JSON.encode`/`JSON.decode`, `getObjectFromGUID`, `broadcastToAll`.
 - **Notebook:** 12 `TabStates` (Rules + one per colour), all empty. `XmlUI` is TTS's default placeholder comment (no UI).
 
 Missing: no scripting zone (`ScriptingTrigger`: none; only hand zones fire `onObjectEnterZone`), so nothing knows which card sits in

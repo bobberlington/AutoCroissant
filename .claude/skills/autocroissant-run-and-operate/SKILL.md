@@ -351,14 +351,15 @@ complete decks, Nicknames set to the website's names, role tags cleared, the Lua
 Two ways to run it:
 
 - **Automatic: TTSCardMaker's GitHub Action** `.github/workflows/tts-save.yml` (details: ttscardmaker-companion
-  §2.6). On a push to main that changes a PNG, `TTS/decks.json` or `site/Card Edits.json`, daily at 11:41 UTC, or
+  §2.6). Daily at 11:41 UTC when its inputs changed since the last successful run (a PNG, `TTS/decks.json`,
+  `site/Card Edits.json`, the save, or this repo's `stats.pkl`/`aliases.pkl`, the website's names, 2026-10-22), or
   by hand (`workflow_dispatch`), it sparse-checks out the updater and its imports from `bobberlington/AutoCroissant`
   main (no config.py: github_api reads it in a try/except), runs `python -m commands.tts_save` on the checkout's save
   with the two env overrides `AUTOCROISSANT_LOCAL_DIR=$GITHUB_WORKSPACE` (where it reads `TTS/decks.json` and
   `site/Card Edits.json`) and `AUTOCROISSANT_HISTORY_CLONE=~/TTSCardMaker-history.git` (its own bare blobless clone;
-  global_config.py reads both with `environ.get`), and commits the save as AutoCroissant when it changed (message
-  from the report's first section titles). The report is the job log. A save commit matches none of the triggers,
-  so it does not run again.
+  global_config.py reads both with `environ.get`), and commits the save as AutoCroissant when it changed (message:
+  the updater's `_commit_message`, which it writes to `<stem>.message.txt`; since 2026-10-22). The report is the job log.
+  The Action's own save commits don't count as changed inputs.
 - **By hand: `/update_tts_save`** (admin only). The bot downloads main's copy by blob sha into a temp dir, updates
   it and, when anything changed, commits it to main through the GitHub git data API with `GIT_TOKEN` (message like
   "TTS save: 812 links pinned, 3 cards added"; when the token can't write — 401/403/404 on the blob upload, or no
@@ -381,7 +382,8 @@ Two ways to run it:
   picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
   under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.
 - **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a
-  local file in place and writes `<stem>.<time>.bak.json` and `<stem>.report.md` beside it. `TTS/decks.json` and
+  local file in place and, when it changed, writes `<stem>.<time>.bak.json`, `<stem>.report.md` and
+  `<stem>.message.txt` (the commit subject) beside it. `TTS/decks.json` and
   `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
 - Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
 
