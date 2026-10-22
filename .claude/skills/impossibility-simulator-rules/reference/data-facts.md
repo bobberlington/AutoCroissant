@@ -198,14 +198,15 @@ colors (the rulebook "02 Abbreviations" time frames; the old tags stay for the r
 | At any time (`any`, purple #7c3aed) | (AAT), (nGCD), (a/bGCD); old (XPGT), (EXGT) | "At any time"; "Global cooldown: 1 global turn"; "(-1/1GCD) Global cooldown: -1 global turn, then 1"; "Old system: usable once per global turn (at any time)", "Old system: every 2 global turns (at any time, multi-turn)" |
 | Forced (`forced`, red #dc2626) | (BOT), (ENDT), (BOGT), (ENDGT) | "Beginning of turn (forced)" and so on |
 | Per game and triggers (`trigger`, orange #b45309) | (OFS), (OS), (OD), (WOF), (XPG), (nU) | "On first summon", "On summon", "On death", "While on field", "Can only be activated once per game", "(2U) 2 uses" |
+| Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), exact case only, since TTSCardMaker `f6ce500e` (2026-10-22) | "Action" |
 
 (nU) in the per-game group could suggest uses per game; Time Riddle's "(1CD) -> (1CD)(2U)" suggests uses per cooldown.
 
 Rulebook also defines on that page: SP = Star Points, DMG = Damage, HP/ATK/DEF/SPD = the stats, PF = Primary field,
 CDMG = Counter damage; "Abilities marked with ⏳ are considered "multi turn" abilities."; "Abilites marked with 🕐 are
 considered "time based"."; 'Time based abilities are considered "refreshed" and become usable again in the specified
-timeframe.' The website's Rulebook tab glossary (`site/assets/app.js`) shows 21 badges: OYT, 1CD, 1/2CD, AAT, 1GCD,
-1/2GCD, BOT, ENDT, BOGT, ENDGT, OFS, OS, OD, WOF, 1PG, 2U, then the old 1PT, E2T, FTE2T, 1PGT, E2GT, with "X can be any
+timeframe.' The website's Rulebook tab glossary (`site/assets/app.js`) shows 22 badges: OYT, 1CD, 1/2CD, AAT, 1GCD,
+1/2GCD, BOT, ENDT, BOGT, ENDGT, OFS, OS, OD, WOF, 1PG, 2U, Action (under "Other tags"), then the old 1PT, E2T, FTE2T, 1PGT, E2GT, with "X can be any
 number; the first number of a pair such as (1/2CD) can also be 0 or −1."
 
 ## 3. Status effects (64 cards: 12 buffs, 52 debuffs)
@@ -420,7 +421,8 @@ Conversion tables on cards, verbatim (now; before in brackets):
   12_Reactions4 picture of Whispy Woods (the card reads "(1CD)(2 points) Heal all friendly creatures by 3 HP.").
 - (3CD) on Empress Bulblax is in two layers: a hidden `Ability` layer and the visible `text 4`; the parse counts it once.
 
-Other parenthesised words in ability text (not timing tags): (Action) 36 (+1 lowercase "(action)"; 36 uses in 28 cards),
+Other parenthesised words in ability text (not timing tags): (Action) 36 (+1 lowercase "(action)"; 36 uses in 28 cards; a grey
+badge since 2026-10-22, the lowercase one stays text; the Stats page's "Timing tags" chart leaves it out),
 point costs (2 points) 34, (4 points) 15, (3 points) 14, (1 point) 13, (1.5 points) 3, (5 points) 3, (0.5 points) 1,
 counters such as (x counters) 3, (3 counters) 2, (4 counters) 2.
 
