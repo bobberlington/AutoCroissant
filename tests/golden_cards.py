@@ -35,13 +35,13 @@ CARDS = CERTIFIED + (
     "Field/4 Stars/The_Maelstrom.psd",
     "Field/2 Stars/Irithyll.psd",                                       # row grouping (_sort_by_position threshold)
     "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability text, in ABILITY_EXCLUSIONS since 2026-10-21
-    "Auxiliary/Minions/God_Tamer.psd",                                  # no stars, ability excluded
+    "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), ability excluded
     "Auxiliary/Minions/Whelp.psd",
     "Auxiliary/Items/Poorly_Drawn_Cabbage.psd",
     "Auxiliary/Creatures/Militron_(No_Armor).psd",
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",
     "Auxiliary/Status Effects/Buffs/Enraged.psd",
-    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # MISSPELT TYPE: tornado
+    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page types (MISSPELT TYPE: tornado until 2026-10-22)
     "Auxiliary/Rulebook/00_Table_of_Contents.psd",
     "Auxiliary/Rulebook/16_The_Field.psd",                              # row grouping
     "N.M.E/Jera.psd",

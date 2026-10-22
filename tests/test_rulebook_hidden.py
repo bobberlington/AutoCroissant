@@ -2,16 +2,14 @@
 import json
 import subprocess
 import types
-from pathlib import Path
+from io import BytesIO
 
 import pytest
 from psd_tools import PSDImage
 
-from conftest import blob_sha
 from golden_cards import golden_file, parser
 
-COPIES = Path("/private/tmp/std-queue/rulebook/cards")    # the H1 copies (hidden text deleted), read-only
-COPIES_BASE = "75e1f776d79c08132808dd2041181b326bf7e70d"   # the card repo commit they were made from
+L11 = "100511d37848773bb8e948ba29625397f6ce5216"           # the card repo commit that deleted the H1 hidden text layers
 H1_PAGES = ("09_TakingYourTurn", "11_Abilities", "12_Reactions2", "22_Negation")
 
 
@@ -34,6 +32,15 @@ def _remove(psd, layers):
 
 def _hidden_text(psd):
     return [layer for layer in psd.descendants() if layer.kind == "type" and not layer.is_visible()]
+
+
+def _page(clone, rev, rel):
+    """A rule page from the clone's history."""
+    try:
+        data = subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True).stdout
+    except (subprocess.CalledProcessError, OSError):
+        pytest.skip(f"the clone's history lacks {rev}:{rel}")
+    return PSDImage.open(BytesIO(data))
 
 
 def _named(psd, name):
@@ -64,36 +71,27 @@ def test_card_page_reads_hidden_ability(psd_parser, clone, monkeypatch):
 
 
 def test_clone_rule_pages(psd_parser, clone, monkeypatch):
-    """Every rule page in the clone parses as if its hidden text layers were deleted."""
-    pages = sorted((clone / "Auxiliary/Rulebook").glob("*.psd"))
-    with_hidden = [page for page in pages if _hidden_text(PSDImage.open(page))]
+    """Every rule page in the clone parses as if its hidden text layers were deleted (none left: the H1 pages before L11)."""
+    pages = [(f"Auxiliary/Rulebook/{page.name}", lambda page=page: PSDImage.open(page))
+             for page in sorted((clone / "Auxiliary/Rulebook").glob("*.psd"))]
+    with_hidden = [(rel, open_page) for rel, open_page in pages if _hidden_text(open_page())]
     if not with_hidden:
-        pytest.skip("no rule page in the clone has hidden text left")
-    for page in with_hidden:
-        rel = f"Auxiliary/Rulebook/{page.name}"
-        psd = PSDImage.open(page)
+        with_hidden = [(rel, lambda rel=rel: _page(clone, L11 + "^", rel)) for rel in (f"Auxiliary/Rulebook/{p}.psd" for p in H1_PAGES)]
+    for rel, open_page in with_hidden:
+        psd = open_page()
+        assert _hidden_text(psd), rel
         got = _parse(psd_parser, monkeypatch, psd, rel)
-        psd = PSDImage.open(page)
+        psd = open_page()
         want = _parse(psd_parser, monkeypatch, _remove(psd, _hidden_text(psd)), rel)
-        assert got.to_dict() == want.to_dict(), page.name
-
-
-def _base_blob(clone, rel):
-    try:
-        return subprocess.run(["git", "-C", str(clone), "rev-parse", f"{COPIES_BASE}:{rel}"],
-                              capture_output=True, text=True, check=True).stdout.strip()
-    except (subprocess.CalledProcessError, OSError):
-        return None
+        assert got.to_dict() == want.to_dict(), rel
 
 
 @pytest.mark.parametrize("page", H1_PAGES)
-def test_h1_copies(psd_parser, clone, monkeypatch, page):
-    """A page that still has the H1 hidden text parses the same as its copy with those layers deleted."""
+def test_h1_pages(psd_parser, clone, monkeypatch, page):
+    """L11 deleted the page's H1 hidden text layers in Photoshop: the page before parses the same as the page after."""
     rel = f"Auxiliary/Rulebook/{page}.psd"
-    copy = COPIES / f"{page}.psd"
-    if not copy.exists() or blob_sha(clone / rel) != _base_blob(clone, rel):
-        pytest.skip("no H1 copy, or the clone page is no longer the one the copy was made from")
-    assert _hidden_text(PSDImage.open(clone / rel)) and not _hidden_text(PSDImage.open(copy))
-    got = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), rel)
-    want = _parse(psd_parser, monkeypatch, PSDImage.open(copy), rel)
-    assert got.ability == want.ability
+    before, after = _page(clone, L11 + "^", rel), _page(clone, L11, rel)
+    assert _hidden_text(before) and not _hidden_text(after)
+    got = _parse(psd_parser, monkeypatch, before, rel)
+    want = _parse(psd_parser, monkeypatch, after, rel)
+    assert got.to_dict() == want.to_dict() and got.alt_names == want.alt_names

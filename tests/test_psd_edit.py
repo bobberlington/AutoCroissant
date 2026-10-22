@@ -12,6 +12,7 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
+from subprocess import CalledProcessError, run
 
 import numpy as np
 import pytest
@@ -43,6 +44,8 @@ FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay 
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
+OVERLAID = {GASOLINE: "3b06f803bb0abf57859297e271177dd82855402b^",    # the last versions with the overlay word: these
+            CANNON: "587d38b401102b13d06733a5f62b01ebeb674d3f^"}      # commits hid it under the JSX's FX layer (2026-10-22)
 STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted Blood", "Curse", "Cursed Inferno", "Frozen",
           "Frozen In Time", "Glued", "Hemorrhaging", "Hexed", "Infected", "Spirit Flame", "Withering"]   # the chart's styled statuses
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
@@ -75,6 +78,18 @@ def _jsx_ink(rel: str) -> tuple:
     out[y0:y1, x0:x1] = np.asarray(Image.open(JSX_FX / (entry["source"][:-4] + ".png")).convert("L")) > 127
     assert int(out.sum()) == entry["ink"]
     return entry["name"], tuple(entry["bbox"]), out
+
+
+def _overlaid(clone, rel: str, tmp_path) -> str:
+    """OVERLAID[rel]'s PSD from the clone's history, in tmp_path/overlaid/."""
+    try:
+        data = run(["git", "-C", str(clone), "show", f"{OVERLAID[rel]}:{rel}"], capture_output=True, check=True).stdout
+    except (CalledProcessError, OSError):
+        pytest.skip(f"the clone's history lacks {OVERLAID[rel]}:{rel}")
+    path = tmp_path / "overlaid" / Path(rel).name
+    path.parent.mkdir()
+    path.write_bytes(data)
+    return str(path)
 
 
 def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)), blocks=(), rect=(0, 0, 1, 1)) -> dict:
@@ -351,7 +366,7 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     with pytest.raises(ValueError):
         pe.set_stat(psd, parsed, "hp", -1)
     assert found["stat_hp"] == [(359, 1199, 1174, 1285)] and found["stat_spd"] == [(359, 1577, 1174, 1663)]
-    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2258)]
+    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2264)]   # 2258 before the (BOT) badge
     assert found["frame"][0] == (0, 1708, 1200, 1748) and found["ability_bg"] == [(0, 1748, 1200, 2400)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
@@ -512,7 +527,8 @@ def test_effect_rules_on_styled_rows(clone):
 def test_layer_records_fingerprint(clone):
     psd = _card(clone, MINI_DOOMER)[0]
     records = pe.layer_records(psd)
-    assert len(records) == 95 and records[93]["name"] == "Name" and records[71]["name"] == "5"
+    assert len(records) == 96 and records[93]["name"] == "Name" and records[71]["name"] == "5"
+    assert records[95]["name"] == "Ability FX: (BOT)"
     assert pe.gate_bytes(psd, psd, []) == ([], 0, 0)
 
 
@@ -824,8 +840,9 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     """The proof against Effect Layers.jsx (Convert overlays on the 2026-10-20 trial copies): regenerating the FX layer for
     the unchanged text cuts the same word (IoU 0.966 / 0.937 with the JSX pixel cut, 99.9% / 100% of our ink on its ink: the
     rest is the fork's raster against Photoshop's), hides the overlay, passes the validator's coverage (1.0) and the bytes
-    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline."""
-    psd_path = _card(clone, rel)[0]
+    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
+    clone's versions before the JSX ran on them (OVERLAID)."""
+    psd_path = _overlaid(clone, rel, tmp_path)
     psd = PSDImage.open(psd_path)
     text = pe.ability_layer(psd).text
     assert [pe.collapse(o.text) for o in pe.overlay_words(psd)] == ["Blazing"]
