@@ -588,6 +588,23 @@ def test_aliases_moved_kept_when_card_edits_fails_to_parse(monkeypatch):
         assert registry.aliases_moved() is moved and ("stale.png" in registry.git_files) is not moved
 
 
+def test_failed_card_edits_read_keeps_the_last_names(monkeypatch):
+    """A newer Card Edits.json that can't be downloaded: the last good aliases still find their cards."""
+    good = dump_edits({"about": ABOUT, ALIASES_MOVED: "x", "cards": {"A Snack": {"aliases": ["Snack"], "_by": "web", "_at": AT}}})
+
+    def fetch(repo, sha, **kw):
+        if sha == "bad":
+            raise OSError("502")
+        return good
+    monkeypatch.setattr(qc, "blob_text", fetch)
+    registry = qc.CardRepository()
+    for sha in ("good", "bad"):
+        registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in TREE}
+        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": sha}]}
+        registry._populate_edit_names()
+        assert registry.git_files.get("snack.png") == SNACK and registry.aliases_moved()
+
+
 def test_aliases_moved_named_by_a_newer_unparsable_file(monkeypatch):
     """An older parsed file without aliases_moved in memory, then a newer one naming it that doesn't parse: aliases.pkl off;
     the next file that parses decides again."""

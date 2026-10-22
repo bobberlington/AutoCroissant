@@ -432,8 +432,9 @@ class CardRepository:
                 print(f"Could not read {path}: {e}")
                 if text is not None:                     # unparsed, but migrated: aliases.pkl stays off
                     self._moved_hint = f'"{ALIASES_MOVED}"' in text
-                return
-            self._edits, self._edit_names, self._moved_hint = edits, (sha, edits.names()), False
+            else:
+                self._edits, self._edit_names, self._moved_hint = edits, (sha, edits.names()), False
+        # a failed read keeps the last good names: aliases live only here once moved
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 
