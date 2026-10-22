@@ -1,8 +1,8 @@
 {
  "alt_names": null,
- "blob": "bb6e2d1112a9b543859779df3579e63042f48885",
+ "blob": "ceca798f2d517635265b7d1717bcfff0f5f04b78",
  "card": {
-  "ability": "Attacks are piercing.\n(2PGT) May perform an attack.\nOnly gains 50% ATK from outside sources.\nThis ability cannot be copied.",
+  "ability": "Attacks are piercing.\n(1GCD)(2U) May perform an attack.\nOnly gains 50% ATK from outside sources.\nThis ability cannot be copied.",
   "atk": 1,
   "def": 2,
   "display_name": "Little guy",

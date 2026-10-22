@@ -1,8 +1,8 @@
 {
  "alt_names": null,
- "blob": "f704a75eefd0228be0205f179de4237c1a4f34f9",
+ "blob": "bdcc832c939e656490c6c6acc5b4caf85ee22dbd",
  "card": {
-  "ability": "Attacks inflict 1T Blindness.\nBoth creatures share this ability, and it cannot be copied:\n(BOGT) Flip to the other creature on this card, putting this in the secondary field. If HP reaches 0, will not die until its turn. This cannot die while in the secondary field.\n(1PGT)(3 points) Flip to to the other creature on this card. This ability costs +1 point every time it is used.\nAttacks do 2 extra damage to creatures not directly across from this one.\nAttacks inflict 1T Afraid. [undead]",
+  "ability": "Attacks inflict 1T Blindness.\nBoth creatures share this ability, and it cannot be copied:\n(BOGT) Flip to the other creature on this card, putting this in the secondary field. If HP reaches 0, will not die until its turn. This cannot die while in the secondary field.\n(1GCD)(3 points) Flip to the other creature on this card. This ability costs +1 point every time it is used.\nAttacks do 2 extra damage to creatures not directly across from this one.\nAttacks inflict 1T Afraid. [undead]",
   "atk": 5,
   "creatures": [
    {

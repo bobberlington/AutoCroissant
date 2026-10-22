@@ -1,8 +1,8 @@
 {
  "alt_names": null,
- "blob": "e226e3f10dd78ca52262e55f4d5fa81113862d2b",
+ "blob": "5487b730f591f99f28608f933878fc5f8540b519",
  "card": {
-  "ability": "(1PT) May lose 1 ATK to grant 1 ATK to any creature on the field.\n(E2T) Gain 1 ATK.",
+  "ability": "(1CD) May lose 1 ATK to grant 1 ATK to any creature on the field.\n(2CD) Gain 1 ATK.",
   "atk": 7,
   "def": 6,
   "hp": 5,
