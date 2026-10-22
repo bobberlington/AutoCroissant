@@ -59,7 +59,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:no]` | The icon with a red prohibition sign (`#e01b22`) over it | `[fire:no]` (means "non-fire") |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
-| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2) | A colored pill badge. The text is still `(1GCD)` | `(1GCD)`, unchanged |
+| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
 
 Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK lookup):
 - Matching is **case-insensitive only inside brackets**. After `[`, every character maps to a lowercase `.tk` copy, so
@@ -71,9 +71,11 @@ Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK 
   time with "unsupported character in token".
 - An unrecognized token, such as `[fier]` or `[X]`, falls back to plain Bree Serif letters. That fallback is
   deliberate, so a typo is visible on the card.
-- **Badges are case-sensitive.** Only the exact uppercase `(1GCD)` becomes a badge.
+- **Badges match in any letter case** (since 2026-10-22, the CASE lookup, §1.2): `(1gcd)`, `(Bogt)`, `(action)` and
+  `(ACTION)` draw the `(1GCD)`, `(BOGT)` and `(Action)` badges. Only a whole tag counts: `(Actions)`, `(Action` and
+  `(x cd)` stay letters, as typed. Before that date only the exact case became a badge.
 - A tag inside an unclosed token still becomes a badge: `[fire(1CD)]` shapes as `bracketleft f.tk i.tk r.tk e.tk
-  badge_1CD bracketright` (checked 2026-10-21; the legacy tags behaved the same before).
+  badge_1CD bracketright` (checked 2026-10-21; the legacy tags behaved the same before; `[fire(1cd)]` too since 2026-10-22).
 
 **Specimen QA (2026-10-20, Photoshop 2023):** sheets at `/private/tmp/fontexplore/spec/` (scratch). No defects found:
 - **Variants:** all 91 icons render in all four variants; all 70 badges render in their group colors (the 270 cards'
@@ -108,8 +110,8 @@ build_stoogedings.py defines two vocabularies and one extra tag:
   impossibility-simulator-rules §3). `nCD`, `nGCD`, `nU` over the same 10 values of n = 30, plus `a/bCD` and `a/bGCD`
   with a in -1, 0–9, X (12) and b in 1–9, X (10) = 240. The a/b range covers every two-number tag on the cards:
   `(1/2CD)` (15 PSDs) and `(-1/1GCD)` (The Temple of Ahn'Qiraj).
-- **`(Action)`, 1 (owner decision 2026-10-22):** on 28 cards. Exact case only: `(action)`, `(ACTION)` and `(Actions)`
-  stay text. Not a timing tag, so it has its own grey `neutral` group; label "Action" in mixed case, 3130 units wide
+- **`(Action)`, 1 (owner decision 2026-10-22):** on 28 cards. Any case draws it (below); `(Actions)` stays text.
+  Not a timing tag, so it has its own grey `neutral` group; label "Action" in mixed case, 3130 units wide
   (about the width of `badge_ENDGT`, 3116), readable at that width.
 
 Size of the 340 (committed in TTSCardMaker 8ec1b92, 2026-10-21): 340 `badge_*` glyphs, 522 SVG documents,
@@ -119,6 +121,39 @@ That is not unreasonable, so the a/b range was not narrowed. Widest badges (1000
 4133, `badge_X_XGCD` 3575; widest old one `badge_ENDGT` 3116. Wider, as expected, not a defect.
 With `(Action)` (TTSCardMaker f6ce500, 2026-10-22): 341 badges, 523 SVG documents, 5,723,428 bytes (+2,072), cmap and
 icon codepoints unchanged, rebuild byte-identical.
+
+**Any letter case (owner request 2026-10-22, TTSCardMaker branch work/badges-any-case):** every tag also matches in
+any case and draws the same badge: `(action)` and `(ACTION)` are (Action), `(1cd)` is (1CD), `(-1/xGcD)` is (-1/XGCD).
+The text stays as typed. A CASE lookup (chaining contextual) runs just before BADGES in `liga` and `rlig`. It has one
+rule per tag from `badge_tags()`: `(`, then each letter as `[own case, other case]`, then `)`. Each letter goes through
+FOLD_UP or FOLD_LOW (single substitutions, applied only from CASE) into the tag's own case, and BADGES then forms the
+ligature as before. A rule matches only a whole `(tag)`, so other text in parentheses is never re-cased, and an
+exact-case tag goes through unchanged. Each rule is its own subtable (`subtable;`), so it is Format 3 like MARK's;
+left alone, feaLib would merge them into one Format 2. The build asserts that no two tags differ only in case.
+Size: 5,736,204 bytes (+12,776). GSUB grew from 49,724 to 62,498 bytes; every other table is byte-identical, glyphs,
+SVG, cmap and name included.
+Proof, 2026-10-22, offline on the built font (scripts in /tmp/anycase-work, scratch):
+- HarfBuzz: 341 tags × every letter-case combination = 2530 spellings, each under default features, `liga` off and
+  `rlig` off, all shape to their canonical badge glyph with its advance. The 341 canonical tags shape byte-identically
+  to the committed font. 17,739 non-tags (every spelling without one paren, with a `z` or a space added, in `[ ]`)
+  draw no badge and shape as before.
+- Every ability, note and name in stats.pkl (1616 texts), plus `Card Edits.json`, shapes exactly as before except
+  A P E X P R E D A T O R's ability. Its `(action)` is the only other-case tag on today's cards.
+- CoreText (a Swift tool loads the file, no install): the same 2530/2530, 12,670 near misses unchanged.
+- Non-ASCII letters that Unicode folds to a tag (`(oſ)`, `(Actıon)`, `(Actİon)`) draw no badge: the case folding is ASCII only.
+- Short tags in prose: any case now badges `(os)`, `(od)`, `(Os)`, `(xu)`, `(e1t)`, `(1u)` and the like wherever they are
+  typed, as asked. None occur in today's cards or rulebook text; keep it in mind when writing card text.
+- Photoshop: **not confirmed yet** (another workflow owned Photoshop). Run `~/Documents/Tools/psd-research/std/case_badge_check.jsx`
+  with the new font installed and Photoshop restarted. It writes `case_badge_check.log` and `.png` next to itself.
+  A CoreText simulation of its rules passes on the new font and fails exactly the other-case rows on the old one.
+  If those rows FAIL in Photoshop, Photoshop ignores CASE: apply `std/case_canonical_tag_fallback.patch`. The walk
+  then writes the tag in its badge's case, which changes the card's text (a PSD + database edit).
+
+Website: `tagInfo(typed)` returns `{tag, ...}` with `tag` in the canonical case (`canon`: upper case, or the `FIXED` key
+for Action). `badgeHtml` labels and tips the badge with it, and the Stats page counts under it. The walk: still
+exact-case until `std/case_insensitive_tag.patch` is applied (not applied on 2026-10-22, while std-batch2 was running).
+Its header lists the driver lines a later pass needs (`std_driver.py` TAG and `badge_adv`, `std_card.jsx` STD_TAG).
+
 Glyph names: `badge_` + the tag with `/` → `_` and `-` → `m` (`badge_1_2CD`, `badge_m1_1GCD`; `badge_glyph()`).
 The label draws `-` as a real minus sign U+2212 (`BADGE_LABEL`); the website does the same. `(OPT)` (Bobberlington, Michael) is in neither vocabulary
 and stays text.
@@ -156,14 +191,18 @@ after changing them. Centring pitfall fixed on 2026-10-20: tracking must go betw
 after the last letter pushes the label off centre.
 
 **The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
-carry the same 341 since 2026-10-22 (TTSCardMaker f6ce500); `tests/test_badge_parity.py` checks them, the walk part only where it exists:
+carry the same 341 since 2026-10-22 (TTSCardMaker f6ce500); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
+and every case of every tag: all 2^letters combinations, 2530 spellings (the font by HarfBuzz: `uharfbuzz` where importable,
+e.g. `~/.venvs/ac-py314-fork`, else the `hb-shape` tool, so it runs in `ac-py314-psd125` too; the walk
+test skips "still exact-case" until the patch is applied, and "clone behind" for an any-case walk with an older font):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
-  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6}|Action)\)/`, no /g flag since 73904db so it holds no
-  `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
+  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Za-z/]{2,6})\)/` since 2026-10-22, any case; no /g flag since
+  73904db so it holds no `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
   `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U` and `Action`; not in git, pre-`Action` copies in
-  `std/pre-action-2026-10-22/`
+  `std/pre-action-2026-10-22/`; any case once `std/case_insensitive_tag.patch` is applied (`/i`, and `(?ai:...)` in l1_check.py: ASCII case only, like
+  JS `/i` and the font; plain `(?i:...)` would also take `(oſ)`, `(Actıon)`, `(Actİon)`, which the test probes)
 
 A **fourth copy** lives in each std batch folder (`~/Documents/Tools/psd-research/std-batch-*/`: `scripts/std_card.jsx`
 `STD_TAG` and `tools/std_driver.py` `TAG`). `test_batches_match_font` checks it, allowing `BATCH_LAG` (std-batch-2026-10-22
@@ -171,6 +210,7 @@ started before `Action` and lacks it). Both walk tests skip, saying "clone behin
 lacks (the clone is `AUTOCROISSANT_LOCAL_DIR`, default ~/Desktop/TTSCardMaker): pull it, or point the variable at a newer checkout.
 **Operating rule:** run the walk (`std.jsx`, `std_l1.jsx`) only with a ~/Library/Fonts/stoogedings.ttf that has every tag in
 its `TAG`. With an older font, `(Action)` is still set in stoogedings but draws as plain letters, not a badge.
+The same goes for an any-case walk with a font from before CASE: `(action)` is set in stoogedings and drawn as letters.
 The website's Stats page "Timing tags" chart (stats.js) leaves out the `neutral` group, so `(Action)` is not counted there.
 
 ### 1.3 Manifest schema and codepoints
@@ -201,9 +241,11 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
    Read any "token collision" or "missing file" lines.
 3. Rebuilds are **byte-identical** (`recalcTimestamp = False`, :514), so `git status` shows the font as changed only
    when something really changed. Verified 2026-10-19: a rebuild of a /tmp copy matched both the committed TTF and
-   the JSON byte for byte. Byte equality depends on the fontTools version: on 2026-10-21 `~/.venvs/ac-py314-psd125`
-   reproduced 8ec1b92's TTF exactly, while `/tmp/fontexplore/venv` packed GSUB differently (same lookups, old script
-   too). The write is atomic (`.tmp` + `os.replace`).
+   the JSON byte for byte. Why `/tmp/fontexplore/venv` once packed GSUB differently from `~/.venvs/ac-py314-psd125`
+   (2026-10-21): fontTools uses HarfBuzz's repacker whenever `uharfbuzz` is importable, and only that venv has it.
+   Since 2026-10-22 the build pins the pure-Python packer (`font.cfg[USE_HARFBUZZ_REPACKER] = False`), so every venv
+   gives the same bytes: both venvs rebuilt f6ce500's TTF exactly, and the any-case build identically. The write is
+   atomic (`.tmp` + `os.replace`).
 4. Install: copy the TTF to `~/Library/Fonts/` (or open it in Font Book), replacing the old copy. Photoshop pitfalls
    are in §4.
 5. In TTSCardMaker, commit the PNG(s), `stoogedings.ttf` and `stoogedings.json` together (the script's docstring
@@ -214,7 +256,8 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 
 ### 1.5 How it is built, and the renderer facts behind the design
 
-GSUB is registered under **both `liga` and `rlig`**. There are five lookups, in this order:
+GSUB is registered under **both `liga` and `rlig`**. There are eight lookups, in this order (FOLD_UP, FOLD_LOW and CASE since
+2026-10-22); TO_TK and the FOLDs run only from the contextual lookups:
 
 | Lookup | Type | Job |
 |---|---|---|
@@ -222,6 +265,8 @@ GSUB is registered under **both `liga` and `rlig`**. There are five lookups, in 
 | MARK | Chaining contextual | applies TO_TK after `[` |
 | TOKENS | Ligature | `[`+`.tk`…+`]` → icon glyph (longest first) |
 | LAYERS | Multiple | `:sticker` → [outline][color icon][spacer]; `:no` → [color icon][zero-width red sign] |
+| FOLD_UP, FOLD_LOW | Single | letter → its other case (only the letters the tags use) |
+| CASE | Chaining contextual | `(` + a tag in any case + `)`: each letter through FOLD_UP/FOLD_LOW into the tag's own case; 341 Format-3 subtables |
 | BADGES | Ligature | `(` tag `)` → badge |
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
@@ -235,7 +280,7 @@ build script's docstring:
 | Photoshop renders OpenType-SVG glyphs, including embedded PNGs | Color icons are SVG glyphs, each embedding its own PNG |
 | Photoshop paints SVG `currentColor`, `context-fill` and CPAL `var()` **black**. Only plain outlines take the text color | `:tint` and the `:sticker` outline are plain TrueType outlines, not SVG |
 | Photoshop draws overlapping glyphs in text order | `:sticker` = outline glyph then icon (both through GSUB multiple substitution). No PNG is stored twice |
-| GSUB single, ligature, multiple and chaining-contextual lookups all work in Photoshop under `liga` | The whole design relies on liga. Leave ligatures on in the Character panel |
+| GSUB single, ligature, multiple and chaining-contextual lookups all work in Photoshop under `liga` (CASE's multi-letter contexts: not checked yet, `case_badge_check.jsx`) | The whole design relies on liga. Leave ligatures on in the Character panel |
 | CoreText (Apple apps) draws plain outlines **above** SVG glyphs | In Preview, Pages and similar apps, `:sticker` shows only the outline. Photoshop is the target, so this is accepted |
 | CoreText ignores an SVG `<use>` that points at an `<image>` | Each color glyph embeds its PNG directly |
 
@@ -809,7 +854,7 @@ pushes", "TTS checks: the audit's checks, re-runnable"). Refresh the
 date-stamps whenever you touch this file.
 
 ```bash
-# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 4], 523 SVG docs; 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
+# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
 MDW/Fonts/stoogedings-src/.venv/bin/python -I -c "from fontTools.ttLib import TTFont; f=TTFont('MDW/Fonts/stoogedings.ttf'); c=f.getBestCmap(); print(f['name'].getDebugName(6), hex(min(x for x in c if x>=0xE000)), hex(max(c)), 0x2605 in c, sum(n.startswith('badge_') for n in f.getGlyphOrder()), [l.LookupType for l in f['GSUB'].table.LookupList.Lookup], len(f['SVG '].docList))"
 # Manifest: 91 icons (35 type / 56 star), contiguous PUA, 15 with aliases
 python3 -c "import json,collections as C; m=json.load(open('MDW/Fonts/stoogedings-src/stoogedings.json'))['icons']; print(len(m), C.Counter(v['kind'] for v in m.values()), sum(bool(v['aliases']) for v in m.values()))"
@@ -850,3 +895,4 @@ Maintenance rules:
 2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").
 2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
 2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`. Later the same day: the batch copies as a fourth place (`test_batches_match_font`), the "clone behind" skip, the walk's font rule and the Stats chart's `neutral` exclusion (TTSCardMaker b686d0c).
+2026-10-22 (any case): §1.1, §1.2 (the CASE lookup, its proof, the Photoshop check and fallback, the three places), §1.4 step 3 (the packer pin), §1.5's lookups and the provenance expectations, against TTSCardMaker branch work/badges-any-case.

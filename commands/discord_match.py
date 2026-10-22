@@ -20,8 +20,8 @@ build    One confidence per (image, card), methods that disagree settled by kind
          (match/rulings.json, from apply_rulings.py) applied, a twin of a sure post made sure, then matches.json
          (per card: first post, the look it shows, each later look's first post, its art's first post; suspect when
          after fs), ambiguous.json and ambiguous.html (stable ids A1, A2...; first posts to confirm too; bot posts
-         left out), REPORT.md and proposal/ (created dates and aliases as Card Edits.json fields, author fixes as
-         Card Authors.txt lines).
+         left out), REPORT.md and proposal/ (created dates as a Card Edits.json field, author fixes as Card
+         Authors.txt lines; no aliases: owner 2026-10-22).
          Standard library only: apply_rulings.py reruns it with any Python 3.
 selftest The image methods on the cards themselves (degraded copies of every PNG), and the version pick on degraded
          copies of every version of the cards with more than one look: accuracy into match/selftest.json.
@@ -2231,7 +2231,7 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
               "pairs_generated": pairs.get("generated"), "ocr": pairs.get("ocr"),
               "versions_mode": pairs.get("versions_mode"), "counts": counts, "thresholds": thresholds(),
               "people_map": mapping, "anomalies": anomalies, "unmatched_cardlike": unmatched, "cards": out_cards}
-    result["proposal"] = proposals(paths, result, cards, names, cards_repo)
+    result["proposal"] = proposals(paths, result)
     write_json(paths.matches, result)
     write_json(paths.ambiguous, {"generated": result["generated"], "how": "reply with rulings like "
                                  "\"A12 = Isma, A13 = none\" (python3 -I apply_rulings.py ...)", "entries": entries})
@@ -2244,15 +2244,13 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
 
 
 SURE_TIERS = ("ruled", "high", "confident")
-EDITS_FILE, AUTHORS_FILE = "Card Edits - created and aliases.json", "Card Authors - corrections.txt"
+EDITS_FILE, AUTHORS_FILE = "Card Edits - created.json", "Card Authors - corrections.txt"
 
 
-def proposals(paths: Paths, result: dict, cards: dict, names: Names, cards_repo: str) -> dict:
-    """What the matches would change on the site, for the owner to review (nothing is applied): created dates and
-    aliases as Card Edits.json fields, author corrections as Card Authors.txt lines. Card names, dates and the
-    site's people only: no message text, links or Discord names."""
-    edits = read_json(join(expanduser(cards_repo), "site", "Card Edits.json"), {}) or {}
-    current = {alnum(k): v for k, v in (edits.get("cards") or {}).items() if isinstance(v, dict)}
+def proposals(paths: Paths, result: dict) -> dict:
+    """What the matches would change on the site, for the owner to review (nothing is applied): created dates as a
+    Card Edits.json field, author corrections as Card Authors.txt lines. No aliases (owner 2026-10-22). Card names,
+    dates and the site's people only: no message text, links or Discord names."""
     ready, pending, authors = {}, {}, []
     for cid, entry in sorted(result["cards"].items(), key=lambda kv: (kv[1].get("key") or kv[0]).lower()):
         d, key = entry.get("discord") or {}, entry.get("key") or entry.get("name") or cid
@@ -2260,19 +2258,6 @@ def proposals(paths: Paths, result: dict, cards: dict, names: Names, cards_repo:
         if first and d.get("tier") in SURE_TIERS and (d.get("fs_check") or {}).get("verdict") in (
                 "discord_earlier", "no_fs"):
             fields["created"] = first["date"][:10]
-        aliases = list((current.get(alnum(key)) or {}).get("aliases") or [])
-        known = set(names.card_forms.get(cid, ())) | {squash(a) for a in aliases}
-        for alias in aliases:
-            names.form_words.setdefault(squash(alias), words(alias).split())
-        new = []                                  # a former title once (backed), a file name on two days
-        rows = [(r["text"], True) for r in (d.get("names") or {}).get("former_titles", [])]
-        rows += [(r["text"], False) for r in (d.get("names") or {}).get("file_names", []) if r.get("days", 0) >= 2]
-        for text, printed in rows:
-            if alias_ok(text, cid, names, known, printed):
-                known.add(squash(text))
-                new.append(text)
-        if new and d.get("tier") in SURE_TIERS:
-            fields["aliases"] = list((current.get(alnum(key)) or {}).get("aliases") or []) + new
         waits = sorted(set(d.get("earlier_ambiguous") or []) | set(d.get("to_confirm") or []), key=lambda a: int(a[1:]))
         if d.get("suspect") and d.get("earliest_open"):     # its first sure post is after fs: one is likely missed
             fields["created_if_ruled"] = {"id": d["earliest_open"]["id"], "date": d["earliest_open"]["date"][:10]}
@@ -2285,8 +2270,8 @@ def proposals(paths: Paths, result: dict, cards: dict, names: Names, cards_repo:
     makedirs(paths.proposal, exist_ok=True)
     write_json(join(paths.proposal, EDITS_FILE), {
         "about": "Proposed from the Discord archive: merge into TTSCardMaker's site/Card Edits.json after review "
-                 "(created: a new database-only field, the date of the card's first Discord post; aliases: the "
-                 "edit's current aliases plus names used on Discord). pending: waits on rulings in ambiguous.html; "
+                 "(created: a new database-only field, the date of the card's first Discord post). pending: waits "
+                 "on rulings in ambiguous.html; "
                  "created_if_ruled (not a field): a card whose first sure post is after fs gets this date if that "
                  "entry is ruled to show it.",
         "generated": result["generated"], "cards": ready, "pending": pending})
@@ -2306,9 +2291,6 @@ def proposals(paths: Paths, result: dict, cards: dict, names: Names, cards_repo:
     return {"created_ready": sum(1 for f in ready.values() if "created" in f),
             "created_pending": sum(1 for f in pending.values() if "created" in f),
             "created_if_ruled": sum(1 for f in pending.values() if "created_if_ruled" in f),
-            "aliases": sum(len(f.get("aliases", [])) - len((current.get(alnum(k)) or {}).get("aliases") or [])
-                           for k, f in list(ready.items()) + list(pending.items())),
-            "alias_cards": sum(1 for f in list(ready.values()) + list(pending.values()) if "aliases" in f),
             "authors": len(authors), "authors_by": {f"{p} (credited {c})": n for (p, c), n in Counter(
                 (a[0], a[1]) for a in authors).most_common()},
             "files": [paths.rel(join(paths.proposal, EDITS_FILE)), paths.rel(join(paths.proposal, AUTHORS_FILE))]}
@@ -2476,27 +2458,6 @@ def chat_names(cid: str, card: dict, mine: list, names: Names, ctx: Context) -> 
         return sorted(({"text": k, "count": len(v), "days": len({d[:10] for d in v if d}), "first": min(v)}
                        for k, v in found.items()), key=lambda r: (-r["count"], r["first"]))[:8]
     return {"former_titles": rows(titles), "file_names": rows(files), "captions": rows(captions)}
-
-
-def alias_ok(text: str, cid: str, names: Names, known: set, printed: bool) -> bool:
-    """A name worth adding as an alias: a word the card's names lack (not a misspelling or a piece of them: a
-    fuzzy lookup finds those), no one-letter words unless it is the name's initials (GOK), naming no other card;
-    a file name (not printed on the card) shares a word with the card's names (a swapped file name doesn't)."""
-    form = squash(text)
-    if len(form) < 3 or form in known or [c for c in names.fuzzy(text, 0.9) if c != cid]:
-        return False
-    initials = {squash("".join(w[0] for w in names.form_words.get(k) or [] if w)) for k in known}
-    if form in {i for i in initials if len(i) >= 3}:
-        return True
-    if any(ratio(form, k) >= 0.75 or form in k or k in form for k in known):
-        return False
-    mine = [squash(w) for w in words(text).split()]
-    theirs = {squash(w) for k in known for w in names.form_words.get(k) or [] if len(w) >= 3}
-    if any(len(w) == 1 for w in mine):
-        return False
-    fresh = [w for w in mine if len(w) >= 3 and all(ratio(w, k) < 0.75 and w not in k and k not in w for k in theirs)]
-    shared = [w for w in mine if w in theirs]
-    return bool(fresh) and (printed or bool(shared))
 
 
 def card_notes(cid: str, mine: list, named: list, ctx: Context) -> list:
@@ -2914,8 +2875,8 @@ def _summary_lines(result: dict, entries: list) -> list:
            "aren't listed: they never date a card.",
            f"- Proposals (in `proposal/`, nothing applied): {proposal.get('created_ready', 0)} created dates ready "
            f"and {proposal.get('created_pending', 0)} after rulings ({proposal.get('created_if_ruled', 0)} more if a "
-           f"suspect card's earliest open post is ruled for it), {proposal.get('aliases', 0)} aliases on "
-           f"{proposal.get('alias_cards', 0)} cards, {proposal.get('authors', 0)} author corrections.", ""]
+           f"suspect card's earliest open post is ruled for it), {proposal.get('authors', 0)} author corrections; no "
+           "aliases (owner 2026-10-22).", ""]
 
     out += ["## Coverage", "", "| tier | meaning | cards |", "|---|---|---|"]
     out += [f"| {k} | {TIER_TEXT[k]} | {tiers[k]} |" for k in TIER_TEXT if tiers.get(k)]
@@ -2990,9 +2951,8 @@ def _summary_lines(result: dict, entries: list) -> list:
     if roles:
         out.append("- Captions used on 3+ cards are roles or remarks, not names (classification posts): "
                    + ", ".join(f"“{t}” x{n}" for t, n in roles.most_common(12)) + ".")
-    out += [f"- Proposed as aliases (former titles and file names naming no other card): {proposal.get('aliases', 0)} "
-            f"on {proposal.get('alias_cards', 0)} cards, in `proposal/{EDITS_FILE}`. Captions are left out (often "
-            "not names); they are in matches.json per card.", ""]
+    out += ["- Not proposed as aliases (owner 2026-10-22: no aliases from Discord); the names are in matches.json "
+            "per card.", ""]
 
     revised = [(c["name"], c["discord"]) for _, c in dated if c["discord"].get("revisions")]
     since = sum(1 for _, c in dated if c["discord"].get("current_since"))
@@ -3045,12 +3005,9 @@ def _summary_lines(result: dict, entries: list) -> list:
             "2. **Author corrections**: `[cards]` lines for `site/Card Authors.txt` (`Card Name = person`, replacing "
             f"the card's current line), {proposal.get('authors', 0)} in `proposal/{AUTHORS_FILE}` with the evidence "
             "in a comment. Confirm the Discord -> person map above first.",
-            "3. **Aliases**: Card Edits.json `aliases` (database-only; the card's current edit aliases plus the new "
-            f"ones), in the same file as created: {proposal.get('aliases', 0)} names on "
-            f"{proposal.get('alias_cards', 0)} cards.",
-            "4. **History**: each look's first post (revisions, current_since) could date the card view's image "
+            "3. **History**: each look's first post (revisions, current_since) could date the card view's image "
             "history, as dates only; the images are other people's posts and stay here.",
-            "5. **Retired cards**: the unmatched card-shaped titles are candidates for the archive of retired cards, "
+            "4. **Retired cards**: the unmatched card-shaped titles are candidates for the archive of retired cards, "
             "to check by hand.", "",
             "## Rulings", "",
             "Open `ambiguous.html`, pick a card (or none) per entry, then reply with the line it builds "

@@ -198,7 +198,7 @@ colors (the rulebook "02 Abbreviations" time frames; the old tags stay for the r
 | At any time (`any`, purple #7c3aed) | (AAT), (nGCD), (a/bGCD); old (XPGT), (EXGT) | "At any time"; "Global cooldown: 1 global turn"; "(-1/1GCD) Global cooldown: -1 global turn, then 1"; "Old system: usable once per global turn (at any time)", "Old system: every 2 global turns (at any time, multi-turn)" |
 | Forced (`forced`, red #dc2626) | (BOT), (ENDT), (BOGT), (ENDGT) | "Beginning of turn (forced)" and so on |
 | Per game and triggers (`trigger`, orange #b45309) | (OFS), (OS), (OD), (WOF), (XPG), (nU) | "On first summon", "On summon", "On death", "While on field", "Can only be activated once per game", "(2U) 2 uses" |
-| Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), exact case only, since TTSCardMaker `f6ce500e` (2026-10-22) | "Action" |
+| Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), since TTSCardMaker `f6ce500e` (2026-10-22); any letter case draws it since the font's CASE lookup (TTSCardMaker work/badges-any-case, 2026-10-22) | "Action" |
 
 (nU) in the per-game group could suggest uses per game; Time Riddle's "(1CD) -> (1CD)(2U)" suggests uses per cooldown.
 

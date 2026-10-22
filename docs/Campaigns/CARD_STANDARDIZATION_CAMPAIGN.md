@@ -65,6 +65,11 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   from `std/`, which now expects `(Action)` in stoogedings. To re-run that batch's scan, point `STD` at `std/pre-action-2026-10-22/`.
   Run the updated walk only after ~/Library/Fonts/stoogedings.ttf has the `(Action)` badge (TTSCardMaker f6ce500); with the old
   font it sets `(Action)` in stoogedings and the text draws as plain letters.
+- **2026-10-22 (any-case badges, TTSCardMaker work/badges-any-case).** The font draws a tag in any letter case as its badge
+  (`(action)` is (Action)). The walk follows with `std/case_insensitive_tag.patch`, which is not applied yet (std-batch2 was
+  running). Apply it with the new font installed, then run `std/case_badge_check.jsx`. If Photoshop ignores the rule, also
+  apply `case_canonical_tag_fallback.patch`; it re-cases the text, a PSD + database edit (companion §1.2). The only
+  other-case tag on the cards is A P E X P R E D A T O R's `(action)`, which is in neither batch.
 
 ### L2. Stat rows to the template layout (45 deviating cards)
 - **What.** `Stats Bars/Darks/<Stat> Dark/0..9` exposure digits with masks, one row per stat; `Bars` leaves named `hp`/`def`/`atk`/`spd`.
