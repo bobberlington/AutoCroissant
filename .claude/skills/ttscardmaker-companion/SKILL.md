@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
+description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), (Action), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -59,7 +59,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:no]` | The icon with a red prohibition sign (`#e01b22`) over it | `[fire:no]` (means "non-fire") |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
-| `(1GCD)`, `(1/2CD)`, `(OYT)` and the other timing tags (340, §1.2) | A colored pill badge. The text is still `(1GCD)` | `(1GCD)`, unchanged |
+| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2) | A colored pill badge. The text is still `(1GCD)` | `(1GCD)`, unchanged |
 
 Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK lookup):
 - Matching is **case-insensitive only inside brackets**. After `[`, every character maps to a lowercase `.tk` copy, so
@@ -94,13 +94,13 @@ Notes:
 - **Icon size:** about 7% smaller than typical hand-placed icons on Gasoline (flame 85 px vs 91 px at 115 px text).
   It was kept, because cards use tight fixed leading (about 0.74 em) and bigger icons would hit the lines around them.
 - **lightshadow:** `Types/lightshadow.png` differs from `light.png` only by a faint dark halo; that's the source art.
-- **Tags without badges:** the commonest are `(n points)` (68) and `(Action)` (36). They aren't rulebook
-  abbreviations, so they get no badge unless the owner wants one.
+- **Tags without badges:** the commonest is `(n points)` (68). It isn't a rulebook abbreviation, so it gets no badge
+  unless the owner wants one. `(Action)` (36) has had one since 2026-10-22 (owner decision, §1.2).
 
-### 1.2 Timing-tag badges (340: the rulebook's 70 + the cards' 270)
+### 1.2 Timing-tag badges (341: the rulebook's 70 + the cards' 270 + `(Action)`)
 
 **Badges are part of the font going forward** (the user adopted them on 2026-10-19). `badge_tags()` in
-build_stoogedings.py defines two vocabularies:
+build_stoogedings.py defines two vocabularies and one extra tag:
 - **Rulebook (old system), 70:** the tags of page "02 Abbreviations", 10 fixed tags plus 6 patterns × 10 values of n
   (1–9 and X). They stay: on the cards they were replaced on 2026-10-21, but the pages 02_Abbreviations,
   11_Abilities2, 11_Abilities4 and 22_Negation still use them.
@@ -108,12 +108,17 @@ build_stoogedings.py defines two vocabularies:
   impossibility-simulator-rules §3). `nCD`, `nGCD`, `nU` over the same 10 values of n = 30, plus `a/bCD` and `a/bGCD`
   with a in -1, 0–9, X (12) and b in 1–9, X (10) = 240. The a/b range covers every two-number tag on the cards:
   `(1/2CD)` (15 PSDs) and `(-1/1GCD)` (The Temple of Ahn'Qiraj).
+- **`(Action)`, 1 (owner decision 2026-10-22):** on 28 cards. Exact case only: `(action)`, `(ACTION)` and `(Actions)`
+  stay text. Not a timing tag, so it has its own grey `neutral` group; label "Action" in mixed case, 3130 units wide
+  (about the width of `badge_ENDGT`, 3116), readable at that width.
 
 Size of the 340 (committed in TTSCardMaker 8ec1b92, 2026-10-21): 340 `badge_*` glyphs, 522 SVG documents,
 5,721,356 bytes ("5.7 MB") vs 5,136,060 with 70 badges (+585,296 bytes, +11.4%), build about 15 s. The /tmp trial
 before it was 6,021,116 bytes; the shipped build rounds SVG path numbers to 0.1 unit (`num()`), which saves 300 KB.
 That is not unreasonable, so the a/b range was not narrowed. Widest badges (1000 units per em): `badge_m1_1GCD`…`badge_m1_9GCD`
 4133, `badge_X_XGCD` 3575; widest old one `badge_ENDGT` 3116. Wider, as expected, not a defect.
+With `(Action)` (TTSCardMaker f6ce500, 2026-10-22): 341 badges, 523 SVG documents, 5,723,428 bytes (+2,072), cmap and
+icon codepoints unchanged, rebuild byte-identical.
 Glyph names: `badge_` + the tag with `/` → `_` and `-` → `m` (`badge_1_2CD`, `badge_m1_1GCD`; `badge_glyph()`).
 The label draws `-` as a real minus sign U+2212 (`BADGE_LABEL`); the website does the same. `(OPT)` (Bobberlington, Michael) is in neither vocabulary
 and stays text.
@@ -128,12 +133,17 @@ tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revis
 | any, at any time (purple `#9f67ff`→`#7c3aed`) | `AAT`, `nPGT`, `EnGT` | `nGCD`, `a/bGCD` |
 | forced (red `#ef5050`→`#dc2626`) | `BOT`, `ENDT`, `BOGT`, `ENDGT` | — |
 | trigger, per game and triggers (orange `#e08a1e`→`#b45309`) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
+| neutral, not a timing tag (slate grey `#64748b`→`#475569`) | — | `Action` |
+
+Grey for `(Action)` because it says what kind of ability it is, not when it can be used: a fifth hue would read as a
+fifth time frame, and grey stays clear of the four group colors (white label contrast about 7.6:1 on `#475569`).
 
 Website tooltips (`tagInfo()` in text.js) follow the letters only, no invented rules: "Cooldown: 2 turns", "Global
 cooldown: 2 global turns", "Cooldown: 1 turn, then 2", the same in global turns for `a/bGCD`, "2 uses" (X stays
 "X"). `count()` gives the singular for 1 and -1 ("Cooldown: 1 turn", "1 use", "Global cooldown: -1 global turn,
 then 1"). Some read oddly because they are literal ("0 turns, then 1", "X global turns, then X"). The old tags keep
-their meanings, prefixed "Old system: ". The site reads ability text from stats.pkl, so the new badges appear there only after an
+their meanings, prefixed "Old system: ". `(Action)`'s tooltip is "Action"; the rules glossary lists it under
+"Other tags" (`GROUP_NAMES.neutral`). The site reads ability text from stats.pkl, so the new badges appear there only after an
 `/update_stats` + `/push` and a site rebuild (2026-10-21: stats.pkl was PICKLE 56b43b9, before the update; 175 of
 the 178 changed cards still showed old tags).
 
@@ -145,14 +155,15 @@ and spacing are the `BADGE_*` constants in build_stoogedings.py (pill top/bottom
 after changing them. Centring pitfall fixed on 2026-10-20: tracking must go between letters only — adding it
 after the last letter pushes the label off centre.
 
-**The tag vocabulary is defined in three places that must change together** (all three carry the same 340 since
-2026-10-21: TTSCardMaker 8ec1b92 and c3f9d68, checked with `/tmp/cdverify/proto.py`):
+**The tag vocabulary is defined in three places that must change together** (all three carry the same 341 since
+2026-10-22: TTSCardMaker f6ce500; `tests/test_badge_parity.py` checks all three, the walk part only where it exists):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
-  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6})\)/`, no /g flag since 73904db so it holds no
+  Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6}|Action)\)/`, no /g flag since 73904db so it holds no
   `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
-  `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U`
+  `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U` and `Action`; not in git, pre-`Action` copies in
+  `std/pre-action-2026-10-22/`
 
 ### 1.3 Manifest schema and codepoints
 
@@ -206,7 +217,7 @@ GSUB is registered under **both `liga` and `rlig`**. There are five lookups, in 
 | BADGES | Ligature | `(` tag `)` → badge |
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
-holds 522 documents (91 icons + 91 no-signs + 340 badges; 252 with the 70 badges before 2026-10-21).
+holds 523 documents (91 icons + 91 no-signs + 341 badges; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21).
 
 Renderer facts. These were tested 2026-10-19 in Photoshop 2023 and macOS CoreText. They are also recorded in the
 build script's docstring:
@@ -601,7 +612,7 @@ What it does for each card's `Ability` text layer:
 1. Walks the text. Each run of 3+ spaces or tabs (a gap) becomes ` [token] ` in stoogedings. The tokens come from
    `spec.json`, precomputed **in the parser's gap order**, so the result matches what gap injection stored.
 2. Sets each timing tag `(…)` matching the badge regex in stoogedings, so it becomes a badge. This prototype's regex
-   (convert_demo.py:15) still holds the 70 old tags; the fixed walk `std/std_l1.jsx` already has all 340 (§1.2), so
+   (convert_demo.py:15) still holds the 70 old tags; the fixed walk `std/std_l1.jsx` already has all 341 (§1.2), so
    copy its `TAG` if the prototype is ever used for a batch.
 3. Rebuilds the style and paragraph ranges (§4 recipe).
 4. Hides the now-redundant inline icon layers: visible layers named like a Types/ icon whose top is at or below the
@@ -789,13 +800,13 @@ pushes", "TTS checks: the audit's checks, re-runnable"). Refresh the
 date-stamps whenever you touch this file.
 
 ```bash
-# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 340 badges, [1, 6, 4, 2, 4], 522 SVG docs; 70 / 252 before 2026-10-21)
+# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 4], 523 SVG docs; 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
 MDW/Fonts/stoogedings-src/.venv/bin/python -I -c "from fontTools.ttLib import TTFont; f=TTFont('MDW/Fonts/stoogedings.ttf'); c=f.getBestCmap(); print(f['name'].getDebugName(6), hex(min(x for x in c if x>=0xE000)), hex(max(c)), 0x2605 in c, sum(n.startswith('badge_') for n in f.getGlyphOrder()), [l.LookupType for l in f['GSUB'].table.LookupList.Lookup], len(f['SVG '].docList))"
 # Manifest: 91 icons (35 type / 56 star), contiguous PUA, 15 with aliases
 python3 -c "import json,collections as C; m=json.load(open('MDW/Fonts/stoogedings-src/stoogedings.json'))['icons']; print(len(m), C.Counter(v['kind'] for v in m.values()), sum(bool(v['aliases']) for v in m.values()))"
 # Byte-identical rebuild: copy Types/, the two input fonts and stoogedings-src/ to /tmp/x/ (same layout), build there, then cmp both outputs (expect no output from cmp)
-# Badge vocabulary (expect 10 fixed + 9 patterns over "123456789X" + a/bCD, a/bGCD over a in -1, 0-9, X and b in 1-9, X) and size constants
-grep -n "def badge_tags" -A8 MDW/Fonts/stoogedings-src/build_stoogedings.py
+# Badge vocabulary (expect 10 fixed + Action + 9 patterns over "123456789X" + a/bCD, a/bGCD over a in -1, 0-9, X and b in 1-9, X) and size constants
+grep -n "def badge_tags" -A14 MDW/Fonts/stoogedings-src/build_stoogedings.py
 grep -n "^BADGE_" MDW/Fonts/stoogedings-src/build_stoogedings.py
 # The website's badges carry no extra multi-turn symbol (expect no output)
 grep -n "multi::after" site/assets/style.css
@@ -825,7 +836,8 @@ ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps
 Maintenance rules:
 - If the website's `norm()` is aligned with the parser, update the §1.6 website row.
 - If the migration prototype is moved into the repo, replace every `/private/tmp/fontexplore` path.
-- When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 340 / 126 /
+- When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 341 / 126 /
   U+E05A).
 2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").
 2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
+2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`.
