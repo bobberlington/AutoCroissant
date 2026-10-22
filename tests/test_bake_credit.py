@@ -1,6 +1,6 @@
 """
 card_bake's bake credit: the run's commit names every editor whose fields it prints, one "Edit-by: <login>" trailer per
-distinct login after the subject and the card lines (TTSCardMaker build_site.EDIT_BY reads them), over the API path and
+baked card and login after the subject and the card lines (TTSCardMaker build_site.EDIT_BY reads them), over the API path and
 the SSH path (git_commit with real git objects in a temp clone; the push is faked). apply_jobs is faked: no fork needed.
 """
 from io import BytesIO
@@ -47,11 +47,11 @@ def test_message_counts_lists_and_git_parses_the_trailers():
     refused = cb.Card("Sans", "sans", {"name": "snas."}, refusal=pe.Refusal("unsupported-card", "no readable Text/Name layer"))
     message = cb._message([card, other, again, refused])
     assert message == ("Card edits: 2 baked, 1 redundant, 1 refused\n\n- Mini Doomer: hp -> 8, atk -> 2\n"
-                       "- Clot White: name -> 'White Clot'\n\nEdit-by: amy\nEdit-by: zed")    # a line per baked card only
-    assert _trailers(message) == ["amy", "zed"]                         # one trailer per editor, however many cards
+                       "- Clot White: name -> 'White Clot'\n\nEdit-by: amy\nEdit-by: zed\nEdit-by: zed")    # a line per baked card only
+    assert _trailers(message) == ["amy", "zed", "zed"]                  # one trailer per card and editor: zed asked for 2
     assert cb._message([_card({"hp": 8}, None)]) == "Card edits: 1 baked\n\n- Mini Doomer: hp -> 8"    # no editor: no trailers
     assert cb._message([other, refused]) == "Card edits: 1 redundant, 1 refused"
-    assert _trailers(cb._message([_card({"hp": 8}, "web") for _ in range(2)])) == ["web"]
+    assert _trailers(cb._message([_card({"hp": 8}, "web") for _ in range(2)])) == ["web", "web"]
 
 
 def test_select_carries_the_entrys_by(github):

@@ -14,21 +14,25 @@ Then one commit on the branch's current head (land): every baked card's PSD and 
 baked and redundant fields removed and the `_psd` verdicts written (a Python port of edit.js editsFile), through
 git_commit (the GitHub API, or git objects in the history clone pushed over SSH when the token can't write). A card
 whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-again refusal; the others still land.
-Refusals are data: one bad card never blocks another. The report goes to stdout, the artifacts (edited PSD, merged
+Refusals are data: one bad card never blocks another. A run bakes at most MAX_BAKES cards and starts none after BUDGET
+(the rest are refused `capped` and wait for the next run). The report goes to stdout, the artifacts (edited PSD, merged
 PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
 fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
-a rate limit, no text engine) are reported but never written as a verdict. The `font` gate refuses only where a face
-resolves to nothing: on a Mac the platform fonts stand in for a missing or empty fonts dir (psd_edit.OK_FONTS).
+a rate limit, no text engine) are reported but never written as a verdict; such a card error, or a commit that failed,
+exits 1 (failure()). The `font` gate refuses only where a face resolves to nothing: on a Mac the platform fonts stand
+in for a missing or empty fonts dir (psd_edit.OK_FONTS); a `font` verdict holds until MDW/Fonts changes.
 """
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep
 from os.path import basename, dirname, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch
+from sys import stderr
 from tempfile import mkdtemp
 from time import perf_counter
 from traceback import format_exc
@@ -56,7 +60,9 @@ PUSHES = 100                                    # activity entries per request (
 COMPARE_FILES = 300                             # a compare lists at most this many files
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
-TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
+MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
+BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
+TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
@@ -95,6 +101,7 @@ class Card:
     creatures: bool = False                     # the entry has a creatures list (it sets the stats)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # the _psd meta written for it (baked or refused)
+    fonts: str = ""                             # a `font` refusal's Snapshot.fonts_key: final only while MDW/Fonts holds
     note: str = ""
     traceback: str = ""
     seconds: float = 0.0
@@ -113,6 +120,8 @@ class Report:
     commit: Optional[str] = None                # the run's one commit
     subject: str = ""                           # its subject (a dry run's: what it would be)
     traceback: str = ""                         # when the commit failed outside a card's steps
+    commit_failed: bool = False                 # land raised: nothing committed although cards had shares
+    text: str = ""                              # the rendered report
     seconds: float = 0.0
 
 
@@ -142,6 +151,13 @@ class Snapshot:
     def sha(self, path: str) -> str:
         """The blob sha of a path in the tree."""
         return self.tree[path][1]
+
+    def fonts_key(self) -> str:
+        """MDW/Fonts' top-level files (what the Action installs) as 8 hex digits: a `font` verdict holds while they do."""
+        prefix = psd_edit.FONTS_DIR + "/"
+        entries = sorted(f"{path} {sha}" for path, (_, sha) in self.tree.items()
+                         if path.startswith(prefix) and "/" not in path[len(prefix):])
+        return sha1("\n".join(entries).encode("utf-8")).hexdigest()[:8]
 
     def duplicate_of(self, key: str) -> str:
         """The PSD a numbered PNG keyed like this card was exported from (A_Snack2.png -> A_Snack.psd), or ""."""
@@ -525,7 +541,7 @@ def editors(card: Card) -> list:
 def _message(cards: list) -> str:
     """
     The run's commit message: "Card edits: 5 baked, 20 redundant, 4 refused", one line per baked card, then one
-    "Edit-by: <login>" trailer per editor of a baked card (build_site.EDIT_BY reads them).
+    "Edit-by: <login>" trailer per baked card and editor, sorted (build_site.EDIT_BY counts them as that editor's cards).
 
     Args:
         cards: The cards in the commit
@@ -535,7 +551,7 @@ def _message(cards: list) -> str:
     refused = [c for c in cards if c.refusal]
     counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
     lines = [f"- {c.name}: {_describe(c)}" for c in baked]
-    trailers = [f"{EDIT_BY}: {login}" for login in sorted({login for c in baked for login in editors(c)})]
+    trailers = [f"{EDIT_BY}: {login}" for login in sorted(login for c in baked for login in editors(c))]
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
 
@@ -618,6 +634,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
     except Refused as refused:
         card.refusal = refused.refusal
+        if refused.code == "font":              # retried once MDW/Fonts changes (pending)
+            card.fonts = snapshot.fonts_key()
     except Transient as error:                  # the runner's or GitHub's: reported, no verdict
         card.refusal, card.transient = Refusal("error", str(error)), True
     except Exception as error:                  # noqa: BLE001 - one bad card never blocks another
@@ -646,7 +664,7 @@ def share_of(card: Card) -> Optional[Share]:
         return Share(card, card.files, card.expect, drop)
     if card.refusal.code in TRANSIENT or card.transient:
         return None
-    card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8],
+    card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], **({"fonts": card.fonts} if card.fonts else {}),
                     "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
     def refuse(text: str) -> Optional[str]:
@@ -663,7 +681,8 @@ def land_cards(report: Report, dry_run: bool) -> None:
     """
     Land the run's cards in one commit (land) and record the outcome on them. A card left out at H' gets its
     try-again refusal (a refused card a note); when the commit itself fails, the baked and redundant cards get that
-    failure, never a verdict. Fenced like a card's steps: the report always comes out.
+    failure, the refused ones a note that their verdict was not written, and the run is failed (main exits 1). Fenced like
+    a card's steps: the report always comes out.
     """
     shares = [s for s in (share_of(c) for c in report.cards) if s]
     if not shares:
@@ -678,10 +697,12 @@ def land_cards(report: Report, dry_run: bool) -> None:
             failure = Refusal("error", str(error) if isinstance(error, Transient) else f"{type(error).__name__}: {error}")
             if not isinstance(error, (Transient, RequestException)):
                 report.traceback = format_exc()
-        report.note = f"Nothing committed: {failure.code}: {failure.why}"
+        report.note, report.commit_failed = f"Nothing committed: {failure.code}: {failure.why}", True
         for s in shares:
             if s.card.refusal is None:
                 s.card.refusal, s.card.transient = failure, True
+            else:
+                s.card.note = "verdict not written: nothing committed"
         return
     included = [s for s in shares if s.included]
     if included:
@@ -729,8 +750,9 @@ def render(report: Report) -> str:
         lines += ["", f"**{report.note}**"]
     baked = [c for c in report.cards if c.baked and not c.refusal]
     redundant = [c for c in report.cards if c.redundant and not c.jobs and not c.refusal]
-    refused = [c for c in report.cards if c.refusal and c.refusal.code != "error"]
+    refused = [c for c in report.cards if c.refusal and c.refusal.code not in ("error", "capped")]
     errors = [c for c in report.cards if c.refusal and c.refusal.code == "error"]
+    capped = [c for c in report.cards if c.refusal and c.refusal.code == "capped"]
     if report.cards and not baked:
         lines += ["", "**Nothing baked.**"]
 
@@ -741,6 +763,7 @@ def render(report: Report) -> str:
     section("Redundant (dropped from the file)", redundant)
     section("Refused", refused)
     section("Errors", errors)
+    section("Next run (capped)", capped)
     for card in errors:
         if card.traceback:
             lines += ["", f"<details><summary>{card.name}</summary>", "", "```", card.traceback.rstrip(), "```", "</details>"]
@@ -757,9 +780,29 @@ def render(report: Report) -> str:
 # ========================
 # Public API Functions
 # ========================
+def failure(report: Report) -> str:
+    """Why the run needs a person (main exits 1; card-edits.yml tells Discord): the commit failed, or a card errored."""
+    if report.commit_failed:
+        return report.note
+    errors = [c.name for c in report.cards if c.refusal and c.refusal.code == "error"]
+    return f"{plural(len(errors), 'card')} with an error: {', '.join(errors)}" if errors else ""
+
+
 def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None) -> tuple:
     """
-    Bake the PSD-kind edits at head and land everything in one commit on the branch's current head.
+    Bake the PSD-kind edits at head and land everything in one commit on the branch's current head (run_report).
+
+    Returns:
+        (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
+    """
+    report = run_report(repository, head, dry_run, card)
+    return report.text, [report.commit] if report.commit else []
+
+
+def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None) -> Report:
+    """
+    run() as a Report: at most MAX_BAKES cards baked and none started after BUDGET; the rest are refused `capped`
+    (try-again: pending next run).
 
     Args:
         repository: owner/name of the card repo
@@ -768,7 +811,7 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
         card: Restrict the run to one card (matched like the authors file)
 
     Returns:
-        (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
+        The Report, its text rendered and written to the work dir's report.md
     """
     started = perf_counter()
     token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
@@ -817,14 +860,22 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
                         pushed.append(recent_paths(repository, head, datetime.now(timezone.utc)))
                     return pushed[0]
                 for one in cards:
+                    baked = sum(1 for c in cards if c.baked)
+                    if baked >= MAX_BAKES or perf_counter() - started >= BUDGET.total_seconds():
+                        one.refusal = Refusal("capped", f"{baked} cards baked in {(perf_counter() - started) / 60:.0f} min "
+                                                        f"(at most {MAX_BAKES} or {BUDGET.seconds // 60} min a run)")
+                        continue
                     bake_card(snapshot, one, parser, fonts, chart, work, recent)
+                waiting = sum(1 for c in cards if c.refusal and c.refusal.code == "capped")
+                if waiting:
+                    report.lines.append(f"- Capped: {plural(waiting, 'card')} wait for the next run")
                 report.cards = cards
                 land_cards(report, dry_run)
     report.seconds = perf_counter() - started
-    text = render(report)
+    report.text = render(report)
     with open(join(work, "report.md"), "w", encoding="utf-8") as fh:
-        fh.write(text)
-    return text, [report.commit] if report.commit else []
+        fh.write(report.text)
+    return report
 
 
 def pending(repository: str = CARD_REPO, head: str = "") -> list:
@@ -832,8 +883,8 @@ def pending(repository: str = CARD_REPO, head: str = "") -> list:
     The schedule's change gate (card-edits.yml): the cards a live run has work for at head, i.e. a PSD-kind edit
     without a final verdict. Final = a refused `_psd` for exactly the entry's PSD-kind values on the PSD blob the tree
     holds (build_site.apply_edits shows a refusal by the same rule); a baked field leaves the file. So new, changed
-    and redundant edits, try-again refusals (recent, head-moved, edit-changed, runner errors) and refused cards whose
-    PSD changed since are pending, and after a complete live run nothing is.
+    and redundant edits, try-again refusals (recent, head-moved, edit-changed, capped, runner errors), refused cards whose
+    PSD changed since and `font` refusals whose MDW/Fonts changed since are pending, and after a complete live run nothing is.
 
     Returns:
         Card names in the file's order ([] when nothing is pending, or the file is missing or isn't JSON)
@@ -850,12 +901,13 @@ def pending(repository: str = CARD_REPO, head: str = "") -> list:
     def final(card: Card) -> bool:
         verdict = edits.meta.get(card.key, {}).get("_psd")
         return (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
-                and verdict.get("psd") == card.psd_sha[:8])
+                and verdict.get("psd") == card.psd_sha[:8]
+                and (not str(verdict.get("reason", "")).startswith("font:") or verdict.get("fonts") == snapshot.fonts_key()))
     return [card.name for card in select(edits, snapshot) if not final(card)]
 
 
 def main(args: Optional[list] = None) -> int:
-    """The command line: run() with the Action's flags, the report on stdout."""
+    """The command line: run() with the Action's flags, the report on stdout; exit 1 when failure() names a reason."""
     parser = ArgumentParser(prog="python -m commands.card_bake",
                             description="Bake the PSD-kind edits of site/Card Edits.json into the card PSDs and PNGs, "
                                         "in one commit (docs/EDIT_PIPELINE_DESIGN.md).")
@@ -864,9 +916,12 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="write the artifacts, commit nothing")
     parser.add_argument("--card", default=None, help="only this card (matched like the authors file)")
     options = parser.parse_args(args)
-    text, _ = run(options.repo, options.head, options.dry_run, options.card)
-    print(text, end="")
-    return 0
+    report = run_report(options.repo, options.head, options.dry_run, options.card)
+    print(report.text, end="")
+    why = failure(report)
+    if why:
+        print(f"card_bake: {why}", file=stderr)
+    return 1 if why else 0
 
 
 if __name__ == "__main__":
@@ -886,6 +941,7 @@ __all__ = [
     'bake_card',
     'dump_edits',
     'editors',
+    'failure',
     'fetch_verified',
     'land',
     'land_cards',
@@ -897,6 +953,7 @@ __all__ = [
     'rewrite_edits',
     'rewrite_entry',
     'run',
+    'run_report',
     'select',
     'share_of',
     'vocabulary',

@@ -499,7 +499,8 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
   queued at the end of `/update_stats` when `site/Card Edits.json`'s blob sha changed) landed and was removed the same day.
   Since 2026-10-22 TTSCardMaker's `card-edits.yml` bakes live every 30 minutes when its gate (`card_bake.pending`: a PSD-kind
-  edit without a refused verdict for exactly its values on the current PSD) finds work; nothing in this repo triggers it.
+  edit without a refused verdict for exactly its values on the current PSD) finds work, at most 40 cards a run, and posts
+  to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a scheduled run fails; nothing in this repo triggers it.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -770,4 +771,4 @@ module, not a shadowing name.
 
 2026-10-21 (card check): section 7's Card check subsection (commands/card_check.py, CLI only; TTSCardMaker's card-check.yml staged in /tmp/card-check until the orchestrator commits it) and its wiring row; nothing in main.py or help.py changed, so no cited line moved. Same day: the subsection no longer says the website shows the validator's notes (only the parser's own reach the site's Parser notes); the error-line sentence names MDW/Markers PSDs and failed API calls (exit 0 kept).
 
-2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved.
+2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message.

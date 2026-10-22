@@ -8,8 +8,9 @@ reboot; harness and notes: `~/Documents/Tools/psd-research/`.
 
 **Live since 2026-10-22.** The user lifted the hold for the bake ("you can bake the five title reprints and switch on
 automatic baking. let's use 30 minute cadence"): the first live run (39761732714) baked Clot White and the four PoD
-trailing dots in 26 commits, one per card. Since then a run makes one commit, and `card-edits.yml` runs every 30 minutes,
-live, behind the `pending` gate (section 8).
+trailing dots in 26 commits, one per card. Since then a run makes one commit, bakes at most 40 cards (the rest wait for
+the next run), and `card-edits.yml` runs every 30 minutes, live, behind the `pending` gate, telling Discord when a scheduled
+run fails (section 8).
 
 ## 1. Goal and done
 
@@ -226,7 +227,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
     otherwise `_by`/`_at` stay. Author/committer `AutoCroissant <autocroissant@gmail.com>`, non-force ref update, 409/422 ->
     back to step 10 up to 3 times (`head-moved` for every card after that). Message: `Card edits: 5 baked, 20 redundant, 4
     refused`, one `- <card>: <what>` line per baked card (`- Goombella: spd 4 -> 5`), then one `Edit-by: <login>`
-    trailer per editor of a baked card (build_site.EDIT_BY); shas, gate codes and the fork tag go to the report and `_psd`.
+    trailer per baked card and editor, sorted (build_site.EDIT_BY counts an editor's trailers as their cards in the run's
+    commit); shas, gate codes and the fork tag go to the report and `_psd`.
     Until 2026-10-22 it was one commit per card plus one for the refused verdicts (26 commits for the first live run).
     Never in a commit: pickles, `MDW/`, `TTS/`.
 11. **After.** `gh workflow run site.yml` and `tts-save.yml` (a `GITHUB_TOKEN` push triggers no workflow).
@@ -307,7 +309,7 @@ on:
   schedule: [{cron: "*/30 * * * *"}]   # live, behind the gate below
   workflow_dispatch: {inputs: {card: {type: string}, dry_run: {type: boolean, default: true}}}
 permissions: {contents: write, actions: write}
-concurrency: {group: tts-save, cancel-in-progress: false}   # shared with tts-save.yml (both commit to main); a running bake is never cancelled
+concurrency: {group: card-edits, cancel-in-progress: false}   # its own: one pending run per group, so tts-save's would lose a pending TTS save
 jobs:
   bake:
     if: github.actor != 'AutoCroissant'
@@ -324,7 +326,8 @@ jobs:
         working-directory: bot         # if go; dry run only for a dispatch with dry_run ticked
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PSD_TOOLS_FONT_DIRS: "${{ github.workspace }}/MDW/Fonts"}
       - uses: actions/upload-artifact@v4   # report + before/after/diff crops per card
-      - run: gh workflow run site.yml && gh workflow run tts-save.yml   # only when the run committed ("committed `" in the report)
+      - run: gh workflow run site.yml && gh workflow run tts-save.yml   # !cancelled(), only when the run committed ("committed `" in the report)
+      - name: Tell Discord             # failure() on a schedule: DISCORD_CHANGELOG_WEBHOOK with the run's link
 ```
 **The gate** (`card_bake.pending`, 2026-10-22): a scheduled run bakes only when some PSD-kind edit has no final verdict, a
 refused `_psd` for exactly its values on the PSD blob the tree holds now (build_site.apply_edits shows a refusal by the same
@@ -333,9 +336,24 @@ rule; a baked field leaves the file). So a new, changed or redundant edit, a try
 over "Card Edits.json changed since the last successful run" (tts-save.yml's kind): it needs no run history or state, it
 retries try-again refusals and refused cards whose art was fixed (a diff of the edits file sees neither), and a wrong "go"
 costs a run that commits nothing. Measured on the live repo: 29 cards pending before the first live run (5 baked, 20
-redundant, 4 refused), none after it. A run that ends at the gate takes the checkouts and the 25 s pip install. Not
-covered: a refused card whose PSD and edit are unchanged is not retried after a pipeline, fork, font or chart fix; a dispatch
-(`dry_run` unticked) does that.
+redundant, 4 refused), none after it. A run that ends at the gate takes the checkouts and the 25 s pip install (about a
+minute; `card_bake` imports psd-tools at the top, so the gate can't run before it). A `font` refusal also carries
+`fonts`, a key of MDW/Fonts' top-level files (`Snapshot.fonts_key`), and is final only while they hold: adding the face
+retries it. Not covered: another refused card whose PSD and edit are unchanged is not retried after a pipeline, fork or
+chart fix; a dispatch (`dry_run` unticked) does that.
+
+**Cap and alert** (2026-10-22). A run bakes at most `MAX_BAKES` = 40 cards and starts none after `BUDGET` = 40 min; the
+rest are refused `capped` (try-again: no verdict, pending, the next tick takes them). A title bake took 29-31 s in run
+39761732714, so without it about 110 edits ran past the job's 60 minutes, which cancelled the job before the one commit,
+every 30 minutes; the cap also bounds what one unattended commit reprints. `main` exits 1 when the commit failed although
+cards had shares, or a card has an `error` (transient ones too: no text engine, no chart, a missing module, a 5xx); the
+upload and the site/TTS dispatch still run (`always()` / `!cancelled()`), and a scheduled run that failed posts its link to
+`DISCORD_CHANGELOG_WEBHOOK`. So a persistent failure is seen (one message per tick until fixed), not repeated silently.
+**Own concurrency group**: GitHub keeps one pending run per group across workflows, so in tts-save's group the next tick
+would replace a pending TTS save; both workflows redo their commit on a moved head, and a bake that commits runs
+tts-save.yml afterwards. **Unpinned bot**: the schedule checks out bobberlington/AutoCroissant's default branch, so an
+AutoCroissant main commit is live within 30 minutes (the fork is pinned by tag, the bot code is not); land AutoCroissant
+changes the workflow depends on before the TTSCardMaker change that calls them.
 Action versions match `site.yml`/`tts-save.yml` today (checkout@v7, setup-python@v7, cache@v6). PSDs are fetched by blob sha
 inside the script; card folders are never checked out (16.4 GB). The extras should have x86_64 and aarch64 manylinux wheels
 (uharfbuzz, freetype-py, aggdraw, scipy; exact versions and wheel availability to confirm, PyPI not reachable while writing);
@@ -389,7 +407,7 @@ reminder's cadence (daily `/update_stats` at 5AM).
 Four sinks: the commit body; the job summary + artifact (report, before/after/diff crops, parse diff, record diff); `_psd` for
 the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes are a closed list: `duplicate`, `unsupported-card`,
 `stat>10`, `recent`, `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
-`idempotence`, `edit-changed`, `head-moved`, `error`. Since 2026-10-21 `unsupported-card` also names a row whose several digits
+`idempotence`, `edit-changed`, `head-moved`, `capped`, `error`. Since 2026-10-21 `unsupported-card` also names a row whose several digits
 carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
 +2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar, no longer that the digit is styled, and `styled-word` means only that this
@@ -397,7 +415,9 @@ psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine 
 Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
 them leaves nothing behind (`$RUNNER_TEMP`), the next run recomputes. A commit that fails (`head-moved` after 3 tries, a
-GitHub error) is a run note: no card gets a verdict and the gate stays open for the next run.
+GitHub error) is a run note: no card gets a verdict (a refused card's line says its verdict was not written), the gate
+stays open for the next run, and the run exits 1 (section 8, cap and alert). `capped` (2026-10-22) is the cap's
+try-again code.
 
 ## 11. Races
 
@@ -409,8 +429,8 @@ GitHub error) is a run note: no card gets a verdict and the gate stays open for 
 - **New edits mid-bake.** Step 10's re-read at H' plus the non-force update; the editor's own 422 retry absorbs our commit.
   An editor rewrite that re-inserts a baked field now equals the PSD -> redundant -> dropped next run, no pixels (whether
   edit.js rebuilds from stale in-memory data after a 422: to confirm; a flicker of "Edited" at worst).
-- **Two bakes.** Actions `concurrency: tts-save` (with tts-save.yml: one run going and one pending, a newer pending run
-  replaces the older, a running one is never cancelled); jetson: the Lock. A PSD pushed in the last 30 min is skipped. Site lag
+- **Two bakes.** Actions `concurrency: card-edits` (one run going and one pending, a newer pending run replaces the older,
+  a running one is never cancelled; not tts-save's group since 2026-10-22, section 8); jetson: the Lock. A PSD pushed in the last 30 min is skipped. Site lag
   after a bake (old value until `/update_stats` + `/push` + build) is named by "Re-parse pending" (section 9).
 
 ## 12. Acceptance: the 10 edits

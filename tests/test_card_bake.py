@@ -15,8 +15,10 @@ import json
 import re
 import shutil
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from subprocess import run as run_process
 from sys import executable
+from types import SimpleNamespace
 
 import pytest
 
@@ -538,8 +540,79 @@ def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):
     data = _edits_at(github)
     assert "_psd" not in data["cards"]["The Freezer"] and data["cards"]["Mini Doomer"]["hp"] == 5
     assert "head-moved: main kept moving" in text.split("## Refused", 1)[1] and "committed `" not in text
+    assert text.count("verdict not written: nothing committed") == 4        # the refused cards say so too
     assert (tmp_path / cb.WORK_NAME / "report.md").read_text(encoding="utf-8") == text
     assert len(cb.pending()) == 5                                           # all of it again next run
+
+
+def test_main_exits_1_when_the_commit_fails_or_a_card_errors(github, monkeypatch):
+    """A failure needs a person: main exits 1 (card-edits.yml then tells Discord); refusals alone exit 0."""
+    err = StringIO()
+    monkeypatch.setattr(cb, "stderr", err)
+    github.conflicts = 3
+    assert cb.main([]) == 1 and "card_bake: Nothing committed: head-moved" in err.getvalue()
+    github.conflicts = 0
+    github.down.add(_sha(github.files_at(github.head)[DOOMER]))
+    assert cb.main(["--card", "Mini Doomer"]) == 1 and err.getvalue().endswith("card_bake: 1 card with an error: Mini Doomer\n")
+    github.down.clear()
+    err.truncate(0)
+    assert cb.main([]) == 0 and cb.main([]) == 0 and err.getvalue() == ""   # 1 redundant, 4 refused committed; then nothing to do
+
+
+def test_cap_leaves_the_rest_for_the_next_run(github, monkeypatch):
+    """At most MAX_BAKES cards baked and none started after BUDGET: the rest are `capped`, no verdict, pending next run."""
+    monkeypatch.setattr(cb, "BUDGET", timedelta(0))
+    text, commits = cb.run()
+    assert commits == [] and "## Next run (capped) (5)" in text and "- Capped: 5 cards wait for the next run" in text
+    assert "## Refused" not in text and len(cb.pending()) == 5
+    monkeypatch.setattr(cb, "BUDGET", timedelta(minutes=40))
+
+    files = github.files_at(github.head)
+    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data["cards"]["Mini Doomer"]["hp"] = 8
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: Mini Doomer")
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        paths = {}
+        for ext in ("psd", "png"):
+            paths[ext] = f"{new_dir}/new.{ext}"
+            shutil.copy(old_psd if ext == "psd" else old_png, paths[ext])
+        with open(paths["psd"], "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=paths["psd"], png_path=paths["png"], edits=[SimpleNamespace(field="hp", old=5)],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], parity={}, flag_bytes=0,
+                               changed_pixels=0)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    monkeypatch.setattr(cb, "MAX_BAKES", 1)
+    text, commits = cb.run()                                                # A Snack, A Snack2, Mini Doomer, then the cap
+    assert len(commits) == 1 and github.commits[commits[0]]["message"].startswith("Card edits: 1 baked, 2 refused\n")
+    assert "## Next run (capped) (2)" in text and "**Nobody**" in text.split("## Next run", 1)[1]
+    assert cb.pending() == ["Nobody", "The Freezer"]
+
+
+def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
+    """A `font` refusal carries MDW/Fonts' key: final while the fonts hold, pending once a font file is added or changed."""
+    files = github.files_at(github.head)
+    files["MDW/Fonts/Some Face.ttf"] = b"face"
+    files["MDW/Fonts/stoogedings-src/x.svg"] = b"not installed"
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: (_ for _ in ()).throw(pe.Refused("font", "no Some Face")))
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    text, commits = cb.run()
+    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+    key = cb.snapshot_at(cb.CARD_REPO, github.head).fonts_key()
+    assert len(commits) == 1 and verdict["reason"] == "font: no Some Face" and verdict["fonts"] == key and len(key) == 8
+    assert cb.pending() == []
+    files = github.files_at(github.head)
+    files["MDW/Fonts/stoogedings-src/x.svg"] = b"changed, still not installed"
+    github.commit(files, "web", "Fonts: source only")
+    assert cb.pending() == []
+    files["MDW/Fonts/Some Face.ttf"] = b"a fixed face"
+    github.commit(files, "web", "Fonts: Some Face")
+    assert cb.pending() == ["Mini Doomer"]
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):
@@ -743,14 +816,15 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
 
 def test_workflow_shape():
     """card-edits.yml: live every 30 minutes behind the pending gate, dispatch with dry_run on by default, never on the
-    pipeline's own commits, one committer at a time (the tts-save group; a running bake is never cancelled), and the
-    report line it greps before running site.yml and tts-save.yml."""
+    pipeline's own commits, one bake at a time in its own group (a running bake is never cancelled; sharing tts-save's
+    group would let a tick replace a pending TTS save), the report line it greps before running site.yml and
+    tts-save.yml, and a Discord message when a scheduled run fails (main exits 1)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
     assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text
-    assert "if: github.actor != 'AutoCroissant'" in text and "group: tts-save" in text and "actions/checkout@v7" in text
+    assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
     grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
     report = cb.Report("o/r", "h" * 40, False, "w")
     card = cb.Card("X", "x", {"hp": 1})
@@ -763,14 +837,19 @@ def test_workflow_shape():
     assert on["schedule"] == [{"cron": "*/30 * * * *"}] and "push" not in on
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
     assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'"
-    assert doc["concurrency"] == {"group": "tts-save", "cancel-in-progress": False}
+    assert doc["concurrency"] == {"group": "card-edits", "cancel-in-progress": False}
     assert doc["permissions"] == {"contents": "write", "actions": "write"}
     steps = doc["jobs"]["bake"]["steps"]
     gate = next(i for i, step in enumerate(steps) if step.get("id") == "gate")
     assert "from commands.card_bake import pending" in steps[gate]["run"] and '[ "$EVENT" != schedule ]' in steps[gate]["run"]
-    assert all("steps.gate.outputs.go == 'true'" in step.get("if", "") for step in steps[gate + 1:])    # nothing pending: done
+    alert = steps[len(steps) - 1]
+    assert all("steps.gate.outputs.go == 'true'" in step.get("if", "") for step in steps[gate + 1:len(steps) - 1])   # nothing pending: done
     bake = next(step for step in steps if step.get("name") == "Bake")
     assert bake["env"]["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"   # the schedule is live
+    after = next(step for step in steps if "grep -q" in step.get("run", ""))
+    assert after["if"].startswith("${{ !cancelled() &&")                     # a card's error exits 1: a commit still runs them
+    assert alert["if"] == "failure() && github.event_name == 'schedule'"
+    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}" and "$RUN" in alert["run"]
 
 
 def test_workflow_gate_line_calls_pending(github, capsys, monkeypatch):

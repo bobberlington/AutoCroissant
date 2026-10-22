@@ -163,7 +163,7 @@ def test_find_fork_explains_a_skip(monkeypatch, tmp_path):
 def test_codes_are_the_closed_list():
     assert pe.CODES == ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font",
                         "overflow", "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed",
-                        "head-moved", "error")
+                        "head-moved", "capped", "error")
     assert PAINT_ORDER[-1] == "ability_fx" and clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
 
 
