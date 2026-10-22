@@ -1,5 +1,7 @@
 # Next session plan (written 2026-10-22 06:00, Opus 5.5)
 
+> **Resume after the power outages (2026-10-22 16:00): read `docs/Future/RESUME_2026-10-22.md` first.**
+>
 > **Resume note (2026-10-22 09:50):** a second session (05:51-) resumed this plan after the first hit its usage limit.
 > Its running state, every landing and the owner's new answers are in
 > `~/Documents/Tools/session-rescue-2026-10-22/resume/SESSION2_NOTES.md` (read it first; this plan is rewritten at its end).
