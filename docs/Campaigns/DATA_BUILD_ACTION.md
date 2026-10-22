@@ -1,0 +1,959 @@
+# Data build Action: the card data built on GitHub (2026-10-22)
+
+**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below); not scheduled; not yet a plan
+item (add one to `docs/NEXT_SESSION_PLAN.md`). The owner's goal, 2026-10-22: "let's work on the data build action". The
+website and the TTS save must not depend on the jetson; a GitHub Action builds the card data. This design also covers:
+- the changelog in Discord (one post per push) and on the website (a Changelog tab and a Database edits tab on the Changes
+  page);
+- balance analytics (the Stats page and each card's Details);
+- `/query as_of:<date>`;
+- old_stats refinements (version dates from git, no duplicate versions);
+- the archive of deleted cards: **merged and deployed** (AutoCroissant main dfdf953; step 2 is done).
+
+**The owner's decisions after the first draft (2026-10-22).**
+- The changelog posts **one post per push**, not a daily digest. Failure alerts stay in the same channel.
+- **Batching:** "since the data build makes new commits, let's just update the save on pushes too - but could we batch edits
+  together for data builds and the save, perhaps every 30 minutes or an hour, to reduce commit churn". So one scheduled run,
+  **Card sync**, every 30 minutes (hourly if the owner prefers, decision 5) does everything in order: bake the pending website
+  edits, build the data, update the TTS save, post the changelog. It makes at most one commit on main and one on `data`.
+  It replaces the per-push build trigger and the hourly catch-up of the first draft, and it absorbs `tts-save.yml` and
+  `card-edits.yml`.
+- **The PSD hold is lifted** (2026-10-22 ~02:40), so the bake runs live in Card sync after a fresh dry run (step 8).
+
+Numbers were measured read-only on 2026-10-22 at AutoCroissant main cae1f2f (last PICKLE 3888392, 00:23) and TTSCardMaker main
+5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". Nothing here is built yet.
+
+**The choice.** Two designs were judged, "minimal" (the Action pushes PICKLE commits to AutoCroissant) and "data-with-cards"
+(the data lives in TTSCardMaker). The robustness judge scored data-with-cards 8.4 and minimal 6.4. The simplicity judge scored
+them 5.8 and 5.6 and asked for a hybrid. **data-with-cards wins**: it is the only design with no cross-repo credential and
+exactly one writer. Grafted onto it:
+- minimal's reuse of the bot's own traverser code, moved rather than rewritten;
+- minimal's cutover discipline (parity dry runs with predicted numbers, the jetson reconcile, the Discord-side writers);
+- the hybrid's order, which ships value before the move.
+
+§3 lists every graft.
+
+## 1. Goal and non-goals
+
+**Goal.** One scheduled GitHub Action in TTSCardMaker, Card sync, is the only writer of the card database and the TTS save.
+Every 30 minutes, when its card inputs changed since its last successful run, it bakes, builds, updates the save and posts,
+and commits plain JSON to a data branch of the same repo. Everything else only reads that data: the website, the TTS save
+(from the run's own data), the bot, the tests and the diagnostics. The jetson can be off for a week and the website, the TTS
+save and the changelog keep working.
+
+**Non-goals.**
+- No change to how cards are parsed: same `psd_parser`, same psd-tools pin, same validator.
+- No new PSD or PNG writer: the bake (`card_bake`, the edit pipeline) stays the only one. Card sync runs it; the build
+  itself writes no card files.
+- No server and no new secret outside TTSCardMaker.
+- No second build path left behind: the traverser's data code moves out of `repo_traverser.py`, it is not copied.
+- No AI.
+
+## 2. What was measured (2026-10-22)
+
+| Fact | Value |
+|---|---|
+| stats.pkl at 3888392 | 819 entries (6 duplicates), every one at `parser_version` 2 |
+| old_stats.pkl | 363 names, 469 versions; 291 versions have no `blob_sha`; 1 name not in stats: `ZOEY!!!!!` |
+| Duplicate versions (all data fields and stats equal to the next version or the current card) | 10, re-counted with the dedupe code itself (step 4): 4 differ only in timestamp (Monkey D Vour, The Lich King v0, Anubisath Guardian, Qiraji Soldier), 6 only in blob_sha or parser_version (or with the timestamp); the first count here said 8 |
+| aliases.pkl | 60 aliases |
+| psd_details.json | 813 records, 0 with a null `supplied` flag (the jetson's fonts cache, B11, filled them 2026-10-21) |
+| Blobless bare clone of TTSCardMaker | 1.1 MB, 615 commits, 2 s |
+| `git log --raw --no-renames -- '*.psd'` on it | 0.07 s, no blob fetched (`GIT_NO_LAZY_FETCH=1`) |
+| Tree at HEAD | 904 PSDs, 1003 PNGs, no upper-case extensions |
+| Stored timestamps vs the newest commit at the card's path | equal for 812 of 813 non-duplicate cards |
+| Re-dating to "the commit that first added this blob" | 31 of the 813 non-duplicate cards change date (their duplicates follow); 3 of the 178 versions that have a blob |
+| ZOEY!!!!! deletion | `Creatures/Other/5 Stars/ZOEY!!!!!.psd`, deleted 2026-06-18 in 35adb383 by Zomoroko |
+| JSON, one record per line (psd_details' style) | stats.json 604 KB (114 KB gzipped); old_stats.json 268 KB (47 KB) |
+| Commits per day, Oct 20 / 21 / 22 | all: 21 / 47 / 28; outside TTS/: 20 / 41 / 17; card inputs (PSD, PNG, Types/, Card Edits.json, Card Authors.txt, manifest): 2 / 8 / 1 |
+| Pushes to main per day, Oct 20 / 21 / 22 (activity API, at e0e26b2f) | 10 / 20 / 22 |
+| Card-input commits, including `TTS/decks.json`, Oct 20 / 21 / 22 | 2 / 8 / 4, in 2 / 5 / 2 half-hour windows; PNG commits in 0 / 2 / 1 half-hour windows |
+| Bot commits on main (AutoCroissant, github-actions), Oct 20 / 21 / 22 | 1 / 1 / 4 |
+| `GET repos/…/activity?ref=refs/heads/main&activity_type=push` | one call lists the last 100 pushes with actor, `before` and `after`; it includes the bot's API commits and GITHUB_TOKEN pushes |
+| TTSCardMaker collaborators with push | 8; rulesets 0; branches: main only |
+| Creatures and minions with all four stats | 387 (creature 2★ 45, 3★ 102, 4★ 93, 5★ 56; minion 1★ 15, 2★ 31, 3★ 27, 4★ 11) |
+
+## 3. Grafts
+
+| Idea | From | Where |
+|---|---|---|
+| Data in TTSCardMaker, pushed with that repo's own GITHUB_TOKEN; no PAT, no deploy key | data-with-cards | §5, §9 |
+| A local `git ls-tree` and `git log --raw` instead of the tree and commits APIs | both | §7.2 |
+| Build main's head and diff against the stored blobs, never against a push's `before` | data-with-cards | §6.2 |
+| A request budget with continuation for full re-parses | data-with-cards | §7.3 |
+| Gate G4 (mass re-parses of unchanged blobs need approval), the `restore` input, the manifest | data-with-cards | §8, §13 |
+| A version only when data changes; art-only changes become `art` events; from/to dates and a cause | data-with-cards | §7.4 |
+| The traverser's own code (moved into a Discord-free module), the three hooks (git dates, `last_run`-style counters, per-PSD failure isolation) | minimal | §7 |
+| Per-PSD failure isolation landed on main first, so the jetson stops aborting whole runs | minimal (judge 1) | step 1 |
+| A dry run with predicted numbers, the jetson reconcile | minimal | §14 |
+| /update_metadata and /mass_replace write `site/Card Edits.json` (with `Edit-by`, `_by`/`_at`) and apply the edit in memory at once | minimal | §11 |
+| A changelog `seq` that never reuses a number | minimal | §8 |
+| An immediate failure alert; a staleness warning; a pinnable builder ref | judge 1 | §6.3, §10, §6.4 |
+| Analytics and `/query as_of` ship first, from today's data | judge 2 | step 3 |
+| The site keeps its own push trigger, so website edits and new art publish as fast as today | judge 2 (from minimal) | §10 |
+| One scheduled run every 30 minutes with a change gate; bake, build, save and post in one run; at most one main commit | the owner, 2026-10-22 | §6 |
+| One changelog post per push | the owner, 2026-10-22 | §12.1 |
+
+**Not taken.**
+- *Keep writing pickles in the first phase* (judge 2). Writing a pickle needs `commands.psd_analyzer` importable, which means
+  discord and pandas on the runner, or a fake module. Instead the JSON is proven against the pickles twice: a round trip of all
+  819 cards and 469 versions, and the site's `cards.json` built both ways must be byte-identical (step 7). The pickles stay
+  reachable for rollback through `python -m commands.card_db export-pickles`.
+- *A jetson fallback writer* (minimal's `local:True`). That would put two parsers (Cython and pure Python) on the same files.
+  The fallback is the same builder run by hand on the Mac (§13).
+- *A second clone of AutoCroissant on the jetson* (minimal). The bot reads two to four files over HTTPS (§11).
+- *A build on every push* (the first draft). The owner chose batching to cut commit churn; a card push now waits up to one
+  interval (§15).
+
+## 4. Architecture
+
+```
+ people: the website's Edit button | Discord (/alias, /update_metadata, /mass_replace) | git pushes (PSDs, PNGs, decks.json)
+        |  commits                         |  commits (git_commit: API, else SSH)          |
+        v                                  v                                               v
+ MichaelJSr/TTSCardMaker  main    PSDs, PNGs, Types/, MDW/Fonts/, stoogedings.json, site/Card Edits.json,
+        |                         site/Card Authors.txt, TTS/decks.json, TTS/Impossibility Simulator.json
+        |
+        |  every 30 minutes (decision 5) | dispatch: the bot, by hand
+        v
+ .github/workflows/card-sync.yml  "Card sync"                       runner, GITHUB_TOKEN only, one job
+   gate   main head, builder, pending work vs db/manifest.json -> go, or end in ~15 s
+   bake   pending website edits (card_bake) -> local commit B on main's head, nothing pushed yet
+   build  B (or main's head), blobless + sparse -> git ls-tree, git log --raw   (tree, dates, authors, deletions, renames)
+          data, depth 1 -> db/ before
+          bobberlington/AutoCroissant @ builder ref, sparse card_data.SPARSE_FILES
+          changed PSD blobs by sha (local first, else REST, budgeted) -> psd_parser, psd_details
+          history pass, changelog events, gates G1-G6
+   save   tts_save on B with names from the new db/
+   main   one commit M = B + the save, fast-forward push to main (only when the bake or the save changed something)
+   post   one Discord message per push with events (DISCORD_CHANGELOG_WEBHOOK)
+   data   one commit: db/ and the posted cursor -> branch data (never forced);  gh workflow run site.yml
+        |
+        v
+ MichaelJSr/TTSCardMaker  data    orphan branch, db/ only, at most one commit per run
+        |                              |                                       |
+        | checkout, depth 1            | 304 check, then raw files at the sha  | the next run's "before"
+        v                              v
+ site.yml -> GitHub Pages             the bot on the jetson: reads JSON, never writes card data,
+   cards.json, Changes, Stats,        dispatches runs (ACTIONS_TOKEN), commits Discord edits to main
+   Details, analytics.json
+```
+
+**Who writes what afterwards**
+
+| Data | Only writer afterwards | Today |
+|---|---|---|
+| `db/stats.json`, `db/old_stats.json`, `db/psd_details.json`, `db/manifest.json`, `db/changelog/*.jsonl` (branch `data`) | card-sync.yml, stage `build` | /update_stats on the jetson, then /push to AutoCroissant main |
+| `db/changelog/posted.json` | card-sync.yml, stage `post` | none |
+| `TTS/Impossibility Simulator.json` | card-sync.yml, stage `save`; `/update_tts_save` as the hand fallback | tts-save.yml (daily), `/update_tts_save` |
+| Baked PSDs and PNGs, the bake's verdicts in `Card Edits.json` | card-sync.yml, stage `bake`; `/bake_cards` as the hand fallback | card-edits.yml (dispatch, dry run), `/bake_cards` |
+| `site/Card Edits.json` | the website, the bake (verdicts), by hand, **and the Discord commands** | the website, the bake, by hand |
+| `site/Card Authors.txt` | by hand, **and `/update_metadata author:` and `/mass_replace author`** | by hand |
+| Aliases | `Card Edits.json` field `aliases` (decision 3); `/alias` commits there | aliases.pkl via /alias and /push |
+| AutoCroissant `stats.pkl`, `old_stats.pkl`, `aliases.pkl`, `psd_details.json` | nobody after the cutover (frozen; deleted at step 10, decision 6) | the jetson |
+| The bot's `card_data/` (a local copy of db/), `reminder.pkl`, `type_emojis.json`, `repo_history.json`, `fonts_cache/` | the bot (all gitignored) | the same, without `card_data/` |
+
+## 5. Where the data lives (decision 1)
+
+**Recommended: an orphan branch `data` in MichaelJSr/TTSCardMaker holding only `db/`.**
+- **Main stays for people.** A data commit never lands on main. Main gets a Card sync commit only when a bake or the save
+  changed something; a PSD-only push, an edit that changes no name and a re-parse make no main commit at all.
+- **Its history is the database's history.** There is at most one commit per run, the per-card diffs are readable, a rollback
+  is one commit, and a reader fetches the branch alone at depth 1.
+- **No loops.** A GITHUB_TOKEN push triggers no workflow, and every workflow listens to `main` only. build_site's
+  `git_history()` and the save's change check read main only, so data commits never count as contributions.
+- **The cost is small.** `fetch-depth: 0` checkouts in site.yml also fetch the branch's commits and trees: a few KB a day.
+
+**Conflict with a memory rule.** The rule "commit to main; delete spare branches" applies. `data` is machine-written state, not a
+work branch, so the owner must approve the exception.
+
+**Fallback: `data/db/` on main.** Batching makes this cheaper than in the first draft: the data rides in the run's one main
+commit, so there is no extra writer and no extra "pull first" moment. The changes:
+- the main commit M also holds `data/db/`, so a run commits to main whenever the data changed, not only for a bake or the save
+  (recently 2 / 5 / 2 runs a day instead of about 0 / 2 / 1, §2);
+- the change gate ignores `data/**`, and `card_commit` names M's parent plus the run's own bake;
+- card makers' pulls carry the JSON deltas (a few KB to tens of KB per commit).
+
+**Who can write `data`.** All 8 collaborators can push to any branch, and there are no rulesets today. Two consequences:
+- The bot and the site read only JSON from `data`, never a pickle. A forged commit can at worst forge card data, which the
+  same people can already do through `Card Edits.json`. It cannot run code on the jetson.
+- A ruleset that lets only GitHub Actions update `data` is to confirm: it depends on whether a personal repo's ruleset can list
+  Actions as a bypass actor.
+
+## 6. The workflow: TTSCardMaker `.github/workflows/card-sync.yml` ("Card sync")
+
+It replaces `tts-save.yml` and `card-edits.yml`, which are deleted at the cutover (step 8).
+
+### 6.1 Triggers
+
+```yaml
+on:
+  schedule:
+    - cron: "4,34 * * * *"   # every 30 minutes; "4 * * * *" for hourly (decision 5)
+  workflow_dispatch:
+    inputs:                  # all optional; 9 of GitHub's 10
+      force: boolean         # run every stage even when the gate finds nothing
+      cards: string          # re-parse these cards (comma separated, matched like Card Authors.txt)
+      full: boolean          # re-parse every card; also the approval gate G4 asks for
+      dry_run: boolean       # run and report, commit and post nothing (default true until step 8, then false)
+      bake: string           # "all" (default), one card's name (card-edits.yml's `card`), or "none"
+      allow_archive: boolean # lift gate G2 for this run
+      restore: string        # a data commit: write its db/ back as a new commit
+      seed: string           # an AutoCroissant commit: start from its pickles (first run; re-seed after a rollback)
+      builder_ref: string    # AutoCroissant ref for this run (else vars.CARD_DATA_BUILDER_REF, else main)
+permissions: {contents: write, actions: write}     # push to main and data; gh workflow run site.yml; gh run list
+concurrency: {group: card-sync, cancel-in-progress: false}
+```
+
+There is no push trigger. Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs most.
+
+### 6.2 Batching and the change gate
+
+- **The schedule is the batch.** Every push in the interval between two runs is handled by the next run, together. A run
+  builds the head of main at its start, not `github.sha`, and diffs against what was last built (the blob shas stored in db/
+  and `manifest.card_commit`). No push is missed and none is built twice.
+- **Concurrency** holds one run going and one pending. A long run (a budgeted full re-parse) delays the next scheduled one; a
+  newer pending run replaces the older one; nothing is cancelled midway.
+- **The gate** (the job's first step, about 15 s) takes a blobless clone of main (1.1 MB) and reads `db/manifest.json` from
+  `data` (one contents read). The run goes on when any of these holds, else it ends green:
+  - (a) `git diff --quiet <manifest.card_commit> <main> -- <card inputs>` finds a change. The card inputs are `*.psd`, `*.png`,
+    `Types/`, `MDW/Fonts/*`, `stoogedings.json`, `site/Card Edits.json`, `site/Card Authors.txt`, `TTS/decks.json` and the save
+    file. `card_commit` only advances on a successful run, so a failed run is retried by the next one;
+  - (b) `manifest.pending.stale` is not empty: a budgeted re-parse is still continuing;
+  - (c) `PARSER_VERSION` at the builder ref differs from `manifest.builder.parser_version`. That version is one line of
+    `commands/psd_parser.py`, read raw from AutoCroissant at no API cost, so a parser change shows up within one interval (gate
+    G4 stops it until it is approved);
+  - (d) `manifest.pending.repin` is not empty: images baked by the last run still need their save links (§6.3, stage 4);
+  - (e) events are unposted: the last event's `seq` is past `posted.seq` (a post failed);
+  - (f) a dispatch with `force`, `cards`, `full`, `restore` or `seed`.
+- **Failed cards are not retried every run.** A broken PSD stays broken until someone pushes a fix, and that push changes its
+  blob, so the build tries it again then; `cards` retries it by hand.
+- No `sleep`, no polling.
+
+### 6.3 The job `sync`
+
+One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only when the gate said go.
+
+**Setup.**
+1. **Check out main:** `fetch-depth: 0`, `filter: blob:none`, sparse `/site/Card Edits.json`, `/site/Card Authors.txt`,
+   `/MDW/Fonts/stoogedings-src/stoogedings.json` and `/TTS/`.
+2. **Check out the data:** `ref: data`, `path: carddata`, `fetch-depth: 1`. On the first run, with no branch yet, the build
+   seeds instead (§7.1).
+3. **Check out the builder:** `bobberlington/AutoCroissant` at `inputs.builder_ref || vars.CARD_DATA_BUILDER_REF || 'main'`,
+   `path: bot`, sparse to `card_data.SPARSE_FILES` (§7), which covers the bake and the save as well. `tests/test_card_data.py`
+   runs `--help` on the three CLIs with exactly that list, as test_card_check does for card-check.yml.
+4. **Python:** setup-python 3.14, the Mac test venv's version (the goldens pass there), with `cache: pip` and
+   `cache-dependency-path: bot/requirements-card-data.txt`. Two virtual environments until one pin serves both:
+   - the builder's: `pip install -r bot/requirements-card-data.txt`, which pins `psd-tools==1.25.0` (the jetson's and the
+     goldens' version) plus fonttools and requests;
+   - the bake's: the psd-tools fork tag card-edits.yml installs today (`cards-20261021`). The builder moves to the fork with
+     the goldens when the fork tag is installed on the jetson, and the second environment goes.
+5. **Fonts:** the cache key is `card-fonts-$(git rev-parse HEAD:MDW/Fonts)`, the key card-edits.yml uses today, so the
+   entries carry over. On a miss, run `git sparse-checkout add '/MDW/Fonts/*' '!/MDW/Fonts/stoogedings-src/'`. This step runs
+   without `GIT_NO_LAZY_FETCH`.
+
+**Stages, in order.**
+1. **Bake** (unless `bake: none`). `python -m commands.card_bake --repo "$GITHUB_REPOSITORY" --head <main> --local "$GITHUB_WORKSPACE"
+   [--card <name>] [--dry-run]`. The new `--local` mode writes every baked PSD and PNG and the rewritten `Card Edits.json`
+   (verdicts) into the clone's object store as one local commit B on main's head, and pushes nothing. The bake's checks are
+   unchanged. A bake failure leaves no B; the run goes on from main's head, and the report says so.
+2. **Build** on B, or main's head without a bake, with env `GIT_NO_LAZY_FETCH=1`, `GITHUB_TOKEN` and
+   `PSD_TOOLS_FONT_DIRS=$GITHUB_WORKSPACE/MDW/Fonts`:
+   ```
+   cd bot && python -m commands.card_data --repo "$GITHUB_REPOSITORY" --checkout "$GITHUB_WORKSPACE" --head <B or main> \
+     --db "$GITHUB_WORKSPACE/carddata/db" --budget 400 --run "$RUN_URL" --summary "$GITHUB_STEP_SUMMARY" \
+     --message "$RUNNER_TEMP/message.txt" [--full] [--cards "$CARDS"] [--allow-archive] [--restore SHA] [--seed SHA]
+   ```
+   - The baked blobs are in the local object store, so they cost no API call.
+   - **Exit codes:** 0 = written, or nothing to do; 2 = a gate refused (red, nothing committed); 1 = an error.
+   - **Job summary:** the counts, a diff_stats-style per-card diff, and the validator notes on re-parsed cards.
+3. **Save.** `python -m commands.tts_save "TTS/Impossibility Simulator.json" --names carddata/db/stats.json`, with
+   `AUTOCROISSANT_LOCAL_DIR` at the checkout on B, as tts-save.yml runs it today. The new `--names` reads the card names from
+   the run's own data (`Card Edits.json` first, as today) instead of the live site's `cards.json`, which is one run behind.
+   - **The run's own baked images keep their old links** in this save: a save cannot pin a link to the commit it is in. The
+     build lists them in `manifest.pending.repin`, and the next run pins them (gate d). Those cards show their old art in the
+     save for one interval.
+   - If the build failed, the save still runs, with names from the last good data.
+4. **Commit main** (skipped on `dry_run`, or when neither the bake nor the save changed anything). One commit M on main's head
+   with the bake's files and the save, as `AutoCroissant <autocroissant@gmail.com>` (git_commit's identity), then
+   `git push origin M:main`: fast-forward only, never forced.
+   - Subject: `Card sync: 2 cards baked, TTS save updated`. Body: the bake report's card lines and the save's message.
+   - M holds the same card files as B, so the builder's references to B (version dates, events) are rewritten to M before
+     the data is written.
+   - **Main moved during the run** (the push is rejected): M and the data are dropped, and the run starts over once from the
+     new head. A second rejection ends the run with a warning; the next run does the work, since the bake and the build
+     are both idempotent.
+5. **Post** (`if: always()`, unless `dry_run`). `python -m commands.changelog post --db carddata/db --site
+   https://michaeljsr.github.io/TTSCardMaker --out discord.json`, then curl, following card-check's pattern. One message per push
+   with events, oldest first (§12.1). The card ids come from the live site's `cards.json`. A missing secret or a failed call is
+   a `::warning::`; the URL is never printed. `posted.json` advances after each accepted message.
+6. **Commit data** (skipped on `dry_run`, or when db/ and the cursor are unchanged), in `carddata/`:
+   - `git add -A db`, committed as `AutoCroissant <autocroissant@gmail.com>` with `-F message.txt`, then
+     `git push origin HEAD:data`, never forced. A rejected push fails the run, and the next run rebuilds on the new tip.
+   - Subject: `Card data: 2 changed, 1 new, 1 archived (main 1a2b3c4d)`.
+   - Body: one line per card, then `Builder: bobberlington/AutoCroissant@<sha>` and `Build: <run url>`.
+   - The cursor is in the same commit, so a run makes one data commit at most. The cost: if this push fails after the posts
+     went out, the next run posts the same pushes again (only possible when another writer moved `data`, gate G6).
+7. **Upload an artifact** (on failure, gate refusal or dry run): the would-be `db/`, the bake's crops and report, the save
+   report, the diff and the summary.
+8. **Dispatch the site build** (`if: always() && !cancelled()`): `gh workflow run site.yml` when stage 4 or 6 committed.
+9. **Failure alert** (`if: failure()`): one Discord message to `DISCORD_CHANGELOG_WEBHOOK`, for example "Card sync failed:
+   <run>; the website and the bot keep the data of <time>". It names the stage that failed. It is sent only when the previous
+   completed run succeeded, so a failing streak sends one message.
+
+### 6.4 The builder ref
+
+The builder follows AutoCroissant main by default. Gate G4 stops a parser change from rewriting the database unannounced (§8).
+To roll back a broken parser push without touching AutoCroissant, set the repo variable `CARD_DATA_BUILDER_REF` (Settings →
+Variables; not a secret) to the last good commit, then clear it once main is fixed. `manifest.builder.commit` records the exact
+commit of every build. The pin also pins the bake and the save, which come from the same checkout.
+
+## 7. The builder (AutoCroissant, Discord-free)
+
+**Modules (all new unless noted; none join setup.py `INCLUDE_FILES`, so the jetson runs the same pure Python as the runner):**
+
+| Path | What |
+|---|---|
+| `commands/card_data.py` | The build and its CLI (`python -m commands.card_data`). The traverser's data path is **moved** here from `repo_traverser.py`: the changed-PSD loop, `_gather_details`, authors, edits, duplicates and archive. It reads a **source**: a tree (in the API's shape), a `text(path)` and a `download(path, sha)`. It also holds the gates and `SPARSE_FILES`. |
+| `commands/card_history.py` | The git index from one `git log --raw`, the version rules, re-dating, dedupe, archive dates and renames |
+| `commands/card_db.py` | JSON records (`record(card)`, `card(record)`), reading and writing `db/` files atomically one record per line, the manifest with sha256 per file, the one-time seed from pickles (an allow-list unpickler mapping `commands.psd_analyzer`/`commands.card_models` CardInfo and CardStats to card_models), `export-pickles`, and the bot's `sync()` |
+| `commands/changelog.py` | Events from before/after plus the index, each with its push; the CLI `post` (Discord payloads, one per push; the cursor) |
+| `commands/card_bake.py` (changed) | Gains `--local`: all baked cards and the verdicts as one local commit, nothing pushed (§6.3, stage 1). The bot's `/bake_cards` keeps its one commit per card. |
+| `commands/tts_save.py` (changed) | Gains `--names <stats.json>`: names from a `db/` instead of the website's `cards.json`, with the same rule build_site uses for `cards.json` names |
+| `commands/repo_traverser.py` (changed) | Becomes the bot's /update_stats. Until step 8 it calls `card_data.build` with the GitHub-API source and writes the root pickles as today (legacy mode, for the jetson). From step 8 it is sync and dispatch (§11). |
+| `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. |
+| `requirements-card-data.txt` | The builder's pins: `psd-tools==1.25.0`, `fonttools`, `requests` |
+
+`SPARSE_FILES`: card_data.py, card_history.py, card_db.py, changelog.py, card_models.py, card_edits.py, psd_parser.py,
+psd_details.py, psd_regions.py, font_check.py, github_api.py, global_config.py, requirements-card-data.txt, and for the other
+two stages card_bake.py, psd_edit.py, git_commit.py, repo_history.py and tts_save.py (today's card-edits.yml and tts-save.yml
+lists). The list never includes psd_analyzer, query_card, utils or type_emojis (discord, pandas). There is no config.py:
+github_api reads it inside a try/except and takes the token from the environment.
+
+### 7.1 One build, in order
+
+1. **Before.** Read `db/*.json` through card_db. When `db/` is empty, or `seed` is given, read AutoCroissant's pickles at that
+   commit through the allow-list unpickler and record `manifest.seed`.
+2. **The tree.** `git ls-tree -r -z <head>` (B or main's head) is shaped like the API tree (path, sha, mode, type), so every
+   traverser helper and `psd_details.font_index` work unchanged. It is never truncated and costs no API call.
+   **Every blob is read by its sha:** from a local object store when it is there, else by REST.
+   - Local means `git cat-file` under `GIT_NO_LAZY_FETCH=1`, so a missing blob is never downloaded by git.
+   - On the runner, the sparse checkout supplies the small files (`Card Edits.json`, `Card Authors.txt`, `stoogedings.json`),
+     and the bake supplies its own PSDs.
+   - On the Mac, `--blobs` supplies every PSD as well.
+3. **The git index** (card_history). One `git log <head> --format='C%x09%H%x09%ct%x09%an' --raw --no-abbrev --no-renames --
+   '*.psd' '*.png'`, under `GIT_NO_LAZY_FETCH=1`, so a blob fetch fails loudly instead of downloading. It took 0.07 s on
+   2026-10-22 (§2). It gives:
+   - per path: the newest commit, the first author, the last `D` (its deletion) and the PNG commits;
+   - per blob: its intro, the oldest commit that added it at any path;
+   - exact renames: a `D` of A and an `A` of B with the same blob in one commit. This is build_site's `image_versions` rule and
+     needs no git rename machinery.
+   `--no-renames` and no `-M`: inexact rename detection reads blobs.
+4. **The changed set.** The traverser's rules, unchanged: new, moved, an older `parser_version`, a different blob. Add the
+   names in `cards`, or everything with `full`. Archived names whose PSD is back are restored (`StatsDatabase.restore()`).
+5. **Downloads.**
+   - Changed PSD blobs by sha (`github_api.fetch_blob`) over 4 streams, after the local object store.
+   - The run stops at `--budget` (400) downloads, or when `X-RateLimit-Remaining` drops below 150. The rest go to
+     `pending.stale`.
+   - Hand run on the Mac: the blobs come from `--blobs`, so no API is used.
+6. **Parse and details,** with hook (c): an exception in `parse` or `_gather_details` for one PSD counts that card as failed
+   (`pending.failed`), keeps its old data, and the run goes on.
+7. **Authors, edits, duplicates.** As today, except one input: `_duplicate_name` reads the duplicate's `Card Edits.json`
+   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main.
+8. **Archive** (merged on main, dfdf953): `prune_clean_cards(at)` runs only when `_can_prune` (no failed new-name PSD, at
+   least one card). Each tag's `at` and `commit` come from the deleting commit in the index, not from the run's clock or a
+   commits-API call. `renamed_to` comes from an exact rename, or from a new card with the same blob in this run.
+9. **History** (§7.4).
+10. **Changelog events** (§12.1), each with the push that brought its commit.
+11. **Gates** (§13).
+12. **Write** `db/`, the manifest (with `pending.repin` for the PNGs baked in B), the summary and the commit message.
+
+### 7.2 Dates and authors
+
+- **Card timestamp.** A card's `timestamp` becomes the time of the commit that first added its current blob. A move, a mode
+  change or a re-commit of the same bytes no longer re-dates a card, and the website's "Recently updated" stops showing moves.
+  Predicted at the cutover: 31 current cards re-dated, 0 data fields changed (§2). A card baked in a run is dated by M.
+- **First author.** It comes from the oldest commit at the path, as the commits API gives today. `site/Card Authors.txt` still
+  wins.
+- **No commits API.** The commits-page lookups (`_commit_page`, `LOOKUP_WORKERS`, `_committed_since_update`) leave the Action's
+  path. Legacy mode on the jetson keeps them until step 10, because the jetson's git 2.25 must never run `log --raw` in a
+  blobless clone (memory `jetson-server`).
+
+### 7.3 Incremental and full builds
+
+- **Incremental** is the default. It downloads only the changed PSDs that are not already local, plus nothing else.
+- **Full** (`full`, or a `PARSER_VERSION` bump approved through G4) means 813 downloads (about 16.4 GB, streamed through temp
+  files). That is three budgeted runs, continued by the gate (b): about an hour at 30 minutes, two hours at hourly. The budget
+  is 400 so that two runs in one hour stay under the token's 1,000 requests an hour with room for card-check.
+  - Between the runs the data mixes parser versions. `manifest.pending.stale` says so, and the site footer and
+    `/update_stats` show "re-parse in progress: N cards still on parser version 2".
+  - The approval (`pending.full = {parser_version, approved_run}`) carries over to the continuation runs.
+- **Caches:** fonts (carried over from card-edits.yml) and pip. The data lives in git and needs no cache.
+
+### 7.4 History rules (old_stats refinements)
+
+- **A version only when data changes.** A new version is recorded only when a card's data fields change: card_type,
+  display_name, ability, stars, subtype, series, subseries, types, stats, creatures, author, note, hidden, duplicate_of.
+- **Each version gets `version`:** `{from, from_commit, to, to_commit, cause, png_commit, legacy}`.
+  - `cause` is one of `psd` (the blob changed), `reparse` (same blob, newer parser), `moved` (the same blob in another
+    folder, whose folder-derived data changed: stars, card type, subtype or series), `edit` (`Card Edits.json`), `authors`
+    (`Card Authors.txt`) or `legacy`. A move that changes no data field is no version (below).
+  - `from` is the blob's intro (for psd and reparse) or the commit of the edits or authors file. `to` is the next version's
+    `from`, or the deleting commit.
+  - `png_commit` is the newest commit of the card's PNG at `to`, so `/query as_of` can link the image of that day with no git on
+    the jetson.
+- **Art-only changes are not versions.** A blob change with identical data becomes an `art` changelog event and updates the
+  current card's `blob_sha`.
+- **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
+  every old path to the current one) is removed, so each version keeps the path it was parsed at. Both readers key history by
+  name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
+  version's own path.
+- **Duplicates** (`duplicate_of`) get no versions; they are copies of their original.
+- **Seed pass** (once; idempotent afterwards, so a later run changes nothing):
+  - drop versions whose data equals the next version or the current card (−10, re-counted at step 4), never one tagged
+    `archived`. A dropped version's earlier `from` moves to the version that holds its data; that version keeps its own
+    cause and `legacy` flag;
+  - re-date the versions that have a blob (3 of 178 change);
+  - mark the 291 blob-less versions `legacy: true` with their stored dates;
+  - date ZOEY!!!!!'s archive tag: `at` 2026-06-18 and `commit` 35adb383. The merged archive code backfills the tag on the
+    jetson's first /update_stats after the deploy (no PICKLE since dfdf953 yet); the seed pass then only adds the commit and
+    date, or tags it itself when seeded from an older PICKLE.
+
+## 8. Data formats (`db/` on branch `data`)
+
+| File | Content | Readers |
+|---|---|---|
+| `db/manifest.json` | What was built from what (below) | everyone: freshness, staleness, the gate, the bot's change check |
+| `db/stats.json` | `{"schema": 1, "cards": {name: record}}`, one card per line, sorted by name; current cards including duplicates | site, the save, bot, tests, diagnostics |
+| `db/old_stats.json` | `{"schema": 1, "cards": {name: [record, ...]}}`, one name per line: history plus archived cards | site (history), bot (`/view_old_metadata`, `as_of`) |
+| `db/psd_details.json` | Unchanged: schema v1 `{version, cards: {blob sha: record}}`, one record per line (`psd_details.text_of`) | site Details, bot `/fonts` |
+| `db/changelog/YYYY-MM.jsonl` | One event per line, appended by each build | site Changes tabs, the post stage |
+| `db/changelog/posted.json` | `{"seq": 120, "push": "<after sha>"}`: the last posted event and its push | post stage, gate (e) |
+
+**Record.**
+- **Keys are CardInfo's attribute names;** `stats` and `creatures` hold CardStats' (`hp`, `defense`, `attack`, `speed`). For
+  example:
+  `"The Freezer": {"ability": "…", "author": "…", "blob_sha": "…", "card_type": "creature", "name": "The Freezer", "parser_version": 2, "path": "…", "stats": {"attack": …, "defense": …, "hp": …, "speed": …}, "timestamp": …, …}`.
+- **Unknown and missing keys.** A record key CardInfo lacks is ignored, with one warning per key. A missing key takes the
+  field's default.
+- **Written** with `json.dumps(…, ensure_ascii=False, separators=(",", ":"), sort_keys=True)` per record (floats round-trip
+  exactly), and atomically: temp file, fsync, replace, as `save_pickle` does.
+- **The round trip is a test:** `record(card(record(c))) == record(c)` and every field equal through `getattr`, for all 819 cards
+  and 469 versions of the live pickles.
+- **The archive tag** is main's `{at, path, blob, commit, renamed_to?, backfill?}`, with `at` and `commit` from git (§7.1,
+  step 8).
+
+**Manifest.**
+```json
+{"schema": 1, "built_at": "2026-10-22T18:04:11Z", "run": "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/<id>",
+ "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>", "card_commit_at": 1792700000,
+ "main_commit": "<M, or null when the run made no main commit>",
+ "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "psd_tools": "1.25.0", "python": "3.14"},
+ "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
+ "inputs": {"edits_blob": "…", "authors_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
+ "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0, "baked": 0},
+ "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null, "repin": []},
+ "problems": [{"card": "…", "path": "…", "notes": ["HP NOT FOUND"]}],
+ "gates": {"G2": "override by run 123"}, "restored_from": null,
+ "files": {"stats.json": "<sha256>", "old_stats.json": "<sha256>", "psd_details.json": "<sha256>"}}
+```
+
+**Changelog event.**
+```json
+{"seq": 121, "at": 1792700000, "build": "<run id>", "card_commit": "<main sha built>", "commit": "<sha that caused it>",
+ "push": {"after": "<sha>", "before": "<sha>", "by": "<pusher's login>", "at": 1792699000},
+ "by": "<its git author>", "edit_by": "<_by of the edit>", "kind": "new|changed|art|moved|renamed|archived|restored|edited|authors|reparse|restore",
+ "card": "<name>", "title": "<display name>", "card_type": "creature", "stars": 3, "path": "…", "from_path": "…",
+ "fields": {"hp": [5, 6], "ability": ["old text", "new text"]}, "blob": ["<old>", "<new>"], "renamed_to": null}
+```
+- `seq = max(the largest seq, posted.seq) + 1`, so a restore never reuses a number.
+- **`push`** comes from one activity API call per run (`repos/…/activity?ref=refs/heads/main&activity_type=push`, §2): the push
+  whose `before..after` holds the event's commit. The run's own commit M is a push of its own (by `Card sync`). Without the
+  activity list (an API error, or a push older than the 100 listed), consecutive commits by one author count as one push.
+- The seed build writes no events: the re-dates, dedupes and backfill are not card changes.
+- Growth is a few KB a day; one file per month keeps each file small.
+
+## 9. Credentials (names only)
+
+| Where | Name | Use |
+|---|---|---|
+| TTSCardMaker Actions | `GITHUB_TOKEN` (built in) | Reads the card repo and the activity list; pushes main (`contents: write`: the bake and the save, as card-edits.yml and tts-save.yml do today) and `data`; `gh workflow run site.yml` and `gh run list` (`actions: write`) |
+| TTSCardMaker Actions | `DISCORD_CHANGELOG_WEBHOOK` (set 2026-10-22) | The per-push posts and the failure alert |
+| TTSCardMaker variables | `CARD_DATA_BUILDER_REF` (optional, not secret) | Pins the builder (§6.4) |
+| The bot's config.py (jetson) | `GIT_TOKEN` (existing) | The change check on `data` and the commits of Discord edits (the API, else SSH through the history clone, as tts_save does) |
+| The bot's config.py (jetson) | `ACTIONS_TOKEN` (new, optional; decision 4) | A fine-grained token on TTSCardMaker only, Actions read and write: `/update_stats` with `force_update` or `cards:` dispatches Card sync |
+
+- **AutoCroissant needs none.** It has no workflows and nothing writes to it any more.
+- **Not needed:** a PAT, a deploy key, or minimal's `AUTOCROISSANT_DEPLOY_KEY` or `AUTOCROISSANT_PUSH_TOKEN`.
+- **The webhook URL.** The owner pasted it in chat on 2026-10-22. It lives only in the secret. Never write it into a file in
+  either repo, since both are public. If that transcript is ever shared, regenerate the webhook in Discord and update the secret.
+
+## 10. Consumers and how each changes
+
+- **site.yml and build_site.py (TTSCardMaker):**
+  - **The data checkout.** A checkout of `ref: data, path: carddata, fetch-depth: 1`, and env `CARD_DATA_DIR=carddata/db`. When
+    the variable is set, `load_bot_pickle` and `load_bot_json` give way to `load_card_data()`, which reads the JSON into the
+    same `_Obj` stand-ins, so `bot_field_warnings` and the rest of the build are unchanged. When it is unset, the build reads
+    AutoCroissant as today, which is the rollback.
+  - `archived` and `version` join `CARD_FIELDS_OPTIONAL` (`archived` already did, e0e26b2f).
+  - **Triggers.** The push trigger stays as today (paths-ignore `TTS/**`), so website edits and new art publish at once on
+    the last data. Card sync dispatches it after each commit, with the new data. The cron goes from every 6 hours to daily
+    (`17 12 * * *`), as a safety net.
+  - **New outputs:** `data/changelog.json` (the last 180 days, names turned into card ids) and `data/analytics.json` (§12.3).
+  - **The footer** reads "Card data built <time> from TTSCardMaker@<sha> (run)". When `manifest.card_commit` is more than 3
+    hours behind the head on card paths, a staleness warning goes in the log and the footer.
+  - **Texts:**
+    - "Not parsed by the bot yet … Run /update_stats" (app.js:691) becomes "added by the next card sync, within 30 minutes
+      (link)".
+    - "Re-parse pending" (app.js:68) becomes "the data follows the next card sync".
+    - edit.js `ABOUT` and its "the bot reads it on /update_stats" lines become "the next card sync applies it (every 30
+      minutes)".
+- **tts-save.yml:** folded into Card sync (stage 3) and deleted at the cutover. Its daily gate becomes gate (a), which already
+  covers its inputs (`*.png`, `TTS/decks.json`, `Card Edits.json`, the save); its card-browser names check goes, because the
+  names come from the run's own data. tts_save.py gains `--names` (§7).
+- **card-edits.yml:** folded into Card sync (stage 1) and deleted at the cutover. Its `card` and `dry_run` inputs become
+  `bake` and `dry_run`; its one commit per card becomes the run's one main commit.
+- **card-check.yml, font-check.yml:** unchanged. card-check keeps reporting on each push's PSDs at once, so card makers still
+  hear about a broken PSD in minutes; merging it into Card sync is a later, separate idea.
+- **The bot:** §11.
+- **Tests (AutoCroissant `tests/`):**
+  - **New:**
+    - `test_card_db.py`: the live round trip (skipped without the pickles), the record format, the manifest hashes, the seed
+      unpickler refusing a non-allow-listed global.
+    - `test_card_history.py`: a fixture `git log --raw` text (newest, first author, blob intro, deletions, exact renames,
+      version meta, dedupe that keeps archived tags, legacy marking).
+    - `test_card_data.py`: `--help` on `SPARSE_FILES` in a clean subprocess for the three CLIs, the gates G1-G6, the exit codes,
+      an offline end-to-end build on a temporary git repo of fixture PSDs, and the B-to-M rewrite.
+    - `test_changelog.py`: every kind, a `seq` never reused, events grouped by push (activity list and the fallback), the
+      Discord payload within limits (§12.1), the cursor moving only after each accepted message.
+    - `test_metadata_edits.py`: Discord edits produce exactly `dump_edits` text and Card Authors.txt lines; `/mass_replace` makes
+      one commit; the alias migration mapping.
+    - `test_query_as_of.py`.
+  - **Changed:** `test_update_stats.py`, for hook (c) and legacy-mode parity (the moved code writes the same pickles as before on
+    the fixtures); `test_card_bake.py` for `--local` (one commit, the same files as the per-card commits); `test_tts_save.py`
+    for `--names` (the same names as `cards.json` on a fixture).
+  - `conftest.real_stats` keeps reading the root stats.pkl until step 10, then reads `db/stats.json` from the Mac clone's
+    `origin/data`.
+- **Diagnostics:**
+  - `diff_stats.py` and `inspect_pickle.py` (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) also accept a
+    `.json` path, loaded through card_db, so the pre-push gate becomes a review of the data commit. The job summary already
+    holds the same diff.
+  - `export-pickles` turns any `db/` back into pickles for the older tooling.
+
+## 11. The bot afterwards
+
+**A reader of card data.**
+- **The change check.** `card_db.sync()` sends one conditional request,
+  `GET repos/MichaelJSr/TTSCardMaker/commits/data` with the sha accept header and `If-None-Match`. A 304 is free.
+- **On a new sha:**
+  - it fetches `db/manifest.json` and then only the files whose sha256 changed, from `raw.githubusercontent.com/<repo>/<sha>/db/…`
+    (immutable at a sha, no lag), and checks each against the manifest;
+  - it writes them atomically into `card_data/` (gitignored) and loads `stats_db` from JSON;
+  - it queues today's follow-ups: `populate_files` (its own tree fetch, an ETag 304 when unchanged), `prep_dataframes`,
+    `sync_changed_emojis` and `refresh_history`.
+- **It never unpickles anything from the network.**
+- **When it syncs:** on_ready, `/update_stats`, and a reminder at Card sync's interval, a few minutes after each run
+  (`/update_stats` every 30 minutes, or hourly; decision 5). The 05:00 reminder d2664752 becomes redundant and is removed with
+  054b5933.
+
+**Commands.**
+- **`/update_stats`:**
+  - **No options:** sync, then reply "Card data built 12 min ago from TTSCardMaker@abc1234 (run): 3 changed, 1 new, 1
+    archived; reloaded", or "already current".
+    - If main is ahead on card paths, the reply says the next card sync (at :04 or :34) picks it up, or links the run when one
+      is going (`actions/runs?status=in_progress`, readable on a public repo).
+    - If the last run failed, it links that run.
+  - **`force_update` or `cards:`** (admin only from step 8, since they cost API budget): dispatch Card sync with `full` or
+    `cards` through `ACTIONS_TOKEN`, poll the run with progress edits for at most 30 minutes, then sync. Without the token, it
+    replies with the Actions link and `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true`.
+  - **`output_problematic_cards`** shows `manifest.problems`.
+- **`/alias`** (decision 3) commits `site/Card Edits.json` with `aliases` on the card the PNG belongs to. The commit is `Discord:
+  /alias breakfast -> A Snack2`, with an `Edit-by` trailer and `_by`/`_at` on the entry. The bot's lookups already merge
+  `Card Edits.json` aliases (`CardEdits.names`, card_edits.py:190), so the alias works at once. `/alias` with no value removes
+  it the same way.
+- **`/update_metadata`** (decision 2) makes one commit to the card repo through `card_bake.land` (it retries when main moved) and
+  `dump_edits`, which moves to card_edits.py and stays re-exported from card_bake. The subject is, for example, `Discord:
+  /update_metadata Tainted Bethany (hp, ability)`, with an `Edit-by` trailer and `_by`/`_at` on the entry. Fields map like this:
+  - `author` → a `[cards]` line in `site/Card Authors.txt`;
+  - `ability`, `stars`, `types`, `hp`/`def`/`atk`/`spd` → `Card Edits.json` fields of the "psd" kind. They persist, show
+    "PSD pending" like a website edit, and the next Card sync bakes them into the PSD;
+  - `subtype`, `series`, `card_type` → `subtype`, `series`, `type` (the "folder" kind);
+  - `subseries` → `subseries`;
+  - `del_entry` → `hidden: true`.
+
+  The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands. A card with only
+  a PNG gets the entry in the file (the website shows it) but no database row.
+- **`/mass_replace`:**
+  - `author` → right-hand sides rewritten in Card Authors.txt plus a `[people] old = new` line;
+  - `series`, `subseries`, `subtype`, `card_type` → one `Card Edits.json` entry per matching card, all in one commit.
+- **`/update_tts_save` and `/bake_cards`:** they stay as hand fallbacks that commit directly, as today. With `ACTIONS_TOKEN`
+  they could dispatch Card sync instead, keeping one writer; that is a later, small change.
+- **`/push`:**
+  - until step 10 it replies "Card data is built by the Card sync Action: <link>";
+  - at step 10 it is removed (`help.py`, `main.py`; the change-control slash-command checklist);
+  - `/update` keeps its pull, Cython rebuild caveat and restart, minus the pickle push.
+- **`/pull` (update_bot.git_pull):** the "keep our pickles" conflict rule goes, because the bot no longer writes those files.
+- **`/fonts`:** it reports from `card_data/psd_details.json` and no longer refills it, because the builder owns that file and
+  fills `supplied` with the fonts present.
+- **Reminders:** remove 054b5933 (the 05:30 /push) and d2664752 (05:00 /update_stats); add the interval sync above; keep
+  134e3b24.
+- **Unchanged:** emojis and the history clone.
+
+## 12. Changelog, Database edits, analytics, `/query as_of`, archive
+
+### 12.1 Changelog
+
+**Kinds** (from before/after and the index):
+
+| Kind | When |
+|---|---|
+| `new` | a name not seen before |
+| `restored` | an archived name whose PSD is back |
+| `changed` | data fields changed and the blob changed |
+| `art` | the blob changed, the data didn't |
+| `reparse` | same blob, newer parser, data changed; summarised as one line |
+| `moved` | only the path changed |
+| `renamed` | archived A plus new B with the same blob |
+| `archived` | the PSD left the card repo |
+| `edited` | a `Card Edits.json` entry changed (`edit_by` from `_by`) |
+| `authors` | only the author changed through Card Authors.txt |
+
+A duplicate's change is listed under its original.
+
+**One post per push.**
+- **Which pushes.** Each push in the run's batch that brought at least one event gets one message, oldest first. A push with
+  no card events (site code, the save alone, `Types/` art with no data change) gets none. The run's own commit M is a push:
+  baked edits post as "Website edits baked into the PSDs". A reparse posts as one message of its own.
+- **The message.** Titled with who pushed and when, for example "Zomoroko, Oct 22 14:05: 1 new, 2 changed", linked to the
+  push's compare view (`before...after`). It uses the website's card-kind words (`KIND_LABEL` in `site/assets/app.js`: Creature,
+  Minion, Item, Field card, N.M.E. item, Debuff, Buff…), never invented ones (memory `game-terminology`).
+- **Its parts:**
+  - New cards: "Name (Creature, 3★) by <author>".
+  - Changed: "Name: HP 5 → 6; ability changed".
+  - New art.
+  - Moved and renamed: "Old is now New".
+  - Archived: "Name (PSD deleted)".
+  - Restored.
+  - Database edits: "Name: subseries → … (by …, on the website / via Discord)".
+  - One line for parser re-reads.
+- **Links.** Each card links to `SITE_URL/c/<slug>/`; when the card has no slug yet (a new card the site has not built), the
+  link falls back to `#/cards?q=`.
+- **Limits.** Discord allows at most 10 embeds, 4,096 characters per description and 6,000 characters per message in all.
+  Anything past that in one push becomes "N more on the website" (`#/changes/changelog`). At most 20 messages per run, about
+  one a second (webhooks allow roughly 5 per 2 s); the rest wait for the next run, through the cursor.
+- `allowed_mentions: {"parse": []}`.
+- **Failure alerts** go to the same channel (§6.3, step 9).
+
+**Website, the Changes page tabs:**
+- **Overview:** today's panels.
+- **Changelog:** events grouped by day and push for the last 180 days, field diffs shown (`diffWords` for ability text),
+  filterable by kind. It also lists archived cards.
+- **Database edits:**
+  - the `edited` and `authors` events;
+  - the website publish batches build_site already computes from the `Card Edits.json` and `Card Authors.txt` history;
+  - commits whose subject starts "Discord:", marked "via Discord".
+
+  The "Edited on the website" panel moves here.
+
+### 12.2 `/query as_of:<YYYY-MM-DD>`
+
+- **The time.** The end of that day in `TIMEZONE`.
+- **Which version.** Pick the version with `from ≤ t < to`, or the current card when `t ≥` the last version's `to`.
+  - Before the first stored version: "no stored version is that old; the oldest is from <date>" (old_stats may not hold the
+    card's first version, so "not made yet" would overclaim).
+  - When archived and `t ≥ archived.at`: "archived on <date> (PSD deleted in <commit>)", showing the last version. A tag
+    with no `at` counts as archived after its last version only.
+- **The image** is pinned to `version.png_commit`, so the jetson runs no git.
+- **Legacy versions** say "(date approximate)".
+- **It ships first (step 3) on today's old_stats.** There, `from` is the stored timestamp and `to` is the next version's. Until the
+  build records `edit` versions, the reply says "Database edits (website, /update_metadata) are not dated yet: a version
+  shows those it had when it was replaced, the current card today's." (no cutover date exists before step 8). An older
+  version shows its stored data, not its image, until `png_commit` arrives with the build.
+- **The live check card** is Tainted Bethany: 4 old versions dated 2026-01-30, 02-07, 10-19, 10-19 in `TIMEZONE` (01-31,
+  02-08, 10-19, 10-19 in UTC). Only the fourth has a blob, so the first three say "(date approximate)". Versions 3 and 4 share
+  a timestamp, so version 3 is never picked until the seed pass drops duplicates.
+- **Archived cards** are found only through their tag. On today's pickles ZOEY!!!!! is unlisted but untagged, so
+  `/query ZOEY!!!!! as_of:…` fuzzy-matches another card until the jetson's next /update_stats backfills the tag.
+
+### 12.3 Balance analytics (the Stats page and Details)
+
+- **Who computes them.** `site/build/analytics.py` (new), called by build_site. The site is the only consumer, so there is one
+  place to compute and nothing for the bot to keep in step. The build only has to supply correctly dated versions.
+- **Cohorts:** creatures and minions by stars (387 cards with all four stats, §2). A cohort under 5 cards is folded into its
+  kind's "all stars" cohort. The 7 auxiliary creatures (`creatures`) count per creature.
+- **`data/analytics.json`:**
+  ```
+  {cohorts: {"creature|3": {n, hp/def/atk/spd/total: {p10, p50, p90}}},
+   cards: {<id>: {cohort, pct: {hp, def, atk, spd, total}, z_total, flags, trend: [{ts, hp, def, atk, spd, total}]}}}
+  ```
+- **The Stats page** gets a Balance section: one quantile strip per cohort and an outliers table (top and bottom 10% of total).
+- **A card's Details** get a Balance line ("total in the top 10% of 3★ creatures") and a sparkline of the trend from its
+  versions.
+- **Ships first (step 3)** from the pickles the site reads today. Load the `dataviz` skill before writing the charts.
+
+### 12.4 Archive
+
+- **Done.** `work/archive-deleted` merged into main (dfdf953, with the review fixes 9ae19f9 and 2167d81) and is deployed. The
+  builder runs its code as is: `prune_clean_cards(at)`, `restore()`, `archived()`, old_stats saved before stats, and
+  psd_details keeping archived blobs.
+- **What the build adds:**
+  - git dates and commits on every tag;
+  - `renamed_to` from exact renames across runs;
+  - gate G2, which caps archives per run.
+
+## 13. Gates, failure modes, rollback
+
+**Gates (in card_data; a refusal exits 2, commits nothing to `data` and uploads the would-be db/):**
+
+| Gate | Refuses when | Lifted by |
+|---|---|---|
+| G1 floor | fewer than 100 cards (build_site's `MIN_CARDS`), or fewer than 95% of before's | nothing; fix the cause |
+| G2 archive ceiling | more than max(5, 1% of cards) archived in one run | `allow_archive` |
+| G3 round trip | any record changes through record → CardInfo → record; psd_details doesn't parse; a written file's sha256 differs from the manifest | nothing |
+| G4 same-blob re-parses | more than 25 cards re-parsed with an unchanged blob | `full` (approval kept in `pending.full`) or naming them in `cards` |
+| G5 quality | UNKNOWN card_type up by more than 3; more than 3 cards lost their ability text; more than 3 lost every stat; psd_details records down by more than 5% | after review: `cards` for the listed cards, or `full` |
+| G6 freshness | the `data` tip moved since checkout (another writer) | the next run, automatically |
+
+A gate refusal also skips the main commit when the run baked, so a bake is never committed without the data that reads it;
+the save then waits too. Without a bake, the save still commits on the last good data.
+
+**Failure modes**
+
+| Case | What happens | Recovery |
+|---|---|---|
+| Build error (exception, API 5xx, a rate limit early in the run) | Red; no data commit; the last good data keeps being served; the save still runs on it; one failure alert per streak | The next run (gate a), or a dispatch |
+| Bake error | The run goes on from main's head without the bake; the report and crops are in the artifact; alert | Fix, then the next run bakes |
+| One unreadable PSD | Hook (c): counted in `pending.failed`; old data kept; no archiving that run if it was a new name; card-check already pinged the card makers | Fix the PSD; the next run builds it |
+| Gate refusal | Red; artifact holds the would-be db/ and the diff; alert | Review, then dispatch with the gate's input, or fix |
+| Wrong text that passes the gates | Visible in the commit's per-card lines and the job summary | `restore` (below) |
+| A parser regression pushed to AutoCroissant | G4 blocks a mass re-parse; per-card damage on newly pushed PSDs is possible | Pin `CARD_DATA_BUILDER_REF`; `restore`; dispatch `cards` after the fix |
+| The builder's import closure broken (a new top-level import) | Red at `--help` time; nothing committed | `test_card_data.py` catches it before the push; pin the ref meanwhile |
+| Main moved during the run | The run starts over once from the new head; then a warning, nothing committed | The next run |
+| Push to `data` rejected | Red; posts already sent may repeat on the next run | The next run rebuilds on the new tip |
+| Webhook down | Warning; cursor kept | The next run posts the waiting pushes |
+| A scheduled run late or skipped (GitHub delays crons under load) | The next run does the work; nothing is lost because the gate diffs against the last success | None needed; a dispatch if urgent |
+| Actions outage | The bot serves `card_data/`; the site can't deploy either (Pages builds in Actions) | The same builder by hand on the Mac (below) |
+| `ACTIONS_TOKEN` expired | `/update_stats force_update` replies with the link and the gh command | Rotate it |
+| Tampered `data` commit | JSON only, so no code runs; the next build carries the forged values forward | `restore`; the ruleset (to confirm) |
+
+**Rollback of data.**
+1. Dispatch `restore=<good data commit>`. The run writes that commit's `stats.json`, `old_stats.json`, `psd_details.json` and
+   manifest (`restored_from`) as a new commit, never forced. It keeps `changelog/` and appends a `restore` event, and the
+   posted cursor never goes back.
+2. **Before that, stop the cause.** Restored data has the old blob shas, so the next run would re-parse the same PSDs with the
+   same code. Pin the builder ref, or run `gh workflow disable card-sync.yml -R MichaelJSr/TTSCardMaker` while fixing (that
+   also stops the bake and the save; `/update_tts_save` covers the save meanwhile).
+3. Re-enable, then run `/update_stats` on the bot. The site is dispatched by the restore run.
+
+**By hand on the Mac** (an Actions outage, or a free full re-parse):
+```
+git clone -q --bare --filter=blob:none https://github.com/MichaelJSr/TTSCardMaker /tmp/tc.git      # 1.1 MB, 2 s
+~/.venvs/ac-py314-psd125/bin/python -m commands.card_data --repo MichaelJSr/TTSCardMaker --checkout /tmp/tc.git \
+  --blobs ~/Desktop/TTSCardMaker --db /tmp/carddata/db [--full] --summary /tmp/card-data.md
+```
+- `--checkout` gives the tree and the index, and must not be shallow: the builder refuses a shallow clone, as build_site does.
+  The Mac's working clone is shallow (checked 2026-10-22), so it serves only as `--blobs`, the object store tried first for
+  every blob by sha. The same gates apply.
+- Publishing: a plain `git push` of `/tmp/carddata` to `data`, with the owner's own credentials. The next scheduled run sees
+  G6 only if it was running at that moment.
+
+**Rollback of the whole move (until step 10):**
+1. Revert the site.yml cutover commit. The site reads AutoCroissant again.
+2. On the Mac, run `python -m commands.card_db export-pickles <data tip> . --git <a checkout of data>`, commit the three
+   files it writes (`stats.pkl`, `old_stats.pkl`, `psd_details.json`; `aliases.pkl` is not in db/ and stays) as `PICKLE` to
+   AutoCroissant and push. The jetson then resumes from the Action's latest data, so nothing is lost.
+3. Revert the bot cutover commit, deploy it (pull, `build_ext`, restart), and re-add the 05:00 /update_stats and 05:30 /push
+   reminders.
+4. Disable card-sync.yml and restore tts-save.yml and card-edits.yml from history (one revert of the cutover's TTSCardMaker
+   commit).
+
+## 14. Migration
+
+Each step lands on main on its own, keeps the full suite green, and is recorded in the plan. [owner] marks the owner's part.
+
+1. **Per-PSD failure isolation (hook c) in `repo_traverser.py`.**
+   - *What:* an exception in `parser.parse` or `_gather_details` for one PSD prints a line, counts the card as failed
+     (`failed_new` for a new name), keeps its data, and skips saving the ETag.
+   - *Verify:* a new test (an unreadable PSD among two good ones: 2 parsed, `failed == 1`, nothing archived); the jetson deploy
+     (pull, `build_ext`, restart); the next 05:00 run is normal in `journalctl -u autocroissant`.
+   - *Undo:* revert the commit and redeploy.
+2. **Merge `work/archive-deleted` into main. Done** (dfdf953, 2026-10-22, deployed).
+   - *Still to check,* on the jetson's next /update_stats: "Archived 1 card deleted before this update: ZOEY!!!!!" and nothing
+     else archived; before that /push, diff_stats shows 0 cards removed from stats and inspect_pickle counts 1 archived.
+   - *Undo:* revert the merge. Revert the PICKLE it produced, a pickle-only revert, which is the change-control exception, after
+     diff_stats.
+3. **Ship value from today's data** (independent; any order).
+   - *What:* the Balance analytics (§12.3), then `/query as_of` (§12.2).
+   - *Verify, analytics:* the site build is green; the cohort sizes in `analytics.json` equal §2's counts; three cards checked by
+     hand.
+   - *Verify, as_of:* `test_query_as_of.py`; live `/query Tainted Bethany as_of:2026-02-01` shows version 1 "from 2026-01-30
+     (date approximate)" (Pacific; 2026-01-31 in UTC). An archived-card check (`/query ZOEY!!!!! as_of:2026-07-01`) waits
+     for the next /update_stats, which backfills its tag.
+   - *Undo:* revert each commit.
+4. **Move the data path into `commands/card_data.py`, and add `card_history.py`, `card_db.py` and `changelog.py`;** add
+   `card_bake --local` and `tts_save --names`. `repo_traverser.update_stats` calls `card_data.build` in legacy mode (GitHub
+   source, root pickles, the bake lock, Discord messages).
+   - *Verify:*
+     - the full suite, plus the new tests in §10;
+     - `--help` of the three CLIs in a clean venv holding only `requirements-card-data.txt` (the bake's with its fork pin);
+     - on the Mac, in a sandbox copy, an incremental legacy run on fixture pickles writes byte-identical pickles to the old code;
+     - `tts_save --names` on a copy of the save with a copy of today's data gives the same Nicknames as the live `cards.json`;
+     - jetson deploy; the next 05:00 run reports as before;
+     - its PICKLE passes diff_stats with 0 unexplained differences.
+   - *Undo:* revert (code only) and redeploy.
+5. **Discord writers and the aliases** [owner: decisions 2 and 3].
+   - *First, the parity re-parse.* On the Mac, a full re-parse by hand with step 4's builder (§13, "By hand on the Mac"; local
+     blobs, no API) is compared by diff_stats (JSON input) with main's stats.pkl.
+     - Predicted: data-field differences only where /update_metadata or /mass_replace set a value after the card's last re-parse
+       (a re-parse would lose those values today), plus any PSD pushed since the jetson's last run.
+     - Any other difference (pure Python vs Cython, psd-tools) stops the migration until it is explained.
+   - *What:*
+     - `/update_metadata`, `/mass_replace` and `/alias` commit to the card repo (§11);
+     - one migration commit moves the 60 aliases into `Card Edits.json` `aliases`, and carries the Discord-only values the
+       re-parse listed, so nothing typed in Discord is lost.
+
+     This works with the jetson's pipeline, which already applies `Card Edits.json`.
+   - *Verify:*
+     - `test_metadata_edits.py`;
+     - every one of the 60 aliases resolves to the same card in `/query` and in the site's `cards.json` aliases as before;
+     - the duplicates' display names are unchanged in the next PICKLE (diff_stats);
+     - a second Mac re-parse shows 0 data-field differences;
+     - one live `/alias` makes one commit with its `Edit-by` trailer.
+   - *Undo:* revert the code. The `Card Edits.json` entries are valid data either way; revert that commit too for a full undo.
+6. **card-sync.yml, dispatch only, `dry_run` defaulting to true** (no schedule yet). tts-save.yml and card-edits.yml keep
+   running beside it.
+   - *Runs:*
+     - (a) an incremental dry run seeded from AutoCroissant's latest PICKLE, all stages;
+     - (b) `cards: Mini Doomer, The Freezer, The Lich King` (the certified goldens), to prove the runner parses as the Mac does;
+     - (c) a bake dry run (the fresh dry run the lifted hold asks for), compared with card-edits.yml's dry run at the same head.
+   - *Predicted before running:*
+     - (a) 0 PSDs to re-parse when the jetson is current; seed pass −10 duplicate versions (re-counted), 31 cards re-dated, 3
+       versions re-dated, 291 marked legacy, archive tags dated; 0 data-field differences; 0 `supplied` changes; the save
+       report equal to tts-save.yml's at the same head; one post per push of the last day in `discord.json`, nothing sent.
+     - (b) the three cards equal their goldens field for field.
+     - (c) the same cards, verdicts and crops as card-edits.yml's dry run.
+   - *Verify:* each prediction against the job summary and `diff_stats.py` (JSON input) vs main's stats.pkl. Any other difference
+     stops the migration until it is explained.
+   - *Undo:* delete the workflow file.
+7. **Shadow** [owner: decisions 1 and 5].
+   - *What:* create the `data` branch from run (a)'s output and add the schedule. The bake, the main commit and the posts stay
+     off in the workflow file until step 8 (the post stage writes `discord.json` to the artifact only), so tts-save.yml and
+     card-edits.yml stay the only main writers and nothing posts twice. The jetson keeps building and pushing pickles; the
+     site still reads AutoCroissant.
+   - *Verify, daily, for 3 days or 10 card pushes, whichever is later:*
+     - `diff_stats.py` between the `data` tip's stats.json and AutoCroissant main's stats.pkl, after the jetson's /push, shows
+       only the predicted refinements;
+     - build_site run twice (with and without `CARD_DATA_DIR`) gives byte-identical `cards.json`, apart from the predicted dates:
+       the re-dated cards and their duplicates, and the history entries of the deduped and re-dated versions;
+     - the changelog's events, grouped by push, match the card pushes of those days;
+     - most scheduled runs end at the gate (about 15 s).
+   - *Undo:* `gh workflow disable card-sync.yml`; delete the `data` branch.
+8. **Cutover, in one sitting.**
+   - *First:* reconcile the jetson. Its `git status` shows no modified data file, and its last /push is in origin. Otherwise
+     /push and re-seed with `seed=<that PICKLE>`. [owner, Discord] `/remove_reminder 054b5933` and `/remove_reminder
+     d2664752`, then add the interval `/update_stats` reminder; [owner] add `ACTIONS_TOKEN` to the jetson's config.py
+     (decision 4).
+   - *Then:*
+     - site.yml: the data checkout, `CARD_DATA_DIR`, the daily cron;
+     - card-sync.yml: the bake, the main commit and the post on; `dry_run` defaults to false; `posted.json` set to the last
+       shadow event, so Discord starts with the pushes after the cutover (the shadow period stays on the website's
+       Changelog);
+     - delete tts-save.yml and card-edits.yml in the same TTSCardMaker commit;
+     - the bot cutover commit: the reader, `/update_stats`, `/push`, `/pull`, `/fonts`, admin-only `force_update`;
+     - jetson deploy.
+   - *Verify:*
+     - the site footer reads "Card data built … from TTSCardMaker@…", with the same card count and no new warnings;
+     - `/update_stats` says "already current";
+     - `/query` on the three goldens;
+     - the next card push lands on the site, in the save and in Discord within one interval plus one site build (§15), with
+       one post for that push and at most one Card sync commit on main.
+   - *Undo:* rollback of the whole move (§13).
+9. **The Changes page tabs.**
+   - *What:* the Changelog and Database edits tabs (§12.1), from `data/changelog.json`.
+   - *Verify:* the tabs list the shadow-period and post-cutover events, grouped by push as the Discord posts were.
+   - *Undo:* revert the site commit.
+10. **Retire, within a day of clean runs** [owner: decision 6, 2026-10-22; tell bobberlington].
+    - *What:* delete AutoCroissant's root `stats.pkl`, `old_stats.pkl`, `aliases.pkl` and `psd_details.json`, the legacy mode,
+      the commits-API path and `/push`. Point `conftest.real_stats` at `db/stats.json`. Update the docs and memory:
+      - change-control: the data class is written by the Action; the gate is the data commit review;
+      - run-and-operate: `/update_stats`, `/push`, reminders, `card_data/`, the TTS save now from Card sync;
+      - architecture-contract: pickles-in-git becomes data-in-git, JSON;
+      - config-and-flags: `ACTIONS_TOKEN`, `CARD_DATA_DIR`;
+      - ttscardmaker-companion: the data flow, Card sync in place of tts-save.yml and card-edits.yml;
+      - impossibility-cards-reference: the db/ schemas;
+      - memories `jetson-server`, `ttscardmaker-integration` and `next-session-plan`.
+    - *Verify:* the suite is green; `/help` lists no /push; a full site build is green.
+    - *Undo:* revert. The files come back from history.
+
+## 15. Runner and API cost
+
+| Item | Cost |
+|---|---|
+| A run that ends at the gate | about 15-20 s; most of the 48 runs a day (24 at hourly), about 15 runner-minutes a day (8 at hourly) |
+| A working run (k changed PSDs) | about 2-4 min: the checkouts and the sparse builder (~10 s), Python and pip from cache (~25 s, two environments), the fonts cache restore (215 MB, ~15 s), ~2-4 s per PSD, the save (~1 min, as tts-save.yml), the posts and commits (~10 s); plus the bake's own time per card when edits are pending |
+| Working runs per day | one per interval with a card-input change: recently 2 / 5 / 2 (§2), against 2 / 8 / 4 builds if every commit built |
+| Commits on main from Card sync | at most one per working run, only when a bake or the save changed something: recently about 0 / 2 / 1 a day (the PNG windows, §2), plus one re-pin commit after each baking run. Before: tts-save daily plus one commit per baked card |
+| Commits on `data` | at most one per working run |
+| Discord posts | one per push with card events (recently a few a day); at most 20 per run |
+| A full re-parse | 813 downloads in three budgeted runs, about 8-15 min each (card-check's sequential whole-tree pass takes 25-30 min) |
+| site.yml | as often as now for pushes; plus one dispatch per committing run; the cron drops from 4 to 1 a day |
+| Price | standard runners are free on a public repo |
+| API (GITHUB_TOKEN, 1,000 requests an hour per repo, shared with card-check and font-check) | per working run: k blob downloads (none for local blobs), 1 activity read, 1 contents read; per gate-only run 1 contents read; a full re-parse is budgeted at 400 per run |
+| API (the bot) | one conditional request per sync (a 304 is free); the raw files are not API calls |
+| Storage | the `data` branch grows by packed deltas of a few KB to tens of KB per data commit; AutoCroissant stops growing by about 10-40 KB per PICKLE |
+
+**A card push reaches the website's data, the TTS save and Discord** within one interval (30 minutes, or an hour) plus about
+3 minutes of run and one site build. The push's images and website edits still reach the site at once through its own push
+trigger.
+
+## 16. Owner decisions
+
+Answered on 2026-10-22 and folded in above: the changelog posts one post per push, with failure alerts in the same channel;
+one batched Card sync run does the bake, the build, the save and the post; the archive is merged and deployed. The six below were answered on 2026-10-22 (03:50 and 04:30): all as recommended,
+except 6, which is one day, not 14:
+
+1. **Where the data lives.** Answered: yes, the orphan branch. Recommended: an orphan branch `data` in TTSCardMaker, an approved exception to "commit to main;
+   delete spare branches". It keeps main's history for people: Card sync touches main only for a bake or the save. The
+   fallback, `data/db/` on main, is now cheap too (it rides the run's one main commit), at the cost of a main commit on every
+   run that changed data (§5).
+2. **Discord edits become card-repo edits.** Answered: yes.
+   - `/update_metadata` writes `Card Edits.json` and `Card Authors.txt`: ability, stars, types and stats become "psd"-kind edits
+     that persist, show "PSD pending" and are baked by the next Card sync;
+   - `del_entry` becomes `hidden: true`;
+   - the Discord-only values found at step 5 are carried into `Card Edits.json`.
+3. **Aliases move from aliases.pkl into `Card Edits.json` `aliases`** (60 today), and `/alias` commits there. Answered: yes (aliases too).
+4. **`ACTIONS_TOKEN` on the jetson** (fine-grained, TTSCardMaker only, Actions read and write), so that `/update_stats
+   force_update` and `cards:` can start a Card sync run. Answered: yes; the owner creates it and puts it in the jetson's config.py. Without it those options reply with a link and the
+   gh command.
+5. **30 or 60 minutes.** Answered: 30. A push waits at most half an hour; the cost is about 7 more runner-minutes a day of
+   gate-only runs (free on a public repo) and no more commits, because commits follow changes, not runs. Hourly halves the gate
+   runs and makes a full re-parse take two hours instead of one. The bot's sync reminder follows the same interval.
+6. **Within a day of clean runs (owner; 14 days was the proposal), delete the pickles, `psd_details.json` and `/push` from AutoCroissant main** (bobberlington's repo:
+   tell him first). Answered: yes.
+
+## 17. To confirm (settled by a test, not by the owner)
+
+- Whether a ruleset on a personal public repo can let only GitHub Actions update `data` (§5).
+- That setup-python 3.14 with `psd-tools==1.25.0` installs on ubuntu-latest (a wheel, or a build from the sdist), and that the
+  bake's fork pin installs on 3.14 too (card-edits.yml runs it on 3.12 today).
+- That every HEAD PSD blob is in the Mac's working clone, for the by-hand full re-parse (one PSD checked 2026-10-22).
+- How build_site's contribution counts treat a `_by` or `Edit-by` naming a Discord user rather than a GitHub login. The proposal
+  is `discord:<name>`; it should be skipped or mapped, never given a person page.
+- That `raw.githubusercontent.com` downloads at a commit sha could replace the REST blob downloads for a one-run full re-parse
+  (their limits are not documented); later, optional.
+- That the activity API lists a website edit's commit as its own push, as it does the bot's API commits (§2).
+- That `tts_save --names` from `db/stats.json` gives exactly the names `cards.json` gives (step 4 checks it on a copy).
+
+**Files referenced.**
+- AutoCroissant (`~/Desktop/AutoCroissant`):
+  - `commands/repo_traverser.py`, `card_models.py`, `card_edits.py`, `card_bake.py`, `tts_save.py`, `git_commit.py`,
+    `github_api.py`, `psd_parser.py`, `psd_details.py`, `psd_analyzer.py`, `query_card.py`, `update_bot.py`, `font_check.py`;
+  - `global_config.py`, `main.py`, `setup.py`;
+  - `tests/conftest.py`, `tests/test_update_stats.py`, `tests/test_card_bake.py`;
+  - `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` and `inspect_pickle.py`;
+  - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt`.
+- TTSCardMaker (`~/Desktop/TTSCardMaker`):
+  - `.github/workflows/site.yml`, `card-edits.yml` and `tts-save.yml` (both folded into card-sync.yml), `card-check.yml`,
+    `font-check.yml`;
+  - `site/build/build_site.py`, `site/assets/app.js`, `stats.js`, `details.js`, `edit.js`;
+  - new: `.github/workflows/card-sync.yml`, `site/build/analytics.py`, the orphan branch `data`.
