@@ -304,6 +304,32 @@ def test_new_cards_reach_full_and_developer_decks(repo):
     assert any("can't be read" in x for x in report.errors)
 
 
+def test_star_move_changes_developer_deck(repo):
+    """A card moved to other stars leaves its add_new_since deck for the one covering it, object and fields kept."""
+    three, four = "Items/Heal/3 Stars/", "Items/Heal/4 Stars/"
+    moved = four + "M.png"
+    repo.tree[moved] = repo.tree[three + "K.png"] = repo.tree[four + "L.png"] = "bm"
+    repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
+    card = _card("000002", moved, 200, Transform={"posX": 1.0}, GMNotes="team")
+    dev3 = _deck("aaaaaa", [_card("000001", three + "K.png", 100), card])
+    dev4 = _deck("bbbbbb", [_card("000003", four + "L.png", 300, Transform={"posX": 4.0})])
+    save = {"ObjectStates": [dev3, dev4]}
+    repo.carried = lambda sha: set(repo.pngs)                         # nothing new
+    rule = {"kind": "items", "count": 1, "partial": True, "add_new_since": "base"}
+    rules = {"decks": {"aaaaaa": {"rule": {**rule, "folders": [three + "*.png"]}},
+                       "bbbbbb": {"rule": {**rule, "folders": [four + "*.png"]}}}}
+    report = tts._Report()
+    tts._sync_decks(save, rules, repo, Names(), report)
+    assert [c["GUID"] for c in dev3["ContainedObjects"]] == ["000001"] and dev3["DeckIDs"] == [100]
+    assert sorted(dev3["CustomDeck"]) == ["1"] and sorted(dev4["CustomDeck"]) == ["2", "3"]
+    assert dev4["ContainedObjects"][1] is card and dev4["DeckIDs"] == [300, 200]
+    assert card["Transform"] == {"posX": 4.0} and card["GMNotes"] == "team" and card["Description"] == "damage"
+    assert len(report.moved) == 1 and "1 card moved" in tts._commit_message(report)
+    again = deepcopy(save)
+    tts._sync_decks(again, rules, repo, Names(), tts._Report())
+    assert again == save
+
+
 def test_carried_follows_renames(tmp_path, monkeypatch):
     """The save's cards at a commit, carried to today's paths through a rename (by blob)."""
     git = lambda *a: run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)

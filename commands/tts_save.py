@@ -8,7 +8,8 @@ Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Sim
 Pins every repo image link to the commit that last changed the file, follows renames, syncs complete decks with
 their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
-save at that commit lacked), sets card Nicknames to the card browser's names, regenerates the Lua resizeTargets table.
+save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
+comes back unless excluded), sets card Nicknames to the card browser's names, regenerates the Lua resizeTargets table.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
@@ -364,6 +365,7 @@ class _Report:
         self.added: list = []           # (deck label, [(name, path, copies)])
         self.new: list = []             # the same, hand-picked decks (add_new_since)
         self.removed: list = []         # (deck label, [(name, path, copies)]): cards outside the deck's rule
+        self.moved: list = []           # cards moved between add_new_since decks (other stars)
         self.names_real: dict = {}      # (path, old, new) -> objects
         self.names_case: dict = {}
         self.unnamed: dict = {}         # (path, Nickname) -> objects: not on the website, kept
@@ -463,8 +465,8 @@ def _template(everything: list, deck: dict, back: str):
 
 def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Report) -> None:
     """Complete decks follow their rule: missing repo cards join (at the rule's usual count; an empty deck from a
-    template card, at the deck's Transform), cards outside it leave. Hand-picked decks with add_new_since only gain
-    the rule's cards the save at that commit lacked."""
+    template card, at the deck's Transform), cards outside it leave. Hand-picked decks with add_new_since gain the
+    rule's cards the save at that commit lacked, and a card moved to other stars changes deck (_move_between)."""
     everything = list(_walk(save.get("ObjectStates")))
     guids = {o.get("GUID") for o, _ in everything}
     top = 0
@@ -472,6 +474,7 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         top = max([top, o.get("CardID", 0) // 100 if isinstance(o.get("CardID"), int) else 0]
                   + [int(k) for k in (o.get("CustomDeck") or {}) if k.isdigit()])
     ids: dict = {}                                          # new image path -> its new CustomDeck id
+    _move_between(everything, rules, repo, report)
     for deck, parents in everything:
         if deck.get("Name") != "Deck":
             continue
@@ -574,6 +577,50 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         deck["CustomDeck"] = {k: v for k, v in (deck.get("CustomDeck") or {}).items() if k in used}
         deck["ContainedObjects"] = cards
         deck["DeckIDs"] = [c.get("CardID", 0) for c in cards]
+
+
+def _move_between(everything: list, rules: dict, repo: _Repo, report: _Report) -> None:
+    """A card in an add_new_since deck whose image left that rule (moved to other stars) moves, object and all, to
+    the one other add_new_since deck whose rule now covers it."""
+    since: dict = {}                                        # guid -> (deck, label, rule cards)
+    for deck, _ in everything:
+        try:
+            entry = rules.get("decks", {}).get(deck.get("GUID", "")) or {}
+            rule = entry.get("rule") or {}
+            if deck.get("Name") == "Deck" and rule.get("partial") and rule.get("add_new_since") and rule.get("count"):
+                since[deck["GUID"]] = (deck, f"`{deck['GUID']}` {deck.get('Nickname') or '(unnamed)'}",
+                                       set(_rule_cards(rule, repo.pngs)))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue                                        # _sync_decks reports it
+    touched: set = set()
+    for guid, (deck, label, wanted) in since.items():
+        cards = deck.get("ContainedObjects") or []
+        for card in list(cards):
+            path = _face_path(card)
+            if not path or path not in repo.tree or path in wanted:
+                continue
+            to = [g for g, (_, _, w) in since.items() if g != guid and path in w]
+            if len(to) != 1:
+                continue
+            target, to_label, _ = since[to[0]]
+            held = target.setdefault("ContainedObjects", [])
+            place = held[len(held) - 1].get("Transform") if held else target.get("Transform")
+            cards.remove(card)
+            if place is not None:
+                card["Transform"] = deepcopy(place)
+            held.append(card)
+            key = str(card.get("CardID", 0) // 100)
+            face = (card.get("CustomDeck") or {}).get(key) or (deck.get("CustomDeck") or {}).get(key)
+            if face is not None:
+                target.setdefault("CustomDeck", {})[key] = deepcopy(face)
+            report.moved.append(f"{card.get('Nickname') or '?'} `{path}`: {label} -> {to_label}")
+            touched.update((guid, to[0]))
+    for guid in touched:
+        d = since[guid][0]
+        held = d.get("ContainedObjects") or []
+        used = {str(c.get("CardID", 0) // 100) for c in held}
+        d["CustomDeck"] = {k: v for k, v in (d.get("CustomDeck") or {}).items() if k in used}
+        d["DeckIDs"] = [c.get("CardID", 0) for c in held]
 
 
 def _fix_keys(save: dict, report: _Report) -> None:
@@ -694,6 +741,7 @@ def _render(report: _Report, head: list) -> str:
     section("Cards added", listed(report.added))
     section("New cards added (hand-picked decks, add_new_since)", listed(report.new))
     section("Cards removed (outside the deck's rule)", listed(report.removed))
+    section("Cards moved (other stars, add_new_since decks)", report.moved)
     section("Nicknames changed", [f"`{p}`: '{old}' -> '{new}' ({n} card{'s' if n != 1 else ''})"
                                   for (p, old, new), n in sorted(report.names_real.items())])
     section("Nicknames changed (case/spacing only)", [f"`{p}`: '{old}' -> '{new}' ({n} card{'s' if n != 1 else ''})"
@@ -719,6 +767,7 @@ def _commit_message(report: _Report) -> str:
              f"{_plural(added, 'card')} added" if added else "",
              f"{_plural(removed, 'card')} removed" if removed else "",
              f"{_plural(len(report.renamed), 'rename')} followed" if report.renamed else "",
+             f"{_plural(len(report.moved), 'card')} moved" if report.moved else "",
              f"{_plural(names, 'Nickname')} fixed" if names else "",
              "resizeTargets updated" if report.lua_added or report.lua_removed else ""]
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
