@@ -46,7 +46,7 @@ In order. A line is struck when it lands; the docs it closes move to `docs/Finis
    cards_v3 <name>`; NEVER `--help`); push `cards`, the nine branches and the consolidated branch; tag `cards-2026102x`; re-pin
    TTSCardMaker `.github/workflows/card-edits.yml` to the tag; install the tag in the jetson venv once `tests/test_parser_goldens.py`
    passes under it (`~/venvs/autocroissant/bin/pip install "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>"`,
-   then a restart off-hours, never during /update_stats); switch `card_bake` to `save(preview=)` (perf/save-with-preview). Refresh
+   then a restart off-hours, never during /update_stats); switch `card_bake` to `save(preview=)` (done 2026-10-22). Refresh
    `~/Documents/Tools/psd-research/RENDER_STATUS.md` (cards_v4 section; drop the stale "Nothing pushed" lines; rewrite the class B
    text per RENDER_ROUND4_PLAN.md) and `PR_BODIES.md` (13 bodies: the user's review commits, the GradientInterpolation ->
    GradientMethod rename, round-3 bodies, the user's note that the round-2 branches stay as they are). Prune the /tmp worktrees of
@@ -144,10 +144,10 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls [open] (BUGS 2.5)
 - Lazy GitPython in update_bot; requests.Session per download thread [open] (BUGS 2.5)
 - No admin gate on /purge, /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music [user] (BUGS 2.5)
-- card_bake: pass the merged PNG as the PSD preview once fork save(preview=) lands (card_bake still calls update_preview=True) [blocked: new tag] (PIPE §14 Q2; BUGS pass 2)
+- card_bake: pass the merged PNG as the PSD preview once fork save(preview=) lands [done 2026-10-22: apply_jobs stores Photoshop's preview with the merge's pixels via save(preview=); card_bake unchanged] (PIPE §14 Q2; BUGS pass 2)
 - tests/test_card_bake.py cannot collect under the fork venv (no requests); pyyaml not installed, two workflow-shape tests skip [open] (BUGS pass 2)
 - /fonts cache from the local clone [open] (M:next-session-plan)
-- Round 4 bot follow-ups: test_moved_effect_paints_the_new_digit flipped, test_cannon_rows_refuse_parity_at_the_baseline now test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean; both skip on forks without rounding/bevel textures [done 2026-10-22, work/save-preview] (R4 §3)
+- Round 4 bot follow-ups: test_moved_effect_paints_the_new_digit flipped, test_cannon_rows_refuse_parity_at_the_baseline now test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean; each fork keeps a check (the truncated refusal; the untextured Cannon refusal) [done 2026-10-22, work/save-preview] (R4 §3)
 - Parity decision for lit cells above mean 1.0 at 0% bad: Cannon 1.579, Glaive_Main_Cannon 1.649; 28 raw-export cards refused by ICC in render_region [user] (R4 §3)
 - D3 remove stale Shadow Duelist from ABILITY_EXCLUSIONS after a golden-checked reparse [open] (BUGS 1.2; SK:autocroissant-psd-extraction-campaign)
 - D4 old_stats balloon 637698b cleanup (optional, diff_stats-gated) [open] (BUGS 1.2)
@@ -300,7 +300,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - Standardization rehearsal on /tmp copies (allowed now, not started): only STD §4.
 - std.jsx and the JSX trial copies (tests/test_psd_edit.py skips without them) live only in /private/tmp/fontexplore: STD L1, PIPE §7.
 - Bot fork tests cite /tmp/wt-pipeline-dev and /tmp/wt-cards (tests/test_card_bake.py, tests/test_psd_edit.py docstrings); pipeline-dev is not in cards: GIT only.
-- card_bake still uses update_preview=True; PIPE Q2 says fork save(preview=) "not done" but round 3 perf/save-with-preview implements it.
+- card_bake save(preview=): resolved 2026-10-22 (PIPE Q2 says done).
 - PSD-pending hole for baked names: only PIPE §9.
 - Pickle-unpickling code-execution risk in TTSCardMaker Actions: only BUGS 1.6.
 - Bot token read-only on the card repo (SSH commits): only PLAN Task 2.

@@ -1021,11 +1021,6 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
     return render, measured
 
 
-def _changed(base: Image.Image, render: Image.Image) -> np.ndarray:
-    """Region-sized mask: where the edited render differs from the baseline."""
-    return (np.asarray(base.convert("RGBA")) != np.asarray(render.convert("RGBA"))).any(axis=2)
-
-
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
     """
     Delta-merge: inside the region, the official PNG takes the new render's pixels where it differs from the
@@ -1038,16 +1033,17 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
         region: The edit's padded region
 
     Returns:
-        (merged image in the PNG's mode, pixels replaced)
+        (merged image in the PNG's mode, region-sized mask of the replaced pixels)
     """
     if png.mode not in ("RGB", "RGBA"):
         raise Refused("shape", f"PNG mode {png.mode}")
     x0, y0, x1, y1 = region
     out = np.array(png.convert("RGBA"))
-    changed = _changed(base, render)
+    after = np.asarray(render.convert("RGBA"))
+    changed = (np.asarray(base.convert("RGBA")) != after).any(axis=2)
     patch = out[y0:y1, x0:x1]
-    patch[changed] = np.asarray(render.convert("RGBA"))[changed]
-    return Image.fromarray(out).convert(png.mode), int(changed.sum())
+    patch[changed] = after[changed]
+    return Image.fromarray(out).convert(png.mode), changed
 
 
 def stored_preview(psd: PSDImage) -> Optional[Image.Image]:
@@ -1069,26 +1065,21 @@ def stored_preview(psd: PSDImage) -> Optional[Image.Image]:
     return image if image is not None and image.mode in ("RGB", "RGBA") else None
 
 
-def merge_preview(preview: Image.Image, base: Image.Image, render: Image.Image, raw: Image.Image,
-                  region: tuple) -> Image.Image:
+def merge_preview(preview: Image.Image, patches: list) -> Image.Image:
     """
-    merge_png() for the PSD's own preview: the pixels it replaces take the raw render (render_pair()).
+    merge_png() for the PSD's own preview: the pixels it replaced take the raw render (render_pair()).
 
     Args:
-        preview: stored_preview() (or the merge so far)
-        base: baseline()'s render of the region
-        render: The region rendered from the edited PSD
-        raw: The same render in the PSD's own values
-        region: The edit's padded region
+        preview: stored_preview()
+        patches: (merge_png()'s mask, raw render, region) per edit
 
     Returns:
         The preview, its mode kept (an RGB one takes the raw render over white)
     """
-    x0, y0, x1, y1 = region
     out = np.array(preview.convert("RGBA"))
-    changed = _changed(base, render)
-    after = _flat(raw) if preview.mode == "RGB" else np.asarray(raw.convert("RGBA"))
-    out[y0:y1, x0:x1][changed] = after[changed]
+    for changed, raw, (x0, y0, x1, y1) in patches:
+        after = _flat(raw) if preview.mode == "RGB" else np.asarray(raw.convert("RGBA"))
+        out[y0:y1, x0:x1][changed] = after[changed]
     return Image.fromarray(out).convert(preview.mode)
 
 
@@ -1438,7 +1429,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     region = changed_region(edits, new)
 
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
-    merged, parity, changed_pixels = png, {}, 0
+    merged, parity, changed_pixels, patches = png, {}, 0, []
     preview = stored_preview(old) if update_preview else None
     timings["baseline"] = timings["render"] = 0.0
     for edit in edits:
@@ -1453,8 +1444,10 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
         if preview is not None:
-            preview = merge_preview(preview, base, render, raw, edit.region)
-        changed_pixels += replaced
+            patches.append((replaced, raw, edit.region))
+        changed_pixels += int(replaced.sum())
+    if preview is not None:
+        preview = merge_preview(preview, patches)
     gate_shape(png, merged, new)
     gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
 
