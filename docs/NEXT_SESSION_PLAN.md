@@ -215,7 +215,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - RULE S1 silences (lane ties, combo rounding, hand limits, starting BRICKS...) [user] (RULE §3)
 - RULE P4 guard step in site.yml (own job / continue-on-error); P5 one Claude API semantic pass; P6 via simulator [blocked: P1-P3] (RULE §4)
 - Idea 15 text-first rulebook (text per page, fork-rendered, pagination) never started [blocked: hold + timing update] (PLAN idea 15)
-- D7 Twin Emperors 2nd DEF reads 4, card shows 10: fix per creature on the website, tick "parser notes checked" [open] (BUGS 1.2)
+- D7 Twin Emperors 2nd DEF reads 4, card shows 10: fix per creature on the website, tick "parser notes checked" [done: TTSCardMaker 98e85f1, fa2006d; Pix, Tainted Lazarus checked too] (BUGS 1.2)
 - D6 0 of 813 PSDs on stoogedings (see L1) [blocked: hold] (BUGS 1.2)
 - Rulebook gaps list in the rules skill: "~22" status count stale (19) [open] (RULE M2)
 

@@ -229,7 +229,7 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
 `card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES" (a guess:
-Twin Emperors' 2nd DEF reads 4, the card shows 10). Fix them with the website's per-creature edit. A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
+Twin Emperors' 2nd DEF read 4, the card shows 10). Fix them with the website's per-creature edit (all three done 2026-10-21 in Card Edits.json). A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
 bottom row N-10) is the problem "STATS TOO HIGH" unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20,
 Royal Eradicator Main Cannon atk 12; `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21). A digit-named group that holds digit layers is a row,
 not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin

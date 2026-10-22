@@ -33,6 +33,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   blob sha (fonts, text layers, effects, smart objects, canvas, icon style, stat-row encoding, FX/overlay layers, template
   deviations, a compact layer tree) for the website's Details dropdown; gathered in /update_stats, pushed with the pickles,
   backfilled by `python -m commands.psd_details --clone`; /fonts reads it first. Owner: autocroissant-run-and-operate §7.
+- 2026-10-21: D7 multi-creature stats, by database-only website edits in TTSCardMaker's `site/Card Edits.json`: Twin Emperors'
+  2nd creature DEF 10 (98e85f1); Pix and Tainted Lazarus checked against their PNGs, parser notes checked (fa2006d). stats.pkl
+  takes them at the next /update_stats.
 - 2026-10-21 (push guard, rule 2): `commands/card_check.py` (uncompiled, CLI only) reports a pushed card's parser and validator notes
   (what /update_stats prints; the parser's own notes among them are also the website's Parser notes) from TTSCardMaker's `card-check.yml` (landed 2026-10-21: AutoCroissant df4a439,
   TTSCardMaker a3451c8; the first whole-repo dispatch, run 39690899334, succeeded, job summary only; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
@@ -56,7 +59,6 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 | D2 | **"20 Creature Types" rulebook page has a `tornado` misspelling** (layer name in `MISSPELT_CARD_TYPES`; the user, 2026-10-21: it is supposed to be `wind`). The single pickled problem card; waits for the PSD hold. | `inspect_pickle.py --problems` | Fix the PSD layer name in TTSCardMaker | `impossibility-cards-reference` §validation |
 | D3 | **Stale exclusion: Shadow Duelist** sits in `ABILITY_EXCLUSIONS` but now has ability text. | Campaign burn-down census | Remove from the exclusion set after a golden-checked reparse | `autocroissant-psd-extraction-campaign` Phase 3.4 |
 | D4 | **A second, never-reverted old_stats balloon** (`637698b`, 2025-11-25): ~26 unchanged cards breadth-archived in one sweep still pollute old_stats.pkl history. | Byte trace in archaeology; snapshot forensics | Optional cleanup; low value, only with a diff_stats-gated PICKLE commit | `autocroissant-failure-archaeology` Entry 3 |
-| D7 | **Multi-creature stats are a parser guess.** Pix, Twin Emperors and Tainted Lazarus carry `SEVERAL CREATURES`; Twin Emperors' 2nd DEF reads 4 but the card shows 10 (an empty row next to a shared one is ambiguous). | `StatTrackers.creatures` | Fix per creature on the website, then tick "parser notes checked". 2026-10-21: doable now under the PSD hold: `creatures` is a database-only website edit (`site/Card Edits.json`), not a PSD write | `impossibility-cards-reference` §3.4 |
 | D6 | **No card uses the stoogedings font yet (0 of 813 PSDs).** About 45 PSDs (81 smart-object icon layers below the midline) still use image-layer icons, so they still depend on gap injection. Counting any layer kind gives 61 PSDs / 148 layers, some of them decoration rather than inline icons. | TTSCardMaker migration audit (2026-10-19) | Migrate them in TTSCardMaker (card content). The JSX prototype and its overlay-layer caveat are in the companion skill | `ttscardmaker-companion` |
 
 ### 1.3 OPEN — docs and cosmetics
