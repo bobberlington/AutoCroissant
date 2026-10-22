@@ -28,7 +28,7 @@ PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL, DETAILS_JSON)   # th
 # psd-tools fork
 # ========================
 FORK_ENV = "AC_PSD_TOOLS_SRC"                           # a psd-tools fork's src dir (the one holding psd_tools/)
-FORK_DEFAULTS = ("~/Documents/Tools/psd-tools/src", "/tmp/wt-cards/src")   # tried in order, each only with the fork API
+FORK_DEFAULTS = ("~/Documents/Tools/psd-tools/src", "/tmp/wt-cards/src")   # tried in order
 FORK_API = Path("psd_tools") / "api" / "text_edit.py"   # what upstream psd-tools lacks
 FORK_DEPS = {"uharfbuzz": "uharfbuzz", "freetype": "freetype-py"}   # psd-tools[text]: module -> package
 FORK_VENV = "~/Documents/Tools/psd-tools/.venv/bin/python"   # has them
@@ -36,8 +36,7 @@ FORK_VENV = "~/Documents/Tools/psd-tools/.venv/bin/python"   # has them
 
 def find_fork() -> tuple:
     """
-    Pick the psd_tools the text-engine tests run on, before anything imports it: $AC_PSD_TOOLS_SRC, else the installed
-    psd_tools if it has the fork API, else the first FORK_DEFAULTS dir that has it (put first on sys.path).
+    The fork's src dir: $AC_PSD_TOOLS_SRC, else the installed psd_tools, else FORK_DEFAULTS (put first on sys.path).
 
     Returns:
         (src dir, "") when usable, ("", why not) otherwise; why is the skip reason.

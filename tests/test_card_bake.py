@@ -3,10 +3,10 @@ card_bake: the edit.js editsFile port (today's file round-trips byte-identically
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
 sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), own commits, the SSH fallback
 for a token that can't write, --dry-run, --card. A real bake (a stat, and an ability with an FX layer) needs the fork's
-renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs
---help there without config.py, with an allowlist of third-party imports.
+renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml
+checks out of this repo and runs --help there without config.py, with an allowlist of third-party imports. Fork as
+conftest.find_fork finds it; a Python without requests skips this file:
     AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
-(the fork is found as conftest.find_fork says; a Python without requests skips this file)
 """
 import ast
 import hashlib

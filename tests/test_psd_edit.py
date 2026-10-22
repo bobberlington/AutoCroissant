@@ -9,6 +9,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 """
 import json
 import sys
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
 
@@ -125,7 +126,19 @@ def test_jsx_fx_fixture_is_vendored_and_small():
     for rel in (GASOLINE, CANNON):
         name, (x0, y0, x1, y1), ink = _jsx_ink(rel)
         assert name == "Ability FX: Blazing" and ink.any() and not ink[:y0].any() and not ink[:, x1:].any()
-    assert sum(f.stat().st_size for f in JSX_FX.parent.rglob("*") if f.is_file()) < 64 * 1024
+    assert sum(f.stat().st_size for f in JSX_FX.rglob("*") if f.is_file()) < 64 * 1024
+
+
+def test_make_jsx_fx_refuses_without_psds(monkeypatch, tmp_path):
+    """No trial copies (wiped, other machine): exit non-zero, vendored fixture untouched."""
+    spec = spec_from_file_location("make_jsx_fx", JSX_FX.parent / "make_jsx_fx.py")
+    script = module_from_spec(spec)
+    spec.loader.exec_module(script)
+    before = {f.name: f.read_bytes() for f in JSX_FX.iterdir()}
+    monkeypatch.setattr(script, "SOURCE", tmp_path)
+    with pytest.raises(SystemExit, match="no PSDs"):
+        script.main()
+    assert {f.name: f.read_bytes() for f in JSX_FX.iterdir()} == before
 
 
 def test_find_fork_explains_a_skip(monkeypatch, tmp_path):
@@ -136,8 +149,15 @@ def test_find_fork_explains_a_skip(monkeypatch, tmp_path):
     (tmp_path / conftest.FORK_API).parent.mkdir(parents=True)
     (tmp_path / conftest.FORK_API).write_text("")
     path = list(sys.path)
-    src, why = conftest.find_fork()                    # deps missing, or psd_tools already imported from elsewhere
-    assert src == "" and str(tmp_path.resolve()) in why and sys.path == path
+    for module in conftest.FORK_DEPS:                   # deps missing
+        monkeypatch.setattr(conftest, "find_spec", lambda name, real=conftest.find_spec, gone=module:
+                            None if name == gone else object() if name in conftest.FORK_DEPS else real(name))
+        src, why = conftest.find_fork()
+        assert src == "" and "this Python lacks " + conftest.FORK_DEPS[module] in why and sys.path == path
+    monkeypatch.setattr(conftest, "find_spec", lambda name: object() if name in conftest.FORK_DEPS else None)
+    monkeypatch.setitem(sys.modules, "psd_tools", sys.modules.get("psd_tools", object()))
+    assert conftest.find_fork() == ("", f"psd_tools was imported before conftest could put {tmp_path.resolve()} first")
+    assert sys.path == path
 
 
 def test_codes_are_the_closed_list():

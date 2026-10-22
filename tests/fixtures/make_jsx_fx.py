@@ -1,7 +1,5 @@
 """
-Write tests/fixtures/jsx_fx/ from Effect Layers - All Cards.jsx's 2026-10-20 trial copies (Convert overlays): per card the JSX
-FX layer's name, bbox and ink (alpha > 0.5, a 1-bit PNG of its bbox), all test_fx_layers_match_the_jsx_output reads. The
-copies (20+ MB each) live in $AC_JSX_FX_DIR, default ~/Documents/Tools/psd-research/fixtures/jsx-fx/:
+Write tests/fixtures/jsx_fx/ (FX layer name, bbox, 1-bit ink PNG per card) from the JSX trial copies in $AC_JSX_FX_DIR:
     python tests/fixtures/make_jsx_fx.py
 """
 import json
@@ -21,9 +19,14 @@ INDEX = OUT / "index.json"
 
 
 def main() -> None:
+    sources = sorted(SOURCE.glob("*.psd"))
+    if not sources:
+        raise SystemExit(f"no PSDs in {SOURCE}: set AC_JSX_FX_DIR; fixture left as is")
     OUT.mkdir(exist_ok=True)
+    for stale in OUT.glob("*.png"):
+        stale.unlink()
     index = {}
-    for path in sorted(SOURCE.glob("*.psd")):
+    for path in sources:
         psd = PSDImage.open(str(path))
         layer, = [layer for layer in psd.descendants() if " FX: " in layer.name]
         ink = layer.numpy("shape")[..., 0] > 0.5
