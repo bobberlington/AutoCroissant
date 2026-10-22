@@ -698,6 +698,46 @@ def test_change_kill_between_the_saves_keeps_one_history(github, psds, monkeypat
     assert [c.blob_sha for c in old["Mini Doomer"]] == [_sha(psds[DOOMER])]
 
 
+def test_move_kill_between_the_saves_keeps_one_history(github, monkeypatch):
+    """A same-blob move killed before stats.pkl: its history entry already has the new path; the next run replaces
+    it instead of doubling it."""
+    import commands.card_models as cm
+    _run()
+    moved = "Field/2 Stars/The_Freezer.psd"
+    github.files[moved] = github.files.pop(FREEZER)
+    real = _kill_on(monkeypatch, cm.STATS_PKL)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    assert [c.path for c in _saved()[1]["The Freezer"]] == [moved]
+    _restart(monkeypatch, real)
+    _run()
+    stats, old = _saved()
+    assert stats["The Freezer"].path == moved and [(c.path, c.stars) for c in old["The Freezer"]] == [(moved, 1)]
+
+
+def test_restore_reparse_kill_between_the_saves_stays_archived(github, psds, monkeypatch):
+    """Restored then re-parsed (a new blob), killed before stats.pkl: old_stats.pkl still holds the tagged record,
+    so the card is archived, not in neither; the next run restores and re-parses it again."""
+    import commands.card_models as cm
+    _run()
+    del github.files[DOOMER]
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    real = _kill_on(monkeypatch, cm.STATS_PKL)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    stats, old = _saved()
+    assert "Mini Doomer" not in stats and len(old["Mini Doomer"]) == 1 and old["Mini Doomer"][0].archived
+    db = cm.StatsDatabase()
+    db.load()
+    assert set(db.archived()) == {"Mini Doomer"}
+    _restart(monkeypatch, real)
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER]) and pa.stats_db.archived() == {}
+    assert [(c.blob_sha, c.archived) for c in old["Mini Doomer"]] == [(_sha(psds[DOOMER]), None)]
+
+
 def test_kill_while_archiving_then_psd_back_leaves_no_old_version(github, psds, monkeypatch):
     """The tagged copy a kill left is dropped once the PSD is back, not shown as an old version."""
     import commands.card_models as cm

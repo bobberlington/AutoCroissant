@@ -112,17 +112,100 @@ def test_restored_copy_matches_after_a_reparse():
     assert db.drop_stale_archives() and "Gone" not in db.old_stats
 
 
-def test_history_replaces_the_archived_copy_or_an_equal_last():
-    """add_history: a restored card's tagged copy, or the equal version a kill left, is replaced, not doubled."""
+def test_history_keeps_the_archived_copy_until_the_save(monkeypatch):
+    """add_history on a restored card: the tagged record stays (a kill leaves it archived), untagged by the save."""
+    monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: None)
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
     db.restore("Gone")
     db.add_history("Gone", db.stats["Gone"])
-    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None
-    db.add_history("Gone", deepcopy(db.stats["Gone"]))
-    assert len(db.old_stats["Gone"]) == 1
-    db.add_history("Gone", _card("Gone", blob="b" * 40))
-    assert [c.blob_sha for c in db.old_stats["Gone"]] == ["a" * 40, "b" * 40]
+    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived
+    db.stats["Gone"] = _card("Gone", blob="b" * 40)                           # the re-parse
+    db.save()
+    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None and not db.kept_archives
+
+
+def test_history_replaces_an_equal_last_even_moved():
+    """The version a kill left (before or after its path followed the card) is replaced, not doubled."""
+    card = _card("Kept")
+    moved = deepcopy(card)
+    moved.path = "Items/New/Kept.psd"
+    db = _db([card], old=[moved])
+    db.add_history("Kept", card)
+    assert db.old_stats["Kept"] == [card]
+    db.add_history("Kept", deepcopy(card))
+    assert len(db.old_stats["Kept"]) == 1
+    db.add_history("Kept", _card("Kept", blob="b" * 40))
+    assert [c.blob_sha for c in db.old_stats["Kept"]] == ["a" * 40, "b" * 40]
+
+
+def test_moved_restore_keeps_the_history():
+    """Restored at its old path, parsed at a new one: the record the paths moved to is history, not a copy."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    db.restore("Gone")
+    db.add_history("Gone", db.stats["Gone"])
+    db.stats["Gone"] = _card("Gone")
+    db.stats["Gone"].path = db.old_stats["Gone"][0].path = "Items/New/Gone.psd"
+    assert db.drop_stale_archives() and len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None
+
+
+def test_blobless_record_is_a_copy_only_when_equal():
+    """No blob: a stub at the same path is not the archived card (never dropped for it); an equal restore is."""
+    real = _card("Legacy", blob=None, ability="The real card.")
+    db = _db([real], seen=["Other"])
+    db.prune_clean_cards(AT)
+    assert db.restore("Legacy") and db.drop_stale_archives() and "Legacy" not in db.old_stats
+    db = _db([real], seen=["Other"])
+    real.archived = None
+    db.prune_clean_cards(AT)
+    db.stats["Legacy"] = cm.CardInfo(name="Legacy", card_type="unknown", path=real.path)
+    assert db.drop_stale_archives() and [c.ability for c in db.old_stats["Legacy"]] == ["The real card."]
+
+
+def test_listed_name_with_another_tagged_version_untags_it():
+    """A /pull mix (listed card, an older tagged version): the version stays as history, untagged."""
+    old = _card("Mixed", blob="0" * 40)
+    old.archived = {"at": AT, "path": old.path, "blob": old.blob_sha, "commit": None}
+    db = _db([_card("Mixed")], old=[old])
+    assert db.stale_archives() == ["Mixed"] and db.drop_stale_archives()
+    assert db.old_stats["Mixed"] == [old] and old.archived is None
+
+
+# ========================
+# rescue_dropped (/pull)
+# ========================
+def _tagged(card):
+    card = deepcopy(card)
+    card.archived = {"at": AT, "path": card.path, "blob": card.blob_sha, "commit": None}
+    return card
+
+
+def test_rescue_brings_back_an_archive_the_merge_dropped():
+    """stats.pkl from the side that archived X, old_stats.pkl from a backfill-only side: X goes back, tagged."""
+    x, v1 = _card("X"), _card("X", blob="1" * 40)
+    archiver = ({"Y": _card("Y")}, {"X": [v1, _tagged(x)]})
+    other = ({"X": x, "Y": _card("Y")}, {"X": [v1], "Z": [_tagged(_card("Z"))]})
+    merged_old = deepcopy(other[1])
+    assert cm.rescue_dropped(dict(archiver[0]), merged_old, [other, archiver]) == ["X"]
+    assert [c.blob_sha for c in merged_old["X"]] == ["1" * 40, "a" * 40] and merged_old["X"][1].archived
+    assert set(merged_old) == {"X", "Z"}
+
+
+def test_rescue_takes_the_listed_card_when_no_side_archived():
+    x = _card("X")
+    merged_old = {}
+    assert cm.rescue_dropped({}, merged_old, [({"X": x}, {}), ({}, {})]) == ["X"] and merged_old["X"] == [x]
+
+
+def test_rescue_leaves_listed_names_whole_histories_and_duplicates():
+    x, dup = _card("X"), _card("X2", duplicate_of="X")
+    sides = [({"X": x, "X2": dup}, {"X": [_card("X", blob="1" * 40)]}), ({"X": x}, {"X": [_tagged(x)]})]
+    merged_old = {"X": [_tagged(x)]}
+    assert cm.rescue_dropped({"X": x}, merged_old, sides) == [] and merged_old == {"X": [_tagged(x)]}
+    gone = _tagged(_card("Gone"))
+    merged_old = {"Gone": [gone]}
+    assert cm.rescue_dropped({}, merged_old, [({"Gone": _card("Gone")}, {}), ({}, {"Gone": [gone]})]) == []
 
 
 def test_untagged_history_is_never_restored():
@@ -234,3 +317,68 @@ def test_backfill_on_the_live_pickles(live_copy):
     again.seen_cards = list(again.stats)
     assert set(again.archived()) == set(db.archived()) and again.prune_clean_cards(AT + 1) == ([], [])
     assert {n: v.archived for n, v in again.archived().items()} == {n: v.archived for n, v in db.archived().items()}
+
+
+# ========================
+# /update_metadata, /pull
+# ========================
+def test_update_metadata_never_stubs_an_archived_card(monkeypatch):
+    """Its PNG may still be in the tree: show the archived record, refuse edits, make no stats entry."""
+    import commands.psd_analyzer as pa
+    import commands.query_card as qc
+    from types import SimpleNamespace
+    sent = []
+    db = _db([_card("The Morgue")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    monkeypatch.setattr(pa, "stats_db", db)
+    monkeypatch.setattr(pa, "queue_message", lambda inter, text, **kw: sent.append(text))
+    monkeypatch.setattr(db, "save", lambda: sent.append("saved"))
+    monkeypatch.setattr(qc.card_repo, "git_files", {"the morgue.png": "MDW/The Morgue/The_Morgue.png"})
+    monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
+    pa.manual_metadata_entry(SimpleNamespace(), "The Morgue")
+    assert "is archived" in sent[0] and "Does a thing." in sent[0]
+    pa.manual_metadata_entry(SimpleNamespace(), "The Morgue", hp=3)
+    assert "can't be edited" in sent[1] and len(sent) == 2 and db.stats == {}
+    assert db.old_stats["The Morgue"][0].archived and db.old_stats["The Morgue"][0].stats.hp != 3
+
+
+def _git(*args):
+    import subprocess
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
+
+
+def _commit(stats, old, message):
+    for obj, name in ((stats, cm.STATS_PKL), (old, cm.OLD_STATS_PKL)):
+        with open(name, "wb") as f:
+            pickle.dump(obj, f)
+    _git("add", cm.STATS_PKL, cm.OLD_STATS_PKL)
+    _git("commit", "-q", "-m", message)
+
+
+def test_pull_merge_keeps_an_archive(monkeypatch):
+    """A /pull on the side that only changed old_stats.pkl, merging the side that archived X (the conflict keeps
+    our old_stats.pkl): X goes back into old_stats.pkl, committed."""
+    import commands.update_bot as ub
+    x, y = _card("X"), _card("Y")
+    _git("init", "-q", "-b", "main")
+    _commit({"X": x, "Y": y}, defaultdict(list), "base")
+    _git("checkout", "-q", "-b", "archiver")
+    _commit({"Y": y}, defaultdict(list, {"X": [_tagged(x)]}), "archive X")
+    _git("checkout", "-q", "main")
+    _commit({"X": x, "Y": y}, defaultdict(list, {"Z": [_tagged(_card("Z"))]}), "backfill Z")
+    with pytest.raises(Exception):
+        _git("merge", "-q", "--no-edit", "archiver")
+    _git("checkout", "--ours", cm.OLD_STATS_PKL)
+    _git("add", cm.OLD_STATS_PKL)
+    _git("commit", "-q", "--no-edit")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "t")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "t@t")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "t")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "t@t")
+    assert ub._rescue_merged_cards() == ["X"]
+    db = cm.StatsDatabase()
+    db.load()
+    assert set(db.archived()) == {"X", "Z"} and set(db.stats) == {"Y"}
+    import subprocess
+    log = subprocess.run(["git", "log", "-1", "--format=%s"], capture_output=True, text=True).stdout.strip()
+    assert log == "PICKLE" and ub._rescue_merged_cards() == []              # the PICKLE commit is no merge

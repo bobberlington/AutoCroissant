@@ -1,6 +1,7 @@
 from discord import Interaction
 from os import execl, execv
 from os.path import isfile
+from pickle import loads
 from sys import argv, executable
 from commands.repo_history import batch_overrides
 from global_config import ALIAS_PKL, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
@@ -23,6 +24,44 @@ def _repo():
     repo = Repo('.')
     repo.git.update_environment(**batch_overrides('.'))
     return repo
+
+
+def _rescue_merged_cards() -> list:
+    """
+    After a merge commit: cards the file-by-file pickle merge dropped (stats.pkl from one side, old_stats.pkl from
+    the other) go back into old_stats.pkl from the side that had them, committed as PICKLE. Returns their names.
+    """
+    from commands.card_models import _old_stats_lock, rescue_dropped, save_pickle
+    repo = _repo()
+    head = repo.head.commit
+    if len(head.parents) != 2:
+        return []
+
+    def read(commit, path) -> dict:
+        try:
+            return loads((commit.tree / path).data_stream.read())
+        except KeyError:                                # not in that commit
+            return {}
+    merged_old = read(head, OLD_STATS_PKL)
+    names = rescue_dropped(read(head, STATS_PKL), merged_old,
+                           [(read(parent, STATS_PKL), read(parent, OLD_STATS_PKL)) for parent in head.parents])
+    if names:
+        save_pickle(merged_old, OLD_STATS_PKL, _old_stats_lock)
+        git = _git()
+        git.add(OLD_STATS_PKL)
+        git.commit('-m', 'PICKLE')
+    return names
+
+
+async def _rescue_after_merge(interaction: Interaction) -> None:
+    """_rescue_merged_cards, told in Discord; a failure never fails the pull."""
+    try:
+        names = _rescue_merged_cards()
+    except Exception as e:
+        await interaction.followup.send(f"Could not check the merged pickles for dropped cards: {e}")
+        return
+    if names:
+        await interaction.followup.send("Kept in old_stats (the merge dropped them): " + ", ".join(names))
 
 
 def restart_bot():
@@ -90,6 +129,7 @@ async def git_pull(interaction: Interaction):
                     # Pull with merge strategy
                     git.pull('origin', 'main', '--no-edit', kill_after_timeout=NET_TIMEOUT)
                     await interaction.followup.send("Merge successful!")
+                    await _rescue_after_merge(interaction)
                 except GitCommandError as merge_error:
                     if "CONFLICT" in str(merge_error) or repo.index.unmerged_blobs():
                         await interaction.followup.send("Merge conflict detected. Resolving automatically...")
@@ -112,6 +152,7 @@ async def git_pull(interaction: Interaction):
                         # Complete the merge
                         git.commit('-m', 'AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)')
                         await interaction.followup.send("Merge conflict resolved automatically!")
+                        await _rescue_after_merge(interaction)
                     else:
                         raise
 
