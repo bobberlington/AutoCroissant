@@ -826,6 +826,25 @@ def test_restored_card_with_a_failed_download_holds_the_prune(github, psds):
     assert stats["Mini Doomer"].blob_sha == _sha(psds[DOOMER]) and "Mini Doomer" not in old   # restored as it was
 
 
+def test_another_psd_under_an_archived_name_is_a_new_card(github, psds, monkeypatch, capsys):
+    """Another path and blob: not restored, so the author is its own; the archived record stays as history."""
+    _run()
+    gone = _saved()[0]["The Freezer"]
+    del github.files[FREEZER]
+    _run()
+    new = "Field/2 Stars/The_Freezer.psd"
+    github.files[new] = psds[OTHER]
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp",
+                        lambda self, repo, path, name: (TIME, "Newcomer" if path == new else "Tester"))
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert stats["The Freezer"].author == "Newcomer" and stats["The Freezer"].blob_sha == _sha(psds[OTHER])
+    assert [(c.blob_sha, c.archived) for c in old["The Freezer"]] == [(gone.blob_sha, None)]
+    assert pa.stats_db.archived() == {}
+    assert "Restored" not in capsys.readouterr().out
+
+
 def test_rename_onto_a_listed_name_records_renamed_to(github, psds):
     """Freezer deleted, its PSD renamed over Mini Doomer's: the archive names Mini Doomer (same blob)."""
     _run()
@@ -866,6 +885,26 @@ def test_archive_records_the_deleting_commit(github, psds, monkeypatch, capsys):
     assert old["Mini Doomer"][0].archived["commit"] == "d" * 40
     assert old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
     assert "Mini Doomer (now Mega Doomer), The Freezer" in capsys.readouterr().out
+
+
+def test_cards_deleted_together_read_the_commit_once(github, psds, monkeypatch):
+    reads = []
+
+    class Counted(_Commit):
+        @property
+        def files(self):
+            reads.append(self.sha)
+            return self._files
+    files = [_File(FREEZER), _File("Auxiliary/Minions/Mega_Doomer.psd", "renamed", DOOMER)]
+    monkeypatch.setattr(pa.RepositoryTraverser, "_commit_page", lambda self, path: [Counted("c" * 40, files)])
+    _run()
+    del github.files[FREEZER]
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = psds[OTHER]
+    del github.files[DOOMER]
+    _run()
+    old = _saved()[1]
+    assert reads == ["c" * 40] and old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
+    assert old["The Freezer"][0].archived["commit"] == "c" * 40 and "renamed_to" not in old["The Freezer"][0].archived
 
 
 def test_plain_deletion_reads_no_commit_files(github, monkeypatch):

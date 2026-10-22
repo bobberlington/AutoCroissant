@@ -99,8 +99,8 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 
 | Way | Gate | What happens |
 |---|---|---|
-| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:162-173) |
-| `/restart_bot` | NONE (verified main.py:152-159 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
+| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:178-189) |
+| `/restart_bot` | NONE (verified main.py:168-175 on 2026-10-22 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
 | Ctrl-C in the terminal | local | discord.py shuts down; main.py:921-922 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
 
 `restart_bot()` (commands/update_bot.py:12-16) does `execv('./startup.sh', argv)`; on
@@ -219,7 +219,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 | "Push failed: <err>" | Rebase conflict (aborted), fetch/auth failure, or push error (ssh key, a race). A remote that is merely ahead is handled by the rebase. If inside /update, the update aborts. |
 | "Git pull failed: <err>" | Merge machinery failed; read the git error. Rebase fallback may follow. |
 | "Rebase also failed: ..." + "Manual intervention may be required." | Bot cannot self-heal the clone. SSH in, `git status`, resolve, restart. |
-| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:205-208) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
+| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:221-224) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
 | "Restarting bot!" then nothing | Process replaced by execv/execl. Watch the terminal/host for the fresh startup lines. |
 
 ## 6. Multi-machine handoff runbook
@@ -395,7 +395,8 @@ Two ways to run it:
 - **Rules file:** `TTS/decks.json` in the card repo (deck GUID -> folder globs, include/exclude, copies per card,
   `partial` for hand-picked decks; `add_new_since: <sha>` on a hand-picked rule adds every rule card the save at
   that commit lacked, renames followed (nothing is recorded: a card taken out by hand comes back unless the rule
-  excludes it; a card moved to other stars moves to that stars' `add_new_since` deck): the four "Creatures Developer Version" decks since 318001ea, 2026-10-22; a rule
+  excludes it; a card moved to other stars moves to that stars' `add_new_since` deck, a fresh CustomDeck id if its key
+  shows another image there; other hand-picked cards stay): the four "Creatures Developer Version" decks since 318001ea, 2026-10-22; a rule
   without `count` leaves its deck alone). The bot reads main's copy. Edit it in TTSCardMaker and push; the Action
   picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
   under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.
@@ -494,14 +495,18 @@ in `psd_details.json` (repo root, committed; `{"version": 1, "cards": {sha: reco
 ### Card bake (/bake_cards, added 2026-10-21; the one live runner is TTSCardMaker's card-edits.yml Action, the jetson a manual fallback)
 
 The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes the website's PSD-kind edits in
-`site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per card. `commands/card_runner.py`
+`site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per run (one per card until
+2026-10-22). `commands/card_runner.py`
 (uncompiled; imports card_bake and psd_edit lazily inside the bake, so the bot starts without the fork's psd-tools) runs it
 inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
-- **No automatic bake (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
+- **No automatic bake in the bot (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
   its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
   queued at the end of `/update_stats` when `site/Card Edits.json`'s blob sha changed) landed and was removed the same day.
-  Lifting the PSD hold is the push trigger of TTSCardMaker's `card-edits.yml` (off today), nothing in this repo.
+  Since 2026-10-22 TTSCardMaker's `card-edits.yml` bakes live every 30 minutes when its gate (`card_bake.pending`: a PSD-kind
+  edit without a refused verdict for exactly its values on the current PSD) finds work, bakes only those cards (`--pending`;
+  a dispatch re-checks every card), at most 40 a run, and posts to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a streak of
+  failed scheduled runs starts (once, not every tick); nothing in this repo triggers it.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -632,7 +637,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 
 | Command | Gate | Notes |
 |---|---|---|
-| `/purge [user] [num] [bulk]` | none | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:665-677) |
+| `/purge [user] [num] [bulk]` | admin (since 2026-10-22) | Deletes messages in the current channel; defaults to the BOT's own messages, num 100 (`-1` = up to 1,000,000); `bulk:True` is faster but needs the bot to have Manage Messages (main.py:700-714). A reminder cannot run it (`user` has no default) |
 | `/list_guilds` | admin | Name, ID, member count per guild |
 | `/leave_guild guild_id` | admin | Numeric ID required |
 | `/list_guild_channels guild_id` | admin | Works with default intents |
@@ -776,3 +781,4 @@ module, not a shadowing name.
 the entry point, summary, download, temp-file and re-parse citations and the re-verification greps re-pointed; the
 saving bullet names the per-PSD failure messages (an unreadable PSD, a failed commit lookup) that replaced a whole-run
 abort.
+2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.

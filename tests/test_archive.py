@@ -18,6 +18,11 @@ def _card(name, blob="a" * 40, ability="Does a thing.", **kw):
                        blob_sha=blob, timestamp=1_700_000_000.0, **kw)
 
 
+def _restore(db, name):
+    """restore() with the PSD back at its archived path."""
+    return db.restore(name, f"Items/{name}.psd", None)
+
+
 def _db(stats=(), old=(), seen=None):
     db = cm.StatsDatabase()
     db.stats = {c.name: c for c in stats}
@@ -76,23 +81,33 @@ def test_restore_returns_the_record_and_keeps_the_history():
     db = _db([_card("Gone", blob="2" * 40)], old=[v1], seen=[])
     db.seen_cards = ["Other"]
     db.prune_clean_cards(AT)
-    assert db.restore("Gone") and db.stats["Gone"].blob_sha == "2" * 40 and db.stats["Gone"].archived is None
+    assert _restore(db, "Gone") and db.stats["Gone"].blob_sha == "2" * 40 and db.stats["Gone"].archived is None
     assert db.old_stats["Gone"][1].archived and db.archived() == {}   # the tagged record stays until the save
-    assert db.stale_archives() == ["Gone"] and not db.restore("Gone")  # listed again: nothing to restore
+    assert db.stale_archives() == ["Gone"] and not _restore(db, "Gone")  # listed again: nothing to restore
     assert db.drop_stale_archives() and db.old_stats["Gone"] == [v1] and db.stale_archives() == []
+
+
+def test_restore_needs_the_same_psd():
+    """The archived path or blob: another PSD under the name is a new card (its own author and series)."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    assert not db.restore("Gone", "Items/New/Gone.psd", "b" * 40) and not db.restore("Gone", "Items/New/Gone.psd", None)
+    assert "Gone" not in db.stats and db.restore("Gone", "Items/New/Gone.psd", "a" * 40)    # moved
+    db.stats.clear()
+    assert db.restore("Gone", "Items/Gone.psd", "b" * 40)                                  # edited in place
 
 
 def test_restore_drops_an_emptied_history():
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    assert db.restore("Gone") and db.drop_stale_archives() and "Gone" not in db.old_stats
+    assert _restore(db, "Gone") and db.drop_stale_archives() and "Gone" not in db.old_stats
 
 
 def test_save_drops_the_restored_copy_after_stats(monkeypatch):
     """old_stats (record kept), stats (card in), old_stats again (record out): no kill leaves it in neither."""
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    db.restore("Gone")
+    _restore(db, "Gone")
     saved = []
     monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: saved.append((path, "Gone" in obj)))
     db.save()
@@ -106,7 +121,7 @@ def test_restored_copy_matches_after_a_reparse():
     """A re-parse of the same blob (new parser, new timestamp) still drops the copy: same path and blob."""
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    db.restore("Gone")
+    _restore(db, "Gone")
     db.stats["Gone"] = _card("Gone", ability="Parsed again.")
     db.stats["Gone"].timestamp += 5
     assert db.drop_stale_archives() and "Gone" not in db.old_stats
@@ -117,7 +132,7 @@ def test_history_keeps_the_archived_copy_until_the_save(monkeypatch):
     monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: None)
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    db.restore("Gone")
+    _restore(db, "Gone")
     db.add_history("Gone", db.stats["Gone"])
     assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived
     db.stats["Gone"] = _card("Gone", blob="b" * 40)                           # the re-parse
@@ -143,7 +158,7 @@ def test_moved_restore_keeps_the_history():
     """Restored at its old path, parsed at a new one: the record the paths moved to is history, not a copy."""
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    db.restore("Gone")
+    _restore(db, "Gone")
     db.add_history("Gone", db.stats["Gone"])
     db.stats["Gone"] = _card("Gone")
     db.stats["Gone"].path = db.old_stats["Gone"][0].path = "Items/New/Gone.psd"
@@ -155,7 +170,7 @@ def test_blobless_record_is_a_copy_only_when_equal():
     real = _card("Legacy", blob=None, ability="The real card.")
     db = _db([real], seen=["Other"])
     db.prune_clean_cards(AT)
-    assert db.restore("Legacy") and db.drop_stale_archives() and "Legacy" not in db.old_stats
+    assert _restore(db, "Legacy") and db.drop_stale_archives() and "Legacy" not in db.old_stats
     db = _db([real], seen=["Other"])
     real.archived = None
     db.prune_clean_cards(AT)
@@ -193,9 +208,13 @@ def test_rescue_brings_back_an_archive_the_merge_dropped():
 
 
 def test_rescue_takes_the_listed_card_when_no_side_archived():
+    """Tagged, so the next /update_stats restores it (same PSD: the copy goes) or keeps it archived."""
     x = _card("X")
     merged_old = {}
-    assert cm.rescue_dropped({}, merged_old, [({"X": x}, {}), ({}, {})]) == ["X"] and merged_old["X"] == [x]
+    assert cm.rescue_dropped({}, merged_old, [({"X": x}, {}), ({}, {})]) == ["X"] and x.archived is None
+    assert merged_old["X"][0].archived["path"] == x.path and cm._equal_but(merged_old["X"][0], x, "archived")
+    db = _db(old=merged_old["X"], seen=["X"])
+    assert set(db.archived()) == {"X"} and _restore(db, "X") and db.drop_stale_archives() and "X" not in db.old_stats
 
 
 def test_rescue_leaves_listed_names_whole_histories_and_duplicates():
@@ -211,8 +230,8 @@ def test_rescue_leaves_listed_names_whole_histories_and_duplicates():
 def test_untagged_history_is_never_restored():
     """A card reset by /update_metadata del_entry (its PSD still there) has untagged history: no restore."""
     db = _db([], old=[_card("Reset")])
-    assert not db.restore("Reset") and "Reset" not in db.stats and len(db.old_stats["Reset"]) == 1
-    assert not db.restore("Never there") and "Never there" not in db.old_stats
+    assert not _restore(db, "Reset") and "Reset" not in db.stats and len(db.old_stats["Reset"]) == 1
+    assert not _restore(db, "Never there") and "Never there" not in db.old_stats
 
 
 def test_archived_skips_listed_names_and_untagged_lasts():

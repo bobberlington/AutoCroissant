@@ -10,6 +10,7 @@ from os import fsync, remove, replace
 from os.path import basename, splitext
 from pickle import load, dump
 from threading import Lock
+from time import time
 from typing import Optional
 
 from global_config import STATS_PKL, OLD_STATS_PKL
@@ -205,18 +206,23 @@ class StatsDatabase:
         version is tagged `archived`. The one read filter for archived cards."""
         found = {}
         for name, versions in self.old_stats.items():
-            if versions and name not in self.stats:
-                last = versions[len(versions) - 1]
-                if getattr(last, "archived", None):
-                    found[name] = last
+            if name not in self.stats and self.archive_tag(name):
+                found[name] = versions[len(versions) - 1]
         return found
 
-    def restore(self, name: str) -> bool:
-        """Put a copy of an archived card back in stats (its PSD is in the card repo again); the tagged record stays
-        until save() has written stats.pkl. Returns whether it was archived."""
+    def archive_tag(self, name: str) -> Optional[dict]:
+        """The `archived` tag of name's last old_stats version, or None."""
         versions = self.old_stats.get(name)
-        if name in self.stats or not versions or not getattr(versions[len(versions) - 1], "archived", None):
+        return getattr(versions[len(versions) - 1], "archived", None) if versions else None
+
+    def restore(self, name: str, path: str, blob: Optional[str]) -> bool:
+        """Put a copy of an archived card back in stats when its PSD is back: the tag's path or blob (another PSD
+        under the name is a new card). The tagged record stays until save() has written stats.pkl. Returns whether
+        it was restored."""
+        tag = None if name in self.stats else self.archive_tag(name)
+        if not tag or (tag.get("path") != path and not (blob and tag.get("blob") == blob)):
             return False
+        versions = self.old_stats[name]
         card = deepcopy(versions[len(versions) - 1])
         card.archived = None
         self.stats[name] = card
@@ -224,8 +230,7 @@ class StatsDatabase:
 
     def stale_archives(self) -> list:
         """Listed names whose last old_stats version is tagged (restore(), a kill or a /pull mix)."""
-        return [name for name, versions in self.old_stats.items()
-                if versions and name in self.stats and getattr(versions[len(versions) - 1], "archived", None)]
+        return [name for name in self.old_stats if name in self.stats and self.archive_tag(name)]
 
     def drop_stale_archives(self) -> bool:
         """Each stale_archives() record: kept as history untagged when add_history kept it or it is another version,
@@ -286,7 +291,7 @@ class StatsDatabase:
             if not versions or name in self.stats or name in seen:
                 continue
             last = versions[len(versions) - 1]
-            if not getattr(last, "archived", None) and not getattr(last, "duplicate_of", None):
+            if not self.archive_tag(name) and not getattr(last, "duplicate_of", None):
                 last.archived = _archive_tag(last, at)
                 last.archived["backfill"] = True
                 backfilled.append(name)
@@ -318,7 +323,8 @@ def rescue_dropped(merged_stats, merged_old, sides) -> list:           # untyped
     """
     Cards a file-by-file pickle merge dropped (stats.pkl from one side, old_stats.pkl from the other): an unlisted
     name whose merged history is shorter than a side's (its history plus its listed card) gets that side's back,
-    the longest, a tagged last first. Duplicates are derived, never rescued.
+    the longest, a tagged last first. A listed card comes back tagged (the next /update_stats restores it if its
+    PSD is there). Duplicates are derived, never rescued.
 
     Args:
         merged_stats: The merged stats.pkl
@@ -335,16 +341,22 @@ def rescue_dropped(merged_stats, merged_old, sides) -> list:           # untyped
                 continue
             versions = list(old.get(name) or [])
             card = stats.get(name)
-            if card is not None and not getattr(card, "duplicate_of", None):
+            listed = card is not None and not getattr(card, "duplicate_of", None)
+            if listed:
                 versions.append(card)
             if not versions:
                 continue
             tagged = bool(getattr(versions[len(versions) - 1], "archived", None))
             if name not in best or (len(versions), tagged) > best[name][0]:
-                best[name] = ((len(versions), tagged), versions)
+                best[name] = ((len(versions), tagged), versions, listed)
     rescued = []
-    for name, (_, versions) in best.items():
+    at = time()
+    for name, (_, versions, listed) in best.items():
         if len(versions) > len(merged_old.get(name) or []):
+            if listed:
+                card = copy(versions[len(versions) - 1])
+                card.archived = _archive_tag(card, at)
+                versions[len(versions) - 1] = card
             merged_old[name] = versions
             rescued.append(name)
     return sorted(rescued)

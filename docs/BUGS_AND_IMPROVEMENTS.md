@@ -186,9 +186,8 @@ Not done in this pass (later; audits on `docs/Finished/optimization-pass-2026-10
   `GIT_TERMINAL_PROMPT=0` / SSH BatchMode for the git calls; a failed blob still records the tree ETag (B9)
   (network-robustness.md items 8, 4, 5).
 - Lazy GitPython in update_bot; a `requests.Session` per download thread (network-speed-results.md).
-- `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and `/delete_all_music` have
-  no admin gate; with `/purge` any member can delete another user's messages if the bot has Manage Messages
-  (docs.md §1.6).
+- Done 2026-10-22: `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and
+  `/delete_all_music` are admin only (tests/test_admin_gates.py; docs.md §1.6).
 
 Not done in pass 2 (2026-10-21; `docs/Finished/optimization-pass-2-2026-10-21/README.md` lists the rest):
 - A bake is 23 s per card and 95 % of it is fork compositing: write the merged PNG as the PSD preview

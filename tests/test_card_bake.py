@@ -1,11 +1,12 @@
 """
 card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
-sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), own commits, the SSH fallback
-for a token that can't write, --dry-run, --card. A real bake (a stat, and an ability with an FX layer) needs the fork's
-renderer; those tests skip under stock psd-tools. The Action-shaped import check copies exactly the files card-edits.yml
-checks out of this repo and runs --help there without config.py, with an allowlist of third-party imports. Fork as
-conftest.find_fork finds it; a Python without requests skips this file:
+sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
+moved card left out, the schedule gate (pending), the SSH fallback for a token that can't write, --dry-run, --card. A
+real bake (a stat, and an ability with an FX layer) needs the fork's renderer; those tests skip under stock psd-tools.
+The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs --help there
+without config.py, with an allowlist of third-party imports. Fork as conftest.find_fork finds it; a Python without
+requests skips this file:
     AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 """
 import ast
@@ -14,8 +15,10 @@ import json
 import re
 import shutil
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from subprocess import run as run_process
 from sys import executable
+from types import SimpleNamespace
 
 import pytest
 
@@ -299,10 +302,10 @@ def test_rewrite_entry_rules():
 def test_run_drops_redundant_and_writes_verdicts(github):
     before = github.head
     text, commits = cb.run()
-    assert len(commits) == 2 and github.head == commits[1]
-    first, verdicts = github.commits[commits[0]], github.commits[commits[1]]
-    assert first["message"] == "Card edit: Mini Doomer hp 5 already on the card" and first["author"]["name"] == "AutoCroissant"
-    assert verdicts["message"] == "Card edits: 4 refused" and [p["sha"] for p in verdicts["parents"]] == [commits[0]]
+    assert len(commits) == 1 and github.head == commits[0]
+    commit = github.commits[commits[0]]
+    assert commit["message"] == "Card edits: 1 redundant, 4 refused" and commit["author"]["name"] == "AutoCroissant"
+    assert [p["sha"] for p in commit["parents"]] == [before]                                     # one commit for the run
     data = _edits_at(github)
     assert data["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}          # hp dropped, no verdict
     assert data["cards"]["Beldam"] == EDITS["Beldam"]
@@ -315,20 +318,22 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     raw = github.files_at(github.head)[cb.EDITS_PATHS[0]].decode("utf-8")
     assert raw == cb.dump_edits(json.loads(raw))                                                 # canonical layout
     assert github.files_at(github.head)[DOOMER] == github.files_at(before)[DOOMER]              # no pixels touched
-    assert "## Redundant (dropped from the file) (1)" in text and "## Refused (4)" in text and "committed `" in text
-    assert "**Nothing baked.**" in text and f"Refused verdicts committed `{commits[1][:8]}`" in text    # card-edits.yml greps "committed `"
+    assert "## Redundant (dropped from the file) (1)" in text and "## Refused (4)" in text
+    assert text.count(f"committed `{commits[0][:8]}`") == 5                                    # card-edits.yml greps "committed `"
+    assert "**Nothing baked.**" in text and f"One commit: `{commits[0][:8]}` Card edits: 1 redundant, 4 refused." in text
     blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
-    assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, the file at H' twice
+    assert len(blobs) == 7      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, the file at H'
     assert [route for _, route in github.calls].count("activity") == 1     # the recent gate reads the pushes once a run
+    assert cb.pending() == []                                               # every PSD-kind edit has its final verdict
 
-    # a rerun on the pipeline's own commit does nothing
+    # a rerun on the pipeline's own commit: the redundant field is gone, the verdicts are unchanged: nothing to commit
     text, commits = cb.run()
-    assert commits == [] and "pipeline's own commit" in text
+    assert commits == [] and "## Refused (4)" in text and "committed `" not in text and "One commit" not in text
 
-    # a human commit on top: the verdicts are unchanged, the redundant field is gone: nothing to commit
+    # a human commit on top: the same
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()
-    assert commits == [] and "## Refused (4)" in text and "Refused verdicts committed" not in text
+    assert commits == [] and "## Refused (4)" in text and "committed `" not in text
 
 
 def test_dry_run_commits_nothing(github, tmp_path):
@@ -337,10 +342,10 @@ def test_dry_run_commits_nothing(github, tmp_path):
     assert commits == [] and github.head == head and "(dry run)" in text and "not committed (dry run)" in text
     assert not [m for m, _ in github.calls if m != "GET"]
     work = tmp_path / cb.WORK_NAME
-    staged = json.loads((work / "Mini Doomer" / "Card Edits.json").read_text(encoding="utf-8"))
+    staged = json.loads((work / "Card Edits.json").read_text(encoding="utf-8"))      # the one file the commit would hold
     assert staged["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
-    verdicts = json.loads((work / "verdicts" / "Card Edits.json").read_text(encoding="utf-8"))
-    assert verdicts["cards"]["The Freezer"]["_psd"]["state"] == "refused" and "hp" in verdicts["cards"]["Mini Doomer"]
+    assert staged["cards"]["The Freezer"]["_psd"]["state"] == "refused"
+    assert "Would commit: Card edits: 1 redundant, 4 refused." in text
     assert (work / "report.md").read_text(encoding="utf-8") == text
 
 
@@ -455,6 +460,99 @@ def test_psd_changed_meanwhile_is_head_moved(github):
     assert commits == [] and f"head-moved: {DOOMER} changed on main" in text
 
 
+def test_moved_psd_leaves_only_its_card_out(github):
+    """A card whose PSD changed under the run stays out of the run's commit (a try-again refusal, no verdict); the rest lands."""
+    snapshot = github.head
+    files = github.files_at(snapshot)
+    files[DOOMER] = files[DOOMER] + b"\0"
+    github.commit(files, "artist", "Mini Doomer: new art")
+    text, commits = cb.run(head=snapshot)
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 4 refused"
+    data = _edits_at(github)
+    assert data["cards"]["Mini Doomer"] == {"hp": 5, "note": "checked", "_by": "web", "_at": AT}     # untouched, no verdict
+    assert data["cards"]["The Freezer"]["_psd"]["state"] == "refused" and github.files_at(github.head)[DOOMER] == files[DOOMER]
+    assert f"**Mini Doomer** `{DOOMER}`: hp 5: head-moved: {DOOMER} changed on main" in text
+    assert cb.pending() == ["Mini Doomer"]                                  # the next scheduled run tries it again
+
+
+def test_rerun_on_its_own_commit_retries_a_try_again_card(github):
+    """No skip for the pipeline's own commit: a card refused `recent` there is retried by the next run, with nothing else new."""
+    github.recent.add(DOOMER)
+    text, commits = cb.run()
+    assert len(commits) == 1 and "recent: PSD pushed in the last 30 min" in text and cb.pending() == ["Mini Doomer"]
+    github.recent.clear()
+    text, commits = cb.run()
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
+    assert cb.pending() == []
+
+
+def test_pending_is_the_schedule_gate(github):
+    """pending: a PSD-kind edit without a refused verdict for exactly its values on the PSD blob the tree holds now."""
+    assert cb.pending() == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]     # nothing tried yet
+    cb.run()
+    assert cb.pending() == []
+    files = github.files_at(github.head)
+    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data["cards"]["Beldam"]["series"] = "Paper Mario"                       # database-only: nothing to bake
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: Beldam")
+    assert cb.pending() == []
+    data["cards"]["Nobody"]["hp"] = 4                                       # a refused value changed
+    data["cards"]["Mini Doomer"]["atk"] = 2                                 # a new PSD field
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[FREEZER] = files[FREEZER] + b"\0"                                 # a refused card's PSD changed
+    github.commit(files, "web", "Website edit: Nobody, Mini Doomer; The Freezer's art")
+    assert cb.pending() == ["Mini Doomer", "Nobody", "The Freezer"]
+    data["cards"]["Mini Doomer"]["_psd"] = {"state": "baked", "for": {"atk": 2}, "psd": "01234567", "reason": "x", "at": AT}
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: a baked verdict beside a field")
+    assert "Mini Doomer" in cb.pending()                                    # only a refusal is final
+    files[cb.EDITS_PATHS[0]] = b"not json"
+    github.commit(files, "web", "Website edit: broken")
+    with pytest.raises(ValueError):                                         # the gate step fails: Discord is told
+        cb.pending()
+
+
+def test_pending_run_skips_final_verdicts(github):
+    """--pending (the schedule): a card whose refused verdict still holds is not looked at again; a dispatch re-checks it."""
+    cb.run()
+    files = github.files_at(github.head)
+    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data["cards"]["The Freezer"]["_psd"]["reason"] = "stars: changed by hand"   # a re-check would rewrite it
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: a verdict")
+    github.calls.clear()
+    text, commits = cb.run(pending_only=True)
+    assert commits == [] and "4 with PSD fields, 4 refused before (not re-checked)" in text
+    assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route != "git/blobs/" + _sha(files[cb.EDITS_PATHS[0]])]
+    text, commits = cb.run()
+    assert len(commits) == 1 and "not re-checked" not in text                # the dispatch rewrote The Freezer's verdict
+    assert _edits_at(github)["cards"]["The Freezer"]["_psd"]["reason"] != "stars: changed by hand"
+
+
+def test_png_verdicts_follow_the_pngs(github):
+    """A `duplicate` verdict rests on the PNGs by path: removing the numbered PNG reopens both cards, a re-export doesn't."""
+    cb.run()
+    data = _edits_at(github)
+    assert data["cards"]["A Snack"]["_psd"]["pngs"] and data["cards"]["A Snack2"]["_psd"]["pngs"]
+    assert "pngs" not in data["cards"]["Nobody"]["_psd"] and cb.pending() == []
+    files = github.files_at(github.head)
+    files["Items/Heal/2 Stars/A_Snack.png"] = b"re-exported"
+    github.commit(files, "web", "A Snack: re-export")
+    assert cb.pending() == []
+    del files["Items/Heal/2 Stars/A_Snack2.png"]
+    github.commit(files, "web", "A Snack2: removed")
+    assert cb.pending() == ["A Snack", "A Snack2"]
+
+
+def test_recent_png_is_refused(github):
+    """A teammate's PNG re-export in the last 30 min is theirs too: refused `recent` before the PSD is fetched."""
+    github.recent.add(DOOMER[:len(DOOMER) - 4] + ".png")
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "recent: PNG pushed in the last 30 min" in text
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and "Mini Doomer" in cb.pending()
+
+
 def test_redundant_name_is_dropped(github):
     """A name the card prints is redundant like any field (the bot reads the title): dropped with its verdict, once."""
     baked = {"state": "baked", "for": {"name": "Mini Doomer"}, "psd": "01234567", "reason": "name 'x' -> 'Mini Doomer'", "at": AT}
@@ -462,7 +560,7 @@ def test_redundant_name_is_dropped(github):
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": "Mini Doomer", "note": "n", "_psd": baked, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: something else")
     text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer name 'Mini Doomer' already on the card"
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
     assert "already on the card: name" in text
     assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "n", "_by": "web", "_at": AT}
     github.commit(github.files_at(github.head), "web", "Website edit: more")
@@ -475,14 +573,87 @@ def test_redundant_name_is_dropped(github):
     assert len(commits) == 1 and "Mini Doomer" not in _edits_at(github)["cards"]
 
 
-def test_verdicts_commit_failure_keeps_the_bake_commits(github, tmp_path):
-    """The verdicts commit is fenced: head-moved there is a note, the card commits and the report survive."""
-    github.conflicts, github.conflict_on = 3, "Card edits:"
+def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):
+    """The run's commit is fenced: head-moved after three tries is a note, no card gets a verdict, the report survives."""
+    github.conflicts = 3
     text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"].startswith("Card edit: Mini Doomer hp 5 already")
-    assert "**Refused verdicts not committed: head-moved: main kept moving" in text and "Refused verdicts committed" not in text
-    assert "_psd" not in _edits_at(github)["cards"]["The Freezer"] and "hp" not in _edits_at(github)["cards"]["Mini Doomer"]
+    assert commits == [] and "**Nothing committed: head-moved: main kept moving: not committed after 3 tries**" in text
+    data = _edits_at(github)
+    assert "_psd" not in data["cards"]["The Freezer"] and data["cards"]["Mini Doomer"]["hp"] == 5
+    assert "head-moved: main kept moving" in text.split("## Refused", 1)[1] and "committed `" not in text
+    assert text.count("verdict not written: nothing committed") == 4        # the refused cards say so too
     assert (tmp_path / cb.WORK_NAME / "report.md").read_text(encoding="utf-8") == text
+    assert len(cb.pending()) == 5                                           # all of it again next run
+
+
+def test_main_exits_1_when_the_commit_fails_or_a_card_errors(github, monkeypatch):
+    """A failure needs a person: main exits 1 (card-edits.yml then tells Discord); refusals alone exit 0."""
+    err = StringIO()
+    monkeypatch.setattr(cb, "stderr", err)
+    github.conflicts = 3
+    assert cb.main([]) == 1 and "card_bake: Nothing committed: head-moved" in err.getvalue()
+    github.conflicts = 0
+    github.down.add(_sha(github.files_at(github.head)[DOOMER]))
+    assert cb.main(["--card", "Mini Doomer"]) == 1 and err.getvalue().endswith("card_bake: 1 card with an error: Mini Doomer\n")
+    github.down.clear()
+    err.truncate(0)
+    assert cb.main([]) == 0 and cb.main([]) == 0 and err.getvalue() == ""   # 1 redundant, 4 refused committed; then nothing to do
+
+
+def test_cap_leaves_the_rest_for_the_next_run(github, monkeypatch):
+    """At most MAX_BAKES cards baked and none started after BUDGET: the rest are `capped`, no verdict, pending next run."""
+    monkeypatch.setattr(cb, "BUDGET", timedelta(0))
+    text, commits = cb.run()
+    assert commits == [] and "## Next run (capped) (5)" in text and "- Capped: 5 cards wait for the next run" in text
+    assert "## Refused" not in text and len(cb.pending()) == 5
+    monkeypatch.setattr(cb, "BUDGET", timedelta(minutes=40))
+
+    files = github.files_at(github.head)
+    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data["cards"]["Mini Doomer"]["hp"] = 8
+    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    github.commit(files, "web", "Website edit: Mini Doomer")
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        paths = {}
+        for ext in ("psd", "png"):
+            paths[ext] = f"{new_dir}/new.{ext}"
+            shutil.copy(old_psd if ext == "psd" else old_png, paths[ext])
+        with open(paths["psd"], "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=paths["psd"], png_path=paths["png"], edits=[SimpleNamespace(field="hp", old=5)],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], parity={}, flag_bytes=0,
+                               changed_pixels=0)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    monkeypatch.setattr(cb, "MAX_BAKES", 1)
+    text, commits = cb.run()                                                # A Snack, A Snack2, Mini Doomer, then the cap
+    assert len(commits) == 1 and github.commits[commits[0]]["message"].startswith("Card edits: 1 baked, 2 refused\n")
+    assert "## Next run (capped) (2)" in text and "**Nobody**" in text.split("## Next run", 1)[1]
+    assert cb.pending() == ["Nobody", "The Freezer"]
+
+
+def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
+    """A `font` refusal carries MDW/Fonts' key: final while the fonts hold, pending once a font file is added or changed."""
+    files = github.files_at(github.head)
+    files["MDW/Fonts/Some Face.ttf"] = b"face"
+    files["MDW/Fonts/stoogedings-src/x.svg"] = b"not installed"
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: (_ for _ in ()).throw(pe.Refused("font", "no Some Face")))
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    text, commits = cb.run()
+    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+    key = cb.snapshot_at(cb.CARD_REPO, github.head).fonts_key()
+    assert len(commits) == 1 and verdict["reason"] == "font: no Some Face" and verdict["fonts"] == key and len(key) == 8
+    assert cb.pending() == []
+    files = github.files_at(github.head)
+    files["MDW/Fonts/stoogedings-src/x.svg"] = b"changed, still not installed"
+    github.commit(files, "web", "Fonts: source only")
+    assert cb.pending() == []
+    files["MDW/Fonts/Some Face.ttf"] = b"a fixed face"
+    github.commit(files, "web", "Fonts: Some Face")
+    assert cb.pending() == ["Mini Doomer"]
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):
@@ -511,7 +682,7 @@ def test_forbidden_token_falls_to_ssh(github, monkeypatch):
         return github.commit({**github.files_at(head), **files}, "AutoCroissant", message)
     monkeypatch.setattr(gc, "git_commit", ssh)
     text, commits = cb.run(card="Mini Doomer")
-    assert len(commits) == 1 and pushed == ["Card edit: Mini Doomer hp 5 already on the card"] and gc.cant_write is True
+    assert len(commits) == 1 and pushed == ["Card edits: 1 redundant"] and gc.cant_write is True
     assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # refused once, then SSH
     assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT} and f"committed `{commits[0][:8]}`" in text
     github.commit(github.files_at(github.head), "web", "Website edit: more")
@@ -520,24 +691,25 @@ def test_forbidden_token_falls_to_ssh(github, monkeypatch):
     assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # no API write tried this run
 
 
-def test_verdict_skipped_when_edit_changed_before_the_verdicts_commit(github, monkeypatch):
-    """land_verdicts re-reads the file at H': a card whose edit changed meanwhile keeps the new edit and gets no verdict; the others do."""
+def test_verdict_skipped_when_edit_changed_before_the_commit(github, monkeypatch):
+    """land re-reads the file at H': a refused card whose edit changed meanwhile keeps the new edit and gets no verdict; the others land."""
     real = cb.land
 
-    def land(repository, files, expect, rewrite, message, dry_run, out_path=""):
-        if message.startswith("Card edits:"):                   # before the verdicts commit: The Freezer's edit changes
-            current = github.files_at(github.head)
-            data = json.loads(current[cb.EDITS_PATHS[0]].decode("utf-8"))
-            data["cards"]["The Freezer"]["stars"] = 3
-            current[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
-            github.commit(current, "web", "Website edit: The Freezer again")
-        return real(repository, files, expect, rewrite, message, dry_run, out_path)
+    def land(repository, shares, message, dry_run, out_path=""):
+        current = github.files_at(github.head)                  # before the commit: The Freezer's edit changes
+        data = json.loads(current[cb.EDITS_PATHS[0]].decode("utf-8"))
+        data["cards"]["The Freezer"]["stars"] = 3
+        current[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+        github.commit(current, "web", "Website edit: The Freezer again")
+        return real(repository, shares, message, dry_run, out_path)
     monkeypatch.setattr(cb, "land", land)
     text, commits = cb.run()
-    assert len(commits) == 2 and "**The Freezer**" in text and "edit changed meanwhile: verdict not written" in text
+    assert len(commits) == 1 and "**The Freezer**" in text and "edit changed meanwhile: verdict not written" in text
+    assert github.commits[commits[0]]["message"] == "Card edits: 1 redundant, 3 refused"
     data = _edits_at(github)
     assert data["cards"]["The Freezer"]["stars"] == 3 and "_psd" not in data["cards"]["The Freezer"]
     assert data["cards"]["Nobody"]["_psd"]["state"] == "refused" and data["cards"]["A Snack"]["_psd"]["state"] == "refused"
+    assert cb.pending() == ["The Freezer"]
 
 
 def test_missing_runner_dependency_is_transient(github, monkeypatch):
@@ -577,7 +749,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edit: Mini Doomer hp 5 -> 8\n\nEdit-by: web"
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
     after = github.files_at(github.head)
     changed = sorted(p for p in after if after[p] != files.get(p))
     assert changed == [DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATHS[0]]
@@ -625,7 +797,7 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     assert fx.name == "Ability FX: Blazing" and saved.index(fx) == saved.index(pe._text_group(saved)) + 1 and saved.has_preview()
     parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
     assert parse["fx"] == ["Ability FX: Blazing"] and parse["validator"] == [] and parse["new"]["ability"].endswith("Inflict Blazing.")
-    rewritten = json.loads((work / "Card Edits.json").read_text(encoding="utf-8"))
+    rewritten = json.loads((work.parent / "Card Edits.json").read_text(encoding="utf-8"))
     entry = rewritten["cards"]["Mini Doomer"]                                # the note keeps the entry; the ability is baked out
     assert "ability" not in entry and entry["note"] == "fx" and entry["_psd"]["state"] == "baked" and entry["_psd"]["for"] == {"ability": old + " Inflict Blazing."}
     print(f"dry-run bake {seconds:.1f} s; PSD {len(files[DOOMER])} -> {(work / 'new' / 'Mini_Doomer.psd').stat().st_size} bytes")
@@ -675,7 +847,7 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     done = run_process([executable, "-m", "commands.card_bake", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     assert done.stdout.startswith("usage: python -m commands.card_bake") and "--dry-run" in done.stdout and "--card" in done.stdout
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--help"}   # no other flags
+    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--pending", "--help"}   # no other flags
     code = "import sys, commands.card_bake; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr      # the copy has no config.py, imports no discord
@@ -684,14 +856,17 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
 
 
 def test_workflow_shape():
-    """card-edits.yml: dispatch only with dry_run on by default, never on the pipeline's own commits, one committer at a time
-    (the tts-save group), and the report line it greps before running site.yml and tts-save.yml."""
+    """card-edits.yml: live every 30 minutes behind the pending gate, dispatch with dry_run on by default, never on the
+    pipeline's own commits, one scheduled bake at a time in its own group (a running bake is never cancelled; sharing
+    tts-save's group would let a tick replace a pending TTS save) and a group per dispatch (never replaced by a tick),
+    the schedule baking only pending cards, step timeouts, the report line it greps before running site.yml and
+    tts-save.yml, and one Discord message when a streak of failed scheduled runs starts (main exits 1)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
-    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text
-    assert "if: github.actor != 'AutoCroissant'" in text and "group: tts-save" in text and "actions/checkout@v7" in text
+    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text and '[ "$EVENT" = schedule ] && args+=(--pending)' in text
+    assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
     grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
     report = cb.Report("o/r", "h" * 40, False, "w")
     card = cb.Card("X", "x", {"hp": 1})
@@ -700,6 +875,38 @@ def test_workflow_shape():
     assert grep in cb.render(report) and grep not in cb.render(cb.Report("o/r", "h" * 40, True, "w"))
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(text)
-    assert doc[True]["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True   # PyYAML reads the `on` key as True
-    assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'" and doc["concurrency"]["group"] == "tts-save"
-    assert doc["permissions"] == {"contents": "write", "actions": "write"} and "push" not in doc[True]
+    on = doc[True]                                                                  # PyYAML reads the `on` key as True
+    assert on["schedule"] == [{"cron": "*/30 * * * *"}] and "push" not in on
+    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
+    assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'"
+    assert doc["concurrency"] == {"group": "${{ github.event_name == 'schedule' && 'card-edits' || format('card-edits-{0}', github.run_id) }}",
+                                  "cancel-in-progress": False}
+    assert doc["permissions"] == {"contents": "write", "actions": "write"}
+    steps = doc["jobs"]["bake"]["steps"]
+    gate = next(i for i, step in enumerate(steps) if step.get("id") == "gate")
+    assert "from commands.card_bake import pending" in steps[gate]["run"] and '[ "$EVENT" != schedule ]' in steps[gate]["run"]
+    alert = steps[len(steps) - 1]
+    assert all("steps.gate.outputs.go == 'true'" in step.get("if", "") for step in steps[gate + 1:len(steps) - 1])   # nothing pending: done
+    bake = next(step for step in steps if step.get("name") == "Bake")
+    assert bake["env"]["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"   # the schedule is live
+    after = next(step for step in steps if "grep -q" in step.get("run", ""))
+    assert after["if"].startswith("${{ !cancelled() &&")                     # a card's error exits 1: a commit still runs them
+    assert alert["if"] == "(failure() || cancelled()) && github.event_name == 'schedule'"   # a job timeout is a cancel
+    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}" and "$RUN" in alert["run"]
+    assert "gh run list" in alert["run"] and '[ "$last" = failure ]' in alert["run"]       # once per streak
+    assert steps[gate]["timeout-minutes"] == 10 and bake["timeout-minutes"] == 50        # a step timeout fails the run
+    assert doc["jobs"]["bake"]["timeout-minutes"] == 60
+
+
+def test_workflow_gate_line_calls_pending(github, capsys, monkeypatch):
+    """The gate's python -c line, run as written: the pending card names, one per line."""
+    if not WORKFLOW.exists():
+        pytest.skip(f"no {WORKFLOW}")
+    code = re.search(r"python -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8")).group(1)
+    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head])
+    exec(code, {})
+    assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]
+    cb.run()
+    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head])
+    exec(code, {})
+    assert capsys.readouterr().out.strip() == ""
