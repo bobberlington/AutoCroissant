@@ -382,7 +382,9 @@ Some cards give a word or phrase in the ability text a glow, stroke or gradient,
   word underneath. Overlays sit outside the `Text` group 50 times out of 63 (13 inside), because that group's own
   Stroke and Drop Shadow (on 652 of 765 cards) would otherwise outline the glow. Four more cards (Bulborb Larva,
   Butterfly, Empress Bulblax, Apex Predator) hide `Ability` and lay the text out again in separately styled
-  layers. The hidden `Ability` is still what gets parsed. Overlays go stale silently when the text is edited.
+  layers. The hidden `Ability` is what gets parsed only while those visible layers over it print exactly its words
+  (`PSDParser._relaid`, 2026-10-22: only printed text counts); otherwise the card has no ability. Overlays go stale
+  silently when the text is edited.
 - **New way: effect layers.** TTSCardMaker `MDW/Scripts/Effect Layers.jsx` makes a pixel layer named
   `<text layer> FX: <words>`, e.g. `Ability FX: Blazing` or `Ability FX: Overkill DMG carries over | Frozen`
   (`|` separates phrases, matched in any case and across line breaks). It holds exactly those words' pixels, cut
@@ -442,11 +444,13 @@ are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_par
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
   Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher, and since
   2026-10-21 (user) the three minions with an empty Ability layer: Anubisath Guardian, Qiraji Soldier, Silithid.
-- **Shadow Duelist is not stale** (checked 2026-10-21, BUGS D3): its PNG prints no ability, but its hidden `Ability` layer
-  still holds "Heals the creature this is summoned on by 2 HP at the end of its turn." The parser reads hidden Ability
-  layers (four relaid-out cards depend on it, §4.2), so that text is in stats.pkl and the entry silences nothing today;
-  it is right again once the layer is emptied or the text printed (card content, the PSD hold). Removing it changes no
-  output; `tests/test_parser_goldens.py::test_shadow_duelist_exclusion` pins the PSD (skips when it changes upstream).
+- **Shadow Duelist is not stale** (BUGS D3): its PNG prints no ability, and its hidden `Ability` layer ("Heals the
+  creature this is summoned on by 2 HP at the end of its turn.") is laid out nowhere, so since 2026-10-22 (owner: hidden
+  Ability layers don't count, only what is printed) it parses to an empty ability and the entry keeps the validator
+  quiet. A hidden `Ability` layer counts only when visible text layers over it print exactly its words (the four
+  relaid-out cards of §4.2); the 7 cards with only a hidden one on 2026-10-22: those four keep their text, Shadow
+  Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_parser_goldens.py::test_shadow_duelist_exclusion`
+  pins the PSD (skips when it changes upstream); `tests/test_rulebook_hidden.py` the rule.
 
 ## 6. Data schemas: CardInfo and the pickles
 

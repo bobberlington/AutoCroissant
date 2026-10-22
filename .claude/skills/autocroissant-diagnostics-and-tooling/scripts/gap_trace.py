@@ -85,12 +85,21 @@ def main() -> int:
         folder in relative_path
         for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
     )
+    texts, hidden = [], []
     for layer in psd.descendants():
         if is_rulepage and layer.kind == "type" and not layer.is_visible():
             continue        # rule pages skip hidden text
+        if layer.kind == "type":
+            texts.append(layer)
+            if not is_rulepage and layer.name.lower() == "ability" and not layer.is_visible():
+                hidden.append(layer)        # read only when its words are printed (relaid)
+                continue
         parser._process_layer(layer, card, num_stars, stat_trackers,
                               type_bboxes, abilities, is_rulepage,
                               get_stars_from_psd, card_mid_y)
+    for layer in hidden:
+        parser._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y,
+                                   parser._relaid(layer, texts))
     # --- end mirror ---
 
     print(f"\n[1] creature-types collected ABOVE midline: {card.types}")

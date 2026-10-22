@@ -73,7 +73,8 @@ Metric definitions (all verified 2026-07-11):
   the exclusion list).
 - **Empty-string abilities**: cards with `ability == ""` (an Ability text layer exists but is blank).
   Today 20 = 17 of the 18 ABILITY_EXCLUSIONS + the 3 WoW minions above. The 18th exclusion,
-  `Shadow Duelist`, now HAS ability text — a stale exclusion.
+  `Shadow Duelist`, had text from its hidden Ability layer; since 2026-10-22 a hidden Ability layer counts only when
+  its words are printed (`PSDParser._relaid`), so it parses to "" and the exclusion is live (it prints no ability).
 - **Residual-gap cards**: cards whose STORED ability still contains a 3+ space run (a gap that
   received no icon). Today 10: 4 rulebook table pages (legit layout) + `Michael's Blessing`,
   `Miracle Matter`, `Pile Of Swords`, `Twin Emperors`, `Warcraftian Druid`, `Warcraftian Hunter`.
@@ -475,7 +476,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 
 | Target | Finding | Action |
 |---|---|---|
-| Shadow Duelist | In ABILITY_EXCLUSIONS but now HAS ability text (`Heals the creature this is summoned on by 2 HP...`) | Stale entry. Remove it; predicted effect: exclusions 18→17, re-validation problems unchanged at 5 |
+| Shadow Duelist | In ABILITY_EXCLUSIONS with text from its hidden Ability layer (`Heals the creature this is summoned on by 2 HP...`); the PNG prints no ability | Done 2026-10-22: only printed text counts (hidden Ability layers only when relaid, `_relaid`), so it parses to "" and the entry stays (live). Method A: 812 PSDs, 1 difference (this card) |
 | Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Re-certify individually, or take the structural candidate below |
 | Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid), NOT in the list → they fire `ABILITY TEXT NOT FOUND` in every force-sweep report | The exclusion treadmill live: adding 3 names is the anti-goal. Take the structural candidate |
 | Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fires 4 NOT FOUND problems per force sweep | Unclassified — run the recipe (step 3 on its `Darks`/`Bars` groups) before theorizing |
