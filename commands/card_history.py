@@ -253,10 +253,11 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined)
 
 
 def _carry(dropped: CardInfo, following: CardInfo) -> None:
-    """A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date)."""
+    """A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date);
+    the cause and legacy flag stay the holder's own (a current card with a blob is no legacy version)."""
     a, b = getattr(dropped, "version", None), getattr(following, "version", None)
     if a and b and a.get("from") is not None and (b.get("from") is None or a["from"] < b["from"]):
-        for key in ("from", "from_commit", "cause", "legacy"):
+        for key in ("from", "from_commit"):
             b[key] = a[key]
 
 
@@ -398,6 +399,20 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     return made
 
 
+def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
+    """The last version of each card archived this build ends at its deleting commit (the tag's at and commit), its
+    PNG pinned to that moment."""
+    for name in names:
+        versions = old_stats.get(name) or []
+        last = versions[len(versions) - 1] if versions else None
+        tag = getattr(last, "archived", None) if last is not None else None
+        if not tag:
+            continue
+        if getattr(last, "version", None) is None:
+            last.version = start_of(last, index, versions[len(versions) - 2] if len(versions) > 1 else None)
+        close(last, index, tag.get("at"), index.by_sha.get(tag.get("commit") or ""))
+
+
 # ========================
 # CLI
 # ========================
@@ -436,6 +451,7 @@ __all__ = [
     'GitIndex',
     'Refined',
     'close',
+    'close_archived',
     'data_of',
     'date_archive',
     'date_cards',

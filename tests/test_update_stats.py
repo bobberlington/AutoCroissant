@@ -368,7 +368,8 @@ def test_failed_commit_lookup_fails_only_its_card(github, monkeypatch, capsys):
     _run()
     assert set(_saved()[0]) == {"The Freezer"} and rt._tree_etags == {}
     out = capsys.readouterr().out
-    assert f"{DOOMER}: not read (502 Server Error)" in out and f"Could not read 1 PSD from the card repo ({DOOMER})" in out
+    assert f"{DOOMER}: commits not looked up (502 Server Error)" in out and "Could not read" not in out
+    assert f"Could not look up the commits of 1 PSD ({DOOMER}); its card keeps its last version" in out
 
 
 def test_blob_5xx_then_200_parses(github, psds):

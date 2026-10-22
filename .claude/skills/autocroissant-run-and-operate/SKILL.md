@@ -268,8 +268,8 @@ beside the downloads, 6.5-8.7 s after; commit requests 25 → 6 (network-speed-r
 `docs/Finished/optimization-pass-2026-10-20/network-speed-results.md`).
 
 **One-time re-parse after a parser bump (2026-10-21):** every parse is stamped `PARSER_VERSION` (psd_parser.py:22, now 2:
-the printed title read into `display_name`), and `_psd_changed` re-parses a card whose stamp differs (repo_traverser.py:80;
-the tree ETag is skipped while any card is stale, :162). So the first `/update_stats` after deploying a bump downloads every
+the printed title read into `display_name`), and `_psd_changed` re-parses a card whose stamp differs (card_data.py:220;
+the tree ETag is skipped while any card is stale, :247). So the first `/update_stats` after deploying a bump downloads every
 PSD once (~813 blobs plus their commit pages, minutes; "813 cards changed or new"; no history grows: the blobs are unchanged)
 and later runs are cheap again. Expect it after the 2026-10-21 deploy; no `force_update` needed. Once re-parsed, `/query` titles its
 embed with the printed title (`query_card.printed_title`; an embed instead of a bare image URL): 157 cards, including the 94 that differ
@@ -277,7 +277,9 @@ from the file name only by letter case or spacing (POORLY DRAWN CABBAGE, A P E X
 website shows the same name, and `/query` finds a card by its printed title (`_populate_titles`, refreshed after every `/update_stats`).
 
 Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl`. Entry point
-repo_traverser.py:486; slash wrapper main.py:374-386.
+repo_traverser.py:59 (the bake lock, the Discord messages, the follow-ups); since 2026-10-22 the traversal itself is
+`card_data.update` in legacy mode (commands/card_data.py, uncompiled, shared with the planned Card sync Action's build);
+slash wrapper main.py:374-386.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -314,22 +316,24 @@ The three options (slash defaults in parentheses, main.py:382-384). (`use_local_
 
 What a run looks like: "Updating card statistics database... This may take a while." -> the bot's
 deferred reply gets EDITED to "25 cards updated.", "50 cards updated.", ... (every `UPDATE_RATE = 25`
-RE-PARSED cards; repo_traverser.py:33,397) -> the summary (repo_traverser.py:457):
+RE-PARSED cards; card_data.py:38, :515) -> the summary (card_data.py:528):
 
 ```
 N cards changed or new, M unchanged, K moved.
 ```
 
 - N counts new cards and every re-parse at an unchanged path (forced ones included); M the skipped cards.
-- Saving (`_update_stats`, repo_traverser.py): every full run (`_can_prune`: no 304, tree not truncated, no
-  failed new-name download, some cards) runs `prune_clean_cards(at)`, which archives the cards whose PSD left the
+- Saving (`card_data.update`, called by `_update_stats`): every full run (`can_prune`: no 304, tree not truncated, no
+  failed new-name download or unreadable new-name PSD, some cards) runs `prune_clean_cards(at)`, which archives the cards whose PSD left the
   tree (moved to the end of their old_stats list, tagged `archived`; a deletion alone is enough since 2026-10-22, was
   B8) and tags names that left stats.pkl before archiving existed. Messages: "Archived (PSD deleted from the card
   repo): A, B (now C)" (C: the rename's new name), "Archived N cards deleted before this update: ..." (backfill, once),
   "Restored (PSD back in the card repo): ..." (a PSD back under an archived name: the record returns, no download for
   the same blob), "Card repo tree truncated or without cards; no card archived." The run saves when anything changed
   (cards, archives, authors, edits, duplicates, blob shas, a stale archived copy). Archived cards: read them with
-  `StatsDatabase.archived()`; no query or export sees them. Open: a GitHub 5xx mid-run (B9).
+  `StatsDatabase.archived()`; no query or export sees them. A PSD that cannot be read, or whose commit lookup fails (a
+  5xx, a rate limit), fails only its card: "Could not read N PSDs ..." / "Could not look up the commits of N PSDs ...";
+  its card keeps its last version and the next run tries again (no ETag kept). Open: a GitHub 5xx on the tree (B9).
 - Then "Card statistics update complete!" and, if enabled, the problem cards: full detail first
   (path + fenced problem list, split into <=1950-char chunks), then a names-only line per card —
   all posted to the invoking channel. There are TWO problem baselines (surface distinction owned
@@ -345,7 +349,7 @@ with 100+ commits costs one more request for its first commit). A daily run spen
 spends a large share of the 5000/hr `GIT_TOKEN` budget, so don't schedule it. Without a token (60/hr) a forced
 or first-ever run cannot finish; check for the "Git token found" startup line.
 
-PSDs come through the git/blobs API (`_download`/`_blob`, repo_traverser.py:117-144) into a temp file deleted
+PSDs come through the git/blobs API (`_download`/`_blob`, card_data.py:130-167) into a temp file deleted
 right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
 files (`site/Card Authors.txt`, `site/Card Edits.json`; in `MDW/` before 2026-10-20) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
@@ -530,7 +534,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, repo_traverser.py:131-144); deleted after each parse (repo_traverser.py:368; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
+| /update_stats PSD temp files | /update_stats | OS temp dir via `mkstemp` (`_download`, card_data.py:144-167); deleted after each parse (card_data.py:478, :488; before 2026-10-19 they piled up, archaeology Entry 10.2) | n/a |
 | TTS save working copy | /update_tts_save | OS temp dir (`TemporaryDirectory`), deleted after each run; the only output is the commit to the card repo (the automatic path runs in TTSCardMaker's Action, not here) | n/a |
 | Card bake work dir | /bake_cards (commands/card_runner.py -> card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo; none under the PSD hold) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
@@ -703,7 +707,7 @@ and the line numbers in 3, 4 and 10 re-verified 2026-10-19 against HEAD a7a4bb3 
 working tree (adds commands/type_emojis.py); sections 1, 3, 5, 7, 8 again 2026-10-20 (HEAD
 9fb3093), and sections 1, 3, 7, 8 and the line numbers after that day's optimization pass. Every claim was verified by
 reading main.py, commands/update_bot.py, commands/analytics.py, commands/management.py,
-commands/help.py, commands/psd_analyzer.py (and since the split repo_traverser.py, github_api.py),
+commands/help.py, commands/psd_analyzer.py (and since the split repo_traverser.py, github_api.py; since 2026-10-22 card_data.py),
 commands/query_card.py, commands/music_player.py,
 commands/utils.py, global_config.py, and .gitignore. Line numbers drift —
 re-find volatile facts with these before trusting them:
@@ -722,13 +726,13 @@ re-find volatile facts with these before trusting them:
 | update_stats options are output_problematic_cards, force_update, cards (local mode archived 2026-10-20) | `grep -n -A4 "def slash_update_stats" main.py`; `grep -n -A4 "^def update_stats" commands/repo_traverser.py`; `grep -rn "use_local" main.py commands/` (only analytics.py `RETIRED_OPTIONS`) |
 | Local traversal archived on its own branch, not in main | `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `ls archive 2>/dev/null` (nothing: main has no archive folder) |
 | Retired reminder options dropped | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py`; `grep -n "^REMINDER_VERSION" commands/analytics.py` (3) |
-| Blob-sha change check, blob downloads, 304, summary, save gate | `grep -n "_psd_changed\|def _download\|def _blob\|fetch_tree\|changed or new\|num_changed > 0 or traverser.changed" commands/repo_traverser.py` |
-| old_stats archived only on blob change or move | `grep -n -B1 "old_stats\[name\].append(old)" commands/repo_traverser.py` |
-| Per-card cost (exclusions skipped, commit lookup only for re-parsed cards) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp\|COMMITS_PAGE =" commands/repo_traverser.py` |
+| Blob-sha change check, blob downloads, 304, summary, save gate | `grep -n "_psd_changed\|def _download\|def _blob\|fetch_tree\|changed or new\|num_changed > 0 or gone" commands/card_data.py` |
+| old_stats archived only on blob change or move (legacy mode) | `grep -n -A3 "def _history" commands/card_data.py` |
+| Per-card cost (exclusions skipped, commit lookup only for re-parsed cards) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp\|COMMITS_PAGE =" commands/card_data.py` |
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
 | reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
-| TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py` (0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
+| TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py commands/card_data.py` (0, 0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
 | Card check (CLI only; no main.py or help.py wiring; the Action is TTSCardMaker's card-check.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^SPARSE_FILES\|^LINE\|^CLOSING" commands/card_check.py` |
@@ -767,3 +771,8 @@ module, not a shadowing name.
 2026-10-21 (details): section 5 (/push adds psd_details.json; /pull keeps it; the /update message), section 7's PSD details subsection, section 8's `psd_details.json` row; repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): section 7's Card check subsection (commands/card_check.py, CLI only; TTSCardMaker's card-check.yml staged in /tmp/card-check until the orchestrator commits it) and its wiring row; nothing in main.py or help.py changed, so no cited line moved. Same day: the subsection no longer says the website shows the validator's notes (only the parser's own reach the site's Parser notes); the error-line sentence names MDW/Markers PSDs and failed API calls (exit 0 kept).
+
+2026-10-22 (data build): /update_stats' traversal moved to commands/card_data.py (`card_data.update`, legacy mode);
+the entry point, summary, download, temp-file and re-parse citations and the re-verification greps re-pointed; the
+saving bullet names the per-PSD failure messages (an unreadable PSD, a failed commit lookup) that replaced a whole-run
+abort.

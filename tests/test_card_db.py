@@ -186,6 +186,23 @@ def test_cli_from_pickles_and_back(tmp_path):
     assert pickle.loads((tmp_path / "out" / "stats.pkl").read_bytes()) == stats
 
 
+def test_export_pickles_from_a_data_commit(tmp_path):
+    """Rollback step 2: export-pickles <data commit> <out> --git <data checkout> reads db/ at that commit."""
+    data = tmp_path / "data"
+    cdb.write_db(str(data / "db"), {"A": _card(ability="Good.")}, defaultdict(list), '{"version": 1, "cards": {\n\n}}\n', {})
+    env = {**__import__("os").environ, "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x", "GIT_COMMITTER_NAME": "a",
+           "GIT_COMMITTER_EMAIL": "a@x"}
+    for args in (("init", "-q", "-b", "data"), ("add", "-A"), ("commit", "-q", "-m", "good")):
+        subprocess.run(["git", "-C", str(data), *args], check=True, env=env, capture_output=True)
+    good = subprocess.run(["git", "-C", str(data), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    cdb.write_db(str(data / "db"), {"A": _card(ability="Bad.")}, defaultdict(list), '{"version": 1, "cards": {\n\n}}\n', {})
+    assert cdb.main(["export-pickles", good, str(tmp_path / "out"), "--git", str(data)]) == 0
+    assert pickle.loads((tmp_path / "out" / "stats.pkl").read_bytes())["A"].ability == "Good."
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["old_stats.pkl", "psd_details.json", "stats.pkl"]
+    with pytest.raises(ValueError):
+        cdb.export_pickles("f" * 40, str(tmp_path / "out2"), str(data))
+
+
 # ========================
 # The live pickles (read only)
 # ========================

@@ -385,21 +385,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
 
 - **Symptom**: every remote `/update_stats` left one `urlretrieve` temp file per parsed PSD in the OS temp dir.
-- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:364-368 after the split).
+- **Fix**: `try: card = self.parser.parse(local_file, path)` / `finally: remove(local_file)` (psd_analyzer.py:1178-1181 on 2026-10-19; 1664-1668 on 2026-10-20, now around a blob download; repo_traverser.py:364-368 after the split; card_data.py:478, :488 since 2026-10-22).
 - **Verified**: code read 2026-10-19. The next live remote sweep is the first real exercise.
 
 ### 10.3 `.DS_Store` became a 36th card type on macOS (was C8)
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:212 after the split, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:212 after the split, card_data.py:301 since 2026-10-22, in `_populate_types_from_local`, which the diagnostics scripts still use).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
 
 - **Symptom (trap)**: the Python default was `force_update=True` and only the slash wrapper passed False, so a bare
   programmatic call re-parsed all 813 cards.
-- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:486 after the 2026-10-20 split), matching main.py:383.
+- **Fix**: the Python default is now `force_update: bool = False` (psd_analyzer.py:1401 on 2026-10-19; repo_traverser.py:486 after the 2026-10-20 split, :59 since 2026-10-22), matching main.py:383.
   Code that wants a forced re-parse must now say `force_update=True` (the validation recipes already do).
 
 ### 10.5 management.py stopped compiling under Cython 3.3
@@ -511,7 +511,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `update_stats_local()` for sandbox sweeps (never imported by the bot, not in INCLUDE_FILES). The same day,
   at the owner's request, that file left main for its own local branch, `archive/local-update-stats`
   (commit e2835a7 on a7a4bb3); main has no `archive/` folder. The offline
-  helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py (repo_traverser.py since the split) for parse_one.py and
+  helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py (repo_traverser.py since the split, card_data.py since 2026-10-22) for parse_one.py and
   gap_trace.py. In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:41):
   stored reminders drop the two options at load (`REMINDER_VERSION` 2 → 3) and at fire time, pre-v2
   positional values are mapped by the old option order first, and a new reminder naming one gets a
@@ -713,7 +713,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `boundscheck=False` the folder indexing read out of bounds (the .py raised IndexError/ValueError). No such PSD
   existed, but one stray commit would have killed the jetson bot during /update_stats.
 - **Root cause**: growth by accretion; the classifier assumed every path had its folder rule's depth.
-- **Evidence**: commands/card_models.py, card_edits.py, psd_parser.py, repo_traverser.py hold the code;
+- **Evidence**: commands/card_models.py, card_edits.py, psd_parser.py, repo_traverser.py hold the code (the traversal moved on to the uncompiled card_data.py on 2026-10-22);
   psd_analyzer.py re-exports it and keeps the metadata/export commands and init_psd. `CardInfo.__module__ =
   CardStats.__module__ = "commands.psd_analyzer"` (card_models.py:151): re-dumped stats.pkl and old_stats.pkl were
   byte-identical in all four .py/.so combinations. The four modules joined INCLUDE_FILES (11 compiled) so the moved
@@ -832,17 +832,17 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
 | Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
-| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/repo_traverser.py` (365, 209, 150/479); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 208); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
+| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/card_data.py commands/repo_traverser.py` (card_data.py 478/488, 301, 234/658; repo_traverser.py 61); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 208); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |
 | Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_parser.py` (:778 on 2026-10-20) |
 | MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_parser.py` (:876 on 2026-10-20) |
-| Archive guard | `git show e7befd5`; current: `grep -n 'history only when' commands/repo_traverser.py` |
+| Archive guard | `git show e7befd5`; current: `grep -n -A3 'def _history' commands/card_data.py` |
 | Save gate ("am forehead") | `git show 4e03190 \| grep 'num_new > 0'`; `git show fb47b5d \| grep 'num_updated > 0'` |
 | Deleted artifacts list | `git log --diff-filter=D --name-only --format='DELETED-IN %h %ad %s' --date=short \| head -40` |
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
-| Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 477; `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
+| Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 59 (since 2026-10-22); `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
 | Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock\|^RESULTS_PER_MESSAGE" commands/query_card.py` (31, 30); `grep -n "tasks.loop" main.py` (847 at 1 s; 853, 866, 878 at 0.1 s) |
 
@@ -860,3 +860,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): the traverser's code moved to the uncompiled commands/card_data.py; the Entry 10 fix citations and the re-verification greps re-pointed (history is kept as it was).

@@ -85,7 +85,8 @@ def test_duplicate_rules(no_aliases):
 
 
 def test_duplicate_name_order(monkeypatch):
-    """Hidden titles name the duplicates in number order; an /alias to the PNG wins (the build takes the aliases)."""
+    """Hidden titles name the duplicates in number order; an /alias to the PNG wins (the build takes the aliases;
+    RepositoryTraverser defaults to the bot's)."""
     src = pa.CardInfo(name="A Snack", card_type="item", alt_names=["Breakfast", "Supper"])
     assert pa.RepositoryTraverser._duplicate_name("a_snack3.png", src, 3, [2, 3]) == "Supper"
     assert pa.RepositoryTraverser._duplicate_name("a_snack3.png", src, 3, [2, 3, 4]) == "A Snack"   # count mismatch
@@ -93,7 +94,8 @@ def test_duplicate_name_order(monkeypatch):
     assert pa.RepositoryTraverser._duplicate_name("a_snack3.png", src, 3, [2, 3], aliases) == "Late Supper"
     monkeypatch.setattr(pa.card_repo, "git_file_alias", aliases)                 # /update_stats passes the bot's
     tr = _traverser({"A Snack": src})
-    assert tr.aliases == {}
+    assert tr.aliases is pa.card_repo.git_file_alias                              # the diagnostics get the bot's too
+    assert pa.RepositoryTraverser(pa.StatsDatabase(), aliases={}).aliases == {}
     import commands.repo_traverser as rt
     seen = []
     monkeypatch.setattr(rt, "update", lambda build, *a: seen.append(build.aliases) or [])

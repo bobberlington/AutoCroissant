@@ -170,7 +170,7 @@ def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None: names)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None, stats_path="": names)
     monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
@@ -363,7 +363,7 @@ def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None: names)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None, stats_path="": names)
     monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
@@ -371,3 +371,40 @@ def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
     after = loads(path.read_text(encoding="utf-8"))["ObjectStates"][0]["ContainedObjects"][0]
     assert report.changed and {k: after.get(k) for k in tts.TEAM_FIELDS} == kept
     assert "role tags" not in text
+
+
+# ========================
+# --names: a card data build's stats.json
+# ========================
+def test_db_names_follow_build_site(tmp_path):
+    """cards.json's rule from stats.json: the printed title (under an edited name), no rule page, a duplicate
+    PNG's display name, an unparsed PSD's file stem; a PNG beside no data and no PSD keeps its stem too."""
+    import commands.card_db as cdb
+    import commands.card_models as cm
+    stats = {
+        "Mini Doomer": cm.CardInfo(name="Mini Doomer", card_type="minion", path="Auxiliary/Minions/Mini_Doomer.psd",
+                                   display_name="Mini Doomer!", parsed_values={"name": "Mini Doomer?"}, parser_version=2),
+        "Page 1": cm.CardInfo(name="Page 1", card_type="rulebook", path="Auxiliary/Rulebook/Page_1.psd", display_name="Rules"),
+        "A Snack": cm.CardInfo(name="A Snack", card_type="item", path="Items/Food/A_Snack.psd", display_name="A Snack"),
+        "A Snack2": cm.CardInfo(name="A Snack2", card_type="item", path="Items/Food/A_Snack.psd", display_name="Breakfast",
+                                duplicate_of="A Snack"),
+        "Elsewhere": cm.CardInfo(name="Elsewhere", card_type="item", path="Items/Old/Elsewhere.psd"),
+    }
+    (tmp_path / "stats.json").write_text(cdb.stats_text(stats), encoding="utf-8")
+    tree = {p: "0" * 40 for p in ("Auxiliary/Minions/Mini_Doomer.psd", "Auxiliary/Minions/Mini_Doomer.png",
+                                  "Auxiliary/Rulebook/Page_1.psd", "Auxiliary/Rulebook/Page_1.png", "Items/Food/A_Snack.psd",
+                                  "Items/Food/A_Snack.png", "Items/Food/A_Snack2.png", "Items/New/New_Card.psd",
+                                  "Items/New/New_Card.png", "Items/Loose/Loose_One.png", "Items/Moved/Elsewhere.png",
+                                  "MDW/cardback.png")}
+    assert tts.db_names(str(tmp_path / "stats.json"), tree) == {
+        "Auxiliary/Minions/Mini_Doomer.png": "Mini Doomer?",
+        "Items/Food/A_Snack.png": "A Snack", "Items/Food/A_Snack2.png": "Breakfast", "Items/New/New_Card.png": "New Card",
+        "Items/Loose/Loose_One.png": "Loose One", "Items/Moved/Elsewhere.png": "Elsewhere"}
+
+
+def test_cli_names_option(tmp_path, monkeypatch):
+    """--names reaches _Names as its stats_path; the save path stays the one positional argument."""
+    seen = []
+    monkeypatch.setattr(tts, "update_save", lambda path, names="": seen.append((path, names)) or "report\n")
+    assert tts.main(["save.json", "--names", "db/stats.json"]) == 0 and tts.main(["save.json"]) == 0
+    assert seen == [("save.json", "db/stats.json"), ("save.json", "")]

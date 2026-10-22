@@ -1,7 +1,7 @@
 """
 Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Simulator.json in the card repo).
 
-    python -m commands.tts_save <save.json>        (from the bot's root; TTSCardMaker's tts-save.yml Action runs this)
+    python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; tts-save.yml, card-sync.yml)
     update_save(path) -> report text
     update_repo_save() -> (report text, commit sha or None)    (the bot: the save on the card repo's main)
 
@@ -9,13 +9,15 @@ Pins every repo image link to the commit that last changed the file, follows ren
 their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
-comes back unless excluded), sets card Nicknames to the card browser's names, regenerates the Lua resizeTargets table.
+comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
+from a card data build's stats.json), regenerates the Lua resizeTargets table.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
 The bot updates a temp copy of main's save and commits it with git_commit (the GitHub API; when the token can't write:
 git objects in the history clone, pushed over SSH); it never writes a checkout.
 """
+from argparse import ArgumentParser
 from copy import deepcopy
 from datetime import datetime
 from json import dumps, load, loads
@@ -24,7 +26,6 @@ from os.path import basename, dirname, exists, expanduser, join, splitext
 from re import DOTALL, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
 from subprocess import CalledProcessError
-from sys import argv, exit
 from tempfile import TemporaryDirectory
 from threading import Lock
 from time import sleep
@@ -52,6 +53,8 @@ URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (Gi
 SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/")   # page and marker cards keep their Nicknames
+CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
+SKIP_PARTS = ("MDW", "Markers")                                             # build_site.SKIP_PARTS
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
@@ -292,18 +295,95 @@ class _Repo:
         return found
 
 
-class _Names:
-    """Website names for card images: Card Edits.json > the card browser's cards.json > PSD stem > PNG stem."""
+def db_names(stats_path: str, tree: dict) -> dict:
+    """
+    cards.json's png -> name from a card data build's stats.json, by build_site's rule: a card's printed title (the
+    parser's, under any Card Edits.json name) else its name, a duplicate PNG its display name, then a PSD or PNG the
+    data lacks its file stem; rule pages are left out (build_site lists them apart). Card Edits.json names are applied by _Names, as for cards.json.
+    """
+    from commands.card_db import parse_stats
+    with open(stats_path, encoding="utf-8") as fh:
+        stats = parse_stats(fh.read(), stats_path)
+    in_cards = [p for p in sorted(tree) if p.startswith(CARD_FOLDERS) and not any(x in SKIP_PARTS for x in p.split("/"))]
+    by_name: dict = {}
+    for path in in_cards:
+        if path.lower().endswith(".png"):
+            by_name.setdefault(basename(path).lower(), path)
 
-    def __init__(self, repo: _Repo, errors: list, edits: Optional[tuple] = None):
-        """edits: (main's Card Edits.json text or None,) for bot runs: the checkout is then not read."""
-        global _site
+    def png_for(psd: str, name: str):
+        guess = psd[:len(psd) - 4] + ".png" if psd.lower().endswith(".psd") else None
+        return guess if guess in tree else by_name.get(name.replace(" ", "_").lower() + ".png")
+    out, seen, dup_names, known = {}, set(), {}, set()
+    for name, card in sorted(stats.items(), key=lambda kv: kv[0].lower()):
+        path = getattr(card, "path", "") or ""
+        if getattr(card, "duplicate_of", None):
+            if getattr(card, "display_name", None):
+                dup_names[name.replace(" ", "_").lower() + ".png"] = card.display_name
+            continue
+        png = png_for(path, name)
+        parsed = getattr(card, "parsed_values", None) or {}
+        title = parsed["name"] if "name" in parsed else getattr(card, "display_name", None)
+        rule = getattr(card, "card_type", "") == "rulebook" or "/Rulebook/" in path
+        shown = (title if not rule else None) or name
+        known |= {_norm(shown), _norm(name)}
+        if png:
+            seen.add(png)
+            if not rule:                                    # rule pages: rules.json, not cards.json
+                out[png] = shown
+    for path in in_cards:                                   # duplicates: numbered PNGs named by the data
+        found = dup_names.get(basename(path).lower())
+        if found and path.lower().endswith(".png") and path not in seen:
+            out[path] = found
+            seen.add(path)
+            known.add(_norm(found))
+    for path in in_cards:                                   # not in the data yet: the file stem
+        low = path.lower()
+        if not (low.endswith(".psd") or (low.endswith(".png") and path not in seen)):
+            continue
+        name = splitext(basename(path))[0].replace("_", " ")
+        if _norm(name) in known or "/Rulebook/" in path:
+            continue
+        known.add(_norm(name))
+        png = png_for(path, name) if low.endswith(".psd") else path
+        if png:
+            out.setdefault(png, name)
+    return out
+
+
+class _Names:
+    """Website names for card images: Card Edits.json > the card browser's cards.json (or a build's stats.json) > PSD
+    stem > PNG stem."""
+
+    def __init__(self, repo: _Repo, errors: list, edits: Optional[tuple] = None, stats_path: str = ""):
+        """edits: (main's Card Edits.json text or None,) for bot runs: the checkout is then not read. stats_path: a card
+        data build's stats.json, read instead of the website's cards.json (Card sync: the run's own data)."""
         local = edits is None
         edits = edits[0] if edits else None
         self.repo = repo
         self.site: dict = {}
         self.edits: dict = {}
         self.source = "file stems"
+        if stats_path:
+            try:
+                self.site, self.source = db_names(stats_path, repo.tree), f"the card data ({basename(stats_path)})"
+            except (OSError, ValueError, TypeError) as e:
+                errors.append(f"Card data not read ({e}): Nicknames left as they are, new cards named by file stem.")
+        else:
+            self.site = self._website(repo, errors, local)
+        try:
+            if local:
+                path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
+                if path is not None:
+                    with open(join(repo.checkout, path), encoding="utf-8") as f:
+                        edits = f.read()
+            if edits is not None:
+                self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def _website(self, repo: _Repo, errors: list, local: bool) -> dict:
+        """png -> name from the card browser's cards.json (an ETag 304 reuses the last), else the local site build."""
+        global _site
         try:
             etag, known = _site
             reply = get(f"{SITE_URL}/data/cards.json", timeout=HTTP_TIMEOUT,
@@ -325,17 +405,7 @@ class _Names:
                 pass
             errors.append(f"Card browser data not fetched ({e}): names from {self.source}"
                           + ("." if cards else "; Nicknames left as they are, new cards named by file stem."))
-        self.site = {c["png"]: c["name"] for c in cards if isinstance(c, dict) and c.get("png") and c.get("name")}
-        try:
-            if local:
-                path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
-                if path is not None:
-                    with open(join(repo.checkout, path), encoding="utf-8") as f:
-                        edits = f.read()
-            if edits is not None:
-                self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
-        except (OSError, ValueError, AttributeError):
-            pass
+        return {c["png"]: c["name"] for c in cards if isinstance(c, dict) and c.get("png") and c.get("name")}
 
     def _stem(self, path: str) -> str:
         psd = self.repo.by_lower.get(splitext(path)[0].lower() + ".psd")
@@ -773,9 +843,10 @@ def _commit_message(report: _Report) -> str:
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
-def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, edits: Optional[tuple] = None) -> tuple:
+def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, edits: Optional[tuple] = None,
+            names_from: str = "") -> tuple:
     """update_save, also returning the _Report. rules: see _load_rules; extras: write the backup and report files;
-    edits: see _Names."""
+    edits, names_from: see _Names (its stats_path)."""
     with open(save_path, "rb") as f:
         raw = f.read()
     save = loads(raw.decode("utf-8"))
@@ -783,7 +854,7 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
     repo = _Repo(report.errors)
     report.head = repo.head
     rules, rules_from = _load_rules(repo, report.errors, rules) if repo.tree and repo.history else (None, "nowhere")
-    names = _Names(repo, report.errors, edits)
+    names = _Names(repo, report.errors, edits, names_from)
     _pin_links(save, repo, report)
     if repo.tree:
         _fix_keys(save, report)
@@ -902,17 +973,18 @@ def _post(interaction, text: str, sha: Optional[str]) -> None:
 # ========================
 # Public API Functions
 # ========================
-def update_save(save_path: str) -> str:
+def update_save(save_path: str, names_from: str = "") -> str:
     """
     Update a TTS save in place and return the report. When it changed: backup, report and commit subject beside it.
 
     Args:
         save_path: The save's JSON file
+        names_from: A card data build's stats.json for the Nicknames ("" = the website's cards.json)
 
     Returns:
         The markdown change report (also written to <stem>.report.md when the save changed)
     """
-    return _update(save_path)[0]
+    return _update(save_path, names_from=names_from)[0]
 
 
 def _blob(sha: str) -> bytes:
@@ -978,15 +1050,19 @@ def update_tts_save(interaction) -> None:
     _post(interaction, text, sha)
 
 
-def main() -> None:
-    if len(argv) != 2:
-        print("usage: python -m commands.tts_save <save.json>")
-        exit(2)
-    print(update_save(argv[1]), end="")
+def main(args: Optional[list] = None) -> int:
+    """The command line (tts-save.yml, card-sync.yml): update_save, the report on stdout."""
+    parser = ArgumentParser(prog="python -m commands.tts_save", description="Update the TTS save of the card table in place.")
+    parser.add_argument("save", help="the save's JSON file")
+    parser.add_argument("--names", default="", help="a card data build's stats.json for the Nicknames (default: the "
+                                                    "website's cards.json)")
+    options = parser.parse_args(args)
+    print(update_save(options.save, options.names), end="")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 
 
 # ========================

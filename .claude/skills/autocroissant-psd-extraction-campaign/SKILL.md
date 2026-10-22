@@ -536,7 +536,7 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-20 after the blob-sha
 change — state no more than this): `manual_metadata_entry` creates a missing card as
 `CardInfo(name, UNKNOWN, path=f"{path}.psd")` (psd_analyzer.py:221) with `timestamp` 0.0 and no
-`blob_sha`; the command cannot set either. `_psd_changed` (repo_traverser.py:77) re-parses a card that
+`blob_sha`; the command cannot set either. `_psd_changed` (card_data.py:217) re-parses a card that
 is new, moved, or whose blob sha differs; a card with no sha is re-parsed only if its PSD was committed
 since the newest stored timestamp, otherwise it adopts the current sha and is kept. Manual EDITS to an
 existing entry survive until the PSD's blob changes, `cards:` names the card, or `force_update:True`; a
@@ -582,9 +582,9 @@ documented in autocroissant-failure-archaeology).
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:383):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
 - Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:473 on 2026-10-20):
-  `grep -n "force_update: bool = " commands/repo_traverser.py`
-- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
-  `grep -n -A9 "def _populate_types_from_local" commands/repo_traverser.py`
+  `grep -n "force_update: bool = " commands/repo_traverser.py commands/card_data.py`
+- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, card_data.py:294 since 2026-10-22, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
+  `grep -n -A9 "def _populate_types_from_local" commands/card_data.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`
@@ -607,9 +607,9 @@ documented in autocroissant-failure-archaeology).
 - Incident commits (3bbaa2b, d0bb28c, dd800bc, f7c915c, cca0aaf/eb9aa84):
   `git log --oneline -1 <hash>` then read the diff, never just the message.
 - Manual-entry semantics (2026-10-20: CardInfo timestamp default card_models.py:87, `_psd_changed`
-  repo_traverser.py:77, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
+  card_data.py:217, `manual_metadata_entry` psd_analyzer.py:169, its CardInfo creation
   psd_analyzer.py:221; /update_metadata at main.py:436):
-  `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/repo_traverser.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
+  `grep -n "timestamp: float = \|def _psd_changed\|def manual_metadata_entry" commands/card_models.py commands/card_data.py commands/psd_analyzer.py; grep -n "update_metadata" main.py`
 - `/update_stats` operating rule (GitHub only since 2026-10-20; the archived local traversal is for
   sandbox sweeps): owned by autocroissant-run-and-operate §7.
 - Font adoption count (0 of 813 PSDs on 2026-10-19) and the migration backlog (45 PSDs / 81
@@ -624,3 +624,5 @@ documented in autocroissant-failure-archaeology).
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): `_psd_changed`, `_populate_types_from_local` and the force_update default's greps re-pointed to commands/card_data.py (the traverser's code moved there, uncompiled).

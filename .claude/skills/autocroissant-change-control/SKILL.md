@@ -161,7 +161,8 @@ deliberate change-control decision: either force-add it or (better) amend
 Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10-20).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
-   query_card.py, parsing in psd_parser.py, the /update_stats traversal in repo_traverser.py, GitHub access in
+   query_card.py, parsing in psd_parser.py, the /update_stats command in repo_traverser.py (its traversal is
+   commands/card_data.py since 2026-10-22, shared with the Card sync Action's build), GitHub access in
    github_api.py, admin in management.py, etc.). Plain
    `def` is fine — it will be thread-wrapped. The body must follow the queue rules:
    never `await` Discord or call `interaction.followup` directly from worker code;
@@ -200,10 +201,11 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner` are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, and the card data build's `card_data`, `card_history`, `card_db` and `changelog` (2026-10-22: the jetson runs the same pure Python as the Action; tests/test_card_data.py checks they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
    sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: the last one's list is
-   `card_check.SPARSE_FILES`), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
+   `card_check.SPARSE_FILES`; the planned card-sync.yml will check out `card_data.SPARSE_FILES`, whose test runs `--help` on
+   the build, the bake and the save with exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py; tts-save.yml's has
    none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
@@ -350,3 +352,7 @@ and update this file.
 2026-10-21 (details): `psd_details.json` joins the pickle discipline (jargon bullet, the /push bullet, the reminder.pkl paragraph; `psd_details` named among the uncompiled modules in step 5). The never-commit list is unchanged: the file is a derived, committed artifact like the pickles, its `.tmp` gitignored. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): `card_check` named among the uncompiled modules in step 5, with the four TTSCardMaker Actions whose sparse lists pin bot file paths; the offline-suite row reads 417 passed, 24 skipped; the sparse-list test clause names the three Actions that have one (tts-save.yml has none).
+
+2026-10-22 (data build): the /update_stats traversal moved to the uncompiled commands/card_data.py (checklist step 1);
+`card_data`, `card_history`, `card_db` and `changelog` named among the uncompiled modules in step 5, with
+`card_data.SPARSE_FILES` (card-sync.yml, planned) beside the Actions' sparse lists.

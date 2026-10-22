@@ -113,8 +113,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:37) is checked against every path segment
-during stats traversal and duplicate-PNG detection (repo_traverser.py:346, 276). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (card_data.py:42 since 2026-10-22) is checked against every path segment
+during stats traversal and duplicate-PNG detection (card_data.py:438, 377). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -187,7 +187,7 @@ joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and a
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:205) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, card_data.py:294) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -505,12 +505,12 @@ aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars
 subseries, subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-repo_traverser.py:409), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+card_data.py:169), looked up once per re-parsed card (the card data build dates a card by its blob's first commit instead, from git). The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:486), the same as the slash command (main.py:383);
+is `update_stats(force_update=False)` (repo_traverser.py:59), the same as the slash command (main.py:383);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -541,7 +541,7 @@ autocroissant-change-control):
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(repo_traverser.py:376-377; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+(`_history`, card_data.py:535-538; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
 archives nothing), and when its PSD leaves the repo. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": run epoch, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
@@ -560,7 +560,8 @@ but for the path (a kill after an edit or a same-blob move) instead of appending
 entry for an archived name (it shows the archived record and refuses edits), and `/pull` puts back into old_stats.pkl a
 card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE).
 Quirk: after each traversal,
-`_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (card_data.py:205-215; /update_stats' legacy mode only: the card data build keeps each
+version's own path) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
@@ -660,13 +661,13 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 ## 9. Provenance and maintenance
 
 Every load-bearing claim above is from `commands/psd_analyzer.py` (since 2026-10-20 also `psd_parser.py`,
-`card_models.py`, `card_edits.py`, `repo_traverser.py`), `commands/query_card.py`,
+`card_models.py`, `card_edits.py`, `repo_traverser.py`, `card_data.py`), `commands/query_card.py`,
 `global_config.py`, `main.py`, the TTSCardMaker clone, and live script runs on 2026-07-11.
 Line numbers drift — re-find facts with these before relying on cited lines:
 
 | Fact | Re-verify with |
 |---|---|
-| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/repo_traverser.py` |
+| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/card_data.py` |
 | Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
 | Exclusion list (21 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
 | Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |
@@ -710,3 +711,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-21 (card check): §5 names `commands/card_check.py` as the second place the validator runs; the `CardValidator` range is :948-1038. Same day: the parse-time list gained `NO STARS FOUND` (:420), the effect layer's (:626) and `SEVERAL CREATURES` (:862), `MISSPELT_CARD_TYPES` re-pointed to line 24, and the card-check line says only those reach the website. Gate: the :626 entry names `_add_problem` and its effect-layer and icon-token callers.
 
 2026-10-21 (D3, idea 14): §4.2 WORDS NOT IN TEXT also covers a `#n` past the last match (orphaned effect layers) and records the corpus and trial-copy counts; §5 says why Shadow Duelist stays excluded; psd_parser.py citations re-pointed (+1 to +3 inside the effect check, +18 after it); the §5 table rows, stale before, re-pointed to the validator (:1008-1050) and MISSPELT TYPE to :566-567.
+
+2026-10-22 (data build): the traversal's citations (EXCLUDE_FOLDERS, the type list, the commit lookup, the history rule, `_update_old_stats_paths`) re-pointed to the uncompiled commands/card_data.py; `_update_old_stats_paths` noted as legacy-mode only. The db/ JSON schemas (`version`, the manifest, the changelog events) are in docs/Campaigns/DATA_BUILD_ACTION.md section 8 until the cutover.

@@ -29,7 +29,13 @@ from commands.utils import queue_command, queue_edit, say
 _tree_etags: dict = {}                                            # repository -> ETag of the last update's tree
 _file_cache: dict = {}                                            # repo path -> (blob sha, text) of small files
 
-RepositoryTraverser = CardBuild                                   # the bot's name for it (psd_analyzer, the diagnostics)
+
+
+class RepositoryTraverser(CardBuild):
+    """CardBuild as the bot runs it (psd_analyzer, the diagnostics): the /alias names unless given."""
+    def __init__(self, db, *args, aliases: Optional[dict] = None, **kwargs):
+        super().__init__(db, *args, aliases=card_repo.git_file_alias if aliases is None else aliases, **kwargs)
+
 
 
 # ========================

@@ -3,7 +3,8 @@ The card database as JSON (db/, the card data build's output): CardInfo <-> plai
 old_stats.json one card per line written atomically, the manifest's sha256 per file, the one-time seed from the
 pickles through an allow-list unpickler, and export-pickles back. No Discord, network or psd-tools.
 
-CLI: python -m commands.card_db from-pickles <pickle dir> <db dir> | export-pickles <db dir> <out dir> | check <db dir>
+CLI: python -m commands.card_db from-pickles <pickle dir> <db dir> | export-pickles <db dir or data commit> <out dir>
+     [--git <data checkout>] | check <db dir>
 """
 from argparse import ArgumentParser
 from collections import defaultdict
@@ -11,7 +12,7 @@ from dataclasses import MISSING, fields
 from hashlib import sha256
 from json import dumps, loads
 from os import fsync, makedirs, remove, replace
-from os.path import exists, isfile, join
+from os.path import exists, isdir, isfile, join
 from pickle import Unpickler, UnpicklingError
 from sys import modules as sys_modules
 from threading import Lock
@@ -298,16 +299,42 @@ def dump_pickle(obj, path: str) -> None:
             del sys_modules[PICKLE_MODULE]
 
 
-def export_pickles(db_folder: str, out_folder: str) -> None:
-    """db/ back to stats.pkl, old_stats.pkl and psd_details.json in out_folder (the older tooling's input)."""
-    stats, old, _, _ = read_db(db_folder)
+def _at_commit(git_dir: str, sha: str, name: str) -> Optional[str]:
+    """db/<name> at a data commit (git show), or None when it has none."""
+    from subprocess import run
+    done = run(["git", "-C", git_dir, "show", f"{sha}:db/{name}"], capture_output=True)
+    return done.stdout.decode("utf-8") if done.returncode == 0 else None
+
+
+def export_pickles(source: str, out_folder: str, git_dir: str = ".") -> None:
+    """
+    db/ back to stats.pkl, old_stats.pkl and psd_details.json in out_folder (the older tooling's input; aliases.pkl
+    is not in db/ and stays as it is).
+
+    Args:
+        source: A db/ folder, or a data commit (its db/ read from git_dir's history)
+        out_folder: Where the three files go
+        git_dir: A checkout of the data branch, for a commit
+    """
+    if isdir(source):
+        stats, old, _, _ = read_db(source)
+        details_path = join(source, DETAILS_JSON)
+        details = None
+        if isfile(details_path):
+            with open(details_path, encoding="utf-8") as fh:
+                details = fh.read()
+    else:
+        stats_t, old_t = _at_commit(git_dir, source, STATS_JSON), _at_commit(git_dir, source, OLD_STATS_JSON)
+        if stats_t is None:
+            raise ValueError(f"{source}: no db/{STATS_JSON} at that commit of {git_dir}")
+        stats = parse_stats(stats_t)
+        old = parse_old_stats(old_t) if old_t is not None else defaultdict(list)
+        details = _at_commit(git_dir, source, DETAILS_JSON)
     makedirs(out_folder, exist_ok=True)
     dump_pickle(old, join(out_folder, "old_stats.pkl"))
     dump_pickle(stats, join(out_folder, "stats.pkl"))
-    details = join(db_folder, DETAILS_JSON)
-    if isfile(details):
-        with open(details, encoding="utf-8") as fh:
-            write_text(join(out_folder, DETAILS_JSON), fh.read())
+    if details is not None:
+        write_text(join(out_folder, DETAILS_JSON), details)
 
 
 # ========================
@@ -319,9 +346,10 @@ def main(argv: Optional[list] = None) -> int:
     seed = sub.add_parser("from-pickles", help="write db/ from a folder's stats.pkl, old_stats.pkl and psd_details.json")
     seed.add_argument("pickles")
     seed.add_argument("db")
-    back = sub.add_parser("export-pickles", help="write stats.pkl, old_stats.pkl and psd_details.json from db/")
-    back.add_argument("db")
+    back = sub.add_parser("export-pickles", help="write stats.pkl, old_stats.pkl and psd_details.json from db/ or a data commit")
+    back.add_argument("db", help="a db/ folder, or a data commit")
     back.add_argument("out")
+    back.add_argument("--git", default=".", help="a checkout of the data branch, for a commit (default: here)")
     check = sub.add_parser("check", help="db/'s files against its manifest")
     check.add_argument("db")
     args = parser.parse_args(argv)
@@ -336,7 +364,7 @@ def main(argv: Optional[list] = None) -> int:
         print(f"{len(stats)} cards, {sum(len(v) for v in old.values())} versions written to {args.db}.")
         return 0
     if args.command == "export-pickles":
-        export_pickles(args.db, args.out)
+        export_pickles(args.db, args.out, args.git)
         print(f"Pickles written to {args.out}.")
         return 0
     problems = check_db(args.db)

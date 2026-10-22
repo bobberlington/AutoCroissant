@@ -59,7 +59,7 @@ Ground rules:
 |---|---|---|---|---|---|
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:12); used by `client.run(TOKEN)` (main.py:920) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
-| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, repo_traverser and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
+| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
@@ -172,8 +172,8 @@ its checkout without a symlink. No other configuration comes from the environmen
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). Only rev-list/ls-tree/merge-base/fetch run there (diff/log would download blobs) |
 | `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, kept as an alias), repo_history (`REPOSITORY`, alias) and tts_save; /set_repo still overrides `card_repo.repository` at runtime |
 | `API_BASE`, `RAW_BASE` (2026-10-20) | `"https://api.github.com/repos/"`, `"https://raw.githubusercontent.com/"` | URL prefixes used by commands/github_api.py (API) and repo_history/tts_save (raw links) |
-| `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, repo_traverser, query_card, type_emojis |
-| `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (repo_traverser, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
+| `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, card_data, query_card, type_emojis |
+| `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (card_data, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
 | `FONT_ALIASES` (2026-10-21) | `{"Papyrus-Regular": "Papyrus", "Kung-Fu-Panda": "KungFuPanda"}` | the Windows PostScript names of two faces MDW/Fonts holds under other names (the targets are the faces' FreeType-style names, `Kung Fu Panda` -> `KungFuPanda`), so the fork's FontMap (commands/psd_edit.py, where the dict lived until 2026-10-21) and the font check (commands/font_check.py) count them as present; here because both importers load from a sparse Action checkout without the rest of the bot (stdlib-only file) |
 | `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's tts-save.yml Action, which passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
@@ -186,7 +186,11 @@ Pickle schemas and commit discipline are owned by **impossibility-cards-referenc
 Every `commands/*.py` opens with a `# Configuration` (or `# Configurable Parameters`) block.
 Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 
-### card modules: commands/repo_traverser.py, psd_parser.py, psd_analyzer.py (psd_analyzer split 2026-10-20)
+### card modules: commands/card_data.py, repo_traverser.py, psd_parser.py, psd_analyzer.py (psd_analyzer split 2026-10-20; the traverser's data path moved to card_data.py 2026-10-22)
+
+The first five rows and `UPDATE_RATE`/`EXCLUDE_FOLDERS` live in commands/card_data.py:38-42 since 2026-10-22 (the
+traverser body moved there, uncompiled; repo_traverser.py re-imports them); `_tree_etags`/`_file_cache` stay in
+repo_traverser.py.
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -195,7 +199,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
-| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, repo_traverser.py:397) |
+| `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, card_data.py:515) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |
 | `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:398, 405) — gitignored via `*.csv` / `*.txt` |
@@ -211,8 +215,24 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (repo_traverser.py:80, :166). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
+| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:22) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (card_data.py:220, :247). Bump it when a parser change must reach the stored cards: the next run downloads every PSD (~813) |
 | `CardValidator.ABILITY_EXCLUSIONS` | 21 card names (psd_parser.py:950-972) | cards allowed to have no ability layer |
+
+### the card data build: commands/card_data.py (2026-10-22; docs/Campaigns/DATA_BUILD_ACTION.md)
+
+Build mode only (`python -m commands.card_data`); legacy /update_stats ignores them. CLI flags, not config.py.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `BUDGET` | `400` | REST PSD downloads per run (`--budget`); the rest go to `pending.stale` and the next run reads them. Two runs an hour stay at 800 of the token's 1,000 requests |
+| `RATE_FLOOR` | `150` | no more REST downloads once `X-RateLimit-Remaining` is below this |
+| `MIN_CARDS`, `FLOOR_SHARE` | `100`, `0.95` | gate G1 |
+| `ARCHIVE_MIN`, `ARCHIVE_SHARE` | `5`, `0.01` | gate G2: at most max(5, 1%) archived a run (`--allow-archive` lifts it) |
+| `REPARSE_MAX` | `25` | gate G4: same-blob re-parses without approval (`--full`, kept in `pending.full` while a budgeted re-parse goes on) |
+| `QUALITY_SLACK`, `DETAILS_SHARE` | `3`, `0.05` | gate G5 |
+| `SPARSE_FILES` | 18 paths | what card-sync.yml checks out of AutoCroissant: the build's, the bake's and the save's import closure (tests/test_card_data.py runs `--help` on all three CLIs with exactly this list) |
+| `EXIT_OK`, `EXIT_ERROR`, `EXIT_GATE` | `0`, `1`, `2` | written or nothing to do; an error (a file not fetched included); a gate refused |
+| changelog `MESSAGES_MAX` | `20` | Discord posts per run (one per push); the rest wait for the next run (commands/changelog.py) |
 
 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
 The exclusion set is a per-card whitelist the owner wants to eventually eliminate ("perfect
@@ -322,7 +342,7 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 | Constant | Value | Meaning |
 |---|---|---|
 | `FONTS_DIR` | `"MDW/Fonts"` | the card repo's fonts folder; top level only (`stoogedings-src/` is the icon font's source) |
-| `EXCLUDE_FOLDERS` | `("MDW", "Markers")` | PSDs under these path parts are not cards (repo_traverser's list) |
+| `EXCLUDE_FOLDERS` | `("MDW", "Markers")` | PSDs under these path parts are not cards (card_data's list) |
 | `ROLE_ID` | `"546427268751294475"` | the card makers' role the Discord message pings (`<@&id>`; `allowed_mentions` names that role only) |
 | `BITE` | `"{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."` | the user's wording, one line per (author, font) |
 | `DISCORD_LIMIT` | `2000` | the webhook payload is cut to one message; the rest is in the commit comment |
@@ -439,7 +459,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
 1. **`update_stats` force_update — resolved 2026-10-19.** The Python default used to be `True` while
    the slash wrapper passed `False`, so a bare programmatic call force-reparsed every non-excluded
    PSD (story: autocroissant-failure-archaeology Entry 10.4). Both are now `False`
-   (repo_traverser.py:486, main.py:383). Code that wants a forced re-parse must pass
+   (repo_traverser.py:59, main.py:383). Code that wants a forced re-parse must pass
    `force_update=True` explicitly.
 2. **`use_local_repo` / `use_local_timestamp` — removed 2026-10-20.** `use_local_repo` defaulted to
    True (local mode) until 2026-10-19 and to False for one day; `use_local_timestamp` defaulted to True,
@@ -507,9 +527,9 @@ table with its command before quoting it in the future.
 | config.py mode 0700 + gitignored | `ls -l config.py` and `git check-ignore -v config.py` |
 | lacks_admin gate list + the ungated /restart_bot | `grep -n "lacks_admin" main.py` then read each hit's enclosing `@tree.command`; `grep -n -A2 'name="restart_bot"' main.py` |
 | lacks_admin polarity | `grep -n -A2 "def lacks_admin" commands/utils.py` |
-| card-module constants (psd_analyzer split 2026-10-20) | `grep -n "UPDATE_RATE\|EXCLUDE_FOLDERS\|COMMITS_PAGE\|_WORKERS" commands/repo_traverser.py`; `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
+| card-module constants (psd_analyzer split 2026-10-20; moved 2026-10-22) | `grep -n "^UPDATE_RATE\|^EXCLUDE_FOLDERS\|^COMMITS_PAGE\|_WORKERS =" commands/card_data.py`; build constants: `grep -n "^BUDGET\|^RATE_FLOOR\|^MIN_CARDS\|^ARCHIVE_\|^REPARSE_MAX\|^QUALITY_\|^DETAILS_SHARE" commands/card_data.py`; `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
 | Exclusion set size/location; PARSER_VERSION | `grep -n "ABILITY_EXCLUSIONS\|^PARSER_VERSION" commands/psd_parser.py` |
-| UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/repo_traverser.py` |
+| UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/card_data.py` |
 | query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | BREAK_LEN | `grep -n "BREAK_LEN = " commands/utils.py` |
 | music constants + browser_cookies + ydl_opts | `grep -n "MUSIC_BASE_DIR\|SKIP_FILES\|browser_cookies\|cookiesfrombrowser\|keepvideo\|postprocessors\|preferredquality" commands/music_player.py` |
@@ -524,7 +544,7 @@ table with its command before quoting it in the future.
 | card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
 | global_config env overrides (exactly two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" . ` (global_config.py and tests/test_tts_save.py only) |
 | Setters never write config.py | `sed -n '670,708p' commands/query_card.py`; confirm zero `open(`/`write` there |
-| update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py` (no use_local hits; every force_update default is False) |
+| update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
 | Reminder constants | `sed -n '26,56p' commands/analytics.py` |
@@ -559,3 +579,8 @@ row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_
 2026-10-21 (details): `DETAILS_JSON` row; commands/psd_details.py's constants catalogued; no flag or default changed. repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): commands/card_check.py's constants catalogued (`SPARSE_FILES`, `LINE`, `CLOSING`, `UNREADABLE`; the rest imported from font_check); no flag or default changed. Same day: `CLOSING` reworded (the validator's notes never reach the website's Parser notes).
+
+2026-10-22 (data build): the traverser's constants (`UPDATE_RATE`, `DOWNLOAD_WORKERS`, `LOOKUP_WORKERS`, `COMMITS_PAGE`,
+`EXCLUDE_FOLDERS`) and body moved to the uncompiled commands/card_data.py; citations and the re-verification greps
+re-pointed there (repo_traverser.py keeps `update_stats`, :59, and the ETag/file caches). The build's own constants
+catalogued (`BUDGET` 400, `RATE_FLOOR`, the gate thresholds, `SPARSE_FILES`, the exit codes, changelog `MESSAGES_MAX`).

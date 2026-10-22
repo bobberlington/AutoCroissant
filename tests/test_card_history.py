@@ -167,6 +167,18 @@ def test_refine_dedupes_dates_and_marks_legacy():
     assert [cdb.record(v) for v in again[1]["A"]] == [cdb.record(v) for v in old["A"]]          # idempotent
 
 
+def test_dropped_legacy_versions_leave_the_current_card_its_cause():
+    """Every old version equal to the current card (The Lich King's case): the current card takes the earliest date,
+    but keeps its own cause and is no legacy version (as_of would call it approximate)."""
+    index = _index_with({"b3": ("c3", 3000.0)})
+    current = _card(blob_sha="b3", timestamp=3500.0)
+    stats, old = {"A": current}, defaultdict(list, {"A": [_card(timestamp=100.0), _card(timestamp=200.0)]})
+    ch.refine(stats, old, index)
+    assert "A" not in old
+    assert (current.version["from"], current.version["from_commit"], current.version["cause"], current.version["legacy"]) == \
+        (100.0, None, "psd", False)
+
+
 def test_refine_keeps_archived_tags_and_dates_them():
     index = _index_with({"b1": ("c1", 1000.0)}, deletions={"Items/Gone.psd": ("cd", 4000.0)})
     index.renames["Items/Gone.psd"] = ("Items/New.psd", index.by_sha["cd"])

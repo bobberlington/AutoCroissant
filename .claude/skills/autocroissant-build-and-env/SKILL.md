@@ -54,7 +54,7 @@ committed (53db8ee).
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
 | psd-tools | The PSD parser (`commands/psd_parser.py:10`). **Brings Pillow transitively — load-bearing, see section 3.** |
-| PyGithub | GitHub API traversal for remote card updates (`commands/repo_traverser.py:107`, imported lazily in `_repo`). **Brings PyNaCl transitively — load-bearing, see section 3.** |
+| PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:110, :120` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build and its requirements-card-data.txt need no PyGithub). **Brings PyNaCl transitively — load-bearing, see section 3.** |
 | requests | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:8`, `commands/github_api.py:4`, `commands/tts_save.py:31`, `commands/git_commit.py:17`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
 
@@ -106,7 +106,7 @@ Notes verified from `setup.py` (2026-07-11):
   semantics), query_card, management, music_player.
 - **Not compiled because they are in neither list:** `commands/type_emojis.py` (added 2026-10-19),
   `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
-  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python).
+  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python), and the card data build's `card_data.py`, `card_history.py`, `card_db.py` and `changelog.py` (2026-10-22: `card_data` holds the traverser's code, so /update_stats on the jetson runs the same pure Python as the Action; compiled `repo_traverser` is now a thin Discord wrapper).
   New modules are uncompiled by default; all were deliberately left out. Note that compiled
   `query_card` imports it at module level, which is fine (compiled code can import plain modules).
 - Never compiled (`EXCLUDE_FILES`, setup.py:9-18), with the reasons stated in the
@@ -301,3 +301,7 @@ result without a PNG posts the name). Review: the uncompiled list names the five
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): the PyGithub citation re-pointed to commands/card_data.py (the traverser's code moved there,
+uncompiled); `requirements-card-data.txt` (psd-tools 1.25.0, fonttools, requests) is the Card sync build's own pin
+list, not the bot's.

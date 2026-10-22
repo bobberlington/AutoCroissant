@@ -1,5 +1,6 @@
 """changelog: per-version field changes and the buff/nerf verdict, every event kind, seq numbering, the Discord message
-within Discord's limits, and the posted cursor that moves only after a post went through."""
+grouped by push (the activity list and the fallback), one message per push within Discord's limits and at most 20 a
+run, and the posted cursor that moves only after each accepted message."""
 import json
 from collections import defaultdict
 from types import SimpleNamespace
@@ -121,61 +122,114 @@ def test_month_files(tmp_path):
 
 
 # ========================
-# The daily post
+# Pushes and the posts (one per push)
 # ========================
+PUSH = {"after": "a2" * 20, "before": "a1" * 20, "by": "Zomoroko", "at": T + 3600}
+
+
+def test_pushes_from_the_activity_list_and_the_fallback():
+    """The activity list's push holding the event's commit; commits it doesn't list: consecutive ones by one author
+    are one push (before = the commit before them); a re-read has none. Events come back in push order."""
+    events = [{"kind": "changed", "card": "A", "commit": "c3"}, {"kind": "new", "card": "B", "commit": "c1"},
+              {"kind": "edited", "card": "C", "commit": "c5"}, {"kind": "new", "card": "D", "commit": "c4"},
+              {"kind": "reparse", "card": "E", "commit": "c1"}, {"kind": "art", "card": "F", "commit": "old"}]
+    listed = [{"after": "c2", "before": "c0", "by": "zomo-gh", "at": 50.0, "commits": ["c2", "c1"]}]
+    commits = [("c1", 10.0, "Zomoroko"), ("c2", 20.0, "Zomoroko"), ("c3", 30.0, "Bob"), ("c4", 40.0, "Bob"),
+               ("c5", 60.0, "Carol")]
+    out = cl.assign_pushes(events, listed, commits, base="c0")
+    assert [e["card"] for e in out] == ["B", "A", "D", "C", "F", "E"]
+    by = {e["card"]: e.get("push") for e in out}
+    assert by["B"] == {"after": "c2", "before": "c0", "by": "zomo-gh", "at": 50.0}
+    assert by["A"] == by["D"] == {"after": "c4", "before": "c2", "by": "Bob", "at": 40.0}
+    assert by["C"] == {"after": "c5", "before": "c4", "by": "Carol", "at": 60.0}
+    assert by["E"] is None and by["F"] is None                                    # a re-read; a commit of no push
+    fallback = cl.assign_pushes([dict(e) for e in events], [], commits, base="c0")
+    assert {e["card"]: (e.get("push") or {}).get("after") for e in fallback} == \
+        {"B": "c2", "A": "c4", "D": "c4", "C": "c5", "F": None, "E": None}
+
+
 def test_payload_words_links_and_order():
-    events = cl.number([{"kind": "new", "card": "Kirby", "title": "Kirby", "card_type": "creature", "stars": 3, "by": "Bob"},
-                        {"kind": "changed", "card": "Waddle Dee", "fields": {"hp": [5, 6], "ability": ["a", "b"], "tags": [[], []]},
-                         "verdict": "buff"},
-                        {"kind": "archived", "card": "Gone"}, {"kind": "renamed", "card": "ZOEY!!!!!", "renamed_to": "Z!!!!!"},
-                        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "discord:mike"},
-                        {"kind": "reparse", "card": "R"}, {"kind": "reparse", "card": "S"}], 0, at=T)
-    body = cl.payload(events, "https://site", {"Kirby": "kirby"})
+    events = [dict(e, push=PUSH) for e in cl.number([
+        {"kind": "new", "card": "Kirby", "title": "Kirby", "card_type": "creature", "stars": 3, "by": "Bob"},
+        {"kind": "new", "card": "Big Pal", "card_type": "creatures", "stars": 4},
+        {"kind": "changed", "card": "Waddle Dee", "fields": {"hp": [5, 6], "ability": ["a", "b"], "tags": [[], []]},
+         "verdict": "buff"},
+        {"kind": "changed", "card": "Waddle Doo", "fields": {"atk": [1, 2]}},
+        {"kind": "archived", "card": "Gone"}, {"kind": "renamed", "card": "ZOEY!!!!!", "renamed_to": "Z!!!!!"},
+        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "discord:mike"},
+        {"kind": "reparse", "card": "R"}, {"kind": "reparse", "card": "S"}], 0, at=T)]
+    body = cl.payload(events, "https://site", {"Kirby": "kirby"}, "MichaelJSr/TTSCardMaker")
     assert body["allowed_mentions"] == {"parse": []} and "content" not in body
-    titles = [e.get("title") for e in body["embeds"]]
-    assert titles == ["Card changes, Oct 22: New cards", "Changed", "Moved and renamed", "Archived", "Database edits", None]
+    first = body["embeds"][0]
+    assert first["title"] == "Zomoroko, Oct 22 14:13: 2 new, 2 changed, 1 renamed, 1 archived, 1 edited, 2 re-read"
+    assert first["url"] == "https://github.com/MichaelJSr/TTSCardMaker/compare/a1a1a1a1a1a1...a2a2a2a2a2a2"
+    assert [e["description"].split("\n")[0] for e in body["embeds"]] == \
+        ["**New cards**", "**Changed**", "**Moved and renamed**", "**Archived**", "**Database edits**", "The parser re-read 2 cards."]
     text = "\n".join(e["description"] for e in body["embeds"])
     assert "[Kirby](https://site/c/kirby/) (Creature, 3★) by Bob" in text
+    assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
     assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
-    assert body["embeds"][len(body["embeds"]) - 1]["description"] == "The parser re-read 2 cards."
     assert cl.payload([], "https://site") is None
 
 
 def test_payload_stays_within_discord_limits():
-    events = cl.number([{"kind": k, "card": f"{k} card {i} " + "x" * 60, "card_type": "item", "fields": {"ability": ["a", "b"]}}
-                        for k in ("new", "changed", "art", "moved", "archived", "restored", "edited") for i in range(150)], 0, at=T)
+    events = [dict(e, push=PUSH) for e in cl.number(
+        [{"kind": k, "card": f"{k} card {i} " + "x" * 60, "card_type": "item", "fields": {"ability": ["a", "b"]}}
+         for k in ("new", "changed", "art", "moved", "archived", "restored", "edited") for i in range(150)], 0, at=T)]
     body = cl.payload(events, "https://michaeljsr.github.io/TTSCardMaker")
     assert len(body["embeds"]) <= cl.EMBEDS_MAX and cl.size(body) <= cl.MESSAGE_MAX
     assert all(len(e["description"]) <= cl.DESCRIPTION_MAX for e in body["embeds"])
     last = body["embeds"][len(body["embeds"]) - 1]["description"]
-    shown = sum(e["description"].count("\n") + 1 for e in body["embeds"][:len(body["embeds"]) - 1])
+    shown = sum(e["description"].count("\n") for e in body["embeds"][:len(body["embeds"]) - 1])   # less the headings
     assert last == f"{len(events) - shown} more on the website: https://michaeljsr.github.io/TTSCardMaker/#/changes/changelog"
 
 
-def test_titles_across_days_and_months():
-    day = 86400
-    assert cl.title_of([{"at": T}]) == "Card changes, Oct 22"
-    assert cl.title_of([{"at": T - day}, {"at": T}]) == "Card changes, Oct 21-22"
-    assert cl.title_of([{"at": T - 22 * day}, {"at": T}]) == "Card changes, Sep 30-Oct 22"
+def test_titles_and_links():
+    assert cl.title_of([{"kind": "art", "push": PUSH}]) == "Zomoroko, Oct 22 14:13: 1 new art"
+    assert cl.title_of([{"kind": "reparse", "at": T, "build": "https://x/runs/1"}]) == "Card sync, Oct 22 13:13: 1 re-read"
+    assert cl.title_of([{"kind": "changed", "push": dict(PUSH, by="Card sync")}]).startswith("Website edits baked into the PSDs, ")
+    assert cl.link_of([{"push": dict(PUSH, before="0" * 40)}], "o/r") == "https://github.com/o/r/commit/" + "a2" * 20
+    assert cl.link_of([{"build": "https://x/runs/1"}], "o/r") == "https://x/runs/1"
 
 
-def test_cursor_moves_only_after_the_post(tmp_path):
+def test_one_message_per_push_at_most_twenty(tmp_path):
+    """Pushes post oldest first, one message each (a re-read on its own); 25 pushes: 20 now, 5 on the next run."""
+    def push(i):
+        return {"after": f"{i:040x}", "before": f"{i + 100:040x}", "by": f"maker{i}", "at": T + i}
+    events = [{"kind": "new", "card": f"Card {i}", "push": push(i), "build": "1"} for i in range(25)]
+    events.insert(1, {"kind": "changed", "card": "Card 0b", "push": push(0), "build": "1"})
+    events.append({"kind": "reparse", "card": "R", "build": "1"})
+    numbered = cl.number(events, 0, at=T)
+    out = cl.messages(numbered, "https://site", repository="o/r")
+    assert len(out) == 20 and out[0]["cursor"] == {"seq": 2, "push": push(0)["after"]}
+    assert out[0]["body"]["embeds"][0]["title"].startswith("maker0, ") and out[1]["cursor"]["seq"] == 3
+    rest = cl.messages([e for e in numbered if e["seq"] > out[19]["cursor"]["seq"]], "https://site", repository="o/r")
+    assert len(rest) == 6 and rest[5]["cursor"] == {"seq": 27, "push": None}
+    assert rest[5]["body"]["embeds"][0]["description"] == "The parser re-read 1 card."
+
+
+def test_cursor_moves_only_after_each_message(tmp_path):
     db = str(tmp_path / "db")
-    cl.append_events(db, cl.number([{"kind": "new", "card": "A"}, {"kind": "new", "card": "B"}], 0, at=T))
+    p1 = dict(PUSH)
+    p2 = dict(PUSH, after="b2" * 20, before=PUSH["after"], by="Bob")
+    cl.append_events(db, [dict(e, push=p) for e, p in zip(
+        cl.number([{"kind": "new", "card": "A"}, {"kind": "new", "card": "B"}], 0, at=T), (p1, p2))])
     out = tmp_path / "discord.json"
+    assert cl.main(["post", "--db", db, "--out", str(out), "--repo", "o/r"]) == 0
+    sent = json.loads(out.read_text(encoding="utf-8"))["messages"]
+    assert [m["cursor"] for m in sent] == [{"seq": 1, "push": p1["after"]}, {"seq": 2, "push": p2["after"]}]
+    assert cl.read_posted(db) == {"seq": 0, "push": None}
+    assert cl.main(["advance", "--db", db, "--seq", "1", "--push", p1["after"]]) == 0      # the first went through
     assert cl.main(["post", "--db", db, "--out", str(out)]) == 0
-    sent = json.loads(out.read_text(encoding="utf-8"))
-    assert sent["cursor"]["seq"] == 2 and sent["message"]["embeds"] and cl.read_posted(db) == {"seq": 0, "date": ""}
-    assert cl.main(["post", "--db", db, "--out", str(out)]) == 0                      # not advanced: the same post again
-    assert json.loads(out.read_text(encoding="utf-8"))["cursor"]["seq"] == 2
-    assert cl.main(["advance", "--db", db, "--seq", "2", "--date", "2026-10-22"]) == 0
-    assert cl.read_posted(db) == {"seq": 2, "date": "2026-10-22"}
+    left = json.loads(out.read_text(encoding="utf-8"))["messages"]
+    assert [m["cursor"]["seq"] for m in left] == [2] and left[0]["body"]["embeds"][0]["title"].startswith("Bob, ")
+    cl.advance(db, 2, p2["after"])
     assert cl.main(["post", "--db", db, "--out", str(out)]) == 0
-    assert json.loads(out.read_text(encoding="utf-8"))["message"] is None              # nothing new
-    cl.advance(db, 1, "2026-10-21")
-    assert cl.read_posted(db) == {"seq": 2, "date": "2026-10-22"}                      # never backwards
+    assert json.loads(out.read_text(encoding="utf-8"))["messages"] == []
+    cl.advance(db, 1, p1["after"])
+    assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
 
 
 def test_history_cli(tmp_path, capsys):
