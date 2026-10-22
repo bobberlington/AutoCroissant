@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
 from psd_tools import PSDImage
-from re import compile as re_compile, sub
+from re import compile as re_compile, fullmatch, sub
 from typing import Optional, Any
 
 from global_config import RULEBOOK_DIR
@@ -479,6 +479,7 @@ class PSDParser:
         "Ability FX: Blazing" holds the word Blazing cut pixel-for-pixel from the "Ability" text layer, with a layer
         style on top (MDW/Scripts/Effect Layers.jsx in TTSCardMaker). Editing the text without running the script's
         Update all leaves the glow where the word used to be; then its pixels stop landing on the text's pixels.
+        A layer whose words left the text (orphaned, or "Frozen#2" with one Frozen left) is WORDS NOT IN TEXT.
         """
         if not layer.is_visible():
             return
@@ -491,14 +492,31 @@ class PSDParser:
         base = next((b for b in bases if b.bbox[0] < x1 and x0 < b.bbox[2] and b.bbox[1] < y1 and y0 < b.bbox[3]), bases[0])
 
         text = sub(r"[\s\x03]+", " ", base.engine_dict["Editor"]["Text"].value).lower()
-        # "Frozen#2" means the 2nd occurrence of Frozen
-        phrases = [sub(r"\s+", " ", sub(r"#\d+$", "", word.strip())).lower() for word in words.split("|")]
-        if any(phrase and phrase not in text for phrase in phrases):
-            self._add_problem(card, f"EFFECT LAYER WORDS NOT IN TEXT: {layer.name}")
-            return
+        for word in words.split("|"):
+            occurrence = fullmatch(r"(.*\S)#(\d+)", word.strip())     # "Frozen#2": the 2nd Frozen
+            phrase = sub(r"\s+", " ", occurrence.group(1) if occurrence else word.strip()).lower()
+            nth = max(int(occurrence.group(2)), 1) if occurrence else 1
+            if phrase and self._occurrences(text, phrase) < nth:
+                self._add_problem(card, f"EFFECT LAYER WORDS NOT IN TEXT: {layer.name}")
+                return
         coverage = self._pixel_coverage(layer, base)
         if coverage is not None and coverage < EFFECT_COVERAGE_MIN:
             self._add_problem(card, f"EFFECT LAYER OUT OF DATE: {layer.name} (run Effect Layers > Update all)")
+
+    @staticmethod
+    def _occurrences(text: str, phrase: str) -> int:
+        """Matches of `phrase` in `text` as Effect Layers.jsx counts them: whole words when there are any, else all."""
+        found = whole = 0
+        start = text.find(phrase) if phrase else -1
+        while start >= 0:
+            end = start + len(phrase)
+            found += 1
+            before = text[start - 1] if start else " "
+            after = text[end] if end < len(text) else " "
+            if not (before.isascii() and before.isalnum()) and not (after.isascii() and after.isalnum()):
+                whole += 1
+            start = text.find(phrase, end)
+        return whole or found
 
     @staticmethod
     def _pixel_coverage(layer, base) -> Optional[float]:
@@ -957,7 +975,7 @@ class CardValidator:
         "Paint Warrior",
         "PoD01Red Bloon",
         "Sabre",
-        "Shadow Duelist",
+        "Shadow Duelist",         # printed card has no ability text; a hidden layer does
         "Sword Knight",
         "Tentacle",
         "Whelp",
