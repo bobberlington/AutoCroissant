@@ -208,7 +208,92 @@ def test_the_callers_tree_needs_no_listing(fake, font_bytes):
     assert fake.lists() == [] and (result.requests, result.downloaded, result.files) == (1, 1, files)
     assert fc.refresh_cache("o/r", files, "cache").requests == 0
     empty = fc.refresh_cache("o/r", {}, "cache")                                 # a tree without fonts never empties it
-    assert empty.error and empty.files == files
+    assert empty.error and empty.files == files and not empty.complete           # nor stands for that tree
+
+
+def test_the_callers_tree_keeps_the_listings_etag(fake, tmp_path):
+    """A refresh from the caller's tree (the same subtree sha) keeps the ETag: the next listing is still a 304."""
+    first = fc.refresh_cache("o/r", directory="cache")
+    (tmp_path / "cache" / "B.ttf").unlink()
+    again = fc.refresh_cache("o/r", first.files, "cache", first.tree)
+    assert again.downloaded == 1 and again.complete and _manifest("cache")["etag"] == _manifest("cache")["etag"] != ""
+    fc.refresh_cache("o/r", directory="cache")
+    assert fake.lists()[1] == _manifest("cache")["etag"] and fake.blobs() == 3                   # a 304
+
+
+def _killed_after_one_file(monkeypatch, fake, font_bytes):
+    """A refresh that dies (an /update restart, power loss) right after its first font file landed."""
+    fake.files["A.ttf"] = font_bytes["CacheFixture-C"]
+    fake.files["Z.ttf"] = b"a new font"
+    real, written = fc._write, []
+
+    def write(path, fn):
+        if not path.endswith(fc.MANIFEST):
+            if written:
+                raise SystemExit("killed")
+            written.append(path)
+        real(path, fn)
+    with monkeypatch.context() as m:
+        m.setattr(fc, "_write", write)
+        with pytest.raises(SystemExit):
+            fc.refresh_cache("o/r", directory="cache")
+    assert written and written[0].endswith("A.ttf")
+
+
+def _manifest_matches_disk(directory) -> bool:
+    saved = _manifest(directory)
+    return all(_sha((Path(directory) / n).read_bytes()) == s for n, s in saved["files"].items() if (Path(directory) / n).exists())
+
+
+def test_a_crash_mid_refresh_then_a_failed_listing(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
+    fc.refresh_cache("o/r", directory="cache")
+    _killed_after_one_file(monkeypatch, fake, font_bytes)
+    assert _manifest("cache")["complete"] is False and _manifest_matches_disk("cache")
+    fake.listing_status = 503
+    assert not fc.refresh_cache("o/r", directory="cache").complete and pd.font_index("o/r", "cache") is None
+
+
+def test_a_crash_mid_refresh_then_a_revert(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
+    """The font change is reverted after the crash: the listing is unconditional and A.ttf is fetched back."""
+    fc.refresh_cache("o/r", directory="cache")
+    original = dict(fake.files)
+    _killed_after_one_file(monkeypatch, fake, font_bytes)
+    fake.files = original
+    result = fc.refresh_cache("o/r", directory="cache")
+    assert fake.lists()[2] is None and result.complete and result.downloaded == 1
+    assert (tmp_path / "cache" / "A.ttf").read_bytes() == font_bytes["CacheFixture-A"] and _manifest_matches_disk("cache")
+    snapshot_files = {n: _sha(d) for n, d in original.items()}
+    assert fc.refresh_cache("o/r", snapshot_files, "cache").requests == 0                   # the bake's shortcut, now true
+
+
+def test_killed_writes_leave_no_temps(fake, tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    dead = next(pid for pid in range(99999, 1, -1) if not _alive(pid))
+    names = {f".A.ttf.{dead}.tmp": False, f".B.ttf.{os.getpid()}.tmp": False, ".C.ttf.1.tmp": True, ".notes.tmp": True}
+    for name in names:
+        (cache / name).write_bytes(b"x")
+    fc.refresh_cache("o/r", directory="cache")
+    assert {n: (cache / n).exists() for n in names} == names                    # pid 1 is alive; no pid: not the cache's
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def test_another_repos_failed_listing_is_not_complete(fake, no_checkout, tmp_path):
+    """A /set_repo'd repo without MDW/Fonts (a 404) never judges by the card repo's fonts."""
+    fc.refresh_cache("o/r", directory="cache")
+    fake.listing_status = 404
+    other = fc.refresh_cache("x/y", directory="cache")
+    assert other.error and not other.complete and pd.font_index("x/y", "cache") is None
+    assert fc.refresh_cache("o/r", directory="cache").complete
 
 
 def test_find_fonts_prefers_the_override_then_the_checkout(fake, monkeypatch, tmp_path, no_checkout):
@@ -234,6 +319,19 @@ def test_details_index_from_the_cache(fake, no_checkout, capsys):
     fake.listing_status = 404
     stale = pd.font_index("o/r", "cache")                                       # the listing failed: the cache stands
     assert stale is not None and stale.files == 2 and "MDW/Fonts listing" in capsys.readouterr().out
+
+
+def test_details_index_from_the_update_tree(fake, no_checkout, monkeypatch):
+    """/update_stats hands its tree over: no listing, only the missing blobs, and the index is built once per fonts change."""
+    tree = {"tree": [{"path": fc.FONTS_DIR, "type": "tree", "sha": "fonts-tree"}]
+            + [{"path": f"{fc.FONTS_DIR}/{n}", "type": "blob", "sha": _sha(d)} for n, d in fake.files.items()]}
+    index = pd.font_index("o/r", "cache", tree)
+    assert index.files == 2 and fake.lists() == [] and fake.blobs() == 2 and _manifest("cache")["tree"] == "fonts-tree"
+    built = []
+    monkeypatch.setattr(pd, "FontIndex", lambda directory: built.append(directory))
+    assert pd.font_index("o/r", "cache", tree) is index and built == [] and fake.calls == [c for c in fake.calls if c[0] == "blob"]
+    assert pd.font_index("o/r", "cache", {**tree, "truncated": True}) is index and fake.lists() == [None]   # truncated: listed
+    assert pd.font_index("o/r", "cache", {"tree": []}) is None                  # no MDW/Fonts in that repo: null flags
 
 
 def test_details_index_is_none_without_fonts(fake, no_checkout, font_bytes, capsys):

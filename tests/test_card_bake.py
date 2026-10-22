@@ -353,6 +353,17 @@ def test_card_restricts_the_run(github):
     assert data["cards"]["The Freezer"]["_psd"]["for"] == {"stars": 2} and "1 with PSD fields (--card the_freezer)" in text
 
 
+def test_no_card_to_bake_needs_no_fonts(github, monkeypatch):
+    """The fonts dir (on the jetson: the fonts cache's fill) is found only when a card has PSD fields."""
+    def boom(snapshot=None):
+        raise cb.Transient("fonts cache: 1 font file failed to download")
+    monkeypatch.setattr(cb, "_fonts_dir", boom)
+    text, commits = cb.run(card="beldam")
+    assert commits == [] and "No entry with a PSD field for 'beldam'" in text and "Runner:" not in text
+    with pytest.raises(cb.Transient):
+        cb.run(card="the_freezer")
+
+
 def test_recent_refuses_before_fetching(github):
     github.recent.add(DOOMER)
     text, commits = cb.run(card="Mini Doomer")

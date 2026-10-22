@@ -9,11 +9,12 @@ keyed by its git blob sha, in psd_details.json beside the pickles (committed; /p
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load/save (tmp + fsync + replace under one lock), prune(cards, shas) to the tree. The traverser
 gathers every re-parsed card's record in /update_stats, its "supplied" flags from font_index() (font_check.find_fonts:
-the checkout's MDW/Fonts, else the fonts cache); the CLI backfills a clone in a process pool (the open is the whole
-cost, like font_check --all), or --refill sets every record's flags from the fonts (records gathered without them, or
-after MDW/Fonts changed; run it while the bot runs no /update_stats, /bake_cards or /fonts: the details file's temp
-and the fonts cache are shared, and its lock is per process). No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when
-it is built in.
+the checkout's MDW/Fonts, else the fonts cache brought to the update's tree), then refills every record's flags from
+that index (records gathered without one, or before MDW/Fonts changed). The CLI backfills a clone in a process pool (the
+open is the whole cost, like font_check --all), or --refill sets the flags by hand. Run --refill from the bot's
+directory (psd_details.json and fonts_cache/ are cwd-relative) while the bot runs no /update_stats (the daily 5AM
+reminder too), /bake_cards or /fonts: the details file's temp and the fonts cache are shared, and their locks are per
+process. No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when it is built in.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -32,7 +33,9 @@ from psd_tools import PSDImage
 from psd_tools.constants import Resource
 
 from commands.card_models import card_name
-from commands.font_check import EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, find_fonts, is_card_psd, layer_fonts
+from commands.font_check import (
+    EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, find_fonts, is_card_psd, layer_fonts, tree_fonts,
+)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
@@ -48,6 +51,7 @@ TREE_DEPTH = 8                              # groups nested deeper show one "mor
 MORE = ["…", "more", True]             # the tree's cut marker
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
 _lock = Lock()                              # one writer of the file
+_indexes: dict = {}                         # (cache dir, its files) -> FontIndex: built once per MDW/Fonts change
 
 
 # ========================
@@ -332,17 +336,27 @@ def refill(cards: dict, index: FontIndex) -> int:
     return sum(mark_supplied(record, index) for record in cards.values() if isinstance(record, dict))
 
 
-def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE) -> Optional[FontIndex]:
+def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE, tree: Optional[dict] = None) -> Optional[FontIndex]:
     """
     The faces the "supplied" flags are judged by: font_check.find_fonts (PSD_TOOLS_FONT_DIRS, the checkout's MDW/Fonts,
-    else the fonts cache refreshed by tree sha: 1 conditional request, the changed font blobs on top).
+    else the fonts cache brought to the tree: no listing, only the changed font blobs; no tree: 1 conditional listing).
+
+    Args:
+        repository: owner/name of the card repo
+        cache: The fonts cache
+        tree: The recursive tree the caller fetched (/update_stats); None or truncated lists MDW/Fonts
 
     Returns:
         FontIndex, or None (one console line) when the fonts can't be had or a file failed to download: "supplied" stays
         null then, never a wrong False. A failed listing uses the cache as the last refresh left it, if that one finished
     """
+    files, sub = None, ""
+    if tree is not None and not tree.get("truncated"):
+        items = tree.get("tree", [])
+        files = tree_fonts({e.get("path", ""): e.get("sha", "") for e in items if e.get("type") == "blob"})
+        sub = next((e.get("sha", "") for e in items if e.get("path") == FONTS_DIR and e.get("type") == "tree"), "")
     try:
-        fonts = find_fonts(repository, directory=cache)
+        fonts = find_fonts(repository, files, cache, sub)
     except Exception as e:                      # never fails an update
         print(f"Fonts for the details: {e}")
         return None
@@ -352,10 +366,17 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE) -> Optiona
     if fonts.error:
         print(f"Fonts for the details: {fonts.error}")
     if not fonts.complete:                      # a failed listing over a cache the last refresh left short
-        print("Fonts for the details: the fonts cache is incomplete; supplied stays null")
+        print("Fonts for the details: the fonts cache is incomplete or not this tree's; supplied stays null")
         return None
+    key = (fonts.directory, tuple(sorted(fonts.files.items()))) if fonts.source == "cache" else None
+    if key in _indexes:
+        return _indexes[key]
     index = FontIndex(fonts.directory) if isdir(fonts.directory) else None
-    return index if index is not None and index.files else None
+    index = index if index is not None and index.files else None
+    if key is not None and index is not None:
+        _indexes.clear()
+        _indexes[key] = index
+    return index
 
 
 def load(path: str = DETAILS_JSON) -> dict:

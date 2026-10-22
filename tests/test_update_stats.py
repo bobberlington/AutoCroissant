@@ -315,7 +315,7 @@ def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):
     """A /set_repo'd update queues no emoji sync: the type emojis follow the card repo only; its fonts judge the details."""
     import commands.psd_details as pd
     asked = []
-    monkeypatch.setattr(pd, "font_index", lambda repository: asked.append(repository))
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: asked.append(repository))
     monkeypatch.setattr(pa.card_repo, "repository", "someone/else")
     _, queued = _run()
     assert "sync_changed_emojis" not in queued and asked == ["someone/else"]
@@ -333,7 +333,7 @@ def test_bake_lock_serialises_update_stats(github, capsys):
         cr.bake_lock.release()
     worker.join(120)
     assert not worker.is_alive() and os.path.exists("stats.pkl")
-    assert "Waiting for the running card bake or update to finish" in capsys.readouterr().out
+    assert "Waiting for the running card update, bake or font check to finish" in capsys.readouterr().out
 
 
 def _details():
@@ -365,6 +365,24 @@ def test_details_follow_the_parsed_cards(github, psds, clone, monkeypatch):
     assert set(details) == {_sha(psds[OTHER])} and details[_sha(psds[OTHER])]["path"] == DOOMER
     assert not os.path.exists("psd_details.json.tmp")
     assert pd.load("psd_details.json") == details
+
+
+def test_details_flags_are_refilled_on_a_changed_tree(github, monkeypatch):
+    """Records gathered without fonts (a failed download) get their flags on the next update whose tree changed,
+    re-parsed or not."""
+    import commands.psd_details as pd
+
+    class Everything:
+        def resolve(self, name):
+            return "exact"
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
+    _run()
+    doomer = _file_sha(github, DOOMER)
+    assert {e["supplied"] for e in _details()[doomer]["fonts"].values()} == {None}
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: Everything())
+    github.files["notes.txt"] = b"not a card"
+    _run()
+    assert {e["supplied"] for e in _details()[doomer]["fonts"].values()} == {True}
 
 
 def test_details_gather_error_never_fails_the_update(github, monkeypatch, capsys):

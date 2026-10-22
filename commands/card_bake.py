@@ -725,13 +725,13 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
                 report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
                                     f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
                                     + (f" (--card {card})" if card else ""))
-                fonts = _fonts_dir(snapshot)
-                engine = "text engine" if psd_edit.text_engine() else "no text engine"
-                report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
-                                    + ("" if isdir(fonts) else " (missing)"))
                 if card and not cards:
                     report.note = f"No entry with a PSD field for {card!r}."
                 if cards:
+                    fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
+                    engine = "text engine" if psd_edit.text_engine() else "no text engine"
+                    report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
+                                        + ("" if isdir(fonts) else " (missing)"))
                     parser = vocabulary(snapshot)
                     colors: list = []           # the chart's fills, read once
 

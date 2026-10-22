@@ -18,7 +18,9 @@ MDW/Fonts by blob sha, so it reads a local copy only when its sha matches and re
 font_names.json lacks. A refresh lists the subtree (git/trees/<branch>:MDW/Fonts, conditional on its ETag: a 304 when
 nothing changed), or takes the caller's tree, and downloads only the blobs whose sha it doesn't hold (sha1-verified); a
 renamed file is copied, a gone one deleted. A failed listing keeps the cache; it counts as complete only if the refresh
-that wrote it finished. On the bot, bake_lock keeps /fonts from refreshing it under a bake (see repo_fonts).
+that wrote it finished, for the same repo (the manifest is marked incomplete before the first file is rewritten, so a
+crash mid-refresh never leaves a complete one). On the bot, bake_lock keeps /fonts from refreshing it under a bake (see
+repo_fonts).
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
@@ -31,7 +33,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from io import BytesIO
 from json import dump, dumps, load
-from os import cpu_count, environ, fsync, getpid, makedirs, pathsep, remove, rename, replace, walk
+from os import cpu_count, environ, fsync, getpid, kill, listdir, makedirs, pathsep, remove, rename, replace, walk
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, isfile, join, relpath, samefile, splitext
 from re import sub
 from threading import Lock
@@ -64,7 +66,7 @@ FILES_PAGE = 300                            # the compare and commit APIs list a
 COMMITS_PAGE = 250                          # the compare API lists at most this many commits
 POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
 POOL_CHUNK = 4                              # PSDs per pool task
-MANIFEST = ".manifest.json"                 # in FONTS_CACHE: {"tree", "etag", "complete", "files": {name: blob sha}}
+MANIFEST = ".manifest.json"                 # in FONTS_CACHE: {"repo", "tree", "etag", "complete", "files": {name: blob sha}}
 _lock = Lock()                              # one /fonts at a time
 _cache_lock = Lock()                        # one cache refresh at a time (the bot: bake_lock keeps readers safe)
 
@@ -593,7 +595,27 @@ def _load_manifest(directory: str) -> dict:
             return data
     except (OSError, ValueError):
         pass                                    # missing or corrupt: every file is checked again
-    return {"tree": "", "etag": "", "complete": False, "files": {}}
+    return {"repo": "", "tree": "", "etag": "", "complete": False, "files": {}}
+
+
+def _clear_temps(directory: str) -> None:
+    """Remove the temp files a killed _write left: its pid is gone, or ours (our writes there hold _cache_lock)."""
+    for name in listdir(directory):
+        stem, _, pid = name[:len(name) - 4].rpartition(".") if name.startswith(".") and name.endswith(".tmp") else ("", "", "")
+        if not stem or not pid.isdigit():
+            continue
+        if int(pid) != getpid():
+            try:
+                kill(int(pid), 0)
+                continue                        # still running: its temp
+            except ProcessLookupError:
+                pass
+            except OSError:                     # alive under another user
+                continue
+        try:
+            remove(join(directory, name))
+        except OSError:
+            pass
 
 
 def _write(path: str, write) -> None:
@@ -638,14 +660,15 @@ def refresh_cache(repository: str = CARD_REPO, files: Optional[dict] = None, dir
     Returns:
         FontsCache; download and listing failures are in failed and error, never raised. Requests: 1 listing (none
         with files; a 304 when the subtree is unchanged), then 1 per blob the cache lacks. complete is False when a
-        failed listing leaves a cache whose last refresh did not finish
+        failed listing leaves a cache whose last refresh did not finish or was another repo's, or the tree has no fonts
     """
     with _cache_lock:
         directory = abspath(directory)
         makedirs(directory, exist_ok=True)
+        _clear_temps(directory)
         manifest = _load_manifest(directory)
         held = {name: sha for name, sha in manifest["files"].items() if isinstance(sha, str) and isfile(join(directory, name))}
-        complete = held == manifest["files"] and manifest.get("complete") is True
+        complete = held == manifest["files"] and manifest.get("complete") is True and manifest.get("repo") == repository
         result = FontsCache(directory, tree=tree, complete=complete)
         etag = ""
         if files is None:
@@ -659,14 +682,17 @@ def refresh_cache(repository: str = CARD_REPO, files: Optional[dict] = None, dir
                 result.files, result.tree = held, manifest.get("tree", "")
                 return result
             result.tree, files, etag = listed
-        if not files:                           # a tree without fonts never empties the cache
-            result.error, result.files = "no font files under MDW/Fonts", held
+        if not files:                           # a tree without fonts never empties the cache, nor stands for it
+            result.error, result.files, result.complete = "no font files under MDW/Fonts", held, False
             return result
+        same_tree = bool(result.tree) and result.tree == manifest.get("tree")
         if held == files and held == manifest["files"]:
             result.files, result.complete = held, True
-            if not complete or (result.tree and result.tree != manifest.get("tree")) or (etag and etag != manifest.get("etag")):
-                _write_manifest(directory, result.tree, etag or manifest.get("etag", ""), held, True)
+            if not complete or (result.tree and not same_tree) or (etag and etag != manifest.get("etag")):
+                _write_manifest(directory, repository, result.tree, etag or manifest.get("etag", ""), held, True)
             return result
+        # a crash from here on leaves an incomplete manifest naming only the files no write touches
+        _write_manifest(directory, repository, "", "", {n: s for n, s in held.items() if files.get(n) == s}, False)
         by_sha = {sha: name for name, sha in held.items()}
         now = {}
         for name in sorted(files):
@@ -706,17 +732,19 @@ def refresh_cache(repository: str = CARD_REPO, files: Optional[dict] = None, dir
                     pass
                 now.pop(name, None)
         done = not result.failed and all(now.get(name) == sha for name, sha in files.items())
-        _write_manifest(directory, result.tree if done else "", etag if done else "", now, done)
+        etag = etag or (manifest.get("etag", "") if same_tree else "")    # the caller's tree: its listing's ETag still holds
+        _write_manifest(directory, repository, result.tree if done else "", etag if done else "", now, done)
         result.files, result.complete = now, done
         return result
 
 
-def _write_manifest(directory: str, tree: str, etag: str, files: dict, complete: bool) -> None:
-    text = dumps({"tree": tree, "etag": etag, "complete": complete, "files": {name: files[name] for name in sorted(files)}}, indent=1)
+def _write_manifest(directory: str, repository: str, tree: str, etag: str, files: dict, complete: bool) -> None:
+    text = dumps({"repo": repository, "tree": tree, "etag": etag, "complete": complete,
+                  "files": {name: files[name] for name in sorted(files)}}, indent=1)
     _write(join(directory, MANIFEST), lambda fh: fh.write(text.encode("utf-8")))
 
 
-def find_fonts(repository: str = CARD_REPO, files: Optional[dict] = None, directory: str = FONTS_CACHE) -> FontsCache:
+def find_fonts(repository: str = CARD_REPO, files: Optional[dict] = None, directory: str = FONTS_CACHE, tree: str = "") -> FontsCache:
     """
     The fonts dir: PSD_TOOLS_FONT_DIRS's first entry, else the checkout's MDW/Fonts, else the cache, refreshed.
 
@@ -724,6 +752,7 @@ def find_fonts(repository: str = CARD_REPO, files: Optional[dict] = None, direct
         repository: owner/name of the card repo (the cache's source)
         files: {name: blob sha} from the caller's tree (refresh_cache)
         directory: The cache
+        tree: The MDW/Fonts tree sha, with files
 
     Returns:
         FontsCache (source "env" or "checkout": nothing refreshed)
@@ -731,7 +760,7 @@ def find_fonts(repository: str = CARD_REPO, files: Optional[dict] = None, direct
     local, source = local_fonts()
     if local:
         return FontsCache(local, source)
-    return refresh_cache(repository, files, directory)
+    return refresh_cache(repository, files, directory, tree)
 
 
 # ========================

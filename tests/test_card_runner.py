@@ -112,7 +112,7 @@ def test_bake_waits_for_the_lock(fake_run):
         worker.start()
         worker.join(0.3)
         assert worker.is_alive() and fake_run == []
-        assert _sent()[0]["content"] == "Waiting for the running card update or bake to finish..."
+        assert _sent()[0]["content"] == "Waiting for the running card update, bake or font check to finish..."
     finally:
         cr.bake_lock.release()
     worker.join(10)
