@@ -1,0 +1,379 @@
+"""
+The card database as JSON (db/, the card data build's output): CardInfo <-> plain records, stats.json and
+old_stats.json one card per line written atomically, the manifest's sha256 per file, the one-time seed from the
+pickles through an allow-list unpickler, and export-pickles back. No Discord, network or psd-tools.
+
+CLI: python -m commands.card_db from-pickles <pickle dir> <db dir> | export-pickles <db dir> <out dir> | check <db dir>
+"""
+from argparse import ArgumentParser
+from collections import defaultdict
+from dataclasses import MISSING, fields
+from hashlib import sha256
+from json import dumps, loads
+from os import fsync, makedirs, remove, replace
+from os.path import exists, isfile, join
+from pickle import Unpickler, UnpicklingError
+from sys import modules as sys_modules
+from threading import Lock
+from types import ModuleType
+from typing import Optional
+
+from commands.card_models import CardInfo, CardStats, save_pickle
+
+# ========================
+# Configuration
+# ========================
+SCHEMA = 1
+STATS_JSON = "stats.json"
+OLD_STATS_JSON = "old_stats.json"
+DETAILS_JSON = "psd_details.json"                  # psd_details' own format, copied as is
+MANIFEST_JSON = "manifest.json"
+DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
+PICKLE_MODULE = CardInfo.__module__                # "commands.psd_analyzer": the class path the pickles store
+EXTRA_KEYS = ("version",)                         # CardInfo attributes outside its dataclass fields
+CARD_FIELDS = {f.name: f for f in fields(CardInfo)}
+STAT_KEYS = tuple(f.name for f in fields(CardStats))
+# what the seed may unpickle: the two card classes under either module path, and old_stats' defaultdict(list)
+ALLOWED = {("commands.psd_analyzer", "CardInfo"): CardInfo, ("commands.psd_analyzer", "CardStats"): CardStats,
+           ("commands.card_models", "CardInfo"): CardInfo, ("commands.card_models", "CardStats"): CardStats,
+           ("collections", "defaultdict"): defaultdict, ("builtins", "list"): list}
+
+# ========================
+# Global State
+# ========================
+_lock = Lock()                                     # one writer per process
+_warned: set = set()                               # record keys CardInfo lacks, warned once each
+
+
+# ========================
+# Records
+# ========================
+def _default(field):
+    """A dataclass field's default value."""
+    if field.default is not MISSING:
+        return field.default
+    if field.default_factory is not MISSING:
+        return field.default_factory()
+    return None
+
+
+def _stats_record(stats) -> Optional[dict]:
+    return None if stats is None else {key: getattr(stats, key) for key in STAT_KEYS}
+
+
+def _plain(value, where: str):
+    """value when it is JSON data (None, bool, int, float, str, lists, dicts with str keys); else TypeError."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_plain(v, where) for v in value]
+    if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+        return {k: _plain(v, where) for k, v in value.items()}
+    raise TypeError(f"{where}: {type(value).__name__} is not JSON data")
+
+
+def record(card: CardInfo) -> dict:
+    """
+    A card as plain data: every CardInfo field (an older pickle's missing one takes its default) plus `version`;
+    stats and creatures as CardStats' attribute names.
+
+    Raises:
+        TypeError: a value that isn't JSON data
+    """
+    out = {}
+    name = getattr(card, "name", "?")
+    for key, field in CARD_FIELDS.items():
+        value = getattr(card, key, None) if hasattr(card, key) else _default(field)
+        if key == "stats":
+            out[key] = _stats_record(value)
+        elif key == "creatures":
+            out[key] = [_stats_record(c) for c in value] if value is not None else None
+        else:
+            out[key] = _plain(value, f"{name}.{key}")
+    for key in EXTRA_KEYS:
+        out[key] = _plain(getattr(card, key, None), f"{name}.{key}")
+    return out
+
+
+def card(rec: dict) -> CardInfo:
+    """A record back to a CardInfo: a missing key takes the field's default; an unknown key is ignored (warned once)."""
+    values = {}
+    for key, value in rec.items():
+        if key in CARD_FIELDS or key in EXTRA_KEYS:
+            values[key] = value
+        elif key not in _warned:
+            _warned.add(key)
+            print(f"card_db: record key {key!r} is not a CardInfo field; ignored")
+    out = CardInfo(name=values.get("name") or "", card_type=values.get("card_type") or "unknown")
+    for key, value in values.items():
+        if key == "stats":
+            value = CardStats(**{k: v for k, v in value.items() if k in STAT_KEYS}) if value is not None else None
+        elif key == "creatures":
+            value = [CardStats(**{k: v for k, v in c.items() if k in STAT_KEYS}) for c in value] if value is not None else None
+        if key in EXTRA_KEYS and value is None:
+            continue                               # the class default
+        setattr(out, key, value)
+    return out
+
+
+def _line(rec: dict) -> str:
+    """One record: its keys sorted; nested dicts (parsed_values, archived, version) keep their order, so a loaded card
+    reprs as it did (CardEdits.apply compares reprs)."""
+    return dumps({key: rec[key] for key in sorted(rec)}, ensure_ascii=False, separators=(",", ":"))
+
+
+# ========================
+# Files
+# ========================
+def stats_text(stats: dict) -> str:
+    """stats.json: {"schema": 1, "cards": {name: record}}, one card per line, sorted by name."""
+    lines = ",\n".join(f"{dumps(name, ensure_ascii=False)}:{_line(record(stats[name]))}" for name in sorted(stats))
+    return '{"schema":%d,"cards":{\n%s\n}}\n' % (SCHEMA, lines)
+
+
+def old_stats_text(old_stats: dict) -> str:
+    """old_stats.json: {"schema": 1, "cards": {name: [record, ...]}}, one name per line (history, then archived)."""
+    lines = ",\n".join(f"{dumps(name, ensure_ascii=False)}:[{','.join(_line(record(c)) for c in old_stats[name])}]"
+                       for name in sorted(old_stats) if old_stats[name])
+    return '{"schema":%d,"cards":{\n%s\n}}\n' % (SCHEMA, lines)
+
+
+def _cards_of(text: str, path: str) -> dict:
+    data = loads(text)
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("cards"), dict):
+        raise ValueError(f"{path}: not a schema {SCHEMA} card file")
+    return data["cards"]
+
+
+def parse_stats(text: str, path: str = STATS_JSON) -> dict:
+    """stats.json's text -> {name: CardInfo}."""
+    return {name: card(rec) for name, rec in _cards_of(text, path).items()}
+
+
+def parse_old_stats(text: str, path: str = OLD_STATS_JSON) -> defaultdict:
+    """old_stats.json's text -> defaultdict(list) of CardInfo, like old_stats.pkl."""
+    out = defaultdict(list)
+    for name, recs in _cards_of(text, path).items():
+        out[name] = [card(rec) for rec in recs]
+    return out
+
+
+def write_text(path: str, text: str) -> None:
+    """Write to <path>.tmp, fsync, then replace (card_models.save_pickle's way)."""
+    with _lock:
+        temp_path = path + ".tmp"
+        try:
+            with open(temp_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+                fh.flush()
+                fsync(fh.fileno())
+            replace(temp_path, path)
+        except BaseException:
+            try:
+                remove(temp_path)
+            except OSError:
+                pass
+            raise
+
+
+def file_sha256(path: str) -> str:
+    with open(path, "rb") as fh:
+        return sha256(fh.read()).hexdigest()
+
+
+def read_db(folder: str) -> tuple:
+    """
+    db/'s cards.
+
+    Returns:
+        (stats, old_stats, details, manifest); empty ones when db/ is empty (the seed's case)
+    """
+    def text(name):
+        path = join(folder, name)
+        if not isfile(path):
+            return None
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    stats_t, old_t, details_t, manifest_t = (text(n) for n in (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON, MANIFEST_JSON))
+    stats = parse_stats(stats_t, join(folder, STATS_JSON)) if stats_t is not None else {}
+    old = parse_old_stats(old_t, join(folder, OLD_STATS_JSON)) if old_t is not None else defaultdict(list)
+    details = (loads(details_t).get("cards") or {}) if details_t is not None else {}
+    manifest = loads(manifest_t) if manifest_t is not None else {}
+    return (stats, old, details, manifest)
+
+
+def write_db(folder: str, stats: dict, old_stats: dict, details_text: str, manifest: dict) -> dict:
+    """
+    db/'s three data files, then the manifest with each file's sha256 (written last: a reader checks the files
+    against it).
+
+    Returns:
+        The manifest written
+    """
+    makedirs(folder, exist_ok=True)
+    texts = {STATS_JSON: stats_text(stats), OLD_STATS_JSON: old_stats_text(old_stats), DETAILS_JSON: details_text}
+    for name, text in texts.items():
+        write_text(join(folder, name), text)
+    manifest = {**manifest, "schema": SCHEMA, "files": {name: file_sha256(join(folder, name)) for name in texts}}
+    write_text(join(folder, MANIFEST_JSON), dumps(manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+    return manifest
+
+
+def check_db(folder: str) -> list:
+    """
+    Gate G3's file half: every data file parses and hashes to the manifest's sha256.
+
+    Returns:
+        The problems, one line each ([] when db/ is whole)
+    """
+    problems = []
+    path = join(folder, MANIFEST_JSON)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            files = loads(fh.read()).get("files") or {}
+    except (OSError, ValueError) as e:
+        return [f"{path}: {e}"]
+    for name in DATA_FILES:
+        target = join(folder, name)
+        if not isfile(target):
+            problems.append(f"{name}: missing")
+        elif files.get(name) != file_sha256(target):
+            problems.append(f"{name}: sha256 differs from the manifest")
+    try:
+        read_db(folder)
+    except (ValueError, TypeError) as e:
+        problems.append(str(e))
+    return problems
+
+
+def round_trip_problems(stats: dict, old_stats: dict) -> list:
+    """Gate G3's record half: names whose record changes through record -> CardInfo -> record."""
+    bad = [name for name, c in stats.items() if record(card(record(c))) != record(c)]
+    bad += [f"{name} (history)" for name, versions in old_stats.items()
+            if any(record(card(record(c))) != record(c) for c in versions)]
+    return bad
+
+
+# ========================
+# Pickles (the seed and the way back)
+# ========================
+class SeedUnpickler(Unpickler):
+    """Unpickles only the card classes, defaultdict and list (ALLOWED); any other global is refused."""
+    def find_class(self, module, name):
+        found = ALLOWED.get((module, name))
+        if found is None:
+            raise UnpicklingError(f"global {module}.{name} is not allowed in a card pickle")
+        return found
+
+
+def load_pickle(path: str):
+    """A card pickle through SeedUnpickler (stats.pkl, old_stats.pkl or aliases.pkl)."""
+    with open(path, "rb") as fh:
+        return SeedUnpickler(fh).load()
+
+
+def read_pickles(folder: str) -> tuple:
+    """(stats, old_stats) of a folder holding stats.pkl and old_stats.pkl (old_stats empty when it has none)."""
+    stats = load_pickle(join(folder, "stats.pkl"))
+    old_path = join(folder, "old_stats.pkl")
+    old = load_pickle(old_path) if exists(old_path) else defaultdict(list)
+    return (stats, old if isinstance(old, defaultdict) else defaultdict(list, old))
+
+
+def dump_pickle(obj, path: str) -> None:
+    """
+    save_pickle without the bot: the pickles name the card classes commands.psd_analyzer.* (card_models pins that path),
+    and pickle imports it to check. When the facade (discord, pandas) is not loaded, a stand-in module holding the two
+    classes takes its place while dumping; the bytes are the same.
+    """
+    shim = None
+    if PICKLE_MODULE not in sys_modules:
+        shim = ModuleType(PICKLE_MODULE)
+        shim.CardInfo, shim.CardStats = CardInfo, CardStats
+        sys_modules[PICKLE_MODULE] = shim
+    try:
+        save_pickle(obj, path, Lock())
+    finally:
+        if shim is not None and sys_modules.get(PICKLE_MODULE) is shim:
+            del sys_modules[PICKLE_MODULE]
+
+
+def export_pickles(db_folder: str, out_folder: str) -> None:
+    """db/ back to stats.pkl, old_stats.pkl and psd_details.json in out_folder (the older tooling's input)."""
+    stats, old, _, _ = read_db(db_folder)
+    makedirs(out_folder, exist_ok=True)
+    dump_pickle(old, join(out_folder, "old_stats.pkl"))
+    dump_pickle(stats, join(out_folder, "stats.pkl"))
+    details = join(db_folder, DETAILS_JSON)
+    if isfile(details):
+        with open(details, encoding="utf-8") as fh:
+            write_text(join(out_folder, DETAILS_JSON), fh.read())
+
+
+# ========================
+# CLI
+# ========================
+def main(argv: Optional[list] = None) -> int:
+    parser = ArgumentParser(prog="python -m commands.card_db", description="The card database's JSON files (db/).")
+    sub = parser.add_subparsers(dest="command", required=True)
+    seed = sub.add_parser("from-pickles", help="write db/ from a folder's stats.pkl, old_stats.pkl and psd_details.json")
+    seed.add_argument("pickles")
+    seed.add_argument("db")
+    back = sub.add_parser("export-pickles", help="write stats.pkl, old_stats.pkl and psd_details.json from db/")
+    back.add_argument("db")
+    back.add_argument("out")
+    check = sub.add_parser("check", help="db/'s files against its manifest")
+    check.add_argument("db")
+    args = parser.parse_args(argv)
+    if args.command == "from-pickles":
+        stats, old = read_pickles(args.pickles)
+        details = join(args.pickles, DETAILS_JSON)
+        text = '{"version": 1, "cards": {\n\n}}\n'
+        if isfile(details):
+            with open(details, encoding="utf-8") as fh:
+                text = fh.read()
+        write_db(args.db, stats, old, text, {"seed": {"pickles": args.pickles}})
+        print(f"{len(stats)} cards, {sum(len(v) for v in old.values())} versions written to {args.db}.")
+        return 0
+    if args.command == "export-pickles":
+        export_pickles(args.db, args.out)
+        print(f"Pickles written to {args.out}.")
+        return 0
+    problems = check_db(args.db)
+    print("\n".join(problems) if problems else f"{args.db}: whole.")
+    return 1 if problems else 0
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'ALLOWED',
+    'DATA_FILES',
+    'MANIFEST_JSON',
+    'OLD_STATS_JSON',
+    'SCHEMA',
+    'STATS_JSON',
+    'SeedUnpickler',
+    'card',
+    'check_db',
+    'dump_pickle',
+    'export_pickles',
+    'file_sha256',
+    'load_pickle',
+    'main',
+    'old_stats_text',
+    'parse_old_stats',
+    'parse_stats',
+    'read_db',
+    'read_pickles',
+    'record',
+    'round_trip_problems',
+    'stats_text',
+    'write_db',
+    'write_text',
+]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

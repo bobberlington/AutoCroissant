@@ -1,0 +1,5 @@
+# The card data build (python -m commands.card_data) and nothing else: what card-data.yml installs.
+# psd-tools stays at the goldens' and the jetson's version; it moves with the goldens.
+psd-tools==1.25.0
+fonttools
+requests

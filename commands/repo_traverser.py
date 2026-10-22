@@ -1,40 +1,27 @@
 """
-/update_stats: RepositoryTraverser reads the card repo's tree on GitHub, re-parses the PSDs whose blob changed, then
-applies the authors file, Card Edits.json and the duplicate PNGs; update_stats saves the result and queues the
-follow-ups (type emojis, the card list).
+/update_stats: commands.card_data's build in legacy mode (the GitHub API, the root pickles and psd_details.json) under
+the bake lock, its messages sent to Discord, then the follow-ups (type emojis, image links, the card list).
 """
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
-from datetime import datetime, timezone
 from discord import Interaction
-from json import loads as json_loads
-from os import fdopen, listdir, remove, walk
-from os.path import basename, isdir, isfile, splitext, join as path_join
-from re import IGNORECASE, match as re_match
-from requests.exceptions import RequestException
-from tempfile import mkstemp
-from threading import local
 from typing import Optional
 
-from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, STARS_DIR, TYPES_DIR
-from commands.card_edits import CardAuthors, CardEdits
-from commands.card_models import CardInfo, StatsDatabase, card_name, stats_db
+from commands.card_data import (
+    COMMITS_PAGE,
+    DOWNLOAD_WORKERS,
+    EXCLUDE_FOLDERS,
+    LOOKUP_WORKERS,
+    PROGRESS,
+    UPDATE_RATE,
+    CardBuild,
+    update,
+)
+from commands.card_edits import CardAuthors
+from commands.card_models import stats_db
 from commands.card_runner import bake_lock
-from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
-from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 from commands.query_card import DEFAULT_REPOSITORY, card_repo
 from commands.repo_history import refresh as refresh_history
 from commands.type_emojis import sync_changed_emojis
 from commands.utils import queue_command, queue_edit, say
-
-# ========================
-# Configuration
-# ========================
-UPDATE_RATE = 25
-DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
-LOOKUP_WORKERS = 2                                                # commit lookups ahead of parsing
-COMMITS_PAGE = 100                                                # commits per request: newest and first in one
-EXCLUDE_FOLDERS = ["Markers", "MDW"]
 
 # ========================
 # Global State
@@ -42,545 +29,22 @@ EXCLUDE_FOLDERS = ["Markers", "MDW"]
 _tree_etags: dict = {}                                            # repository -> ETag of the last update's tree
 _file_cache: dict = {}                                            # repo path -> (blob sha, text) of small files
 
-
-class RepositoryTraverser:
-    """Traverses repository to update card stats."""
-    def __init__(self, db: StatsDatabase):
-        self.db = db
-        self.parser: Optional[PSDParser] = None
-        self._local = local()                    # a PyGithub client per thread: one client isn't thread-safe
-        self._lookups: dict = {}                 # repo path -> Future of its commit page
-        self.edits: Optional[CardEdits] = None
-        self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
-        self.failed = 0                          # failed downloads and PSDs: the tree ETag is not kept, so the next run retries
-        self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
-        self.unreadable: list = []               # PSDs that raised while read: {path, blob, error}; their cards keep their data
-        self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
-        self.repository = ""
-        self.shas: dict = {}                     # repo path -> blob sha, from the tree
-        self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
-        self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
-        self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
-        self.details_changed = 0                 # records gathered this run
-        self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
-        self._recent: Optional[set] = None
-        self.restored: list = []                 # archived cards whose PSD is back
-        self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
-
-    def _update_old_stats_paths(self) -> None:
-        """
-        Update paths in old_stats to match current paths.
-        This ensures historical entries reflect where the card is now located.
-        """
-        for name in self.db.old_stats:
-            if name in self.db.stats:
-                current_path = self.db.stats[name].path
-                # Update all historical entries to use the current path
-                for old_card in self.db.old_stats[name]:
-                    old_card.path = current_path
-
-    def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
-        """Changed = new, moved, an older parser or a different blob. Cards saved before blob shas: committed since the last update."""
-        card = self.db.stats.get(name)
-        if card is None or card.path != path or getattr(card, "parser_version", None) != PARSER_VERSION:
-            return True                           # an older parser's card is read again once (no history: same blob)
-        if getattr(card, "blob_sha", None):
-            return card.blob_sha != sha
-        recent = self._committed_since_update()
-        if recent is None or path in recent:
-            return True
-        card.blob_sha = sha                       # unchanged: remember its blob
-        self.changed += 1
-        return False
-
-    def _committed_since_update(self) -> Optional[set]:
-        """Paths committed after the newest stored card timestamp (one pass over those commits), or None."""
-        if self._recent is None:
-            newest = max((c.timestamp for c in self.db.stats.values() if (c.timestamp or 0) > 0), default=0)
-            if not newest:
-                return None
-            from github import Github
-            repo = Github(login_or_token=GIT_TOKEN).get_repo(self.repository)
-            self._recent = {f.filename for commit in repo.get_commits(since=datetime.fromtimestamp(newest, timezone.utc))
-                            for f in commit.files}
-        return self._recent
-
-    def _repo(self):
-        """This thread's repo (its own client and connection; lazy: no request)."""
-        repo = getattr(self._local, "repo", None)
-        if repo is None:
-            from github import Github
-            repo = Github(login_or_token=GIT_TOKEN, per_page=COMMITS_PAGE).get_repo(self.repository, lazy=True)
-            self._local.repo = repo
-        return repo
-
-    def _commit_page(self, path: str) -> Optional[list]:
-        """A file's newest commits (all of them up to COMMITS_PAGE): one request."""
-        repo = self._repo()
-        return repo.get_commits(path=path).get_page(0) if repo else None
-
-    def _blob(self, sha: str, stream: bool = False):
-        """A file's exact content by blob sha (raw.githubusercontent can lag behind the tree)."""
-        return fetch_blob(self.repository, sha, stream=stream, timeout=120)
-
-    def _repo_text(self, path: str) -> Optional[str]:
-        """A small repo file's text; downloaded again only when its blob changed."""
-        sha = self.shas.get(path)
-        if sha is None:
-            return None
-        cached = _file_cache.get(path)
-        if not cached or cached[0] != sha:
-            _file_cache[path] = cached = (sha, blob_text(self.repository, sha, timeout=120))
-        return cached[1]
-
-    def _download(self, path: str, sha: str) -> Optional[str]:
-        """A PSD into a temp file, or None. fetch_blob retries a 5xx; a stream that breaks gets one more try (a 15 MB
-        stream breaks now and then)."""
-        for last in (False, True):
-            try:
-                reply = self._blob(sha, stream=True)
-            except RequestException as e:                       # tried 3 times already
-                print(f"{path}: download failed ({e})")
-                return None
-            name, done = None, False
-            try:
-                with reply:
-                    fd, name = mkstemp(suffix=".psd")
-                    with fdopen(fd, "wb") as fh:
-                        for chunk in reply.iter_content(1 << 20):
-                            fh.write(chunk)
-                done = True
-                return name
-            except (RequestException, OSError) as e:
-                print(f"{path}: download failed ({e})" + ("" if last else "; trying once more"))
-            finally:
-                if not done and name is not None and isfile(name):      # partial download
-                    remove(name)
-        return None
-
-    def traverse_remote(self,
-                        repository: str,
-                        interaction: Optional[Interaction] = None,
-                        output_problematic: bool = True,
-                        force_update: bool = False) -> tuple[list[str], int]:
-        """
-        Traverse remote GitHub repository.
-
-        Args:
-            repository: Repository name (owner/repo)
-            interaction: Optional Discord interaction for progress updates
-            output_problematic: Whether to output problematic cards
-
-        Returns:
-            List of formatted problem card messages
-        """
-        self.repository = repository
-        stale = any(getattr(c, "parser_version", None) != PARSER_VERSION for c in self.db.stats.values())
-        etag = _tree_etags.get(repository) if not force_update and not self.only and not stale else None
-        resp = fetch_tree(repository, etag or "")                   # 304 when nothing changed (free)
-        if resp.status_code == 304:
-            say(interaction, "Nothing changed in the card repo since the last update.")
-            return ([], 0)
-        resp.raise_for_status()
-        self.tree = resp.json()                         # parsed once; the helpers below read it
-        self.etag = resp.headers.get("ETag") or ""
-        self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
-        from commands import psd_details                # lazy: fontTools loads here, not at startup
-        self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts; none on a 304
-
-        self._populate_types_from_response(resp)
-        self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
-
-        self.edits = self._edits_from_response(resp, repository)
-        problems, num_changed = self._process_files_from_response(resp, repository, interaction, output_problematic, force_update)
-        self.changed += self._apply_authors(self._authors_from_response(resp, repository))
-        self.changed += self._apply_edits()
-        self.changed += self._sync_duplicates(resp)
-        self.changed += self._apply_edits()             # the duplicates' own edits
-
-        # Update old_stats paths after processing all files
-        self._update_old_stats_paths()
-        if self.failed:                                 # no 304 next time: the failed files are fetched again
-            _forget_tree(repository)
-            self._send_failures(interaction)
-        elif self.font_index is None and psd_details.tree_fonts(self.shas):
-            _forget_tree(repository)                    # no fonts: the supplied flags are tried again next run
-        else:
-            _tree_etags[repository] = resp.headers.get("ETag")
-
-        return (problems, num_changed)
-
-    def _tree_items(self, response) -> list:
-        """The tree's entries: self.tree once traverse_remote parsed it, else the response's."""
-        return (self.tree if self.tree is not None else response.json()).get("tree", [])
-
-    def _populate_types_from_response(self, response) -> None:
-        """Populate card types from API response."""
-        self.db.all_types.clear()
-        for item in self._tree_items(response):
-            path = item.get("path", "")
-            if path.startswith(TYPES_DIR) and "Stars" not in path and '.' in path:
-                self.db.all_types.append(splitext(basename(path))[0].lower())
-
-    def _populate_types_from_local(self, local_path: str) -> None:
-        """Populate card types from a local clone (offline diagnostics; /update_stats itself only reads GitHub)."""
-        self.db.all_types.clear()
-        types_dir = path_join(local_path, TYPES_DIR)
-        for folder, _, files in walk(types_dir):
-            if folder.endswith(TYPES_DIR):
-                for file in files:
-                    if not file.startswith('.'):
-                        self.db.all_types.append(splitext(file)[0].lower())
-
-    @staticmethod
-    def _star_name(path: str) -> str:
-        """Types/Stars/Dst Star.png -> "dst_star" (the name the icon font uses)."""
-        return splitext(basename(path))[0].lower().replace(" ", "_")
-
-    def _icons_from_response(self, response, repository: str) -> IconVocabulary:
-        """Icon vocabulary from the GitHub tree: Types/ and Types/Stars/ names plus the font's manifest, if any."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
-        stars = [self._star_name(p) for p in paths if p.startswith(STARS_DIR + "/") and p.lower().endswith(".png")]
-        manifest = None
-        if ICON_MANIFEST_PATH in paths:
-            try:
-                manifest = json_loads(self._repo_text(ICON_MANIFEST_PATH))
-            except (RequestException, ValueError) as e:
-                if isinstance(e, RequestException):
-                    self.failed += 1
-                print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
-        return IconVocabulary.build(self.db.all_types, stars, manifest)
-
-    def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
-        """The card repo's authors file (the first of AUTHORS_PATHS in the tree), or None if missing or unreadable."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
-        path = next((p for p in AUTHORS_PATHS if p in paths), None)
-        if path is None:
-            return None
-        try:
-            return CardAuthors.parse(self._repo_text(path))
-        except RequestException as e:
-            self.failed += 1
-            print(f"Could not read {path}; authors stay as they are: {e}")
-            return None
-
-    def _apply_authors(self, authors: Optional[CardAuthors]) -> int:
-        """Set every card's author from the authors file (all cards, not just re-parsed ones). Returns how many changed."""
-        if authors is None:
-            return 0
-        changed = 0
-        for name, card in self.db.stats.items():
-            author = authors.resolve(name, card.author)
-            if author != card.author:
-                card.author = author
-                changed += 1
-        if changed:
-            print(f"{changed} authors set from {AUTHORS_PATH}.")
-        return changed
-
-    def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
-        """The card repo's website fixes (the first of EDITS_PATHS in the tree), or None if missing or unreadable."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
-        path = next((p for p in EDITS_PATHS if p in paths), None)
-        if path is None:
-            return None
-        try:
-            return CardEdits.parse(self._repo_text(path))
-        except (RequestException, ValueError) as e:
-            if isinstance(e, RequestException):
-                self.failed += 1
-            print(f"Could not read {path}; edits stay as they are: {e}")
-            return None
-
-    def _sync_duplicates(self, response) -> int:
-        """
-        Duplicates: <Name>N.png next to <Name>.psd with no PSD of its own (A_Snack2.png "Breakfast"). Each is
-        recorded as a copy of the original's card with duplicate_of set. Returns how many entries changed.
-        """
-        paths = [item.get("path", "") for item in self._tree_items(response)]
-        lower = {p.lower() for p in paths}
-        found = {}
-        for path in paths:
-            m = re_match(r"(.+?)(\d+)\.png$", path, IGNORECASE)
-            if (not m or any(folder in EXCLUDE_FOLDERS for folder in path.split("/")) or RULEBOOK_DIR in path
-                    or f"{m.group(1)}{m.group(2)}.psd".lower() in lower or f"{m.group(1)}.psd".lower() not in lower):
-                continue
-            original = basename(m.group(1)).replace("_", " ")
-            if original in self.db.stats and not self.db.stats[original].duplicate_of:
-                found[card_name(path)] = (original, int(m.group(2)), basename(path).lower())
-        before = {n: repr(c) for n, c in self.db.stats.items() if getattr(c, "duplicate_of", None)}
-        for name in before:
-            if name not in found:
-                del self.db.stats[name]
-        siblings: dict = {}
-        for name, (original, number, _) in found.items():
-            siblings.setdefault(original, []).append(number)
-        for name, (original, number, png) in found.items():
-            src = self.db.stats[original]
-            card = deepcopy(src)
-            card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
-            card.display_name = self._duplicate_name(png, src, number, sorted(siblings[original]))
-            self.db.stats[name] = card
-            self.db.seen_cards.append(name)             # not pruned as a missing PSD
-        return sum(1 for n in found if before.get(n) != repr(self.db.stats[n])) + sum(1 for n in before if n not in found)
-
-    @staticmethod
-    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list) -> str:
-        """The /alias pointing at this PNG, else the PSD's hidden title in order, else the original's name."""
-        aliases = [a for a, target in card_repo.git_file_alias.items() if target.lower() == png]
-        if aliases:
-            return " ".join(w[:1].upper() + w[1:] for w in max(aliases, key=len).replace("_", " ").split())
-        titles = getattr(original, "alt_names", None) or []
-        if len(titles) == len(numbers):
-            return titles[numbers.index(number)]
-        return original.display_name or original.name
-
-    def _apply_edits(self) -> int:
-        """Apply the website fixes to every card. Returns how many changed."""
-        if self.edits is None:
-            return 0
-        changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
-        if changed:
-            print(f"{changed} cards changed by {EDITS_PATH}.")
-        return changed
-
-    def _icons_from_local(self, local_path: str) -> IconVocabulary:
-        """Icon vocabulary from a local clone: Types/ and Types/Stars/ names plus the font's manifest, if any."""
-        stars_dir = path_join(local_path, STARS_DIR)
-        stars = [self._star_name(f) for f in listdir(stars_dir) if f.lower().endswith(".png")] if isdir(stars_dir) else []
-        manifest = None
-        manifest_path = path_join(local_path, ICON_MANIFEST_PATH)
-        if isfile(manifest_path):
-            try:
-                with open(manifest_path, encoding="utf-8") as fh:
-                    manifest = json_loads(fh.read())
-            except (OSError, ValueError) as e:
-                print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
-        return IconVocabulary.build(self.db.all_types, stars, manifest)
-
-    def _process_files_from_response(self,
-                                     response,
-                                     repository: str,
-                                     interaction: Optional[Interaction],
-                                     output_problematic: bool,
-                                     force_update: bool) -> tuple[list[str], int]:
-        """Re-parse the PSDs whose blob changed (all with force_update). Unchanged cards cost no requests."""
-        problematic_cards = []
-        num_updated = num_changed = num_old = num_moved = 0
-        todo = []
-        for item in self._tree_items(response):
-            path = item.get("path", "")
-            if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
-                continue
-            name = card_name(path)
-            self.db.seen_cards.append(name)
-            if name not in self.db.stats and self.db.restore(name):     # the archived record again; same blob: no download
-                self.restored.append(name)
-                self.changed += 1
-            if force_update or CardAuthors.key(name) in self.only or self._psd_changed(name, path, item.get("sha")):
-                todo.append((path, name, item.get("sha")))
-            else:
-                num_old += 1
-
-        pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
-        downloads = [pool.submit(self._download, path, sha) for path, _, sha in todo]
-        lookups = ThreadPoolExecutor(LOOKUP_WORKERS)    # commit lookups overlap the downloads too
-        self._lookups = {path: lookups.submit(self._commit_page, path) for path, _, _ in todo}
-        try:
-            for (path, name, sha), download in zip(todo, downloads):
-                local_file = download.result()
-                if local_file is None:
-                    self.failed += 1
-                    self.failed_new += name not in self.db.stats or name in self.restored
-                    continue
-                try:
-                    timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
-                    card = self.parser.parse(local_file, path)
-                    self._gather_details(local_file, path, name, sha)
-                except Exception as e:                          # one bad PSD: its card keeps its data, the run goes on
-                    self._unreadable(path, name, sha, e)
-                    continue
-                finally:
-                    remove(local_file)
-                old = self.db.stats.get(name)
-                if old is None or getattr(old, "blob_sha", None) != sha:
-                    self.new_blobs.setdefault(sha, name)
-                if old is None:
-                    num_changed += 1
-                else:
-                    if old.path != path or getattr(old, "blob_sha", None) != sha:
-                        self.db.add_history(name, old)          # history only when the PSD changed or moved
-                    if old.path != path:
-                        num_moved += 1
-                    else:
-                        num_changed += 1
-                card.timestamp = timestamp
-                card.blob_sha = sha
-                if author and not card.author:
-                    card.author = author
-                if self.edits:
-                    self.edits.apply(name, card)
-                self.db.stats[name] = card
-
-                if output_problematic:
-                    problems = CardValidator.validate(card)
-                    if problems:
-                        problematic_cards.append((path, card, problems))
-
-                num_updated += 1
-                if num_updated % UPDATE_RATE == 0:
-                    self._send_progress(interaction, num_updated)
-        finally:
-            self._lookups = {}
-            lookups.shutdown(wait=False, cancel_futures=True)
-            for download in downloads:
-                download.cancel()
-            pool.shutdown(wait=True)
-            for download in downloads:                          # temp files left by an error
-                if download.done() and not download.cancelled() and download.result() and isfile(download.result()):
-                    remove(download.result())
-
-        self._send_summary(interaction, num_changed, num_old, num_moved)
-        return (self._format_problems(problematic_cards), num_changed + num_moved)
-
-    def _archive_sources(self, names: list) -> None:
-        """
-        Each archived card's deleting commit (its path's newest, one request) and, for a rename, the new name: the
-        card new or changed this run with its blob, else the commit's rename of the path (one more request, only when
-        this run parsed a new blob or restored a card). A failure leaves them unset.
-        """
-        fresh = set(self.new_blobs.values()) | set(self.restored)
-        for name in names:
-            versions = self.db.old_stats.get(name) or []
-            tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
-            if not tag:
-                continue
-            renamed = self.new_blobs.get(tag["blob"]) if tag.get("blob") else None
-            try:
-                commits = self._commit_page(tag["path"])
-                if commits:
-                    tag["commit"] = commits[0].sha
-                    if renamed is None and fresh:
-                        renamed = next((card_name(f.filename) for f in commits[0].files
-                                        if f.status == "renamed" and f.previous_filename == tag["path"]
-                                        and card_name(f.filename) in fresh), None)
-            except Exception as e:
-                print(f"{tag['path']}: deleting commit not found ({e})")
-            if renamed:
-                tag["renamed_to"] = renamed
-
-    def _unreadable(self, path: str, name: str, sha: str, error: Exception) -> None:
-        """Count a PSD that raised as failed (a new name holds the prune, like a failed download); one console line."""
-        print(f"{path}: not read ({error}); its card keeps its last version")
-        self.failed += 1
-        self.failed_new += name not in self.db.stats or name in self.restored
-        self.unreadable.append({"path": path, "blob": sha, "error": str(error)[:300]})
-
-    def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
-        """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
-        try:
-            from commands import psd_details                # lazy: fontTools (through font_check) loads with the first parse
-            self.details[sha] = psd_details.gather(local_file, path, name, self.font_index, self.db.all_types)
-            self.details_changed += 1
-        except Exception as e:
-            print(f"{path}: details not gathered ({e})")
-
-    def _get_remote_timestamp(self,
-                              repo,
-                              path: str,
-                              name: str) -> tuple[float, Optional[str]]:
-        """
-        Get timestamp for a file from GitHub.
-
-        Uses the most recent commit for timestamp, but preserves original author
-        from the first commit if not already set.
-        """
-        if not repo:
-            return (datetime(1000, 1, 1).timestamp(), None)
-
-        pending = self._lookups.pop(path, None)                 # started beside the download
-        commits = pending.result() if pending is not None else self._commit_page(path)
-        if not commits:
-            return (datetime(1000, 1, 1).timestamp(), None)
-
-        # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
-        # (AUTHORS_PATH) corrects either afterwards.
-        if name not in self.db.stats or not self.db.stats[name].author:
-            first = (commits[len(commits) - 1] if len(commits) < COMMITS_PAGE
-                     else repo.get_commits(path=path).reversed[0])     # more than one page: fetch the last
-            return (commits[0].commit.committer.date.timestamp(), first.commit.author.name)
-
-        return (commits[0].commit.committer.date.timestamp(), None)
-
-    @staticmethod
-    def _send_progress(interaction: Optional[Interaction], count: int) -> None:
-        """Send progress update."""
-        message = f"{count} cards updated."
-        if interaction:
-            queue_edit(interaction, content=message)
-        else:
-            print(message)
-
-    def _send_failures(self, interaction: Optional[Interaction]) -> None:
-        """The failed downloads, then the PSDs that could not be read (by path)."""
-        unread = len(self.unreadable)
-        downloads = self.failed - unread
-        if downloads:
-            say(interaction, f"Could not download {downloads} file{'' if downloads == 1 else 's'} from the card repo; "
-                             "the next /update_stats tries again.")
-        if unread:
-            say(interaction, f"Could not read {unread} PSD{'' if unread == 1 else 's'} from the card repo ("
-                             + ", ".join(u["path"] for u in self.unreadable) + "); "
-                             + ("its card keeps its" if unread == 1 else "their cards keep their")
-                             + " last version and the next /update_stats tries again.")
-
-    @staticmethod
-    def _send_summary(interaction: Optional[Interaction],
-                      num_changed: int,
-                      num_old: int,
-                      num_moved: int = 0) -> None:
-        """Send summary of update."""
-        say(interaction, f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
-
-    @staticmethod
-    def _format_problems(
-        problematic_cards: list[tuple[str, CardInfo, list[str]]]
-    ) -> list[str]:
-        """Format problematic cards for display."""
-        return [
-            f"{path}\n```\n" + '\n'.join(problems) + "\n```"
-            for path, _, problems in problematic_cards
-        ]
+RepositoryTraverser = CardBuild                                   # the bot's name for it (psd_analyzer, the diagnostics)
 
 
 # ========================
 # Helper Functions
 # ========================
-def _can_prune(traverser: RepositoryTraverser) -> bool:
-    """Whether the run saw the whole repo: no 304, no truncated tree, no failed new-name PSD, at least one card."""
-    tree = traverser.tree
-    if tree is None or traverser.failed_new:
-        return False
-    if tree.get("truncated") or not traverser.db.seen_cards:
-        print("Card repo tree truncated or without cards; no card archived.")
-        return False
-    return True
-
-
-def _archived_names(db: StatsDatabase, names: list) -> list:
-    """Archived names for the message, a rename's new name beside it."""
-    out = []
-    for name in names:
-        versions = db.old_stats.get(name) or []
-        tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
-        new = tag.get("renamed_to") if tag else None
-        out.append(f"{name} (now {new})" if new else name)
-    return out
-
-
 def _forget_tree(repository: str) -> None:
     """Drop the tree ETag so the next /update_stats refetches and retries."""
     _tree_etags.pop(repository, None)
+
+
+def _progress(interaction: Optional[Interaction]):
+    """The parse count as an edit of the command's reply, or None (printed)."""
+    if interaction is None:
+        return None
+    return lambda count: queue_edit(interaction, content=PROGRESS.format(count=count))
 
 
 # ========================
@@ -617,42 +81,16 @@ def _update_stats(interaction: Optional[Interaction],
                   force_update: bool,
                   verbose: bool,
                   cards: str) -> list[str]:
-    """The traversal, the saves and the queued follow-ups; update_stats holds bake_lock around it."""
+    """card_data.update on the bot's database, the messages and the queued follow-ups; update_stats holds bake_lock."""
     if verbose:
         say(interaction, "Updating card statistics database... This may take a while.")
 
-    at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     stats_db.load()
     stats_db.seen_cards.clear()
-    traverser = RepositoryTraverser(stats_db)
+    traverser = RepositoryTraverser(stats_db, report=lambda text: say(interaction, text), progress=_progress(interaction),
+                                    aliases=card_repo.git_file_alias, etags=_tree_etags, file_cache=_file_cache)
     traverser.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
-    from commands import psd_details                # lazy: fontTools loads here, not at startup
-    traverser.details = psd_details.load()
-
-    problem_cards, num_changed = traverser.traverse_remote(
-        card_repo.repository,
-        interaction,
-        output_problematic,
-        force_update)
-
-    gone, backfilled = stats_db.prune_clean_cards(at) if _can_prune(traverser) else ([], [])
-    if gone:
-        traverser._archive_sources(gone)
-        say(interaction, "Archived (PSD deleted from the card repo): " + ", ".join(_archived_names(stats_db, gone)))
-    if backfilled:
-        say(interaction, f"Archived {len(backfilled)} card{'' if len(backfilled) == 1 else 's'} deleted before this update: "
-                         + ", ".join(backfilled))
-    if traverser.restored:
-        say(interaction, "Restored (PSD back in the card repo): " + ", ".join(sorted(traverser.restored)))
-    if num_changed > 0 or gone or backfilled or traverser.changed or stats_db.stale_archives():
-        stats_db.save()
-    if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated or archived
-        refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
-        keep = set(traverser.shas.values()) | {c.archived["blob"] for c in stats_db.archived().values() if c.archived.get("blob")}
-        keep |= {c.blob_sha for c in stats_db.stats.values() if getattr(c, "blob_sha", None)}   # a failed PSD's card keeps its record
-        pruned = 0 if traverser.tree.get("truncated") else psd_details.prune(traverser.details, keep)
-        if pruned or traverser.details_changed or refilled:
-            psd_details.save(traverser.details)
+    problem_cards = update(traverser, card_repo.repository, output_problematic, force_update)
 
     if verbose:
         say(interaction, "Card statistics update complete!")
@@ -679,6 +117,11 @@ def _update_stats(interaction: Optional[Interaction],
 # Module Exports
 # ========================
 __all__ = [
+    'COMMITS_PAGE',
+    'DOWNLOAD_WORKERS',
+    'EXCLUDE_FOLDERS',
+    'LOOKUP_WORKERS',
+    'UPDATE_RATE',
     'RepositoryTraverser',
     'update_stats',
 ]
