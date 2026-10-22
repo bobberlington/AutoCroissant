@@ -11,6 +11,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from inspect import signature
+from io import BytesIO
 from os.path import basename, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, sub
 from struct import pack
@@ -49,6 +50,9 @@ EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_L
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG
 PARITY_MEAN_MAX = 1.0       # mean |diff| over the region (Mini_Doomer hp row: 0.83, max 2)
+ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
+ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
+ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
@@ -149,6 +153,7 @@ class Baked:
     timings: dict           # seconds: open, baseline, render, save, reparse, idempotence
     block_bytes: int = 0    # effect block bytes that moved with a toggle (idea 12) or landed on an FX layer (idea 14)
     fx: list = field(default_factory=list)      # names of the FX layers regenerated
+    icc: bool = True        # export_icc(): rendered converted by the embedded profile (False: the PNG was exported raw)
 
 
 # ========================
@@ -769,6 +774,21 @@ def _targets(rows: list, stat: str, value: int) -> list:
     return [None, value - STAT_MAX if value < 2 * STAT_MAX else None]
 
 
+def _trade_anchor(source, target) -> list:
+    """
+    The moves trading two digits' reference points (fxrp): a style's pattern and bevel texture tile from its layer's
+    fxrp, so the anchor travels with the effect (the Cannon's digits sit 138-160 px apart, off the 64 px texture).
+
+    Returns:
+        [(from layer, to layer, b"fxrp")]: none when the two hold the same bytes
+    """
+    key = Tag.REFERENCE_POINT
+    held = {layer: layer.tagged_blocks[key].tobytes() if key in layer.tagged_blocks else None for layer in (source, target)}
+    if held[source] == held[target]:
+        return []
+    return [(a, b, key) for a, b in ((source, target), (target, source)) if held[a] is not None]
+
+
 def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
     """
     Show one digit of a row (None: none), hide the others, the row's effect following the visible digit (idea 12).
@@ -799,8 +819,9 @@ def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
         else:                                           # replace, never merge: a disabled block on the new digit goes first
             moves += [(show, None, key) for key in EFFECT_BLOCKS if key in show.tagged_blocks]
             moves += [(styled[0], show, key) for key in EFFECT_BLOCKS if key in styled[0].tagged_blocks]
-    for source_layer, target_layer, key in moves:
-        block = source_layer.tagged_blocks.pop(key)
+            moves += _trade_anchor(styled[0], show)
+    taken = [(source_layer.tagged_blocks.pop(key), target_layer, key) for source_layer, target_layer, key in moves]
+    for block, target_layer, key in taken:     # all popped first: a traded anchor lands on a record it just left
         if target_layer is not None:
             target_layer.tagged_blocks[key] = block
     changed = []
@@ -824,8 +845,9 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     only when Bottom carries its own 10 marker).
 
     The row's effect follows the visible digit (idea 12): when digit O goes hidden and N shows, O's effect blocks
-    (lfx2 and its lmfx/lfxs/lrFX kin) move onto N's record, replacing any block of N's with nothing enabled; when N
-    carries an enabled effect of its own it keeps it and O's is cleared. Nothing moves to a 10 (no digit shows: the
+    (lfx2 and its lmfx/lfxs/lrFX kin) move onto N's record, replacing any block of N's with nothing enabled, and O
+    and N trade reference points (fxrp, where the effect's textures tile from; a round trip gives both their blocks
+    back); when N carries an enabled effect of its own it keeps it and O's is cleared. Nothing moves to a 10 (no digit shows: the
     effect stays on the hidden O), and a toggle from 10 takes the effect of the one hidden digit carrying one; several
     such digits refuse (unsupported-card). A hidden styled digit beside a visible unstyled one (Mettaton_EX's Atk 6)
     is left alone: showing it later shows it styled. So the path matters: atk 7 -> 4 moves nothing, 7 -> 10 -> 4 gives
@@ -971,38 +993,97 @@ def changed_region(edits: list, psd: PSDImage) -> tuple:
     return clip(region, psd.width, psd.height)
 
 
-def render_region(psd: PSDImage, region: tuple) -> Image.Image:
+def foreign_profile(psd: PSDImage) -> Optional[bytes]:
+    """The embedded ICC profile of an RGB card when it is not sRGB (score_cards.py _icc_profile), else None."""
+    from PIL import ImageCms
+    if psd.color_mode != ColorMode.RGB or Resource.ICC_PROFILE not in psd.image_resources:
+        return None
+    data = psd.image_resources.get_data(Resource.ICC_PROFILE)
+    try:
+        description = ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(BytesIO(data)))
+    except Exception:
+        return data
+    return None if "srgb" in description.lower() else data
+
+
+def icc_vote(psd: PSDImage, png: Image.Image) -> Optional[tuple]:
+    """
+    The harness's ICC vote (score_cards.py render) over the stored preview: of the pixels the profile's conversion
+    moves by ICC_MOVED or more, the share where the PNG is nearer the unconverted values.
+
+    Args:
+        psd: The card
+        png: Its official PNG
+
+    Returns:
+        (vote, moved pixels); None without a foreign profile, a preview of the canvas size, or an RGB(A) one
+    """
+    profile = foreign_profile(psd)
+    if profile is None or not psd.has_preview():
+        return None
+    preview = psd.topil(apply_icc=False)
+    if preview is None or preview.mode not in ("RGB", "RGBA") or preview.size != png.size:
+        return None
+    raw, conv = _flat(preview)[..., :3].astype(np.int16), _flat(post_process(preview, None, profile))[..., :3].astype(np.int16)
+    official = _flat(png)[..., :3].astype(np.int16)
+    moved = np.abs(raw - conv).max(axis=2) >= ICC_MOVED
+    count = int(moved.sum())
+    if not count:
+        return 0.0, 0
+    nearer = np.abs(raw - official).sum(axis=2) < np.abs(conv - official).sum(axis=2)
+    return float(nearer[moved].mean()), count
+
+
+def export_icc(psd: PSDImage, png: Image.Image) -> bool:
+    """
+    Whether the card's PNG was exported converted to sRGB (render with apply_icc) or raw, unconverted (21 cards on
+    2026-10-22: Block_Hopper, PoD01Red_Bloon...): raw when icc_vote() moved ICC_MIN_PX pixels and voted ICC_RAW_VOTE.
+
+    Args:
+        psd: The card before the edit
+        png: Its official PNG
+
+    Returns:
+        False for a raw export; True otherwise (no foreign profile, no preview, no evidence)
+    """
+    vote = icc_vote(psd, png)
+    return vote is None or vote[1] < ICC_MIN_PX or vote[0] < ICC_RAW_VOTE
+
+
+def render_region(psd: PSDImage, region: tuple, icc: bool = True) -> Image.Image:
     """
     psd.composite over a viewport, never from the stored preview and never forced (section 15).
 
     Args:
         psd: The card
         region: Canvas bbox to render
+        icc: Convert by the embedded profile (export_icc(): how the card's PNG was exported)
 
     Returns:
         The render, region-sized
     """
-    return psd.composite(viewport=region, ignore_preview=True)
+    return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc)
 
 
-def render_pair(psd: PSDImage, region: tuple) -> tuple:
+def render_pair(psd: PSDImage, region: tuple, icc: bool = True) -> tuple:
     """
     One render of the region, as render_region() returns it and in the PSD's own values (what its preview stores).
 
     Args:
         psd: The card
         region: Canvas bbox to render
+        icc: render_region()'s
 
     Returns:
-        (render, raw): raw before the embedded profile's sRGB conversion; the same image without a profile
+        (render, raw): raw before the embedded profile's sRGB conversion; the same image without a profile or icc
     """
     raw = psd.composite(viewport=region, ignore_preview=True, apply_icc=False)
-    if Resource.ICC_PROFILE not in psd.image_resources:
+    if not icc or Resource.ICC_PROFILE not in psd.image_resources:
         return raw, raw
     return post_process(raw, None, psd.image_resources.get_data(Resource.ICC_PROFILE)), raw
 
 
-def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
+def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True) -> tuple:
     """
     Render the unedited region and measure it against the official PNG (gate parity).
 
@@ -1010,11 +1091,12 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple) -> tuple:
         psd: The card before the edit
         png: Its official PNG
         region: The edit's padded region
+        icc: render_region()'s
 
     Returns:
         (render, measurement); raises Refused("parity") when the fork already renders the region wrong
     """
-    render = render_region(psd, region)
+    render = render_region(psd, region, icc)
     measured = _measure(render, png.crop(region))
     if not _within_bar(measured):
         raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d" % (measured["bad_pct"], measured["mean"], measured["max"]))
@@ -1311,7 +1393,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     return new
 
 
-def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list) -> dict:
+def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
+                     icc: bool = True) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it matches the merged PNG within
     the parity bar (not byte-equal: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -1322,6 +1405,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         psd: The saved PSD, reopened
         merged: The merged PNG
         edits: The applied Edits
+        icc: render_region()'s
 
     Returns:
         {field: region measurement}
@@ -1331,7 +1415,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         raise Refused("idempotence", "still to bake: " + ", ".join(sorted(again.jobs)))
     out = {}
     for edit in edits:
-        measured = _measure(render_region(psd, edit.region), merged.crop(edit.region))
+        measured = _measure(render_region(psd, edit.region, icc), merged.crop(edit.region))
         if not _within_bar(measured):
             raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f" % (edit.field, measured["bad_pct"], measured["mean"]))
         out[edit.field] = measured
@@ -1431,16 +1515,17 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
     merged, parity, changed_pixels, patches = png, {}, 0, []
     preview = stored_preview(old) if update_preview else None
+    icc = export_icc(old, png)
     timings["baseline"] = timings["render"] = 0.0
     for edit in edits:
         start = perf_counter()
-        base, parity[edit.field] = baseline(old, png, edit.region)
+        base, parity[edit.field] = baseline(old, png, edit.region, icc)
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
         if preview is None:
-            render = render_region(new, edit.region)
+            render = render_region(new, edit.region, icc)
         else:
-            render, raw = render_pair(new, edit.region)
+            render, raw = render_pair(new, edit.region, icc)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
         if preview is not None:
@@ -1464,10 +1549,10 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
-    gate_idempotence(reparse, jobs, reopened, merged, edits)
+    gate_idempotence(reparse, jobs, reopened, merged, edits, icc)
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
-                 block_bytes, [name for edit in edits for name, _ in edit.fx])
+                 block_bytes, [name for edit in edits for name, _ in edit.fx], icc)
 
 
 # ========================
@@ -1499,6 +1584,8 @@ __all__ = [
     'changed_region',
     'classify',
     'collapse',
+    'export_icc',
+    'foreign_profile',
     'fx_layers',
     'fx_name',
     'gate_bytes',
@@ -1507,6 +1594,7 @@ __all__ = [
     'gate_reparse',
     'gate_shape',
     'gate_size',
+    'icc_vote',
     'layer_records',
     'merge_png',
     'merge_preview',
