@@ -61,6 +61,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   `Action`; pre-change copies in `std/pre-action-2026-10-22/`. The std batch `std-batch-2026-10-22` started before it and keeps its own
   regex (`scripts/std_card.jsx:12` `STD_TAG`, `tools/std_driver.py:29` `TAG`), so its cards leave `(Action)` in the body font: re-run
   the tag step on them, or add `|Action` there, before the next batch.
+  Its manifest tools also still assume 340: `tools/build_manifest.py:123` says so, and `tools/scan.py` imports `l1_check`
+  from `std/`, which now expects `(Action)` in stoogedings. To re-run that batch's scan, point `STD` at `std/pre-action-2026-10-22/`.
+  Run the updated walk only after ~/Library/Fonts/stoogedings.ttf has the `(Action)` badge (TTSCardMaker f6ce500); with the old
+  font it sets `(Action)` in stoogedings and the text draws as plain letters.
 
 ### L2. Stat rows to the template layout (45 deviating cards)
 - **What.** `Stats Bars/Darks/<Stat> Dark/0..9` exposure digits with masks, one row per stat; `Bars` leaves named `hp`/`def`/`atk`/`spd`.

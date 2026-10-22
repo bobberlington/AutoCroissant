@@ -155,8 +155,8 @@ and spacing are the `BADGE_*` constants in build_stoogedings.py (pill top/bottom
 after changing them. Centring pitfall fixed on 2026-10-20: tracking must go between letters only — adding it
 after the last letter pushes the label off centre.
 
-**The tag vocabulary is defined in three places that must change together** (all three carry the same 341 since
-2026-10-22: TTSCardMaker f6ce500; `tests/test_badge_parity.py` checks all three, the walk part only where it exists):
+**The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
+carry the same 341 since 2026-10-22 (TTSCardMaker f6ce500); `tests/test_badge_parity.py` checks them, the walk part only where it exists:
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
   Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Z/]{2,6}|Action)\)/`, no /g flag since 73904db so it holds no
@@ -164,6 +164,14 @@ after the last letter pushes the label off centre.
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
   `l1_check.py:14`), which includes `(?:-1|[0-9X])\/[1-9X]G?CD|[1-9X]G?CD|[1-9X]U` and `Action`; not in git, pre-`Action` copies in
   `std/pre-action-2026-10-22/`
+
+A **fourth copy** lives in each std batch folder (`~/Documents/Tools/psd-research/std-batch-*/`: `scripts/std_card.jsx`
+`STD_TAG` and `tools/std_driver.py` `TAG`). `test_batches_match_font` checks it, allowing `BATCH_LAG` (std-batch-2026-10-22
+started before `Action` and lacks it). Both walk tests skip, saying "clone behind", when the walk has a tag the clone's font
+lacks (the clone is `AUTOCROISSANT_LOCAL_DIR`, default ~/Desktop/TTSCardMaker): pull it, or point the variable at a newer checkout.
+**Operating rule:** run the walk (`std.jsx`, `std_l1.jsx`) only with a ~/Library/Fonts/stoogedings.ttf that has every tag in
+its `TAG`. With an older font, `(Action)` is still set in stoogedings but draws as plain letters, not a badge.
+The website's Stats page "Timing tags" chart (stats.js) leaves out the `neutral` group, so `(Action)` is not counted there.
 
 ### 1.3 Manifest schema and codepoints
 
@@ -840,4 +848,4 @@ Maintenance rules:
   U+E05A).
 2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").
 2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
-2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`.
+2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`. Later the same day: the batch copies as a fourth place (`test_batches_match_font`), the "clone behind" skip, the walk's font rule and the Stats chart's `neutral` exclusion (TTSCardMaker b686d0c).

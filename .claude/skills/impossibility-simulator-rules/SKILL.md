@@ -322,7 +322,8 @@ damage-counting abilities ignore overkill (11_Abilities7).
 
 Reading card text: a type icon in the text IS the type (stored as `[fire]`, rendered as an icon or emoji); "X" is "a
 variable that can represent any number" (02_Abbreviations); "5T1 Poison" = 5 turns of 1 stack (19_Status_Effects2);
-"(Action)" marks an ability costing the action (36 uses in 28 cards, 37 in 29 counting one "(action)"; card convention, not rulebook); PF = primary field, CDMG =
+"(Action)" marks an ability costing the action (36 uses in 28 cards, 37 in 29 counting one "(action)"; card convention, not rulebook;
+a grey badge, not a timing tag, since 2026-10-22); PF = primary field, CDMG =
 counter damage (02_Abbreviations).
 
 **Reactions** (12_Reactions–12_Reactions5): "When a play occours [sic], a player may choose to react to it with one of
@@ -581,3 +582,6 @@ pushed the same data, and the scripts give the same counts on its `stats.pkl` du
 at 00:43 (TTSCardMaker `2291b5de`, a site-only commit; no PSD changed after `73904dbd`). The scripts read
 cards.json or a loadpkl.py dump through `rows.py`; `lines.py` is new; `tags.py` matches (a/bCD) tags; `loadpkl.py`
 dumps stat lines as dicts.
+
+2026-10-22 (Action): (Action) became a grey `neutral` badge (TTSCardMaker `f6ce500e`); §"Timing tags (badge_tags)", the
+glossary count and the "Other parenthesised words" line of reference/data-facts.md, and the reading note above, updated.
