@@ -3,6 +3,7 @@ The card database's data: CardType, CardStats and CardInfo (the two pickled clas
 stats_db. Pure data, so anything may import it (no Discord, network, pandas or psd-tools).
 """
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from os import fsync, remove, replace
@@ -161,10 +162,12 @@ class StatsDatabase:
         self.seen_cards: list[str] = []            # names in the last tree; the rest are archived
 
     def save(self) -> None:
-        """Save all databases to pickle files (atomically, one lock per pickle). old_stats first: a kill between the
-        two leaves an archived card in both files, never in neither."""
+        """Save all databases to pickle files (atomically, one lock per pickle). old_stats first, and a restored card's
+        archived copy leaves old_stats only after stats.pkl holds it: a kill between saves never loses a card."""
         save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
         save_pickle(self.stats, STATS_PKL, _stats_lock)
+        if self.drop_stale_archives():
+            save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
 
     def load(self) -> None:
         """Load all databases from pickle files."""
@@ -205,16 +208,41 @@ class StatsDatabase:
         return found
 
     def restore(self, name: str) -> bool:
-        """Put an archived card back in stats (its PSD is in the card repo again). Returns whether it was archived."""
+        """Put a copy of an archived card back in stats (its PSD is in the card repo again); the tagged record stays
+        until save() has written stats.pkl. Returns whether it was archived."""
         versions = self.old_stats.get(name)
         if name in self.stats or not versions or not getattr(versions[len(versions) - 1], "archived", None):
             return False
-        card = versions.pop()
-        if not versions:
-            del self.old_stats[name]
+        card = deepcopy(versions[len(versions) - 1])
         card.archived = None
         self.stats[name] = card
         return True
+
+    def stale_archives(self) -> list:
+        """Listed names whose last old_stats version is a tagged copy of the listed card (restore() or a kill)."""
+        return [name for name, versions in self.old_stats.items()
+                if versions and name in self.stats and _tagged_copy(versions[len(versions) - 1], self.stats[name])]
+
+    def drop_stale_archives(self) -> bool:
+        """Drop the stale_archives() copies. Returns whether any."""
+        names = self.stale_archives()
+        for name in names:
+            versions = self.old_stats[name]
+            versions.pop()
+            if not versions:
+                del self.old_stats[name]
+        return bool(names)
+
+    def add_history(self, name: str, card: CardInfo) -> None:
+        """Append card to name's history; a last version that is its archived copy or an equal one (a kill between
+        the saves) is replaced."""
+        versions = self.old_stats.setdefault(name, [])
+        if versions:
+            last = versions[len(versions) - 1]
+            if _tagged_copy(last, card) or last == card:
+                versions[len(versions) - 1] = card
+                return
+        versions.append(card)
 
     def prune_clean_cards(self, at: float) -> tuple:
         """
@@ -258,9 +286,9 @@ def _archive_tag(card: CardInfo, at: float) -> dict:
 
 
 def _tagged_copy(old: CardInfo, card: CardInfo) -> bool:
-    """Whether old is this card archived already (tagged; same PSD, parse and time)."""
+    """Whether old is this card archived already (tagged, same PSD path and blob)."""
     return bool(getattr(old, "archived", None)) and all(
-        getattr(old, key, None) == getattr(card, key, None) for key in ("path", "blob_sha", "timestamp", "ability"))
+        getattr(old, key, None) == getattr(card, key, None) for key in ("path", "blob_sha"))
 
 
 # ========================

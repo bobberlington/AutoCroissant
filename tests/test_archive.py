@@ -77,14 +77,52 @@ def test_restore_returns_the_record_and_keeps_the_history():
     db.seen_cards = ["Other"]
     db.prune_clean_cards(AT)
     assert db.restore("Gone") and db.stats["Gone"].blob_sha == "2" * 40 and db.stats["Gone"].archived is None
-    assert db.old_stats["Gone"] == [v1] and db.archived() == {}
-    assert not db.restore("Gone")                               # listed again: nothing to restore
+    assert db.old_stats["Gone"][1].archived and db.archived() == {}   # the tagged record stays until the save
+    assert db.stale_archives() == ["Gone"] and not db.restore("Gone")  # listed again: nothing to restore
+    assert db.drop_stale_archives() and db.old_stats["Gone"] == [v1] and db.stale_archives() == []
 
 
 def test_restore_drops_an_emptied_history():
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
-    assert db.restore("Gone") and "Gone" not in db.old_stats
+    assert db.restore("Gone") and db.drop_stale_archives() and "Gone" not in db.old_stats
+
+
+def test_save_drops_the_restored_copy_after_stats(monkeypatch):
+    """old_stats (record kept), stats (card in), old_stats again (record out): no kill leaves it in neither."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    db.restore("Gone")
+    saved = []
+    monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: saved.append((path, "Gone" in obj)))
+    db.save()
+    assert saved == [(cm.OLD_STATS_PKL, True), (cm.STATS_PKL, True), (cm.OLD_STATS_PKL, False)]
+    saved.clear()
+    db.save()
+    assert saved == [(cm.OLD_STATS_PKL, False), (cm.STATS_PKL, True)]          # nothing stale: two writes
+
+
+def test_restored_copy_matches_after_a_reparse():
+    """A re-parse of the same blob (new parser, new timestamp) still drops the copy: same path and blob."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    db.restore("Gone")
+    db.stats["Gone"] = _card("Gone", ability="Parsed again.")
+    db.stats["Gone"].timestamp += 5
+    assert db.drop_stale_archives() and "Gone" not in db.old_stats
+
+
+def test_history_replaces_the_archived_copy_or_an_equal_last():
+    """add_history: a restored card's tagged copy, or the equal version a kill left, is replaced, not doubled."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    db.restore("Gone")
+    db.add_history("Gone", db.stats["Gone"])
+    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None
+    db.add_history("Gone", deepcopy(db.stats["Gone"]))
+    assert len(db.old_stats["Gone"]) == 1
+    db.add_history("Gone", _card("Gone", blob="b" * 40))
+    assert [c.blob_sha for c in db.old_stats["Gone"]] == ["a" * 40, "b" * 40]
 
 
 def test_untagged_history_is_never_restored():
@@ -137,6 +175,16 @@ def test_a_new_card_under_an_archived_name_keeps_the_archive():
     db = _db([stub], old=[real], seen=["Other"])
     db.prune_clean_cards(AT)
     assert [c.ability for c in db.old_stats["Gone"]] == ["The real card.", None]
+
+
+def test_a_copy_left_by_a_kill_is_dropped_when_the_psd_is_back():
+    """Killed after old_stats.pkl while archiving, PSD back before the next run: the tagged copy is no 'old version'."""
+    card = _card("Back")
+    left = deepcopy(card)
+    left.archived = {"at": 1.0, "path": card.path, "blob": card.blob_sha, "commit": None}
+    db = _db([card], old=[_card("Back", blob="0" * 40), left])
+    assert db.stale_archives() == ["Back"] and db.drop_stale_archives()
+    assert [c.blob_sha for c in db.old_stats["Back"]] == ["0" * 40]
 
 
 def test_save_writes_old_stats_first(monkeypatch):

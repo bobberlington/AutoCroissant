@@ -617,6 +617,126 @@ def test_kill_between_the_saves_leaves_one_record(github, monkeypatch):
     assert "The Freezer" not in stats and len(old["The Freezer"]) == 1 and old["The Freezer"][0].archived
 
 
+def _kill_on(monkeypatch, target):
+    """save_pickle raises on target's first write (a kill there); returns the real one."""
+    import commands.card_models as cm
+    real = cm.save_pickle
+
+    def killed(obj, path, lock):
+        if path == target:
+            raise KeyboardInterrupt("killed")
+        real(obj, path, lock)
+    monkeypatch.setattr(cm, "save_pickle", killed)
+    return real
+
+
+def _restart(monkeypatch, real):
+    import commands.card_models as cm
+    monkeypatch.setattr(cm, "save_pickle", real)
+    monkeypatch.setattr(rt, "_tree_etags", {})
+
+
+def test_kill_between_the_saves_after_a_restore_keeps_the_record(github, psds, monkeypatch):
+    """A same-blob restore keeps the archived record in old_stats.pkl until stats.pkl holds the card."""
+    import commands.card_models as cm
+    _run()
+    del github.files[FREEZER]
+    _run()
+    archived = _saved()[1]["The Freezer"]
+    github.files[FREEZER] = psds[FREEZER]
+    real = _kill_on(monkeypatch, cm.STATS_PKL)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    stats, old = _saved()
+    assert "The Freezer" not in stats and old["The Freezer"] == archived           # still archived, not lost
+    _restart(monkeypatch, real)
+    github.calls.clear()
+    _run()
+    stats, old = _saved()
+    assert "The Freezer" in stats and "The Freezer" not in old and github.blobs() == []
+
+
+def test_kill_after_a_restore_before_the_drop_is_cleaned_next_run(github, psds, monkeypatch):
+    """Killed after stats.pkl but before old_stats.pkl drops the copy: the next run drops it."""
+    import commands.card_models as cm
+    _run()
+    del github.files[FREEZER]
+    _run()
+    github.files[FREEZER] = psds[FREEZER]
+    real = cm.save_pickle
+    writes = []
+
+    def killed(obj, path, lock):
+        writes.append(path)
+        if len(writes) == 3:
+            raise KeyboardInterrupt("killed")
+        real(obj, path, lock)
+    monkeypatch.setattr(cm, "save_pickle", killed)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    stats, old = _saved()
+    assert "The Freezer" in stats and old["The Freezer"][0].archived                # in both
+    _restart(monkeypatch, real)
+    _run()
+    stats, old = _saved()
+    assert "The Freezer" in stats and "The Freezer" not in old
+
+
+def test_change_kill_between_the_saves_keeps_one_history(github, psds, monkeypatch):
+    """An edit killed before stats.pkl: the next run replaces the equal history entry instead of doubling it."""
+    import commands.card_models as cm
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    real = _kill_on(monkeypatch, cm.STATS_PKL)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    assert len(_saved()[1]["Mini Doomer"]) == 1
+    _restart(monkeypatch, real)
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER])
+    assert [c.blob_sha for c in old["Mini Doomer"]] == [_sha(psds[DOOMER])]
+
+
+def test_kill_while_archiving_then_psd_back_leaves_no_old_version(github, psds, monkeypatch):
+    """The tagged copy a kill left is dropped once the PSD is back, not shown as an old version."""
+    import commands.card_models as cm
+    _run()
+    del github.files[FREEZER]
+    real = _kill_on(monkeypatch, cm.STATS_PKL)
+    with pytest.raises(KeyboardInterrupt):
+        _run()
+    assert _saved()[1]["The Freezer"][0].archived
+    github.files[FREEZER] = psds[FREEZER]
+    _restart(monkeypatch, real)
+    _run()
+    stats, old = _saved()
+    assert "The Freezer" in stats and "The Freezer" not in old
+
+
+def test_restored_card_with_a_failed_download_holds_the_prune(github, psds):
+    """A new blob under an archived name that fails to download counts as a failed new name: nothing archived."""
+    _run()
+    del github.files[DOOMER]
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    github.broken.add(_sha(psds[OTHER]))
+    del github.files[FREEZER]
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and "The Freezer" not in old
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[DOOMER]) and "Mini Doomer" not in old   # restored as it was
+
+
+def test_rename_onto_a_listed_name_records_renamed_to(github, psds):
+    """Freezer deleted, its PSD renamed over Mini Doomer's: the archive names Mini Doomer (same blob)."""
+    _run()
+    github.files[DOOMER] = github.files.pop(FREEZER)
+    _run()
+    old = _saved()[1]
+    assert old["The Freezer"][0].archived["renamed_to"] == "Mini Doomer"
+
+
 class _File:
     def __init__(self, filename, status="removed", previous_filename=None):
         self.filename, self.status, self.previous_filename = filename, status, previous_filename

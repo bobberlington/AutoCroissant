@@ -64,7 +64,7 @@ class RepositoryTraverser:
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
         self.restored: list = []                 # archived cards whose PSD is back
-        self.new_blobs: dict = {}                # blob sha -> name, for cards new this run (a rename's new name)
+        self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
 
     def _update_old_stats_paths(self) -> None:
         """
@@ -391,7 +391,7 @@ class RepositoryTraverser:
                 local_file = download.result()
                 if local_file is None:
                     self.failed += 1
-                    self.failed_new += name not in self.db.stats
+                    self.failed_new += name not in self.db.stats or name in self.restored
                     continue
                 try:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
@@ -400,12 +400,13 @@ class RepositoryTraverser:
                 finally:
                     remove(local_file)
                 old = self.db.stats.get(name)
+                if old is None or getattr(old, "blob_sha", None) != sha:
+                    self.new_blobs.setdefault(sha, name)
                 if old is None:
                     num_changed += 1
-                    self.new_blobs.setdefault(sha, name)
                 else:
                     if old.path != path or getattr(old, "blob_sha", None) != sha:
-                        self.db.old_stats[name].append(old)     # history only when the PSD changed or moved
+                        self.db.add_history(name, old)          # history only when the PSD changed or moved
                     if old.path != path:
                         num_moved += 1
                     else:
@@ -442,8 +443,8 @@ class RepositoryTraverser:
     def _archive_sources(self, names: list) -> None:
         """
         Each archived card's deleting commit (its path's newest, one request) and, for a rename, the new name: the
-        card new this run with its blob, else the commit's rename of the path (one more request, only when this run
-        added or restored a card). A failure leaves them unset.
+        card new or changed this run with its blob, else the commit's rename of the path (one more request, only when
+        this run parsed a new blob or restored a card). A failure leaves them unset.
         """
         fresh = set(self.new_blobs.values()) | set(self.restored)
         for name in names:
@@ -620,7 +621,7 @@ def _update_stats(interaction: Optional[Interaction],
                          + ", ".join(backfilled))
     if traverser.restored:
         say(interaction, "Restored (PSD back in the card repo): " + ", ".join(sorted(traverser.restored)))
-    if num_changed > 0 or gone or backfilled or traverser.changed:
+    if num_changed > 0 or gone or backfilled or traverser.changed or stats_db.stale_archives():
         stats_db.save()
     if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
