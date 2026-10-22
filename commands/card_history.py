@@ -171,7 +171,8 @@ def collapse(versions: list, holder: Optional[CardInfo]) -> tuple:
     One name's history without duplicates (design 7.4): of each run of consecutive versions with the same data
     (same_data: the blob, path, dates and parse bookkeeping are no data) the first stays; a run with the data of the
     card that follows it (the current card, or the archived record ending the list) goes into that card. Either way
-    the run's earliest start stays (carry). A version tagged `archived` is never dropped. Idempotent.
+    the run's earliest start stays (carry). A version tagged `archived` is never dropped and ends its run (the
+    versions after it are the card's next life). Idempotent.
 
     Args:
         versions: The name's old_stats versions, oldest first (not changed)
@@ -182,8 +183,9 @@ def collapse(versions: list, holder: Optional[CardInfo]) -> tuple:
     """
     runs: list = []
     for version in versions:
-        if runs and same_data(runs[len(runs) - 1][0], version):
-            runs[len(runs) - 1].append(version)
+        tail = runs[len(runs) - 1] if runs else None
+        if tail and not getattr(tail[len(tail) - 1], "archived", None) and same_data(tail[0], version):
+            tail.append(version)
         else:
             runs.append([version])
     kept, dropped = [], []

@@ -221,6 +221,18 @@ def test_collapse_never_drops_an_archived_record():
     assert ch.collapse([stale], _card(timestamp=400.0)) == ([stale], [])
 
 
+def test_a_tagged_record_ends_its_run():
+    """[A1, A2 archived, A3] + another current card: the versions after the tag are the card's next life, so A3 stays
+    (no tag left inside a list that had none after it); A1 goes into the tagged record."""
+    a1, a3 = _card(timestamp=100.0), _card(timestamp=300.0)
+    a2 = _card(timestamp=200.0, archived={"at": 250.0, "path": "Items/A.psd"})
+    kept, dropped = ch.collapse([a1, a2, a3], _card(ability="B.", timestamp=400.0))
+    assert (kept, dropped) == ([a2, a3], [a1]) and ch.start(a2) == (100.0, None) and a3.version is None
+    current = _card(timestamp=400.0)                                  # the same data again: A3 goes into the card
+    kept, dropped = ch.collapse([a1, a2, a3], current)
+    assert (kept, dropped) == ([a2], [a1, a3]) and ch.start(current) == (300.0, None)
+
+
 def test_dedupe_cleans_every_name_once():
     stats = {"A": _card(timestamp=300.0), "B": _card("B", ability="B2.", timestamp=300.0)}
     old = defaultdict(list, {"A": [_card(timestamp=100.0), _card(timestamp=200.0)],
@@ -332,6 +344,16 @@ def test_restored_with_the_same_data_at_another_path_is_no_version():
     assert ch.record_versions({}, {"A": record}, db, {"A": 1}, ["A"], index) == []
     db.drop_stale_archives()
     assert "A" not in db.old_stats and (db.stats["A"].version["from"], db.stats["A"].version["to"]) == (1000.0, None)
+
+
+def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
+    """restore() declined (back at another path with another blob) but the data is the same: the tagged record goes,
+    its earlier start to the listed card (as_of before the re-add still finds it)."""
+    record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"})
+    listed = _card(path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0)
+    db = _db({"A": listed}, {"A": [record]})
+    assert db.drop_stale_archives() and "A" not in db.old_stats
+    assert ch.start(listed) == (100.0, None) and listed.version["cause"] == "legacy" and not listed.version["legacy"]
 
 
 # ========================
