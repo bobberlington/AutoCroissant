@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert all(set(t) == {"layer", "text", "font", "size", "color", "visible"} for t in record["text"])
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
-        assert record["icons"] == ("mixed" if rel == CANNON else "images")             # Cannon: image types, badge runs
+        assert record["icons"] == ("images" if rel == VIRUS else "mixed")              # image types, badge runs
         assert set(record["stats"]) == {"hp", "def", "atk", "spd"}
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
     assert _size(records[DOOMER]) < 8_000 and _size(records[CANNON]) < 8_000
@@ -79,7 +79,9 @@ def test_text_layers_and_template(records):
     assert ability["font"] == "FOTPopHappinessStrp-ExtraBold" and ability["size"] == 50.0 and ability["color"] == "#ffffff"
     assert ability["visible"] and ability["text"].startswith("Has stats equal to")
     assert doomer["template"] == {"name_layer": "Text/Name", "ability_layers": ["Text/Ability"], "deviations": ["icons as images"]}
-    assert doomer["smart_objects"][:2] == ["images/Background (1)", "Stars/Warpstar"] and doomer["fx"] == [] and doomer["overlays"] == []
+    assert doomer["smart_objects"][:2] == ["images/Background (1)", "Stars/Warpstar"] and doomer["overlays"] == []
+    assert doomer["fx"] == ["Ability FX: (BOT)"] and ["Ability FX: (BOT)", "pixel", True] in doomer["tree"]   # the badge's gradient
+    assert doomer["fonts"]["stoogedings-Regular"]["layers"] == ["Text/Ability"]                        # the (BOT) badge run
     assert doomer["effects"]["Creature Types"] == ["Stroke (off)"] and doomer["effects"]["Creature Types/Light"] == ["DropShadow", "OuterGlow"]
     cannon = records[CANNON]
     assert cannon["overlays"] == [] and cannon["fx"] == ["Ability FX: Blazing"] and cannon["template"]["deviations"] == ["icons as images"]
