@@ -104,14 +104,15 @@ def test_restore_drops_an_emptied_history():
 
 
 def test_save_drops_the_restored_copy_after_stats(monkeypatch):
-    """old_stats (record kept), stats (card in), old_stats again (record out): no kill leaves it in neither."""
+    """old_stats (record kept), stats (card in), stats (a carried start), old_stats again (record out): no kill leaves
+    it in neither."""
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
     _restore(db, "Gone")
     saved = []
     monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: saved.append((path, "Gone" in obj)))
     db.save()
-    assert saved == [(cm.OLD_STATS_PKL, True), (cm.STATS_PKL, True), (cm.OLD_STATS_PKL, False)]
+    assert saved == [(cm.OLD_STATS_PKL, True), (cm.STATS_PKL, True), (cm.STATS_PKL, True), (cm.OLD_STATS_PKL, False)]
     saved.clear()
     db.save()
     assert saved == [(cm.OLD_STATS_PKL, False), (cm.STATS_PKL, True)]          # nothing stale: two writes

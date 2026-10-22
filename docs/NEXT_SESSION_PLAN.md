@@ -73,6 +73,9 @@ Everything from the 2026-10-22 session is in git (pushed, or in local branches l
 
 1. [ ] **Collect the in-flight work** above (1-4) and push it. Delete merged branches and their /tmp worktrees; delete the
    `wip/*` refs made for rescue (psd-tools: wip/rv4-bricon-*, wip/wt-r4-final, wip/wt-tag-r3) once nothing needs them.
+   **Land TTSCardMaker work/version-dates before the AutoCroissant deploy**: every /update_stats after it (the dedupe and
+   each same-data re-save, `test_website_dates.py`) moves website dates until `analytics.when` is live. The default suite
+   skips that gate until the conftest clone has `when`; set `AC_SITE_SRC` to run it before then.
 2. [ ] **Checks after the first unattended day**: the website shows the five baked titles; TTS/checks 24/24 after the 11:41
    UTC tts-save run (`AUTOCROISSANT=~/Desktop/AutoCroissant LUA_PYTHON=/tmp/tts-checks-venv/bin/python`; rebuild that venv
    with lupa if /tmp was wiped); `gh run list -R MichaelJSr/TTSCardMaker --workflow card-edits.yml` green and quiet (the

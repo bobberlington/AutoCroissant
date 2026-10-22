@@ -545,6 +545,9 @@ github_api reads it inside a try/except and takes the token from the environment
     same `_Obj` stand-ins, so `bot_field_warnings` and the rest of the build are unchanged. When it is unset, the build reads
     AutoCroissant as today, which is the rollback.
   - `archived` and `version` join `CARD_FIELDS_OPTIONAL` (`archived` already did, e0e26b2f).
+  - **Version dates.** analytics dates a version by `version['from']` when it has one (`analytics.when`, TTSCardMaker
+    work/version-dates), else its timestamp. After the seed pass every version has a record, so every website date moves to
+    the blob's intro, and a `moved` version to the move commit (as the bot's changelog does).
   - **Triggers.** The push trigger stays as today (paths-ignore `TTS/**`), so website edits and new art publish at once on
     the last data. Card sync dispatches it after each commit, with the new data. The cron goes from every 6 hours to daily
     (`17 12 * * *`), as a safety net.

@@ -356,6 +356,44 @@ def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
     assert ch.start(listed) == (100.0, None) and listed.version["cause"] == "legacy" and not listed.version["legacy"]
 
 
+
+def _stale_pair():
+    record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"})
+    return _db({"A": _card(path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0)}, {"A": [record]})
+
+
+def _reloaded():
+    db = cm.StatsDatabase()
+    db.load()
+    return db
+
+
+def test_a_carried_start_reaches_stats_pkl():
+    """/update_stats saves (drop after stats.pkl): the carried start is on disk, the record gone, nothing stale."""
+    _stale_pair().save()
+    db = _reloaded()
+    assert ch.start(db.stats["A"]) == (100.0, None) and "A" not in db.old_stats and db.stale_archives() == []
+
+
+def test_a_kill_after_the_carried_start_keeps_the_record(monkeypatch):
+    """Killed before old_stats.pkl's second write: the record is still there, and the next save drops it again."""
+    real, calls = cm.save_pickle, []
+
+    def kill_fourth(obj, path, lock):
+        calls.append(path)
+        if len(calls) == 4:
+            raise KeyboardInterrupt
+        real(obj, path, lock)
+    monkeypatch.setattr(cm, "save_pickle", kill_fourth)
+    with pytest.raises(KeyboardInterrupt):
+        _stale_pair().save()
+    monkeypatch.setattr(cm, "save_pickle", real)
+    db = _reloaded()
+    assert ch.start(db.stats["A"]) == (100.0, None) and db.stale_archives() == ["A"]
+    db.save()
+    db = _reloaded()
+    assert ch.start(db.stats["A"]) == (100.0, None) and "A" not in db.old_stats
+
 # ========================
 # CLI
 # ========================

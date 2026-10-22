@@ -167,10 +167,12 @@ class StatsDatabase:
     def save(self) -> None:
         """Save all databases to pickle files (atomically, one lock per pickle). old_stats first, and a restored card's
         archived record is dropped or untagged only after stats.pkl holds the card: a kill between saves never leaves
-        it unlisted and untagged."""
+        it unlisted and untagged. A dropped record's start lives on in the listed card (carry), so stats.pkl is written
+        again before old_stats.pkl: a kill between them leaves the record, dropped again by the next save."""
         save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
         save_pickle(self.stats, STATS_PKL, _stats_lock)
         if self.drop_stale_archives():
+            save_pickle(self.stats, STATS_PKL, _stats_lock)
             save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
 
     def load(self) -> None:
