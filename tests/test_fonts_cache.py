@@ -159,6 +159,40 @@ def test_a_failed_listing_leaves_the_cache(fake, tmp_path):
     assert (tmp_path / "cache" / "A.ttf").exists() and fake.blobs() == 2
 
 
+def test_an_unfinished_refresh_is_not_complete_on_a_failed_listing(fake, no_checkout, font_bytes, tmp_path, capsys):
+    """B failed on the last refresh, then the listing fails: the cache is incomplete, so no index (never a wrong False)."""
+    fake.missing.add(_sha(font_bytes["CacheFixture-B"]))
+    first = fc.refresh_cache("o/r", directory="cache")
+    assert set(first.failed) == {"B.ttf"} and not first.complete and _manifest("cache")["complete"] is False
+    fake.listing_status = 503
+    second = fc.refresh_cache("o/r", directory="cache")
+    assert second.error and second.failed == {} and not second.complete and set(second.files) == {"A.ttf"}
+    assert pd.font_index("o/r", "cache") is None and "incomplete" in capsys.readouterr().out
+    fake.listing_status = 200
+    fake.missing.clear()
+    third = fc.refresh_cache("o/r", directory="cache")
+    assert third.complete and third.downloaded == 1 and _manifest("cache")["complete"] is True
+    fake.listing_status = 503
+    assert fc.refresh_cache("o/r", directory="cache").complete and pd.font_index("o/r", "cache").files == 2
+
+
+def test_a_lost_file_is_not_complete_on_a_failed_listing(fake, tmp_path):
+    fc.refresh_cache("o/r", directory="cache")
+    (tmp_path / "cache" / "B.ttf").unlink()
+    fake.listing_status = 503
+    assert not fc.refresh_cache("o/r", directory="cache").complete
+
+
+def test_a_case_only_rename_keeps_the_file(fake, font_bytes, tmp_path):
+    fc.refresh_cache("o/r", directory="cache")
+    fake.files["a.ttf"] = fake.files.pop("A.ttf")
+    result = fc.refresh_cache("o/r", directory="cache")
+    assert (result.failed, result.complete, result.removed) == ({}, True, 0 if (tmp_path / "CACHE").exists() else 1)
+    assert sorted(p.name for p in (tmp_path / "cache").iterdir()) == [fc.MANIFEST, "B.ttf", "a.ttf"]
+    assert fc.FontIndex(result.directory).resolve("CacheFixture-A") == "exact"
+    assert (tmp_path / "cache" / "a.ttf").read_bytes() == font_bytes["CacheFixture-A"]
+
+
 def test_a_lost_file_is_fetched_again(fake, tmp_path):
     fc.refresh_cache("o/r", directory="cache")
     (tmp_path / "cache" / "B.ttf").unlink()
@@ -271,7 +305,7 @@ def test_bake_fonts_dir(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
     assert cb._fonts_dir(snapshot) == str(checkout / cb.psd_edit.FONTS_DIR)
 
 
-def test_fonts_command_reuses_the_cached_files(fake, font_bytes, monkeypatch, tmp_path):
+def test_fonts_command_reuses_the_cached_files(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
     """/fonts keeps the font files: a lost font_names.json costs no font download."""
     fonts = {n: _sha(d) for n, d in fake.files.items()}
     tree = {"tree": [{"path": f"{fc.FONTS_DIR}/{n}", "type": "blob", "sha": s} for n, s in fonts.items()]}
@@ -283,6 +317,67 @@ def test_fonts_command_reuses_the_cached_files(fake, font_bytes, monkeypatch, tm
     (tmp_path / "font_names.json").unlink()
     second = fc.repo_fonts("o/r", "font_names.json")
     assert (second.fonts_files, second.fonts_faces) == (2, 2) and fake.blobs() == 2
+
+
+def _fonts_tree(fake, monkeypatch):
+    tree = {"tree": [{"path": f"{fc.FONTS_DIR}/{n}", "type": "blob", "sha": _sha(d)} for n, d in fake.files.items()]}
+    real = fake.get
+    monkeypatch.setattr(ga, "get", lambda url, **kw: Reply(body=tree) if "/git/trees/main?" in url else real(url, **kw))
+    return tree
+
+
+def test_fonts_command_with_a_warm_cache_requests_no_font(fake, no_checkout, monkeypatch, tmp_path):
+    _fonts_tree(fake, monkeypatch)
+    fc.repo_fonts("o/r", "font_names.json")
+    import shutil
+    shutil.rmtree(tmp_path / global_config.FONTS_CACHE)                         # font_names.json knows every blob
+    again = fc.repo_fonts("o/r", "font_names.json")
+    assert (again.fonts_files, again.fonts_faces, again.errors) == (2, 2, []) and fake.blobs() == 2
+    assert not (tmp_path / global_config.FONTS_CACHE).exists()
+
+
+def test_fonts_command_reads_a_matching_checkout(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
+    """A local copy is used only where its sha is the branch's: the rest comes through the cache."""
+    _fonts_tree(fake, monkeypatch)
+    checkout = tmp_path / "TTSCardMaker"
+    (checkout / fc.FONTS_DIR).mkdir(parents=True)
+    (checkout / fc.FONTS_DIR / "A.ttf").write_bytes(font_bytes["CacheFixture-A"])
+    (checkout / fc.FONTS_DIR / "B.ttf").write_bytes(font_bytes["CacheFixture-C"])   # out of date
+    monkeypatch.setattr(fc, "LOCAL_DIR_LOC", str(checkout))
+    report = fc.repo_fonts("o/r", "font_names.json")
+    assert (report.fonts_files, report.errors) == (2, []) and fake.blobs() == 2  # the cache's refresh fills both
+    assert json.loads(Path("font_names.json").read_text(encoding="utf-8"))["fonts"].keys() == {_sha(d) for d in fake.files.values()}
+    Path("font_names.json").unlink()
+    (checkout / fc.FONTS_DIR / "B.ttf").write_bytes(font_bytes["CacheFixture-B"])
+    import shutil
+    shutil.rmtree(tmp_path / global_config.FONTS_CACHE)
+    assert fc.repo_fonts("o/r", "font_names.json").fonts_files == 2 and fake.blobs() == 2   # all from the checkout
+    assert not (tmp_path / global_config.FONTS_CACHE).exists()
+
+
+def test_fonts_command_never_refreshes_under_a_bake(fake, no_checkout, monkeypatch, tmp_path):
+    from threading import Lock
+    _fonts_tree(fake, monkeypatch)
+    lock = Lock()
+    lock.acquire()
+    report = fc.repo_fonts("o/r", "font_names.json", fonts_lock=lock)
+    assert report.fonts_unread == 2 and fake.blobs() == 0 and "holds the fonts cache" in report.errors[0]
+    lock.release()
+    report = fc.repo_fonts("o/r", "font_names.json", fonts_lock=lock)
+    assert (report.fonts_unread, report.fonts_files) == (0, 2) and not lock.locked()
+
+
+def test_fonts_command_saves_on_a_cache_failure(fake, no_checkout, monkeypatch, tmp_path):
+    _fonts_tree(fake, monkeypatch)
+
+    def full(*args, **kw):
+        raise OSError("No space left on device")
+    monkeypatch.setattr(fc, "refresh_cache", full)
+    details = tmp_path / "details.json"
+    pd.save({_sha(b"psd"): {"path": "Creatures/X.psd", "fonts": {"F": {"layers": ["Text/Name"], "supplied": None}}}}, str(details))
+    with pytest.raises(OSError):
+        fc.repo_fonts("o/r", "font_names.json", details_path=str(details))
+    assert json.loads(Path("font_names.json").read_text(encoding="utf-8"))["psds"] == {_sha(b"psd"): {"F": ["Name"]}}
 
 
 def test_cache_is_gitignored_and_named():

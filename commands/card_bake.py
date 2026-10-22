@@ -44,7 +44,7 @@ from commands.card_models import card_name
 from commands.git_commit import API_TIMEOUT, AUTHOR, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
+from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -55,7 +55,6 @@ COMPARE_FILES = 300                             # a compare lists at most this m
 OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
-FONT_DIRS_ENV = "PSD_TOOLS_FONT_DIRS"           # the runner's fonts dir(s), pathsep-separated; else the checkout's MDW/Fonts
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
 # edit.js FIELDS, in order: how a rewritten entry lists its fields

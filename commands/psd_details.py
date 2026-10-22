@@ -11,7 +11,8 @@ gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a car
 gathers every re-parsed card's record in /update_stats, its "supplied" flags from font_index() (font_check.find_fonts:
 the checkout's MDW/Fonts, else the fonts cache); the CLI backfills a clone in a process pool (the open is the whole
 cost, like font_check --all), or --refill sets every record's flags from the fonts (records gathered without them, or
-after MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when
+after MDW/Fonts changed; run it while the bot runs no /update_stats, /bake_cards or /fonts: the details file's temp
+and the fonts cache are shared, and its lock is per process). No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when
 it is built in.
 """
 from argparse import ArgumentParser
@@ -338,7 +339,7 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE) -> Optiona
 
     Returns:
         FontIndex, or None (one console line) when the fonts can't be had or a file failed to download: "supplied" stays
-        null then, never a wrong False. A failed listing keeps the cache as the last refresh left it
+        null then, never a wrong False. A failed listing uses the cache as the last refresh left it, if that one finished
     """
     try:
         fonts = find_fonts(repository, directory=cache)
@@ -350,6 +351,9 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE) -> Optiona
         return None
     if fonts.error:
         print(f"Fonts for the details: {fonts.error}")
+    if not fonts.complete:                      # a failed listing over a cache the last refresh left short
+        print("Fonts for the details: the fonts cache is incomplete; supplied stays null")
+        return None
     index = FontIndex(fonts.directory) if isdir(fonts.directory) else None
     return index if index is not None and index.files else None
 

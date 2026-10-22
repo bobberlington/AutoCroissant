@@ -312,10 +312,13 @@ def test_deleted_card_alone_is_kept(github):
 
 
 def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):
-    """A /set_repo'd update queues no emoji sync: the type emojis follow the card repo only."""
+    """A /set_repo'd update queues no emoji sync: the type emojis follow the card repo only; its fonts judge the details."""
+    import commands.psd_details as pd
+    asked = []
+    monkeypatch.setattr(pd, "font_index", lambda repository: asked.append(repository))
     monkeypatch.setattr(pa.card_repo, "repository", "someone/else")
     _, queued = _run()
-    assert "sync_changed_emojis" not in queued
+    assert "sync_changed_emojis" not in queued and asked == ["someone/else"]
 
 
 def test_bake_lock_serialises_update_stats(github, capsys):
@@ -338,17 +341,20 @@ def _details():
     return pd.load("psd_details.json")                                 # cwd-relative, like the pickles
 
 
-def test_details_follow_the_parsed_cards(github, psds):
+def test_details_follow_the_parsed_cards(github, psds, clone, monkeypatch):
     """Every parsed card's PSD facts land in psd_details.json by blob sha, saved with the pickles; a blob that left
     the tree takes its record with it, and a 304 writes nothing."""
+    import commands.font_check as fc
     import commands.psd_details as pd
+    fonts = clone / fc.FONTS_DIR
+    monkeypatch.setenv(fc.FONT_DIRS_ENV, str(fonts))                            # the clone's fonts, whatever the shell says
     _run()
     details = _details()
     assert set(details) == {_file_sha(github, DOOMER), _file_sha(github, FREEZER)}
     doomer = details[_file_sha(github, DOOMER)]
     assert (doomer["path"], doomer["name"], doomer["parser"]) == (DOOMER, "Mini Doomer", pa.PARSER_VERSION)
     assert doomer["stats"]["hp"] == "template" and doomer["icons"] == "images" and doomer["template"]["name_layer"] == "Text/Name"
-    assert {e["supplied"] for e in doomer["fonts"].values()} == {True}            # judged by the checkout's MDW/Fonts (find_fonts)
+    assert {e["supplied"] for e in doomer["fonts"].values()} == ({True} if fonts.is_dir() else {None})
     mtime = os.stat("psd_details.json").st_mtime_ns
     _run()                                                                      # 304
     assert os.stat("psd_details.json").st_mtime_ns == mtime

@@ -59,7 +59,7 @@ class RepositoryTraverser:
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
         self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
         self.details_changed = 0                 # records gathered this run
-        self.font_index = None                   # the /fonts cache's faces for the records' "supplied" flags, or None
+        self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
 
     def _update_old_stats_paths(self) -> None:
@@ -525,7 +525,7 @@ def _update_stats(interaction: Optional[Interaction],
     traverser.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
     from commands import psd_details                # lazy: fontTools loads here, not at startup
     traverser.details = psd_details.load()
-    traverser.font_index = psd_details.font_index()
+    traverser.font_index = psd_details.font_index(card_repo.repository)
 
     problem_cards, num_changed = traverser.traverse_remote(
         card_repo.repository,

@@ -116,10 +116,12 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 ### 2.3 Operational hardening (small, high-value)
 
 Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29), B11 2026-10-21. Open: B8, B9.
-- **B11 (done 2026-10-21): fonts on the jetson.** Without `PSD_TOOLS_FONT_DIRS` or a checkout, the bake, the details gather's
-  `supplied` flags and `/fonts` use `fonts_cache/` (gitignored; `font_check.refresh_cache`): MDW/Fonts' font files, refreshed when
-  the subtree changes (1 conditional listing, a free 304; then only the missing blobs, sha-verified; first fill 277 requests,
-  226 MB). Older records: `python -m commands.psd_details --refill`.
+- **B11 (done 2026-10-21): fonts on the jetson.** Without `PSD_TOOLS_FONT_DIRS` or a checkout, the bake and the details gather's
+  `supplied` flags use `fonts_cache/` (gitignored; `font_check.refresh_cache`): MDW/Fonts' font files, refreshed when
+  the subtree changes (1 conditional listing per `/update_stats`, a free 304; then only the missing blobs, sha-verified; first
+  fill 277 requests, 226 MB). `/fonts` judges the branch by blob sha: it reads only blobs `font_names.json` lacks, from a local
+  copy with that sha, else through the cache (never under `bake_lock`). Older records: `python -m commands.psd_details --refill`,
+  run while the bot is idle.
 
 ### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md; Task 3 first)
 
