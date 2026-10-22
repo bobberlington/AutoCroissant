@@ -154,7 +154,8 @@ def carry(dropped: CardInfo, holder: CardInfo) -> None:
     """
     A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date); the
     cause and legacy flag stay the holder's own (a current card with a blob is no legacy version). A holder without a
-    record (/update_stats) gets one, cause legacy: the seed pass dates it from git and keeps the earlier start.
+    record (/update_stats) gets one, cause legacy: the seed pass dates it from git and keeps the earlier start. The
+    website dates a version by this start too (TTSCardMaker site/build/analytics.py when).
     """
     at, commit = start(dropped)
     now = start(holder)[0]
