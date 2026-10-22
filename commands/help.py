@@ -77,7 +77,7 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones).\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones). A card whose PSD was deleted is archived with its history, and restored if the PSD comes back.\n"
                                                                "- output_problematic_cards: Show cards with errors (default: True).\n"
                                                                "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
                                                                "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",

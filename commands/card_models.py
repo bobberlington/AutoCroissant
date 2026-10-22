@@ -106,6 +106,7 @@ class CardInfo:
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
     subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
+    archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -157,12 +158,13 @@ class StatsDatabase:
         self.stats: dict[str, CardInfo] = {}
         self.old_stats: defaultdict[str, list[CardInfo]] = defaultdict(list)
         self.all_types: list[str] = []
-        self.seen_cards: list[str] = []            # names in the last tree; the rest are pruned
+        self.seen_cards: list[str] = []            # names in the last tree; the rest are archived
 
     def save(self) -> None:
-        """Save all databases to pickle files (atomically, one lock per pickle)."""
-        save_pickle(self.stats, STATS_PKL, _stats_lock)
+        """Save all databases to pickle files (atomically, one lock per pickle). old_stats first: a kill between the
+        two leaves an archived card in both files, never in neither."""
         save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
+        save_pickle(self.stats, STATS_PKL, _stats_lock)
 
     def load(self) -> None:
         """Load all databases from pickle files."""
@@ -191,18 +193,74 @@ class StatsDatabase:
             print(f"{OLD_STATS_PKL} is empty or doesn't exist, starting fresh...")
             self.old_stats = defaultdict(list)
 
-    def prune_clean_cards(self) -> list[str]:
-        """Move cards not in seen_cards to old_stats. Returns their names, sorted."""
-        seen = set(self.seen_cards)
-        cards_to_remove = []
-        for name, card in self.stats.items():
-            if name not in seen and not getattr(card, "duplicate_of", None):
-                self.old_stats[name].append(card)
-                cards_to_remove.append(name)
+    def archived(self) -> dict:
+        """Cards whose PSD left the card repo: {name: its last version}, for names not in stats whose last old_stats
+        version is tagged `archived`. The one read filter for archived cards."""
+        found = {}
+        for name, versions in self.old_stats.items():
+            if versions and name not in self.stats:
+                last = versions[len(versions) - 1]
+                if getattr(last, "archived", None):
+                    found[name] = last
+        return found
 
-        for name in cards_to_remove:
-            self.stats.pop(name)
-        return sorted(cards_to_remove)
+    def restore(self, name: str) -> bool:
+        """Put an archived card back in stats (its PSD is in the card repo again). Returns whether it was archived."""
+        versions = self.old_stats.get(name)
+        if name in self.stats or not versions or not getattr(versions[len(versions) - 1], "archived", None):
+            return False
+        card = versions.pop()
+        if not versions:
+            del self.old_stats[name]
+        card.archived = None
+        self.stats[name] = card
+        return True
+
+    def prune_clean_cards(self, at: float) -> tuple:
+        """
+        Archive the cards not in seen_cards (their PSD left the card repo; duplicates are derived, so just dropped by
+        _sync_duplicates): each moves to old_stats behind its earlier versions, tagged `archived`. The same pass tags
+        the untagged last versions of names gone from stats before archiving existed (backfill).
+
+        Args:
+            at: The run's time (epoch seconds), kept in each tag
+
+        Returns:
+            (archived names, backfilled names), each sorted
+        """
+        seen = set(self.seen_cards)
+        archived = [name for name, card in self.stats.items()
+                    if name not in seen and not getattr(card, "duplicate_of", None)]
+        for name in archived:
+            card = self.stats.pop(name)
+            card.archived = _archive_tag(card, at)
+            versions = self.old_stats.setdefault(name, [])
+            if versions and _tagged_copy(versions[len(versions) - 1], card):    # left by a kill between the two saves
+                versions[len(versions) - 1] = card
+            else:
+                versions.append(card)
+
+        backfilled = []
+        for name, versions in self.old_stats.items():
+            if not versions or name in self.stats or name in seen:
+                continue
+            last = versions[len(versions) - 1]
+            if not getattr(last, "archived", None) and not getattr(last, "duplicate_of", None):
+                last.archived = _archive_tag(last, at)
+                last.archived["backfill"] = True
+                backfilled.append(name)
+        return (sorted(archived), sorted(backfilled))
+
+
+def _archive_tag(card: CardInfo, at: float) -> dict:
+    """A CardInfo.archived record: plain builtins (the website reads the pickles as data)."""
+    return {"at": at, "path": card.path, "blob": getattr(card, "blob_sha", None) or None, "commit": None}
+
+
+def _tagged_copy(old: CardInfo, card: CardInfo) -> bool:
+    """Whether old is this card archived already (tagged; same PSD, parse and time)."""
+    return bool(getattr(old, "archived", None)) and all(
+        getattr(old, key, None) == getattr(card, key, None) for key in ("path", "blob_sha", "timestamp", "ability"))
 
 
 # ========================

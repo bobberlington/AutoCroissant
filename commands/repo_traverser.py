@@ -63,6 +63,8 @@ class RepositoryTraverser:
         self.details_changed = 0                 # records gathered this run
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
+        self.restored: list = []                 # archived cards whose PSD is back
+        self.new_blobs: dict = {}                # blob sha -> name, for cards new this run (a rename's new name)
 
     def _update_old_stats_paths(self) -> None:
         """
@@ -372,6 +374,9 @@ class RepositoryTraverser:
                 continue
             name = card_name(path)
             self.db.seen_cards.append(name)
+            if name not in self.db.stats and self.db.restore(name):     # the archived record again; same blob: no download
+                self.restored.append(name)
+                self.changed += 1
             if force_update or CardAuthors.key(name) in self.only or self._psd_changed(name, path, item.get("sha")):
                 todo.append((path, name, item.get("sha")))
             else:
@@ -397,6 +402,7 @@ class RepositoryTraverser:
                 old = self.db.stats.get(name)
                 if old is None:
                     num_changed += 1
+                    self.new_blobs.setdefault(sha, name)
                 else:
                     if old.path != path or getattr(old, "blob_sha", None) != sha:
                         self.db.old_stats[name].append(old)     # history only when the PSD changed or moved
@@ -432,6 +438,32 @@ class RepositoryTraverser:
 
         self._send_summary(interaction, num_changed, num_old, num_moved)
         return (self._format_problems(problematic_cards), num_changed + num_moved)
+
+    def _archive_sources(self, names: list) -> None:
+        """
+        Each archived card's deleting commit (its path's newest, one request) and, for a rename, the new name: the
+        card new this run with its blob, else the commit's rename of the path (one more request, only when this run
+        added or restored a card). A failure leaves them unset.
+        """
+        fresh = set(self.new_blobs.values()) | set(self.restored)
+        for name in names:
+            versions = self.db.old_stats.get(name) or []
+            tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
+            if not tag:
+                continue
+            renamed = self.new_blobs.get(tag["blob"]) if tag.get("blob") else None
+            try:
+                commits = self._commit_page(tag["path"])
+                if commits:
+                    tag["commit"] = commits[0].sha
+                    if renamed is None and fresh:
+                        renamed = next((card_name(f.filename) for f in commits[0].files
+                                        if f.status == "renamed" and f.previous_filename == tag["path"]
+                                        and card_name(f.filename) in fresh), None)
+            except Exception as e:
+                print(f"{tag['path']}: deleting commit not found ({e})")
+            if renamed:
+                tag["renamed_to"] = renamed
 
     def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
         """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
@@ -506,9 +538,20 @@ def _can_prune(traverser: RepositoryTraverser) -> bool:
     if tree is None or traverser.failed_new:
         return False
     if tree.get("truncated") or not traverser.db.seen_cards:
-        print("Card repo tree truncated or without cards; no card removed.")
+        print("Card repo tree truncated or without cards; no card archived.")
         return False
     return True
+
+
+def _archived_names(db: StatsDatabase, names: list) -> list:
+    """Archived names for the message, a rename's new name beside it."""
+    out = []
+    for name in names:
+        versions = db.old_stats.get(name) or []
+        tag = getattr(versions[len(versions) - 1], "archived", None) if versions else None
+        new = tag.get("renamed_to") if tag else None
+        out.append(f"{name} (now {new})" if new else name)
+    return out
 
 
 def _forget_tree(repository: str) -> None:
@@ -554,6 +597,7 @@ def _update_stats(interaction: Optional[Interaction],
     if verbose:
         say(interaction, "Updating card statistics database... This may take a while.")
 
+    at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     stats_db.load()
     stats_db.seen_cards.clear()
     traverser = RepositoryTraverser(stats_db)
@@ -567,14 +611,21 @@ def _update_stats(interaction: Optional[Interaction],
         output_problematic,
         force_update)
 
-    gone = stats_db.prune_clean_cards() if _can_prune(traverser) else []
+    gone, backfilled = stats_db.prune_clean_cards(at) if _can_prune(traverser) else ([], [])
     if gone:
-        say(interaction, "Removed (PSD deleted from the card repo): " + ", ".join(gone))
-    if num_changed > 0 or gone or traverser.changed:
+        traverser._archive_sources(gone)
+        say(interaction, "Archived (PSD deleted from the card repo): " + ", ".join(_archived_names(stats_db, gone)))
+    if backfilled:
+        say(interaction, f"Archived {len(backfilled)} card{'' if len(backfilled) == 1 else 's'} deleted before this update: "
+                         + ", ".join(backfilled))
+    if traverser.restored:
+        say(interaction, "Restored (PSD back in the card repo): " + ", ".join(sorted(traverser.restored)))
+    if num_changed > 0 or gone or backfilled or traverser.changed:
         stats_db.save()
-    if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated
+    if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
-        pruned = 0 if traverser.tree.get("truncated") else psd_details.prune(traverser.details, set(traverser.shas.values()))
+        keep = set(traverser.shas.values()) | {c.archived["blob"] for c in stats_db.archived().values() if c.archived.get("blob")}
+        pruned = 0 if traverser.tree.get("truncated") else psd_details.prune(traverser.details, keep)
         if pruned or traverser.details_changed or refilled:
             psd_details.save(traverser.details)
 
