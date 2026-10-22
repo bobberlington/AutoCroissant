@@ -34,7 +34,7 @@ from psd_tools.constants import Resource
 
 from commands.card_models import card_name
 from commands.font_check import (
-    EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, find_fonts, is_card_psd, layer_fonts, tree_fonts,
+    EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, dir_fonts, find_fonts, is_card_psd, layer_fonts, tree_fonts,
 )
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION
@@ -340,6 +340,7 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE, tree: Opti
     """
     The faces the "supplied" flags are judged by: font_check.find_fonts (PSD_TOOLS_FONT_DIRS, the checkout's MDW/Fonts,
     else the fonts cache brought to the tree: no listing, only the changed font blobs; no tree: 1 conditional listing).
+    A local dir counts only when its font files are the tree's, by blob sha.
 
     Args:
         repository: owner/name of the card repo
@@ -357,6 +358,9 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE, tree: Opti
         sub = next((e.get("sha", "") for e in items if e.get("path") == FONTS_DIR and e.get("type") == "tree"), "")
     try:
         fonts = find_fonts(repository, files, cache, sub)
+        if fonts.source != "cache" and files and dir_fonts(fonts.directory) != files:
+            print(f"Fonts for the details: {fonts.directory} is not the branch's MDW/Fonts; supplied stays null")
+            return None
     except Exception as e:                      # never fails an update
         print(f"Fonts for the details: {e}")
         return None
@@ -368,7 +372,8 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE, tree: Opti
     if not fonts.complete:                      # a failed listing over a cache the last refresh left short
         print("Fonts for the details: the fonts cache is incomplete or not this tree's; supplied stays null")
         return None
-    key = (fonts.directory, tuple(sorted(fonts.files.items()))) if fonts.source == "cache" else None
+    held = fonts.files if fonts.source == "cache" else files
+    key = (fonts.directory, tuple(sorted(held.items()))) if held else None
     if key in _indexes:
         return _indexes[key]
     index = FontIndex(fonts.directory) if isdir(fonts.directory) else None

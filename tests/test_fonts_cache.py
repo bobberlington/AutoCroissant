@@ -334,6 +334,26 @@ def test_details_index_from_the_update_tree(fake, no_checkout, monkeypatch):
     assert pd.font_index("o/r", "cache", {"tree": []}) is None                  # no MDW/Fonts in that repo: null flags
 
 
+def test_details_index_needs_the_trees_fonts_locally(fake, no_checkout, font_bytes, monkeypatch, tmp_path, capsys):
+    """A checkout's MDW/Fonts judges the flags only when its files are the tree's, and is indexed once; a lagging one
+    leaves them null."""
+    tree = {"tree": [{"path": f"{fc.FONTS_DIR}/{n}", "type": "blob", "sha": _sha(d)} for n, d in fake.files.items()]}
+    checkout = tmp_path / "TTSCardMaker"
+    fonts = checkout / fc.FONTS_DIR
+    fonts.mkdir(parents=True)
+    for name, data in fake.files.items():
+        (fonts / name).write_bytes(data)
+    monkeypatch.setattr(fc, "LOCAL_DIR_LOC", str(checkout))
+    index = pd.font_index("o/r", "cache", tree)
+    assert index is not None and index.files == 2 and fake.calls == []
+    assert pd.font_index("o/r", "cache", tree) is index
+    (fonts / "A.ttf").write_bytes(font_bytes["CacheFixture-C"])                 # behind the branch
+    assert pd.font_index("o/r", "cache", tree) is None and "not the branch's MDW/Fonts" in capsys.readouterr().out
+    (fonts / "A.ttf").write_bytes(font_bytes["CacheFixture-A"])
+    (fonts / "Gone.ttf").write_bytes(font_bytes["CacheFixture-C"])              # deleted on the branch
+    assert pd.font_index("o/r", "cache", tree) is None and fake.calls == []
+
+
 def test_details_index_is_none_without_fonts(fake, no_checkout, font_bytes, capsys):
     fake.listing_status = 404
     assert pd.font_index("o/r", "cache") is None                                # nothing cached yet
@@ -435,7 +455,7 @@ def test_fonts_command_with_a_warm_cache_requests_no_font(fake, no_checkout, mon
 
 
 def test_fonts_command_reads_a_matching_checkout(fake, no_checkout, font_bytes, monkeypatch, tmp_path):
-    """A local copy is used only where its sha is the branch's: the rest comes through the cache."""
+    """A local copy is used only where its sha is the branch's: the rest is fetched alone, never a cache fill."""
     _fonts_tree(fake, monkeypatch)
     checkout = tmp_path / "TTSCardMaker"
     (checkout / fc.FONTS_DIR).mkdir(parents=True)
@@ -443,13 +463,12 @@ def test_fonts_command_reads_a_matching_checkout(fake, no_checkout, font_bytes, 
     (checkout / fc.FONTS_DIR / "B.ttf").write_bytes(font_bytes["CacheFixture-C"])   # out of date
     monkeypatch.setattr(fc, "LOCAL_DIR_LOC", str(checkout))
     report = fc.repo_fonts("o/r", "font_names.json")
-    assert (report.fonts_files, report.errors) == (2, []) and fake.blobs() == 2  # the cache's refresh fills both
+    assert (report.fonts_files, report.errors) == (2, []) and fake.blobs() == 1  # only B
     assert json.loads(Path("font_names.json").read_text(encoding="utf-8"))["fonts"].keys() == {_sha(d) for d in fake.files.values()}
+    assert not (tmp_path / global_config.FONTS_CACHE).exists()
     Path("font_names.json").unlink()
     (checkout / fc.FONTS_DIR / "B.ttf").write_bytes(font_bytes["CacheFixture-B"])
-    import shutil
-    shutil.rmtree(tmp_path / global_config.FONTS_CACHE)
-    assert fc.repo_fonts("o/r", "font_names.json").fonts_files == 2 and fake.blobs() == 2   # all from the checkout
+    assert fc.repo_fonts("o/r", "font_names.json").fonts_files == 2 and fake.blobs() == 1   # all from the checkout
     assert not (tmp_path / global_config.FONTS_CACHE).exists()
 
 

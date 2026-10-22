@@ -53,6 +53,7 @@ class RepositoryTraverser:
         self.edits: Optional[CardEdits] = None
         self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
         self.failed = 0                          # failed downloads: the tree ETag is not kept, so the next run retries
+        self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
         self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
         self.repository = ""
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
@@ -200,6 +201,8 @@ class RepositoryTraverser:
             _forget_tree(repository)
             say(interaction, f"Could not download {self.failed} file{'' if self.failed == 1 else 's'} from the card repo; "
                              "the next /update_stats tries again.")
+        elif self.font_index is None and psd_details.tree_fonts(self.shas):
+            _forget_tree(repository)                    # no fonts: the supplied flags are tried again next run
         else:
             _tree_etags[repository] = resp.headers.get("ETag")
 
@@ -383,6 +386,7 @@ class RepositoryTraverser:
                 local_file = download.result()
                 if local_file is None:
                     self.failed += 1
+                    self.failed_new += name not in self.db.stats
                     continue
                 try:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
@@ -496,16 +500,10 @@ class RepositoryTraverser:
 # ========================
 # Helper Functions
 # ========================
-def _gone_cards(db: StatsDatabase) -> list[str]:
-    """Cards whose PSD left the tree: the ones prune_clean_cards moves to old_stats."""
-    seen = set(db.seen_cards)
-    return sorted(n for n, c in db.stats.items() if n not in seen and not getattr(c, "duplicate_of", None))
-
-
 def _can_prune(traverser: RepositoryTraverser) -> bool:
-    """Whether the run saw the whole repo: no 304, no truncated tree, no failed download, at least one card."""
+    """Whether the run saw the whole repo: no 304, no truncated tree, no failed new-name PSD, at least one card."""
     tree = traverser.tree
-    if tree is None or traverser.failed:
+    if tree is None or traverser.failed_new:
         return False
     if tree.get("truncated") or not traverser.db.seen_cards:
         print("Card repo tree truncated or without cards; no card removed.")
@@ -569,17 +567,15 @@ def _update_stats(interaction: Optional[Interaction],
         output_problematic,
         force_update)
 
-    prunable = _can_prune(traverser)
-    gone = _gone_cards(stats_db) if prunable else []
-    if prunable and (num_changed > 0 or gone):
-        stats_db.prune_clean_cards()
+    gone = stats_db.prune_clean_cards() if _can_prune(traverser) else []
     if gone:
         say(interaction, "Removed (PSD deleted from the card repo): " + ", ".join(gone))
     if num_changed > 0 or gone or traverser.changed:
         stats_db.save()
-    if traverser.tree is not None and not traverser.tree.get("truncated"):    # new blobs in, gone blobs out
+    if traverser.tree is not None:                  # new blobs in; gone blobs out unless truncated
         refilled = psd_details.refill(traverser.details, traverser.font_index) if traverser.font_index is not None else 0
-        if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed or refilled:
+        pruned = 0 if traverser.tree.get("truncated") else psd_details.prune(traverser.details, set(traverser.shas.values()))
+        if pruned or traverser.details_changed or refilled:
             psd_details.save(traverser.details)
 
     if verbose:

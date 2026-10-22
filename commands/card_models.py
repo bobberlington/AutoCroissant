@@ -191,16 +191,18 @@ class StatsDatabase:
             print(f"{OLD_STATS_PKL} is empty or doesn't exist, starting fresh...")
             self.old_stats = defaultdict(list)
 
-    def prune_clean_cards(self) -> None:
-        """Move cards not in seen_cards to old_stats."""
+    def prune_clean_cards(self) -> list[str]:
+        """Move cards not in seen_cards to old_stats. Returns their names, sorted."""
+        seen = set(self.seen_cards)
         cards_to_remove = []
         for name, card in self.stats.items():
-            if name not in self.seen_cards and not getattr(card, "duplicate_of", None):
+            if name not in seen and not getattr(card, "duplicate_of", None):
                 self.old_stats[name].append(card)
                 cards_to_remove.append(name)
 
         for name in cards_to_remove:
             self.stats.pop(name)
+        return sorted(cards_to_remove)
 
 
 # ========================

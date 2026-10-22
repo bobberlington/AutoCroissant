@@ -578,6 +578,15 @@ def tree_fonts(blobs: dict) -> dict:
             if path.startswith(FONTS_DIR + "/") and path.count("/") == 2 and path.lower().endswith(FONT_EXTENSIONS)}
 
 
+def dir_fonts(directory: str) -> dict:
+    """{file name: blob sha} of the font files at the top of directory."""
+    out = {}
+    for path in _font_files(directory):
+        with open(path, "rb") as fh:
+            out[basename(path)] = blob_sha(fh.read())
+    return out
+
+
 def local_fonts() -> tuple:
     """(dir, "env") from PSD_TOOLS_FONT_DIRS, else (the checkout's MDW/Fonts, "checkout") when it exists, else ("", "")."""
     dirs = environ.get(FONT_DIRS_ENV, "")
@@ -808,7 +817,8 @@ def _details_fonts(path: str) -> dict:
 
 def _new_faces(repository: str, files: dict, need: dict, cache_dir: str, fonts_lock) -> tuple:
     """
-    The faces of the font files in need: the local fonts dir's copy when its sha matches, else the fonts cache's.
+    The faces of the font files in need: the local fonts dir's copy when its sha matches, else its blob (a local dir
+    exists) or the fonts cache's.
 
     Returns:
         ({name: faces, or why fontTools can't read it}, {name: why it was not read})
@@ -829,6 +839,13 @@ def _new_faces(repository: str, files: dict, need: dict, cache_dir: str, fonts_l
         else:
             rest[name] = sha
     if not rest:
+        return out, unread
+    if local and isdir(local):                  # a lagging local copy: only its stale files, no cache fill
+        for name, sha in rest.items():
+            try:
+                out[name] = _faces(fetch_verified(repository, sha, timeout=API_TIMEOUT))
+            except Exception as e:              # read again next run
+                unread[name] = str(e)
         return out, unread
     if fonts_lock is not None and not fonts_lock.acquire(blocking=False):
         return out, {name: "a card update or bake holds the fonts cache" for name in rest}   # never refreshed under a bake
@@ -863,13 +880,13 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
     Every card PSD on the card repo's branch against its MDW/Fonts, through the API with a per-blob cache.
 
     A font file is read once per blob sha (font_names.json): from the local fonts dir (PSD_TOOLS_FONT_DIRS or the
-    checkout's MDW/Fonts) when its copy has that sha, else from the fonts cache brought to the branch's MDW/Fonts (the
-    first fill downloads 276 files, 226 MB; later only the blobs it lacks). A warm font_names.json costs no font
-    request. The first run reads up to batch PSDs (the whole repo is ~813 PSDs, 15.6 GB: about 25 min of downloads at
-    the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs the details file already describes
-    (psd_details.json, gathered by /update_stats) are not downloaded either. Blobs no longer in the tree leave the
-    cache. When a font file can't be had, any card could be asking for one of its faces: the PSDs are still read and
-    cached, but no card is reported (fonts_unread).
+    checkout's MDW/Fonts) when its copy has that sha, else that blob alone; without a local dir, from the fonts cache
+    brought to the branch's MDW/Fonts (the first fill downloads 276 files, 226 MB; later only the blobs it lacks). A
+    warm font_names.json costs no font request. The first run reads up to batch PSDs (the whole repo is ~813 PSDs,
+    15.6 GB: about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs
+    the details file already describes (psd_details.json, gathered by /update_stats) are not downloaded either. Blobs no
+    longer in the tree leave the cache. When a font file can't be had, any card could be asking for one of its faces:
+    the PSDs are still read and cached, but no card is reported (fonts_unread).
 
     Args:
         repository: owner/name
@@ -1012,6 +1029,7 @@ __all__ = [
     'check_files',
     'check_psd',
     'check_repo_fonts',
+    'dir_fonts',
     'discord_payload',
     'discord_text',
     'face_names',

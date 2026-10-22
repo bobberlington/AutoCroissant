@@ -407,6 +407,18 @@ def test_rename_with_failed_download_keeps_the_old_card(github, capsys):
     assert "Removed (PSD deleted from the card repo): Mini Doomer" in capsys.readouterr().out
 
 
+def test_failed_listed_card_still_prunes(github, psds):
+    """A failed download of a card already listed is no rename: a deleted card is still removed."""
+    _run()
+    github.files[DOOMER] = psds[OTHER]
+    github.broken.add(_sha(psds[OTHER]))
+    del github.files[FREEZER]
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer"} and stats["Mini Doomer"].blob_sha == _sha(psds[DOOMER])
+    assert list(old) == ["The Freezer"] and rt._tree_etags == {}
+
+
 def test_truncated_tree_prunes_nothing(github, capsys):
     _run()
     details = _details()
@@ -504,8 +516,8 @@ def test_details_flags_are_refilled_on_a_changed_tree(github, monkeypatch):
     assert {e["supplied"] for e in _details()[doomer]["fonts"].values()} == {True}
 
 
-def test_truncated_tree_refills_nothing(github, monkeypatch):
-    """A truncated tree leaves psd_details.json alone: no prune, no refill."""
+def test_truncated_tree_saves_the_details_prunes_none(github, psds, monkeypatch):
+    """A truncated tree: the records gathered and refilled are saved; the ones whose blob it lacks stay."""
     import commands.psd_details as pd
 
     class Everything:
@@ -513,13 +525,29 @@ def test_truncated_tree_refills_nothing(github, monkeypatch):
             return "exact"
     monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
     _run()
-    mtime = os.stat("psd_details.json").st_mtime_ns
+    doomer, freezer = _file_sha(github, DOOMER), _file_sha(github, FREEZER)
     monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: Everything())
-    github.files["notes.txt"] = b"not a card"
+    github.files[DOOMER] = psds[OTHER]
+    del github.files[FREEZER]
     github.truncated = True
     _run()
-    assert os.stat("psd_details.json").st_mtime_ns == mtime
-    assert {e["supplied"] for e in _details()[_file_sha(github, DOOMER)]["fonts"].values()} == {None}
+    details = _details()
+    assert set(details) == {doomer, freezer, _sha(psds[OTHER])}
+    assert {e["supplied"] for e in details[doomer]["fonts"].values()} == {True}
+
+
+def test_no_fonts_keeps_no_etag(github, monkeypatch):
+    """A tree with MDW/Fonts whose fonts could not be had: no 304 next run, so the supplied flags are tried again."""
+    import commands.psd_details as pd
+    monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
+    _run()
+    assert rt._tree_etags                                                       # no MDW/Fonts in the tree
+    github.files["MDW/Fonts/A.ttf"] = b"font"
+    _run()
+    assert rt._tree_etags == {}
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None)
 
 
 def test_details_gather_error_never_fails_the_update(github, monkeypatch, capsys):
