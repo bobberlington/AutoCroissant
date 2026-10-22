@@ -1,12 +1,28 @@
 from discord import Interaction
-from git import GitCommandError, Repo
-from git.cmd import Git
 from os import execl, execv
 from os.path import isfile
 from sys import argv, executable
+from commands.repo_history import batch_overrides
 from global_config import ALIAS_PKL, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
 
 NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
+
+
+# GitPython is imported in the functions: startup never loads it
+def _git():
+    """GitPython's Git on the bot's checkout, non-interactive."""
+    from git.cmd import Git
+    git = Git('.')
+    git.update_environment(**batch_overrides('.'))
+    return git
+
+
+def _repo():
+    """GitPython's Repo on the bot's checkout, non-interactive."""
+    from git import Repo
+    repo = Repo('.')
+    repo.git.update_environment(**batch_overrides('.'))
+    return repo
 
 
 def restart_bot():
@@ -17,8 +33,9 @@ def restart_bot():
 
 
 async def git_push(interaction: Interaction):
+    from git import GitCommandError
     try:
-        git = Git('.')
+        git = _git()
         git.add(ALIAS_PKL)
         git.add(STATS_PKL)
         git.add(OLD_STATS_PKL)
@@ -48,9 +65,10 @@ async def git_push(interaction: Interaction):
 
 
 async def git_pull(interaction: Interaction):
+    from git import GitCommandError
     try:
-        git = Git('.')
-        repo = Repo('.')
+        git = _git()
+        repo = _repo()
 
         # First, fetch to see the remote state
         await interaction.followup.send("Fetching from remote...")
@@ -120,8 +138,9 @@ async def git_pull(interaction: Interaction):
 
 async def git_reset_hard(interaction: Interaction):
     """Reset local repository to match remote, discarding all local changes."""
+    from git import GitCommandError
     try:
-        git = Git('.')
+        git = _git()
 
         # Fetch latest
         git.fetch(kill_after_timeout=NET_TIMEOUT)
