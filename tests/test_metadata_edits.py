@@ -333,10 +333,16 @@ def test_mass_replace_counts_and_no_ops(repo):
     """The subject and the reply count the entries changed; old == new and a hand-formatted file make no commit."""
     start = repo.github.head
     repo.stats["Goombella"].series = "MARIO"                                     # its entry already says "Mario"
+    repo.stats["Mini Doomer"].series = "Mario"                                   # already new (its folder's): no override
     de.mass_replace_field(repo.who, "series", "mario", "Mario")
     (message,) = _commits(repo.github, start)
-    assert message.startswith("Discord: /mass_replace series 'mario' -> 'Mario' (1 cards)\n\n- The Freezer\n\nEdit-by")
-    assert "1 card entries in Card Edits.json" in repo.sent[0]
+    assert message.startswith("Discord: /mass_replace series 'mario' -> 'Mario' (1 card)\n\n- The Freezer\n\nEdit-by")
+    assert "Mini Doomer" not in json.loads(_at_head(repo.github, EDITS_PATH))["cards"]
+    assert "1 card set in Card Edits.json; " in repo.sent[0]
+    repo.stats["Goombella"].series = "Mario"
+    de.mass_replace_field(repo.who, "series", "MARIO", "Mario")                  # every one already so: no commit
+    assert len(_commits(repo.github, start)) == 1 and "already has 'Mario'" in repo.sent[1]
+    repo.stats["Goombella"].series = "MARIO"
     for field, value in (("series", "Mario"), ("author", "Zomoroko")):
         de.mass_replace_field(repo.who, field, value, f" {value} ")
         assert "are both" in repo.sent[len(repo.sent) - 1]
@@ -355,9 +361,16 @@ def test_card_type_is_a_known_kind(repo):
     de.mass_replace_field(repo.who, "card_type", "minion", "minnion")
     de.manual_metadata_entry(repo.who, "Goombella", card_type="beast")
     assert repo.github.head == start and all("card_type must be one of" in s for s in repo.sent)
+    de.manual_metadata_entry(repo.who, "Goombella", card_type="Unknown")         # edit.js offers no "unknown"
+    de.mass_replace_field(repo.who, "card_type", "creature", "unknown")
+    assert repo.github.head == start and all("card_type must be one of" in s and "unknown" not in s for s in repo.sent)
+    de.mass_replace_field(repo.who, "card_type", "Creature", "creature")         # old canonicalized too: the same kind
+    assert repo.github.head == start and "are both 'creature'" in repo.sent[len(repo.sent) - 1]
     de.mass_replace_field(repo.who, "card_type", "MINION", " Creature ")
     assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]["type"] == "creature"
-    assert _commits(repo.github, start)[0].startswith("Discord: /mass_replace card_type 'MINION' -> 'creature' (1 cards)")
+    assert "Goombella" not in json.loads(_at_head(repo.github, EDITS_PATH))["cards"] or \
+        "type" not in json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]
+    assert _commits(repo.github, start)[0].startswith("Discord: /mass_replace card_type 'minion' -> 'creature' (1 card)")
     de.manual_metadata_entry(repo.who, "Goombella", card_type="mdw")
     assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]["type"] == "MDW"
     assert len(_commits(repo.github, start)) == 2
@@ -433,24 +446,58 @@ def test_alias_create_move_delete(repo):
     assert len(_commits(repo.github, start)) == 3
 
 
+def _reloaded(repo):
+    """The registry a card-list reload builds from the committed Card Edits.json (populate_files' order)."""
+    fresh = qc.CardRepository()
+    fresh.git_files = {p.rsplit("/", 1)[1].lower(): p for p in (SNACK, SNACK2, DOOMER, FREEZER, GOOMBELLA, FIX)}
+    edits = CardEdits.parse(_at_head(repo.github, EDITS_PATH))
+    fresh._edits, fresh._edit_names = edits, ("x", edits.names())
+    fresh.relink()
+    return {k: v for k, v in fresh.git_files.items() if k != "breakfast.png"}   # A Snack2's title (fixture: no reload ran)
+
+
+def test_alias_never_loses_its_key_on_a_reload(repo):
+    """An alias whose key is another card's Card Edits.json name: refused (a reload gives the key to the card sorting
+    first). The card's own name, or a printed title (added after Card Edits.json's): created, and a reload agrees."""
+    files = repo.github.files_at(repo.github.head)
+    data = json.loads(files[EDITS_PATH])
+    data["cards"]["Goombella"] = {**data["cards"]["Goombella"], "name": "Bella"}
+    head = repo.github.commit({**files, EDITS_PATH: dump_edits(data).encode()}, "web", "Website edit: Goombella")
+    repo.registry._edits = CardEdits.parse(dump_edits(data))
+    repo.registry._edit_names = ("x", repo.registry._edits.names())
+    repo.stats["The Freezer"].display_name = "Cold Room"
+    repo.registry.relink()
+    de.manage_alias(repo.who, " BELLA ", "mini doomer")
+    assert repo.github.head == head and "Card Edits.json name of another card (Goombella)" in repo.sent[0]
+    assert repo.registry.git_files["bella.png"] == GOOMBELLA
+    de.manage_alias(repo.who, "Bella", "goombella")                              # its own name: no other card wins
+    de.manage_alias(repo.who, "Cold Room", "mini doomer")
+    assert "Created alias: Cold Room -> Mini Doomer" in repo.sent[2] and len(_commits(repo.github, head)) == 2
+    assert repo.registry.git_files["cold_room.png"] == DOOMER
+    reloaded = _reloaded(repo)
+    assert {k: v for k, v in repo.registry.git_files.items() if k != "breakfast.png"} == reloaded
+
+
 def test_alias_delete_keeps_name_and_title_lookups(repo):
     """Deleting an alias whose key is also a Card Edits.json name or a printed title: that lookup finds its card again."""
     files = repo.github.files_at(repo.github.head)
     data = json.loads(files[EDITS_PATH])
     data["cards"]["Goombella"] = {**data["cards"]["Goombella"], "name": "Bella"}
+    data["cards"]["Mini Doomer"] = {"aliases": ["Bella"], "_by": "web", "_at": AT}   # a website alias on Goombella's name
     repo.github.commit({**files, EDITS_PATH: dump_edits(data).encode()}, "web", "Website edit: Goombella")
     repo.registry._edits = CardEdits.parse(dump_edits(data))
     repo.registry._edit_names = ("x", repo.registry._edits.names())
     repo.stats["The Freezer"].display_name = "Cold Room"
-    repo.registry._add_lookup("Goombella", ["Bella"])
+    repo.registry.git_files["bella.png"] = DOOMER
     repo.registry._populate_titles()
-    assert repo.registry.git_files["bella.png"] == GOOMBELLA and repo.registry.git_files["cold_room.png"] == FREEZER
+    assert repo.registry.git_files["cold_room.png"] == FREEZER
+    de.manage_alias(repo.who, "Cold Room", "mini doomer")
+    assert repo.registry.git_files["cold_room.png"] == DOOMER
     for alias in ("Bella", "Cold Room"):
-        de.manage_alias(repo.who, alias, "mini doomer")
-        assert repo.registry.git_files[f"{alias.lower().replace(' ', '_')}.png"] == DOOMER
         de.manage_alias(repo.who, alias, None)
-    assert "Deleted alias: Cold Room" in repo.sent[3]
+    assert "Deleted alias: Bella" in repo.sent[1] and "Deleted alias: Cold Room" in repo.sent[2]
     assert repo.registry.git_files["bella.png"] == GOOMBELLA and repo.registry.git_files["cold_room.png"] == FREEZER
+    assert {k: v for k, v in repo.registry.git_files.items() if k != "breakfast.png"} == _reloaded(repo)
 
 
 def test_alias_on_a_card_with_two_aliases(repo, monkeypatch):

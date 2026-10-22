@@ -1,7 +1,8 @@
 # Data build Action: the card data built on GitHub (2026-10-22)
 
-**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below); not scheduled; not yet a plan
-item (add one to `docs/NEXT_SESSION_PLAN.md`). The owner's goal, 2026-10-22: "let's work on the data build action". The
+**Status:** designed 2026-10-22, revised the same day for the owner's later decisions (below). In progress: step 2 is on
+main; steps 4 and 5 are built on `work/data-build` and `work/discord-writers`, not yet landed (`docs/NEXT_SESSION_PLAN.md`
+tracks it). The owner's goal, 2026-10-22: "let's work on the data build action". The
 website and the TTS save must not depend on the jetson; a GitHub Action builds the card data. This design also covers:
 - the changelog in Discord (one post per push) and on the website (a Changelog tab and a Database edits tab on the Changes
   page);
@@ -21,7 +22,7 @@ website and the TTS save must not depend on the jetson; a GitHub Action builds t
 - **The PSD hold is lifted** (2026-10-22 ~02:40), so the bake runs live in Card sync after a fresh dry run (step 8).
 
 Numbers were measured read-only on 2026-10-22 at AutoCroissant main cae1f2f (last PICKLE 3888392, 00:23) and TTSCardMaker main
-5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". Nothing here is built yet.
+5bdda4ad, with push counts re-measured at e0e26b2f (§2). Anything not checked is marked "to confirm". They predate the build (§14 says what is built).
 
 **The choice.** Two designs were judged, "minimal" (the Action pushes PICKLE commits to AutoCroissant) and "data-with-cards"
 (the data lives in TTSCardMaker). The robustness judge scored data-with-cards 8.4 and minimal 6.4. The simplicity judge scored

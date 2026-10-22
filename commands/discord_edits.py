@@ -58,6 +58,7 @@ METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), 
             ("subseries", "subseries"), ("hp", "hp"), ("defense", "def"), ("attack", "atk"), ("speed", "spd"),
             ("card_type", "type"), ("types", "types"))
 KINDS = {t.value.lower(): t.value for t in CardType}   # a card_type typed in Discord: one of these, any case
+SETTABLE = {k: v for k, v in KINDS.items() if v != CardType.UNKNOWN.value}     # edit.js offers no "unknown"
 NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses for now (psd_edit.NOT_YET): not taken
 MASS = {"series": "series", "subseries": "subseries", "subtype": "subtype", "card_type": "type"}   # /mass_replace -> field
 BODY_LINES = 40                                 # a commit body lists at most this many cards
@@ -515,8 +516,8 @@ def manual_metadata_entry(interaction,
                          "print them, and while one waits in Card Edits.json the bake refuses every other edit to the "
                          "card's PSD. Change them in the PSD.")
         return
-    if given.get("type", "") not in ("", *KINDS.values()):
-        say(interaction, f"Not committed: card_type must be one of {', '.join(KINDS.values())}.")
+    if given.get("type", "") not in ("", *SETTABLE.values()):
+        say(interaction, f"Not committed: card_type must be one of {', '.join(SETTABLE.values())}.")
         return
     bad = [f for f, v in given.items() if not CardEdits.valid(f, v) or v in ("", [])]
     if bad or author == "":
@@ -567,6 +568,10 @@ def manual_metadata_entry(interaction,
 # ========================
 # /mass_replace
 # ========================
+def _cards(n: int) -> str:
+    return f"{n} card" if n == 1 else f"{n} cards"
+
+
 def mass_replace_field(interaction, field: str = "", old_value: str = "", new_value: str = "") -> None:
     """
     /mass_replace: one value replaced by another on every card, in one commit to the card repo. author rewrites Card
@@ -589,10 +594,10 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
         say(interaction, "Not committed: old_value and new_value can't be empty.")
         return
     if field == "card_type":
-        if new.lower() not in KINDS:
-            say(interaction, f"Not committed: card_type must be one of {', '.join(KINDS.values())}.")
+        if new.lower() not in SETTABLE:
+            say(interaction, f"Not committed: card_type must be one of {', '.join(SETTABLE.values())}.")
             return
-        new = KINDS[new.lower()]
+        old, new = KINDS.get(old.lower(), old), SETTABLE[new.lower()]
     if old == new:
         say(interaction, f"Not committed: old_value and new_value are both '{old}'.")
         return
@@ -615,17 +620,21 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
             names = None
         else:
             target = MASS[field]
-            names = sorted(n for n, c in stats_db.stats.items() if not getattr(c, "duplicate_of", None)
-                           and isinstance(getattr(c, field, None), str) and getattr(c, field).strip().lower() == old.lower())
-            if not names:
+            found = {n: getattr(c, field).strip() for n, c in stats_db.stats.items() if not getattr(c, "duplicate_of", None)
+                     and isinstance(getattr(c, field, None), str) and getattr(c, field).strip().lower() == old.lower()}
+            if not found:
                 say(interaction, f"No card has {field} '{old}': nothing to commit.")
+                return
+            names = sorted(n for n, value in found.items() if value != new)     # one already so: no override
+            if not names:
+                say(interaction, f"Nothing to replace: every card with {field} '{old}' already has '{new}'.")
                 return
 
             def rewrite(text):                  # a card whose entry already says new: no op
                 entries = _entries(text)
                 seen["names"] = [n for n in names if entries.get(CardAuthors.key(n), {}).get(target) != new]
                 return _stamped(text, [{"key": n, "set": {target: new}, "unset": []} for n in seen["names"]], at, by)
-            sha, written = commit(lambda: f"{subject} ({len(seen['names'])} cards)", by,
+            sha, written = commit(lambda: f"{subject} ({_cards(len(seen['names']))})", by,
                                   lambda: [f"- {n}" for n in seen["names"]], rewrite)
     except Exception as error:                  # noqa: BLE001
         _failed(interaction, f"/mass_replace {field}", error)
@@ -644,8 +653,8 @@ def mass_replace_field(interaction, field: str = "", old_value: str = "", new_va
         detail = (f"{len(seen['moved'])} [cards] lines now credit {new}; [people] "
                   + ", ".join(f"{git} = {shown}" for git, shown in seen["people"].items()))
     else:
-        detail = f"{len(seen['names'])} card entries in Card Edits.json"
-    say(interaction, f"Replaced {field}='{old}' with '{new}' ({_link(sha)}): {detail}; {len(changed)} cards changed now.")
+        detail = f"{_cards(len(seen['names']))} set in Card Edits.json"
+    say(interaction, f"Replaced {field}='{old}' with '{new}' ({_link(sha)}): {detail}; {_cards(len(changed))} changed now.")
 
 
 # ========================
@@ -756,11 +765,20 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
     if own and basename(own).lower() == f"{norm}.png" and own != target:
         say(interaction, f"'{alias}' is already the name of {card_name(own)}'s card image: alias not created.")
         return
+    named: list = []
+
+    def add(text):                              # a reload adds Card Edits names first come: that card would win the key
+        paths = [_png_path(card_repo, k.replace(" ", "_")) for k, f in _entries(text).items()
+                 if k != CardAuthors.key(card) and isinstance(f.get("name"), str) and alias_key(f["name"]) == norm]
+        named[:] = [card_name(p) for p in paths if p]
+        return text if named else _stamped(text, _alias_ops(text, alias, card), at, by)
     try:
-        sha, written = commit(f"{SUBJECT} /alias {alias} -> {card}", by, [],
-                              lambda text: _stamped(text, _alias_ops(text, alias, card), at, by))
+        sha, written = commit(f"{SUBJECT} /alias {alias} -> {card}", by, [], add)
     except Exception as error:                  # noqa: BLE001
         _failed(interaction, f"/alias {alias}", error)
+        return
+    if named:
+        say(interaction, f"'{alias}' is the Card Edits.json name of another card ({', '.join(named)}): alias not created.")
         return
     if not sha:
         say(interaction, f"'{alias}' already finds {card}.")
