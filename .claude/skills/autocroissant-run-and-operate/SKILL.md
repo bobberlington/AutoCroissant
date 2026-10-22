@@ -99,8 +99,8 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 
 | Way | Gate | What happens |
 |---|---|---|
-| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:162-173) |
-| `/restart_bot` | NONE (verified main.py:152-159 on 2026-10-20 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
+| `/stop_bot` | admin | Stops the four loops, replies "Stopping bot!", `client.close()`, `exit(0)` (main.py:178-189) |
+| `/restart_bot` | NONE (verified main.py:168-175 on 2026-10-22 — no lacks_admin; anyone in the guild can restart) | Stops the loops, replies "Restarting bot!", then `restart_bot()` |
 | Ctrl-C in the terminal | local | discord.py shuts down; main.py:921-922 prints "Bot shutting down via keyboard interrupt". Any other fatal error prints "Fatal error: ..." and exits 1 |
 
 `restart_bot()` (commands/update_bot.py:12-16) does `execv('./startup.sh', argv)`; on
@@ -219,7 +219,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 | "Push failed: <err>" | Rebase conflict (aborted), fetch/auth failure, or push error (ssh key, a race). A remote that is merely ahead is handled by the rebase. If inside /update, the update aborts. |
 | "Git pull failed: <err>" | Merge machinery failed; read the git error. Rebase fallback may follow. |
 | "Rebase also failed: ..." + "Manual intervention may be required." | Bot cannot self-heal the clone. SSH in, `git status`, resolve, restart. |
-| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:205-208) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
+| "Update failed: <err>" + "Bot was NOT restarted due to errors." | /update aborted mid-way. CRITICAL QUIRK: the queue loops were stopped BEFORE the update (main.py:221-224) and nothing restarts them on failure — the bot looks alive but every queue-delivered reply (most commands) goes silent. Recover with `/restart_bot` (sends directly, still works) or a manual restart. `/pull` and `/push` alone do NOT stop the loops. |
 | "Restarting bot!" then nothing | Process replaced by execv/execl. Watch the terminal/host for the fresh startup lines. |
 
 ## 6. Multi-machine handoff runbook

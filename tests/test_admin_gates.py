@@ -118,6 +118,7 @@ def test_admin_reminder_runs(name, setup):
 
 @pytest.mark.parametrize("creator", (ADMIN, OTHER))
 def test_purge_never_runs_from_a_reminder(creator, setup):
+    # If purge gets a scheduled default, invert this (admin runs, non-admin refused); don't delete.
     sent = _fire(GATED["purge"][2], creator)
     assert setup == [] and len(sent) == 1 and "`user` is required" in sent[0]
 

@@ -77,8 +77,8 @@ In order. A line is struck when it lands; the docs it closes move to `docs/Finis
    check (does EFFECT LAYER OUT OF DATE cover it?); the companion skill §5 L1 questions (`[fire]/ [machine]` spacing, token order).
 6. [ ] **Bot small items:** B8 done 2026-10-22 (deleted PSDs archived in old_stats, restorable);
    B9 (a blob 5xx must not record the tree ETag); GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls; lazy GitPython in update_bot;
-   a requests.Session per download thread; on_ready re-running inits after a failed RESUME; [user] admin gates on /purge,
-   /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music; the parser skipping hidden text layers on
+   a requests.Session per download thread; on_ready re-running inits after a failed RESUME; admin gates on /purge,
+   /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music done 2026-10-22; the parser skipping hidden text layers on
    rule pages (after the page fixes); OJWikibot unit copies still saying python3.10 (cosmetic).
 7. [ ] **Website follow-ups** when asked (site/NOTES.md §7-12 "not done" lists): profile avatars and GitHub link, per-person chart,
    bake credit to the requesting editor, the deck-builder picker inside the profile editor, Details for rulebook pages and a
@@ -143,7 +143,7 @@ Items marked [user] need the user; [blocked: X] wait for X.
 - Repeat on_ready after a failed RESUME re-runs inits [open] (BUGS 2.5 "Not done")
 - GIT_TERMINAL_PROMPT=0 / SSH BatchMode on git calls [open] (BUGS 2.5)
 - Lazy GitPython in update_bot; requests.Session per download thread [open] (BUGS 2.5)
-- No admin gate on /purge, /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music [user] (BUGS 2.5)
+- No admin gate on /purge, /update_metadata, /mass_replace, /alias, /set_repo, /delete_song, /delete_all_music [done 2026-10-22: admin only] (BUGS 2.5)
 - card_bake: pass the merged PNG as the PSD preview once fork save(preview=) lands [done 2026-10-22: apply_jobs stores Photoshop's preview with the merge's pixels via save(preview=); card_bake unchanged] (PIPE §14 Q2; BUGS pass 2)
 - tests/test_card_bake.py cannot collect under the fork venv (no requests); pyyaml not installed, two workflow-shape tests skip [open] (BUGS pass 2)
 - /fonts cache from the local clone [open] (M:next-session-plan)
