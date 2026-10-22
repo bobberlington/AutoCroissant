@@ -33,7 +33,8 @@ TTSCardMaker
 psd-tools fork and research
 - cards_v2 (round 2 + text engine) then cards_v3 a6363a04 with the user's seven round-1 review commits; pushed; tag `cards-20261020`.
 - The user's six round-2 review commits pushed on their branches; consolidated as `review/round2-consolidated` 31e1a294 (local).
-- Round 3: nine branches built and reviewed (local); round 4 research: `RENDER_ROUND4_PLAN.md` (class B fixable from FEid/FMsk,
+- Round 3: nine branches built and reviewed (local; seven clean, two with a last fix not re-reviewed; integration moved to the
+  2026-10-22 checklist after the workflow was stopped at 17:50); round 4 research: `RENDER_ROUND4_PLAN.md` (class B fixable from FEid/FMsk,
   byte rounding, bevel texture) with scratch worktrees /tmp/wt-r4-*.
 
 Decisions the user took today are in memory `website-and-pipeline-ideas` (rounds 1-4) and `agent-model-preference`.

@@ -15,9 +15,17 @@ checked against is reproduced below.
 - Fork: `cards` a6363a04 = tag `cards-20261020` (pushed). Local, unpushed: `review/round2-consolidated` 31e1a294 (/tmp/wt-review-r2),
   the nine round-3 branches (fix/clipped-overlay-group, fix/drop-shadow-spread, fix/inside-stroke-offcanvas, fix/outer-glow-coverage,
   fix/pattern-overlay-origin, fix/text-stroke-perc, fix/vibrance-fit, perf/save-with-preview, perf/viewport-effects; worktrees
-  /tmp/wt-*), the round-4 scratch branches r4/*-scratch (/tmp/wt-r4-bevel, -gradshade, -blur). Round 3's integration result: see
-  the workflow journal `~/.claude/projects/-Users-michaelsrouji-Desktop-AutoCroissant/5c6ede3c-b4cb-4791-926e-2af4b5a959fa/subagents/workflows/wf_059e8902-7ff/journal.jsonl`
-  (integrate + critic results) and the status line in memory `next-session-plan`.
+  /tmp/wt-*), the round-4 scratch branches r4/*-scratch (/tmp/wt-r4-bevel, -gradshade, -blur). ROUND 3 WAS NOT INTEGRATED: its
+  workflow was stopped at 17:50 before the integrate/critic stages (a model switch invalidated its build cache; do NOT resume
+  wf_059e8902-7ff, it would rebuild the nine branches). State of the nine branches from the journal
+  (`~/.claude/projects/-Users-michaelsrouji-Desktop-AutoCroissant/5c6ede3c-b4cb-4791-926e-2af4b5a959fa/subagents/workflows/wf_059e8902-7ff/journal.jsonl`):
+  seven passed both reviewers after their fixes (fix/clipped-overlay-group 3e62a1d5, fix/drop-shadow-spread fbbaf6a6,
+  fix/pattern-overlay-origin 027a7518, fix/inside-stroke-offcanvas b52a1428, fix/text-stroke-perc 17d471fe, fix/vibrance-fit 4e752142,
+  perf/viewport-effects d3c36869); two carry a second fix that was NOT re-reviewed (the loop's cap): fix/outer-glow-coverage 464883df
+  and perf/save-with-preview 6f91981e (its open findings were CMYK/Lab alpha on save(preview=) and has_composite on 3-channel
+  documents, both addressed by the last commit, unverified). The bot-side half of save(preview=) that an agent drafted uncommitted in
+  commands/psd_edit.py was saved as `~/Documents/Tools/psd-research/rescued-2026-10-21/psd_edit_save_preview_draft.patch` and the
+  working tree restored; apply it only with the new pin tag installed and the tests green.
 - PSD hold still on: no PSD/PNG write in TTSCardMaker; dry runs on /tmp copies only.
 - /tmp holds things the tests and the fork work need (29 worktrees, /private/tmp/fontexplore JSX trial copies and std.jsx,
   /tmp/r4* diagnostics, the website node harnesses): a reboot loses them; item 4 below rescues what matters.
@@ -26,7 +34,10 @@ checked against is reproduced below.
 
 In order. A line is struck when it lands; the docs it closes move to `docs/Finished/`.
 
-1. [ ] **Fork integration.** Collect round 3's result (journal above; worktrees /tmp/wt-*). Verified 2026-10-21 evening with
+1. [ ] **Fork integration** (a fresh Opus workflow, not a resume). Re-review fix/outer-glow-coverage 464883df and
+   perf/save-with-preview 6f91981e (two lenses each, as round 3 did); then merge the nine round-3 branches into a `cards_v4`
+   worktree from a6363a04, run the 813-card harness vs cards_v3 and a critic with the stat-toggle check (what the stopped
+   integrate/critic stages would have done). Verified 2026-10-21 evening with
    `git merge-base --is-ancestor`: the user's seven round-1 review commits (5d92a0e7, ddf64e52, fc75012a, 2c691bc2, 409aa349, 2db839da,
    c294d094) ARE in `cards` a6363a04; the six round-2 ones (1d363b1d, c2797ede, c48ee268, ad07098e, 3d8b4f22, d33e0bda) are NOT: they
    live on their fix/* branches and, hand-ported, in `review/round2-consolidated`. Merge `review/round2-consolidated`
