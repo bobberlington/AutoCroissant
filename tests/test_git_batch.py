@@ -25,9 +25,9 @@ def clean_git(monkeypatch, tmp_path):
     for key, value in {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(tmp_path),
                        "XDG_CONFIG_HOME": str(tmp_path)}.items():   # git 2.25 ignores GIT_CONFIG_GLOBAL
         monkeypatch.setenv(key, value)
-    rh._configured_ssh.cache_clear()
+    rh._ssh_cache.clear()
     yield tmp_path
-    rh._configured_ssh.cache_clear()
+    rh._ssh_cache.clear()
 
 
 def _repo(path, *config):
@@ -60,8 +60,44 @@ def test_core_ssh_command_is_kept(clean_git):
 
 
 def test_git_ssh_program_is_left_alone(clean_git, monkeypatch):
-    monkeypatch.setenv("GIT_SSH", "/usr/bin/plink")                    # takes no options, and wins over core.sshCommand
+    monkeypatch.setenv("GIT_SSH", "/usr/bin/plink")                    # takes no options
     assert rh.batch_overrides() == {"GIT_TERMINAL_PROMPT": "0"}
+
+
+def test_core_ssh_command_wins_over_git_ssh(clean_git, monkeypatch):
+    log = clean_git / "ssh.log"
+    scripts = {}
+    for name in ("gs", "core"):
+        script = clean_git / f"{name}.sh"
+        script.write_text(f'#!/bin/sh\necho "{name} $@" >> "{log}"\nexit 255\n')
+        script.chmod(0o755)
+        scripts[name] = script
+    monkeypatch.setenv("GIT_SSH", str(scripts["gs"]))
+    repo = _repo(clean_git / "r", ("core.sshCommand", f"{scripts['core']} -i /keys/bot"))
+    assert rh.ssh_command(str(repo)) == f"{scripts['core']} -i /keys/bot -o BatchMode=yes"
+    subprocess.run(["git", "-C", str(repo), "fetch", "-q", "ssh://git@example.invalid/r.git"],
+                   env=rh.batch_env(str(repo)), capture_output=True, timeout=60)
+    lines = log.read_text().splitlines()                                # git's order: core.sshCommand, then GIT_SSH
+    assert lines and all(line.startswith("core -i /keys/bot") and "-o BatchMode=yes" in line for line in lines)
+
+
+def test_plink_and_explicit_batch_mode_are_left_alone(clean_git, monkeypatch):
+    for command in ("plink -batch", "C:\\PuTTY\\TortoisePlink.exe", "ssh -oBatchMode=no", "ssh -o 'BatchMode yes'"):
+        monkeypatch.setenv("GIT_SSH_COMMAND", command)
+        assert rh.ssh_command() == command
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -F /home/batchmode/config")    # only the word: still added
+    assert rh.ssh_command() == "ssh -F /home/batchmode/config -o BatchMode=yes"
+
+
+def test_lookup_is_refreshed_and_a_missing_dir_not_cached(clean_git, monkeypatch):
+    repo = clean_git / "later"
+    assert rh.ssh_command(str(repo)) == "ssh -o BatchMode=yes"          # not cloned yet
+    _repo(repo, ("core.sshCommand", "ssh -i /keys/bot"))
+    assert rh.ssh_command(str(repo)) == "ssh -i /keys/bot -o BatchMode=yes"
+    subprocess.run(["git", "-C", str(repo), "config", "core.sshCommand", "ssh -i /keys/new"], check=True)
+    assert rh.ssh_command(str(repo)) == "ssh -i /keys/bot -o BatchMode=yes"      # cached
+    monkeypatch.setattr(rh, "SSH_CACHE_SECONDS", 0)
+    assert rh.ssh_command(str(repo)) == "ssh -i /keys/new -o BatchMode=yes"      # an operator's change is seen
 
 
 def test_env_keeps_the_agent_socket(clean_git, monkeypatch):

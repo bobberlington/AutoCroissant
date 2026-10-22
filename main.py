@@ -95,17 +95,20 @@ intents.message_content = True
 client = Client(intents=intents)
 tree = CommandTree(client)
 
+# Global State
+_started = False                                        # on_ready's one-time inits have run
+_synced_guilds: set = set()                             # guild ids synced or syncing
+
 
 async def sync_guild_commands(guild):
-    """Sync commands to a specific guild."""
-    tree.copy_global_to(guild=guild)
-    await tree.sync(guild=guild)
-    _synced_guilds.add(guild.id)
+    """Sync commands to a specific guild; a failure lets the next on_ready retry it."""
+    try:
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
+    except BaseException:
+        _synced_guilds.discard(guild.id)
+        raise
     print(f"Synced commands to guild: {guild.name} ({guild.id})")
-
-
-_started = False                                        # on_ready's one-time inits have run
-_synced_guilds: set = set()                             # guild ids whose commands are synced
 
 
 # Events
@@ -117,6 +120,7 @@ async def on_ready():
 
     for guild in client.guilds: # Sync commands to each guild not synced yet
         if guild.id not in _synced_guilds:
+            _synced_guilds.add(guild.id)                # before the task runs: a quick repeat skips it
             create_task(sync_guild_commands(guild))
 
     if _started:

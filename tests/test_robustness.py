@@ -485,6 +485,33 @@ def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
     assert "Reconnected: inits skipped, revived commands" in capsys.readouterr().out
 
 
+def test_on_ready_repeat_before_the_sync_runs_syncs_once(monkeypatch):
+    synced, fail = [], [True]
+    async def sync(guild, **kw):
+        synced.append(guild.id)
+        if fail.pop(0) if fail else False:
+            raise RuntimeError("discord down")
+    monkeypatch.setattr(main, "_loops", lambda: [FakeLoop(n) for n in "abcd"])
+    monkeypatch.setattr(main, "queue_command", lambda func, *a: None)
+    monkeypatch.setattr(main, "client", SimpleNamespace(user="bot", guilds=[SimpleNamespace(id=1, name="a")]))
+    monkeypatch.setattr(main.tree, "copy_global_to", lambda **kw: None)
+    monkeypatch.setattr(main.tree, "sync", sync)
+    monkeypatch.setattr(main, "_started", False)
+    monkeypatch.setattr(main, "_synced_guilds", set())
+    monkeypatch.setattr(main, "slash_registry", {})
+
+    async def go():
+        asyncio.get_running_loop().set_exception_handler(lambda loop, ctx: None)
+        await main.on_ready()
+        await main.on_ready()                                           # before the first sync task runs
+        await asyncio.sleep(0)
+        assert synced == [1] and 1 not in main._synced_guilds           # it failed: free to retry
+        await main.on_ready()
+        await asyncio.sleep(0)
+    asyncio.run(go())
+    assert synced == [1, 1] and main._synced_guilds == {1}
+
+
 # ========================
 # Commands and help (C1, C2, C3, C5, C6)
 # ========================
