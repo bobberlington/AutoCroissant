@@ -129,6 +129,18 @@ def test_sync_decks_keeps_non_png_and_skips_bad_entries(save, repo):
         tts._decks([])
 
 
+def test_sync_decks_drops_unused_keys(repo):
+    """A card taken out of a complete deck leaves its key behind; the rewrite drops it (UPD-4)."""
+    deck = _deck("eeeeee", [_card("000011", A, 100)])
+    deck["CustomDeck"]["5"] = deepcopy(deck["CustomDeck"]["1"])          # the removed card's key
+    save = {"ObjectStates": [deck]}
+    rules = {"decks": {"eeeeee": {"rule": {"kind": "items", "folders": [HEAL + "*.png"], "count": 1}}}}
+    tts._sync_decks(save, rules, repo, Names(), tts._Report())
+    assert [tts._face_path(c) for c in deck["ContainedObjects"]] == [A, B, C]
+    assert sorted(deck["CustomDeck"]) == ["1", "6", "7"]
+    assert set(deck["CustomDeck"]) == {str(c["CardID"] // 100) for c in deck["ContainedObjects"]}
+
+
 def test_fix_keys(repo):
     shown = {"FaceURL": f"{RAW}main/{tts._encode(A)}"}
     own = {"FaceURL": f"{RAW}main/{tts._encode(B)}"}

@@ -502,13 +502,13 @@ def _sync_decks(save: dict, rules: dict, repo: _Repo, names: _Names, report: _Re
         if outside:
             gone = {id(c) for c in outside}
             cards = [c for c in cards if id(c) not in gone]
-            used = {str(c.get("CardID", 0) // 100) for c in cards}
-            deck["CustomDeck"] = {k: v for k, v in (deck.get("CustomDeck") or {}).items() if k in used}
             left: dict = {}
             for c in outside:
                 key = (c.get("Nickname") or "", _face_path(c))
                 left[key] = left.get(key, 0) + 1
             report.removed.append((label, [(n, p, c) for (n, p), c in left.items()]))
+        used = {str(c.get("CardID", 0) // 100) for c in cards}       # keys no card uses go
+        deck["CustomDeck"] = {k: v for k, v in (deck.get("CustomDeck") or {}).items() if k in used}
         deck["ContainedObjects"] = cards
         deck["DeckIDs"] = [c.get("CardID", 0) for c in cards]
 
