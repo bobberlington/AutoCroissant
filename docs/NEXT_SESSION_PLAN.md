@@ -56,7 +56,7 @@ Everything from the 2026-10-22 session is in git (pushed, or in local branches l
    dirty: patch in the rescue folder). Remaining: verify/fix each, integrate, harness vs r5_base (`score_cards.py <run>`,
    `compare_scores.py r5_base <run>`; never `--help`), merge `review/cards-r4` 3a63bc4f, tag `cards-2026102x`, re-pin
    card-edits.yml, install in the jetson venv (never 05:00-05:40) and `~/.venvs/ac-py314-fork`; goldens must pass. Then the
-   owner decides the parity bar [user].
+   owner decides the parity bar [user] (decided 2026-10-22: mean 2.0, bad 0.5% and max 24 kept; `psd_edit.PARITY_MEAN_MAX`).
 3. **Data build phase 1** (`data-build-phase-1`): the design `docs/Campaigns/DATA_BUILD_ACTION.md` (committed today, owner
    answers folded in §16). Branches: AutoCroissant `work/query-as-of` f78eb49 (`/query as_of:`, reviewed clean, ready to merge);
    TTSCardMaker `work/analytics` 2098d525 (balance analytics on Stats + per card; second review clean; NOTES §14 cites /tmp

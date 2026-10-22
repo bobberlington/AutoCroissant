@@ -145,6 +145,14 @@ def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False):
 # ========================
 # Pure functions (any psd-tools)
 # ========================
+def test_parity_bar():
+    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24."""
+    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH) == (2.0, 0.5, 24)
+    assert pe._within_bar({"bad_pct": 0.5, "mean": 2.0, "max": 200})
+    assert not pe._within_bar({"bad_pct": 0.0, "mean": 2.01, "max": 7})
+    assert not pe._within_bar({"bad_pct": 0.51, "mean": 0.5, "max": 7})
+
+
 def test_jsx_fx_fixture_is_vendored_and_small():
     """The comparison's fixture ships in tests/ (no /tmp, no 20 MB trial copies): both cards, ink counts intact."""
     assert sorted(json.loads((JSX_FX / "index.json").read_text(encoding="utf-8"))) == sorted([CANNON, GASOLINE])
@@ -638,7 +646,8 @@ def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
 def test_moved_effect_paints_the_new_digit(clone):
     """hp 5 -> 2 in memory: the fork paints the moved GradientOverlay over cells 3-10, so the colour inside digit 2's mask
     matches the official PNG inside digit 5's mask (the lit cells were bright before). With rounded bytes the baseline
-    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22); truncated it refuses on the mean (1.03)."""
+    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22); truncated (mean 1.03) it refused on the mean until the bar
+    went to 2.0 that day."""
     psd_path, png_path = _card(clone, METTATON)
     png = Image.open(png_path)
     psd = PSDImage.open(psd_path)
@@ -654,29 +663,24 @@ def test_moved_effect_paints_the_new_digit(clone):
     new = inside(render, row.digits["2"], edit.region[:2])
     assert np.abs(new - inside(official, row.digits["5"], (0, 0))).max() < 3
     assert np.abs(new - inside(official, row.digits["2"], (0, 0))).max() > 20
-    if rounds_bytes():
-        _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
-        assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
-    else:
-        with pytest.raises(pe.Refused) as refused:
-            pe.baseline(PSDImage.open(psd_path), png, edit.region)
-        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.0")
+    _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
+    assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
+    assert (measured["mean"] < 1.0) == bool(rounds_bytes())
 
 
 @round4
-def test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean(clone, parser, tmp_path):
+def test_cannon_rows_pass_parity(clone, parser, tmp_path):
     """The Cannon's digits carry ColorOverlay + a textured BevelEmboss. With round 4 every row is 0% bad (2026-10-22):
-    the two-row atk passes (mean 0.51) and bakes, the one-row hp refuses on the mean alone (1.06 against the 1.0 bar)."""
+    the two-row atk bakes (mean 0.51), and so does the one-row hp, refused on the mean alone (1.06) until the owner set the
+    bar to 2.0 that day."""
     for stat in ("atk", "hp"):
         (tmp_path / stat).mkdir()
     parsed, baked = _bake(clone, parser, CANNON, {"atk": 15}, tmp_path / "atk")
     assert baked.reparse["card"]["atk"] == 15 and baked.reparse["validator"] == parsed["validator"]   # STATS TOO HIGH: atk 12 is
     assert baked.parity["atk"]["bad_pct"] == 0 and baked.parity["atk"]["mean"] <= pe.PARITY_MEAN_MAX
-    with pytest.raises(pe.Refused) as refused:
-        _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
-    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.")
-    assert float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > pe.PARITY_MEAN_MAX
-    assert not list((tmp_path / "hp").iterdir())
+    parsed, baked = _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
+    assert baked.reparse["card"]["hp"] == 2 and baked.parity["hp"]["bad_pct"] == 0
+    assert 1.0 < baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
 
 
 @before_textures

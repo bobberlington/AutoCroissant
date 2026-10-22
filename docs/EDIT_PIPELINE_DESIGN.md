@@ -174,7 +174,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
-   and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; the bar stays, the user 2026-10-21: section 7 idea 12). A row the
+   and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12). A row the
    fork already renders wrong (class A) is refused here, never pasted.
 4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
@@ -275,7 +275,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   14 with several visible styled digits (False_Knight, Tainted_Lazarus: non-template anyway).
   **Decision (the user, 2026-10-21):** the bar stays (`PARITY_MEAN_MAX` 1.0 / `PARITY_BAD_MAX` 0.5% / `PARITY_THRESH` 24); Mettaton EX's
   toggles over lit cells (mean 1.03-1.04) wait for a fork fix of the pixel bars' GradientOverlay shade (a rendering round candidate),
-  not a looser bar.
+  not a looser bar. **Revised (the user, 2026-10-22):** mean 2.0 (`PARITY_MEAN_MAX`; bad 0.5% and max 24 unchanged), so those
+  toggles, the Cannon's one-row hp (mean 1.06) and Z.O.M.G.'s title (1.28) pass the baseline; the 0.5% bad-pixel bar still refuses
+  a row the fork renders wrong (the Cannon before round 4: 5-7% bad).
 - **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
   Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
   marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
@@ -523,7 +525,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
    aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
    ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`). **Reprinted 2026-10-22** (run
-   39761732714: Clot White, M.O.A.B., D.D.T., B.F.B., B.A.D.; Z.O.M.G. refused `parity`, baseline mean 1.28 over the 1.0 bar).
+   39761732714: Clot White, M.O.A.B., D.D.T., B.F.B., B.A.D.; Z.O.M.G. refused `parity`, baseline mean 1.28 over the then 1.0 bar;
+   within the 2.0 bar since 2026-10-22).
 
 ## 15. Known wrong paths (fenced off)
 

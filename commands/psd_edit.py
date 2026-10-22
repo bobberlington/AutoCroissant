@@ -51,7 +51,7 @@ EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_L
                  Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V1, Tag.EFFECTS_LAYER)   # a digit's effect blocks: lfx2 and its kin
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG
-PARITY_MEAN_MAX = 1.0       # mean |diff| over the region (Mini_Doomer hp row: 0.83, max 2)
+PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
