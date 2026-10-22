@@ -1,19 +1,21 @@
 """
 The edit pipeline's driver (docs/EDIT_PIPELINE_DESIGN.md sections 4, 5, 8-11): bake the PSD-kind edits of
-TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per card.
+TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per run.
 
     python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>]
-    run(repository, head, dry_run, card) -> (markdown report, commit shas)
+    run(repository, head, dry_run, card) -> (markdown report, commit shas: one at most)
+    pending(repository, head) -> the cards a live run has work for (card-edits.yml's schedule gate)
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
 file with a PSD-kind field: refuse `recent` (PSD pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
-(psd_edit.apply_jobs; an ability edit also regenerates the status words' FX layers from the chart, section 7 idea 14),
-rewrite the file with the baked and redundant fields removed and the `_psd` verdict written
-(a Python port of edit.js editsFile), and commit PSD + PNG + file on the branch's current head (git_commit: the
-GitHub API, or git objects in the history clone pushed over SSH when the token can't write). Refusals are data: one bad card never
-blocks another; refused verdicts land in one file-only commit. The report goes to stdout, the artifacts (edited
-PSD, merged PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
+(psd_edit.apply_jobs; an ability edit also regenerates the status words' FX layers from the chart, section 7 idea 14).
+Then one commit on the branch's current head (land): every baked card's PSD and PNG and the file rewritten with the
+baked and redundant fields removed and the `_psd` verdicts written (a Python port of edit.js editsFile), through
+git_commit (the GitHub API, or git objects in the history clone pushed over SSH when the token can't write). A card
+whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-again refusal; the others still land.
+Refusals are data: one bad card never blocks another. The report goes to stdout, the artifacts (edited PSD, merged
+PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
 fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
@@ -41,7 +43,7 @@ import commands.github_api as github_api
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import card_name
-from commands.git_commit import API_TIMEOUT, AUTHOR, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
+from commands.git_commit import API_TIMEOUT, COMMIT_TRIES, Transient, api, commit_files, commit_info, plural, ref_head
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC, STARS_DIR, TYPES_DIR
@@ -52,7 +54,7 @@ from global_config import CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, IC
 RECENT = timedelta(minutes=30)                  # a PSD pushed more recently is its author's: don't race them
 PUSHES = 100                                    # activity entries per request (GitHub's max)
 COMPARE_FILES = 300                             # a compare lists at most this many files
-OWN_SUBJECT = "Card edit"                       # the pipeline's own commits start so: nothing new to bake on them
+SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
 TRANSIENT = ("recent", "head-moved", "edit-changed")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
@@ -86,11 +88,13 @@ class Card:
     transient: bool = False                     # the refusal is a runner or GitHub failure: no verdict for the editor
     baked: Optional[psd_edit.Baked] = None
     new_psd_sha: str = ""
-    commit: Optional[str] = None
+    files: dict = field(default_factory=dict)   # {repo path: bytes}: the baked PSD and PNG for the commit
+    expect: dict = field(default_factory=dict)  # {repo path: blob sha}: what its PSD and PNG must still be at the commit
+    commit: Optional[str] = None                # the run's commit, when the card is in it
     dropped: list = field(default_factory=list)     # fields removed from the file
     creatures: bool = False                     # the entry has a creatures list (it sets the stats)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
-    verdict: Optional[dict] = None              # the _psd meta written for it (refused cards)
+    verdict: Optional[dict] = None              # the _psd meta written for it (baked or refused)
     note: str = ""
     traceback: str = ""
     seconds: float = 0.0
@@ -104,11 +108,23 @@ class Report:
     dry_run: bool
     work: str
     lines: list = field(default_factory=list)   # head lines after the repo line
-    note: str = ""                              # why the run stopped early, if it did
+    note: str = ""                              # why the run stopped early or committed nothing, if so
     cards: list = field(default_factory=list)
-    verdicts: Optional[str] = None              # the refused verdicts' commit
-    traceback: str = ""                         # when the verdicts commit failed outside a card's steps
+    commit: Optional[str] = None                # the run's one commit
+    subject: str = ""                           # its subject (a dry run's: what it would be)
+    traceback: str = ""                         # when the commit failed outside a card's steps
     seconds: float = 0.0
+
+
+@dataclass
+class Share:
+    """One card's part of the run's commit (land): its files, the blobs they rely on, its change to the edits file."""
+    card: Card
+    files: dict                                 # {repo path: bytes} ({} for a file-only share)
+    expect: dict                                # {repo path: blob sha} these paths must still hold at H'
+    rewrite: Callable[[str], Optional[str]]     # edits file text -> new text, None when unchanged; raises Refused to stay out
+    out: Optional[Refusal] = None               # why the last attempt left it out
+    included: bool = False                      # in the last attempt's commit
 
 
 class Snapshot:
@@ -174,8 +190,10 @@ def _tree(repository: str, tree_sha: str) -> dict:
             if entry.get("type") == "blob"}
 
 
-def _own_commit(info: dict) -> bool:
-    return (info.get("author") or {}).get("name") == AUTHOR["name"] and (info.get("message") or "").startswith(OWN_SUBJECT)
+def snapshot_at(repository: str, head: str) -> Snapshot:
+    """The card repo at a commit (two API reads: the commit and its tree)."""
+    info = commit_info(repository, head)
+    return Snapshot(repository, head, info, _tree(repository, info["tree"]["sha"]))
 
 
 def fetch_verified(repository: str, sha: str, path: str = "") -> bytes:
@@ -351,39 +369,51 @@ def _now() -> str:
 # ========================
 # Commits (steps 10-11)
 # ========================
-def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Optional[str]], message: str,
-         dry_run: bool, out_path: str = "") -> Optional[str]:
+def land(repository: str, shares: list, message: Callable[[list], str], dry_run: bool, out_path: str = "") -> Optional[str]:
     """
-    Step 10 for one commit: re-read the branch head H' and its tree, check the files we replace still hold the blobs
-    we read (head-moved), rewrite Card Edits.json from the file at H' (the rewrite raises edit-changed itself), and
-    commit on H'; on 409/422 or a rejected push, again from H' up to COMMIT_TRIES times.
+    Step 10 for the whole run: one commit on the branch head H' with every share that still holds there. Re-read H'
+    and its tree; a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite
+    raises (edit-changed); the others' rewrites apply in turn to the edits file at H'. On 409/422 or a rejected push,
+    all again from the new H', up to COMMIT_TRIES times.
 
     Args:
-        files: {repo path: bytes} the PSD and PNG to commit ({} for a file-only commit)
-        expect: {repo path: blob sha} what those paths must still hold at H'
-        rewrite: edits file text at H' -> new text, or None when nothing is left to write
-        message: Commit message (subject, then any trailers)
+        shares: [Share]; each attempt sets its `out` and `included`
+        message: The included shares -> commit message (subject, then any trailers)
         dry_run: Write out_path, commit nothing
         out_path: Where the rewritten file goes for the artifacts
 
     Returns:
-        The commit's sha, None when nothing was committed (dry run, or the rewrite returned None);
-        raises Refused("head-moved") after COMMIT_TRIES, Refused("edit-changed") from the rewrite
+        The commit's sha, None when nothing was committed (dry run, or no share had anything to write);
+        raises Refused("head-moved") after COMMIT_TRIES or when H' has no edits file
     """
     uploaded: set = set()                       # blob shas uploaded this run: a retry re-uploads only the rewritten file
     for attempt in range(COMMIT_TRIES):
         head = ref_head(repository)
         info = commit_info(repository, head)
         tree = _tree(repository, info["tree"]["sha"])
-        for path, sha in expect.items():
-            if tree.get(path, ("", ""))[1] != sha:
-                raise Refused("head-moved", f"{path} changed on {CARD_BRANCH} `{head[:8]}` meanwhile")
         edits_path = next((p for p in EDITS_PATHS if p in tree), None)
         if edits_path is None:
             raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
         text = fetch_verified(repository, tree[edits_path][1]).decode("utf-8")
-        new_text = rewrite(text)
-        if new_text is None:
+        new_text, files = text, {}
+        for share in shares:
+            share.out, share.included = None, False
+            moved = [path for path, sha in share.expect.items() if tree.get(path, ("", ""))[1] != sha]
+            if moved:
+                share.out = Refusal("head-moved", f"{moved[0]} changed on {CARD_BRANCH} `{head[:8]}` meanwhile")
+                continue
+            try:
+                rewritten = share.rewrite(new_text)
+            except Refused as refused:
+                share.out = refused.refusal
+                continue
+            if rewritten is None and not share.files:
+                continue                        # nothing of its own to write (an unchanged verdict)
+            new_text = new_text if rewritten is None else rewritten
+            files.update(share.files)
+            share.included = True
+        included = [share for share in shares if share.included]
+        if not included:
             return None
         if out_path:
             makedirs(dirname(out_path), exist_ok=True)
@@ -391,9 +421,9 @@ def land(repository: str, files: dict, expect: dict, rewrite: Callable[[str], Op
                 fh.write(new_text)
         if dry_run:
             return None
-        payload = {**files, edits_path: new_text.encode("utf-8")}
+        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {})}
         modes = {path: tree[path][0] for path in payload if path in tree}
-        commit = commit_files(repository, head, info["tree"]["sha"], modes, payload, message, uploaded)
+        commit = commit_files(repository, head, info["tree"]["sha"], modes, payload, message(included), uploaded)
         if commit:
             return commit
     raise Refused("head-moved", f"{CARD_BRANCH} kept moving: not committed after {COMMIT_TRIES} tries")
@@ -483,12 +513,6 @@ def _describe(card: Card) -> str:
     return ", ".join(parts)
 
 
-def _subject(card: Card) -> str:
-    if card.jobs:
-        return f"{OWN_SUBJECT}: {card.name} {_describe(card)}"
-    return f"{OWN_SUBJECT}: {card.name} " + ", ".join(f"{f} {card.fields[f]!r}" for f in card.redundant) + " already on the card"
-
-
 def editors(card: Card) -> list:
     """The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated."""
     if not card.jobs:                           # nothing printed (redundant only): no credit
@@ -498,17 +522,29 @@ def editors(card: Card) -> list:
     return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1})   # a login: one word
 
 
-def _message(card: Card) -> str:
-    """The subject, then one "Edit-by: <login>" trailer per editor (build_site.EDIT_BY reads them)."""
-    trailers = "".join(f"\n{EDIT_BY}: {login}" for login in editors(card))
-    return _subject(card) + ("\n" + trailers if trailers else "")
+def _message(cards: list) -> str:
+    """
+    The run's commit message: "Card edits: 5 baked, 20 redundant, 4 refused", one line per baked card, then one
+    "Edit-by: <login>" trailer per editor of a baked card (build_site.EDIT_BY reads them).
+
+    Args:
+        cards: The cards in the commit
+    """
+    baked = [c for c in cards if c.jobs and not c.refusal]
+    redundant = [c for c in cards if not c.jobs and not c.refusal]
+    refused = [c for c in cards if c.refusal]
+    counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
+    lines = [f"- {c.name}: {_describe(c)}" for c in baked]
+    trailers = [f"{EDIT_BY}: {login}" for login in sorted({login for c in baked for login in editors(c)})]
+    return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
-              dry_run: bool, recent: Callable[[], Optional[set]]) -> None:
+              recent: Callable[[], Optional[set]]) -> None:
     """
-    Section 5 for one card: the recent, duplicate and blob gates, classify, apply with every gate, commit.
-    Fills the Card in place; a Refused becomes its refusal, any other exception its "error".
+    Section 5 for one card up to the commit: the recent, duplicate and blob gates, classify, apply with every gate.
+    Fills the Card in place (its files, expect, verdict and dropped fields for land); a Refused becomes its refusal,
+    any other exception its "error".
 
     Args:
         snapshot: The tree at the run's head
@@ -517,7 +553,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         fonts_dir: MDW/Fonts for the text engine
         chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
         work: The run's work dir (the card's artifacts go in a folder named after it)
-        dry_run: Write the artifacts, commit nothing
         recent: Returns recent_paths() (fetched once)
     """
     started = perf_counter()
@@ -555,8 +590,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if not card.jobs and not card.redundant:
             return
 
-        verdict = None
-        files, expect = {}, {card.rel: card.psd_sha, card.png: card.png_sha}
+        card.expect = {card.rel: card.psd_sha, card.png: card.png_sha}
         if card.jobs:
             if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
@@ -572,26 +606,16 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             with open(card.baked.png_path, "rb") as fh:
                 png_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
-            files = {card.rel: psd_bytes, card.png: png_bytes}
+            card.files = {card.rel: psd_bytes, card.png: png_bytes}
             crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)
             for name, image in crops.items():
                 image.save(join(folder, f"{name}.png"))
             with open(join(folder, "parse.json"), "w", encoding="utf-8") as fh:
                 fh.write(dumps({"old": parsed["card"], "new": card.baked.reparse["card"], "jobs": card.jobs,
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
-            verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
-                       "at": _now()}
+            card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
+                            "at": _now()}
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
-
-        def rewrite(text: str) -> Optional[str]:
-            entry = _entry_at(text, card.name)
-            if psd_fields(entry or {}) != card.fields:
-                raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-            new_text = rewrite_edits(text, card.name, card.dropped, verdict)
-            return new_text if new_text is not None or not files else text
-
-        card.commit = land(snapshot.repository, files, expect, rewrite, _message(card), dry_run,
-                           join(folder, basename(EDITS_PATHS[0])))
     except Refused as refused:
         card.refusal = refused.refusal
     except Transient as error:                  # the runner's or GitHub's: reported, no verdict
@@ -604,44 +628,71 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.seconds = perf_counter() - started
 
 
-def land_verdicts(snapshot: Snapshot, cards: list, dry_run: bool, work: str) -> Optional[str]:
+def share_of(card: Card) -> Optional[Share]:
     """
-    The refused verdicts (section 9's _psd) in one file-only commit; unchanged verdicts and transient refusals
-    write nothing, cards whose edit changed meanwhile are left out.
-
-    Args:
-        snapshot: The tree at the run's head
-        cards: The run's Cards after bake_card
-        dry_run: Write the file to the work dir, commit nothing
-        work: The run's work dir
-
-    Returns:
-        The commit's sha, or None
+    A card's part of the run's commit: a baked card's PSD, PNG and file entry, a redundant card's entry, a refused card's
+    verdict (section 9's _psd). None for a try-again refusal (no verdict for the editor) or a card with nothing to write.
+    At H' a baked or redundant card whose edit changed stays out (edit-changed: never remove a value you did not
+    render); a refused card whose edit changed gets no verdict, and an unchanged verdict writes nothing.
     """
-    refused = [c for c in cards if c.refusal and c.refusal.code not in TRANSIENT and not c.transient]
-    for card in refused:
-        card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8],
-                        "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
-    if not refused:
+    if card.refusal is None:
+        if not card.dropped:
+            return None
+
+        def drop(text: str) -> Optional[str]:
+            if psd_fields(_entry_at(text, card.name) or {}) != card.fields:
+                raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
+            return rewrite_edits(text, card.name, card.dropped, card.verdict)
+        return Share(card, card.files, card.expect, drop)
+    if card.refusal.code in TRANSIENT or card.transient:
         return None
+    card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8],
+                    "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
-    def rewrite(text: str) -> Optional[str]:
-        changed = False
-        for card in refused:
-            entry = _entry_at(text, card.name)
-            if entry is None or psd_fields(entry) != card.fields:
-                card.note = "edit changed meanwhile: verdict not written"
-                continue
-            meta = CardEdits.parse(text).meta.get(card.key, {}).get("_psd")
-            if _same_verdict(meta, card.verdict):
-                continue
-            new_text = rewrite_edits(text, card.name, (), card.verdict)
-            if new_text is not None:
-                text, changed = new_text, True
-        return text if changed else None
+    def refuse(text: str) -> Optional[str]:
+        entry = _entry_at(text, card.name)
+        if entry is None or psd_fields(entry) != card.fields:
+            raise Refused("edit-changed", "edit changed meanwhile: verdict not written")
+        if _same_verdict(CardEdits.parse(text).meta.get(card.key, {}).get("_psd"), card.verdict):
+            return None
+        return rewrite_edits(text, card.name, (), card.verdict)
+    return Share(card, {}, {}, refuse)
 
-    return land(snapshot.repository, {}, {}, rewrite, f"{OWN_SUBJECT}s: {len(refused)} refused", dry_run,
-                join(work, "verdicts", basename(EDITS_PATHS[0])))
+
+def land_cards(report: Report, dry_run: bool) -> None:
+    """
+    Land the run's cards in one commit (land) and record the outcome on them. A card left out at H' gets its
+    try-again refusal (a refused card a note); when the commit itself fails, the baked and redundant cards get that
+    failure, never a verdict. Fenced like a card's steps: the report always comes out.
+    """
+    shares = [s for s in (share_of(c) for c in report.cards) if s]
+    if not shares:
+        return
+    try:
+        report.commit = land(report.repository, shares, lambda included: _message([s.card for s in included]), dry_run,
+                             join(report.work, basename(EDITS_PATHS[0])))
+    except Exception as error:                  # noqa: BLE001
+        if isinstance(error, Refused):
+            failure = error.refusal
+        else:
+            failure = Refusal("error", str(error) if isinstance(error, Transient) else f"{type(error).__name__}: {error}")
+            if not isinstance(error, (Transient, RequestException)):
+                report.traceback = format_exc()
+        report.note = f"Nothing committed: {failure.code}: {failure.why}"
+        for s in shares:
+            if s.card.refusal is None:
+                s.card.refusal, s.card.transient = failure, True
+        return
+    included = [s for s in shares if s.included]
+    if included:
+        report.subject = _message([s.card for s in included]).split("\n", 1)[0]
+    for s in shares:
+        if s.out is not None and s.card.refusal is not None:   # a refused card whose edit changed: no verdict
+            s.card.note = s.out.why
+        elif s.out is not None:
+            s.card.refusal, s.card.transient = s.out, True
+        elif s.included:
+            s.card.commit = report.commit
 
 
 # ========================
@@ -693,10 +744,12 @@ def render(report: Report) -> str:
     for card in errors:
         if card.traceback:
             lines += ["", f"<details><summary>{card.name}</summary>", "", "```", card.traceback.rstrip(), "```", "</details>"]
-    if report.verdicts:
-        lines += ["", f"Refused verdicts committed `{report.verdicts[:8]}`."]
+    if report.commit:
+        lines += ["", f"One commit: `{report.commit[:8]}` {report.subject}."]
+    elif report.subject and report.dry_run:
+        lines += ["", f"Would commit: {report.subject}."]
     if report.traceback:
-        lines += ["", "<details><summary>verdicts</summary>", "", "```", report.traceback.rstrip(), "```", "</details>"]
+        lines += ["", "<details><summary>commit</summary>", "", "```", report.traceback.rstrip(), "```", "</details>"]
     lines += ["", f"Took {report.seconds:.0f} s."]
     return "\n".join(lines) + "\n"
 
@@ -706,7 +759,7 @@ def render(report: Report) -> str:
 # ========================
 def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None) -> tuple:
     """
-    Bake the PSD-kind edits at head: one commit per card on the branch's current head, the refused verdicts in one.
+    Bake the PSD-kind edits at head and land everything in one commit on the branch's current head.
 
     Args:
         repository: owner/name of the card repo
@@ -715,86 +768,97 @@ def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card
         card: Restrict the run to one card (matched like the authors file)
 
     Returns:
-        (markdown report, commit shas); raises on a failure outside a card's steps
+        (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
     """
     started = perf_counter()
     token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
     work = _work_dir()
     head = head or ref_head(repository)
-    info = commit_info(repository, head)
     report = Report(repository, head, dry_run, work)
     report.lines.append(f"- Work dir: `{work}`")
-    commits: list = []
-    if _own_commit(info):
-        report.note = "The head is the pipeline's own commit: nothing new to bake."
+    snapshot = snapshot_at(repository, head)
+    if snapshot.edits_path is None:
+        report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
     else:
-        snapshot = Snapshot(repository, head, info, _tree(repository, info["tree"]["sha"]))
-        if snapshot.edits_path is None:
-            report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
-        else:
-            text = fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8")
-            try:
-                edits = CardEdits.parse(text)
-            except ValueError as error:
-                edits = None
-                report.note = f"{snapshot.edits_path} isn't JSON: {error}"
-            if edits is not None:
-                cards = select(edits, snapshot, card)
-                report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
-                                    f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
-                                    + (f" (--card {card})" if card else ""))
-                if card and not cards:
-                    report.note = f"No entry with a PSD field for {card!r}."
-                if cards:
-                    fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
-                    engine = "text engine" if psd_edit.text_engine() else "no text engine"
-                    report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
-                                        + ("" if isdir(fonts) else " (missing)"))
-                    parser = vocabulary(snapshot)
-                    colors: list = []           # the chart's fills, read once
+        text = fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8")
+        try:
+            edits = CardEdits.parse(text)
+        except ValueError as error:
+            edits = None
+            report.note = f"{snapshot.edits_path} isn't JSON: {error}"
+        if edits is not None:
+            cards = select(edits, snapshot, card)
+            report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
+                                f"{plural(len(edits.cards), 'card')}, {len(cards)} with PSD fields"
+                                + (f" (--card {card})" if card else ""))
+            if card and not cards:
+                report.note = f"No entry with a PSD field for {card!r}."
+            if cards:
+                fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
+                engine = "text engine" if psd_edit.text_engine() else "no text engine"
+                report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
+                                    + ("" if isdir(fonts) else " (missing)"))
+                parser = vocabulary(snapshot)
+                colors: list = []               # the chart's fills, read once
 
-                    def chart() -> Optional[dict]:
-                        if not colors:
-                            if psd_edit.STATUS_CHART not in snapshot.tree:
-                                colors.append(None)
-                            else:
-                                path = join(work, basename(psd_edit.STATUS_CHART))
-                                fetch_verified(repository, snapshot.sha(psd_edit.STATUS_CHART), path)
-                                colors.append(psd_edit.status_fills(PSDImage.open(path)))
-                        return colors[0]
-                    pushed: list = []           # recent_paths(), read once
+                def chart() -> Optional[dict]:
+                    if not colors:
+                        if psd_edit.STATUS_CHART not in snapshot.tree:
+                            colors.append(None)
+                        else:
+                            path = join(work, basename(psd_edit.STATUS_CHART))
+                            fetch_verified(repository, snapshot.sha(psd_edit.STATUS_CHART), path)
+                            colors.append(psd_edit.status_fills(PSDImage.open(path)))
+                    return colors[0]
+                pushed: list = []               # recent_paths(), read once
 
-                    def recent() -> Optional[set]:
-                        if not pushed:
-                            pushed.append(recent_paths(repository, head, datetime.now(timezone.utc)))
-                        return pushed[0]
-                    for one in cards:
-                        bake_card(snapshot, one, parser, fonts, chart, work, dry_run, recent)
-                        if one.commit:
-                            commits.append(one.commit)
-                    report.cards = cards
-                    try:                        # fenced like a card's steps: the bake commits above have landed
-                        report.verdicts = land_verdicts(snapshot, cards, dry_run, work)
-                    except Refused as refused:
-                        report.note = f"Refused verdicts not committed: {refused.code}: {refused.why}"
-                    except Exception as error:  # noqa: BLE001
-                        report.note = f"Refused verdicts not committed: {type(error).__name__}: {error}"
-                        if not isinstance(error, (Transient, RequestException)):
-                            report.traceback = format_exc()
-                    if report.verdicts:
-                        commits.append(report.verdicts)
+                def recent() -> Optional[set]:
+                    if not pushed:
+                        pushed.append(recent_paths(repository, head, datetime.now(timezone.utc)))
+                    return pushed[0]
+                for one in cards:
+                    bake_card(snapshot, one, parser, fonts, chart, work, recent)
+                report.cards = cards
+                land_cards(report, dry_run)
     report.seconds = perf_counter() - started
     text = render(report)
     with open(join(work, "report.md"), "w", encoding="utf-8") as fh:
         fh.write(text)
-    return text, commits
+    return text, [report.commit] if report.commit else []
+
+
+def pending(repository: str = CARD_REPO, head: str = "") -> list:
+    """
+    The schedule's change gate (card-edits.yml): the cards a live run has work for at head, i.e. a PSD-kind edit
+    without a final verdict. Final = a refused `_psd` for exactly the entry's PSD-kind values on the PSD blob the tree
+    holds (build_site.apply_edits shows a refusal by the same rule); a baked field leaves the file. So new, changed
+    and redundant edits, try-again refusals (recent, head-moved, edit-changed, runner errors) and refused cards whose
+    PSD changed since are pending, and after a complete live run nothing is.
+
+    Returns:
+        Card names in the file's order ([] when nothing is pending, or the file is missing or isn't JSON)
+    """
+    token_from_env()
+    snapshot = snapshot_at(repository, head or ref_head(repository))
+    if snapshot.edits_path is None:
+        return []
+    try:
+        edits = CardEdits.parse(fetch_verified(repository, snapshot.sha(snapshot.edits_path)).decode("utf-8"))
+    except ValueError:
+        return []
+
+    def final(card: Card) -> bool:
+        verdict = edits.meta.get(card.key, {}).get("_psd")
+        return (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
+                and verdict.get("psd") == card.psd_sha[:8])
+    return [card.name for card in select(edits, snapshot) if not final(card)]
 
 
 def main(args: Optional[list] = None) -> int:
     """The command line: run() with the Action's flags, the report on stdout."""
     parser = ArgumentParser(prog="python -m commands.card_bake",
                             description="Bake the PSD-kind edits of site/Card Edits.json into the card PSDs and PNGs, "
-                                        "one commit per card (docs/EDIT_PIPELINE_DESIGN.md).")
+                                        "in one commit (docs/EDIT_PIPELINE_DESIGN.md).")
     parser.add_argument("--repo", default=CARD_REPO, help=f"owner/name of the card repo (default {CARD_REPO})")
     parser.add_argument("--head", default="", help=f"commit to read the tree and edits file at (default: {CARD_BRANCH}'s head)")
     parser.add_argument("--dry-run", action="store_true", help="write the artifacts, commit nothing")
@@ -816,6 +880,7 @@ __all__ = [
     'Card',
     'ORDER',
     'Report',
+    'Share',
     'Snapshot',
     'Transient',
     'bake_card',
@@ -823,8 +888,9 @@ __all__ = [
     'editors',
     'fetch_verified',
     'land',
-    'land_verdicts',
+    'land_cards',
     'main',
+    'pending',
     'psd_fields',
     'recent_paths',
     'render',
@@ -832,5 +898,6 @@ __all__ = [
     'rewrite_entry',
     'run',
     'select',
+    'share_of',
     'vocabulary',
 ]

@@ -6,6 +6,11 @@ the "robust" gates (parity bar, record diff, outside-region equality, job key), 
 status words first, refuse the rest). Numbers measured 2026-10-20 unless marked "to confirm". `/tmp/` research files vanish on
 reboot; harness and notes: `~/Documents/Tools/psd-research/`.
 
+**Live since 2026-10-22.** The user lifted the hold for the bake ("you can bake the five title reprints and switch on
+automatic baking. let's use 30 minute cadence"): the first live run (39761732714) baked Clot White and the four PoD
+trailing dots in 26 commits, one per card. Since then a run makes one commit, and `card-edits.yml` runs every 30 minutes,
+live, behind the `pending` gate (section 8).
+
 ## 1. Goal and done
 
 For each PSD-backed edit in TTSCardMaker `site/Card Edits.json`: apply it to the card PSD (digit toggles per stat row; name
@@ -120,7 +125,7 @@ One pure-Python entry point run identically by both runners:
 `python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>]`. Two flags only
 (simple-tooling rule): `--dry-run` writes the artifacts and commits nothing, `--card` restricts the run to one card. Whether
 the saved PSD carries a regenerated preview is question 2's answer baked into the code, not a flag. Input: one tree snapshot
-+ blobs by sha. Output: zero or more commits (one per card) and a markdown report on stdout in `tts_save._render` style. The
++ blobs by sha. Output: at most one commit per run (section 5 step 10) and a markdown report on stdout in `tts_save._render` style. The
 runner supplies credentials, the fonts dir, a cache dir, how to push, where the report goes. The core never reads
 `config.py`, never touches the pickles, never writes outside its work dir.
 
@@ -153,11 +158,12 @@ chart, FX naming) stays in the bot. TTSCardMaker: `.github/workflows/card-edits.
 ## 5. Per-card algorithm and gates
 
 Job key = (Card Edits.json blob sha E, PSD blob sha P, the PSD-kind fields and values). A rerun on the pipeline's own commit
-finds no PSD-kind field and does nothing: idempotence is the resume mechanism, state lives in git. Refusals are data with a
-code, never exceptions; one bad card never blocks another.
+finds no PSD-kind field but the refused ones, whose verdicts are unchanged, and commits nothing: idempotence is the resume
+mechanism, state lives in git. Refusals are data with a code, never exceptions; one bad card never blocks another.
 
 0. **Snapshot.** Tree at head H; `CardEdits.parse` of the file blob; card key -> PSD path (same stem, case-insensitive like
-   `png_for`), PNG path(s) and shas. Skip own commits (message `Card edit:` / actor AutoCroissant).
+   `png_for`), PNG path(s) and shas. The pipeline's own commits are not skipped (2026-10-22): a card refused `recent` or
+   `head-moved` is retried by the next run even when nothing else landed on top.
 1. **Fetch** every card named in the file that has a field outside the folder and database-only kinds (section 3): PSD,
    PNG(s), chart (once per run), fonts (cached). Gate `blob`: sha1(`blob N\0` + data) == tree sha. Refuse `recent` first
    (PSD pushed < 30 min ago: don't race its author; by push time, not commit date: `activity` + one `compare` per run).
@@ -210,14 +216,19 @@ code, never exceptions; one bad card never blocks another.
    Name: `Text/Name` read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels).
-10. **Commit.** Re-fetch head H' and the file at H'. Gate `edit-changed`: the card's PSD-kind values at H' equal what was
-    baked, else bake nothing for it (never remove a value you did not render). Tree on `base_tree` H': PSD, PNG (existing
-    path and case), `site/Card Edits.json` with the baked fields removed and `_psd` written (section 9), re-serialised by the
-    `editsFile` port. Entry rule: an entry with no `FIELDS` key left is deleted whole, `_by`/`_at`/`_psd` with it (the port
+10. **Commit, one per run** (since 2026-10-22; `card_bake.land`). Re-fetch head H' and the file at H'. Per card: gate
+    `head-moved`, its PSD and PNG at H' still hold the blobs it read, and gate `edit-changed`, its PSD-kind values at H' equal
+    what was baked (never remove a value you did not render); a card that fails either stays out of the commit as a try-again
+    refusal and the others still land. Tree on `base_tree` H': every remaining card's PSD and PNG (existing path and case),
+    `site/Card Edits.json` with the baked and redundant fields removed and the `_psd` verdicts written (section 9), re-serialised
+    by the `editsFile` port. Entry rule: an entry with no `FIELDS` key left is deleted whole, `_by`/`_at`/`_psd` with it (the port
     does this explicitly; `editsFile` itself keeps any non-`FIELDS` key, `edit.js:39-40`, and would leave a `_`-only entry);
     otherwise `_by`/`_at` stay. Author/committer `AutoCroissant <autocroissant@gmail.com>`, non-force ref update, 409/422 ->
-    back to step 10 up to 3 times (`head-moved` after that). Message: subject only, `Card edit: Goombella spd 4 -> 5` (the
-    editor, shas, gate codes and fork tag go to the report and `_psd`). Never in a commit: pickles, `MDW/`, `TTS/`.
+    back to step 10 up to 3 times (`head-moved` for every card after that). Message: `Card edits: 5 baked, 20 redundant, 4
+    refused`, one `- <card>: <what>` line per baked card (`- Goombella: spd 4 -> 5`), then one `Edit-by: <login>`
+    trailer per editor of a baked card (build_site.EDIT_BY); shas, gate codes and the fork tag go to the report and `_psd`.
+    Until 2026-10-22 it was one commit per card plus one for the refused verdicts (26 commits for the first live run).
+    Never in a commit: pickles, `MDW/`, `TTS/`.
 11. **After.** `gh workflow run site.yml` and `tts-save.yml` (a `GITHUB_TOKEN` push triggers no workflow).
 
 ## 6. Delta-merge rule
@@ -288,32 +299,43 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
 
 ## 8. Runner
 
-**GitHub Actions (primary).** TTSCardMaker `.github/workflows/card-edits.yml` (new):
+**GitHub Actions (primary).** TTSCardMaker `.github/workflows/card-edits.yml`, as it runs since 2026-10-22 (the file is the
+authority):
 ```yaml
 name: Card edits
 on:
-  # push trigger deferred (section 14, question 7): dispatch only until Thunderfury's entry matches the print (S5)
-  push: {branches: [main], paths: ["site/Card Edits.json"]}
-  workflow_dispatch: {inputs: {card: {type: string}, dry_run: {type: boolean}}}
+  schedule: [{cron: "*/30 * * * *"}]   # live, behind the gate below
+  workflow_dispatch: {inputs: {card: {type: string}, dry_run: {type: boolean, default: true}}}
 permissions: {contents: write, actions: write}
-concurrency: {group: card-edits, cancel-in-progress: false}
+concurrency: {group: tts-save, cancel-in-progress: false}   # shared with tts-save.yml (both commit to main); a running bake is never cancelled
 jobs:
   bake:
     if: github.actor != 'AutoCroissant'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7      # sparse, non-cone: /site/, /Types/, /MDW/Fonts/ (top level), "/MDW/Croissant's Special Folder/Satus Effect Colors.psd"
+      - uses: actions/checkout@v7      # sparse, non-cone: /site/Card Edits.json, /TTS/ (and every tree, for the fonts' sha)
       - uses: actions/checkout@v7      # bobberlington/AutoCroissant -> bot/: commands/{card_bake,psd_edit,psd_regions,psd_parser,card_models,card_edits,github_api,git_commit,repo_history}.py global_config.py (never psd_analyzer: discord, pandas)
-      - uses: actions/setup-python@v7  # 3.12, cache: pip
-      - uses: actions/cache@v6         # MDW/Fonts + the chart, keyed on `git ls-tree HEAD` of those paths (site.yml does this for PNGs)
-      - run: pip install requests "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261020"
-      - run: python -m commands.card_bake --repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA" | tee "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
-        working-directory: bot         # as tts-save.yml's `cd bot`
+      - uses: actions/setup-python@v7  # 3.12
+      - run: pip install requests "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261021"
+      - id: gate                       # schedule only: python -c 'from commands.card_bake import pending ...' -> go=true|false
+      - uses: actions/cache@v6         # MDW/Fonts by its tree sha (if go)
+      - run: python -m commands.card_bake --repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA" [--dry-run] [--card "$CARD"] | tee "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+        working-directory: bot         # if go; dry run only for a dispatch with dry_run ticked
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PSD_TOOLS_FONT_DIRS: "${{ github.workspace }}/MDW/Fonts"}
       - uses: actions/upload-artifact@v4   # report + before/after/diff crops per card
-      - run: gh workflow run site.yml && gh workflow run tts-save.yml   # only when a commit was made
+      - run: gh workflow run site.yml && gh workflow run tts-save.yml   # only when the run committed ("committed `" in the report)
 ```
+**The gate** (`card_bake.pending`, 2026-10-22): a scheduled run bakes only when some PSD-kind edit has no final verdict, a
+refused `_psd` for exactly its values on the PSD blob the tree holds now (build_site.apply_edits shows a refusal by the same
+rule; a baked field leaves the file). So a new, changed or redundant edit, a try-again refusal (`recent`, `head-moved`,
+`edit-changed`, a runner error) and a refused card whose PSD changed all open it, and a complete live run closes it. Chosen
+over "Card Edits.json changed since the last successful run" (tts-save.yml's kind): it needs no run history or state, it
+retries try-again refusals and refused cards whose art was fixed (a diff of the edits file sees neither), and a wrong "go"
+costs a run that commits nothing. Measured on the live repo: 29 cards pending before the first live run (5 baked, 20
+redundant, 4 refused), none after it. A run that ends at the gate takes the checkouts and the 25 s pip install. Not
+covered: a refused card whose PSD and edit are unchanged is not retried after a pipeline, fork, font or chart fix; a dispatch
+(`dry_run` unticked) does that.
 Action versions match `site.yml`/`tts-save.yml` today (checkout@v7, setup-python@v7, cache@v6). PSDs are fetched by blob sha
 inside the script; card folders are never checked out (16.4 GB). The extras should have x86_64 and aarch64 manylinux wheels
 (uharfbuzz, freetype-py, aggdraw, scipy; exact versions and wheel availability to confirm, PyPI not reachable while writing);
@@ -374,7 +396,8 @@ styled digit means the render missed the bar, no longer that the digit is styled
 psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
 Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
-them leaves nothing behind (`$RUNNER_TEMP`), the next push recomputes.
+them leaves nothing behind (`$RUNNER_TEMP`), the next run recomputes. A commit that fails (`head-moved` after 3 tries, a
+GitHub error) is a run note: no card gets a verdict and the gate stays open for the next run.
 
 ## 11. Races
 
@@ -386,7 +409,8 @@ them leaves nothing behind (`$RUNNER_TEMP`), the next push recomputes.
 - **New edits mid-bake.** Step 10's re-read at H' plus the non-force update; the editor's own 422 retry absorbs our commit.
   An editor rewrite that re-inserts a baked field now equals the PSD -> redundant -> dropped next run, no pixels (whether
   edit.js rebuilds from stale in-memory data after a 422: to confirm; a flicker of "Edited" at worst).
-- **Two bakes.** Actions `concurrency: card-edits`; jetson: the Lock. A PSD pushed in the last 30 min is skipped. Site lag
+- **Two bakes.** Actions `concurrency: tts-save` (with tts-save.yml: one run going and one pending, a newer pending run
+  replaces the older, a running one is never cancelled); jetson: the Lock. A PSD pushed in the last 30 min is skipped. Site lag
   after a bake (old value until `/update_stats` + `/push` + build) is named by "Re-parse pending" (section 9).
 
 ## 12. Acceptance: the 10 edits
@@ -413,7 +437,7 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 | S2 bot | `psd_regions.py`; `psd_edit.py` stats path: baseline, toggle, viewport render, delta merge, gates `bytes`/`region`/`reparse`/`idempotence`; `--dry-run` artifacts | Mini_Doomer hp 5 -> 8 dry run: 2 flag bytes, parser reads 8, 0 pixels differ outside the row mask, rerun does nothing | M |
 | S3 bot | text path: name and ability via `set_text`/`set_span_style`/`rasterize`, chart fills, `font`/`overflow` refusals | name edit on Mini_Doomer and 3 single-Ability cards pass every gate; a too-long ability refuses | M |
 | S4 bot | `card_bake.py`: tree, blobs, `editsFile` port, commit (API + SSH), report, `_psd` | today's Card Edits.json round-trips byte-identical; a dry commit on a throwaway branch (owner-run) | M |
-| S5 TTSCardMaker | `card-edits.yml` dry-run, then live with `gh workflow run --card`, actor guard, tts-save retry; the push trigger goes live only after question 7 (else the first push run reprints the 7 titles) | one stat bake on Mini_Doomer lands PSD + PNG + one-line file diff; site.yml and tts-save.yml run; `diff_stats` lists that card | S |
+| S5 TTSCardMaker | `card-edits.yml` dry-run, then live with `gh workflow run --card`, actor guard, tts-save retry; the push trigger goes live only after question 7 (else the first push run reprints the 7 titles) | one stat bake on Mini_Doomer lands PSD + PNG + one-line file diff; site.yml and tts-save.yml run; `diff_stats` lists that card. **Live 2026-10-22**: run 39761732714 reprinted the titles (one commit per card then); since then one commit per run, and a 30-minute schedule behind the `pending` gate replaced the push trigger (section 8) | S |
 | S6 bot + fork | idea 14: FX regeneration (glyph boxes, pixel cut, chart effect block) **code done 2026-10-21**, no fork change (section 7: Gasoline IoU 0.966 / Cannon 0.937 with the JSX cuts, coverage 1.0, Mini_Doomer ability edits with FX pass every gate); idea 12 and idea 13 **code done 2026-10-21** (section 7: Mettaton_EX hp 5 -> 8 passes every gate; the Cannon writes and re-parses but its bevelled digits refuse `parity`) | Gasoline and Royal Eradicator FX layers within the validator's 0.95 coverage and the region bar; Mettaton_EX rows pass parity; goldens refreshed | L |
 | S7 jetson | a manual fallback: fork in the bot venv, Lock, SSH commit, Discord report. **Code done 2026-10-21** (`commands/card_runner.py`, `/bake_cards`, `bake_lock`; the edits-sha notice landed and was removed the same day: the user chose ONE live runner, the Action, and no notice on the jetson); the venv install only if the fallback is ever needed | only if ever needed: one bake with Actions disabled; CPU/RAM peak recorded | M |
 | S8 user | the 10 edits of section 12 | 10/10; results in `docs/Finished/`; Photopea retired to an archive branch | S |
@@ -440,7 +464,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
    and effect and hides the hand-made overlay word layers it replaces (part of S6).
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
    aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
-   ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`).
+   ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`). **Reprinted 2026-10-22** (run
+   39761732714: Clot White, M.O.A.B., D.D.T., B.F.B., B.A.D.; Z.O.M.G. refused `parity`, baseline mean 1.28 over the 1.0 bar).
 
 ## 15. Known wrong paths (fenced off)
 

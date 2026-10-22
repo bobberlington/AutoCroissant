@@ -490,14 +490,16 @@ in `psd_details.json` (repo root, committed; `{"version": 1, "cards": {sha: reco
 ### Card bake (/bake_cards, added 2026-10-21; the one live runner is TTSCardMaker's card-edits.yml Action, the jetson a manual fallback)
 
 The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes the website's PSD-kind edits in
-`site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per card. `commands/card_runner.py`
+`site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per run (one per card until
+2026-10-22). `commands/card_runner.py`
 (uncompiled; imports card_bake and psd_edit lazily inside the bake, so the bot starts without the fork's psd-tools) runs it
 inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
-- **No automatic bake (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
+- **No automatic bake in the bot (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
   its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
   queued at the end of `/update_stats` when `site/Card Edits.json`'s blob sha changed) landed and was removed the same day.
-  Lifting the PSD hold is the push trigger of TTSCardMaker's `card-edits.yml` (off today), nothing in this repo.
+  Since 2026-10-22 TTSCardMaker's `card-edits.yml` bakes live every 30 minutes when its gate (`card_bake.pending`: a PSD-kind
+  edit without a refused verdict for exactly its values on the current PSD) finds work; nothing in this repo triggers it.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -767,3 +769,5 @@ module, not a shadowing name.
 2026-10-21 (details): section 5 (/push adds psd_details.json; /pull keeps it; the /update message), section 7's PSD details subsection, section 8's `psd_details.json` row; repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-21 (card check): section 7's Card check subsection (commands/card_check.py, CLI only; TTSCardMaker's card-check.yml staged in /tmp/card-check until the orchestrator commits it) and its wiring row; nothing in main.py or help.py changed, so no cited line moved. Same day: the subsection no longer says the website shows the validator's notes (only the parser's own reach the site's Parser notes); the error-line sentence names MDW/Markers PSDs and failed API calls (exit 0 kept).
+
+2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved.
