@@ -500,6 +500,17 @@ def _gone_cards(db: StatsDatabase) -> list[str]:
     return sorted(n for n, c in db.stats.items() if n not in seen and not getattr(c, "duplicate_of", None))
 
 
+def _can_prune(traverser: RepositoryTraverser) -> bool:
+    """Whether the run saw the whole repo: no 304, no truncated tree, no failed download, at least one card."""
+    tree = traverser.tree
+    if tree is None or traverser.failed:
+        return False
+    if tree.get("truncated") or not traverser.db.seen_cards:
+        print("Card repo tree truncated or without cards; no card removed.")
+        return False
+    return True
+
+
 def _forget_tree(repository: str) -> None:
     """Drop the tree ETag so the next /update_stats refetches and retries."""
     _tree_etags.pop(repository, None)
@@ -557,14 +568,15 @@ def _update_stats(interaction: Optional[Interaction],
         output_problematic,
         force_update)
 
-    gone = _gone_cards(stats_db) if traverser.tree is not None else []      # a 304 saw no cards: prune nothing
-    if num_changed > 0 or gone:
+    prunable = _can_prune(traverser)
+    gone = _gone_cards(stats_db) if prunable else []
+    if prunable and (num_changed > 0 or gone):
         stats_db.prune_clean_cards()
     if gone:
         say(interaction, "Removed (PSD deleted from the card repo): " + ", ".join(gone))
     if num_changed > 0 or gone or traverser.changed:
         stats_db.save()
-    if traverser.tree is not None:                  # the records follow the tree: new blobs in, gone blobs out
+    if traverser.tree is not None and not traverser.tree.get("truncated"):    # new blobs in, gone blobs out
         if psd_details.prune(traverser.details, set(traverser.shas.values())) or traverser.details_changed:
             psd_details.save(traverser.details)
 

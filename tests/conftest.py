@@ -78,6 +78,9 @@ class Reply:
         for i in range(0, len(self.content), size):
             yield self.content[i:i + size]
 
+    def close(self):
+        pass
+
     def __enter__(self):
         return self
 

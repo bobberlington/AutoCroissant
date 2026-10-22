@@ -61,13 +61,15 @@ class FakeGitHub:
     def __init__(self, files: dict):
         self.files = dict(files)
         self.tree_status = 200
+        self.truncated = False
         self.broken: set = set()
         self.flaky: dict = {}                   # blob sha -> how many more 503s before it answers
         self.calls: list = []
         self.waits: list = []                   # get_with_retry's sleeps
 
     def tree(self) -> dict:
-        return {"tree": [{"path": p, "sha": _sha(d), "type": "blob"} for p, d in sorted(self.files.items())]}
+        return {"tree": [{"path": p, "sha": _sha(d), "type": "blob"} for p, d in sorted(self.files.items())],
+                "truncated": self.truncated}
 
     def get(self, url, headers=None, timeout=None, stream=False):
         headers = headers or {}
@@ -385,6 +387,47 @@ def test_deleted_card_alone_is_pruned(github, capsys):
     assert "0 cards changed or new, 1 unchanged, 0 moved." in out
     _run()                                                            # 304: nothing pruned or saved again
     assert _saved()[1]["The Freezer"] == old["The Freezer"] and len(_saved()[1]["The Freezer"]) == 1
+
+
+def test_rename_with_failed_download_keeps_the_old_card(github, capsys):
+    """A renamed PSD whose new blob fails: nothing is pruned, the old name stays listed until the retry lands."""
+    _run()
+    data = github.files.pop(DOOMER)
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = data
+    github.broken.add(_sha(data))
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {}
+    assert "Removed (PSD deleted" not in capsys.readouterr().out
+    github.broken.clear()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mega Doomer", "The Freezer"} and len(old["Mini Doomer"]) == 1
+    assert "Removed (PSD deleted from the card repo): Mini Doomer" in capsys.readouterr().out
+
+
+def test_truncated_tree_prunes_nothing(github, capsys):
+    _run()
+    details = _details()
+    del github.files[FREEZER]
+    github.truncated = True
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {} and _details() == details
+    assert "Card repo tree truncated or without cards; no card removed." in capsys.readouterr().out
+
+
+def test_tree_without_cards_prunes_nothing(github, capsys):
+    """A tree with no PSDs (say a /set_repo to another repo) moves no card to old_stats."""
+    _run()
+    del github.files[FREEZER], github.files[DOOMER]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old == {}
+    assert "no card removed" in capsys.readouterr().out
 
 
 def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):

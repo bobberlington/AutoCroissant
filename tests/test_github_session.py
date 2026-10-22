@@ -93,8 +93,9 @@ def test_same_request_as_requests_get_and_no_cookies(server):
 
 def test_fetch_blob_keeps_timeout_headers_and_stream(monkeypatch):
     calls = []
-    monkeypatch.setattr(ga.session(), "get", lambda url, **kw: calls.append((url, kw)) or
-                        type("R", (), {"status_code": 200, "raise_for_status": lambda self: None})())
+    fake = type("S", (), {"get": lambda self, url, **kw: calls.append((url, kw)) or
+                          type("R", (), {"status_code": 200, "raise_for_status": lambda self: None})()})()
+    monkeypatch.setattr(ga, "session", lambda: fake)                # the real Session is never patched
     ga.fetch_blob("o/r", "abc", stream=True, timeout=120)
     url, kw = calls[0]
     assert url == f"{ga.API_BASE}o/r/git/blobs/abc"
@@ -123,17 +124,19 @@ def replies(monkeypatch):
 
 def test_fetch_blob_retries_a_5xx(replies):
     queue, waits = replies
-    queue[:] = [Reply(502), Reply(503), Reply(200)]
-    assert ga.fetch_blob("o/r", "abc").content == b"psd" and waits == [1, 2] and queue == []
+    tries = [Reply(502), Reply(503), Reply(200)]
+    queue[:] = tries
+    assert ga.fetch_blob("o/r", "abc", stream=True).content == b"psd" and waits == [1, 2] and queue == []
+    assert [r.closed for r in tries] == [True, True, False]           # discarded replies free their connection
 
 
 def test_fetch_blob_gives_up_after_3_tries_and_closes_the_stream(replies):
     queue, waits = replies
-    last = Reply(503)
-    queue[:] = [Reply(503), Reply(503), last]
+    tries = [Reply(503), Reply(503), Reply(503)]
+    queue[:] = list(tries)
     with pytest.raises(HTTPError):
         ga.fetch_blob("o/r", "abc", stream=True)
-    assert waits == [1, 2] and last.closed
+    assert waits == [1, 2] and all(r.closed for r in tries)
 
 
 def test_fetch_blob_no_retry_on_404(replies):
@@ -142,3 +145,27 @@ def test_fetch_blob_no_retry_on_404(replies):
     with pytest.raises(HTTPError):
         ga.fetch_blob("o/r", "abc")
     assert waits == []
+
+
+def test_retry_reuses_one_connection(server, monkeypatch):
+    """Two 503s then a 200 on a stream: the discarded replies are closed, so the 3 tries share one connection."""
+    srv, base = server
+    left = [2]
+    real = Handler.do_GET
+
+    def flaky(self):
+        if left[0]:
+            left[0] -= 1
+            self.server.seen.append((self.client_address[1], self.path, dict(self.headers)))
+            body = b"busy" * 1000
+            self.send_response(503)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        real(self)
+    monkeypatch.setattr(Handler, "do_GET", flaky)
+    monkeypatch.setattr(ga, "sleep", lambda s: None)
+    reply = _in_thread(lambda: ga.get_with_retry(f"{base}/blob", stream=True, timeout=5))
+    assert reply.status_code == 200 and reply.text == "ok /blob"
+    assert len(srv.seen) == 3 and len({port for port, _, _ in srv.seen}) == 1

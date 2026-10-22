@@ -80,6 +80,7 @@ def get_with_retry(url: str, **kwargs):
         else:
             if wait is None or (reply.status_code != 429 and reply.status_code < 500):
                 return reply
+            _discard(reply)
         sleep(wait)
 
 
@@ -111,6 +112,15 @@ def fetch_blob(repository: str, sha: str, stream: bool = False, timeout: int = 3
         reply.close()                               # hand the connection back
     reply.raise_for_status()
     return reply
+
+
+def _discard(reply) -> None:
+    """Read and close a reply that gets retried, so a stream's connection goes back to the pool."""
+    try:
+        reply.content                               # a short error body
+    except RequestException:
+        pass
+    reply.close()
 
 
 def blob_sha(data: bytes) -> str:
