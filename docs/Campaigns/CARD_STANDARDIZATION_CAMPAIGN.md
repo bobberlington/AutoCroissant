@@ -50,12 +50,13 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   (`/tmp/wt-text-engine/src/psd_tools/api/text_edit.py:109-150`, branch feat/text-engine; not in `/tmp/wt-cards` until the S0 merge).
 - **Check.** Parser gate (only token spellings differ); 0 `UNKNOWN ICON TOKEN` / `ICON TOKEN NOT IN STOOGEDINGS FONT`; harness ability
   region; Photoshop with ligatures on. **Risk.** Font icons are narrower than the gaps: lines re-break and strand overlay words (Gasoline's
-  "Blazing"), so L7 runs first; `[fire]/ [machine]` spacing and token order vs gap order are open (companion §5); bar layers named
+  "Blazing"), so L7 runs first; `[fire]/ [machine]` spacing and token order vs gap order were open (answered 2026-10-21 below); bar layers named
   `Dark`/`Light`/`Machine` are not icons (L2). **Depends.** L7; question 1; the fork's font-run API unless Photoshop.
 - **2026-10-21 (question 1 answered; std.jsx).** Inline icons only: the header badges stay images, permanently, so Scope 2 and its 688
   cards leave the batch. `std.jsx` still lives only in `/private/tmp/fontexplore/std/` (gone on a reboot): copy it before one, into
   `MDW/Scripts/` only if the user agrees (a script file, under the hold only with their yes), otherwise under `~/Documents/Tools/psd-research/`.
   The fork's text engine is in cards since a6363a04 (tag cards-20261020), so the `/tmp/wt-cards` caveat above is past.
+- **2026-10-21 (spacing, token order).** Spacing = gap injection's (`[fire] / [machine]`); token order = icon order on all 42, tokens safe; 15 cards with no parser gap get their tokens appended, as the parser does; Tainted Lazarus out (header icon); fixed walk `~/Documents/Tools/psd-research/std/std_l1.jsx`, `l1_check.py` 41/41 (companion §5).
 
 ### L2. Stat rows to the template layout (45 deviating cards)
 - **What.** `Stats Bars/Darks/<Stat> Dark/0..9` exposure digits with masks, one row per stat; `Bars` leaves named `hp`/`def`/`atk`/`spd`.
@@ -78,6 +79,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 - **2026-10-21 (questions 2 and 3 answered).** The 37 drawn or pixel-bar cards are rebuilt as template digit rows (the look change is
   accepted). Multi-creature cards (Pix, Tainted Lazarus, Twin Emperors) and raid bosses get no templates of their own: they stay
   deviations the pipeline refuses (`unsupported-card`).
+- **2026-10-21 (owner: drawn value differs from the layer name).** Tainted_Isaac `hp` is drawn as 6 hearts with the lit layer named `5`;
+  Tainted_Eden `spd` as 4 with it named `7`. The parser reads the name, so the rebuild would print the name's value and the parse gate cannot
+  see it; `l2_template_rows.py` counts the lit cells and leaves these two until the owner picks the stat. Alex_YIIK's `Dark` is an inline
+  icon (L1), not a bar layer: nothing to rename.
 
 ### L3. Stats above 10 -> top row 10 + bottom row N-10 (design section 14, question 3: answered)
 - **What.** Royal Eradicator's layout is canonical: `Stats Bars/Darks/atk dark/Top/0..9` all hidden (= 10), `Bottom/<N-10>` visible. Sonic
@@ -201,6 +206,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   12_Reactions2, 22_Negation) to delete (hidden text is parsed); H2 off-canvas and overflow boxes (11_Abilities6; 12, 14, 20); V1 the stray
   box on 16_The_Field (a decision); X2 icons after the page number on 6 pages; C1-C6 text once decided; BUGS D2: the layer named `tornado`
   on 20_Creature_Types is supposed to be `wind` (user, 2026-10-21): rename it. Tool: Photoshop with Consolas active (companion §3); later plan item 15. Check: that campaign's G3 (rules.json diff).
+- 2026-10-21: the cards moved to the cooldown tags ((nCD), (a/bCD), (nGCD), (a/bGCD), (nU); TTSCardMaker df02b3b..7cb4c86); 02_Abbreviations, 11_Abilities2, 11_Abilities4 and 22_Negation still show the old tags: the team updates them (that campaign's U1).
 
 ### L12. Files beside the PSDs (no edit wanted; recorded so nobody "fixes" them)
 - 813 PSDs, 821 PNGs (`git ls-files`). 5 case-only stem mismatches (Dark_matter.psd/Dark_Matter.png, grand_doomer/Grand_Doomer, hr-h/HR-H,
@@ -248,6 +254,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
    15 styles loaded in Photoshop. The rehearsal: copy every PSD an entry names (about 110 cards; 688 more with L1's header scope) to
    `/tmp/rehearsal/`, run each tool there in the day's order, then the three gates on the copies (parse of all 813 vs the pre-batch parse,
    harness regions vs `score/results/cards_v1_icc.json`, goldens) and write the expected per-card diff list.
+   **2026-10-21: rehearsed** on copies of the manifest's 425 PSDs at 9f0c9ec: gates green or explained, 26-row diff list, timings and
+   the day's needs in `STANDARDIZATION_REHEARSAL.md` (redo for the 115 cards a teammate re-pushed during it).
 2. **The day.** Confirm no PSD commit in the last 30 min (the `recent` rule: never race an author), pull main. Photoshop batches first,
    since they re-export PNGs and reflow text: L7 (`Effect Layers - All Cards.jsx`), L1 migration, L11 pages, L5 blank content, the
    pixel-changing cases of L5/L6/L9. Then the fork scripts for 0-pixel structure: L2 rows and renames, L3 clean-ups, L5/L6 renames, L4 effect
