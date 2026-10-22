@@ -685,6 +685,57 @@ def test_carried_values_are_the_discord_only_ones():
     assert lines[0].startswith("1 aliases: 1 moved") and lines[2].startswith("3 Discord-only values")
 
 
+def test_migration_lists_the_fields_it_adds_to_an_editors_entry(tmp_path):
+    """An entry another editor stamped keeps its stamps, and the fields the migration adds to it go in _bot (credited to
+    nobody); the bot's own entries and fields merged into the editor's own get none; a later edit takes its field out."""
+    psd = EDITS["The Freezer"]["_psd"]
+    text = dump_edits({"about": ABOUT, "cards": {
+        "Dark matter": {"name": "Dark Matter", "_by": "MichaelJSr", "_at": "2026-10-22T14:35:30Z"},
+        "Sonic": {"allow_high_stats": True, "_by": "AutoCroissant", "_at": "2026-10-21T00:00:00Z"},
+        "A Snack": {"aliases": ["Snack"], "_by": "web", "_at": AT}, "The Freezer": EDITS["The Freezer"]}})
+    ops = [{"key": "Dark matter", "set": {"series": "Kirby"}, "unset": []},
+           {"key": "Sonic", "set": {"series": "Sonic the Hedgehog"}, "unset": []},
+           {"key": "A Snack", "set": {"aliases": ["Snack", "grape juice"]}, "unset": []},
+           {"key": "The Freezer", "set": {"series": "Ice", "subseries": "Cold"}, "unset": []},
+           {"key": "New", "set": {"series": "X"}, "unset": []}]
+    later = "2026-10-23T00:00:00Z"
+    cards = de._bot_edits(text, ops, later)["cards"]
+    assert cards["Dark matter"] == {"name": "Dark Matter", "series": "Kirby", "_bot": ["series"], "_by": "MichaelJSr",
+                                    "_at": "2026-10-22T14:35:30Z"}
+    assert cards["Sonic"] == {"series": "Sonic the Hedgehog", "allow_high_stats": True, "_by": "AutoCroissant",
+                              "_at": "2026-10-21T00:00:00Z"}
+    assert cards["A Snack"] == {"aliases": ["Snack", "grape juice"], "_by": "web", "_at": AT}
+    assert list(cards["The Freezer"].items()) == [("series", "Ice"), ("subseries", "Cold"), ("stars", 2), ("_psd", psd),
+                                                  ("_bot", ["series", "subseries"]), ("_by", "web"), ("_at", AT)]
+    assert cards["New"] == {"series": "X", "_by": "AutoCroissant", "_at": later}
+    moved = dump_edits({"about": ABOUT, "cards": cards})
+    assert dump_edits(de._bot_edits(moved, ops, later)) == moved                    # again: the same file
+    edit = lambda ops: json.loads(de.edits_file(moved, ops, later, BY))["cards"]
+    assert edit([{"key": "The Freezer", "set": {"series": "Snow"}, "unset": []}])["The Freezer"]["_bot"] == ["subseries"]
+    assert "_bot" not in edit([{"key": "Dark matter", "set": {}, "unset": ["series"]}])["Dark matter"]
+    assert edit([{"key": "Dark matter", "set": {"name": "Dark Matter Blade"}, "unset": []}])["Dark matter"]["_bot"] == ["series"]
+    if EDIT_JS.exists() and "_bot" in EDIT_JS.read_text(encoding="utf-8"):         # edit.js drops them the same way
+        for op in ({"key": "The Freezer", "set": {"series": "Snow"}, "unset": []}, {"key": "Dark matter", "set": {}, "unset": ["series"]}):
+            assert de.edits_file(moved, [op], later, BY) == _node(tmp_path, moved, [op], later, BY)
+
+
+def test_an_edit_to_a_bot_entry_lists_its_fields_in_bot(tmp_path):
+    """An editor's edit to a _by AutoCroissant entry lists the bot's untouched fields in _bot: the migrated series and
+    aliases stay nobody's edit (the editor gets only what they change); the bot's own edit adds none."""
+    text = dump_edits({"about": ABOUT, "cards": {
+        "Chef Saltbaker": {"series": "Cuphead", "aliases": ["saltbaker"], "_by": "AutoCroissant", "_at": AT}}})
+    edit = lambda op, by=BY: json.loads(de.edits_file(text, [op], "2026-10-23T00:00:00Z", by))["cards"]["Chef Saltbaker"]
+    hp = {"key": "chef saltbaker", "set": {"hp": 6}, "unset": []}
+    assert edit(hp) == {"series": "Cuphead", "hp": 6, "aliases": ["saltbaker"], "_bot": ["series", "aliases"], "_by": BY,
+                        "_at": "2026-10-23T00:00:00Z"}
+    assert "_bot" not in edit({"key": "Chef Saltbaker", "set": {"series": "Cuphead DLC"}, "unset": ["aliases"]})
+    assert edit({"key": "Chef Saltbaker", "set": {}, "unset": ["aliases"]})["_bot"] == ["series"]
+    assert "_bot" not in edit(hp, "AutoCroissant")
+    if EDIT_JS.exists() and "isBot" in EDIT_JS.read_text(encoding="utf-8"):        # the website's editsFile the same
+        for op in (hp, {"key": "Chef Saltbaker", "set": {"aliases": ["salt"]}, "unset": []}):
+            assert de.edits_file(text, [op], AT, "MichaelJSr") == _node(tmp_path, text, [op], AT, "MichaelJSr")
+
+
 def test_migration_cli(tmp_path, capsys):
     clone = tmp_path / "cards"
     files = {EDITS_PATH: dump_edits({"about": ABOUT, "cards": EDITS}).encode(), AUTHORS_PATH: AUTHORS.encode(),
