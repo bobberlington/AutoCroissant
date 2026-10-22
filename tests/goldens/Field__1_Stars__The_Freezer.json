@@ -1,8 +1,8 @@
 {
  "alt_names": null,
- "blob": "58519235d755b91e535ca9f83a5a4c46829f5a83",
+ "blob": "90fa61f4bc121df389b3d8040282461c8fc82083",
  "card": {
-  "ability": "For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1.",
+  "ability": "For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.",
   "path": "Field/1 Stars/The_Freezer.psd",
   "stars": 1,
   "timestamp": 0.0,

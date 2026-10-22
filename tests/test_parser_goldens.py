@@ -41,7 +41,7 @@ def test_certified_values():
     f = freezer["card"]
     assert (f["type"], f["stars"], f["types"]) == ("field", 1, ["field"])
     assert f["ability"] == ("For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n"
-                            "(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1.")
+                            "(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.")
     assert lich["card"]["types"] == ["ice", "undead"]
     assert lich["card"]["ability"].splitlines()[-1] == "Minions inherit [undead]."
 
