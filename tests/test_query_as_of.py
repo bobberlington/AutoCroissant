@@ -234,3 +234,28 @@ def test_slash_surface_and_help():
     assert all(len(p.description) <= 100 for p in cmd.parameters) and len(cmd.description) <= 100
     entry = help_module.card_commands["/query <query> [as_of]:"]
     assert "- as_of: A date, YYYY-MM-DD" in entry and "archived cards too" in entry and "(default: the current card)" in entry
+
+
+def test_archived_text_says_where_a_retired_psd_went():
+    """White Palace moved into MDW/The Morgue (moved_to): archived, not deleted."""
+    tag = {"at": 1792658876.0, "commit": "b6330730235d", "moved_to": "MDW/The Morgue/White_Palace.psd"}
+    assert "(PSD moved to MDW/The Morgue in b633073)" in qc._archived_text(tag)
+    assert "(PSD deleted in b633073)" in qc._archived_text({**tag, "moved_to": None})
+
+
+def test_a_png_named_in_another_case_finds_its_card(db, monkeypatch):
+    """omori.psd's card is "omori", its PNG Omori.png: /query and as_of find the card (they said no stored data)."""
+    monkeypatch.setitem(qc.card_repo.git_files, "omori.png", "Creatures/Omori/5 Stars/Omori.png")
+    omori = _card("omori", "Creatures/Omori/5 Stars/omori", _at(2026, 10, 21, 22, 57, 50), "Death counter.")
+    monkeypatch.setitem(cm.stats_db.stats, "omori", omori)
+    assert qc._stats_card("omori.png") is omori and qc._as_of_match("omori") == ("omori.png", "omori")
+    assert "**omori** as of 2026-10-22 " in _texts("omori", "2026-10-22")[0]   # once: no stored card data
+
+
+def test_an_archived_name_wins_over_an_alias(db, monkeypatch):
+    """ZOEY!!!!! renamed to Z!!!!!, with an alias zoey!!!!! -> Z!!!!!'s PNG: as_of for ZOEY!!!!! is the archived card's
+    history; Z!!!!!'s own name still finds Z!!!!!."""
+    monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
+    monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
+    assert qc._as_of_match("ZOEY!!!!!") == (None, "ZOEY!!!!!")
+    assert qc._as_of_match("Z!!!!!") == ("z!!!!!.png", "Z!!!!!")

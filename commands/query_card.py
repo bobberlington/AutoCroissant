@@ -589,7 +589,20 @@ def _stats_card(filename: str):
     """The stats entry for a registry file name (aliases resolve to their PNG)."""
     from commands.psd_analyzer import card_name, stats_db
     path = card_repo.git_files.get(filename.lower())
-    return stats_db.stats.get(card_name(path)) if path else None
+    return stats_db.stats.get(_stats_name(card_name(path))) if path else None
+
+
+def _stats_name(name: str) -> str:
+    """The database's name for a PNG's card name: the PSD's spelling when the two differ only in letter case
+    (Grand_Doomer.png, grand_doomer.psd); the name itself otherwise."""
+    from commands.psd_analyzer import stats_db
+    if name in stats_db.stats or name in stats_db.old_stats:
+        return name
+    key = name.lower()
+    try:
+        return next((n for n in [*stats_db.stats, *stats_db.old_stats] if n.lower() == key), name)
+    except RuntimeError:                                 # /update_stats writing meanwhile
+        return name
 
 
 def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None) -> None:
@@ -696,9 +709,10 @@ def _approx(card) -> str:
 
 
 def _archived_text(tag: dict) -> str:
-    """'archived on <date> (PSD deleted in <commit>)'; 'by' for a backfill (deleted earlier)."""
+    """'archived on <date> (PSD deleted in <commit>)', or moved to MDW/...; 'by' for a backfill (deleted earlier)."""
     commit = tag.get("commit")
-    deleted = f"PSD deleted in {commit[:7]}" if commit else "PSD deleted"
+    gone = f"PSD moved to {tag['moved_to'].rsplit('/', 1)[0]}" if tag.get("moved_to") else "PSD deleted"
+    deleted = f"{gone} in {commit[:7]}" if commit else gone
     if tag.get("renamed_to"):
         deleted += f", renamed to {tag['renamed_to']}"
     return f"archived {'by' if tag.get('backfill') else 'on'} {_day(tag.get('at'))} ({deleted})"
@@ -712,13 +726,16 @@ def _as_of_match(query: str) -> Optional[tuple]:
     except RuntimeError:                                 # /update_stats writing meanwhile
         archived = {}
     key = card_repo._normalize_card_name(query)
+    if key in archived and key in card_repo.git_files and \
+            card_repo._normalize_card_name(card_name(card_repo.git_files[key])) != key:
+        return (None, archived[key])                     # an alias or another card's PNG claims the archived name
     if len(key) >= 200 or (key not in card_repo.git_files and key not in archived):
         found = get_close_matches(key, card_repo.git_filenames + list(archived), n=1, cutoff=card_repo.match_ratio)
         if not found:
             return None
         key = found[0]
     if key in card_repo.git_files:
-        return (key, card_name(card_repo.git_files[key]))
+        return (key, _stats_name(card_name(card_repo.git_files[key])))
     return (None, archived[key])
 
 
