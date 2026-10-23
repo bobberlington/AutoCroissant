@@ -286,7 +286,9 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 ## 5. The future guard: an Action on push that reports (then fixes)
 
 Each rule is one TTSCardMaker Action on push that runs a bot module on the pushed PSDs by blob sha, writes the job summary, comments on the
-commit and pings the card makers' role on Discord (the shared secret `DISCORD_FONT_WEBHOOK`), and never reverts or rejects.
+commit and pings the card makers' role on Discord (`DISCORD_FONT_WEBHOOK`, the font channel; the font check posts to the standards
+channel's `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22, on TTSCardMaker `work/push-guards` until it lands), and
+never reverts or rejects.
 
 - **Rule 1, the font check** (LIVE since 2026-10-21: TTSCardMaker f5a0e50, AutoCroissant ae1d2c5, secret set):
   `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
@@ -303,6 +305,15 @@ commit and pings the card makers' role on Discord (the shared secret `DISCORD_FO
   card into the job summary. Today's notes (the clone at e4e0a58): Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types
   `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`;
   `tests/test_card_check.py` pins them. Operations: autocroissant-run-and-operate §7.
+- **Rules 3+, the push guards** (BUILT 2026-10-22 on AutoCroissant `work/push-guards` and TTSCardMaker `work/push-guards`, not
+  landed; design and build notes `docs/Campaigns/PUSH_GUARDS.md`): `.github/workflows/card-guards.yml` runs
+  `commands/card_guards.py` (`png_export.py`: a PSD pushed without its PNG gets the PNG the bake would make, the fork's
+  render of the changed layers merged into the old PNG and gated, the stored composite only a cross-check (owner's ruling
+  2026-10-22); `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD, R9 Txt2 sync fixed with byte gates
+  (R11's exact-name rename is built but reported until the owner says yes), the rest, fonts (R7) included, reported once
+  per push in the standards channel after the 30-minute quiet window, `DISCORD_STANDARDS_WEBHOOK`, no role ping). Off until the repo variable
+  `CARD_GUARDS` is `report`, then `on`; dispatches default to dry runs. At 6e50c3ee the rules reproduce this ledger's counts
+  (PUSH_GUARDS.md section 16).
 - **Later rules, deviations by class** (`site/build/check_cards.py` proposed beside the rulebook campaign's `check_rules.py`, or a bot
   module in the card check's shape): for each PSD whose blob changed on the push, report every deviation by class, the classes being this
   ledger's (the scratch `corpus_scan.py` + `aggregate.py` + `classify.py` ported into the bot next to `psd_edit.classify` and
