@@ -23,6 +23,8 @@ OVERLAY_VIRUS = "83728277^"                                            # Compute
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
+PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                    # its title layer is named after its own text
+GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"                  # a rule page: its heading too
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "tree")
 
@@ -122,6 +124,16 @@ def test_template_names_the_title_layer_the_parser_reads(clone):
             pytest.skip(f"{rel} not in the clone")
         template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
         assert template["name_layer"] == layer and ("no title layer" in template["deviations"]) == (layer is None)
+
+
+def test_template_takes_a_title_named_after_its_text_not_a_heading(clone):
+    """Papyrus's 'Text/The Great Papyrus', named after its own text, is the title the parser reads (no deviation); a rule
+    page's heading named so (The Global Turn's) is no title layer, as the parser has none there."""
+    for rel, layer in ((PAPYRUS, "Text/The Great Papyrus"), (GLOBAL_TURN, None)):
+        if not (clone / rel).exists():
+            pytest.skip(f"{rel} not in the clone")
+        template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
+        assert template["name_layer"] == layer and "no title layer" not in template["deviations"]
 
 
 def test_gather_without_an_index_leaves_supplied_null(clone):

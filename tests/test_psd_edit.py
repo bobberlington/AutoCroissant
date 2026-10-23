@@ -62,6 +62,10 @@ MOSLING = "Auxiliary/Minions/Mosling.psd"                          # a faint wat
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"     # no Text group: its title is the top-level layer 'Afraid'
 JAWSUM = "Creatures/Omori/3 Stars/Mr_Jawsum.psd"                   # no Text group: its title 'Group 3/Group 2/Mr. Jawsum'
 SOUL_MASTER = "Creatures/Hollow Knight/4 Stars/Soul_Master.psd"    # its title 'Soul Master' sits beside the Text group
+PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                # its title layer 'Text/The Great Papyrus' is named after its text
+SANS = "Creatures/Undertale/5 Stars/Sans.psd"                      # likewise 'Text/snas.'
+KNIGHT = "Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd"        # 'Knight', 'Lost', 'A', 'Lot' stacked: two in the title region
+GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"              # a rule page: its heading 'Text/THE GLOBAL TURN'
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
 PIZZA = "Creatures/Other/3 Stars/Pizza.psd"                        # three lines in three colours, each after a badge
 COLOURED = "0bc4c099"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
@@ -508,11 +512,11 @@ def test_non_template_rows_and_titles_refuse(clone):
     with pytest.raises(pe.Refused, match="spd: 3 bar rows"):                   # Sonic's 20 is a renamed 9 beside two hidden rows
         pe.template_rows(PSDImage.open(_card(clone, "Creatures/Other/4 Stars/Sonic.psd")[0]), "spd")
     twins = PSDImage.open(_card(clone, "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")[0])
-    for read in (pe.name_layer, pe.ability_layer):
+    for read in (lambda psd: pe.name_layer(psd, own_text=False), pe.ability_layer):   # no Name, no card name given
         with pytest.raises(pe.Refused) as refused:
             read(twins)
         assert refused.value.code == "unsupported-card"
-    assert pe.read_name(twins) is None
+    assert pe.read_name(twins) == "Twin Emperors"                               # its title is named after its text
 
 
 def test_title_layer_is_the_one_the_parser_reads(clone, parser):
@@ -521,7 +525,8 @@ def test_title_layer_is_the_one_the_parser_reads(clone, parser):
     printing the rest of the title refuse: a bake would write the whole title into one piece."""
     bone = PSDImage.open(_card(clone, BONE)[0])
     with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone', not Name or the card's name"):
-        pe.name_layer(bone)                                                     # without the card's name
+        pe.name_layer(bone, own_text=False)                                     # without the card's name or its text
+    assert pe.name_layer(bone).name == "Wham Bam Bone"                           # named after its text too
     assert pe.name_layer(bone, card_name(BONE)).name == "Wham Bam Bone" and pe.read_name(bone, card_name(BONE)) == "Wham Bam Bone"
     parsed = pe.parse_card(parser, _card(clone, BONE)[0], BONE)
     assert pe.classify(parsed, {"name": "Wham Bam Bones"}, bone).jobs == {"name": "Wham Bam Bones"}
@@ -551,7 +556,7 @@ def test_a_title_named_after_the_card_outside_text(clone, parser):
         assert pe.classify(parsed, {"name": title}, psd).redundant == ["name"]
         assert pe.classify(parsed, {"name": title + "s"}, psd).jobs == {"name": title + "s"}
     with pytest.raises(pe.Refused, match="no Text group"):
-        pe.name_layer(PSDImage.open(_card(clone, AFRAID)[0]))                  # without the card's name
+        pe.name_layer(PSDImage.open(_card(clone, AFRAID)[0]), own_text=False)  # without the card's name or its text
 
 
 class _Fake:
@@ -616,6 +621,71 @@ def test_ability_layer_wherever_the_card_keeps_it(clone):
     assert [fx.name for fx in pe.fx_layers(marx, layer)] == ["Ability FX: Glued"]
     doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     assert pe._top(pe.ability_layer(doomer)) is pe._text_group(doomer)
+
+
+def test_a_title_named_after_its_own_text(clone, parser):
+    """The last rule (owner, 2026-10-23: where the title sits is the developer's): a visible layer in the title region
+    named after its own text, as Photoshop names a new text layer, when nothing else is found. Papyrus prints 'The
+    Great Papyrus' and Sans 'snas.' (the live bake's two refusals of e1a491be): parser and bake read that layer, and
+    the website's edits asking for those titles are redundant. Several such layers (Knight Lost A Lot's stacked words)
+    read as none; a rule page's heading is no title."""
+    for rel, title in ((PAPYRUS, "The Great Papyrus"), (SANS, "snas.")):
+        psd_path = _card(clone, rel)[0]
+        psd = PSDImage.open(psd_path)
+        layer = pe.name_layer(psd, card_name(rel))
+        assert _layer_path(layer) == "Text/" + title and pe.read_name(psd, card_name(rel)) == title
+        assert pe.own_text_title(layer, card_name(rel))
+        parsed = pe.parse_card(parser, psd_path, rel)
+        assert parsed["card"]["display_name"] == pe.shown_name(parsed) == title
+        assert pe.classify(parsed, {"name": title}, psd).redundant == ["name"]
+        assert pe.classify(parsed, {"name": title + "s"}, psd).jobs == {"name": title + "s"}
+    psd_path = _card(clone, KNIGHT)[0]
+    parsed = pe.parse_card(parser, psd_path, KNIGHT)
+    assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Knight Lost A Lot"
+    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost A Lot"}, PSDImage.open(psd_path)).refusals] == []
+    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == [
+        "2 layers in the title region named after their text"]
+    psd_path = str(clone / GLOBAL_TURN)
+    if not Path(psd_path).exists():
+        pytest.skip(f"{GLOBAL_TURN} not in the clone")
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, GLOBAL_TURN)
+    assert parsed["card"].get("display_name") is None and pe.name_layer(psd).name == "THE GLOBAL TURN"
+    assert [r.why for r in pe.classify(parsed, {"name": "The Global Turn"}, psd).refusals] == [
+        "title layer named 'THE GLOBAL TURN', not Name or the card's name"]
+
+
+def test_own_text_is_the_last_rule():
+    """Only when no Name and no layer named after the card is found, and only the one visible text layer in the title
+    region named after its text, letters and digits alike ('SNAS' printing 'snas.'); not on a rule page."""
+    def found(*layers, own_text=True):
+        psd = _Fake("", kind="group", children=layers)
+        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+        return [_layer_path(layer) for layer in pe.PSDParser.title_layers(psd, texts, "Sans", own_text)]
+    assert found(_Fake("Text", kind="group", children=[_Fake("snas.", 20)])) == ["Text/snas."]
+    assert found(_Fake("SNAS", 20, text="snas.\r")) == ["SNAS"]
+    assert found(_Fake("snas.", 20), own_text=False) == []
+    assert found(_Fake("snas.", 500)) == [] and found(_Fake("snas.", 20, visible=False)) == []
+    assert found(_Fake("Layer 1", 20, text="snas.")) == [] and found(_Fake("-", 20)) == []    # named otherwise; no letters
+    assert found(_Fake("Knight", 20), _Fake("Lost", 60)) == []                  # several: none
+    assert found(_Fake("snas.", 20), _Fake("Text", kind="group", children=[_Fake("Name", 30, text="Sans")])) == ["Text/Name"]
+    assert found(_Fake("snas.", 20), _Fake("Sans", 40, text="the skeleton")) == ["Sans"]      # named after the card first
+    stacked = _Fake("", kind="group", children=[_Fake("Text", kind="group", children=[_Fake("Knight", 20), _Fake("Lost", 60)])])
+    with pytest.raises(pe.Refused, match="2 layers in the title region named after their text"):
+        pe.name_layer(stacked, "Knight Lost A Lot")
+
+
+def test_gate_bytes_allows_only_the_declared_rename(monkeypatch):
+    """A title named after its text is renamed after the new title (Edit.renamed): that name and no other."""
+    files = {"old": [_record("Text"), _record("snas.")],
+             "new": [_record("Text"), _record("sans.", channels=((-1, 5), (0, 5), (1, 5), (2, 5)))]}
+    monkeypatch.setattr(pe, "layer_records", lambda path: [dict(r) for r in files[path]])
+    records, flag_bytes, _ = pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None, renamed="sans.")])
+    assert records == [(1, "snas.", ["channels", "name"])] and flag_bytes == 0
+    with pytest.raises(pe.Refused, match="changed channels, name"):
+        pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None)])
+    with pytest.raises(pe.Refused, match="renamed 'sans.', not 'sans'"):
+        pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None, renamed="sans")])
 
 
 @composites
@@ -1016,6 +1086,23 @@ def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, reco
     assert baked.reparse["card"]["display_name"] == new
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved, card_name(rel)) == new and pe.stale_stories(saved) == []
+    assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
+
+
+@text_edit
+@pytest.mark.parametrize("rel", [PAPYRUS, SANS])
+def test_name_edit_on_a_title_named_after_its_text(clone, parser, chart, rel, tmp_path):
+    """Papyrus's and Sans's titles bake through every gate; the layer takes the new title as its name, as Photoshop
+    renames a layer it named, so the parser reads it back and nothing is left to bake."""
+    psd_path = _card(clone, rel)[0]
+    title = pe.read_name(PSDImage.open(psd_path), card_name(rel))
+    new = _typo_fix(title)
+    parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
+    assert [name for _, name, _ in baked.records] == [title] and [e.renamed for e in baked.edits] == [new]
+    assert {"blocks", "channels", "name"} <= set(baked.records[0][2]) <= set(TEXT_RECORD + ["name"])
+    assert baked.reparse["card"]["display_name"] == new and baked.reparse["validator"] == parsed["validator"]
+    saved = PSDImage.open(baked.psd_path)
+    assert _layer_path(pe.name_layer(saved, card_name(rel))) == "Text/" + new and pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
 
 
