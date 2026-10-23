@@ -612,6 +612,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
 
 
 def _init_worker(clone: str, repository: str, context, vocab) -> None:
+    token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     _worker.update(source=Source(clone, repository), context=context, parser=vocab.parser())
 
 

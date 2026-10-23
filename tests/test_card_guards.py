@@ -774,6 +774,17 @@ def test_action_shaped_copy(tmp_path):
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
 
 
+def test_a_pool_worker_takes_the_token(monkeypatch):
+    """A spawned worker has no main(): its blob fetches need GITHUB_TOKEN too (else 60 requests/hour)."""
+    import commands.github_api as api
+    monkeypatch.setattr(api, "GIT_TOKEN", "")
+    monkeypatch.setattr(api, "HEADERS", {})
+    monkeypatch.setenv("GITHUB_TOKEN", "t0k")
+    monkeypatch.setattr(cg, "_worker", {})
+    cg._init_worker("clone", "o/r", None, type("Vocab", (), {"parser": lambda self: None})())
+    assert api.HEADERS["Authorization"] == "token t0k"
+
+
 def test_guard_modules_stay_uncompiled():
     """Not in setup.py's INCLUDE_FILES: the Action runs them as pure Python (the change-control skill's step 5)."""
     setup = (REPO / "setup.py").read_text(encoding="utf-8")

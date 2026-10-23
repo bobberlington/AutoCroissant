@@ -157,8 +157,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
     `uses_icon_font`, plus `icc_vote` / `export_icc` / `foreign_profile` from work/r5-bot;
   - `psd_regions`: `overlay_words`, `fx_pad`;
   - `txt2_repair.repair` / `verify`.
-- **Fork pin:** the tag after `cards` da3b0f6d (release step 2; it carries `sync_story`). The pin is shared with card-edits.yml
-  and card-sync.yml.
+- **Fork pin:** `cards-20261022b` (it carries `sync_story`), shared with card-edits.yml and card-sync.yml.
 
 ## 4. Triggers and change detection
 
@@ -368,10 +367,10 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
   - `gate_size` within 1%.
 - **Repo size:** the fork keeps every untouched byte, so git packs the fixed blob as a delta of a few KB against the pushed
   one.
-- **R9 needs the fork tag with `sync_story`** (release step 2). Until it is installed, R9 is report-only, as the bake's
+- **R9 needs the fork tag with `sync_story`** (`cards-20261022b`, pinned). Without it R9 is report-only, as the bake's
   `story_sync()` check does.
-- **Plainly, for the owner:** at rollout "fix the easy issues" fixes nothing. R9 reports until card-edits.yml and
-  card-guards.yml move to the tag with `sync_story`, and R11 has 0 cases in the tree. Everything is told instead.
+- **Plainly, for the owner:** at rollout "fix the easy issues" means R9 (Txt2 sync) only; R11 has 0 cases in the tree.
+  Everything else is told.
 - **Report mode tells the fixable issues** (nothing is fixed there); in `on` they are fixed and not told, unless the fix
   does not land (7.3).
 
@@ -608,8 +607,8 @@ jobs:
    ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
    card pushed again to the later push, and tells the writes that did not land. Cost: a runner held about 31 minutes per
    push with anything to tell, free while TTSCardMaker is public (it is). The alternative is the post at check time.
-3. **At rollout "fix the easy issues" fixes nothing** (6.3): R9 needs the fork tag with `sync_story`, R11 has 0 cases.
-   Report mode and early `on` tell everything.
+3. **At rollout "fix the easy issues" is R9 only** (6.3): the pin `cards-20261022b` has `sync_story`; R11 has 0 cases.
+   Report mode tells everything.
 4. **Two channels.** A push touching PSDs starts three Actions: font-check.yml and card-check.yml (the font channel, with
    their role ping) and card-guards.yml (the standards channel, no ping). R7 (fonts) stays out of the guard's post so a
    missing font is told once; the parser's notes stay card-check's by design. A card can still appear in both channels for
@@ -698,11 +697,16 @@ jobs:
 10. The fixes run at check time, so dry and report runs carry the fixed PSD in the artifact; `land` only re-checks the blobs.
 11. The commit comment goes up only when a card has something told, a write or an error (`summary.json`); the job summary
     always has the report.
-12. The fork pin is `cards-20261022`, card-edits.yml's. It has no `sync_story`, so in the Action R9 reports until both pins move
-    to the release's tag (step 2); `story_sync()` decides. R11 has 0 cases in the tree, so at rollout "fix the easy issues"
-    fixes nothing until the pin moves. Measured at the pin (0302b08b, review 2026-10-22): the 34 replayed commits give the
-    same outcome, writer, changed pixels and truth max as at e0ea34f6 (34 of 34); the 3 bot bakes pass the referee (PoD09DDT
-    and PoD10BFB max 0, Springtrap max 32 on 0.002%); test_png_export 17 of 17. Evidence:
+12. The fork pin is `cards-20261022b` (with `sync_story`), as card-edits.yml and card-sync.yml; R9 is a fix in `on`. Replay
+    after the release (2026-10-22, main 7b48db05, blobless clone, `--repo`): of the last 10 pushes the Txt2 repair push
+    (2 PSDs without PNGs) checks both as current (0 pixels moved, nothing re-exported, no R9) and tells one R1 issue
+    (Springtrap's (OD) is set in the card's font); the pin push and 3 others are skipped by the paths filter, 3 bot pushes
+    by the job's `if`; 07589cc7 tells God Tamer only, 38c55bd3 nothing. Evidence:
+    `~/Documents/Tools/wt/scratch/guards-final/replay_on.log`. The replay found pool workers fetching blobs without the
+    token (spawned processes skip main()); `_init_worker` now calls `token_from_env`. Earlier, measured at `cards-20261022`
+    (0302b08b, review 2026-10-22): the 34 replayed commits give the same outcome, writer, changed pixels and truth max as at
+    e0ea34f6 (34 of 34); the 3 bot bakes pass the referee (PoD09DDT and PoD10BFB max 0, Springtrap max 32 on 0.002%);
+    test_png_export 17 of 17. Evidence:
     `~/Documents/Tools/wt/scratch/guards-fix/replay_at_pin.jsonl`.
 
 **Review fixes (2026-10-22):**
