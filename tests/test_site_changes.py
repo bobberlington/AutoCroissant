@@ -31,7 +31,7 @@ const cards = Array.from({ length: ch.WEB_EDITS_SHOWN + 5 }, (_, i) =>
 cards.push({ id: "bot", edited: ["series"], editBy: "AutoCroissant", editAt: "2030-01-01" },
            { id: "moved", edited: ["series"], botEdited: ["series"], editBy: "MichaelJSr", editAt: "2030-01-01" });
 const { shown, total } = ch.webEdits(cards);
-process.stdout.write(JSON.stringify({ n: ch.WEB_EDITS_SHOWN, total, shown: shown.map(c => c.editAt), ids: shown.map(c => c.id) }));
+process.stdout.write(JSON.stringify({ n: ch.WEB_EDITS_SHOWN, total, shown: shown.map(r => r.at), ids: shown.map(r => r.c.id) }));
 """)
     assert out["total"] == out["n"] + 5 and len(out["shown"]) == out["n"]
     assert out["shown"] == sorted(out["shown"], reverse=True) and not {"bot", "moved"} & set(out["ids"])

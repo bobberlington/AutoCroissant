@@ -848,6 +848,8 @@ def test_live_aliases_find_the_same_card_image_after_the_migration(clone):
     listed = subprocess.run(["git", "-C", str(clone), "ls-tree", "-r", "-z", "--name-only", "HEAD"], capture_output=True, check=True)
     pngs = [p for p in listed.stdout.decode("utf-8").split("\0") if p.endswith(".png")]
     text = (clone / EDITS_PATH).read_text(encoding="utf-8")
+    if json.loads(text).get("aliases_moved"):
+        pytest.skip("the clone's Card Edits.json is already migrated")
     moved, report = de.migrate_aliases(legacy, text, pngs, AT)
 
     def registry(aliases, edits_text):
