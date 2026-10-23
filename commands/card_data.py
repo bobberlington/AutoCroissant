@@ -264,6 +264,8 @@ class CardBuild:
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
         self.edits = self._edits_from_response(resp, repository)
+        if self.edits is None or not self.edits.aliases_moved:
+            self._aliases()                             # read before the PSDs: a missing aliases.pkl stops here
         problems, num_changed = self._process_files_from_response(resp, repository, output_problematic, force_update)
         authors = self._authors_from_response(resp, repository)
         self.changed += self._apply_authors(authors)
@@ -1007,7 +1009,7 @@ class GitBuild(CardBuild):
         from commands.card_history import GitIndex
         super().__init__(db, legacy=False, **kwargs)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
-        self.aliases_ref = aliases_ref           # no aliases given: aliases.pkl at this AutoCroissant ref, read on need
+        self.aliases_ref = aliases_ref           # no aliases given: aliases.pkl at this AutoCroissant ref, read if needed
         self.head = _git(checkout, "rev-parse", head).strip()
         self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
@@ -1022,8 +1024,8 @@ class GitBuild(CardBuild):
         return _TreeReply(ls_tree(self.checkout, self.head))
 
     def _aliases(self) -> dict:
-        """aliases.pkl from aliases_ref, read the first time a duplicate needs it: never once Card Edits.json has
-        aliases_moved, so a build runs on after AutoCroissant deletes the file (step 10)."""
+        """aliases.pkl from aliases_ref, read once, before the PSDs: never once Card Edits.json has aliases_moved, so a
+        build runs on after AutoCroissant deletes the file (step 10)."""
         if self.aliases_ref:
             self.aliases, self.aliases_ref = load_aliases(self.aliases_ref), ""
         return self.aliases

@@ -665,3 +665,29 @@ def test_no_aliases_pkl_once_the_aliases_moved(cards, monkeypatch):
     assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
     assert _build(cards, "--full")[0] == cd.EXIT_OK                                 # no seed: once AutoCroissant main's
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
+
+
+def test_aliases_pkl_missing_before_the_aliases_moved_stops_before_the_psds(cards, monkeypatch):
+    """No aliases_moved yet and aliases.pkl answers 404: the build stops once Card Edits.json is read, before any PSD."""
+    from requests.exceptions import HTTPError
+
+    def gone(ref, name, folder, required=True):
+        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
+    read = []
+    process = cd.CardBuild._process_files_from_response
+    monkeypatch.setattr(cd.CardBuild, "_process_files_from_response", lambda self, *a: read.append(1) or process(self, *a))
+    monkeypatch.setattr(cd, "_bot_file", gone)
+    monkeypatch.setattr(cd, "ALIASES_REF", "main")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "checked"}}}).encode())
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_ERROR
+    assert not read and not cards.db.joinpath("stats.json").exists()
+
+
+def test_live_card_edits_has_aliases_moved(clone):
+    """The real Card Edits.json has aliases_moved: a real build never reads aliases.pkl, so step 10 can delete it."""
+    from commands.card_edits import CardEdits
+    path = clone / cd.EDITS_PATH
+    if not path.is_file():
+        pytest.skip(f"no {cd.EDITS_PATH}")
+    assert CardEdits.parse(path.read_text(encoding="utf-8")).aliases_moved

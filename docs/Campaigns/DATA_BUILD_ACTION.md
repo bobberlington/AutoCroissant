@@ -401,8 +401,9 @@ github_api reads it inside a try/except and takes the token from the environment
 6. **Parse and details,** with hook (c): an exception in `parse` or `_gather_details` for one PSD counts that card as failed
    (`pending.failed`), keeps its old data, and the run goes on.
 7. **Authors, edits, duplicates.** As today, except one input: `_duplicate_name` reads the duplicate's `Card Edits.json`
-   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main, only when a duplicate needs a name and
-   `Card Edits.json` has no `aliases_moved` (2026-10-23), so deleting the file at step 10 breaks no build. Then every card's `created` from
+   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main, only while `Card Edits.json` has no
+   `aliases_moved` (2026-10-23; read before the PSDs, so a missing file stops the build early), so deleting the file at
+   step 10 breaks no build. Then every card's `created` from
    `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.discord_edits created` from
    the Discord archive), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
    upload is earlier and the entry isn't a hand one; a card the file misses (one added since the last `created` run)
