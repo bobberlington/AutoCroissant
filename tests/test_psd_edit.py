@@ -195,6 +195,19 @@ def test_miss_notes():
     assert pe.miss_notes(SimpleNamespace(parity={"hp": miss, "spd": ok})) == [f"hp {note}"]     # a Baked without rerender
 
 
+def test_own_pixels():
+    """The blank-render check's pixels (review 2026-10-23): the merge's replaced pixels no other edit's region reaches;
+    all of them when the others cover the region."""
+    replaced = np.zeros((10, 20), bool)
+    replaced[0:2, 0:2] = True                                               # another edit's change, in the overlap
+    region = (100, 50, 120, 60)
+    assert not pe.own_pixels(replaced, region, [(90, 40, 105, 55)]).any()
+    assert pe.own_pixels(replaced, region, [(110, 55, 130, 70), (0, 0, 10, 10)]).sum() == 4    # no overlap there
+    replaced[9, 19] = True
+    assert pe.own_pixels(replaced, region, [(90, 40, 105, 55)]).sum() == 1
+    assert pe.own_pixels(replaced, region, [(0, 0, 200, 200)]).sum() == 5   # covered: every replaced pixel counts
+
+
 def test_jsx_fx_fixture_is_vendored_and_small():
     """The comparison's fixture ships in tests/ (no /tmp, no 20 MB trial copies): both cards, ink counts intact."""
     assert sorted(json.loads((JSX_FX / "index.json").read_text(encoding="utf-8"))) == sorted([CANNON, GASOLINE])
@@ -1223,6 +1236,29 @@ def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monk
                      paths=(str(out / Path(psd_path).name), str(out / Path(png_path).name)))
     assert baked.changed_pixels == 0 and pe._within_bar(baked.parity["ability"]) and pe.miss_notes(baked) == []
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(new)
+
+
+@text_edit
+def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, monkeypatch):
+    """Another edit's pixels inside an overlapping region are not this edit's drawing (review 2026-10-23): Shield of the
+    Guilty retitled and its ability drawn blank, the ability's region stretched over the title, is refused `parity` as
+    the blank render it is (it baked before: the title's pixels made the ability's merge non-empty)."""
+    psd_path, _ = _card(clone, SHIELD)
+    _no_ability(monkeypatch)
+    old = pe.parse_card(parser, psd_path, SHIELD)["card"]["ability"]
+    new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
+    real = pe.set_text_layer
+
+    def stretched(psd, which, text, fonts_dir, chart=None):
+        edit = real(psd, which, text, fonts_dir, chart)
+        if which == "ability":
+            edit.region = pe.union_box([edit.region, pe.name_layer(psd).bbox])
+        return edit
+    monkeypatch.setattr(pe, "set_text_layer", stretched)
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, SHIELD, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path))), "ability": new}, tmp_path)
+    assert refused.value.code == "parity" and refused.value.why.startswith("ability: the render shows no change, baseline bad ")
+    assert not list(tmp_path.iterdir())
 
 
 # ========================

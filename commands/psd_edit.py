@@ -1438,6 +1438,18 @@ def miss_notes(baked) -> list:
     return out
 
 
+def own_pixels(replaced: np.ndarray, region: tuple, others: list) -> np.ndarray:
+    """
+    The merge's replaced pixels (region-sized) that no other edit's region reaches: what this edit drew (another edit's
+    change inside an overlapping region is not this one's); all of them when the others cover the whole region.
+    """
+    x0, y0, x1, y1 = region
+    free = np.ones(replaced.shape, bool)
+    for ox0, oy0, ox1, oy1 in others:
+        free[max(oy0 - y0, 0):max(oy1 - y0, 0), max(ox0 - x0, 0):max(ox1 - x0, 0)] = False
+    return replaced & free if free.any() else replaced
+
+
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
     """
     Delta-merge: inside the region, the official PNG takes the new render's pixels where it differs from the
@@ -1929,7 +1941,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
             render, raw = render_pair(new, edit.region, icc)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
-        if not replaced.any() and not _within_bar(parity[edit.field]):     # a blank render: the PNG would keep the old one
+        own = own_pixels(replaced, edit.region, [other.region for other in edits if other is not edit and other.region])
+        if not own.any() and not _within_bar(parity[edit.field]):     # a blank render: the PNG would keep the old one
             raise Refused("parity", "%s: the render shows no change, baseline bad %.2f%% mean %.2f max %d"
                           % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]))
         if preview is not None:
@@ -2016,6 +2029,7 @@ __all__ = [
     'name_layer',
     'normalize_ability',
     'offline_parser',
+    'own_pixels',
     'parse_card',
     'read_name',
     'shown_name',
