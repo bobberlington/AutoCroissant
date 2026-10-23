@@ -39,6 +39,9 @@ DEFCON_PANDA = ("9ea7b16710613bd532ceb56e09238bf99a86d5e6", "9e8da0ed097e6dd21cc
 CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3ba4150ffbe9cca3a5f2ced0",
                   "e35deab6a8bdc6d760e73b7363998f6d20c17111")                                            # 100511d3
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
+SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
+FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
+SABRE = "becff9f709b1403a8c5ec2d5aa4b7855ec4c5320"      # Auxiliary/Minions/Sabre.psd (3a268cad): an empty Ability layer
 # The real cards are drawn as the bake draws them: upstream psd-tools renders type layers and effects otherwise. Measured
 # at the Action's pin cards-20261022b (90508839).
 fork = pytest.mark.skipif(not text_engine(), reason="guard 1 renders with the fork, as the bake does: " + fork_reason())
@@ -255,6 +258,66 @@ def test_a_new_card_drawn_with_a_miss_is_made(tmp_path, monkeypatch):
     assert pe.miss_notes(found) == ["made with a pixel difference (against the PSD's own image): bad 1.11%, mean 0.33, max 30"]
     beside = pe.export(None, new, card(colour=(0, 255, 0)))       # D is the square; the row crosses it
     assert beside.outcome == "re-exported" and list(beside.misses) == ["cross"]
+
+
+def _hidden(monkeypatch, name: str) -> None:
+    """The fork drawing nothing for the layer or group so named (the bake's blank-render simulation): every render hides it."""
+    draw = psd_edit.render_region
+
+    def blank(psd, box, icc=True):
+        layer = next(layer for layer in psd.descendants() if layer.name.strip() == name)
+        was, layer.visible = layer.visible, False
+        try:
+            return draw(psd, box, icc)
+        finally:
+            layer.visible = was
+    monkeypatch.setattr(psd_edit, "render_region", blank)
+
+
+@fork
+def test_a_new_card_drawn_blank_in_a_text_box_is_refused(clone, monkeypatch):
+    """Review (2026-10-23): over the whole card a blank text box stays under the floor (Shield of the Guilty's Ability
+    drawn blank: 2.3% of the card), so each text and stat box is held to it too, and a missed box whose layer the fork
+    draws nothing for refuses (the bake's blank render); beside its PNG likewise. The Freezer's Text group drawn blank:
+    10.1% of the card, its Ability box past the floor."""
+    shield = pe.open_psd(blob(clone, SHIELD))
+    _hidden(monkeypatch, "Ability")
+    found = pe.export_new(shield)
+    assert (found.outcome, found.gate, found.why, found.data) == ("refused", "G6", pe.G6_BLANK.format(what="the Ability text"), b"")
+    assert psd_edit.PARITY_BAD_MAX < found.numbers["cross"]["bad_pct"] < psd_edit.PARITY_FLOOR
+    box = found.numbers["boxes"]["the Ability text"]
+    assert box["blank"] and 5 < box["bad_pct"] < psd_edit.PARITY_FLOOR and box["ink"]["bad_pct"] > 90   # its letters
+    old = np.array(pe.convert(shield, pe.composite(shield), True).convert("RGB"))
+    x0, y0, x1, y1 = next(layer for layer in shield.descendants() if layer.name == "Ability").bbox
+    old[y0:y1, x0:x1] = 255 - old[y0:y1, x0:x1]         # the PNG beside it shows another ability
+    beside = pe.export(None, shield, Image.fromarray(old))
+    assert (beside.outcome, beside.why) == ("refused", pe.G6_BLANK.format(what="the Ability text"))
+    assert beside.numbers["cross"]["bad_pct"] < psd_edit.PARITY_FLOOR
+    freezer = pe.open_psd(blob(clone, FREEZER))
+    _hidden(monkeypatch, "Text")
+    found = pe.export_new(freezer)
+    assert found.outcome == "refused" and found.why.startswith("PNG not made: the bot's drawing of the Ability text does not")
+    assert found.numbers["cross"]["bad_pct"] < psd_edit.PARITY_FLOOR < found.numbers["boxes"]["the Ability text"]["bad_pct"]
+
+
+@fork
+def test_a_new_card_tells_its_missed_box(clone):
+    """The Freezer pushed as a new card: the whole card within the bar, its title box missing it (KrabbyPatty over the
+    Text group's effects: 1.9% bad); made, the miss told for the box."""
+    found = pe.export_new(pe.open_psd(blob(clone, FREEZER)))
+    assert found.outcome == "re-exported" and found.data and psd_edit._within_bar(found.numbers["cross"])
+    assert list(found.misses) == ["the Name text"] and found.numbers["boxes"]["the Ability text"]["bad_pct"] == 0
+    (note,) = pe.miss_notes(found)
+    assert note.startswith("made with a pixel difference (the Name text against the PSD's own image): bad 1.")
+
+
+@fork
+def test_a_new_card_with_an_empty_text_layer_is_made(clone):
+    """Sabre's Ability layer holds no text (bbox 0 x 0): no box, so hiding it (it moves nothing) is no blank drawing; its
+    stat labels' small misses (bad 0%, mean about 2.3) are told. The sweep of 2026-10-23 refused it before this rule."""
+    found = pe.export_new(pe.open_psd(blob(clone, SABRE)))
+    assert found.outcome == "re-exported" and "the Ability text" not in found.numbers["boxes"]
+    assert all(m["bad_pct"] <= psd_edit.PARITY_BAD_MAX and not m.get("blank") for m in found.numbers["boxes"].values())
 
 
 def test_g5_stays_a_refusal_under_the_floor(tmp_path):
