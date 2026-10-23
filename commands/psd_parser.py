@@ -323,13 +323,15 @@ class PSDParser:
         self.icons = icons if icons is not None else IconVocabulary.build(all_types, [], None)
         self._gap_pattern = re_compile(r'\s{3,}')
 
-    def parse(self, file_path: str, relative_path: str = "") -> CardInfo:
+    def parse(self, file_path: str, relative_path: str = "", existing: Optional[CardInfo] = None) -> CardInfo:
         """
         Parse a PSD file to extract card information.
 
         Args:
             file_path: Full path to PSD file
             relative_path: Relative path in repository
+            existing: The card whose author and series it keeps (default: the stored card of its name; a renamed PSD's
+                is its old name's)
 
         Returns:
             CardInfo object with extracted data
@@ -337,7 +339,7 @@ class PSDParser:
         name = card_name(relative_path)
 
         # Get existing card if it exists
-        existing_card = self.db.stats.get(name)
+        existing_card = existing if existing is not None else self.db.stats.get(name)
 
         # Initialize card with classification (passing existing card)
         card_dict = CardClassifier.classify(relative_path)

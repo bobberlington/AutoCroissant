@@ -49,7 +49,7 @@ from commands.repo_traverser import (
     RepositoryTraverser,
     update_stats,
 )
-from commands.query_card import card_repo
+from commands.query_card import archived_text, card_repo, history_match
 from commands.utils import queue_message, queue_file, queue_long_message
 
 # ========================
@@ -151,12 +151,12 @@ def view_old_metadata(interaction: Interaction,
         version: Version index (-1 for oldest, 0 for most recent old version,
                 1 for second most recent, etc.)
     """
-    path = card_repo.get_card_path(query)
-    if not path:
+    found = history_match(query)                # archived names too, before an alias that claims them
+    if not found:
         queue_message(interaction, f"No card found matching '{query}'.")
         return
 
-    name = basename(path).replace('_', ' ')
+    name = found[1]
 
     # Check if card has old versions
     if name not in stats_db.old_stats or not stats_db.old_stats[name]:
@@ -192,10 +192,13 @@ def view_old_metadata(interaction: Interaction,
     version_text = "oldest" if index == 0 else f"version {len(old_versions) - index - 1}"
     if index == len(old_versions) - 1:
         version_text = "most recent old version"
+    tag = getattr(card, "archived", None)
+    archived = f", {archived_text(tag)}" if tag and name not in stats_db.stats else ""
 
     queue_message(
         interaction,
-        f"Old metadata for **{name}** ({version_text} of {len(old_versions)}):\n```{_format_metadata(card, name)}```"
+        f"Old metadata for **{name}** ({version_text} of {len(old_versions)}){archived}:\n"
+        f"```{_format_metadata(card, name)}```"
     )
 
 

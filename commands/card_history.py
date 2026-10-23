@@ -55,6 +55,7 @@ class GitIndex:
     pngs: dict = field(default_factory=dict)          # PNG path -> Commits that changed it, newest first
     pngs_lower: dict = field(default_factory=dict)    # the same by lower-cased path (a PNG named in another case)
     renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact rename
+    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact rename into it
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
     at_path: dict = field(default_factory=dict)       # path -> [(Commit, blob)] that put a blob there, newest first
 
@@ -68,6 +69,7 @@ class GitIndex:
             for blob, old in gone.items():
                 if blob in added and old not in index.renames:
                     index.renames[old] = (added[blob], commit)
+                    index.renamed_from.setdefault(added[blob], old)
 
         for token in text.split("\0"):
             token = token.lstrip("\n")
@@ -127,6 +129,16 @@ class GitIndex:
         found = self.intro.get(blob) if blob else None
         return found[0] if found else None
 
+    def origin(self, path: str, once: bool = False) -> str:
+        """The path an exact rename (or a chain of them; once: the newest only) brought path from, else path."""
+        seen = {path}
+        while path in self.renamed_from and self.renamed_from[path] not in seen:
+            path = self.renamed_from[path]
+            seen.add(path)
+            if once:
+                break
+        return path
+
     def blob_at(self, path: str, at: Optional[float]) -> Optional[tuple]:
         """(Commit, blob) of the one commit at `at` that put a blob at path (a legacy version's stored timestamp is its
         commit's time), else None (none, or several at that second)."""
@@ -176,21 +188,30 @@ def leaf(data: dict) -> Optional[str]:
     return data["subseries"] or data["series"]
 
 
-def same_data(a: CardInfo, b: CardInfo) -> bool:
+def knows(a: CardInfo, b: CardInfo) -> bool:
     """
-    Whether two versions hold the same data (data_of); a field either reading could not know (unknown) and a series
-    moved under a parent (the same leaf) are no difference. A value record() can't read counts as different (a
-    version is kept, as before 2026-10-22), so the cleanup at each /update_stats never fails on it.
+    Whether reading a knew all that b did (data_of): every field b could know (unknown), a knew too, with b's value; a
+    series moved under a parent (the same leaf) is the same. So a reading that knew less (a parse that failed on a
+    field) never stands for one that knew more. A value record() can't read counts as not known (a version is kept, as
+    before 2026-10-22), so the cleanup at each /update_stats never fails on it.
     """
     try:
         x, y = data_of(a), data_of(b)
     except (TypeError, AttributeError) as error:
         print(f"History: {getattr(a, 'name', '?')} compared as changed ({error})")
         return False
-    skip = unknown(a) | unknown(b)
+    skip = unknown(b)
+    if not unknown(a) <= skip:
+        return False
     if leaf(x) == leaf(y):
-        skip.update(SERIES)
+        skip = skip | set(SERIES)
     return all(x[key] == y[key] for key in DATA_FIELDS if key not in skip)
+
+
+def same_data(a: CardInfo, b: CardInfo) -> bool:
+    """Whether one of two readings stands for the other (knows): the same data, a field the other could not know
+    aside."""
+    return knows(a, b) or knows(b, a)
 
 
 def _exact(a: CardInfo, b: CardInfo) -> bool:
@@ -228,11 +249,12 @@ def carry(dropped: CardInfo, holder: CardInfo) -> None:
 
 def _reread(older: CardInfo, newer: CardInfo) -> bool:
     """Whether older is an earlier reading of newer's PSD: the same start (one commit read twice, by an older parser
-    or before an edit) and no other blob, newer read with a blob or older without one, by no older parser."""
+    or before an edit) and no other blob, newer read with a blob or older without one, by no older parser, knowing
+    every field older knew (unknown)."""
     if getattr(older, "archived", None) or start(older)[0] != start(newer)[0]:
         return False
     a, b = getattr(older, "blob_sha", None), getattr(newer, "blob_sha", None)
-    if (a and b and a != b) or (a and not b):
+    if (a and b and a != b) or (a and not b) or not unknown(newer) <= unknown(older):
         return False
     return (getattr(newer, "parser_version", None) or 0) >= (getattr(older, "parser_version", None) or 0)
 
@@ -251,37 +273,41 @@ def _rereads(versions: list, holder: Optional[CardInfo]) -> tuple:
 
 
 def _runs(versions: list) -> list:
-    """Consecutive versions with the same data (same_data with every member: a field one of them could not know
-    never joins two known values), an archived version ending its run."""
+    """Consecutive versions one of which knew all the others did (_knower: a field one of them could not know never
+    joins two known values); an archived version joins only a run it knew all of (it holds the run) and ends it."""
     runs: list = []
     for version in versions:
         tail = runs[len(runs) - 1] if runs else None
-        if (tail and not getattr(tail[len(tail) - 1], "archived", None)
-                and all(same_data(member, version) for member in tail)):
+        if tail and not getattr(tail[len(tail) - 1], "archived", None) and (
+                all(knows(version, member) for member in tail) if getattr(version, "archived", None)
+                else _knower([*tail, version]) is not None):
             tail.append(version)
         else:
             runs.append([version])
     return runs
 
 
-def _best(run: list) -> CardInfo:
-    """The version a run keeps when it does not go into the card after it: the first when all are equal (data_of),
-    else the one that knew the most (the newest of those): the run's other readings knew less."""
+def _knower(run: list) -> Optional[CardInfo]:
+    """The version a run keeps when it does not go into the card after it: one that knew all the others did (knows),
+    the first when all are equal (data_of), else the newest of those; None when none did (no run)."""
+    found = [version for version in run if all(other is version or knows(version, other) for other in run)]
+    if not found:
+        return None
     first = run[0]
-    if all(_exact(first, version) for version in run):
+    if found[0] is first and all(_exact(first, version) for version in run):
         return first
-    ranked = sorted(enumerate(run), key=lambda item: (len(unknown(item[1])), -item[0]))
-    return ranked[0][1]
+    return found[len(found) - 1]
 
 
 def collapse(versions: list, holder: Optional[CardInfo]) -> tuple:
     """
     One name's history without duplicates (design 7.4). An earlier reading of the same commit goes (_rereads). Of each
-    run of consecutive versions with the same data (same_data: the blob, path, dates and parse bookkeeping are no data;
-    a field a reading could not know is no difference) one stays (_best); a run with the data of the card that follows
-    it (the current card, or the archived record ending the list) goes into that card. Either way the run's earliest
-    start stays (carry). A version tagged `archived` is never dropped and ends its run (the versions after it are the
-    card's next life). Repeated until nothing goes, so a second call changes nothing.
+    run of consecutive versions with the same data (_runs: the blob, path, dates and parse bookkeeping are no data; a
+    field a reading could not know is no difference) the one that knew all the others did stays (_knower); a run the
+    card that follows it knew all of (knows: the current card, or the archived record ending the list) goes into that
+    card. A reading that knew less never absorbs one that knew more. Either way the run's earliest start stays
+    (carry). A version tagged `archived` is never dropped and ends its run (the versions after it are the card's next
+    life). Repeated until nothing goes, so a second call changes nothing.
 
     Args:
         versions: The name's old_stats versions, oldest first (not changed)
@@ -296,12 +322,12 @@ def collapse(versions: list, holder: Optional[CardInfo]) -> tuple:
         kept, gone = [], []
         for i, run in enumerate(runs):
             last = run[len(run) - 1]
-            if i + 1 == len(runs) and holder is not None and all(same_data(member, holder) for member in run):
+            if i + 1 == len(runs) and holder is not None and all(knows(holder, member) for member in run):
                 into = holder
             elif getattr(last, "archived", None):
                 into = last
             else:
-                into = _best(run)
+                into = _knower(run)
             for version in run:
                 if version is into or getattr(version, "archived", None):
                     kept.append(version)
@@ -484,7 +510,9 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
     """Names gone from stats: the last version tagged archived (backfill) if untagged (not with backfill False:
     /update_stats leaves that to its guarded prune); every tag's at and commit from its path's deleting commit,
     renamed_to from an exact rename whose new card is listed (else from its PNG's exact rename: a rename that also
-    edited the PSD), moved_to from an exact rename into a folder of no cards (MDW/The Morgue: retired, not deleted)."""
+    edited the PSD), moved_to from an exact rename into a folder of no cards (MDW/The Morgue: retired, not deleted).
+    A deletion or rename older than the record's own reading, or an index that lacks the tag's commit (a clone not
+    fetched since: a path deleted, added back and deleted again), changes nothing."""
     for name, versions in old_stats.items():
         if not versions or name in stats:
             continue
@@ -498,12 +526,15 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
                              "commit": None, "backfill": True}
             report.tagged.append(name)
         tag = last.archived
+        read = getattr(last, "timestamp", None) or 0.0
+        stale = bool(tag.get("commit")) and tag["commit"] not in index.by_sha      # the index predates the tag's commit
         gone = index.deleted.get(tag.get("path") or "")
-        if gone is not None and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
+        if gone is not None and not stale and gone.at >= read and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
             tag["at"], tag["commit"] = gone.at, gone.sha
             report.tags_dated.append(name)
         moved = index.renames.get(tag.get("path") or "")
         art = index.renames.get(splitext(tag.get("path") or "")[0] + ".png") if moved is None else None
+        moved, art = [found if found and not stale and found[1].at >= read else None for found in (moved, art)]
         if moved and not tag.get("renamed_to") and card_name(moved[0]) in stats:
             tag["renamed_to"] = card_name(moved[0])
             report.renamed.append((name, tag["renamed_to"]))
@@ -618,7 +649,8 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     appended to its history (at its own path), closed where the new version starts (never before that version's own
     start: a held PSD change or a re-read after an edit); an art-only change or a move keeps the version going; a
     re-read of the same PSD (same blob and path: a parser change) replaces its reading, its start kept; a card
-    restored with the same data drops its archived record. Duplicates get none.
+    restored with the same data drops its archived record. A reading that knew less (unknown: a parse that failed on
+    a field) keeps the card before as a version. Duplicates get none.
 
     Args:
         before: stats at the build's start (a deep copy)
@@ -650,7 +682,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
             if getattr(card, "version", None) is None:
                 card.version = start_of(card, index, None)
             continue
-        if same_data(old, card):
+        if knows(card, old):                          # the new reading knew all the old one did: no version
             info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None)
             info["to"], info["to_commit"], info["png_commit"] = None, None, None
             card.version = info
@@ -661,7 +693,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
                     if not versions:
                         del db.old_stats[name]
             continue
-        if name in reparsed and name not in restored and old.path == card.path and \
+        if name in reparsed and name not in restored and old.path == card.path and unknown(card) <= unknown(old) and \
                 getattr(old, "blob_sha", None) and getattr(old, "blob_sha", None) == getattr(card, "blob_sha", None):
             info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None)   # the same PSD read again:
             info["to"], info["to_commit"], info["png_commit"] = None, None, None            # the reading is replaced
@@ -688,6 +720,35 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
             close(previous, index, start["from"], end_of(start))
             db.old_stats.setdefault(name, []).append(previous)
         made.append((name, start["cause"]))
+    return made
+
+
+def record_edits(db, before: dict, at: float, commit: Optional[str] = None) -> list:
+    """
+    Legacy (/update_stats, a Discord edit's in-memory refresh): an applied database edit that changed a card's data
+    (its card before knew something it doesn't: knows) keeps the card before as a version; the card's version starts
+    at the edit (its commit's time, never before the version it ends; cause edit). Duplicates get none.
+
+    Args:
+        db: The StatsDatabase after the edits (changed in place)
+        before: {name: its card before the edits (a copy)}
+        at: When the edit was made (the edits file's commit time, else now)
+        commit: That commit's sha, if known
+
+    Returns:
+        The names given a version
+    """
+    made = []
+    for name, old in before.items():
+        card = db.stats.get(name)
+        if card is None or getattr(card, "duplicate_of", None) or knows(card, old):
+            continue
+        prior = start(old)[0]
+        when = at if prior is None or at >= prior else prior
+        db.add_history(name, old)
+        card.version = meta(None, when, "edit")
+        card.version["from_commit"] = commit
+        made.append(name)
     return made
 
 
@@ -754,10 +815,12 @@ __all__ = [
     'date_cards',
     'date_versions',
     'dedupe',
+    'knows',
     'leaf',
     'main',
     'meta',
     'normalize',
+    'record_edits',
     'record_versions',
     'refine',
     'same_data',

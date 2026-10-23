@@ -4,6 +4,8 @@ import random
 from difflib import SequenceMatcher, get_close_matches
 from types import SimpleNamespace
 
+from datetime import datetime, timezone
+
 import pytest
 from pandas import DataFrame
 
@@ -138,9 +140,10 @@ def test_commit_lookup_prefetched_and_empty(monkeypatch):
     monkeypatch.setattr(tr, "_repo", lambda: repo)
     tr._lookups = {"Items/A.psd": SimpleNamespace(result=lambda: [Commit(5)])}
     assert tr._get_remote_timestamp(repo, "Items/A.psd", "A") == (5.0, "author5") and calls == []
-    with pytest.raises(LookupError):                         # no commits: the card waits, no made-up date (year 1000)
-        tr._get_remote_timestamp(repo, "Items/B.psd", "B")
-    with pytest.raises(LookupError):
+    before = datetime.now(timezone.utc).timestamp()
+    at, author = tr._get_remote_timestamp(repo, "Items/B.psd", "B")   # no commits: dated by the run (no year 1000), no
+    assert author is None and before <= at <= datetime.now(timezone.utc).timestamp()   # failure (nor at every run)
+    with pytest.raises(LookupError):                         # no repository: the card waits
         tr._get_remote_timestamp(None, "Items/B.psd", "B")
 
 

@@ -242,15 +242,15 @@ class StatsDatabase:
 
     def drop_stale_archives(self) -> bool:
         """Each stale_archives() record: kept as history untagged when add_history kept it or it is another version,
-        else dropped (a copy of the listed card, or its data again: card_history.same_data; its earlier start goes to
-        the listed card, card_history.carry). Returns whether any."""
-        from commands.card_history import carry, same_data   # lazy: card_history imports this module
+        else dropped (a copy of the listed card, or its data again, the listed card knowing all it did:
+        card_history.knows; its earlier start goes to the listed card, card_history.carry). Returns whether any."""
+        from commands.card_history import carry, knows       # lazy: card_history imports this module
         names = self.stale_archives()
         for name in names:
             versions = self.old_stats[name]
             last = versions[len(versions) - 1]
             listed = self.stats[name]
-            if name in self.kept_archives or not (_tagged_copy(last, listed) or same_data(last, listed)):
+            if name in self.kept_archives or not (_tagged_copy(last, listed) or knows(listed, last)):
                 last.archived = None
                 vars(last).pop("created", None)            # plain history now: the listed card keeps its date
             else:
