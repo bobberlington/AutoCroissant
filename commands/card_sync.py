@@ -371,12 +371,14 @@ def _state(repository: str, run: dict) -> str:
 def follow(interaction, run: dict, started: float) -> Optional[dict]:
     """
     Look at the run every POLL_SECONDS until it ends; its state edits the command's reply while Discord still takes
-    edits (EDIT_MINUTES).
+    edits (EDIT_MINUTES), never a reminder's (it has no reply to edit: each would be a new message).
 
     Returns:
         The ended run ("ran": seen started), or None after WAIT_MINUTES
     """
     shown, ran = None, False
+    if interaction is not None and _by_reminder(interaction):
+        interaction = None
     while run.get("status") != "completed":
         ran = ran or run.get("status") not in WAITING
         if monotonic() - started >= WAIT_MINUTES * 60:

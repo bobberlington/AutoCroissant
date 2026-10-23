@@ -381,6 +381,15 @@ def test_card_syncs_own_retry_is_followed(github, tmp_path, full):
     assert said[2] == f"Card sync run finished: <{url}42>" and len(github.posts) == 1
 
 
+def test_a_reminders_run_posts_no_progress_edits(github, tmp_path):
+    """A reminder has no reply to edit (each edit would be a new channel message): only its messages."""
+    from commands.analytics import _ReminderUser
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 43, _run(43, "queued"), _run(43, "in_progress"), _run(43))
+    cs.update(SimpleNamespace(user=_ReminderUser(1, "owner")), cards="A")
+    assert _edits() == [] and "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/43>" in _said()
+
+
 def test_full_dispatch_without_run_details_finds_its_run(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     github.runs = [_run(7, event="schedule")]
