@@ -218,6 +218,27 @@ def test_r9_story_sync_on_clot_white(clone, context, tmp_path):
     assert not list((tmp_path / "work").iterdir())          # temporaries removed
 
 
+def test_two_cards_of_one_key_fix_in_separate_files(tmp_path, monkeypatch):
+    """The process pool shares out/work: Same.psd in two folders, fixed at once (one inside the other's rename here),
+    keep their own bytes and leave no temporary behind."""
+    calls = []
+
+    def rename(path, out):
+        calls.append(path)
+        if len(calls) == 1:                                 # the other card's whole fix while this one is mid-way
+            other = cs.fix(b"B" * 1000, "Creatures/Other/Same.psd", [cs.Issue("R11", "x", fix=True)], str(tmp_path / "work"))
+            assert other.data == b"B" * 1000 + b"!"
+        with open(path, "rb") as fh:
+            data = fh.read()
+        with open(out, "wb") as fh:
+            fh.write(data + b"!")
+        return ["renamed"]
+    monkeypatch.setattr(cs, "rename", rename)
+    fixed = cs.fix(b"A" * 1000, "Items/Heal/2 Stars/Same.psd", [cs.Issue("R11", "x", fix=True)], str(tmp_path / "work"))
+    assert fixed.data == b"A" * 1000 + b"!" and fixed.refused == [] and len(set(calls)) == 2
+    assert not list((tmp_path / "work").iterdir())
+
+
 def test_nothing_fixed_on_rule_pages_or_waived(clone):
     issue = cs.Issue("R9", "x", ("Name",), fix=True)
     assert cs.fix(b"", "Auxiliary/Rulebook/02_A.psd", [issue], "unused").data == b""

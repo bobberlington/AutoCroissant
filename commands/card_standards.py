@@ -11,9 +11,11 @@ is reported. Rule pages are never checked.
 No Discord, network or config.
 """
 from dataclasses import dataclass, field
-from os import makedirs, remove
-from os.path import basename, exists, getsize, join
+from os import makedirs
+from os.path import basename, getsize, join
 from re import compile as re_compile
+from shutil import rmtree
+from tempfile import mkdtemp
 from typing import Optional
 
 from psd_tools import PSDImage
@@ -444,6 +446,45 @@ def rename(path: str, out_path: str) -> list:
     return [f"{a['name']!r} -> {b['name']!r}" for i, (a, b) in enumerate(zip(old_records, new_records)) if i in indices]
 
 
+def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed) -> None:
+    """fix()'s work in its own temporary folder."""
+    from commands.txt2_repair import repair
+    base = join(folder, "pushed.psd")
+    with open(base, "wb") as fh:
+        fh.write(data)
+    current, codes = base, []
+    for issue in sorted(wanted, key=lambda i: FIXABLE.index(i.code)):
+        out = join(folder, f"{issue.code}.psd")
+        try:
+            if issue.code == "R11":
+                if not rename(current, out):
+                    continue
+            else:
+                done = repair(current, out)
+                if not done.out:
+                    continue
+        except (Refused, ImportError, ValueError) as error:
+            result.refused.append((issue.code, str(error)))
+            continue
+        current = out
+        codes.append(issue.code)
+        result.applied.append(issue.line())
+    if current == base:
+        return
+    try:
+        if abs(getsize(current) - getsize(base)) > SIZE_MAX * getsize(base):
+            raise Refused("size", f"PSD {getsize(base)} -> {getsize(current)} bytes")
+        if parser is not None:
+            before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, current, rel)
+            if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
+                raise Refused("reparse", "the bot reads the fixed PSD differently")
+        with open(current, "rb") as fh:
+            result.data = fh.read()
+    except Refused as refused:
+        result.refused += [(code, str(refused)) for code in codes]
+        result.applied, result.data = [], b""
+
+
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated; then the size and the reparse gates
@@ -459,50 +500,16 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     Returns:
         Fixed
     """
-    from commands.txt2_repair import repair
     result = Fixed()
     wanted = [issue for issue in issues if issue.fix and not issue.waived]
     if not wanted or kind_of(rel) == "rule":
         return result
     makedirs(work, exist_ok=True)
-    stem = card_key(rel).replace(" ", "_").replace("/", "_")
-    base = join(work, f"{stem}.pushed.psd")
-    with open(base, "wb") as fh:
-        fh.write(data)
-    current, temps, codes = base, [base], []
-    for issue in sorted(wanted, key=lambda i: FIXABLE.index(i.code)):
-        out = join(work, f"{stem}.{issue.code}.psd")
-        temps.append(out)
-        try:
-            if issue.code == "R11":
-                if not rename(current, out):
-                    continue
-            else:
-                done = repair(current, out)
-                if not done.out:
-                    continue
-        except (Refused, ImportError, ValueError) as error:
-            result.refused.append((issue.code, str(error)))
-            continue
-        current = out
-        codes.append(issue.code)
-        result.applied.append(issue.line())
-    if current != base:
-        try:
-            if abs(getsize(current) - getsize(base)) > SIZE_MAX * getsize(base):
-                raise Refused("size", f"PSD {getsize(base)} -> {getsize(current)} bytes")
-            if parser is not None:
-                before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, current, rel)
-                if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
-                    raise Refused("reparse", "the bot reads the fixed PSD differently")
-            with open(current, "rb") as fh:
-                result.data = fh.read()
-        except Refused as refused:
-            result.refused += [(code, str(refused)) for code in codes]
-            result.applied, result.data = [], b""
-    for temp in temps:
-        if exists(temp):
-            remove(temp)
+    folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
+    try:
+        _fix_in(folder, data, rel, wanted, parser, result)
+    finally:
+        rmtree(folder, ignore_errors=True)
     return result
 
 
