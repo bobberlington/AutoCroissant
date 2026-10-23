@@ -477,7 +477,8 @@ not land.**
   nothing, 6.3) and "PNG still current".
 - **Payload:** `{"content": ..., "allowed_mentions": {"parse": []}, "flags": 4}`: nobody is pinged, and the links get no
   preview cards. font-check.yml's role mention is not copied.
-- **Long pushes:** whole lines are dropped to fit 2,000 characters, ending "... and N more cards: [details](<commit url>)".
+- **Long pushes:** to fit 2,000 characters the cards lose their changes first (the last card first), then whole lines
+  are dropped, ending "... and N more cards: [details](<commit url>)".
 - **The webhook:** the URL comes from `DISCORD_STANDARDS_WEBHOOK` into curl's `--data @file` call. It is never echoed,
   logged or written to a file. A failed call is a `::warning::`, and the comment still goes up.
 
@@ -495,8 +496,9 @@ not land.**
   out of a group, restacked; a text box widened, narrowed, taller or shorter, a layer moved or resized; font, size,
   colour, leading or alignment on the words that kept their text ("Ability font Perpetua -> stoogedings-Regular on
   '(ENDT)'"); layer styles added, removed, on, off or changed; opacity, fill, blend, clipping; pixels, masks, shapes,
-  smart object content and filters, adjustment settings. An overlay status word (`psd_regions.overlay_words`) is named
-  "<word> overlay".
+  smart object content and filters, adjustment settings; a text that reads the same: "invisible character removed" (a
+  BOM: Cake Mix, Cortez) or "line breaks or spacing changed". An overlay status word (`psd_regions.overlay_words`) is
+  named "<word> overlay". The comment and the post escape the phrases' markdown (card text and layer names).
 - **Layers pair** by layer id (Photoshop keeps it across saves and renames), else by path; a layer deleted and made again
   under the same group with its name and kind pairs with its old self.
 - **Photoshop's re-save noise is left out**, measured on the 465 PSDs of the last 20 PSD pushes (19,801 layer records
@@ -507,6 +509,7 @@ not land.**
   - equal pixels encoded differently (Glaive's Laser Beam mask: 22,269 then 23,144 RLE bytes, the same mask): channels
     whose bytes differ are decoded and compared;
   - a group opened or closed in the Layers panel (`lsct`);
+  - smart filter ids and `validAtPosition`, renumbered by a save (Bone's Loans's Puppet Warp: filterID 1002 then 632);
   - descriptors read by meaning: floats rounded, b"Nrml" and b"normal" alike (Tainted Lazarus's 41 styles), and in a
     layer style only the keys both versions write (a newer Photoshop adds `gs99` to old Gradient Overlays: Heavy Mole);
   - text compared as text, style per character, boxes and origins within 1 px.
