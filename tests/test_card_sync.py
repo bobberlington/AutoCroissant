@@ -205,6 +205,30 @@ def test_a_pickle_on_the_branch_is_never_loaded(github, tmp_path):
     assert not (tmp_path / "card_data" / cdb.STATS_JSON).exists()
 
 
+@pytest.mark.parametrize("name, cards", [(cdb.STATS_JSON, {"A": 5}), (cdb.STATS_JSON, {"A": {"stats": [1]}}),
+                                         (cdb.OLD_STATS_JSON, {"A": 5}), (cdb.OLD_STATS_JSON, {"A": [5]})])
+def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monkeypatch, name, cards):
+    """A file whose top level is right but a record isn't: the sync writes nothing; on disk, startup passes it by."""
+    from hashlib import sha256
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    files = github.commits[github.tip]
+    files[name] = json.dumps({"schema": cdb.SCHEMA, "cards": cards}).encode()
+    manifest = json.loads(files[cdb.MANIFEST_JSON])
+    manifest["files"][name] = sha256(files[name]).hexdigest()
+    files[cdb.MANIFEST_JSON] = json.dumps(manifest).encode()
+    with pytest.raises(ValueError, match="A: not a"):
+        cdb.sync("card_data", REPO, "data")
+    assert not (tmp_path / "card_data").exists()
+    (tmp_path / "card_data").mkdir()
+    for file, data in files.items():                                  # on disk anyway (an older bot, a hand copy)
+        (tmp_path / "card_data" / file).write_bytes(data)
+    assert cs.load_local("card_data") is False and cdb.check_db("card_data")
+    loads = []
+    monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))
+    cs.startup()
+    assert loads == [1]                                               # the pickles, as with no card data
+
+
 def test_a_damaged_copy_is_fetched_again(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     cdb.sync("card_data", REPO, "data")

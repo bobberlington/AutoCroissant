@@ -150,16 +150,26 @@ def _cards_of(text: str, path: str) -> dict:
     return data["cards"]
 
 
+def _card_of(rec, path: str, name: str) -> CardInfo:
+    """card(rec); ValueError for a record that isn't one."""
+    try:
+        return card(rec)
+    except (AttributeError, TypeError) as e:
+        raise ValueError(f"{path}: {name}: not a card record ({e})") from e
+
+
 def parse_stats(text: str, path: str = STATS_JSON) -> dict:
-    """stats.json's text -> {name: CardInfo}."""
-    return {name: card(rec) for name, rec in _cards_of(text, path).items()}
+    """stats.json's text -> {name: CardInfo}; ValueError for a bad file or record."""
+    return {name: _card_of(rec, path, name) for name, rec in _cards_of(text, path).items()}
 
 
 def parse_old_stats(text: str, path: str = OLD_STATS_JSON) -> defaultdict:
-    """old_stats.json's text -> defaultdict(list) of CardInfo, like old_stats.pkl."""
+    """old_stats.json's text -> defaultdict(list) of CardInfo, like old_stats.pkl; ValueError for a bad file or record."""
     out = defaultdict(list)
     for name, recs in _cards_of(text, path).items():
-        out[name] = [card(rec) for rec in recs]
+        if not isinstance(recs, list):
+            raise ValueError(f"{path}: {name}: not a list of records")
+        out[name] = [_card_of(rec, path, name) for rec in recs]
     return out
 
 
@@ -363,10 +373,12 @@ def write_bytes(path: str, data: bytes) -> None:
 
 
 def _check_text(name: str, data: bytes) -> None:
-    """A downloaded data file parses as its kind; else ValueError (nothing is written then)."""
+    """A downloaded data file loads as its kind, every record too; else ValueError (nothing is written then)."""
     text = data.decode("utf-8")
-    if name in (STATS_JSON, OLD_STATS_JSON):
-        _cards_of(text, name)
+    if name == STATS_JSON:
+        parse_stats(text, name)
+    elif name == OLD_STATS_JSON:
+        parse_old_stats(text, name)
     elif not isinstance(loads(text).get("cards"), dict):
         raise ValueError(f"{name}: not a details file")
 
