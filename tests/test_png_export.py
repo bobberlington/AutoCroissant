@@ -41,9 +41,10 @@ CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
+RED_KNIFE = "bdf0d61f843242ef8ba9da7325efe1aa085efdbd"  # Auxiliary/Items/Red_Knife.psd (71ddebec)
 SABRE = "becff9f709b1403a8c5ec2d5aa4b7855ec4c5320"      # Auxiliary/Minions/Sabre.psd (3a268cad): an empty Ability layer
 # The real cards are drawn as the bake draws them: upstream psd-tools renders type layers and effects otherwise. Measured
-# at the Action's pin cards-20261022b (90508839).
+# at the Action's pin cards-20261022b (90508839); misses re-measured at cards-20261023 (ecc4b773).
 fork = pytest.mark.skipif(not text_engine(), reason="guard 1 renders with the fork, as the bake does: " + fork_reason())
 gradients = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy), as the Action installs")
 
@@ -302,9 +303,9 @@ def test_a_new_card_drawn_blank_in_a_text_box_is_refused(clone, monkeypatch):
 
 @fork
 def test_a_new_card_tells_its_missed_box(clone):
-    """The Freezer pushed as a new card: the whole card within the bar, its title box missing it (KrabbyPatty over the
-    Text group's effects: 1.9% bad); made, the miss told for the box."""
-    found = pe.export_new(pe.open_psd(blob(clone, FREEZER)))
+    """Red_Knife pushed as a new card: the whole card within the bar, its title box missing it (its outer glow's noise:
+    1.8% bad at cards-20261023; The Freezer's title is within the bar since round 7); made, the miss told for the box."""
+    found = pe.export_new(pe.open_psd(blob(clone, RED_KNIFE)))
     assert found.outcome == "re-exported" and found.data and psd_edit._within_bar(found.numbers["cross"])
     assert list(found.misses) == ["the Name text"] and found.numbers["boxes"]["the Ability text"]["bad_pct"] == 0
     (note,) = pe.miss_notes(found)
@@ -465,7 +466,8 @@ def test_the_refusals_of_the_replay(clone):
     show its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG); 20 Creature
     Types' header, which Photoshop redrew from a type layer whose stored raster did not change (the composite
     cross-check refuses what the render cannot see). Defcon Panda's Ability drop shadow, which the fork draws with
-    another edge (1.4% bad), refused until the owner's ruling of 2026-10-23: made now, the miss told."""
+    another edge, refused until the owner's ruling of 2026-10-23: made now, the miss told (at cards-20261023 the
+    cross-check's, 0.63% bad; the baseline's 1.4% at cards-20261022b)."""
     for shas, gate, why in ((RESTRAINED, "G5", "PNG not made: the PSD and its old PNG already disagreed where you changed it"),
                             (CREATURE_TYPES, "G6", pe.G6_UNSEEN)):
         old, new, old_png, _ = pair(clone, shas)
@@ -474,8 +476,8 @@ def test_the_refusals_of_the_replay(clone):
         assert not found.data
     old, new, old_png, _ = pair(clone, DEFCON_PANDA)
     found = pe.export(old, new, old_png)
-    assert found.outcome == "re-exported" and found.data and "baseline" in found.misses
-    assert psd_edit.PARITY_BAD_MAX < found.misses["baseline"]["bad_pct"] <= psd_edit.PARITY_FLOOR
+    assert found.outcome == "re-exported" and found.data and found.misses
+    assert all(not psd_edit._within_bar(m) and m["bad_pct"] <= psd_edit.PARITY_FLOOR for m in found.misses.values())
     # the author's PNG pushed first: Photoshop's image vouches for the change the fork draws otherwise, nothing to tell
     old, new, _, _ = pair(clone, DEFCON_PANDA)
     first = pe.export(old, new, pe.open_png(blob(clone, "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")))
