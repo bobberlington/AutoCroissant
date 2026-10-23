@@ -552,6 +552,12 @@ def _blob_of(card: CardInfo, index: GitIndex) -> Optional[str]:
     return found[1] if found else None
 
 
+def _read_at(path: str, blob: Optional[str], at: Optional[float], index: GitIndex) -> Optional[float]:
+    """When a reading's PSD bytes came to its own path (the PNG beside it is that path's), else its date."""
+    here = index.intro_at.get((blob, path)) if blob else None
+    return here.at if here is not None else at
+
+
 def _only_types(a: CardInfo, b: CardInfo) -> bool:
     """Whether the newer version b differs from a in its types alone and knew all a knew besides (knows)."""
     try:
@@ -603,8 +609,8 @@ def _misread(name: str, versions: list, holder: Optional[CardInfo], index: GitIn
             blobs = (_blob_of(a, index), _blob_of(b, index))
             if None in blobs or blobs[0] == blobs[1] or not _only_types(a, b):
                 continue
-            if _same_png(index, a.path, a.timestamp, b.path, start(b)[0]):     # a's own reading, b's data from its
-                found = (a, b)                                                   # start (a re-read carried it there)
+            if _same_png(index, a.path, _read_at(a.path, blobs[0], a.timestamp, index), b.path, start(b)[0]):
+                found = (a, b)                  # a's own reading at its path, b's data from its start (a re-read carried it)
                 break
         if found is None:
             return merged
@@ -637,6 +643,7 @@ class Reading:
     commit: Optional[str] = None
     blob: Optional[str] = None
     unknown: set = field(default_factory=set)
+    read_at: Optional[float] = None               # when its blob came to its path (the PNG beside it: _read_at)
 
 
 @dataclass
@@ -803,14 +810,15 @@ def _locate(reading: Reading, index: GitIndex, snapshot_at: float) -> bool:
     found = index.blob_at(reading.card.path, reading.card.timestamp)
     if found is not None:
         reading.at, reading.commit, reading.blob = reading.card.timestamp, found[0].sha, found[1]
-        return True
-    first = index.blob_before(reading.card.path, min(reading.card.timestamp, snapshot_at))
-    if first is None or first != index.blob_before(reading.card.path, snapshot_at):
-        return False
-    intro = index.blob_intro(first)
-    if intro is None:
-        return False
-    reading.at, reading.commit, reading.blob = intro.at, intro.sha, first
+    else:
+        first = index.blob_before(reading.card.path, min(reading.card.timestamp, snapshot_at))
+        if first is None or first != index.blob_before(reading.card.path, snapshot_at):
+            return False
+        intro = index.blob_intro(first)
+        if intro is None:
+            return False
+        reading.at, reading.commit, reading.blob = intro.at, intro.sha, first
+    reading.read_at = _read_at(reading.card.path, reading.blob, reading.at, index)
     return True
 
 
@@ -925,8 +933,9 @@ def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_
         gaps.setdefault(k, []).append(reading)
     placed: dict = {}                               # item index -> versions restored before it
     for k, readings in sorted(gaps.items()):
-        runs = _runs_of(readings, index, allowed,
-                        (_printed(items[k - 1], set(), allowed), items[k - 1].timestamp, items[k - 1].path) if k else None)
+        before = items[k - 1] if k else None
+        runs = _runs_of(readings, index, allowed, (_printed(before, set(), allowed), _read_at(
+            before.path, _blob_of(before, index), before.timestamp, index), before.path) if before is not None else None)
         after = items[k]
         held = (_printed(after, set(), allowed), starts[k], after.path)
         if runs and _alike(index, _form(runs[len(runs) - 1], allowed), held) and \
@@ -950,7 +959,7 @@ def _form(run_: list, allowed: bool, best: bool = False) -> tuple:
     """A run's printed form for _alike: (printed, commit time, path) of its first reading (best: of the one that knew
     most, _restored's)."""
     first = max(run_, key=lambda r: (-len(r.unknown), r.order)) if best else run_[0]
-    return (_printed(first.card, first.unknown, allowed), first.at, first.card.path)
+    return (_printed(first.card, first.unknown, allowed), first.read_at or first.at, first.card.path)
 
 
 def _runs_of(readings: list, index: GitIndex, allowed: bool, before: Optional[tuple] = None) -> list:
@@ -958,7 +967,7 @@ def _runs_of(readings: list, index: GitIndex, allowed: bool, before: Optional[tu
     prints go, when it knew all they knew (a reading that knew less never stands for one that knew more)."""
     runs: list = []
     for reading in readings:
-        mine = (_printed(reading.card, reading.unknown, allowed), reading.at, reading.card.path)
+        mine = (_printed(reading.card, reading.unknown, allowed), reading.read_at or reading.at, reading.card.path)
         if runs and _alike(index, _form(runs[len(runs) - 1], allowed), mine):
             runs[len(runs) - 1].append(reading)
         elif not runs and before is not None and _alike(index, before, mine) and set(mine[0]) <= set(before[0]):
