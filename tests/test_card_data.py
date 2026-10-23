@@ -558,6 +558,65 @@ def test_events_carry_their_push(cards, monkeypatch):
     assert (last["card"], last["push"]) == ("Mini Doomer", {"after": c5, "before": c4, "by": "erin-gh", "at": 3010.0})
 
 
+def _one_email(tmp_path):
+    """Two names for one email (Michael, then MichaelJSr) and a .mailmap naming it MichaelJSr."""
+    repo = tmp_path / "mailmapped"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    for at, (name, rel) in enumerate((("Michael", "site/Card Edits.json"), ("MichaelJSr", "Items/A.psd"),
+                                       ("Michael", ".mailmap")), start=1):
+        put(repo, rel, b"MichaelJSr <me@x>\n" if rel == ".mailmap" else rel.encode())
+        stamp = f"@{at * 1000} +0000"
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", rel, env={"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": "me@x", "GIT_COMMITTER_NAME": name,
+                                                  "GIT_COMMITTER_EMAIL": "me@x", "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})
+    return repo
+
+
+def test_git_authors_go_through_the_mailmap(tmp_path):
+    """The build's commit list and a file's newest commit name the person as .mailmap does (%aN)."""
+    repo = _one_email(tmp_path)
+    assert [author for _, _, author in cd._commits(str(repo), None, "HEAD")] == ["MichaelJSr"] * 3
+    build = cd.GitBuild(cm.StatsDatabase(), str(repo))
+    assert build.file_commit("site/Card Edits.json").author == "MichaelJSr"
+    assert build.index.first["Items/A.psd"].author == "MichaelJSr"
+
+
+class _ApiCommit:
+    """A PyGithub commit: .commit.author (name, email) and .commit.committer.date."""
+    def __init__(self, name, email, at):
+        from datetime import datetime, timezone
+        self.commit = SimpleNamespace(author=SimpleNamespace(name=name, email=email),
+                                      committer=SimpleNamespace(date=datetime.fromtimestamp(at, timezone.utc)))
+
+
+def test_api_first_author_goes_through_the_mailmap(monkeypatch):
+    """The API ignores .mailmap: the tree's, read once a run (only for a new card's author), maps by the commit's email;
+    a failed read raises (the card waits) and is tried again."""
+    from requests.exceptions import ConnectionError as Down
+    build = cd.CardBuild(cm.StatsDatabase())
+    monkeypatch.setattr(build, "_commit_page", lambda path: [_ApiCommit("Bob", "bob@x", 3000), _ApiCommit("Michael", "ME@x", 1000)])
+    reads = []
+
+    def blob_text(repository, sha, timeout=None):
+        reads.append(sha)
+        if sha == "down":
+            raise Down("503")
+        return "# one person\nMichaelJSr <me@x>\n"
+    monkeypatch.setattr(cd, "blob_text", blob_text)
+    build.shas = {}                                                          # no .mailmap in the tree: git names as they are
+    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, "Michael") and reads == []
+    build.mailmap, build.shas = None, {".mailmap": "down"}
+    with pytest.raises(Down):
+        build._get_remote_timestamp(object(), "Items/A.psd", "A")
+    assert build.mailmap is None
+    build.shas = {".mailmap": "m1"}
+    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, "MichaelJSr")
+    assert build._get_remote_timestamp(object(), "Items/B.psd", "B") == (3000.0, "MichaelJSr") and reads == ["down", "m1"]
+    build.db.stats["A"] = cm.CardInfo(name="A", card_type="item", path="Items/A.psd", author="Someone")
+    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, None)
+
+
 def test_bake_commit_rewritten_to_the_main_commit(cards):
     """Stage 4: the build ran on the local bake commit B; after M (B plus the save) is pushed, --rewrite B M names M
     everywhere B was (dates too) and lists B's PNGs to re-pin."""

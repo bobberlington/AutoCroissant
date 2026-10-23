@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import pytest
 
+from commands.card_edits import Mailmap
 from commands.psd_analyzer import CardEdits, CardInfo, CardStats, CardValidator
 
 
@@ -214,3 +215,14 @@ def test_psd_meta_rides_beside_by_and_at():
     assert e.psd_state("New Card") == {"state": "baked"} and "new card" not in e.cards
     e.set_psd_state("Nobody", None)
     assert "nobody" not in e.meta                              # removing nothing leaves no empty meta behind
+
+
+def test_mailmap_forms():
+    """git's name forms: by email (either email given), by name and email, an email-only line and comments left out."""
+    mailmap = Mailmap.parse("# who is who\nMichaelJSr <Me@X>\nBob  B <bob@new> <bob@old>\n"
+                            "Ann <ann@x> ann2 <Shared@X>\n<only@email> <other@x>\n  # Nobody <n@x>\nno brackets\n")
+    assert mailmap.name("Michael", "me@x") == "MichaelJSr" and mailmap.name("MichaelJSr", "ME@x") == "MichaelJSr"
+    assert mailmap.name("bob", "bob@old") == "Bob B" and mailmap.name("bob", "bob@new") == "bob"
+    assert mailmap.name("ANN2", "shared@x") == "Ann" and mailmap.name("Carl", "shared@x") == "Carl"
+    assert mailmap.name("o", "other@x") == "o" and mailmap.name("Nobody", "n@x") == "Nobody"
+    assert Mailmap.parse("").name("x", None) == "x"

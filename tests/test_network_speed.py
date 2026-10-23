@@ -43,7 +43,7 @@ class Reply:
 class Commit:
     def __init__(self, n):
         self.commit = SimpleNamespace(committer=SimpleNamespace(date=SimpleNamespace(timestamp=lambda: float(n))),
-                                      author=SimpleNamespace(name=f"author{n}"))
+                                      author=SimpleNamespace(name=f"author{n}", email=f"author{n}@x"))
 
 
 class Commits:
