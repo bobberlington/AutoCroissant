@@ -475,7 +475,9 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   A pixel miss is no refusal since 2026-10-23 (owner): the edit is baked and the bake commit's line says "name baked
   with a pixel difference: bad 1.97%, mean 1.60, max 217"; only a broken render (more than 25% of the box's pixels off,
   or none of the edit drawn) or a read-back that is not the edit is refused. Pixel refusals written under the old bar
-  (Masked Dedede, PoD11ZOMG, Zero Override) show as refused until the next run bakes them.
+  (Masked Dedede, PoD11ZOMG, Zero Override) show as refused until the next run bakes them: `build_site.py` (about line
+  855) knows nothing of the floor, so the window is the first 30-minute card-edits tick after the change lands (a
+  dispatch closes it at once).
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.

@@ -181,7 +181,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (`psd_edit.miss_notes`). Gate `parity` is now only the safety floor: more than 25% of the region's pixels past 24
    (`PARITY_FLOOR`) is a broken render, refused before anything is written. So is a box that misses the bar and whose
    merge replaces no pixel (`<field>: the render shows no change`, review 2026-10-23): the fork drew nothing new there,
-   so the PSD would carry the edit and the PNG the old card. A blank ability box stays under the floor on 9 of 24
+   so the PSD would carry the edit and the PNG the old card. Only the replaced pixels no other edit's region reaches count
+   (`own_pixels`, review 2026-10-23: a retitle in a region stretched over a blank ability made its merge non-empty and it
+   baked); when the others cover the whole region, all count. A blank ability box stays under the floor on 9 of 24
    sampled cards (Shield_of_the_Guilty 10.7%, Clot_Blood 12.5%, Lost_Kin 16.6%, Rusty_Knife 19.1% ... Grey_Prince_Zote
    23.6%); the 8 re-run are all refused now. A box within the bar that draws no change (a case fix under all caps) still
    bakes. The other floor is the data one, step 8: what the bot reads back from the baked PSD must be the edit. Before
@@ -396,8 +398,12 @@ retries it. A `duplicate` or no-PNG refusal likewise carries `pngs`, a key of th
 final only while they hold: removing `NME_Stock2.png` retries it, a re-export of the same paths doesn't (a verdict written
 before 2026-10-22 has no key and is retried once). A pixel refusal under the floor (`parity: baseline bad 0.11% ...` or
 `idempotence: <field> re-render bad ...`, written under the old bar before 2026-10-23: Masked Dedede, PoD11ZOMG and Zero
-Override on that day) is never final: the next scheduled run bakes it (build_site shows it refused until that run rewrites
-the verdict) or refuses it again past the floor or as a render that shows no change, and those stay final. A `Card
+Override on that day) is never final: the next scheduled run bakes it or refuses it again past the floor or as a render
+that shows no change, and those stay final. Until that run the website still shows it refused: TTSCardMaker
+`site/build/build_site.py` (about line 855) shows any `_psd` refusal while its `for` values and `psd` prefix hold and
+knows nothing of the floor (review 2026-10-23). `pending()` takes these cards on the first 30-minute tick after this lands
+(3 cards, under `MAX_BAKES`), and the bake commit rebuilds the site, so the window is one tick; a dispatch closes it at
+once. Teaching build_site the floor is a TTSCardMaker change, not made. A `Card
 Edits.json` that isn't JSON fails the gate (Discord is told) rather than ending it silently. Not covered: another refused
 card whose PSD and edit are unchanged is not retried after a pipeline, fork or chart fix; a dispatch (`dry_run` unticked)
 does that.
