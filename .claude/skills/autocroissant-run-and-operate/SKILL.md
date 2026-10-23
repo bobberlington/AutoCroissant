@@ -547,21 +547,29 @@ and at most one bot commit, both after a 30-minute quiet window.
   artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
   against its first parent; `cards` limits it; `all` audits every card PSD (about 40 minutes, always dry). `dry_run` off
   comments, posts and lands at once on the blob check alone (no quiet window), so it refuses ("still in its quiet
-  window") while a push run of that commit, or of a later one, is unfinished: dispatch again once it has finished. An
-  author with no GitHub account is named by the git author name there, never the dispatcher.
+  window") while a push run of that commit, or of a later one, is unfinished: dispatch again once it has finished.
+  `CARD_GUARDS` does not bind a dispatch: unset or `report`, a dispatch with `dry_run` off still comments, posts and
+  lands, so dispatch dry while testing in the `report` phase. An author with no GitHub account is named by the git author
+  name there, never the dispatcher.
 - **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
   --out <dir>` (any clone with the history; blobs it lacks come by API), then `land --plan <dir>/plan.json --dry-run`
-  or `--local <clone>` (commits there, pushes nothing). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
-- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the comment's told mark; a re-run that
-  cannot read the comments counts the push as told, and neither its failure alert nor its post goes out). After a run
-  that landed, the re-run finds its blobs on the branch ("already on the branch") and writes nothing.
+  or `--local <clone>` (commits there, pushes nothing). A bare `land` commits to TTSCardMaker with config.py's token, so it
+  refuses a plan not checked with `--mode on` (exit 2). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
+- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the told mark on any guards comment;
+  the lookup is tried 3 times, and a re-run that still cannot read the comments counts the push as told: neither its
+  failure alert nor its post goes out, and its error says the push may be untold, so re-run again once GitHub answers).
+  A re-run that fails in Check looks the mark up in the alert step, so a push already told gets no "was not guarded".
+  The quiet window counts from the push, so a late re-run does not wait again. After a run that landed, the re-run finds
+  its blobs on the branch ("already on the branch") and writes nothing.
 - **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
   or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
   run failed" once Check passed. Once per streak: a run that sent it, or stayed quiet inside a told streak, leaves the
   `card-guards-failure-told` artifact, and the next failing run is quiet only when the last finished push run left it
   and is not green. A red run that posted its own lines (a card error, a failed comment) leaves none, so the next
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
-  errors"); re-check it with a dispatch (`sha`, `cards`).
+  errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
+  bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
+  next day).
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -845,3 +853,4 @@ abort.
 2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.
 2026-10-22 (card guards): section 7's Card guards subsection (the CARD_GUARDS switch, dispatches, re-runs, the failure alert); no cited line moved.
 2026-10-22 (card guards, review 4): the Card guards subsection gains the any-case switch, the refused dispatch, the dispatch's author, the streak artifact and the unread-comment re-run; the Card bake `--local` bullet no longer calls card-sync.yml planned; no cited line moved.
+2026-10-22 (card guards, review 5): the Card guards subsection gains the dispatch outside CARD_GUARDS, `land`'s refusal of a non-`on` plan, the retried lookup, the alert's own lookup on a re-run, the re-run's window and the unstarted site build; no cited line moved.
