@@ -6,6 +6,8 @@ against the card standards (fonts included) and fixes only the 0-pixel classes. 
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
+Every card PNG the push brought is recompressed losslessly in that commit when it shrinks by more than 10% (owner,
+2026-10-23: png_export.recompress, the same pixels), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] [--fonts <dir>] --out <dir>
@@ -109,7 +111,8 @@ class Writer:
 class Job:
     """One card's work in the push."""
     psd: str                                    # the PSD path at after (the deleted one's for "deleted")
-    case: str                                   # stale, pair, new, beside, rename, psd-only, png-only, deleted, png-deleted, whole
+    case: str                                   # stale, pair, new, beside, rename, psd-only, png-only, deleted, png-deleted, whole,
+                                                # numbered (numbered PNGs pushed alone)
     psd_old: str = ""                           # its blob before the push
     psd_new: str = ""                           # its blob at after
     png: str = ""                               # the PNG path (to check, or to write)
@@ -120,6 +123,7 @@ class Job:
     psd_anchor: str = ""                        # stale: the PSD as of its PNG's last change, when a burst's earlier push
     anchor_commit: str = ""                     # changed the PSD without the PNG (G5's second try); that commit
     left: str = ""                              # rename: the old PNG, still at its old path
+    pushed: dict = field(default_factory=dict)  # numbered PNG path -> blob the push brought (recompressed only)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -134,7 +138,7 @@ class Result:
     fix_refused: list = field(default_factory=list)   # (code, why)
     r10: dict = field(default_factory=dict)     # png_check of a pushed PNG
     notes: list = field(default_factory=list)   # (text, told on Discord)
-    writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind", "line"}
+    writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind" (png, psd, recompress), "line"}
     changes: list = field(default_factory=list) # what changed inside a modified PSD (psd_diff phrases)
     error: str = ""
 
@@ -200,7 +204,7 @@ def _is_png(path: str) -> bool:
     return path.lower().endswith(".png")
 
 
-def _card_png(path: str) -> bool:
+def card_png(path: str) -> bool:
     """A PNG in the card folders (not Types/, site/, TTS/; MDW/ and Markers/ hold no card)."""
     return _is_png(path) and path.startswith(CARD_ROOTS) and is_card_psd(path[:len(path) - 4] + ".psd")
 
@@ -371,7 +375,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     skipped = {c.path: writers[c.path] for c in changes if c.path in writers and writers[c.path].bot}
     changes = [c for c in changes if c.path not in skipped]
     psds = [c for c in changes if is_card_psd(c.path)]
-    pngs = {c.path: c for c in changes if _card_png(c.path)}
+    pngs = {c.path: c for c in changes if card_png(c.path)}
     deleted: dict = {}                          # blob -> deleted paths: an added path with one of them is a rename
     for c in psds:
         if c.status == "D":
@@ -388,12 +392,15 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     def numbered(path: str) -> dict:
         return {p: tree[p][1] for p in snapshot.png_for(path)[1] if p not in pngs and p in tree}
 
+    def pushed(path: str) -> dict:
+        return {p: pngs[p].new for p in snapshot.png_for(path)[1] if p in pngs and pngs[p].status in "AM"}
+
     for change in psds:
         if change.path in renamed_old:
             continue
         png = snapshot.png_for(change.path)[0] if change.status != "D" else ""
         login, commit = who(change.path)
-        job = Job(change.path, "", change.old, change.new, login=login, commit=commit)
+        job = Job(change.path, "", change.old, change.new, login=login, commit=commit, pushed=pushed(change.path))
         if change.status == "D":
             left = snapshot.png_for(change.path)[0]
             if left:
@@ -441,9 +448,19 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             continue
         login, commit = who(path)
         if change.status in "AM":
-            jobs.append(Job(psd, "png-only", "", tree[psd][1], path, change.old, change.new, login=login, commit=commit))
+            jobs.append(Job(psd, "png-only", "", tree[psd][1], path, change.old, change.new, login=login, commit=commit,
+                            pushed=pushed(psd)))
         elif change.status == "D":
             jobs.append(Job(psd, "png-deleted", "", tree[psd][1], path, change.old, login=login, commit=commit))
+    covered = {path for job in jobs for path in job.pushed}
+    alone: dict = {}                            # numbered PNGs pushed without their PSD or its PNG: recompressed only
+    for path, change in sorted(pngs.items()):
+        psd = snapshot.duplicate_of(CardAuthors.key(card_name(path))) if change.status in "AM" and path not in covered else ""
+        if psd in tree and path in snapshot.png_for(psd)[1]:
+            alone.setdefault(psd, {})[path] = change.new
+    for psd, found in alone.items():
+        login, commit = who(sorted(found)[0])
+        jobs.append(Job(psd, "numbered", "", tree[psd][1], login=login, commit=commit, pushed=found))
     if cards:
         jobs = [job for job in jobs if CardAuthors.key(card_name(job.psd)) in cards]
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
@@ -512,6 +529,19 @@ def _crops(out: str, rel: str, before, after, box) -> None:
         image.save(f"{stem}.{name}.png")
 
 
+def _size(n: int) -> str:
+    return f"{n / 1e6:.1f} MB" if n >= 1e6 else f"{n / 1e3:.0f} KB"
+
+
+def _recompress(out: str, result: Result, path: str, data: bytes) -> None:
+    """A PNG the push brought, recompressed losslessly when more than RECOMPRESS_MIN smaller (owner, 2026-10-23): a write
+    of its own kind, resting on that PNG alone and never told on Discord."""
+    smaller = png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+    if smaller is not None:
+        result.writes.append({"path": path, "file": _save(out, path, smaller), "sha": blob_sha(smaller), "kind": "recompress",
+                              "line": f"recompressed losslessly ({_size(len(data))} -> {_size(len(smaller))}, the same pixels)"})
+
+
 def _export_dict(found) -> dict:
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
@@ -549,6 +579,10 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> R
 
 
 def _run(source: Source, job: Job, context, parser, out: str, result: Result) -> None:
+    for path, sha in sorted(job.pushed.items()):
+        _recompress(out, result, path, source.blob(sha))
+    if job.case == "numbered":
+        return
     if job.case == "deleted":
         result.notes.append((f"{basename(job.png)} is left without its PSD", False))
         return
@@ -557,10 +591,13 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         return
     if job.case == "rename":
         data = source.blob(job.copy_from)
+        smaller = png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+        line = "the PNG copied to the PSD's new name" + (
+            f"; recompressed losslessly ({_size(len(data))} -> {_size(len(smaller))})" if smaller else "")
+        data = smaller or data
         file = _save(out, job.png, data)
         result.export = {"outcome": "re-exported", "why": "", "copied": True}
-        result.writes.append({"path": job.png, "file": file, "sha": blob_sha(data), "kind": "png",
-                              "line": "the PNG copied to the PSD's new name"})
+        result.writes.append({"path": job.png, "file": file, "sha": blob_sha(data), "kind": "png", "line": line})
         if job.left:
             result.notes.append((f"{basename(job.left)} is left at the PSD's old name", False))
         return
@@ -613,7 +650,10 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
                                           + "".join(f"; {note}" for note in png_export.miss_notes(found))})
     # R10: a pushed PNG against the PSD
     if job.case in ("pair", "png-only", "whole") and job.png_new:
-        png = png_export.open_png(source.blob(job.png_new))
+        data = source.blob(job.png_new)
+        if job.case != "whole":
+            _recompress(out, result, job.png, data)
+        png = png_export.open_png(data)
         measured = png_export.png_check(new, png)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
         if measured.get("ok") is None:
@@ -664,7 +704,7 @@ def _expect(job: Job) -> dict:
     expect = {job.psd: job.psd_new}
     if job.png:
         expect[job.png] = job.png_old if job.case in ("stale", "beside") else job.png_new
-    for path, sha in job.numbered.items():
+    for path, sha in (*job.numbered.items(), *job.pushed.items()):
         expect[path] = sha
     return expect
 
@@ -791,6 +831,10 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
             out.append(f"- {entry['r10']['line']}")
         elif entry["r10"].get("ok"):
             out.append(f"- {basename(entry['psd'])[:-4]}.png matches the PSD (mean {entry['r10'].get('mean', 0):.2f})")
+        for write in entry.get("writes", []):
+            if write.get("kind") == "recompress":
+                out.append(f"- {basename(write['path'])} {write['line']}" if mode == "on" else
+                           f"- {basename(write['path'])} would be {write['line']} with CARD_GUARDS=on")
         told = [i["line"] for i in entry["issues"] if i["told"]]
         if told:
             out.append("- Issues: " + "; ".join(told))
@@ -812,8 +856,8 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
             out += _landing(entry, landed)
         for note in (landed or {}).get("after", {}).get(entry["psd"], []):
             out.append(f"- After the quiet window: {note}")
-        if not (line or told or entry["fixed"] or entry["fix_refused"] or entry["notes"] or entry["r10"]):
-            out.append("- Meets the standards.")
+        if not (line or told or entry["fixed"] or entry["fix_refused"] or entry["notes"] or entry["r10"] or entry.get("writes")):
+            out.append("- Nothing to recompress." if entry.get("case") == "numbered" else "- Meets the standards.")
         out.append("")
     if errors:
         out += ["Errors:"] + [f"- {e}" for e in errors] + [""]
@@ -945,16 +989,21 @@ def message(landed: list, after: str) -> str:
     """The bot commit's message: subject with the counts, one line per file, the Guarded-push trailer."""
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd")
+    smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
     counts = ", ".join(part for part in (plural(pngs, "PNG") + " re-exported" if pngs else "",
-                                         plural(psds, "PSD") + " fixed" if psds else "") if part)
+                                         plural(psds, "PSD") + " fixed" if psds else "",
+                                         plural(smaller, "PNG") + " recompressed" if smaller else "") if part)
     lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
     return f"{SUBJECT}: {counts} (push {after[:8]})\n\n" + "\n".join(lines) + f"\n{TRAILER}: {after}\n"
 
 
 def _rests_on(entry: dict, write: dict) -> list:
-    """The paths a write rests on: a PSD fix (0 pixels) on its PSD alone, a PNG on the whole card (PSD, PNG, numbered)."""
-    return [entry["psd"]] if write["kind"] == "psd" else sorted(entry["expect"])
+    """The paths a write rests on: a PSD fix (0 pixels) on its PSD alone, a recompressed PNG on itself, a PNG on the whole
+    card (PSD, PNG, numbered)."""
+    if write["kind"] == "psd":
+        return [entry["psd"]]
+    return [write["path"]] if write["kind"] == "recompress" else sorted(entry["expect"])
 
 
 class Head:
@@ -1045,8 +1094,8 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
         already = _already(landed, entry["card"])
         for write in [] if landed.get("dry") or landed.get("unread") else entry.get("writes", []):
             why = "the bot's commit failed" if landed.get("error") else dropped.get(write["path"], "")
-            if not why or write["path"] in already:
-                continue                        # landed (now or by an earlier run)
+            if not why or write["path"] in already or write["kind"] == "recompress":
+                continue                        # landed (now or by an earlier run); a recompression is never told
             if here and not _holds(entry, write["path"], here(write["path"])) and not (by_bot and write["path"] == psd):
                 continue                        # the author replaced that file: nothing to tell
             why = why.replace("superseded: ", "")
@@ -1255,6 +1304,7 @@ __all__ = [
     'TELL_PNG_MISMATCH',
     'Writer',
     'build_context',
+    'card_png',
     'changes',
     'check',
     'discord_payload',

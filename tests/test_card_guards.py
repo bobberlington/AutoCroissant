@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from importlib.util import find_spec
 from sys import executable
 
 import pytest
@@ -20,8 +21,9 @@ from PIL import Image, ImageDraw
 
 import commands.card_guards as cg
 import commands.git_commit as gc
+import commands.png_export as pe
 from commands.github_api import blob_sha
-from test_png_export import _rows_off, card, fixture_psd
+from test_png_export import _rows_off, art, card, fixture_psd, photoshop_png
 
 # ========================
 # Configuration
@@ -466,6 +468,8 @@ def test_message():
     assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed (push {'f' * 8})"
     assert "Items/X.png: re-exported by the bot's render of the PSD (12 px changed) (Zomoroko, 7cb4c867)" in text
     assert text.rstrip().endswith(f"Guarded-push: {'f' * 40}") and "Edit-by" not in text
+    landed[0]["writes"].append({"path": "Items/Z.png", "kind": "recompress", "line": "recompressed losslessly (9.0 MB -> 2.0 MB)"})
+    assert cg.message(landed, "f" * 40).splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
 
 
 # ========================
@@ -875,6 +879,73 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
     assert again["cards"] == []                                                             # the bot's commit is never guarded
 
 
+# ========================
+# Lossless recompression (owner, 2026-10-23)
+# ========================
+@pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs")
+def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
+    """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%
+    smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;
+    the bot's commit is never guarded (no loop)."""
+    root, base, alice, bot = cards
+    work = tmp_path / "psds"                    # the fixture's PSD folder
+    big = art("RGB", (300, 450))
+    fixture_psd(work, big, "Fat")
+    psd, heavy, numbered = (work / "Fat.psd").read_bytes(), photoshop_png(big), photoshop_png(art("RGB", (300, 450)))
+    push = _plumb(root, {f"{FOLDER}/Fat.psd": psd, f"{FOLDER}/Fat.png": heavy, f"{FOLDER}/Thin.psd": psd,
+                         f"{FOLDER}/Thin.png": pe.recompress(heavy), f"{FOLDER}/Snack2.png": numbered}, "Photoshop exports")
+    _git(root, "reset", "-q", "--hard")         # the checkout land commits in (_plumb left it behind)
+    out = tmp_path / "out"
+    data = cg.check(str(root), push, bot, mode="on", out=str(out), workers=1)
+    by = {c["card"]: c for c in data["cards"]}
+    assert (by["Fat"]["case"], by["Snack"]["case"], by["Thin"]["writes"]) == ("pair", "numbered", [])
+    assert by["Fat"]["told"] == by["Snack"]["told"] == [] and "ok" in by["Fat"]["r10"]   # R10 still checks the pushed PNG
+    (fat,), (snack,) = by["Fat"]["writes"], by["Snack"]["writes"]
+    assert (fat["path"], fat["kind"], snack["path"], snack["kind"]) == (f"{FOLDER}/Fat.png", "recompress", f"{FOLDER}/Snack2.png", "recompress")
+    assert pe.same_png(heavy, (out / fat["file"]).read_bytes()) and pe.same_png(numbered, (out / snack["file"]).read_bytes())
+    assert "ecompress" not in json.dumps(data["discord"])
+    report = (out / "report.md").read_text()
+    assert re.search(r"- Fat\.png recompressed losslessly \(\d+ KB -> \d+ KB, the same pixels\)\n", report)
+    assert "- Snack2.png recompressed losslessly" in report
+    landed = cg.land(str(out / "plan.json"), local=str(root))
+    assert landed["sha"] and sorted(landed["landed"]) == ["Fat", "Snack"]
+    assert _git(root, "log", "-1", "--format=%an %s", landed["sha"]) == f"AutoCroissant Card guards: 2 PNGs recompressed (push {push[:8]})"
+    committed = subprocess.run(["git", "-C", str(root), "show", f"{landed['sha']}:{FOLDER}/Fat.png"], capture_output=True,
+                               check=True).stdout
+    assert len(committed) * 3 < len(heavy) and pe.same_png(heavy, committed)
+    assert cg.check(str(root), landed["sha"], push, mode="on", out=str(tmp_path / "again"), workers=1)["cards"] == []
+    told = cg.check(str(root), push, bot, mode="report", out=str(tmp_path / "report"), workers=1)
+    assert [c["told"] for c in told["cards"] if c["card"] in ("Fat", "Snack")] == [[], []]
+    assert "- Fat.png would be recompressed losslessly (" in (tmp_path / "report" / "report.md").read_text()
+
+
+def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatch):
+    """A recompressed PNG rests on that PNG alone (a later push of the PSD does not drop it) and is never told on
+    Discord: not in report mode ("export it in Photoshop" is for a PNG not made), not when it did not land."""
+    line = "recompressed losslessly (9.0 MB -> 2.0 MB, the same pixels)"
+    job = cg.Job("X/Fat.psd", "pair", "", "s1", "X/Fat.png", png_new="p1", login="Alice", commit="a" * 40)
+    result = cg.Result(job, writes=[{"path": "X/Fat.png", "file": "files/Fat.png", "sha": blob_sha(b"small"),
+                                     "kind": "recompress", "line": line}])
+    for mode in ("report", "on"):
+        planned = cg.plan([result], "o/r", "e" * 40, "f" * 40, mode)
+        assert planned["cards"][0]["told"] == [] and cg.discord_payload(planned, "o/r") == {} and cg.summary(planned, [])["writes"] == 1
+    assert f"- Fat.png would be {line} with CARD_GUARDS=on" in cg.markdown(cg.plan([result], "o/r", "e" * 40, "f" * 40, "report"), [], [], [])
+    assert f"- Fat.png {line}\n" in cg.markdown(cg.plan([result], "o/r", "e" * 40, "f" * 40, "on"), [], [], [])
+    out = tmp_path / "plan"
+    fat = _entry("Fat", case="pair")
+    _write(out, fat, "X/Fat.png", "recompress", b"small", line)
+    plan = _full_plan(tmp_path, [fat])
+    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
+    hub = FakeHub({"X/Fat.psd": ("100644", "s1"), "X/Fat.png": ("100644", "p1")}, recent={"X/Fat.psd"})
+    hub.install(monkeypatch)
+    report = cg.land(plan, quiet_from="2026-10-22T17:00:00Z", now=lambda: now)
+    assert report["landed"] == ["Fat"] and hub.commits[0][2].startswith("Card guards: 1 PNG recompressed (push ffffffff)")
+    FakeHub({"X/Fat.psd": ("100644", "s1"), "X/Fat.png": ("100644", "theirs")}).install(monkeypatch)
+    report = cg.land(plan)
+    assert report["dropped"] == [["Fat", "superseded: X/Fat.png changed on the branch", "X/Fat.png"]]
+    assert report["told"] == {"X/Fat.psd": []} and cg.finish(plan, report) == {}
+
+
 def test_a_faint_beside_mismatch_note_names_the_case(cards, tmp_path):
     """Beside, current (no pixel past the threshold) but the mean is outside the bar: the note says the PSD is new and
     gives the mean, not "0.0% of pixels differ" nor "this push moved no pixel"."""
@@ -938,11 +1009,12 @@ def test_a_real_r11_fix_lands_for_a_pair(clone, tmp_path, monkeypatch):
     push = _commit(root, "Mini Doomer", author="Alice")
     out = tmp_path / "out"
     told = cg.check(str(root), push, base, mode="on", out=str(tmp_path / "told"), workers=1)["cards"][0]
-    assert told["writes"] == [] and "layer names to correct: 'NAME' -> 'Name' (new)" in told["told"]   # the owner's rule today
+    assert [w["kind"] for w in told["writes"]] == ["recompress"]                     # the re-saved PNG (level 1)
+    assert "layer names to correct: 'NAME' -> 'Name' (new)" in told["told"]                 # the owner's rule today
     monkeypatch.setattr(cg.standards, "AUTO_FIX", ("R9", "R11"))
     data = cg.check(str(root), push, base, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
-    assert entry["case"] == "pair" and [w["kind"] for w in entry["writes"]] == ["psd"], entry
+    assert entry["case"] == "pair" and [w["kind"] for w in entry["writes"]] == ["recompress", "psd"], entry
     assert entry["expect"][f"{rel}.png"] == cg.Source(str(root)).tree(push)[f"{rel}.png"][1]
     assert "The bot will fix: " in data["markdown"]
     assert cg.main(["land", "--plan", str(out / "plan.json"), "--local", str(root)]) == 0
@@ -985,7 +1057,10 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     by = {c["card"]: c for c in data["cards"]}
     assert len(by) == 19
     assert {name for name, c in by.items() if c["export"].get("outcome") == "current"} == {"God Tamer", "Bubble", "12 Reactions2"}
-    assert all(not c["writes"] for c in data["cards"])
+    # nothing re-exported (the PNGs were pushed); 16 of Photoshop's exports recompressed (owner, 2026-10-23)
+    assert all(w["kind"] == "recompress" for c in data["cards"] for w in c["writes"])
+    recompressed = {name for name, c in by.items() if c["writes"]}
+    assert len(recompressed) == 16 and {"Warcraftian Druid", "22 Negation", "Asteroid Field"} <= recompressed
     assert by["God Tamer"]["changes"] == ["added Star group", "Group 2 renamed 'Stars'", "Star/Delicate Flower moved into Star"]
     assert by["Bubble"]["changes"] == ["added Stars group", "starfish14 moved into Stars"]
     assert by["12 Reactions2"]["changes"] == ["removed Item shop copy"]
@@ -1068,6 +1143,7 @@ def test_workflow_shape(clone):
     cards = next(s for s in steps if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
     pin = re.search(r"psd-tools@([\w.-]+)\"", text).group(1)
+    assert re.search(r"pip install [^\n]*pyoxipng==[\d.]+ ", text)          # the lossless PNG recompression (png_export)
     edits = path.parent / "card-edits.yml"
     if edits.exists():
         assert re.search(r"psd-tools@([\w.-]+)\"", edits.read_text(encoding="utf-8")).group(1) == pin

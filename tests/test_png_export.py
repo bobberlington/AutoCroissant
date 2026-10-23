@@ -394,6 +394,105 @@ def test_png_check(tmp_path):
 
 
 # ========================
+# Lossless recompression (owner, 2026-10-23)
+# ========================
+oxipng = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs")
+
+
+def photoshop_png(image: Image.Image, icc: str = "sRGB") -> bytes:
+    """image as Photoshop exports it: no deflate (zlib level 0), with its colour and text chunks."""
+    import io
+    from struct import pack
+    from PIL import ImageCms, PngImagePlugin
+    info = PngImagePlugin.PngInfo()
+    info.add(b"gAMA", pack(">I", 45455))
+    info.add_itxt("XML:com.adobe.xmp", "<x:xmpmeta xmlns:x='adobe:ns:meta/'>" + "photoshop " * 400 + "</x:xmpmeta>")
+    info.add_itxt("Comment", "squeezed " * 50, zip=True)
+    info.add_text("Software", "Adobe Photoshop 24.0", zip=True)
+    buf = io.BytesIO()
+    image.save(buf, "PNG", compress_level=0, pnginfo=info, dpi=(300, 300),
+               icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile(icc)).tobytes())
+    return buf.getvalue()
+
+
+def art(mode="RGBA", size=(400, 600)) -> Image.Image:
+    """A card-like picture: gradients and shapes (opaque, so oxipng could drop the alpha if allowed)."""
+    x, y = np.meshgrid(np.arange(size[0]), np.arange(size[1]))
+    rgb = np.stack([x * 255 // size[0], y * 255 // size[1], (x + y) % 256], axis=2).astype(np.uint8)
+    image = Image.fromarray(rgb).convert(mode)
+    ImageDraw.Draw(image).ellipse((50, 80, 300, 400), fill=(250, 200, 40) + (() if mode == "RGB" else (255,)))
+    return image
+
+
+@oxipng
+@pytest.mark.parametrize("mode", ["RGBA", "RGB"])
+def test_recompress_keeps_the_image_and_its_chunks(mode):
+    """A Photoshop-sized PNG gets several times smaller and stays the same file to every reader: the header (an opaque
+    RGBA stays RGBA: the bake and guard 1 read RGB and RGBA only), the pixels, the ICC profile, gAMA, pHYs and the text."""
+    data = photoshop_png(art(mode))
+    out = pe.recompress(data, pe.RECOMPRESS_MIN, pe.RECOMPRESS_BYTES)
+    assert out is not None and len(out) * 3 < len(data) and pe.same_png(data, out)
+    assert out[:33] == data[:33]                                            # signature and IHDR, byte for byte
+    before, after = pe.open_png(data), pe.open_png(out)
+    assert after.mode == before.mode == mode and np.array_equal(np.asarray(after), np.asarray(before))
+    for key in ("icc_profile", "gamma", "dpi", "XML:com.adobe.xmp", "Comment", "Software"):
+        assert after.info[key] == before.info[key], key
+    assert pe.recompress(out, pe.RECOMPRESS_MIN) is None                  # done once: nothing more to save
+
+
+@oxipng
+def test_same_png_tells_a_changed_pixel_or_chunk():
+    data = photoshop_png(art())
+    out = pe.recompress(data)
+    assert pe.same_png(data, out) and pe.same_png(data, data)
+    image = art()
+    image.putpixel((7, 7), (0, 0, 0, 255))
+    assert not pe.same_png(data, photoshop_png(image))                      # one pixel
+    assert not pe.same_png(data, photoshop_png(art("RGB")))                 # the colour type
+    plain = art()
+    import io
+    buf = io.BytesIO()
+    plain.save(buf, "PNG")
+    assert not pe.same_png(data, buf.getvalue())                            # the chunks dropped
+    assert not pe.same_png(data, photoshop_png(art(), icc="XYZ"))           # another ICC profile
+    assert not pe.same_png(data, b"not a png")
+
+
+@oxipng
+def test_recompress_wants_its_saving():
+    data = photoshop_png(art(size=(80, 120)))
+    out = pe.recompress(data)
+    assert out is not None and len(data) - len(out) < pe.RECOMPRESS_BYTES
+    assert pe.recompress(data, pe.RECOMPRESS_MIN, pe.RECOMPRESS_BYTES) is None    # too small to be worth a commit
+    assert pe.worth(1000, 899, 0.10, 0) and not pe.worth(1000, 900, 0.10, 0) and not pe.worth(1000, 1000, 0, 0)
+
+
+def test_recompress_leaves_16_bit_and_runs_without_oxipng(monkeypatch):
+    import io
+    buf = io.BytesIO()
+    Image.fromarray(np.arange(64 * 64, dtype=np.uint16).reshape(64, 64) * 16).save(buf, "PNG", compress_level=0)
+    assert buf.getvalue()[24] == 16 and pe.recompress(buf.getvalue()) is None    # same_png reads 8 bits: not tried
+    monkeypatch.setattr(pe, "_oxipng", lambda: None)
+    data = photoshop_png(art())
+    assert pe.recompress(data) is None
+    image, like = art(), pe.open_png(data)
+    plain = io.BytesIO()
+    psd_edit.save_png(image, plain, like)
+    assert pe.encode(image, like) == plain.getvalue()                       # the bot's own PNG, as before
+
+
+@oxipng
+def test_the_bots_own_pngs_are_recompressed():
+    """encode (guard 1's re-exported, new and numbered PNGs): smaller than PIL's deflate, the same image."""
+    import io
+    image, like = art(), pe.open_png(photoshop_png(art()))
+    plain = io.BytesIO()
+    psd_edit.save_png(image, plain, like)
+    made = pe.encode(image, like)
+    assert len(made) < len(plain.getvalue()) and pe.same_png(plain.getvalue(), made)
+
+
+# ========================
 # Real commits (the clone's object store, read-only)
 # ========================
 def _near_the_authors_export(found, truth) -> np.ndarray:
