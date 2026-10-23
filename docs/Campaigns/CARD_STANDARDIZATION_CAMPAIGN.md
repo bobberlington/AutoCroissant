@@ -132,7 +132,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ### L5. Ability layer naming, visibility and blank content
 - **What.** Exactly one visible text layer named `Ability` directly under top-level `Text`, with text. **Why.** The parser reads every
-  layer named `ability` (`psd_parser.py:559-584`); the pipeline accepts only this shape (`psd_edit.ability_layer`).
+  layer named `ability` (`psd_parser.py:559-584`); since 2026-10-23 the pipeline takes the one visible `Ability` wherever it is
+  (`psd_edit.ability_layer`), so only the hidden, several and blank ones still need work.
 - **How many.** Of 651: 605 template; 34 one visible `Ability` elsewhere (top-level `Ability` on 16, `Types/Text/Ability` on 8, nested
   groups; paths in `lists.py`); 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax,
   Apex_Predator; 4 re-laid out in separately styled layers); 5 several visible (Lit_Bob-omb 2, Tainted_Lazarus 2, Miracle_Matter 5,
@@ -150,7 +151,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ### L6. Name layer
 - **What.** A visible `Text/Name` text layer holding the printed title; the parser reads it into `display_name` since 2026-10-21 (design question 1; `psd_parser._printed_title`).
-  **Why.** Pipeline name edits need `Text/Name`; 22 of the 29 live name edits become redundant.
+  **Why.** 22 of the 29 live name edits become redundant. Since 2026-10-23 the pipeline bakes whichever layer the parser
+  reads the title from (`psd_edit.name_layer`), so a title named after the card or a `Name` outside `Text` needs no rename.
 - **How many.** Of 651: 552 visible `Name` (506 under `Text`, 46 elsewhere; paths in `lists.py`); 91 titled by a layer named after the
   card (153 over all 813, status effects included); 3 hidden (Sonic, whose title is the pixel layer `Layer 0 copy`; Baba; Man_Serpent_Shield;
   plus the field card E._Gadd's_Garage); 5 none or rasterized (ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card); 16 with two or more
