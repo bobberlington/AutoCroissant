@@ -132,16 +132,19 @@ class GitIndex:
     def blob_since(self, blob: Optional[str], path: str, at: Optional[float] = None) -> Optional[Commit]:
         """When a version's bytes became its card's: the blob's intro, unless path (or the path an exact rename brought
         them from) held other bytes after it: then the newest commit that put these back, no later than at (the
-        version's reading; None: the newest). A revert dates from the revert (2025-04-04); idempotent on its result."""
+        version's reading; None: the newest). A revert dates from the revert (2025-04-04), an exact rename keeps the
+        date (even onto a path that held others); idempotent on its result."""
         first = self.blob_intro(blob)
         starts, seen, after = [], {path}, None        # starts newest first; after: the rename that took them from path
         while first is not None:
             puts = [(c, b) for c, b in self.at_path.get(path, []) if after is None or c.order > after.order]
-            starts += [c for i, (c, b) in enumerate(puts) if b == blob and i + 1 < len(puts)
-                       and puts[i + 1][1] != blob and puts[i + 1][0].order < first.order]
             mine = [c for c, b in puts if b == blob]
             old, came = self.renamed_from.get(path), mine[len(mine) - 1] if mine else None
-            if came is None or old is None or old in seen or (self.renames.get(old) or (None, None))[1] is not came:
+            renamed = came is not None and old is not None and old not in seen and \
+                (self.renames.get(old) or (None, None))[1] is came
+            starts += [c for i, (c, b) in enumerate(puts) if b == blob and i + 1 < len(puts) and not (renamed and c is came)
+                       and puts[i + 1][1] != blob and puts[i + 1][0].order < first.order]
+            if not renamed:
                 break
             seen.add(old)
             path, after = old, came
