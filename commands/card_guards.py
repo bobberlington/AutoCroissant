@@ -596,9 +596,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
         entry = {"card": result.name, "psd": result.job.psd, "case": result.job.case, "login": result.job.login,
                  "commit": result.job.commit, "export": result.export, "r10": result.r10, "issues": result.issues,
                  "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
-                 "told": result.told(mode), "error": result.error, "writes": result.writes}
-        if result.writes:
-            entry["expect"] = _expect(result.job)
+                 "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
+                 "expect": _expect(result.job)}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -633,19 +632,35 @@ def _guard1_line(entry: dict) -> str:
 
 
 def _landed_head(landed: dict) -> str:
-    sha, left = landed.get("sha", ""), len(landed.get("dropped", []))
-    out = f"Landed in `{sha[:8]}`: {plural(len(landed.get('landed', [])), 'card')}." if sha else "Nothing landed."
-    return out + (f" {plural(left, 'card')} left out: changed again on the branch." if left else "")
+    sha, error = landed.get("sha", ""), landed.get("error", "")
+    left = len({card for card, *_ in landed.get("dropped", [])} - set(landed.get("landed", [])))
+    out = (f"Landed in `{sha[:8]}`: {plural(len(landed.get('landed', [])), 'card')}." if sha else
+           f"Not landed: {error.rstrip('.')}. Nothing was committed." if error else "Nothing landed.")
+    return out + (f" {plural(left, 'card')} left out: changed again on the branch." if left and not error else "")
+
+
+def _landing(entry: dict, landed: dict) -> list:
+    """The comment's lines on what became of a card's writes after the quiet window."""
+    if not entry["writes"]:
+        return []
+    if landed.get("error"):
+        return ["- Not landed (the bot's commit failed): nothing above was committed for this card"]
+    dropped = {path: why for card, why, path in landed.get("dropped", []) if card == entry["card"]}
+    if not dropped:
+        return [f"- Landed in `{landed['sha'][:8]}`"] if landed.get("sha") else []
+    if len(dropped) == len(entry["writes"]):
+        return [f"- Not landed ({next(iter(dropped.values()))}): nothing above was committed for this card"]
+    return [f"- Not landed ({why}): `{path}`" for path, why in dropped.items()] + [f"- The rest landed in `{landed['sha'][:8]}`"]
 
 
 def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[dict] = None) -> str:
-    """The job summary and commit comment; with land's report (landed.json), the comment as edited after the landing."""
+    """The job summary and commit comment; with land's report (landed.json), the comment as edited after the quiet window."""
     mode = data["mode"]
     head = {"dry": "Dry run: nothing is posted or committed.", "report": "Report only (CARD_GUARDS=report): nothing is committed.",
             "on": "Writes land after the 30-minute quiet window, in one bot commit."}[mode]
-    if landed is not None:
+    final = landed is not None and not landed.get("dry")
+    if final:
         head = _landed_head(landed)
-    dropped = dict(landed.get("dropped", [])) if landed else {}
     out = ["## Card guards", "", f"Push `{data['after'][:8]}` (against `{data['before'][:8]}`): "
                                  f"{plural(len(data['cards']), 'card')}. {head}"]
     for note in notes:
@@ -670,8 +685,10 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
         if told:
             out.append("- Issues: " + "; ".join(told))
         if entry["fixed"]:
-            verb = ("The bot would fix (CARD_GUARDS=on)" if mode != "on" else "The bot will fix" if landed is None else
-                    "Not fixed" if entry["card"] in dropped else "Fixed by the bot")
+            psd_landed = final and landed.get("sha") and not landed.get("error") and not any(
+                card == entry["card"] and path == entry["psd"] for card, _, path in landed.get("dropped", []))
+            verb = ("The bot would fix (CARD_GUARDS=on)" if mode != "on" else "The bot will fix" if not final else
+                    "Fixed by the bot" if psd_landed else "Not fixed")
             out.append(f"- {verb}: " + "; ".join(entry["fixed"]))
         for line, why in entry["fix_refused"]:
             out.append(f"- Not fixed: {line} ({why})")
@@ -680,9 +697,10 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
             out.append("- Waived (owner decisions): " + "; ".join(waived))
         for note in entry["notes"]:
             out.append(f"- {note}")
-        if landed is not None and entry["writes"]:
-            out.append(f"- Not landed ({dropped[entry['card']]}): nothing above was committed for this card"
-                       if entry["card"] in dropped else f"- Landed in `{landed['sha'][:8]}`")
+        if final:
+            out += _landing(entry, landed)
+        for note in (landed or {}).get("after", {}).get(entry["psd"], []):
+            out.append(f"- After the quiet window: {note}")
         if not (line or told or entry["fixed"] or entry["fix_refused"] or entry["notes"] or entry["r10"]):
             out.append("- Meets the standards.")
         out.append("")
@@ -791,30 +809,59 @@ def message(landed: list, after: str) -> str:
     return f"{SUBJECT}: {counts} (push {after[:8]})\n\n" + "\n".join(lines) + f"\n{TRAILER}: {after}\n"
 
 
-def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bool = False, local: str = "",
-         sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
+def _rests_on(entry: dict, write: dict) -> list:
+    """The paths a write rests on: a PSD fix (0 pixels) on its PSD alone, a PNG on the whole card (PSD, PNG, numbered)."""
+    return [entry["psd"]] if write["kind"] == "psd" else sorted(entry["expect"])
+
+
+def _superseded(entry: dict, write: dict, tip: Snapshot, recent: Optional[set]) -> str:
+    rests = _rests_on(entry, write)
+    moved = [p for p in rests if tip.tree.get(p, ("", ""))[1] != entry["expect"].get(p, "")]
+    if moved:
+        return f"superseded: {moved[0]} changed on the branch"
+    if recent is None:
+        return "superseded: too many pushes to tell"
+    touched = sorted(set(rests) & recent)
+    return f"superseded: a later push touched {touched[0]}" if touched else ""
+
+
+def after_window(data: dict, landed: dict, tip: Optional[Snapshot]) -> tuple:
     """
-    Commit a plan's writes once (G9): wait until quiet_from + RECENT, leave out a card a later push touched or whose PSD,
-    PNG or numbered PNGs no longer hold the blobs it rests on, and commit the rest on the branch head (retried on a
-    moved head, COMMIT_TRIES times); --local commits in that clone instead (nothing pushed).
+    What the one Discord post says after the quiet window (section 7.3), per card PSD: the check's lines, less a card whose
+    PSD changed again (the later push's own check tells) and a PNG refusal whose PNG was pushed since; plus the writes
+    that did not land and were not replaced by the author (the bot's commit failed, a later push touched the card).
 
     Returns:
-        {"sha": the commit or "", "landed": [card], "dropped": [[card, why]]}; raises Transient when the commit fails
+        ({psd: [Discord lines]}, {psd: [comment notes]})
     """
-    out_dir = dirname(plan_path)
-    with open(plan_path, encoding="utf-8") as fh:
-        data = load(fh)
-    repository = repository or data.get("repo") or ("" if local else CARD_REPO)
-    entries = [entry for entry in data["cards"] if entry.get("writes")]
-    report = {"sha": "", "landed": [], "dropped": []}
-    if not entries:
-        return report
-    if quiet_from:
-        mark = datetime.fromisoformat(quiet_from.replace("Z", "+00:00")) + RECENT + QUIET_MARGIN
-        wait = (mark - now()).total_seconds()
-        if wait > 0:
-            print(f"Waiting {wait / 60:.1f} min for the quiet window.", file=stderr)
-            sleep(wait)
+    told, after = {}, {}
+    dropped = {path: why for _, why, path in landed.get("dropped", [])}
+    for entry in data["cards"]:
+        psd, expect, lines, notes = entry["psd"], entry.get("expect", {}), list(entry.get("told", [])), []
+        here = (lambda path: tip.tree.get(path, ("", ""))[1]) if tip is not None else None
+        if here and entry["case"] != "deleted" and psd in expect and here(psd) != expect[psd]:
+            told[psd], after[psd] = [], ["the PSD changed again on the branch: that push's own check tells"]
+            continue
+        export, png = entry.get("export", {}), entry.get("png", "")
+        if here and export.get("outcome") == "refused" and png and here(png) != expect.get(png, ""):
+            lines = [line for line in lines if line != export.get("why")]
+            notes.append(f"{basename(png)} was pushed since: the refusal is withdrawn")
+        for write in [] if landed.get("dry") else entry.get("writes", []):
+            why = "the bot's commit failed" if landed.get("error") else dropped.get(write["path"], "")
+            if not why or (here and here(write["path"]) != expect.get(write["path"], "")):
+                continue                        # landed, or the author replaced that file: nothing to tell
+            why = why.replace("superseded: ", "")
+            if write["kind"] == "psd":
+                lines.append(f"{write['line']} (the bot could not fix it: {why})")
+            elif write["path"] == png:
+                lines.append(f"PNG not made: {why}; export it in Photoshop")
+            else:
+                lines.append(f"{basename(write['path'])} not updated: {why}; re-export it in Photoshop")
+        told[psd], after[psd] = list(dict.fromkeys(lines)), notes
+    return told, after
+
+
+def _read_files(out_dir: str, entries: list) -> dict:
     files = {}
     for entry in entries:
         for write in entry["writes"]:
@@ -822,41 +869,98 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
                 files[write["path"]] = fh.read()
             if blob_sha(files[write["path"]]) != write["sha"]:
                 raise Transient(f"{write['file']} does not hash to the planned {write['sha'][:8]}")
-    uploaded: set = set()
-    for attempt in range(COMMIT_TRIES if not local else 1):
-        tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
-        recent = recent_paths(repository, tip.head, now(), local) if repository else set()   # a clone alone: no push times
-        included, report["dropped"] = [], []
-        for entry in entries:
-            moved = [p for p, sha in entry["expect"].items() if (tip.tree.get(p, ("", ""))[1]) != sha]
-            touched = sorted(set(entry["expect"]) & recent) if recent is not None else ["(too many pushes to tell)"]
-            if moved:
-                report["dropped"].append([entry["card"], f"superseded: {moved[0]} changed on the branch"])
-            elif touched:
-                report["dropped"].append([entry["card"], f"superseded: a later push touched {touched[0]}"])
-            else:
-                included.append(entry)
-        report["landed"] = [entry["card"] for entry in included]
-        if not included or dry_run:
-            return report
-        payload = {w["path"]: files[w["path"]] for entry in included for w in entry["writes"]}
-        text = message(included, data["after"])
-        if local:
-            report["sha"] = local_commit(local, tip.head, payload, text)
-            return report
-        modes = {path: tip.tree[path][0] for path in payload if path in tip.tree}
-        sha = commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded)
-        if sha:
-            report["sha"] = sha
-            return report
-    raise Transient(f"the branch kept moving: not committed after {COMMIT_TRIES} tries")
+    return files
+
+
+def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bool = False, local: str = "",
+         sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
+    """
+    After the quiet window (quiet_from + RECENT), commit a plan's writes once (G9) and settle what the one Discord post
+    says (after_window). A write is left out when a later push touched what it rests on or that no longer holds its
+    blob (a PSD fix rests on its PSD alone, a PNG on the whole card); the rest is one commit on the branch head (retried
+    on a moved head, COMMIT_TRIES times); --local commits in that clone instead (nothing pushed). dry_run (report mode)
+    commits nothing.
+
+    Returns:
+        {"sha": the commit or "", "landed": [card], "dropped": [[card, why, path]], "error": why nothing was committed,
+         "told": {psd: [Discord lines]}, "after": {psd: [comment notes]}, "dry": dry_run}
+    """
+    out_dir = dirname(plan_path)
+    with open(plan_path, encoding="utf-8") as fh:
+        data = load(fh)
+    repository = repository or data.get("repo") or ("" if local else CARD_REPO)
+    entries = [entry for entry in data["cards"] if entry.get("writes")]
+    report = {"sha": "", "landed": [], "dropped": [], "error": "", "told": {}, "after": {}, "dry": dry_run}
+    if not entries and not any(entry.get("told") for entry in data["cards"]):
+        return report
+    if quiet_from:
+        mark = datetime.fromisoformat(quiet_from.replace("Z", "+00:00")) + RECENT + QUIET_MARGIN
+        wait = (mark - now()).total_seconds()
+        if wait > 0:
+            print(f"Waiting {wait / 60:.1f} min for the quiet window.", file=stderr)
+            sleep(wait)
+    tip = None
+    try:
+        files = _read_files(out_dir, entries)
+        uploaded: set = set()
+        for _ in range(COMMIT_TRIES if not local else 1):
+            tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
+            recent = recent_paths(repository, tip.head, now(), local) if repository else set()   # a clone alone: no push times
+            included, report["dropped"] = [], []
+            for entry in entries:
+                for write in entry["writes"]:
+                    why = _superseded(entry, write, tip, recent)
+                    if why:
+                        report["dropped"].append([entry["card"], why, write["path"]])
+                    else:
+                        included.append((entry, write))
+            cards = list(dict.fromkeys(entry["card"] for entry, _ in included))
+            report["landed"] = cards
+            if not included or dry_run:
+                break
+            payload = {write["path"]: files[write["path"]] for _, write in included}
+            text = message([{**entry, "writes": [w for e, w in included if e is entry]} for entry in entries
+                            if entry["card"] in cards], data["after"])
+            if local:
+                report["sha"] = local_commit(local, tip.head, payload, text)
+                break
+            modes = {path: tip.tree[path][0] for path in payload if path in tip.tree}
+            sha = commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded)
+            if sha:
+                report["sha"] = sha
+                break
+        else:
+            raise Transient(f"the branch kept moving: not committed after {COMMIT_TRIES} tries")
+    except (Transient, Refused) as error:
+        report.update(sha="", landed=[], error=str(error))
+    report["told"], report["after"] = after_window(data, report, tip)
+    return report
+
+
+def finish(plan_path: str, landed: dict) -> dict:
+    """land's files beside the plan: landed.json, report-landed.md (the comment's new body) and discord-final.json (the
+    one post, as after_window settled it). Returns the post."""
+    out_dir = dirname(plan_path)
+    with open(plan_path, encoding="utf-8") as fh:
+        data = load(fh)
+    with open(join(out_dir, "landed.json"), "w", encoding="utf-8") as fh:
+        dump(landed, fh)
+    with open(join(out_dir, "report-landed.md"), "w", encoding="utf-8") as fh:
+        fh.write(landed_markdown(data, landed))
+    told = landed.get("told", {})
+    final = {**data, "cards": [dict(entry, told=told.get(entry["psd"], entry.get("told", []))) for entry in data["cards"]]}
+    post = discord_payload(final, data.get("repo") or CARD_REPO)
+    with open(join(out_dir, "discord-final.json"), "w", encoding="utf-8") as fh:
+        dump(post, fh)
+    return post
 
 
 # ========================
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """check: the report on stdout (exit 0 whatever it finds); land: one line per card, exit 1 when the commit failed."""
+    """check: the report on stdout (exit 0 whatever it finds, 1 when it could not check); land: one line per card, exit 1
+    when the commit failed (its files are written either way)."""
     cli = ArgumentParser(prog="python -m commands.card_guards",
                          description="The push guards: a forgotten PNG made from the PSD's stored composite, the card standards "
                                      "checked (0-pixel fixes planned). check never writes to the card repo; land commits a plan once.")
@@ -886,28 +990,20 @@ def main(args: Optional[list] = None) -> int:
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
                          options.mode, options.fonts, options.out, options.workers)
-        except (Transient, Refused) as error:   # the clone or the API failed: one line, the job summary says so
+        except (Transient, Refused) as error:   # the clone or the API failed: one line; the run fails (card-guards.yml alerts)
             print(f"## Card guards\n\nNot checked: {error}\n")
-            return 0
+            return 1
         print(data["markdown"], end="")
         return 0
-    try:
-        report = land(options.plan, options.repo, options.quiet_from, options.dry_run, options.local)
-    except (Transient, Refused) as error:
-        print(f"Not landed: {error}")
-        return 1
-    with open(join(dirname(options.plan), "landed.json"), "w", encoding="utf-8") as fh:
-        dump(report, fh)
-    if not options.dry_run:                     # the comment's new body (card-guards.yml's Follow up)
-        with open(options.plan, encoding="utf-8") as fh:
-            text = landed_markdown(load(fh), report)
-        with open(join(dirname(options.plan), "report-landed.md"), "w", encoding="utf-8") as fh:
-            fh.write(text)
+    report = land(options.plan, options.repo, options.quiet_from, options.dry_run, options.local)
+    finish(options.plan, report)
+    if report["error"]:
+        print(f"Not landed: {report['error']}")
     for card in report["landed"]:
         print(f"{card}: {'landed in `' + report['sha'][:8] + '`' if report['sha'] else 'would land'}")
-    for card, why in report["dropped"]:
-        print(f"{card}: {why}")
-    return 0
+    for card, why, path in report["dropped"]:
+        print(f"{card}: {why} ({path})")
+    return 1 if report["error"] else 0
 
 
 if __name__ == "__main__":
@@ -931,6 +1027,8 @@ __all__ = [
     'build_context',
     'check',
     'discord_payload',
+    'after_window',
+    'finish',
     'land',
     'landed_markdown',
     'main',
