@@ -44,6 +44,7 @@ OUTCOMES = ("re-exported", "current", "refused", "error")
 EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
 G2 = ("PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with "
       "it on, or " + EXPORT)
+G2_MODE = "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; " + EXPORT
 G5 = "PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); " + EXPORT
 G5_IN = "PNG not made: the PSD and its old PNG already disagreed where you changed it ({bad:.1f}% of pixels); " + EXPORT
 G6_BASE = ("PNG not made: the bot cannot draw this part of the card as its old PNG shows it ({bad:.1f}% of pixels "
@@ -331,7 +332,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         return Export("refused", G7, "G7")
     composed = composite(new)
     if composed is None:                        # nothing to cross-check the render against
-        return Export("refused", G2, "G2")
+        return _no_composite(new)
     if old is None:
         return _beside(new, old_png, composed, result, numbered)
     before = composite(old)
@@ -434,6 +435,12 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     return result
 
 
+def _no_composite(psd: PSDImage) -> Export:
+    """G2: no stored composite to check against; the line says why (not 8-bit RGB, or no Maximize Compatibility)."""
+    mode = psd.color_mode != ColorMode.RGB or psd.depth != 8
+    return Export("refused", G2_MODE if mode else G2, "G2")
+
+
 def _refuse(result: Export, why: str, gate: str) -> Export:
     result.outcome, result.why, result.gate, result.image, result.data = "refused", why, gate, None, b""
     return result
@@ -470,7 +477,7 @@ def export_new(new: PSDImage) -> Export:
     """
     composed = composite(new)
     if composed is None:
-        return Export("refused", G2, "G2")
+        return _no_composite(new)
     result = Export("current", icc=icc_mode(new, True), writer="new")
     box = (0, 0, new.width, new.height)
     out = _render(new, box, True, result.numbers)
@@ -526,6 +533,7 @@ __all__ = [
     'encode',
     'EXPORT',
     'G2',
+    'G2_MODE',
     'G5',
     'G5_IN',
     'G6',

@@ -278,7 +278,7 @@ one ends "export it in Photoshop").
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
 | G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
-| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB (the cross-check needs it) | "PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with it on, or export it in Photoshop" |
+| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB (the cross-check needs it) | "PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with it on, or export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit): "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
@@ -776,7 +776,8 @@ jobs:
 4. G6 also covers a tool save that moved no composite pixel but changed layers (a script that saved without a new composite):
    the referee renders the changed layers' box and refuses when the composite is stale (test on Mini Doomer).
 5. "PNG still current", but the PNG and the composite were already outside the bar: told ("does not match the PSD, though this
-   push moved no pixel"). Dark_Mind_Eye and Kel get this line when their PSD is pushed.
+   push moved no pixel"). Dark_Mind_Eye and Kel get this line when their PSD is pushed. A new PSD beside its PNG says "the PSD
+   is new beside it", and gives the mean difference when no pixel passes the threshold.
 6. A new PSD beside an existing PNG takes the ICC mode from that PNG's own vote.
 7. A PSD pushed with its PNG deleted: the standards only, no PNG made (the deletion is the author's).
 8. A rename (same blob) copies the old PNG to the new name and tells that the old PNG is left at the old name.

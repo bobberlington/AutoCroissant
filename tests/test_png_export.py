@@ -116,6 +116,14 @@ def test_g2_without_a_composite(tmp_path):
     assert pe.export_new(new).gate == "G2"
 
 
+def test_g2_names_a_16_bit_or_cmyk_psd():
+    from types import SimpleNamespace
+    from psd_tools.constants import ColorMode
+    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=16)).why == pe.G2_MODE
+    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.CMYK, depth=8)).why == pe.G2_MODE
+    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=8)).why == pe.G2
+
+
 def test_g7_size_changed(tmp_path):
     new = fixture_psd(tmp_path, card(size=(60, 100)), "new")
     found = pe.export(fixture_psd(tmp_path, card(), "old"), new, card())
@@ -251,7 +259,7 @@ def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
 
 
 def test_every_refusal_says_export_it_in_photoshop():
-    for line in (pe.G2, pe.G5, pe.G5_IN, pe.G6, pe.G6_BASE, pe.G6_NEW, pe.G6_STALE, pe.G6_UNSEEN, pe.G7):
+    for line in (pe.G2, pe.G2_MODE, pe.G5, pe.G5_IN, pe.G6, pe.G6_BASE, pe.G6_NEW, pe.G6_STALE, pe.G6_UNSEEN, pe.G7):
         assert line.startswith("PNG not made: ") and line.endswith("export it in Photoshop"), line
 
 
