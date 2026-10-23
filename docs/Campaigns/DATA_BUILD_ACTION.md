@@ -771,7 +771,7 @@ github_api reads it inside a try/except and takes the token from the environment
   pending it is said (dispatching again would cancel that one), and one seen running, or with nothing newer at all, was
   cancelled by hand. Card sync's own retry (main moved during the run: a green run with its data dropped, then a
   dispatch by github-actions[bot]) is followed too; it never carries `full`, so the reply says to ask again. One
-  followed run at a time. Progress edits stop after 14 minutes (the interaction's 15).
+  followed run at a time. Progress edits stop after 14 minutes (the interaction's 15); a reminder's run gets none.
 - **Discord edits** keep committing and applying in memory, but no longer save stats.pkl. A sync of a run that started
   before the edit's commit shows the card without it until the next run (30 minutes at most), as does a restart.
 - **/fonts** reports the fonts the build marked `supplied: false` in `card_data/psd_details.json`; a PSD without a record or
