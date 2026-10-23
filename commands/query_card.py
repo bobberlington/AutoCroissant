@@ -152,7 +152,8 @@ class CardRepository:
             return self._tree, why
 
     def _add_file_to_registry(self, path: str) -> None:
-        """Add a file path to the registry, handling duplicates."""
+        """Add a file path to the registry, handling duplicates; a name with spaces also under underscores (aliases,
+        titles, /alias and the Card Edits.json lookups build underscore keys)."""
         png_filename = path[path.rindex("/") + 1:].lower()
 
         if png_filename in self.git_files:
@@ -173,6 +174,8 @@ class CardRepository:
             self.ambiguous_names[png_filename] = (*self.ambiguous_names[png_filename], new_filename)
         else:
             self.git_files[png_filename] = path
+        if " " in png_filename:                     # a file named with spaces: the underscore lookups find it too
+            self.git_files.setdefault(png_filename.replace(" ", "_"), path)
 
     @staticmethod
     def _get_prefixed_name(path: str, filename: str) -> str:
