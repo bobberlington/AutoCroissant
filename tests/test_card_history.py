@@ -78,6 +78,8 @@ def test_index_from_one_log(history):
     assert index.intro[blob(X)][0].sha == c[1] and index.intro[blob(X)][1] == "Items/A.psd"      # B's same bytes: no new date
     assert index.blob_intro(blob(Y)).sha == c[2] and index.intro_at[(blob(Y), "Items/Heal/A.psd")].sha == c[3]
     assert index.deleted["Items/B.psd"].sha == c[5] and "Items/Heal/C.psd" not in index.deleted
+    assert index.origin("Items/Heal/C.psd") == "Items/A.psd" and index.origin("Items/Heal/C.psd", once=True) == \
+        "Items/Heal/A.psd" and index.first[index.origin("Items/Heal/C.psd")].author == "alice"   # not the renamers
     assert index.renames["Items/Heal/A.psd"] == ("Items/Heal/C.psd", index.by_sha[c[5]])
     assert index.renames["Items/A.psd"][0] == "Items/Heal/A.psd" and "Items/B.psd" not in index.renames
     assert [x.sha for x in index.pngs["Items/A.png"]] == [c[3], c[2], c[1]]
@@ -218,6 +220,17 @@ def test_refine_keeps_archived_tags_and_dates_them():
     assert report.tagged == ["Gone"] and report.renamed == [("Gone", "New")]
     assert old["Twin"] == [tagged_twin]                                       # equal to the card, but tagged: never dropped
     assert old["Gone"][len(old["Gone"]) - 1].version["to"] == 4000.0       # an archived version ends at its deletion
+
+
+def test_a_stale_index_never_dates_a_tag_back_to_an_older_deletion():
+    """Items/A.psd deleted at 150, added back at 200 and deleted again at 300 (tag from _archive_sources): a clone not
+    fetched since the second deletion knows only the first, which dates nothing, with or without the tag's commit."""
+    index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
+    for commit in ("new", None):
+        record = _card(timestamp=200.0, archived={"at": 300.0, "path": "Items/A.psd", "blob": None, "commit": commit})
+        report = ch.Refined()
+        ch.date_archive({}, defaultdict(list, {"A": [record]}), index, report, backfill=False)
+        assert (record.archived["at"], record.archived["commit"], report.tags_dated) == (300.0, commit, [])
 
 
 def test_a_psd_moved_into_mdw_is_retired_not_deleted():

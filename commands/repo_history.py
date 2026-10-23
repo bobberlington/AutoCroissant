@@ -267,9 +267,17 @@ def commit_before(repository: str, path: str, end: float) -> Optional[tuple]:
         print(f"Repo history: no commit of {path} looked up ({e})")
         return None
     for i in range(0, len(rows) - 1, 2):
-        if float(rows[i]) < end:
+        if float(rows[i]) < end and _has(rows[i + 1], path):      # not the commit that deleted it
             return (rows[i + 1], float(rows[i]), i > 0)
     return None
+
+
+def _has(commit: str, path: str) -> bool:
+    """Whether path is in commit's tree (ls-tree: no blob read)."""
+    try:
+        return bool(_git("ls-tree", "-z", commit, "--", path, GIT_NO_LAZY_FETCH="1").strip("\0"))
+    except (OSError, SubprocessError):
+        return False
 
 
 # ========================
