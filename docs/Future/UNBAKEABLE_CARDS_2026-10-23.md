@@ -53,14 +53,40 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
   report. The website no-op adds 5 cards whose status words take the chart's swatch (Ancient Fuelweaver, Monkey D
   Goofy's Become Back Money, Undyne, Pananda Peel, Flower Of Decay) and Warcraftian Hunter, whose website text lacks
   its column spaces. On the corpus the 6 layers the B1 batch leaked badge pills into (std-batch2 FX.md: The Radiance,
-  Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too; 22 of 31 no-ops are identical.
+  Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too: the website no-op leaves 22 of
+  the corpus's 31 cards identical, the Update-all no-op 23 of 30 (Warcraftian Hunter's refuses `reparse`, its column
+  spaces); on main the website no-op leaves 42 of 56.
   PoD06Rainbow Bloon's and The Radiance's no-ops refuse `parity` (a render that changes nothing on a box past the bar,
   section 10); their real edits bake.
 - **Real edits (main):** a moved word bakes on 46 cards (13 have no plain word before an FX word): 22 FX layers kept
   whole, 28 cut again at their new place; " Die." bakes on 57 (Pandamonium overflows); removing the first FX word bakes
-  on 57: 47 layers deleted, 8 renamed (`(1GCD) | (2U) | (2CD)` -> `(2U) | (2CD)`). Monkey D Goofy refuses only when its
-  "1" leaves the text (the JSX would then cut a badge). Parity notes only where the card's baseline already misses the
-  bar (PoD06Rainbow Bloon, The Radiance). A bake took 7 s (median; 16 s at most on a loaded Mac).
+  on 58: 48 layers deleted, 8 renamed (`(1GCD) | (2U) | (2CD)` -> `(2U) | (2CD)`). Parity notes only where the card's
+  baseline already misses the bar (PoD06Rainbow Bloon, The Radiance). A bake took 5-7 s (median; 16 s at most on a
+  loaded Mac).
+- **Review fixes (same branch, 2026-10-23; census re-run with two more edits, scripts and JSON
+  `~/Documents/Tools/wt/bf-fx-fix-scratch/`, `runs/{corpus,clone}.json`: the five edits above match the first census
+  but for the two lines below):**
+  - A layer carrying a chart status's style stays on its own words (`psd_edit.follow_fx`). Goofy's `1#1` is the first
+    "1" of a text with no whole-word "1" (the "1" of "3T1"): a whole-word "1" typed anywhere ("Draw 1 card." before or
+    after, "Draw 1 of the following", " Then 1.") would take the JSX's `1#1` to it and paint it gold, so the edit is
+    refused ("Ability FX: 1#1: Effect Layers.jsx's '1#1' would leave its 1 for another"); a "1" typed before it renames
+    the layer `1#2` (told; Effect Layers.jsx's Update all in Photoshop cuts `1#2` on the same "1", IoU 1.0); its "1"
+    removed deletes the layer, told (Goofy's "first FX word removed" now bakes). Clot Gold's `1 Become Back Money` (in
+    "2T1 Become Back Money", no whole word) refuses a whole-word "1 Become Back Money" typed again. gate_fx checks each
+    such layer still reaches the characters the edit kept (`Edit.held`).
+  - A badge typed outside the icon font (anywhere but right after another badge it stays body text) onto a badge
+    layer's phrase is refused ("'(1CD)' typed outside the icon font would show on it as plain letters"): Update all
+    would lift those letters above the Text group, out of its overlay, white. A badge typed in the icon font joins the
+    badge layer's name (each badge layer names every badge of its card): PoD11ZOMG's "(2U)" made "(3U)" gives
+    `(1GCD) | (2CD) | (3U)` (Update all in Photoshop: IoU 1.0).
+  - The report says why a numbered layer went: "Frozen In Time#2 deleted: the ability has 1 Frozen In Time now"
+    (Standstill), not "its words left". An FX layer that is no pixel layer refuses (none on any card); a styled status
+    word a digit touches ("2Blazing") beside a whole-word one refuses (no JSX name reaches it; none on any card).
+    gate_fx counts stray pixels at any alpha.
+  - The first FX word typed again at the end (" Then <word>."): main 23 of 68 bake, 45 refused: 24 typed badges on
+    the badge cards, 9 overflow, 8 no chart style, Goofy and Clot Gold (above), Miracle Matter, Apex Predator; corpus
+    13 of 34. "Draw 1 card. " put in front: main 48 bake, 20 refused (9 overflow, 8 no chart style, Goofy, Miracle
+    Matter, Apex Predator); corpus 28 of 34.
 - **Photoshop cross-check (copies under `~/std-work-1022/fx-1023/`):** Effect Layers.jsx's Update all run in Photoshop on 8
   baked copies (badges moved and renamed, chart words moved, a restyle) rebuilt the same layers: same boxes, style and
   place, ink IoU 0.955-1.0 (ours 0-132 faint edge pixels more), no differing pixel on the shared ink. Photoshop renders
@@ -659,7 +685,7 @@ Cards that meet this reason only once the pending changes land (7; another reaso
 Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 
 - **Why:** A hand-made word layer over the ability (an overlay or FX layer for a word such as Smoldering or +2 DEF) has no style on the status chart, so the bot can't recreate it after an edit.
-- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it. The BUG 2 fix (`work/fx-rebuild`, 2026-10-23) rebuilds an FX layer that carries a styled chart status's style: Goofy's '1#1' and Clot Gold's '1 Become Back Money' (both Become Back Money's gradient) bake; the others keep strokes or gradients of their own and stay refused, Mr Krabs for its unstyled '2T' (owner to confirm Clot Gold).
+- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it. The BUG 2 fix (`work/fx-rebuild`, 2026-10-23) rebuilds an FX layer that carries a styled chart status's style: Goofy's '1#1' and Clot Gold's '1 Become Back Money' (both Become Back Money's gradient) bake (not an edit that types a whole-word '1' or '1 Become Back Money', which would move the layer: refused); the others keep strokes or gradients of their own and stay refused, Mr Krabs for its unstyled '2T' (owner to confirm Clot Gold).
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
