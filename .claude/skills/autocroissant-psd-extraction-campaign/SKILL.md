@@ -78,7 +78,10 @@ Metric definitions (all verified 2026-07-11):
 - **Residual-gap cards**: cards whose STORED ability still contains a 3+ space run (a gap that
   received no icon). Today 10: 4 rulebook table pages (legit layout) + `Michael's Blessing`,
   `Miracle Matter`, `Pile Of Swords`, `Twin Emperors`, `Warcraftian Druid`, `Warcraftian Hunter`.
-  These 6 are the standing Phase 2 suspect list.
+  These 6 are the standing Phase 2 suspect list. 2026-10-23 (fixes-1023): a line's leading gap no type fills is
+  dropped as padding, so after a re-parse Twin Emperors and Warcraftian Druid have none; Michael's Blessing,
+  Pile Of Swords and Warcraftian Hunter keep their mid-line gaps; Miracle Matter keeps only blank icon-row lines
+  (the gaps before its forms, the sole sign of its unnamed icon layers, go: a card fix).
 - **Goldens**: Mini Doomer, The Freezer, The Lich King (inventory owned by
   autocroissant-validation-and-qa; expected values pinned below).
 
