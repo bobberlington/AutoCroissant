@@ -1,7 +1,7 @@
 """
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
 the card repo does not supply. TTSCardMaker's font-check.yml Action runs it on every push to main (job summary, commit
-comment, a Discord message pinging the card makers' role); the bot's /fonts runs it over the whole repo.
+comment, a Discord message in the standards channel pinging the card makers' role); the bot's /fonts runs it over the whole repo.
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]

@@ -2,7 +2,7 @@
 Card check for the card PSDs: what the bot's parser and validator note about a card, the lines /update_stats prints (the
 parser's own notes among them are also the website's Parser notes; the validator's are printed only). TTSCardMaker's
 card-check.yml Action runs it on every push to main that touches a PSD, Types/ or site/Card Edits.json (job summary, commit
-comment, a Discord message pinging the card makers' role).
+comment, a Discord message in the standards channel, no ping).
 
     python -m commands.card_check [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
@@ -31,7 +31,7 @@ from typing import Optional
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase, card_name
-from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, ROLE_ID, is_card_psd, \
+from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, \
     pushed_files, tree_blobs
 from commands.github_api import RemotePSD, blob_text, fetch_verified, range_reads, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
@@ -204,8 +204,8 @@ def markdown(report: Report) -> str:
 
 def discord_payload(report: Report) -> dict:
     """
-    The webhook body: the role mention once, one LINE per card, CLOSING last; {} when nothing to report. Whole lines are
-    dropped from the end to fit DISCORD_LIMIT ("... and N more cards"). Only the role may be pinged.
+    The webhook body (standards channel): one LINE per card, CLOSING last; {} when nothing to report. Whole lines are
+    dropped from the end to fit DISCORD_LIMIT ("... and N more cards"). Nobody is pinged (owner, 2026-10-23).
     """
     if not report.cards:
         return {}
@@ -214,14 +214,14 @@ def discord_payload(report: Report) -> dict:
     def assemble(kept: int) -> str:
         rest = len(lines) - kept
         more = [f"... and {rest} more card{'s' if rest != 1 else ''}"] if rest else []
-        return "\n".join([f"<@&{ROLE_ID}>"] + lines[:kept] + more + [CLOSING])
+        return "\n".join(lines[:kept] + more + [CLOSING])
 
     kept = len(lines)
     content = assemble(kept)
     while len(content) > DISCORD_LIMIT and kept > 0:
         kept -= 1
         content = assemble(kept)
-    return {"content": content, "allowed_mentions": {"roles": [ROLE_ID]}}
+    return {"content": content, "allowed_mentions": {"parse": []}}
 
 
 # ========================
