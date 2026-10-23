@@ -537,3 +537,9 @@ explanation); TTSCardMaker growth (PSD count and API-cost estimate drift).
 (validate and `_format_problems`, the change check, the download and commit-lookup cost, the timestamp source); those
 citations and greps re-pointed. The card data build (`python -m commands.card_data`) has its own gates G1-G6 and tests
 (tests/test_card_data.py, test_card_history.py, test_card_db.py, test_changelog.py).
+
+2026-10-23 (fixes-1023): `_process_abilities` drops a line's leading gap that no type fills (layout padding). Method A over
+812 PSDs: 5 differences, all that padding (Twin Emperors, Warcraftian Druid, Warcraftian Hunter, Miracle Matter,
+00_Table_of_Contents); the Twin Emperors and 00_Table_of_Contents goldens re-pinned (ability only). PARSER_VERSION not
+bumped: re-parse those five with `/update_stats cards:...`. Miracle Matter's icons are unnamed layers ("Layer 1/2/3"), so
+they never become types: a card fix, not a parser one.
