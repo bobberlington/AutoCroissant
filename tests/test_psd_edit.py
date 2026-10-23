@@ -24,6 +24,7 @@ from psd_tools.constants import Resource, Tag
 from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
+from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
 from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, rounds_bytes, saves_preview,
                       story_sync as _story_sync, text_engine as _text_engine)
@@ -49,6 +50,8 @@ GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay 
 FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay "Smoldering": unstyled on the chart, nothing to cut
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
+BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
+VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"               # its Name layer sits at the root
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -324,7 +327,7 @@ def test_classify_table():
     assert out.jobs == {"hp": 8}
     assert out.redundant == ["def", "ability"]
     assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("stat>10", "atk 11"), ("unsupported-card", "stars"),
-                                                                     ("unsupported-card", "types"), ("unsupported-card", "no readable Text/Name layer")]
+                                                                     ("unsupported-card", "types"), ("unsupported-card", "no PSD to find the title layer in")]
     assert out.other == ["spd", "note", "series", "creatures", "hidden"]
     assert out.refusals[0].why == "atk 11: one bar row; a second row is standardization work (ledger L3)"
     two_rows = {"card": {"type": "creature", "atk": 12}}                      # a parse above 10 means Top + Bottom rows (idea 13)
@@ -451,12 +454,27 @@ def test_non_template_rows_and_titles_refuse(clone):
             read(twins)
         assert refused.value.code == "unsupported-card"
     assert pe.read_name(twins) is None
-    virus = PSDImage.open(_card(clone, "Creatures/Kirby/3 Stars/Computer_Virus.psd")[0])   # its Name sits at the root
-    with pytest.raises(pe.Refused, match="no Text/Name layer"):
-        pe.name_layer(virus)
-    bone = PSDImage.open(_card(clone, "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd")[0])      # title named after the card
-    with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone'"):
-        pe.name_layer(bone)
+
+
+def test_title_layer_is_the_one_the_parser_reads(clone, parser):
+    """name_layer takes the one layer PSDParser.title_layers reads, wherever the card keeps it (NEXT_IDEAS 5b A): a title
+    named after the card under Text, a Name layer at the root. Two Name layers (an epithet) or a Name beside layers
+    printing the rest of the title refuse: a bake would write the whole title into one piece."""
+    bone = PSDImage.open(_card(clone, BONE)[0])
+    with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone', not Name or the card's name"):
+        pe.name_layer(bone)                                                     # without the card's name
+    assert pe.name_layer(bone, card_name(BONE)).name == "Wham Bam Bone" and pe.read_name(bone, card_name(BONE)) == "Wham Bam Bone"
+    parsed = pe.parse_card(parser, _card(clone, BONE)[0], BONE)
+    assert pe.classify(parsed, {"name": "Wham Bam Bones"}, bone).jobs == {"name": "Wham Bam Bones"}
+    virus = PSDImage.open(_card(clone, VIRUS)[0])
+    assert pe.name_layer(virus).parent is virus and pe.read_name(virus) == "Computer Virus appears!"
+    for rel, why in ((AZAMOTH_KING, "2 title layers"), (CANNON, "the title is split over several layers")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        with pytest.raises(pe.Refused, match=why) as refused:
+            pe.name_layer(psd, card_name(rel))
+        assert refused.value.code == "unsupported-card" and pe.read_name(psd, card_name(rel)) is None
+        parsed = pe.parse_card(parser, _card(clone, rel)[0], rel)
+        assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
 
 
 def test_name_redundancy_uses_the_printed_title(clone, parser):
@@ -467,12 +485,11 @@ def test_name_redundancy_uses_the_printed_title(clone, parser):
     assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Mini Doomer"   # prints its file name
     assert pe.classify(parsed, {"name": "Mini  Doomer\r"}, psd).redundant == ["name"]
     assert pe.classify(parsed, {"name": "Mini Doomer II"}, psd).jobs == {"name": "Mini Doomer II"}
-    rel = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                     # Name at the root: read, not editable
-    path = _card(clone, rel)[0]
-    parsed = pe.parse_card(parser, path, rel)
+    path = _card(clone, VIRUS)[0]                                          # Name at the root: read and editable
+    parsed = pe.parse_card(parser, path, VIRUS)
     assert parsed["card"]["display_name"] == pe.shown_name(parsed) == "Computer Virus appears!"
     assert pe.classify(parsed, {"name": "Computer Virus appears!"}, PSDImage.open(path)).redundant == ["name"]
-    assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).refusals[0].why == "no readable Text/Name layer"
+    assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).jobs == {"name": "Computer Virus"}
 
 
 def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
@@ -816,6 +833,21 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
+
+
+@text_edit
+@pytest.mark.parametrize("rel, record", [(BONE, "Wham Bam Bone"), (VIRUS, "Name")])
+def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, record, tmp_path):
+    """A title named after the card (Wham Bam Bone) or a Name layer at the root (Computer Virus) bakes through every
+    gate: the parser reads the new title back and nothing is left to bake."""
+    psd_path = _card(clone, rel)[0]
+    new = _typo_fix(pe.read_name(PSDImage.open(psd_path), card_name(rel)))
+    parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
+    assert [(name, fields) for _, name, fields in baked.records] == [(record, TEXT_RECORD)]
+    assert baked.reparse["card"]["display_name"] == new
+    saved = PSDImage.open(baked.psd_path)
+    assert pe.read_name(saved, card_name(rel)) == new and pe.stale_stories(saved) == []
+    assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
 
 
 @text_edit

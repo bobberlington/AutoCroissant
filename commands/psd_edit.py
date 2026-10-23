@@ -319,34 +319,58 @@ def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
 # ========================
 # Layers
 # ========================
-def name_layer(psd: PSDImage):
-    """
-    The card's title layer: Text/Name, a visible text layer.
-
-    Returns:
-        The layer; raises Refused("unsupported-card") for the card-named, hidden and rasterized titles
-    """
+def _no_title(psd: PSDImage) -> str:
+    """Why the parser reads no title layer (name_layer's refusal)."""
     group = _text_group(psd)
     if group is None:
-        raise Refused("unsupported-card", "no Text group")
-    layer = next((child for child in group if child.name.strip() == "Name"), None)
-    if layer is None:
-        titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
-                  and child.bbox[1] < psd.height * 0.15]
-        raise Refused("unsupported-card", f"title layer named {titles[0]!r}, not Name" if titles else "no Text/Name layer")
-    if not _is_text_layer(layer):
-        raise Refused("unsupported-card", "rasterized name layer")
-    if not layer.is_visible():
-        raise Refused("unsupported-card", "hidden name layer")
-    return layer
+        return "no Text group"
+    named = [child for child in group if child.name.strip() == "Name"]
+    if named:
+        if not any(_is_text_layer(child) for child in named):
+            return "rasterized name layer"
+        if not any(_is_text_layer(child) and child.is_visible() for child in named):
+            return "hidden name layer"
+        return f"{len(named)} Name layers, none in the title region"
+    titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
+              and child.bbox[1] < psd.height * 0.15]
+    return f"title layer named {titles[0]!r}, not Name or the card's name" if titles else "no Text/Name layer"
 
 
-def read_name(psd: PSDImage) -> Optional[str]:
-    """The printed title, whitespace collapsed; None when the card has no readable Text/Name."""
+def name_layer(psd: PSDImage, card: str = ""):
+    """
+    The card's title layer: the one visible text layer the parser reads the printed title from (PSDParser.title_layers:
+    Text/Name, else a Name layer in the title region, else a layer under Text named after the card).
+
+    Args:
+        psd: The open card
+        card: The card's name (file stem), which a title layer may be named after
+
+    Returns:
+        The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
+        title split over layers)
+    """
+    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
+    if not found:
+        raise Refused("unsupported-card", _no_title(psd))
+    if len(found) > 1:
+        raise Refused("unsupported-card", f"{len(found)} title layers")
+    if PSDParser.split_title(psd, found, title_text(found[0].text), card):
+        raise Refused("unsupported-card", "the title is split over several layers")
+    return found[0]
+
+
+def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
+    """The printed title, whitespace collapsed; None when name_layer refuses."""
     try:
-        return collapse(name_layer(psd).text)
+        return collapse(name_layer(psd, card).text)
     except Refused:
         return None
+
+
+def _card_name(parsed: dict) -> str:
+    """The parse's card name (file stem)."""
+    info = parsed.get("info")
+    return info.name if info is not None else parsed["card"].get("name") or ""
 
 
 def story_sync() -> bool:
@@ -723,7 +747,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Class
     Args:
         parsed: parse_card() of the card's PSD
         edits: The card's fields from CardEdits.parse (no _keys)
-        psd: The open PSD, needed to check Text/Name is editable for a name edit and the rows for a stat above 10
+        psd: The open PSD, needed to find the title layer for a name edit (name_layer) and the rows for a stat above 10
 
     Returns:
         Classification
@@ -755,10 +779,14 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Class
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
             if shown_name(parsed) == collapse(value):
                 out.redundant.append(name)
-            elif psd is None or read_name(psd) is None:
-                out.refusals.append(Refusal("unsupported-card", "no readable Text/Name layer"))
+            elif psd is None:
+                out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
             else:
-                out.jobs[name] = value
+                try:
+                    name_layer(psd, _card_name(parsed))
+                    out.jobs[name] = value
+                except Refused as refused:
+                    out.refusals.append(refused.refusal)
     return out
 
 
@@ -1172,17 +1200,19 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
                 [(_record_index(a), None if b is None else _record_index(b), bytes(key)) for a, b, key in moves])
 
 
-def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> Edit:
+def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
+                   card: str = "") -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine.
 
     Args:
         psd: The open card (edited in place)
-        which: "name" (Text/Name) or "ability" (the single visible Text/Ability)
+        which: "name" (name_layer) or "ability" (ability_layer)
         text: The new text; newlines become paragraph breaks but where the layer had a forced line break (keep_breaks);
             the layer's blank first and last paragraphs stay (keep_ends)
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
+        card: The card's name (file stem), for name_layer
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs),
@@ -1203,7 +1233,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    layer = name_layer(psd) if which == "name" else ability_layer(psd)
+    layer = name_layer(psd, card) if which == "name" else ability_layer(psd)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
@@ -1758,8 +1788,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         raise Refused("reparse", "new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    if "name" in jobs and read_name(psd) != collapse(jobs["name"]):
-        raise Refused("reparse", f"Text/Name reads {read_name(psd)!r}")
+    if "name" in jobs and read_name(psd, _card_name(parsed)) != collapse(jobs["name"]):
+        raise Refused("reparse", f"the title reads {read_name(psd, _card_name(parsed))!r}")
     return new
 
 
@@ -1882,7 +1912,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         if name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     edits = [edit for edit in edits if edit.layers]

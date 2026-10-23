@@ -450,10 +450,37 @@ class PSDParser:
         Returns:
             The printed title, or None when it equals the name or can't be read
         """
+        found = self.title_layers(psd, text_layers, name)
+        texts = []
+        for text, _ in self._sort_by_position([(title_text(layer.text), BoundingBox.from_tuple(layer.bbox[:2])) for layer in found]):
+            if text and text not in texts:              # a layer copied for an effect prints its words once
+                texts.append(text)
+        title = " ".join(texts)
+        if not title or title == name:
+            return None
+        if len(texts) > 1 and sorted(title.lower().split()) == sorted(name.lower().split()):
+            return None                                 # the pieces' order is a guess
+        if self.split_title(psd, found, title, name):
+            return None                                 # the other layers print the rest of the name
+        return title
+
+    @staticmethod
+    def title_layers(psd: PSDImage, text_layers: list, name: str) -> list:
+        """
+        The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
+        layers under Text named after the card; of several, those in the title region.
+
+        Args:
+            psd: The open card
+            text_layers: Its text layers
+            name: The card's name (file stem)
+
+        Returns:
+            The layers, in layer order
+        """
         top = psd.height * TITLE_REGION_RATIO
         text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
-        shown = [layer for layer in text_group if layer.is_visible()] if text_group is not None else []
-        under_text = [layer for layer in shown if layer.kind == "type"]
+        under_text = [layer for layer in text_group if layer.is_visible() and layer.kind == "type"] if text_group is not None else []
         key = " ".join(name.lower().split())
         found = [layer for layer in under_text if layer.name.strip() == "Name"]
         if not found:
@@ -462,28 +489,34 @@ class PSDParser:
             found = [layer for layer in under_text if " ".join(layer.name.lower().split()) == key]
         if len(found) > 1:
             found = [layer for layer in found if layer.bbox[1] < top]
-        texts = []
-        for text, _ in self._sort_by_position([(title_text(layer.text), BoundingBox.from_tuple(layer.bbox[:2])) for layer in found]):
-            if text and text not in texts:              # a layer copied for an effect prints its words once
-                texts.append(text)
-        title = " ".join(texts)
-        if not title or title == name:
-            return None
-        words, stem = title.lower().split(), name.lower().split()
-        if len(texts) > 1 and sorted(words) == sorted(stem):
-            return None                                 # the pieces' order is a guess
-        joined, whole = "".join(words), "".join(stem)
-        if joined != whole and joined in whole:         # part of the name: do the layers beside it print the rest?
-            found_ids = {id(layer) for layer in found}
-            pieces = ["".join(title_text(layer.text if layer.kind == "type" else layer.name).lower().split())
-                      for layer in shown if id(layer) not in found_ids and layer.bbox[1] < top]
-            rest = whole.replace(joined, "", 1)
-            for piece in sorted(pieces, key=len, reverse=True):
-                if piece and piece in rest:
-                    rest = rest.replace(piece, "", 1)
-            if not rest:
-                return None                             # the other layers print the rest of the name
-        return title
+        return found
+
+    @staticmethod
+    def split_title(psd: PSDImage, found: list, title: str, name: str) -> bool:
+        """
+        Whether the title layers print part of the name and the visible layers beside them under Text, in the title
+        region, the rest (Royal Eradicator Main Cannon: "Main Cannon" beside "Royal" and "Eradicator").
+
+        Args:
+            psd: The open card
+            found: title_layers()
+            title: Their text, joined
+            name: The card's name (file stem)
+        """
+        joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
+        if joined == whole or joined not in whole:
+            return False
+        top = psd.height * TITLE_REGION_RATIO
+        text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
+        shown = [layer for layer in text_group if layer.is_visible()] if text_group is not None else []
+        found_ids = {id(layer) for layer in found}
+        pieces = ["".join(title_text(layer.text if layer.kind == "type" else layer.name).lower().split())
+                  for layer in shown if id(layer) not in found_ids and layer.bbox[1] < top]
+        rest = whole.replace(joined, "", 1)
+        for piece in sorted(pieces, key=len, reverse=True):
+            if piece and piece in rest:
+                rest = rest.replace(piece, "", 1)
+        return not rest
 
     def _check_effect_layer(self, layer, text_layers: list, card: CardInfo) -> None:
         """
