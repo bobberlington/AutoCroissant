@@ -1017,6 +1017,23 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
 
 
 @text_edit
+@pytest.mark.skipif(not colour_glyphs(), reason="the fork draws SVG colour glyphs in one colour")
+def test_fx_layers_leave_colour_glyphs_out(clone, chart):
+    """Gasoline's [fire] token keeps its SVG colours in a key copy: the all-black key finds it, and it stays out of the
+    regenerated Blazing layer, which matches the clean one Effect Layers.jsx cut before the badges (std-batch2 FX.md)."""
+    psd = PSDImage.open(_card(clone, GASOLINE)[0])
+    layer = pe.ability_layer(psd)
+    assert pe.uses_icon_font(layer) and "[fire]" in layer.text
+    old, = pe.fx_layers(psd, layer)
+    theirs = _ink(old, psd)
+    edit = pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text), str(clone / pe.FONTS_DIR), chart)
+    assert [name for name, _ in edit.fx] == [old.name] == ["Ability FX: Blazing"]
+    mine, = pe.fx_layers(psd, pe.ability_layer(psd))
+    ours = _ink(mine, psd)
+    assert (ours & theirs).sum() / (ours | theirs).sum() >= 0.9 and (ours & theirs).sum() / ours.sum() >= 0.99
+
+
+@text_edit
 def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, chart, tmp_path):
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
     within the parity bar, the validator clean, nothing outside the region; a second bake on the result drops Frozen and
