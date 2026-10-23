@@ -34,7 +34,7 @@ RESULTS_PER_MESSAGE = 10                                 # /query_ability lines 
 _alias_lock = Lock()                                     # one writer for aliases.pkl
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
-DATE_PATTERN = compile(r"^(created)(<=|>=|==|<|>)(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created==2023-10
+DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
 AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are not dated yet: a version shows those it had "
                     "when it was replaced, the current card today's.")
 
@@ -62,7 +62,7 @@ class CardRepository:
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
-        self._stat_pattern = compile(r"^(\w+)(<|<=|==|>=|>)(\d+)$", IGNORECASE)
+        self._stat_pattern = compile(r"^(\w+)\s*(<|<=|==|>=|>)\s*(\d+)$", IGNORECASE)   # spaces as the website's search
 
     @property
     def git_filenames(self) -> list[str]:
@@ -250,7 +250,7 @@ class CardRepository:
             return operators.get(operator, lambda df, col, val: DataFrame())(self.cards_dff, column, value)
 
         # Try string exact match pattern (e.g., type==creature, subtype==attack)
-        string_exact_pattern = compile(r"^(\w+)==(.+)$", IGNORECASE)
+        string_exact_pattern = compile(r"^(\w+)\s*==(.+)$", IGNORECASE)
         string_match = string_exact_pattern.match(ability)
         if string_match:
             column, value = string_match.groups()
@@ -266,7 +266,7 @@ class CardRepository:
             return self.cards_dff[col.notna() & (col.astype(str).str.lower() == value)]
 
         # Try string contains pattern (e.g., type~creature)
-        string_contains_pattern = compile(r"^(\w+)~(.+)$", IGNORECASE)
+        string_contains_pattern = compile(r"^(\w+)\s*~(.+)$", IGNORECASE)
         contains_match = string_contains_pattern.match(ability)
         if contains_match:
             column, value = contains_match.groups()

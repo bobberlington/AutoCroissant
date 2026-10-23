@@ -192,6 +192,17 @@ def test_created_queries_at_the_precision_given(repo):
     assert q("created==2024") == []
 
 
+def test_spaces_around_the_operator_as_the_website(repo):
+    """search.js allows spaces around a condition's operator (created >= 2025, hp > 5, type == creature); so does the bot."""
+    old, new = _dated("Old", "2019-02-13"), _dated("New", "2025-05-05")
+    old.stats, new.stats, new.series = cm.CardStats(3, 1, 1, 1), cm.CardStats(7, 1, 1, 1), "Kirby"
+    r = repo({"Old": old, "New": new})
+    q = lambda text: sorted(r.ability_search_engine(text).index)
+    assert q("created >= 2025") == ["New"] == q("created>=2025") and q("created == 2019-02") == ["Old"]
+    assert q("hp > 5") == ["New"] and q("hp >=3 & created< 2020") == ["Old"]
+    assert q("type == creature") == ["New", "Old"] and q("series ~ kir") == ["New"] and q("series == kirby") == ["New"]
+
+
 def test_created_column_when_no_card_has_one(repo):
     r = repo({"Undated": _dated("Undated", None)})
     found = r._parse_stat_query("created>=2025")
