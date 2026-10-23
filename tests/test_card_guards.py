@@ -887,7 +887,7 @@ def test_a_faint_beside_mismatch_note_names_the_case(cards, tmp_path):
     root, base, alice, bot = cards
     psd = (root / FOLDER / "Bread.psd").read_bytes()
     image = Image.open(root / FOLDER / "Bread.png")
-    faint = Image.eval(image.convert("RGB"), lambda v: max(v - 10, 0)).convert(image.mode)
+    faint = Image.eval(image.convert("RGB"), lambda v: max(v - 6, 0)).convert(image.mode)     # within BESIDE_CUT
     buf = io.BytesIO()
     faint.save(buf, "PNG")
     first = _plumb(root, {f"{FOLDER}/Faint.png": buf.getvalue()}, "the PNG first")
