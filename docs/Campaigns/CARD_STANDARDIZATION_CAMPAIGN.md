@@ -152,7 +152,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 ### L6. Name layer
 - **What.** A visible `Text/Name` text layer holding the printed title; the parser reads it into `display_name` since 2026-10-21 (design question 1; `psd_parser._printed_title`).
   **Why.** 22 of the 29 live name edits become redundant. Since 2026-10-23 the pipeline bakes whichever layer the parser
-  reads the title from (`psd_edit.name_layer`), so a title named after the card or a `Name` outside `Text` needs no rename.
+  reads the title from (`psd_edit.name_layer`), so a title named after the card or a `Name` outside `Text` needs no rename;
+  nor, since title-own-text (2026-10-23), the one title layer named after its own text (Papyrus, Sans).
 - **How many.** Of 651: 552 visible `Name` (506 under `Text`, 46 elsewhere; paths in `lists.py`); 91 titled by a layer named after the
   card (153 over all 813, status effects included); 3 hidden (Sonic, whose title is the pixel layer `Layer 0 copy`; Baba; Man_Serpent_Shield;
   plus the field card E._Gadd's_Garage); 5 none or rasterized (ABBI, Tyler, Minecraft_Panda, Pandanoko, Holy_Card); 16 with two or more
@@ -162,7 +163,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   Ech", Sir Grodus "Grodus", The Chicken "Chicken", Rasta Beast "Pasta Beast", Indoctrination "Indoctrinati0n", Kyle) are INTENTIONAL
   in-jokes: NOT standardization work, never retitle them. Six case-only titles look like typos (SPringtrap, Dark MAtter, MEtal General,
   MAsked Dedede, StaR DREAM, Zero OVerride): ask the user card by card before any reprint; a name edit reprints a title through the
-  pipeline. Sans and Papyrus title their layers after the print, not `Name`.
+  pipeline. Sans and Papyrus title their layers after the print, not `Name` (read and baked since 2026-10-23: the
+  parser's last title rule).
 - **Tool.** Fork: `layer.name` set, 0 pixels; rasterized titles: Photoshop retype (pixels change; question 6) or leave them to
   `display_name` from `Card Edits.json`. **Check.** Parser reads `Text/Name` == the printed title (after the question-1 code); PNG
   byte-equal. **Depends.** `Effect Layers.jsx` keys FX layers on the text layer's name (`<layer> FX:`): rename before L7 or rerun Update all.

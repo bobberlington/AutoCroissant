@@ -542,7 +542,7 @@ fonts of the visible type layers with their layers and a `supplied` flag (MDW/Fo
 every type layer's text (200 chars), font, size, colour and visibility, effects per layer (`(off)` when disabled), smart objects,
 canvas (size, mode, depth, ICC description), type-icon style (images / tokens / mixed / none), the stat-row encoding per stat
 (template / two-row / pixel / other / none), `FX:` and overlay word layers, the title layer the parser reads (2026-10-23: a
-root `Name` or a layer named after the card is no deviation) and the Ability layers with the ledger's cheap deviations, and a
+root `Name`, a layer named after the card or the one named after its own text is no deviation) and the Ability layers with the ledger's cheap deviations, and a
 compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
 in `psd_details.json` (repo root, committed; `{"version": 1, "cards": {sha: record}}`, one card per line so diffs stay per card).
 
@@ -601,7 +601,8 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 - **What refuses since 2026-10-23 (owner):** a pixel miss no longer refuses. Only `psd_edit.PARITY_FLOOR` (more than 25%
   of an edited box past 24 levels), a blank render or a read-back that differs from the edit refuses; a smaller miss is
   baked and written in the bake report and the commit note. The bake also takes the layers it used to refuse
-  (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) and a single
+  (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) or, failing
+  those, after its own text (title-own-text: Papyrus, Sans; a bake renames it after the new title), and a single
   visible Ability layer under another name. Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the

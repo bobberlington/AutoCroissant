@@ -26,6 +26,13 @@ card and field, whether a bake works, why not, and what would fix it.
 - Section 3: Frog's and Masked Dedede's Name boxes are within the bar on the release fork (no pixel note).
 - Doctor Zomboss bakes (2.11 lists it with the split titles): the edit goes into Text/Name, the only visible copy; its
   'images/Name' under the art keeps the old title inside the PSD.
+- **title-own-text** (`work/title-own-text`, 2026-10-23, owner: which layer holds the title is the developers' freedom):
+  the title is also the one visible text layer in the title region named after its own text, as Photoshop names a new
+  layer, when nothing else is found (not on rule pages). Papyrus and Sans now read and bake (2.4: 10 left -> 8); their
+  website edits ask for the printed title, so a dry bake of TTSCardMaker `56011634` finds them redundant (section 4). A
+  real rename bakes through every gate and renames the layer after the new title ('sans.', 'The Great Papyrus!'; 'The
+  Greatest Papyrus' reaches the stars: section 5). Knight Lost A Lot and Dark Matter Swordsman have two such layers and
+  still refuse, now as "2 layers in the title region named after their text".
 - Ability bakes gave the edited words the layer's commonest colour (Pizza's '1' -> '2' went from yellow to cyan) and,
   with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
@@ -190,7 +197,7 @@ twice are refusals of work/refused-layers, not of today's bot.
 Today: **90 cards** (Name 90). After the pending changes, **79** of them bake.
 
 - **Why:** The printed title is a text layer named after the card (for example 'Hornet') instead of 'Name', so today's bot doesn't know it is the title.
-- **What would fix it:** Code, in progress (work/refused-layers): it bakes the layer when its name matches the card's. The owner chose to leave these layer names as they are (2026-10-22). Left after it: the layers whose name differs from the card's ('Twin Princes' on Lorian, 'Knight' on Knight Lost A Lot): edit in Photoshop, or rename that one layer to Name.
+- **What would fix it:** Code, in progress (work/refused-layers): it bakes the layer when its name matches the card's. The owner chose to leave these layer names as they are (2026-10-22). Left after it: the layers whose name differs from the card's ('Twin Princes' on Lorian, 'Knight' on Knight Lost A Lot): edit in Photoshop, or rename that one layer to Name. Since title-own-text (2026-10-23) the one layer in the title region named after its own text is the title too (Papyrus, Sans); two such layers (Knight Lost A Lot, Dark Matter Swordsman) still refuse.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -259,11 +266,11 @@ Today: **90 cards** (Name 90). After the pending changes, **79** of them bake.
 | Old Chica | Creatures/Fnaf/4 Stars | 'Old Chica' in layer 'Old Chica' (in Text) | bakes (refused-layers) |
 | Old Foxy | Creatures/Fnaf/4 Stars | 'Old Foxy' in layer 'Old Foxy' (in Text) | bakes (refused-layers) |
 | Old Freddy | Creatures/Fnaf/4 Stars | 'Old Freddy' in layer 'Old Freddy' (in Text) | bakes (refused-layers) |
-| Papyrus | Creatures/Undertale/3 Stars | 'The Great Papyrus' in layer 'The Great Papyrus' (in Text) | no change |
+| Papyrus | Creatures/Undertale/3 Stars | 'The Great Papyrus' in layer 'The Great Papyrus' (in Text) | bakes (title-own-text: named after its text) |
 | Pessimism | Auxiliary/Status Effects/Debuffs/3 Stars | 'Pessimism' in layer 'Pessimism' (in Text) | bakes (refused-layers) |
 | Po | Creatures/Pandas/4 Stars | 'Po' in layer 'Po' (in Text) | bakes (refused-layers) |
 | Pure Vessel | Creatures/Hollow Knight/5 Stars | 'Pure Vessel' in layer 'Pure Vessel' (in Text) | bakes (refused-layers) |
-| Sans | Creatures/Undertale/5 Stars | 'snas.' in layer 'snas.' (in Text) | no change |
+| Sans | Creatures/Undertale/5 Stars | 'snas.' in layer 'snas.' (in Text) | bakes (title-own-text: named after its text) |
 | Shell Shock | Auxiliary/Status Effects/Debuffs/3 Stars | 'Shell Shock' in layer 'Shell Shock' (in Text) | bakes with a pixel note (refused-layers) |
 | Sniffle Thwomp | Creatures/Mario/3 Stars | 'Sniffle Thwomp' in layer 'Sniffle  Thwomp' (in Text) | still refused: the title would touch the stars or type icons (shown once refused-layers lands) |
 | Snow Bunny | Items/Heal/2 Stars | 'Snow Bunny' in layer 'Snow Bunny' (in Text) | bakes (refused-layers) |
@@ -919,16 +926,19 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
 | Masked Dedede | name → 'Masked Dedede' | parity: baseline bad 0.11% mean 3.01 max 136 | refused: parity: baseline bad 0.00% mean 3.07 max 14 | bakes with a pixel note (bad 0.00% mean 2.95 max 14) |
 | Metal General | name → 'Metal General' | overflow: name reaches the stars or type icons | bakes (dry run) | bakes (dry run) |
 | NME Stock | name → 'NME Stock™' | duplicate: numbered PNGs share the PSD: NME_Stock2.png | refused: numbered PNGs share the PSD (NME_Stock2.png) | refused: numbered PNGs share the PSD (NME_Stock2.png) |
-| Papyrus | name → 'The Great Papyrus' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'The Great Papyrus', not Name or the card's name |
+| Papyrus | name → 'The Great Papyrus' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'The Great Papyrus', not Name or the card's name (live, e1a491be); redundant with title-own-text |
 | PoD11ZOMG | name → 'Z.O.M.G.' | parity: baseline bad 0.03% mean 1.16 max 46 | bakes (dry run) | bakes (dry run) |
-| Sans | name → 'snas.' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'snas.', not Name or the card's name |
+| Sans | name → 'snas.' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'snas.', not Name or the card's name (live, e1a491be); redundant with title-own-text |
 | Star Dream | name → 'Star Dream' | overflow: name reaches the stars or type icons | bakes (dry run) | bakes (dry run) |
 | Zero Override | name → 'Zero Override' | parity: baseline bad 1.96% mean 1.71 max 127 | bakes (dry run) | bakes (dry run) |
 
 - Metal General, Z.O.M.G., Star Dream and Zero Override bake today: their verdicts are from 2026-10-22 (old bar and fork).
   The schedule (`card_bake.final`) skips a refused verdict until the PSD changes, so they wait for a dispatched run.
 - Papyrus and Sans ask for the title the card already prints ('The Great Papyrus', 'snas.'). There is nothing to redraw;
-  the bot just doesn't read those layers as the title (their layer names differ from the card's name).
+  the bot didn't read those layers as the title (their layer names differ from the card's name). title-own-text reads a
+  layer named after its own text: a dry `card_bake` run (`--dry-run --local`, TTSCardMaker `56011634`) finds both
+  redundant and drops the name from their entries. Their refused verdicts are final for the schedule (same PSD, same
+  edit), so a dispatched run re-checks them, after `/update_stats cards:Papyrus, Sans` has re-read the two titles.
 - Masked Dedede bakes with a pixel note once soft parity lands. NME Stock needs its numbered PNG sorted out (2.2).
 
 ## 5. Limits that depend on the edit (not unbakeable)

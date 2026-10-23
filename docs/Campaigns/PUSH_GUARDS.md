@@ -27,7 +27,8 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 3. *The guard tells font issues (R7)* in its standards-channel post too.
 
 **The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
-group or not) and which layer holds the title (`Text/Name` or one named after the card) are the developers' freedom, and
+group or not) and which layer holds the title (`Text/Name`, one named after the card or, since title-own-text, after its
+own text) are the developers' freedom, and
 the bake handles those layouts. The ruling was first applied as dropping both rules whole (2ada357); R3 and R4 are back
 for the real issues only (section 6.1), with their waivers and `card_guards.added()` (R4's new-card rules): a hidden
 Ability layer with words the parser reads nowhere (an empty one, on a card with no ability, or one laid out again in
