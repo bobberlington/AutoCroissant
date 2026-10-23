@@ -1,14 +1,25 @@
 """
-TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors) and site/Card Edits.json (CardEdits).
-No Discord, network or psd-tools.
+TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors) and site/Card Edits.json (CardEdits), and
+the file's layout as the website writes it (dump_edits, the edit.js editsFile port). No Discord, network or psd-tools.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
-from json import loads as json_loads
+from json import dumps as json_dumps, loads as json_loads
 from re import sub
 from typing import Optional
+from unicodedata import combining, normalize
 
 from commands.card_models import CardInfo, CardStats
+
+# ========================
+# Configuration
+# ========================
+# edit.js FIELDS, in order: how an entry lists its fields
+ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
+         "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
+# what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
+PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
+ALIASES_MOVED = "aliases_moved"                 # top-level key: AutoCroissant's aliases.pkl moved into the file
 
 
 @dataclass
@@ -63,6 +74,7 @@ class CardEdits:
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd), never applied
+    aliases_moved: bool = False                     # ALIASES_MOVED is set: the bot's aliases.pkl no longer counts
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
@@ -106,6 +118,7 @@ class CardEdits:
         data = json_loads(text)
         cards = data.get("cards") if isinstance(data, dict) else None
         edits = cls()
+        edits.aliases_moved = isinstance(data, dict) and bool(data.get(ALIASES_MOVED))
         for name, fields in (cards if isinstance(cards, dict) else {}).items():
             if isinstance(fields, dict):
                 key = CardAuthors.key(name)
@@ -197,9 +210,57 @@ class CardEdits:
 
 
 # ========================
+# The file's layout (edit.js editsFile)
+# ========================
+def _json(value) -> str:
+    """JSON.stringify: compact, UTF-8 as is."""
+    return json_dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _collate(key: str) -> list:
+    """How localeCompare with sensitivity "base" orders keys: case and accents ignored; spaces, punctuation, symbols, digits, letters."""
+    out = []
+    for char in normalize("NFKD", key):
+        if combining(char):
+            continue
+        if char.isspace():
+            out.append((0, 0))
+        elif char in PUNCTUATION:
+            out.append((1, PUNCTUATION.index(char)))
+        elif char.isdigit():
+            out.append((3, ord(char)))
+        elif char.isalpha():
+            out.append((4, ord(char.lower())))
+        else:
+            out.append((2, ord(char)))
+    return out
+
+
+def dump_edits(data: dict) -> str:
+    """
+    Card Edits.json as edit.js editsFile writes it: the other top-level keys first, cards sorted, one line per card.
+
+    Args:
+        data: The parsed file
+
+    Returns:
+        The text (with its final newline)
+    """
+    cards = data.get("cards") or {}
+    rest = "".join(f"  {_json(k)}: {_json(v)},\n" for k, v in data.items() if k != "cards")
+    keys = sorted(cards, key=_collate)
+    body = ",\n".join(f"    {_json(k)}: {_json(cards[k])}" for k in keys)
+    return "{\n" + rest + '  "cards": {' + (f"\n{body}\n  " if keys else "") + "}\n}\n"
+
+
+# ========================
 # Module Exports
 # ========================
 __all__ = [
+    'ALIASES_MOVED',
     'CardAuthors',
     'CardEdits',
+    'ORDER',
+    'PUNCTUATION',
+    'dump_edits',
 ]

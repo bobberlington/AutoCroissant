@@ -195,6 +195,48 @@ def test_changed_blob(github, psds, capsys):
     assert "1 cards changed or new, 1 unchanged, 0 moved." in capsys.readouterr().out
 
 
+def test_same_data_from_a_new_blob_is_no_version(github, psds, monkeypatch):
+    """A re-saved PSD (new blob, newer commit) that parses the same: no history version; the card takes the blob and
+    the date, and keeps its start for as_of. Then a real change archives the card before, its start kept too."""
+    _run()
+    later = TIME + 86400
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (later, None))
+    github.files[DOOMER] = psds[DOOMER] + b"\0"                       # another blob, the same layers
+    _run()
+    stats, old = _saved()
+    doomer = stats["Mini Doomer"]
+    assert "Mini Doomer" not in old and doomer.blob_sha == _file_sha(github, DOOMER) and doomer.timestamp == later
+    assert (doomer.version["from"], doomer.version["cause"], doomer.version["legacy"]) == (TIME, "legacy", False)
+    github.files[DOOMER] = psds[OTHER]
+    _run()
+    stats, old = _saved()
+    assert [c.blob_sha for c in old["Mini Doomer"]] == [_sha(psds[DOOMER] + b"\0")]
+    assert old["Mini Doomer"][0].version["from"] == TIME and stats["Mini Doomer"].version is None
+
+
+def test_duplicate_versions_are_cleaned_once(github, capsys):
+    """The duplicates archived before 2026-10-22 go at the next /update_stats, even on a 304: the first of each run stays,
+    a run equal to the card goes into it (its start kept); one line says so, and the run after says nothing."""
+    _run()
+    stats, _ = _saved()
+    freezer = stats["The Freezer"]
+    older = [pickle.loads(pickle.dumps(freezer)) for _ in range(3)]
+    for card, when, blob in zip(older, (TIME - 300, TIME - 200, TIME - 100), ("1" * 40, "2" * 40, "3" * 40)):
+        card.timestamp, card.blob_sha = when, blob
+    older[0].ability = older[1].ability = "Before."
+    with open("old_stats.pkl", "wb") as f:
+        pickle.dump({"The Freezer": older}, f)
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert [c.blob_sha for c in old["The Freezer"]] == ["1" * 40]
+    assert stats["The Freezer"].version["from"] == TIME - 100
+    out = capsys.readouterr().out
+    assert "History: 2 duplicate versions removed (1 card)." in out and "Nothing changed in the card repo" in out
+    _run()
+    assert "History:" not in capsys.readouterr().out
+
+
 def test_moved_card(github, capsys):
     _run()
     github.files["Field/2 Stars/The_Freezer.psd"] = github.files.pop(FREEZER)
@@ -225,6 +267,24 @@ def test_force_update_reparses_without_history(github):
     _run(force_update=True)
     assert github.calls[0] == ("tree", None) and sorted(github.blobs()) == sorted([DOOMER, FREEZER])
     assert _saved()[1] == {}                                          # same blobs: nothing archived
+
+
+def test_same_blob_reparse_keeps_the_start(github, capsys):
+    """A carried start (the duplicate cleanup) survives cards: and force_update: the same PSD read again is no new
+    version, so as_of and the website keep the earlier date."""
+    _run()
+    stats, _ = _saved()
+    older = pickle.loads(pickle.dumps(stats["The Freezer"]))
+    older.timestamp, older.blob_sha = TIME - 100, "1" * 40
+    with open("old_stats.pkl", "wb") as f:
+        pickle.dump({"The Freezer": [older]}, f)
+    _run()
+    assert _saved()[0]["The Freezer"].version["from"] == TIME - 100
+    _run(cards="the_freezer")
+    assert _saved()[0]["The Freezer"].version["from"] == TIME - 100
+    _run(force_update=True)
+    stats, old = _saved()
+    assert stats["The Freezer"].version["from"] == TIME - 100 and old == {}
 
 
 def test_older_parser_version_reparsed_once(github):
@@ -312,6 +372,64 @@ def test_failed_card_keeps_the_rest_of_the_run(github, capsys):
     _run()
     assert github.calls[0] == ("tree", None) and github.blobs() == [DOOMER]
     assert set(_saved()[0]) == {"Mini Doomer", "The Freezer"} and rt._tree_etags
+
+
+# ========================
+# A PSD that raises: its card keeps its data, the run goes on
+# ========================
+BROKEN = b"8BPS" + b"\0" * 30                                         # a PSD header psd-tools refuses
+
+
+def test_unreadable_psd_among_good_ones(github, psds, capsys):
+    """An unreadable new PSD beside two good ones: 2 parsed, 1 failed, nothing archived, no ETag kept; fixed, it is read."""
+    _seed_old_stats(_gone_card())                                     # a leftover the backfill would tag
+    github.files["Items/Broken_Card.psd"] = BROKEN
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and old["Gone Card"][0].archived is None
+    out = capsys.readouterr().out
+    assert "Items/Broken_Card.psd: not read (" in out and "Archived" not in out
+    assert ("Could not read 1 PSD from the card repo (Items/Broken_Card.psd); its card keeps its last version and the next "
+            "/update_stats tries again.") in out and "Could not download" not in out
+    assert "2 cards changed or new, 0 unchanged, 0 moved." in out and rt._tree_etags == {}
+    github.files["Items/Broken_Card.psd"] = psds[OTHER]
+    github.calls.clear()
+    _run()
+    assert github.calls[0] == ("tree", None) and github.blobs() == ["Items/Broken_Card.psd"]
+    assert "Broken Card" in _saved()[0] and rt._tree_etags
+
+
+def test_unreadable_change_keeps_the_card_and_its_details(github, psds, capsys):
+    """A listed card's new blob raises: its last version stays (no history), its details too; a deletion beside it is
+    still archived (a listed name is no rename)."""
+    _run()
+    before, details = _saved()[0]["Mini Doomer"], _details()
+    github.files[DOOMER] = BROKEN
+    del github.files[FREEZER]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"Mini Doomer"} and stats["Mini Doomer"] == before and "Mini Doomer" not in old
+    assert old["The Freezer"][0].archived and _details() == details
+    assert f"Could not read 1 PSD from the card repo ({DOOMER})" in capsys.readouterr().out
+    github.files[DOOMER] = psds[OTHER]
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer"].blob_sha == _sha(psds[OTHER]) and [c.blob_sha for c in old["Mini Doomer"]] == [before.blob_sha]
+
+
+def test_failed_commit_lookup_fails_only_its_card(github, monkeypatch, capsys):
+    """A commit lookup that raises for one PSD fails that card alone; the others are saved."""
+    def lookup(self, repo, path, name):
+        if path == DOOMER:
+            raise HTTPError("502 Server Error")
+        return (TIME, "Tester")
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lookup)
+    _run()
+    assert set(_saved()[0]) == {"The Freezer"} and rt._tree_etags == {}
+    out = capsys.readouterr().out
+    assert f"{DOOMER}: commits not looked up (502 Server Error)" in out and "Could not read" not in out
+    assert f"Could not look up the commits of 1 PSD ({DOOMER}); its card keeps its last version" in out
 
 
 def test_blob_5xx_then_200_parses(github, psds):
@@ -906,7 +1024,9 @@ def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     who = utils.make_simple_fake_interaction(1)
     utils.dispatch_queue.clear()
     pa.list_orphans(who)
-    pa.mass_replace_field(who, "author", freezer.author, "Somebody")
+    import commands.discord_edits as de
+    monkeypatch.setattr(de, "commit", lambda subject, by, body, edits=None, authors=None: ("abc1234", {"authors": authors(None)}))
+    de.mass_replace_field(who, "author", freezer.author, "Somebody")
     assert pa.stats_db.old_stats["The Freezer"][0].author == freezer.author
     for csv in (True, False):
         pa.export_stats_to_file(who, as_csv=csv)

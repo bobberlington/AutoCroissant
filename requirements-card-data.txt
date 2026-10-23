@@ -1,0 +1,5 @@
+# The card data build (python -m commands.card_data): what card-sync.yml installs for it (the bake has its own pin).
+# psd-tools stays at the goldens' and the jetson's version; it moves with the goldens.
+psd-tools==1.25.0
+fonttools
+requests

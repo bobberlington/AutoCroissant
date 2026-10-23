@@ -113,8 +113,8 @@ no series, no −1 stat seeding, so the stat validators (section 5) never fire f
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (repo_traverser.py:37) is checked against every path segment
-during stats traversal and duplicate-PNG detection (repo_traverser.py:346, 276). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (card_data.py:42 since 2026-10-22) is checked against every path segment
+during stats traversal and duplicate-PNG detection (card_data.py:438, 377). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -187,7 +187,7 @@ joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and a
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, repo_traverser.py:205) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, card_data.py:294) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -382,7 +382,9 @@ Some cards give a word or phrase in the ability text a glow, stroke or gradient,
   word underneath. Overlays sit outside the `Text` group 50 times out of 63 (13 inside), because that group's own
   Stroke and Drop Shadow (on 652 of 765 cards) would otherwise outline the glow. Four more cards (Bulborb Larva,
   Butterfly, Empress Bulblax, Apex Predator) hide `Ability` and lay the text out again in separately styled
-  layers. The hidden `Ability` is still what gets parsed. Overlays go stale silently when the text is edited.
+  layers. The hidden `Ability` is what gets parsed only while those visible layers over it print exactly its words
+  (`PSDParser._relaid`, 2026-10-22: only printed text counts); otherwise the card has no ability. Overlays go stale
+  silently when the text is edited.
 - **New way: effect layers.** TTSCardMaker `MDW/Scripts/Effect Layers.jsx` makes a pixel layer named
   `<text layer> FX: <words>`, e.g. `Ability FX: Blazing` or `Ability FX: Overkill DMG carries over | Frozen`
   (`|` separates phrases, matched in any case and across line breaks). It holds exactly those words' pixels, cut
@@ -442,11 +444,13 @@ are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_par
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
   Sword Knight, Tentacle, Whelp, Warrior Dee, The Master, Panda, Chomp, Abyss Watcher, and since
   2026-10-21 (user) the three minions with an empty Ability layer: Anubisath Guardian, Qiraji Soldier, Silithid.
-- **Shadow Duelist is not stale** (checked 2026-10-21, BUGS D3): its PNG prints no ability, but its hidden `Ability` layer
-  still holds "Heals the creature this is summoned on by 2 HP at the end of its turn." The parser reads hidden Ability
-  layers (four relaid-out cards depend on it, §4.2), so that text is in stats.pkl and the entry silences nothing today;
-  it is right again once the layer is emptied or the text printed (card content, the PSD hold). Removing it changes no
-  output; `tests/test_parser_goldens.py::test_shadow_duelist_exclusion` pins the PSD (skips when it changes upstream).
+- **Shadow Duelist is not stale** (BUGS D3): its PNG prints no ability, and its hidden `Ability` layer ("Heals the
+  creature this is summoned on by 2 HP at the end of its turn.") is laid out nowhere, so since 2026-10-22 (owner: hidden
+  Ability layers don't count, only what is printed) it parses to an empty ability and the entry keeps the validator
+  quiet. A hidden `Ability` layer counts only when visible text layers over it print exactly its words (the four
+  relaid-out cards of §4.2); the 7 cards with only a hidden one on 2026-10-22: those four keep their text, Shadow
+  Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_parser_goldens.py::test_shadow_duelist_exclusion`
+  pins the PSD (skips when it changes upstream); `tests/test_rulebook_hidden.py` the rule.
 
 ## 6. Data schemas: CardInfo and the pickles
 
@@ -505,12 +509,12 @@ aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars
 subseries, subtype.
 
 **Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-repo_traverser.py:409), looked up once per re-parsed card. The timestamp does not decide re-parsing; the
+card_data.py:169), looked up once per re-parsed card (the card data build dates a card by its blob's first commit instead, from git). The timestamp does not decide re-parsing; the
 blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:486), the same as the slash command (main.py:383);
+is `update_stats(force_update=False)` (repo_traverser.py:59), the same as the slash command (main.py:383);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -527,8 +531,9 @@ team's record of who made each card.
 Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20) of the first
 commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
-survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` still works, but for a
-card listed in the file, the file wins at the next `/update_stats`. `/list_orphans` lists author-less cards.
+survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` writes the card's `[cards]`
+line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
+right-hand sides where they stand (the group renamed, rulebook pages left in place) plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
 
 Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
 autocroissant-change-control):
@@ -540,9 +545,12 @@ autocroissant-change-control):
 | `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
 | `reminder.pkl` | reminders, gitignored — not this skill's domain | |
 
-`old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved
-(repo_traverser.py:376-377; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
-archives nothing), and when its PSD leaves the repo. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+`old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved and its data changed
+(`_history` and `_record_history`, card_data.py; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
+archives nothing, since 2026-10-22 neither does a new blob with the same data: `card_history.same_data` compares the
+data fields, not the blob, path, dates or parse bookkeeping; the card keeps its start in a `version` record that
+/query as_of reads), and when its PSD leaves the repo. The next /update_stats after 2026-10-22 removes the duplicates
+stored before once (`card_history.dedupe`: the first of a run stays, a run equal to the card goes into it). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": run epoch, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename) and `"backfill": True` on names that left
@@ -562,7 +570,8 @@ entry for an archived name (it shows the archived record and refuses edits), and
 card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE; a rescued listed card
 comes back tagged, so the next run restores it).
 Quirk: after each traversal,
-`_update_old_stats_paths` (repo_traverser.py:65-75) rewrites ALL archived entries' `path` to the
+`_update_old_stats_paths` (card_data.py:205-215; /update_stats' legacy mode only: the card data build keeps each
+version's own path) rewrites ALL archived entries' `path` to the
 card's CURRENT path, so history entries do not preserve historical locations.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
@@ -589,12 +598,14 @@ these instead" list when the hit is ambiguous. Duplicated basenames in the repo 
 cardback.png, equip.png, field.png, fragile equip.png, nme.png, panda.png (mostly card-vs-Types
 icon collisions).
 
-**Aliases** (`aliases.pkl`, 60 today): `/alias` with key+value creates (target must resolve to an
-existing png; suffix match allowed), key alone deletes, no args lists; saves the pickle immediately
-(query_card.py:695-748). At `populate_files` time each alias key is inserted into `git_files` as
-`<alias>.png` pointing at the target's path (:110-124), so aliases work everywhere names do.
-Everything is lowercased on load. Examples: `abyss_watchers -> the_abyss_watchers.png`,
-`red_bloon -> pod01red_bloon.png`.
+**Aliases** (`aliases.pkl`, 60 today): At `populate_files` time each alias key is inserted into `git_files` as
+`<alias>.png` pointing at the target's path, so aliases work everywhere names do. Everything is lowercased on load.
+Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. Since branch
+work/discord-writers (2026-10-22) `/alias` (commands/discord_edits.py) writes `aliases` on the Card Edits.json entry of
+the card the PNG belongs to (one commit; target: an existing png, suffix match allowed), key alone deletes, no args
+lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.json, with the Discord-only series values the
+parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
+names), and before that `/alias` refuses to change an aliases.pkl alias.
 
 ### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:218-304)
 
@@ -662,13 +673,13 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 ## 9. Provenance and maintenance
 
 Every load-bearing claim above is from `commands/psd_analyzer.py` (since 2026-10-20 also `psd_parser.py`,
-`card_models.py`, `card_edits.py`, `repo_traverser.py`), `commands/query_card.py`,
+`card_models.py`, `card_edits.py`, `repo_traverser.py`, `card_data.py`), `commands/query_card.py`,
 `global_config.py`, `main.py`, the TTSCardMaker clone, and live script runs on 2026-07-11.
 Line numbers drift — re-find facts with these before relying on cited lines:
 
 | Fact | Re-verify with |
 |---|---|
-| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/repo_traverser.py` |
+| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/card_data.py` |
 | Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
 | Exclusion list (21 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
 | Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |
@@ -712,3 +723,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-21 (card check): §5 names `commands/card_check.py` as the second place the validator runs; the `CardValidator` range is :948-1038. Same day: the parse-time list gained `NO STARS FOUND` (:420), the effect layer's (:626) and `SEVERAL CREATURES` (:862), `MISSPELT_CARD_TYPES` re-pointed to line 24, and the card-check line says only those reach the website. Gate: the :626 entry names `_add_problem` and its effect-layer and icon-token callers.
 
 2026-10-21 (D3, idea 14): §4.2 WORDS NOT IN TEXT also covers a `#n` past the last match (orphaned effect layers) and records the corpus and trial-copy counts; §5 says why Shadow Duelist stays excluded; psd_parser.py citations re-pointed (+1 to +3 inside the effect check, +18 after it); the §5 table rows, stale before, re-pointed to the validator (:1008-1050) and MISSPELT TYPE to :566-567.
+
+2026-10-22 (data build): the traversal's citations (EXCLUDE_FOLDERS, the type list, the commit lookup, the history rule, `_update_old_stats_paths`) re-pointed to the uncompiled commands/card_data.py; `_update_old_stats_paths` noted as legacy-mode only. The db/ JSON schemas (`version`, the manifest, the changelog events) are in docs/Campaigns/DATA_BUILD_ACTION.md section 8 until the cutover.

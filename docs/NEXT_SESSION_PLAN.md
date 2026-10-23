@@ -58,7 +58,7 @@ Everything from the 2026-10-22 session is in git (pushed, or in local branches l
    dirty: patch in the rescue folder). Remaining: verify/fix each, integrate, harness vs r5_base (`score_cards.py <run>`,
    `compare_scores.py r5_base <run>`; never `--help`), merge `review/cards-r4` 3a63bc4f, tag `cards-2026102x`, re-pin
    card-edits.yml, install in the jetson venv (never 05:00-05:40) and `~/.venvs/ac-py314-fork`; goldens must pass. Then the
-   owner decides the parity bar [user].
+   owner decides the parity bar [user] (decided 2026-10-22: mean 2.0, bad 0.5% and max 24 kept; `psd_edit.PARITY_MEAN_MAX`).
 3. **Data build phase 1** (`data-build-phase-1`): the design `docs/Campaigns/DATA_BUILD_ACTION.md` (committed today, owner
    answers folded in §16). Branches: AutoCroissant `work/query-as-of` f78eb49 (`/query as_of:`, reviewed clean, ready to merge);
    TTSCardMaker `work/analytics` 2098d525 (balance analytics on Stats + per card; second review clean; NOTES §14 cites /tmp
@@ -75,6 +75,9 @@ Everything from the 2026-10-22 session is in git (pushed, or in local branches l
 
 1. [ ] **Collect the in-flight work** above (1-4) and push it. Delete merged branches and their /tmp worktrees; delete the
    `wip/*` refs made for rescue (psd-tools: wip/rv4-bricon-*, wip/wt-r4-final, wip/wt-tag-r3) once nothing needs them.
+   **Land TTSCardMaker work/version-dates before the AutoCroissant deploy**: every /update_stats after it (the dedupe and
+   each same-data re-save, `test_website_dates.py`) moves website dates until `analytics.when` is live. The default suite
+   skips that gate until the conftest clone has `when`; set `AC_SITE_SRC` to run it before then.
 2. [ ] **Checks after the first unattended day**: the website shows the five baked titles; TTS/checks 24/24 after the 11:41
    UTC tts-save run (`AUTOCROISSANT=~/Desktop/AutoCroissant LUA_PYTHON=/tmp/tts-checks-venv/bin/python`; rebuild that venv
    with lupa if /tmp was wiped); `gh run list -R MichaelJSr/TTSCardMaker --workflow card-edits.yml` green and quiet (the

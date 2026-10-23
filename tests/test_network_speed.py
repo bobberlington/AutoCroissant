@@ -7,11 +7,11 @@ from types import SimpleNamespace
 import pytest
 from pandas import DataFrame
 
+import commands.card_data as cd
 import commands.git_commit as gc
 import commands.github_api as ga
 import commands.psd_analyzer as pa
 import commands.query_card as qc
-import commands.repo_traverser as rt
 import commands.tts_save as ts
 import commands.type_emojis as te
 import commands.utils as utils
@@ -123,7 +123,7 @@ def test_commit_lookup_is_one_request(monkeypatch):
 
 def test_commit_lookup_more_than_one_page(monkeypatch):
     calls = []
-    monkeypatch.setattr(rt, "COMMITS_PAGE", 3)
+    monkeypatch.setattr(cd, "COMMITS_PAGE", 3)                                     # moved to card_data with the build
     repo = SimpleNamespace(get_commits=lambda path: Commits(7, 3, calls))
     tr = pa.RepositoryTraverser(pa.StatsDatabase())
     monkeypatch.setattr(tr, "_repo", lambda: repo)

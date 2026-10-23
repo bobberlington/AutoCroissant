@@ -97,7 +97,8 @@ def test_occurrences_like_effect_layers_jsx():
 
 
 def test_shadow_duelist_exclusion(clone):
-    """D3 is not stale: the card prints no ability; the parsed text comes from its hidden Ability layer."""
+    """D3 is live: the card prints no ability and nothing lays out its hidden Ability layer's words, so it parses to no
+    ability (only printed text counts, 2026-10-22) and the exclusion keeps the validator quiet."""
     from psd_tools import PSDImage
     from commands.psd_analyzer import CardValidator
     rel = "Auxiliary/Minions/Shadow_Duelist.psd"
@@ -106,3 +107,5 @@ def test_shadow_duelist_exclusion(clone):
     ability = [layer for layer in PSDImage.open(clone / rel).descendants() if layer.name == "Ability"]
     assert [layer.is_visible() for layer in ability] == [False] and ability[0].text.startswith("Heals the creature")
     assert "Shadow Duelist" in CardValidator.ABILITY_EXCLUSIONS
+    parsed = parse(parser(), clone, rel)
+    assert parsed["card"]["ability"] == "" and parsed["validator"] == []

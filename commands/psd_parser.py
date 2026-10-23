@@ -391,6 +391,7 @@ class PSDParser:
 
         effect_layers = []
         text_layers = []
+        hidden_abilities = []
         for layer in psd.descendants():
             if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
                 effect_layers.append(layer)     # a pixel copy of words from a text layer; nothing to parse
@@ -399,10 +400,16 @@ class PSDParser:
                 continue                        # hidden rule text isn't printed
             if layer.kind == "type":
                 text_layers.append(layer)
+                if not is_rulepage and layer.name.lower() == "ability" and not layer.is_visible():
+                    hidden_abilities.append(layer)      # read once every text layer is known (_relaid)
+                    continue
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
                 is_rulepage, get_stars_from_psd, card_mid_y)
+        for layer in hidden_abilities:
+            self._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y,
+                                     self._relaid(layer, text_layers))
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
         titles = [" ".join((layer.text or "").split()) for layer in text_layers
@@ -412,6 +419,8 @@ class PSDParser:
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
+        elif hidden_abilities:
+            card.ability = ""                   # its Ability layer is hidden and its words printed nowhere
         else:
             card.problems.append("NO ABILITY LAYER")
         self._process_stats(card, stat_trackers)
@@ -569,9 +578,9 @@ class PSDParser:
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
-                            is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int) -> None:
+                            is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False) -> None:
         """
-        Process text layer.
+        Process text layer. A hidden Ability layer is the ability only when relaid (_relaid): only printed text counts.
 
         Text set in the stoogedings font is read as icons: [fire]-style tokens (any case, spacing or alias) become
         canonical [fire] tokens, and icon characters typed from the Glyphs panel become tokens too. Header text in
@@ -579,7 +588,7 @@ class PSDParser:
         font take the original path unchanged.
         """
         engine_text = layer.engine_dict["Editor"]["Text"]
-        is_ability = layer.name.lower() == "ability" or is_rulepage
+        is_ability = is_rulepage or (layer.name.lower() == "ability" and (relaid or layer.is_visible()))
         icon_spans = self._icon_font_spans(layer, engine_text.value)
         self._flag_misplaced_tokens(engine_text.value, icon_spans, card)
         if icon_spans:
@@ -604,6 +613,20 @@ class PSDParser:
         if is_ability:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             abilities.append((layer_text, bbox))
+
+    @staticmethod
+    def _relaid(hidden, text_layers: list) -> bool:
+        """
+        Whether a hidden Ability layer's words are printed: the visible text layers over it, in reading order, say
+        exactly them (Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator lay their ability out again in pieces).
+        Shadow Duelist prints none of its hidden text: not its ability.
+        """
+        x0, y0, x1, y1 = hidden.bbox
+        pieces = sorted((layer for layer in text_layers if layer is not hidden and layer.is_visible()
+                         and layer.bbox[0] < x1 and x0 < layer.bbox[2] and layer.bbox[1] < y1 and y0 < layer.bbox[3]),
+                        key=lambda layer: (layer.bbox[1], layer.bbox[0]))
+        words = " ".join((layer.text or "") for layer in pieces).replace("\x03", " ").replace("\ufeff", "").split()
+        return bool(words) and words == (hidden.text or "").replace("\x03", " ").replace("\ufeff", "").split()
 
     @staticmethod
     def _icon_font_spans(layer, text: str) -> list[tuple[int, int]]:
@@ -977,7 +1000,7 @@ class CardValidator:
         "Paint Warrior",
         "PoD01Red Bloon",
         "Sabre",
-        "Shadow Duelist",         # printed card has no ability text; a hidden layer does
+        "Shadow Duelist",         # prints no ability (its Ability layer is hidden)
         "Sword Knight",
         "Tentacle",
         "Whelp",

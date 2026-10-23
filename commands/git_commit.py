@@ -4,6 +4,8 @@ blobs, tree and commit through the Git Data API with a non-force ref update; whe
 POST git/blobs, or no token) the same objects are written into the blobless history clone and pushed over SSH.
 
     commit_files(repository, head, base_tree, modes, {path: bytes}, message) -> sha, or None when the branch moved
+    local_commit(clone, head, {path: bytes}, message) -> sha: the same objects in a local clone, nothing pushed
+    checkout_head(clone) -> the commit its HEAD is at ("" when unborn)
 
 A rate-limited 403 is this run's, not the token's: it raises Transient (ssh_on_limit: SSH for the rest of the run). No Discord or
 config imports (the token: config through github_api, else GITHUB_TOKEN); never the pickles.
@@ -31,6 +33,7 @@ COMMIT_TRIES = 3                                # the branch moved meanwhile: ca
 CONFLICT = (409, 422)                           # ref update refused (not a fast forward)
 NO_WRITE = (401, 403, 404)                      # blob upload refused: the token can't write (classic PATs get 404)
 GIT_TIMEOUT = 300
+NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}            # a blobless clone fails on a missing blob instead of fetching it
 API_TIMEOUT = 300                               # a PSD blob is up to 85 MB (113 MB as base64)
 
 # ========================
@@ -216,21 +219,7 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
         raise Transient(f"the history clone mirrors {CARD_REPO}, not {repository}")
     refresh()                                   # the clone exists and knows head
     clone, env = expanduser(HISTORY_CLONE), git_env()
-    try:
-        changes: dict = {}
-        for path, data in files.items():
-            node = changes
-            *folders, name = path.split("/")
-            for folder in folders:
-                node = node.setdefault(folder, {})
-            node[name] = git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
-        tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
-        commit = git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
-    except CalledProcessError as error:
-        raise Transient(f"git {error.cmd[3]} in the history clone failed: "
-                        f"{(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
-    except (TimeoutExpired, OSError) as error:  # slower than GIT_TIMEOUT, or no git
-        raise Transient(f"git in the history clone failed: {error}") from error
+    commit = _write_commit(clone, head, files, message, env, "the history clone")
     try:                                        # --no-thin: a thin pack would fetch the old blobs as its delta bases
         push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", f"git@github.com:{repository}.git",
                             f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env=env)
@@ -245,6 +234,66 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
                         + ("" if environ.get("SSH_AUTH_SOCK") else " (no SSH_AUTH_SOCK: no SSH agent)"))
     refresh()
     return commit
+
+
+def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, where: str) -> str:
+    """The files' blobs, the tree on head's and the commit on head, written into clone; raises Transient."""
+    try:
+        changes: dict = {}
+        for path, data in files.items():
+            node = changes
+            *folders, name = path.split("/")
+            for folder in folders:
+                node = node.setdefault(folder, {})
+            node[name] = git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
+        tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
+        return git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
+    except CalledProcessError as error:
+        raise Transient(f"git {error.cmd[3]} in {where} failed: "
+                        f"{(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+    except (TimeoutExpired, OSError) as error:  # slower than GIT_TIMEOUT, or no git
+        raise Transient(f"git in {where} failed: {error}") from error
+
+
+def local_commit(clone: str, head: str, files: dict, message: str) -> str:
+    """
+    One commit of files on head in a local clone (blobless is enough), nothing pushed. A checkout whose HEAD is head
+    moves to it (a fast forward; its local changes stay, and one in the way fails the commit); a bare clone, an unborn
+    HEAD or a HEAD elsewhere doesn't (the caller checks where HEAD is). A failed fast forward leaves the commit's objects
+    unreferenced in the clone (git gc drops them).
+
+    Returns:
+        The commit's sha; raises Transient on a git failure
+    """
+    env = batch_env(clone, **GIT_IDENTITY, **NO_LAZY)
+    try:
+        bare = git(clone, "rev-parse", "--is-bare-repository", env=env).decode().strip() == "true"
+        at = "" if bare else checkout_head(clone, env)
+    except CalledProcessError as error:
+        raise Transient(f"git {error.cmd[3]} in {clone} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git in {clone} failed: {error}") from error
+    commit = _write_commit(clone, head, files, message, env, clone)
+    if at != head:
+        return commit
+    try:
+        git(clone, "merge", "--ff-only", "-q", commit, env=env)
+    except CalledProcessError as error:
+        raise Transient(f"git merge in {clone} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()} "
+                        f"(commit {commit[:8]} left unreferenced)") from error
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git merge in {clone} failed: {error} (commit {commit[:8]} left unreferenced)") from error
+    return commit
+
+
+def checkout_head(clone: str, env: Optional[dict] = None) -> str:
+    """The commit a clone's HEAD is at, "" when unborn; raises CalledProcessError when clone isn't a repo."""
+    done = run_process(["git", "-C", clone, "rev-parse", "-q", "--verify", "HEAD^{commit}"], capture_output=True,
+                       timeout=GIT_TIMEOUT, env=batch_env(clone) if env is None else env)
+    if done.returncode and not done.stdout:
+        git(clone, "rev-parse", "--git-dir", env=env)   # not a repo: raises
+        return ""
+    return done.stdout.decode().strip()
 
 
 # ========================
@@ -295,10 +344,12 @@ __all__ = [
     'CONFLICT',
     'GIT_IDENTITY',
     'GIT_TIMEOUT',
+    'NO_LAZY',
     'NO_WRITE',
     'Transient',
     'api',
     'api_commit',
+    'checkout_head',
     'commit_files',
     'commit_info',
     'git',
@@ -306,6 +357,7 @@ __all__ = [
     'git_env',
     'git_tree',
     'limited',
+    'local_commit',
     'plural',
     'ref_head',
     'status',

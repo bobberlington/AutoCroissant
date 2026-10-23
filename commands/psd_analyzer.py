@@ -7,7 +7,7 @@ commands.repo_traverser (RepositoryTraverser, update_stats). Everything is re-ex
 diagnostics scripts and the pickles (CardInfo and CardStats pickle as commands.psd_analyzer.*) import from this module.
 """
 from discord import Interaction, File
-from os.path import basename
+from os.path import basename, splitext
 from re import compile as re_compile
 from typing import Optional
 import pandas as pd
@@ -81,17 +81,21 @@ def get_card_aliases(name: Optional[str] = None) -> dict[str, list[str]] | list[
     """
     card_to_aliases = {}
 
-    # Build reverse lookup using get_card_path
-    for alias in card_repo.git_file_alias.keys():
-        # Use get_card_path to find the actual card this alias points to
+    # aliases.pkl's, until they moved into Card Edits.json: the card each one finds
+    for alias in ([] if card_repo.aliases_moved() else list(card_repo.git_file_alias.keys())):
         path = card_repo.get_card_path(alias)
         if path:
-            # Extract card name from path
-            target_name = basename(path).replace('_', ' ')
+            card_to_aliases.setdefault(basename(path).replace('_', ' '), []).append(alias)
 
-            if target_name not in card_to_aliases:
-                card_to_aliases[target_name] = []
-            card_to_aliases[target_name].append(alias)
+    # Card Edits.json's, on the card whose PNG the entry names (as query_card._add_lookup registers them)
+    edits = card_repo._edits
+    for key, fields in (edits.cards.items() if edits is not None else ()):
+        target = f"{key.replace(' ', '_')}.png"
+        path = card_repo.git_files.get(target) or next((v for k, v in card_repo.git_files.items() if k.endswith("/" + target)), None)
+        if path:
+            have = card_to_aliases.setdefault(splitext(basename(path))[0].replace('_', ' '), [])
+            have += [a for a in fields.get("aliases") or [] if a.lower().replace(' ', '_') not in
+                     {h.lower().replace(' ', '_') for h in have}]
 
     # If specific card requested, return just its aliases
     if name is not None:
@@ -132,177 +136,6 @@ def list_orphans(interaction: Interaction) -> None:
         return
 
     queue_long_message(interaction, '\n'.join(orphans))
-
-
-def mass_replace_field(interaction: Interaction,
-                       field: str = "",
-                       old_value: str = "",
-                       new_value: str = "") -> None:
-    """
-    Replace all instances of one field value with another.
-
-    Args:
-        interaction: Discord interaction
-        field: Field name to modify (e.g., 'author', 'series', 'subseries', 'subtype', 'card_type')
-        old_value: Value to replace
-        new_value: New value
-    """
-    # Validate field name
-    valid_fields = ['author', 'series', 'subseries', 'subtype', 'card_type']
-    if field not in valid_fields:
-        queue_message(interaction, f"Invalid field '{field}'. Valid fields are: {', '.join(valid_fields)}")
-        return
-
-    num_replaced = 0
-    for _, card in stats_db.stats.items():
-        current_value = getattr(card, field, None)
-
-        # Handle case-insensitive comparison for string fields
-        if isinstance(current_value, str) and current_value.lower() == old_value.lower():
-            setattr(card, field, new_value)
-            num_replaced += 1
-
-    stats_db.save()
-    queue_message(interaction, f"Replaced {num_replaced} instances of {field}='{old_value}' with '{new_value}'.")
-
-
-def manual_metadata_entry(interaction: Interaction,
-                          query: str,
-                          del_entry: bool = False,
-                          author: Optional[str] = None,
-                          ability: Optional[str] = None,
-                          stars: Optional[int] = None,
-                          subtype: Optional[str] = None,
-                          series: Optional[str] = None,
-                          subseries: Optional[str] = None,
-                          hp: Optional[int] = None,
-                          defense: Optional[int] = None,
-                          attack: Optional[int] = None,
-                          speed: Optional[int] = None,
-                          card_type: Optional[str] = None,
-                          types: Optional[str] = None) -> None:
-    """
-    Manually edit metadata for a card.
-
-    Args:
-        interaction: Discord interaction
-        query: Card name query
-        del_entry: Whether to delete the entire entry
-        author: Card author/creator
-        ability: Card ability text
-        stars: Star count
-        subtype: Card subtype
-        series: Card series
-        subseries: Card subseries (database only, never in the PSD)
-        hp: HP stat
-        defense: Defense stat
-        attack: Attack stat
-        speed: Speed stat
-        card_type: Card type
-        types: Comma-separated list of types (e.g., "fire,water")
-    """
-    path = card_repo.get_card_path(query)
-    if not path:
-        queue_message(interaction, f"No card found matching '{query}'.")
-        return
-
-    name = basename(path).replace('_', ' ')
-
-    # Handle deletion
-    if del_entry:
-        if name in stats_db.stats:
-            del stats_db.stats[name]
-            stats_db.save()
-        queue_message(interaction, f"Deleted metadata for **{name}**.")
-        return
-
-    archived = stats_db.archived().get(name) if name not in stats_db.stats else None
-    if archived is not None:                     # no stub: the next run would archive it over the real card
-        if all(v is None for v in (author, ability, stars, subtype, series, subseries, hp, defense, attack, speed,
-                                   card_type, types)):
-            queue_message(interaction, f"**{name}** is archived (its PSD was deleted from the card repo):\n"
-                                       f"```{_format_metadata(archived, name)}```")
-        else:
-            queue_message(interaction, f"**{name}** is archived (its PSD was deleted from the card repo); "
-                                       "its metadata can't be edited.")
-        return
-
-    # Initialize metadata entry if it doesn't exist
-    if name not in stats_db.stats:
-        stats_db.stats[name] = CardInfo(
-            name=name,
-            card_type=CardType.UNKNOWN.value,
-            path=f"{path}.psd")
-
-    card = stats_db.stats[name]
-
-    # Track what was updated
-    updates = []
-
-    # Update all provided fields
-    if author is not None:
-        card.author = author
-        updates.append(f"author: {author}")
-
-    if ability is not None:
-        card.ability = ability
-        updates.append(f"ability: {ability[:50]}..." if len(ability) > 50 else f"ability: {ability}")
-
-    if stars is not None:
-        card.stars = stars
-        updates.append(f"stars: {stars}")
-
-    if subtype is not None:
-        card.subtype = subtype
-        updates.append(f"subtype: {subtype}")
-
-    if series is not None:
-        card.series = series
-        updates.append(f"series: {series}")
-
-    if subseries is not None:
-        card.subseries = subseries
-        updates.append(f"subseries: {subseries}")
-
-    if hp is not None:
-        card.stats.hp = hp
-        updates.append(f"hp: {hp}")
-
-    if defense is not None:
-        card.stats.defense = defense
-        updates.append(f"def: {defense}")
-
-    if attack is not None:
-        card.stats.attack = attack
-        updates.append(f"atk: {attack}")
-
-    if speed is not None:
-        card.stats.speed = speed
-        updates.append(f"spd: {speed}")
-
-    if card_type is not None:
-        card.card_type = card_type
-        updates.append(f"type: {card_type}")
-
-    if types is not None:
-        # Parse comma-separated types into a list
-        types_list = [t.strip() for t in types.split(',') if t.strip()]
-        card.types = types_list
-        updates.append(f"types: {types_list}")
-
-    # If no updates were provided, show current metadata
-    if not updates:
-        queue_message(interaction, f"Current metadata for **{name}**:\n```{_format_metadata(card, name)}```")
-        return
-
-    stats_db.save()
-
-    # Format success message
-    updates_text = '\n'.join(f"  • {update}" for update in updates)
-    queue_message(
-        interaction,
-        f"Updated metadata for **{name}**:\n{updates_text}"
-    )
 
 
 def view_old_metadata(interaction: Interaction,
@@ -501,8 +334,6 @@ __all__ = [
     'get_stats_as_dict',
     'update_stats',
     'list_orphans',
-    'mass_replace_field',
-    'manual_metadata_entry',
     'view_old_metadata',
     'export_stats_to_file',
     'export_rulebook_to_file',
