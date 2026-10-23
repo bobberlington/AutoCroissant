@@ -59,6 +59,7 @@ MODES = ("dry", "report", "on")
 LINE = "{login} pushed {card} with these issues: {issues}. [{short}]({url})"
 DISCORD_LIMIT = 2000
 SUPPRESS_EMBEDS = 4                             # Discord message flag: no link previews
+URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
 NOBODY = "Someone"
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
@@ -673,7 +674,7 @@ def discord_payload(data: dict, repository: str) -> dict:
     """
     url = f"https://github.com/{repository}/commit/"
     lines = [LINE.format(login=entry["login"], card=entry["card"], issues="; ".join(entry["told"]).rstrip("."),
-                         short=(entry["commit"] or data["after"])[:8], url=url + (entry["commit"] or data["after"]))
+                         short=(entry["commit"] or data["after"])[:8], url=url + (entry["commit"] or data["after"])[:URL_SHA])
              for entry in data["cards"] if entry["told"]]
     if not lines:
         return {}

@@ -1,7 +1,7 @@
 # Push guards: stale PNGs and card standards, checked on every push (2026-10-22)
 
-**Status:** designed 2026-10-22, nothing built. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by
-three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
+**Status:** designed and BUILT 2026-10-22 (section 16), not landed: AutoCroissant `work/push-guards`, TTSCardMaker
+`work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
 
@@ -550,3 +550,75 @@ jobs:
 - The 57 cards within the bar but past 2 levels (2.1). They are re-exported only when pushed with a visible change, and then
   their whole PNG becomes the composite. 28 are status effects, 18 of them at max 36 on under 0.5% of pixels: probably text
   re-rasterized by a newer Photoshop. Check one in Photoshop before `on`.
+
+## 16. Build (2026-10-22)
+
+**What exists** (nothing pushed, dispatched or posted; the Desktop clone was only read):
+- AutoCroissant `work/push-guards`: `commands/png_export.py` (guard 1), `commands/card_standards.py` (guard 2),
+  `commands/card_guards.py` (the driver: `check`, `land`, `--whole-tree`, `--local`), tests `test_png_export.py` (17),
+  `test_card_standards.py` (23), `test_card_guards.py` (14). work/r5-bot is merged in for `icc_vote` (one conflict:
+  `PARITY_MEAN_MAX` stays 2.0, the owner's value, with r5-bot's ICC constants added).
+- TTSCardMaker `work/push-guards`: `.github/workflows/card-guards.yml` (section 12's sketch made whole). Its shape is pinned by
+  `test_card_guards.test_workflow_shape` (set `CARD_GUARDS_YML` to the file until it is on the clone's main).
+- Run: `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>] --out <dir>` writes
+  `report.md`, `discord.json`, `plan.json`, `summary.json` and the artifacts (`files/`, `crops/`); `land --plan <dir>/plan.json`.
+  Scratch scripts and outputs: `~/Documents/Tools/wt/scratch/guards-build/`; evidence:
+  `~/Documents/Tools/psd-research/evidence/push-guards-2026-10-22/build-replay-last10/`.
+
+**Measured with the built code** (fork `cards` e0ea34f6, the Mac at load 75-115):
+- The 34 replayed commits (2.2): 34 re-exported. The 31 Photoshop saves: 30 within 2 levels of the author's export, 9
+  pixel-identical, the worst 4 levels (Final_Dark_Mind_Eye). The 3 bot bakes went to the referee and passed (Springtrap within
+  2 levels; PoD09DDT and PoD10BFB max 49 on 0.3%, the bake's merged preview against its merged PNG). The PNGs weigh 66.0 MB
+  against the authors' 169.9 MB.
+- The whole tree at 6e50c3ee (812 PSDs, 1.7 s a card median): section 6's counts rule for rule. R1 129 cards, R2 15 (+1
+  waived), R3 41 (+6 waived), R4 150 all waived, R5 15 (+8 waived), R6 2, R7 1 waived, R8 0, R9 6 to fix, R10 2
+  (Dark_Mind_Eye, Kel), R11 0.
+- origin/main's last 10 pushes, replayed:
+
+| Push (UTC) | By | Run | Cards | Guard 1 | Writes | Discord lines |
+|---|---|---|---|---|---|---|
+| 18:13 6ba412ae..6e50c3ee | MichaelJSr | none (no PSD or PNG) | | | | |
+| 17:57 c6dc6d08..6ba412ae | github-actions[bot] | none (bot push) | | | | |
+| 17:56 7886ac43..c6dc6d08 | github-actions[bot] | none (bot push: the bake) | | | | |
+| 17:00 5dd2a408..7886ac43 | MichaelJSr | none (no PSD or PNG) | | | | |
+| 16:01 07589cc7..5dd2a408 | github-actions[bot] | none (bot push) | | | | |
+| 15:18 38c55bd3..07589cc7 | MichaelJSr | check, 22 s | 19 (15 pairs, 3 stale, 1 PNG alone) | 3 current (God Tamer, Bubble, 12 Reactions2) | 0 | 1 (God Tamer: Ability outside Text) |
+| 15:18 5034c4cf..38c55bd3 | MichaelJSr | check, 26 s | 19 pairs | | 0 | 0 |
+| 14:44 56a79f4f..5034c4cf | MichaelJSr | none (no PSD or PNG) | | | | |
+| 14:41 91fcda38..56a79f4f | MichaelJSr | check, 26 s | 39 pairs | | 0 | 5 (Ability outside Text) |
+| 14:39 287e0e5a..91fcda38 | MichaelJSr | check, 36 s | 38 pairs | | 0 | 2 (Lothric, Jevil: "(Action)" not a badge) |
+
+  No pushed PNG failed R10, and nothing would have been written. Every Discord line names a deviation the card already had
+  before the push (none marked "(new)").
+
+- The first dry dispatches of section 8, predicted by running them here:
+  - `sha=7cb4c867` (Zomoroko's cooldowns (5)): 29 PSD+PNG pairs, no guard-1 work, R10 0 flags of 29 (as predicted). R1 flags all
+    29 cards, each "(new)" (the cooldown tags typed in the text font); also R2 3, R3 2, R5 1. The post fits 6 full-sha lines,
+    so the links now carry 12 hex digits (GitHub resolves them), about 8 lines, then "... and N more cards: [details](...)".
+  - `sha=dc37f4ad`: God Tamer and Bubble "PNG still current"; one line (God Tamer, R3).
+  - `sha=100511d3`: 12 Reactions2 current; 12 rule pages' PNGs match (R10); nothing told.
+
+**Changes from the design, found while building:**
+1. Per-card waivers: `site/Card Edits.json` `problems_ok: true` (a bool in `CardEdits.TYPES`, so "STD R3" codes would be
+   dropped as invalid). It waives the report-only rules R1-R8; R10 is still told and R9/R11 still fixed. Today: Pix,
+   Tainted Lazarus, Twin Emperors.
+2. The Q2 class waiver includes Pix (a multi-creature card): R3 after waivers is 41, not 42.
+3. R11's reparse gate refuses a rename that changes the bot's reading. The parser misses an `ability ` layer (trailing space),
+   so renaming it changes the card's data: it stays a report. The bot never changes data on its own.
+4. G6 also covers a tool save that moved no composite pixel but changed layers (a script that saved without a new composite):
+   the referee renders the changed layers' box and refuses when the composite is stale (test on Mini Doomer).
+5. "PNG still current", but the PNG and the composite were already outside the bar: told ("does not match the PSD, though this
+   push moved no pixel"). Dark_Mind_Eye and Kel get this line when their PSD is pushed.
+6. A new PSD beside an existing PNG takes the ICC mode from that PNG's own vote.
+7. A PSD pushed with its PNG deleted: the standards only, no PNG made (the deletion is the author's).
+8. A rename (same blob) copies the old PNG to the new name and tells that the old PNG is left at the old name.
+9. PNGs under `Types/`, `site/` or `TTS/` are not card PNGs (the paths filter still starts a run, which finds nothing).
+10. The fixes run at check time, so dry and report runs carry the fixed PSD in the artifact; `land` only re-checks the blobs.
+11. The commit comment goes up only when a card has something told, a write or an error (`summary.json`); the job summary
+    always has the report.
+12. The fork pin is `cards-20261022`, card-edits.yml's. It has no `sync_story`, so in the Action R9 reports until both pins move
+    to the release's tag (step 2); `story_sync()` decides.
+
+**Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
+past 2 levels" cards in Photoshop (section 15).
+

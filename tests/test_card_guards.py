@@ -173,7 +173,7 @@ def test_check_end_to_end(cards, tmp_path):
     payload = json.loads((out / "discord.json").read_text())
     assert payload["allowed_mentions"] == {"parse": []} and payload["flags"] == 4 and "<@" not in payload["content"]
     lines = payload["content"].splitlines()
-    assert all(re.fullmatch(r"\S+ pushed .+ with these issues: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{40}\)", l)
+    assert all(re.fullmatch(r"\S+ pushed .+ with these issues: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{12}\)", l)
                for l in lines), lines
     assert any(l.startswith("Alice pushed Lonely with these issues: Lonely.png does not match its PSD") for l in lines)
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
@@ -197,7 +197,7 @@ def test_discord_fits_and_says_nothing_without_issues():
     assert re.fullmatch(r"\.\.\. and \d+ more cards: \[details\]\(https://github\.com/MichaelJSr/TTSCardMaker/commit/a{40}\)", last)
     one = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "MichaelJSr/TTSCardMaker")["content"]
     assert one == ("Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group. "
-                   "[77777777](https://github.com/MichaelJSr/TTSCardMaker/commit/" + "7" * 40 + ")")
+                   "[77777777](https://github.com/MichaelJSr/TTSCardMaker/commit/" + "7" * 12 + ")")
     assert cg.discord_payload({"after": "a" * 40, "cards": [dict(entry, told=[])]}, "o/r") == {}
 
 
