@@ -555,11 +555,12 @@ stored before once (`card_history.dedupe`: the first of a run stays, a run equal
 ability none, the retired type `offense` is `negation`), a field a reading could not know is no difference (a title
 before parser 2; stars, types or ability its parse reported a problem with) nor is the series split's move under a parent;
 stored versions' series are filled from the next version (items) or moved under that parent, and an earlier reading of
-the same commit (one start, no other blob) goes first. The rule runs one way (`card_history.knows`): the reading that knew
-more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer keeps the
-card before as a version. An applied database edit that changes a card's data (Card Edits.json at /update_stats, a
-Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`, since
-2026-10-23). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+the same commit (one start, no other blob) goes first, never the card before an edit's version (cause `edit` or
+`authors`, which starts no earlier than the version it ends). The rule runs one way (`card_history.knows`): the reading
+that knew more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer
+keeps the card before as a version. An applied database edit that changes a card's data (Card Edits.json at
+/update_stats, a Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`,
+since 2026-10-23). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
