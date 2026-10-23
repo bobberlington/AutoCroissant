@@ -3,6 +3,8 @@ Timing-tag badges: the stoogedings font's badge_tags(), the website's TAG/tagInf
 hold the same tags (companion skill §1.2, "three places"); std batch copies may only lag by BATCH_LAG. Any letter case
 is the same tag since the font's CASE lookup (2026-10-22): "(action)" draws and shows the (Action) badge. Reads the card
 repo clone; skips without it or node, when the clone is behind the walk, or while the walk is still exact-case.
+Token variants too (2026-10-23): the variants the font draws ([fire:glow], [fire:darkglow]...) are the parser's
+ICON_VARIANTS, and the parser and the website read all but :no as the plain icon.
 """
 import ast
 import json
@@ -32,10 +34,10 @@ pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), rea
 
 
 def build_fns() -> dict:
-    """badge_tags() and badge_glyph() run on their own (the build script imports cv2 etc.)."""
+    """badge_tags(), badge_glyph() and spellings() run on their own (the build script imports cv2 etc.)."""
     tree = ast.parse(BUILD.read_text())
-    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ("badge_tags", "badge_glyph")]
-    ns = {}
+    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ("badge_tags", "badge_glyph", "spellings")]
+    ns = {"re": re}
     exec(compile(ast.Module(fns, []), str(BUILD), "exec"), ns)
     return ns
 
@@ -203,3 +205,107 @@ def test_batches_match_font(font, cased, any_case, tmp_path):
         jsx = jsx_tags(tmp_path, (d / "scripts" / "std_card.jsx").read_text(), "STD_TAG", cands)
         assert py == jsx, d.name
         check(py, font, cased, any_case, d.name, BATCH_LAG.get(d.name, set()), exact_ok=True)   # a copy as it ran
+
+
+# ========================
+# Token variants
+# ========================
+MANIFEST = CLONE / "MDW" / "Fonts" / "stoogedings-src" / "stoogedings.json"
+VARIANT_PROBES = ["tint", "sticker", "no", "glow", "darkglow", "Glow", "DARKGLOW", "glo", "glows", "dark glow",
+                  "dark_glow", "darkglo", "lightglow", "shadow", "outline", "bogus"]
+
+
+def font_order():
+    ttlib = pytest.importorskip("fontTools.ttLib")
+    return ttlib.TTFont(FONT, lazy=True).getGlyphOrder()
+
+
+@pytest.fixture(scope="module")
+def glow_build() -> bool:
+    """The clone's build script makes :glow and :darkglow (TTSCardMaker work/glow-tokens); an older one doesn't."""
+    return "GLOWS" in BUILD.read_text()
+
+
+def behind(glow_build: bool) -> None:
+    if not glow_build:
+        pytest.skip(f"clone behind: {CLONE}'s font predates :glow; pull TTSCardMaker")
+
+
+@pytest.fixture(scope="module")
+def font_variants() -> set:
+    """The :variant suffixes the clone's font draws as an icon on [fire:...], lowercased."""
+    order = font_order()
+    got = shaper(order)([f"[fire:{v}]" for v in VARIANT_PROBES])
+    return {v.lower() for v in VARIANT_PROBES if all(g.startswith("icon_") or g.endswith("_space") for g in got[f"[fire:{v}]"])}
+
+
+def test_parser_variants_match_font(font_variants, glow_build):
+    from commands.psd_parser import ICON_VARIANTS
+    behind(glow_build)
+    assert {v.lower() for v in VARIANT_PROBES if v.lower() in ICON_VARIANTS} == font_variants
+
+
+def test_parser_reads_variants_as_the_plain_icon():
+    from types import SimpleNamespace
+    from commands.psd_parser import IconVocabulary, PSDParser
+    vocab = IconVocabulary.build(["fire", "darkmatter"], [], {"icons": {"darkmatter": {"aliases": ["dark matter"]}}})
+    parser = SimpleNamespace(icons=vocab, _covered=PSDParser._covered, _add_problem=PSDParser._add_problem)
+    card = SimpleNamespace(problems=[])
+    text = "[fire:glow] [Fire:DarkGlow] [fire:sticker] [fire:tint] [fire:no] [dark matter:glow] [fire:glows] [fire:dark glow]"
+    out, icons = PSDParser._read_icon_tokens(parser, text, [(0, len(text))], card)
+    assert out == "[fire] [fire] [fire] [fire] [fire:no] [darkmatter] [fire:glows] [fire:dark glow]"
+    assert [name for name, _ in icons] == ["fire"] * 5 + ["darkmatter"]
+    assert card.problems == ["UNKNOWN ICON TOKEN: [fire:glows]", "UNKNOWN ICON TOKEN: [fire:dark glow]"]
+
+
+def test_font_draws_every_glow(glow_build):
+    behind(glow_build)
+    icons = json.loads(MANIFEST.read_text())["icons"]
+    spell = build_fns()["spellings"]
+    order = font_order()
+    bases = {key: "icon_" + re.sub(r"[^a-z0-9]", "_", key) for key in icons}
+    bases = {key: base for key, base in bases.items() if base in order}   # a PNG gone keeps its codepoint, no glyph
+    want = {}
+    for key, base in bases.items():
+        for name in [key] + icons[key].get("aliases", []):
+            for sp in spell(name):
+                for v in ("glow", "darkglow"):
+                    for text in (f"[{sp}:{v}]", f"[{sp.upper()}:{v.upper()}]"):
+                        want.setdefault(text, [f"{base}.{v}_bg", base, "glow_space"])
+    got = shaper(order)(list(want))
+    assert {t: got[t] for t in want} == want
+    assert len({tuple(w) for w in want.values()}) == 2 * len(bases) > 100   # 182 on 2026-10-23
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+def test_site_reads_variants_as_the_plain_icon(tmp_path):
+    from commands.psd_parser import ICON_VARIANTS
+    shutil.copy(TEXT_JS, tmp_path / "text.mjs")
+    out = node(tmp_path, f"""import {{ makeRenderer, plain }} from "./text.mjs";
+const r = makeRenderer({{ cards: [], icons: {{ fire: {{ file: "fire.webp" }} }} }});
+const res = {{}};
+for (const v of {json.dumps([v for v in ICON_VARIANTS if v])}) res[v] = [r.render(`a [fire:${{v}}] b`) === r.render("a [fire] b"), plain(`[fire:${{v}}]`)];
+console.log(JSON.stringify(res));""")
+    site = json.loads(out)
+    assert {v: same for v, (same, _) in site.items()} == {v: v != "no" for v in ICON_VARIANTS if v}
+    assert {v: flat for v, (_, flat) in site.items()} == {v: "non-fire" if v == "no" else "fire" for v in ICON_VARIANTS if v}
+
+
+def test_site_previews_flatten_variants(glow_build):
+    from importlib.util import module_from_spec, spec_from_file_location
+    import sys
+    from commands.psd_parser import ICON_VARIANTS
+    behind(glow_build)
+    build = CLONE / "site" / "build"
+    sys.path.insert(0, str(build))
+    try:
+        spec = spec_from_file_location("site_build_parity", build / "build_site.py")
+        site = module_from_spec(spec)
+        spec.loader.exec_module(site)
+    except ImportError as e:
+        pytest.skip(f"build_site.py needs {e.name}")
+    finally:
+        sys.path.remove(str(build))
+    for v in ICON_VARIANTS:
+        text = site.share_text({"type": "item", "ability": f"Burn [fire{':' + v if v else ''}]"})
+        assert text.endswith("Burn non-Fire" if v == "no" else "Burn Fire"), v

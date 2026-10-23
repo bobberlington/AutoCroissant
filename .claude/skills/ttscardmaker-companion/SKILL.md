@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), (Action), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
+description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], [x:glow], [x:darkglow], glow halo, ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), (Action), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, the TTS save workflow tts-save.yml (TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -25,7 +25,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before, PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 7,235,496 with `:glow` on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
@@ -57,6 +57,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:tint]` | One-color silhouette that takes the **text color** | `[fire]` |
 | `[fire:sticker]` | The color icon on an outline in the text color | `[fire]` |
 | `[fire:no]` | The icon with a red prohibition sign (`#e01b22`) over it | `[fire:no]` (means "non-fire") |
+| `[fire:glow]`, `[fire:darkglow]` (branch work/glow-tokens, §1.8) | The color icon on a soft white or black halo, 0.1 em wide | `[fire]` |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
 | `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
@@ -237,7 +238,8 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 1. One-time setup: `python3 -m venv MDW/Fonts/stoogedings-src/.venv && MDW/Fonts/stoogedings-src/.venv/bin/pip install -r MDW/Fonts/stoogedings-src/requirements.txt`
 2. Build (no arguments; it finds the repo from its own location; about 13 s):
    `MDW/Fonts/stoogedings-src/.venv/bin/python MDW/Fonts/stoogedings-src/build_stoogedings.py`
-   Expected output today: `built …/stoogedings.ttf: 5.7 MB, 91 icons, 1024 token spellings`.
+   Expected output today: `built …/stoogedings.ttf: 5.7 MB, 91 icons, 1024 token spellings` (with `:glow`:
+   `7.2 MB, 91 icons, 1536 token spellings`).
    Read any "token collision" or "missing file" lines.
 3. Rebuilds are **byte-identical** (`recalcTimestamp = False`, :514), so `git status` shows the font as changed only
    when something really changed. Verified 2026-10-19: a rebuild of a /tmp copy matched both the committed TTF and
@@ -257,7 +259,8 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 ### 1.5 How it is built, and the renderer facts behind the design
 
 GSUB is registered under **both `liga` and `rlig`**. There are eight lookups, in this order (FOLD_UP, FOLD_LOW and CASE since
-2026-10-22); TO_TK and the FOLDs run only from the contextual lookups:
+2026-10-22; ten with GLOW_TOKENS and GLOW_LAYERS on branch work/glow-tokens); TO_TK and the FOLDs run only from the
+contextual lookups:
 
 | Lookup | Type | Job |
 |---|---|---|
@@ -268,9 +271,11 @@ GSUB is registered under **both `liga` and `rlig`**. There are eight lookups, in
 | FOLD_UP, FOLD_LOW | Single | letter → its other case (only the letters the tags use) |
 | CASE | Chaining contextual | `(` + a tag in any case + `)`: each letter through FOLD_UP/FOLD_LOW into the tag's own case; 341 Format-3 subtables |
 | BADGES | Ligature | `(` tag `)` → badge |
+| GLOW_TOKENS, GLOW_LAYERS (§1.8) | Ligature, Multiple (Extension type 7) | TOKENS and LAYERS for `:glow` / `:darkglow`. Last, so the eight above keep their bytes |
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
-holds 523 documents (91 icons + 91 no-signs + 341 badges; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21).
+holds 523 documents (91 icons + 91 no-signs + 341 badges; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21;
+705 with the 182 halos of §1.8).
 
 Renderer facts. These were tested 2026-10-19 in Photoshop 2023 and macOS CoreText. They are also recorded in the
 build script's docstring:
@@ -283,6 +288,7 @@ build script's docstring:
 | GSUB single, ligature, multiple and chaining-contextual lookups all work in Photoshop under `liga` (CASE's multi-letter contexts: not checked yet, `case_badge_check.jsx`) | The whole design relies on liga. Leave ligatures on in the Character panel |
 | CoreText (Apple apps) draws plain outlines **above** SVG glyphs | In Preview, Pages and similar apps, `:sticker` shows only the outline. Photoshop is the target, so this is accepted |
 | CoreText ignores an SVG `<use>` that points at an `<image>` | Each color glyph embeds its PNG directly |
+| CoreText draws an SVG glyph past its `glyf` box (2026-10-23: a halo drawn whole with a smaller outline) | Only Photoshop's line-box clip (§4) limits the halo of §1.8 |
 
 ### 1.6 Four consumers, four matching rules
 
@@ -292,9 +298,9 @@ same spellings; the website is still more lenient:
 | Consumer | Normalization | Aliases | Notes |
 |---|---|---|---|
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
-| AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant` | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
+| AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant`; the variants are `ICON_VARIANTS` (`glow`, `darkglow` on branch work/glow-tokens), all but `no` read as the plain icon | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
-| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
+| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`; any other variant (`:glow` too) is the plain icon in text.js, and `share_text` (build_site.py) flattens `no|tint|sticker|glow|darkglow`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
 Emoji names differ from manifest keys in exactly two cases: `fragile equip` → `fragile_equip`, and
 `thunderfury_blessed_blade_of_the_starseeker` → `thunderfury_blessed_blade_of_the`. The 126 emojis are
@@ -316,6 +322,57 @@ own set. Live Discord upload is untested as of 2026-10-19.
 Rule: **never rename or delete an icon PNG to "fix" a name. Add an alias instead.** If you must rename, the change
 spans TTSCardMaker (PNG, rebuilt font and manifest, every PSD that uses the old token or layer name) and the bot
 (`/update_stats`, which also deletes the old emojis). Class (d) gates apply: autocroissant-change-control.
+
+### 1.8 Glow variants `:glow` and `:darkglow` (owner ruling 2026-10-22; branch work/glow-tokens, 2026-10-23)
+
+`[x:glow]` is the color icon on a soft white halo, `[x:darkglow]` on a soft black one, for all 91 icons. Same grammar
+as `:sticker`: any case, every separator, aliases. The parser and the website read both as plain `[x]` (§1.6). Not
+merged on 2026-10-23: TTSCardMaker and AutoCroissant branches `work/glow-tokens`.
+
+**The model.** The owner's reference is Nebulous_Precipice's darkmatter icon layer, at origin/main blob 81bde4f7
+(before the standardization hid it). Its effect is a Drop Shadow: white, Normal, opacity 80%, distance 0, spread 20%,
+size 120 px, linear contour, layer knocks out shadow. The icon is 91×93 px and the text 95 px per em. On the card
+(original PNG against the standardized one, where the layer is hidden) the glow's alpha is 0.46 at the icon's edge,
+0.33 at 20 px, 0.20 at 40 px, 0.10 at 60 px and 0 by about 110 px. This emulation fits it with rmse 0.002: grow the
+matte by spread × size, blur with a Gaussian of sigma 0.42 × (1 − spread) × size, multiply by the opacity.
+
+**The size is cut (ruling pending).** At token size that glow reaches 1.26 em. Photoshop clips SVG glyphs to the line
+box (§4): ascent 1077, descent 281 units, and an icon's bottom is at −180, so 0.1 em fits under it. The build uses
+`GLOW_SIZE` 100 units with the same spread, opacity and model: a tight soft rim, not the card's wide cloud. Larger
+sizes need taller font metrics (which move text) or an effect layer (§6).
+`~/Documents/Tools/wt/scratch/rulings/glow/glow_size_comparison.png` compares the card, 0.1, 0.3 and 1.26 em, and 1.26
+em clipped as Photoshop would.
+
+**The glyphs.** Per icon: `icon_x.glow`, `icon_x.glow_bg`, `icon_x.darkglow`, `icon_x.darkglow_bg`, and one shared
+`glow_space`. A token draws [halo, advance `GLOW_SIZE` − `SIDE`][color icon][`glow_space`]. It is 120 units wider than
+the plain icon, so the halo stays inside its own advance. Each halo is a PNG (8 units per px, RGBA) in an OT-SVG
+`<image>`, one per icon and color. Its `glyf` is the whole halo's outline, so the non-SVG fallback is a blob, like
+`:sticker`'s.
+- **Nothing old changes.** The new glyphs come after the `.tk` glyphs and the two new lookups go last. Every old glyph
+  id, glyf record, advance, SVG document, cmap entry and the eight old lookups stay byte-identical. The vertical
+  metrics are unchanged; `head` yMin/yMax grow to −278/920.
+- **Extension lookups.** The packer makes the two new lookups Extension (type 7): GSUB grows from 62 to 88 KB. They are
+  separate because TOKENS alone (41 KB, one subtable) would have grown to 65 KB, near the 64 KB subtable limit.
+- **Size:** 7,235,496 bytes (+1,499,292, +26%), build about 20 s. Byte-identical in ac-py314-fork and ac-py314-psd125.
+
+**Proof, 2026-10-23** (old font 38a19d81 vs new 9f7ec894; scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py` in
+`~/Documents/Tools/wt/scratch/rulings/glow/scripts/`):
+- **HarfBuzz** (uharfbuzz 0.56.3), under default features, `liga` off and `rlig` off:
+  - all 2560 glow spellings (every name and alias, 4 separators, 5 case mixes, both variants: 182 icon × variant
+    pairs) shape to [halo, icon, `glow_space`], alone and in a sentence;
+  - 1080 old tokens, 2530 badge spellings, 20,240 badge near misses, 8,654 glow near misses (`[x:glo]`, `[x: glow]`,
+    `[x:dark glow]`, `[x:glow:no]`…), 5,817 card text lines (stats.pkl, old_stats.pkl, Card Edits.json) and 599
+    random mixes shape exactly as before;
+  - 4,401 random mixes with a glow token shape as before outside the tokens, and as the triple inside.
+- **CoreText** (a Swift tool that loads the file, no install), `liga` on and off: the same sets, all pass.
+- **Renders:** CoreText draws the halo whole, and clipping to the line box changes 0 pixels. Samples on four
+  backgrounds: `scratch/rulings/glow/samples/`.
+- **Photoshop: not checked** (a batch owned it; the font is not installed). Install the font, restart Photoshop and run
+  `~/Documents/Tools/wt/scratch/rulings/glow/glow_check.jsx`: it samples the halo beside and under the icon and writes
+  `glow_check.log` and `.png` next to itself (its rules pass on a CoreText render). A FAIL under the icon only means
+  the line box clips it.
+- `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets. That is past the
+  parser's 48 (`ICON_SCAN_PATTERN`), as `:sticker` (51) already is, so it reads as text. Use the `thunderfury` alias.
 
 ## 2. The card-browser website
 
@@ -854,7 +911,7 @@ pushes", "TTS checks: the audit's checks, re-runnable"). Refresh the
 date-stamps whenever you touch this file.
 
 ```bash
-# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
+# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; with :glow [1, 6, 4, 2, 1, 1, 6, 4, 7, 7] and 705; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
 MDW/Fonts/stoogedings-src/.venv/bin/python -I -c "from fontTools.ttLib import TTFont; f=TTFont('MDW/Fonts/stoogedings.ttf'); c=f.getBestCmap(); print(f['name'].getDebugName(6), hex(min(x for x in c if x>=0xE000)), hex(max(c)), 0x2605 in c, sum(n.startswith('badge_') for n in f.getGlyphOrder()), [l.LookupType for l in f['GSUB'].table.LookupList.Lookup], len(f['SVG '].docList))"
 # Manifest: 91 icons (35 type / 56 star), contiguous PUA, 15 with aliases
 python3 -c "import json,collections as C; m=json.load(open('MDW/Fonts/stoogedings-src/stoogedings.json'))['icons']; print(len(m), C.Counter(v['kind'] for v in m.values()), sum(bool(v['aliases']) for v in m.values()))"
@@ -896,3 +953,4 @@ Maintenance rules:
 2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
 2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`. Later the same day: the batch copies as a fourth place (`test_batches_match_font`), the "clone behind" skip, the walk's font rule and the Stats chart's `neutral` exclusion (TTSCardMaker b686d0c).
 2026-10-22 (any case): §1.1, §1.2 (the CASE lookup, its proof, the Photoshop check and fallback, the three places), §1.4 step 3 (the packer pin), §1.5's lookups and the provenance expectations, against TTSCardMaker branch work/badges-any-case.
+2026-10-23 (glow): §0's font row, §1.1, §1.4's output, §1.5 (lookups, SVG count, the CoreText row), §1.6 and §1.8 against TTSCardMaker branch work/glow-tokens (3539dc83) and AutoCroissant branch work/glow-tokens; font line below run on its TTF.

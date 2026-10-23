@@ -319,7 +319,8 @@ For layers that do use the font, `_read_icon_tokens` rewrites what's in it:
   Spellings the font would draw as letters — `[fragile.equip]`, `[fragile  equip]` (two spaces), `[ fire]`,
   `[fire: no]` — are `UNKNOWN ICON TOKEN` problems. Until 2026-10-20 the parser also ignored dots, apostrophes
   and extra spaces and so accepted those silently (archaeology Entry 10.11).
-- `:tint` and `:sticker` are dropped. `[x:no]` is kept as `[x:no]`, because it means "non-x".
+- `:tint` and `:sticker` are dropped (`:glow` and `:darkglow` too, on branch work/glow-tokens). `[x:no]` is kept as
+  `[x:no]`, because it means "non-x".
 - Private-use characters inserted from the Glyphs panel become `[name]`, and `★` becomes `[star]`.
 
 The result is passed through `repr()`, since `str()` of a psd-tools engine string *is* its repr, and then the
@@ -351,7 +352,8 @@ so the parser stores it unchanged, and nothing in AutoCroissant parses badges. M
 parser: a tag in parentheses is never a token, because tokens need square brackets.
 
 **Vocabulary at a glance (2026-10-19).** 91 icons in the manifest (35 `type` from `Types/`, 56 `star` from
-`Types/Stars/`), fixed codepoints U+E000–U+E05A, 15 icons with aliases; variants `:tint`, `:sticker`, `:no`.
+`Types/Stars/`), fixed codepoints U+E000–U+E05A, 15 icons with aliases; variants `:tint`, `:sticker`, `:no`
+(`:glow`, `:darkglow` on branch work/glow-tokens).
 The font, its badge list, codepoint allocation and rebuild procedure are owned by
 **ttscardmaker-companion** (§1). Remaining known mismatch: the manifest keeps entries for icons whose PNG
 was renamed or deleted, so their old tokens still parse while the rebuilt font draws letters

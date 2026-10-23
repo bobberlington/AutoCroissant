@@ -149,7 +149,8 @@ On the TTS table 7 of them are the "Deck of Rejects" in the Specific Item Decks 
 `stoogedings.json` has one key, `icons`: 91 entries = 35 `type` (Types/*.png, PUA U+E000..U+E022) and 56 `star`
 (Types/Stars/*.png, U+E023..U+E05A). U+2605 (★) is the gold star. Token grammar (build_stoogedings.py docstring):
 `[fire]` icon in its colors, `[fire:tint]` one-color in the text color, `[fire:sticker]` icon on an outline, `[fire:no]`
-icon crossed out with a red prohibition sign; case-insensitive, space/_/- interchangeable.
+icon crossed out with a red prohibition sign (`[fire:glow]` / `[fire:darkglow]` on a white / black halo, branch
+work/glow-tokens); case-insensitive, space/_/- interchangeable.
 
 The 35 type icons, grouped by what the rulebook uses them for:
 
