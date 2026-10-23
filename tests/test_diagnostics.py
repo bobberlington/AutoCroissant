@@ -95,7 +95,7 @@ def test_diff_stats_matches_versions_the_seed_pass_dated(tmp_path):
 
 def test_diff_stats_matches_a_legacy_version_given_a_blob_and_re_dated(tmp_path):
     """The seed pass can give a legacy version its commit's blob and re-date it to that blob's intro (and rename a
-    retired type): the same version, its start moved, not one added and one dropped (12 such on the 077337a9 rebuild).
+    retired type): the same version, its start moved, not one added and one dropped (5 such on the 077337a9 rebuild).
     """
     stats = {"Kirby": _card("Kirby")}
     jetson = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1743730939.0, blob_sha=None,
