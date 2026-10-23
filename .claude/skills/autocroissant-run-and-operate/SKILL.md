@@ -508,9 +508,10 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   edit without a refused verdict for exactly its values on the current PSD) finds work, bakes only those cards (`--pending`;
   a dispatch re-checks every card), at most 40 a run, and posts to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a streak of
   failed scheduled runs starts (once, not every tick); nothing in this repo triggers it.
-- **`--local <clone>`** (2026-10-22, for the planned card-sync.yml, docs/Campaigns/DATA_BUILD_ACTION.md §6.3 stage 1): the
-  tree and blobs come from that clone (blobless is enough; a missing blob by REST, never a lazy fetch) and the run's commit
-  B is made there on `--head` (default its HEAD) and pushed by nobody; a checkout at `--head` fast-forwards to B. Same gates.
+- **`--local <clone>`** (2026-10-22, for card-sync.yml, on TTSCardMaker main and dispatch only until its cutover,
+  docs/Campaigns/DATA_BUILD_ACTION.md §6.3 stage 1): the tree and blobs come from that clone (blobless is enough; a
+  missing blob by REST, never a lazy fetch) and the run's commit B is made there on `--head` (default its HEAD) and pushed
+  by nobody; a checkout at `--head` fast-forwards to B. Same gates.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -538,22 +539,29 @@ without its PNG gets the PNG from its stored composite (gated), the pushed PSDs 
 (0-pixel fixes only), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no ping)
 and at most one bot commit, both after a 30-minute quiet window.
 
-- **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret). Unset or `off`: push runs
-  are skipped. `report`: check, comment and post (after the window), never commit. `on`: also land the PNGs and fixes.
-  Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on` (owner's call; the
-  items to confirm first are at the top of PUSH_GUARDS.md section 15).
+- **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
+  `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit. `on`: also land the
+  PNGs and fixes. Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on`
+  (owner's call; the items to confirm first are at the top of PUSH_GUARDS.md section 15).
 - **Dispatch (Actions > Card guards > Run workflow):** `dry_run` defaults to true (job summary and the `card-guards`
   artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
   against its first parent; `cards` limits it; `all` audits every card PSD (about 40 minutes, always dry). `dry_run` off
-  comments, posts and lands at once on the blob check alone (no quiet window): use it on a push older than 30 minutes.
+  comments, posts and lands at once on the blob check alone (no quiet window), so it refuses ("still in its quiet
+  window") while a push run of that commit, or of a later one, is unfinished: dispatch again once it has finished. An
+  author with no GitHub account is named by the git author name there, never the dispatcher.
 - **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
   --out <dir>` (any clone with the history; blobs it lacks come by API), then `land --plan <dir>/plan.json --dry-run`
   or `--local <clone>` (commits there, pushes nothing). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
-- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the comment's told mark). After a run
+- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the comment's told mark; a re-run that
+  cannot read the comments counts the push as told, and neither its failure alert nor its post goes out). After a run
   that landed, the re-run finds its blobs on the branch ("already on the branch") and writes nothing.
-- **Failures:** a push run that fails (not checked, the commit failed unposted, a step broke or timed out) sends one
-  message to the standards channel with the run link, for the first failure of a streak only. A card the guards could not
-  finish is told in the post and turns the run red ("Fail on card errors"); re-check it with a dispatch (`sha`, `cards`).
+- **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
+  or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
+  run failed" once Check passed. Once per streak: a run that sent it, or stayed quiet inside a told streak, leaves the
+  `card-guards-failure-told` artifact, and the next failing run is quiet only when the last finished push run left it
+  and is not green. A red run that posted its own lines (a card error, a failed comment) leaves none, so the next
+  failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
+  errors"); re-check it with a dispatch (`sha`, `cards`).
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -836,3 +844,4 @@ abort.
 2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.
 2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.
 2026-10-22 (card guards): section 7's Card guards subsection (the CARD_GUARDS switch, dispatches, re-runs, the failure alert); no cited line moved.
+2026-10-22 (card guards, review 4): the Card guards subsection gains the any-case switch, the refused dispatch, the dispatch's author, the streak artifact and the unread-comment re-run; the Card bake `--local` bullet no longer calls card-sync.yml planned; no cited line moved.

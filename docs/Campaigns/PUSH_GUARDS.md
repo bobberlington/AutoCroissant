@@ -219,7 +219,9 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   after a landing) still holds: the re-run writes nothing and the comment says "already on the branch".
 - **A dispatch with `dry_run` off** has no quiet window: the last 30 minutes' pushes would include the checked push
   itself, so every write would be dropped as "a later push touched it" (review 3). It lands at once on the blob check
-  alone, which sees every change since the checked commit. Run it on a push older than 30 minutes.
+  alone, which sees every change since the checked commit. So it is refused (the step "No push run in its window",
+  review 4) while a push run whose head is that commit, or comes after it, is unfinished: that run's comment has no told
+  mark yet, so both would post. A head the checkout lacks (pushed since) counts too. A dry dispatch is never refused.
 - **A card whose PSD changed again** is left to the later push's run, unless the last commit that changed it is a bot's
   (bake, Card sync, another guard run): no run follows that one, so the push's lines are told anyway (`_bot_changed`, one
   API read per such card).
@@ -389,14 +391,17 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 - No pickles, no `site/` files, no `TTS/`.
 
 **7.2 The commit comment** (on `after`, posted at check time when `summary.json`'s `comment` count is not 0: a card with
-something told, a write, an error, or comment-only lines (R10, an R7 issue, "PNG left without its PSD", "deleted; the PSD
-stays"...), so a push whose only finding is a PNG that does not match its PSD gets its comment (review 3); saying "The bot
+something told, a write, a card's error, or comment-only lines (R10, an R7 issue, "PNG left without its PSD", "deleted; the PSD
+stays"...), so a push whose only finding is a PNG that does not match its PSD gets its comment (review 3); an error outside
+the cards (a standing MDW/Fonts index error, a manifest or status chart fetch) asks for none, so it is in the job summary
+and in a comment that goes up anyway (review 4); saying "The bot
 will fix"; after `land` it is rewritten from
 `report-landed.md`: "Landed in `<sha>`" per landed card, "Fixed by the bot", for a card left out "Not landed (superseded:
 ...): nothing above was committed for this card", for a failed commit "Not landed: <why>. Nothing was committed.", and
 "After the quiet window: ..." notes, and on a re-run after a landing "already on the branch". A broken Land step still
-rewrites it: "The bot could not finish this push". A re-run edits the same comment. A failed comment call fails the run
-but never stops Land: its `if` asks only for Check's success.)
+rewrites it: "The bot could not finish this push". A re-run edits the same comment: the lookup is read whole (no pipe
+into `head`, which can kill `gh` under pipefail), and a re-run that cannot read it, or the earlier comment, counts the push
+as told (review 4). A failed comment call fails the run but never stops Land: its `if` asks only for Check's success.)
 - `## Card guards`, then per card:
   - its issues;
   - the guard-1 outcome with D's size, the gates' numbers and the ICC mode;
@@ -409,14 +414,17 @@ not land.**
 - **Sent:** after the quiet window (4.5), from `discord-final.json` only (`land` settles it and never raises). Check's
   `discord.json` is never posted: it would tell refusals since withdrawn and miss the writes that did not land. When Land
   ran but settled nothing (killed, timed out), Tell Discord fails and the run-failed message goes out instead. Once sent,
-  the comment carries the mark `<!-- card-guards: told on Discord -->`, so a re-run never posts again.
+  the comment carries the mark `<!-- card-guards: told on Discord -->`, so a re-run never posts again (nor sends the
+  failure alert, review 4).
 - **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`); R7 while font-check.yml pings;
   "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
   review 3).
 - **The login:** the commits API's login of the commit's author; an author with no GitHub account: the login in a
   GitHub noreply email, else the pusher's login (`github.actor`, who pushed the card), never the git author name while the
-  API answers (review 3).
-- **Format:** one line per card, with the masked link to the commit that last changed it:
+  API answers (review 3). A dispatch passes no pusher (whoever ran it did not push the card), so there it is the git
+  author name (review 4).
+- **Format:** one line per card, with the masked link to the commit that last changed it (beyond the brief's literal
+  line: section 15, item 6):
   `Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group; "Blazing" is an overlay text layer, not an Ability FX: layer. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
 - **Not in the post:** planned fixes and re-exports (they are not issues) and "PNG still current".
 - **Payload:** `{"content": ..., "allowed_mentions": {"parse": []}, "flags": 4}`: nobody is pinged, and the links get no
@@ -433,11 +441,13 @@ not land.**
 ## 8. Dry run and switches
 
 - **Dispatch inputs** (4):
-  - `dry_run` (boolean, **default true**): the job summary and artifacts only; no comment, no Discord, no commit;
+  - `dry_run` (boolean, **default true**): the job summary and artifacts only; no comment, no Discord, no commit; off, it
+    is refused while a push run of the commit, or of a later one, is unfinished (4.5);
   - `sha`: check this commit as if pushed, against its first parent (e.g. 7cb4c867, dc37f4ad); empty means main's head;
   - `cards`: only these, matched like `Card Authors.txt`;
   - `all`: every card PSD of the tree; standards and R10 only, job summary only; about 813 downloads and 40 min.
-- **Repo variable `CARD_GUARDS`** (Settings, Variables; not a secret):
+- **Repo variable `CARD_GUARDS`** (Settings, Variables; not a secret; any letter case: the job's `if` matches `On` too,
+  so the Start step lowercases `MODE` for the shell and `--mode`, review 4):
   - unset or `off`: push runs are skipped at the job's `if`;
   - `report`: push runs check, comment and post (after the quiet window), and never commit;
   - `on`: report and land.
@@ -472,14 +482,14 @@ not land.**
 
 | Case | What happens | Recovery |
 |---|---|---|
-| An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red | a dispatch with `sha` and `cards` |
-| Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak (card-edits.yml's rule), no ping | re-run the job |
+| An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red (its post went out: no failure alert, and no streak mark, so the next failure is told) | a dispatch with `sha` and `cards` |
+| Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak, no ping. The streak is the `card-guards-failure-told` artifact a run leaves when it sent the message or stayed quiet in a told streak: quiet only when the last finished push run left it and is not green (a re-run that passed keeps its first attempt's artifact; review 4: counting red runs hid a push after a red run that had posted its own lines) | re-run the job |
 | A gate refuses | report line, Discord, no write | the author exports in Photoshop, or fixes the PSD |
 | The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job |
-| The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only) | none |
+| The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); with nothing to tell, the alert says the push "was checked, but its run failed"; on a re-run, a lookup that fails counts as told (never a second post) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
 | A PSD saved without Maximize Compatibility | G2 refusal for guard 1; guard 2 still runs | save with it on |
@@ -487,7 +497,9 @@ not land.**
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
 | GitHub schedules late | n/a: push runs are not scheduled; only the Card sync fold depends on the cron | none |
 | A burst of pushes | each its own run, so no report is lost (4.4); landing commits serialize by retry | none |
-| A run re-run by hand | edits its earlier comment; posts to Discord only if the first run had not (the comment's told mark); after a landing, the bot's own blobs count as held: "already on the branch", nothing written or told again | none |
+| A run re-run by hand | edits its earlier comment; posts to Discord only if the first run had not (the comment's told mark); after a landing, the bot's own blobs count as held: "already on the branch", nothing written or told again; its failure alert stays quiet once the push was told (the mark, or an earlier attempt's streak artifact) | none |
+| A dispatch with `dry_run` off while the commit's push run waits | refused before Check: a red dispatch run, nothing commented, posted or landed | dispatch again once the push run has finished, or dry |
+| `CARD_GUARDS` typed `On` or `Report` | the job's `if` matches it in any case; Start lowercases `MODE` (argparse's choices and Land's `--dry-run` test are exact) | none |
 | A bot commit (bake, Card sync, another guard run) changes a card's PSD in the window | no run follows it, so the card's lines are still told; its PSD fix is told as not made | none |
 
 ## 11. Folding into Card sync (`DATA_BUILD_ACTION.md` §6)
@@ -539,6 +551,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7                       # trees only: the diff, the pairing, no blobs
         with: {fetch-depth: 0, filter: "blob:none", sparse-checkout: "/.github/", sparse-checkout-cone-mode: false}
+      - name: No push run in its window                 # a dispatch with dry_run off: refused while a push run of the commit (or a later one) is unfinished
       - uses: actions/checkout@v7                       # card_guards.SPARSE_FILES
         with: {repository: bobberlington/AutoCroissant, path: bot, sparse-checkout-cone-mode: false, sparse-checkout: "..."}
       - uses: actions/setup-python@v7
@@ -557,7 +570,9 @@ jobs:
         env: {WEBHOOK: "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"}
         run: curl -sS -o /dev/null -f -H "Content-Type: application/json" --data @"$OUT/discord-final.json" "$WEBHOOK" || echo "::warning::..."
       - name: Fail on card errors                       # summary.json card_errors > 0: red (the errors were told)
-      - name: Tell Discord the run failed               # a failed push run whose post did not go out: once per failure streak
+      - name: Tell Discord the run failed               # a failed push run whose post did not go out, not told before (the comment's
+                                                        # mark): once per failure streak (the last push run's STREAK artifact)
+      - uses: actions/upload-artifact@v4                # STREAK (card-guards-failure-told), when the alert told or stayed quiet in a streak
       - uses: actions/upload-artifact@v4                # always()
 ```
 
@@ -615,6 +630,10 @@ jobs:
    different findings.
 5. **The login** in "<login> pushed <card>": the commit author's GitHub login; for an author with no GitHub account, the
    pusher's login (7.3).
+6. **The commit link.** The brief's line is "<GitHub login> pushed <card> with these issues: ..."; each line also ends with
+   a masked link to the card's commit (`[7cb4c867](url)`), and a post too long for Discord ends "... and N more cards:
+   [details](url)". Nobody is pinged and previews are off. Dropping the link is one change to `card_guards.LINE` (and the
+   "more" line).
 
 - Whether font-check.yml's push run (role ping, font channel) should stop once the guard reports R7 in the standards channel.
   Until then, R7 stays out of the post and only in the comment, so a missing font is told once.
@@ -761,6 +780,35 @@ jobs:
 - The login fallback is the pusher's GitHub login, not the git author name (`test_login_falls_back_to_a_github_login`).
 - Section 9's timeout is 150, as card-guards.yml has it; the owner's items to confirm are listed at the top of section 15;
   the run-and-operate skill has a card-guards section.
+
+**Review fixes, fourth pass (2026-10-22):**
+- The failure alert's streak counted red runs, but four kinds of red run (a card error, a failed comment call, a failed
+  commit, a failed follow-up dispatch) post their own lines and never send the alert: the next run that failed in Check
+  was quiet and its push went unguarded with nobody told. The streak is now the `card-guards-failure-told` artifact, left
+  by a run that sent the alert or stayed quiet inside a told streak, on a last push run that is not green (a re-run that
+  passed keeps its first attempt's artifact; `test_workflow_failure_streak_counts_told_runs_only`, with the steps' `--jq`
+  run by the real jq).
+- A re-run of a red run whose push was told (a card error, say) sent "was not guarded" as a second post: the alert now
+  skips a push the comment marks as told, and a re-run of a run that failed in Check finds its earlier attempt's artifact.
+- The alert says "was checked, but its run failed" once Check passed (a failed comment call with nothing to tell).
+- The Comment step piped the lookup into `head -n 1`: under pipefail a killed `gh` read as "no comment", so a re-run
+  posted a new comment and told Discord again. The lookup is read whole; a re-run that cannot read it, or the earlier
+  comment, counts the push as told (`test_workflow_comment_lookup_never_posts_twice`).
+- A numbered PNG's refusal (G8) is withdrawn when the author pushes that PNG in the window, as the main PNG's is
+  (`test_a_numbered_png_pushed_in_the_window_withdraws_its_refusal`).
+- `summary.json`'s `comment` counted the context errors, so a standing font-index error would comment on every push; it
+  counts cards only (`test_context_errors_alone_ask_no_comment`).
+- A dispatch with `dry_run` off on a commit whose push run was still waiting posted and landed first, then the push run
+  posted again: it is refused while such a run is unfinished
+  (`test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits`).
+- `CARD_GUARDS=On` passed the job's `if` (expressions ignore case) and then failed argparse on every push (and `Report`
+  would have made Land commit): Start lowercases `MODE`, `--mode` takes any case (`test_workflow_lowercases_card_guards`,
+  `test_mode_takes_any_case`).
+- A dispatch named an author with no GitHub account after the dispatcher: a dispatch passes no `--author`, so the git
+  author name stands.
+- The commit link in each Discord line is listed for the owner (15, item 6).
+- `test_card_standards.test_r9_story_sync_on_clot_white` read the live clone, whose Clot White main's Txt2 repair
+  (7b48db05) synced: it reads the blob at d8163103, before the repair.
 
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).

@@ -206,11 +206,12 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
    sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: its list is
    `card_check.SPARSE_FILES`; card-guards.yml: its list is `card_guards.SPARSE_FILES`, 16 files including `psd_edit`,
-   `card_bake`, `txt2_repair` and `png_export`; the planned card-sync.yml will check out `card_data.SPARSE_FILES`, whose test runs `--help` on
-   the build, the bake and the save with exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; four of the lists
+   `card_bake`, `txt2_repair` and `png_export`; card-sync.yml, on TTSCardMaker main since 2026-10-22 (dispatch only until
+   its cutover), checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
+   exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; five of the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py,
-   test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`; tts-save.yml's has
-   none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
+   test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
+   tts-save.yml's has none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
    that is already declared (declare it once; the management.py incident,
@@ -359,3 +360,5 @@ and update this file.
 2026-10-22 (data build): the /update_stats traversal moved to the uncompiled commands/card_data.py (checklist step 1);
 `card_data`, `card_history`, `card_db` and `changelog` named among the uncompiled modules in step 5, with
 `card_data.SPARSE_FILES` (card-sync.yml, planned) beside the Actions' sparse lists.
+
+2026-10-22 (card-sync.yml landed): step 5 no longer calls card-sync.yml planned (on TTSCardMaker main, dispatch only) and counts its sparse-list test, test_card_data.py, among the five.
