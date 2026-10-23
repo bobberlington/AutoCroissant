@@ -472,6 +472,10 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   "Image update refused: …" and "Re-parse pending" on the card page, tiles, table rows and the Changes tab; the
   `pending` flag filters pending and refused cards; the editor marks pending rows. A malformed `_psd` is logged and skipped
   like any wrong-typed field; a refusal shows only while its `for` values and `psd` blob prefix still match (review fix 2026-10-20).
+  A pixel miss is no refusal since 2026-10-23 (owner): the edit is baked and the bake commit's line says "name baked
+  with a pixel difference: bad 1.97%, mean 1.60, max 217"; only a broken render (more than 25% of the box's pixels off)
+  or a read-back that is not the edit is refused. Pixel refusals written under the old bar (Masked Dedede, PoD11ZOMG,
+  Zero Override) show as refused until the next run bakes them.
 
 The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
 **autocroissant-run-and-operate**.

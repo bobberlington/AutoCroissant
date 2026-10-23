@@ -291,6 +291,12 @@ ignored — read the story before you decide the rule doesn't apply to you.
   font tokens, emoji names and website icons all key off the file stem; the font manifest
   keeps the old entry, so old tokens keep parsing while the card shows letters. Add an alias
   instead (ttscardmaker-companion §1.7).
+- **Turning a pixel miss back into a refusal** in the bake (`psd_edit.baseline`, `gate_idempotence`) or the push guards'
+  PNG export (`png_export`, G6; branch work/push-guards). Since 2026-10-23 (owner: "let's not refuse bakes for failing
+  the pixel check anymore. rather, we should improve psd-tools and fix these as we come across them") a box past the
+  parity bar is baked or written and its miss told (report, commit note or comment); only `psd_edit.PARITY_FLOOR` (more
+  than 25% of the box's pixels past 24) or a read-back that is not the edit refuses. A miss is fixed in the psd-tools
+  fork, not by refusing the card; a new pixel refusal needs the owner.
 - **Changing `ICON_MANIFEST_PATH` (global_config.py) / `ICON_FONT_PREFIX` (psd_parser.py) or `emoji_name` rules
   in type_emojis.py** without the matching TTSCardMaker change. These are cross-repo contracts
   (values: autocroissant-config-and-flags).
