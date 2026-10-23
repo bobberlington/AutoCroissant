@@ -346,7 +346,7 @@ em clipped as Photoshop would. Whether Photoshop really clips a bigger halo is t
 
 **The glyphs.** Per icon: `icon_x.glow`, `icon_x.glow_bg`, `icon_x.darkglow`, `icon_x.darkglow_bg`, and one shared
 `glow_space`. A token draws [halo, advance `GLOW_SIZE` − `SIDE`][color icon][`glow_space`]. It is 120 units wider than
-the plain icon, so the halo stays inside its own advance. Each halo is a PNG (`GLOW_UPP` 12 units per px, RGBA; owner 2026-10-23: 8 cost 0.53 MB more and looked the same) in an OT-SVG
+the plain icon, so the halo stays inside its own advance. Each halo is a PNG (`GLOW_UPP` 12 units per px, RGBA; owner 2026-10-23 chose 12 over 8 from an estimate; measured after: 8 cost 0.53 MB more and looked the same) in an OT-SVG
 `<image>`, one per icon and color. Its `glyf` is the whole halo's outline, so the non-SVG fallback is a blob, like
 `:sticker`'s.
 - **Nothing old changes.** The new glyphs come after the `.tk` glyphs and the two new lookups go last. Every old glyph
