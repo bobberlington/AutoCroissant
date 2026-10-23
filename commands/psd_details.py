@@ -37,7 +37,7 @@ from commands.font_check import (
     EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, dir_fonts, find_fonts, is_card_psd, layer_fonts, tree_fonts,
 )
 from commands.github_api import blob_sha, token_from_env
-from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION
+from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
 from global_config import CARD_REPO, DETAILS_JSON, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
 
@@ -230,16 +230,18 @@ def _overlays(psd: PSDImage, texts: list) -> list:
     return [layer_path(layer) for layer in overlay_words(psd, None, shown)]
 
 
-def _template(psd: PSDImage, texts: list, stats, icons, overlays, rulebook: bool) -> dict:
-    """The template's Name and Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7); rule pages get no deviations."""
+def _template(psd: PSDImage, texts: list, name: str, stats, icons, overlays, rulebook: bool) -> dict:
+    """
+    The title layer the parser reads (Text/Name, else a root Name or one named after the card: no rename needed, L6),
+    the Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7); rule pages get no deviations.
+    """
     text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
-    under = list(text_group) if text_group is not None else []
-    name_layer = next((layer for layer in under if layer.kind == "type" and layer.is_visible() and layer.name.strip() == "Name"), None)
+    titles = PSDParser.title_layers(psd, texts, name)
     abilities = [layer for layer in texts if layer.is_visible() and layer.name.strip().lower() == "ability"]
     deviations = []
     if not rulebook:
-        if name_layer is None:
-            deviations.append("no Name layer")
+        if not titles:
+            deviations.append("no title layer")
         if not abilities:
             deviations.append("no Ability layer")
         elif len(abilities) > 1:
@@ -252,7 +254,7 @@ def _template(psd: PSDImage, texts: list, stats, icons, overlays, rulebook: bool
             deviations.append("icons as images")
         if isinstance(overlays, list) and overlays:
             deviations.append("overlay word layers")
-    return {"name_layer": layer_path(name_layer) if name_layer is not None else None,
+    return {"name_layer": layer_path(titles[0]) if titles else None,
             "ability_layers": [layer_path(layer) for layer in abilities], "deviations": deviations}
 
 
@@ -313,7 +315,8 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
     record["stats"] = _guard(_stats, psd)
     record["fx"] = _guard(_fx, layers)
     record["overlays"] = _guard(_overlays, psd, texts)
-    record["template"] = _guard(_template, psd, texts, record["stats"], record["icons"], record["overlays"], RULEBOOK_DIR in rel)
+    record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"],
+                                RULEBOOK_DIR in rel)
     record["tree"] = _guard(_tree, psd)
     return record
 

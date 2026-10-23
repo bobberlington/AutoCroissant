@@ -104,8 +104,8 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | Field | Kind | Pipeline (round 1) | After the bake |
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
-| `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; one visible `Text/Ability` only | field removed |
-| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on `Text/Name`; refuse the card-named, hidden and rasterized layers (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
+| `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count) | field removed |
+| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | refused ("not yet") | - |
 | `types` | PSD (icon layers or font tokens) | refused ("not yet") | - |
 | `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
@@ -170,7 +170,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
-   `unsupported-card` (non-template rows, not one visible `Text/Ability`, name layer not `Text/Name`, overlay word or
+   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word or
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
@@ -216,7 +216,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1), the ability's own raster
    gives the pixels (`numpy("color"/"shape")` after `rasterize`), `PixelLayer.fromarray` makes the layer with a unicode name
    and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
-   it goes directly above the top-level `Text` group. A hand-made overlay word layer over the ability is hidden when it names a
+   it goes directly above the ability's top-level group (`Text`; the layer itself at the root), as Effect Layers.jsx puts it. A hand-made overlay word layer over the ability is hidden when it names a
    styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
    layer holding a badge or token run (`Ability FX: (BOT)`, `Ability FX: (1CD) | (2U)`: queue A's gradient cards, 2026-10-22)
    or a word the chart has no style for (Morpho Knight's `Smoldering`) cannot be made again exactly, so the edit refuses
@@ -257,8 +257,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
    every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
    2026-10-21 review). FX layers back as declared after the reopen: the names in order,
-   visible, styled, directly above `Text`, no overlay word layer showing.
-   Name: `Text/Name` read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
+   visible, styled, directly above the ability's top-level group, no overlay word layer showing.
+   Name: the title layer's read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
    the render is held to the same floor (refused past 25% bad); a miss is told, as `(re-render)` when only it missed.

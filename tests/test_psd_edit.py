@@ -24,6 +24,7 @@ from psd_tools.constants import Resource, Tag
 from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
+from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
 from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, rounds_bytes, saves_preview,
                       story_sync as _story_sync, text_engine as _text_engine)
@@ -49,6 +50,16 @@ GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay 
 FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay "Smoldering": unstyled on the chart, nothing to cut
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
+BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
+VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"               # its Name layer sits at the root
+MARX = "Creatures/Kirby/5 Stars/Marx.psd"                          # its Ability sits at the root, 'Ability FX: Glued' over it
+EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"                  # 'Name copy' and 'Name copy 2' print the title again
+SOMETHING = "Creatures/Omori/3 Stars/SOMETHING.psd"                # two offset copies print the ability again
+ZOMBOSS = "Creatures/Other/5 Stars/Doctor_Zomboss.psd"             # 'images/Name' prints the title again under the art
+MOSLING = "Auxiliary/Minions/Mosling.psd"                          # a faint watermark 'Group 1/Name' prints the title again
+AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"     # no Text group: its title is the top-level layer 'Afraid'
+JAWSUM = "Creatures/Omori/3 Stars/Mr_Jawsum.psd"                   # no Text group: its title 'Group 3/Group 2/Mr. Jawsum'
+SOUL_MASTER = "Creatures/Hollow Knight/4 Stars/Soul_Master.psd"    # its title 'Soul Master' sits beside the Text group
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -365,7 +376,7 @@ def test_classify_table():
     assert out.jobs == {"hp": 8}
     assert out.redundant == ["def", "ability"]
     assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("stat>10", "atk 11"), ("unsupported-card", "stars"),
-                                                                     ("unsupported-card", "types"), ("unsupported-card", "no readable Text/Name layer")]
+                                                                     ("unsupported-card", "types"), ("unsupported-card", "no PSD to find the title layer in")]
     assert out.other == ["spd", "note", "series", "creatures", "hidden"]
     assert out.refusals[0].why == "atk 11: one bar row; a second row is standardization work (ledger L3)"
     two_rows = {"card": {"type": "creature", "atk": 12}}                      # a parse above 10 means Top + Bottom rows (idea 13)
@@ -492,12 +503,134 @@ def test_non_template_rows_and_titles_refuse(clone):
             read(twins)
         assert refused.value.code == "unsupported-card"
     assert pe.read_name(twins) is None
-    virus = PSDImage.open(_card(clone, "Creatures/Kirby/3 Stars/Computer_Virus.psd")[0])   # its Name sits at the root
-    with pytest.raises(pe.Refused, match="no Text/Name layer"):
-        pe.name_layer(virus)
-    bone = PSDImage.open(_card(clone, "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd")[0])      # title named after the card
-    with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone'"):
-        pe.name_layer(bone)
+
+
+def test_title_layer_is_the_one_the_parser_reads(clone, parser):
+    """name_layer takes the one layer PSDParser.title_layers reads, wherever the card keeps it (NEXT_IDEAS 5b A): a title
+    named after the card under Text, a Name layer at the root. Two Name layers (an epithet) or a Name beside layers
+    printing the rest of the title refuse: a bake would write the whole title into one piece."""
+    bone = PSDImage.open(_card(clone, BONE)[0])
+    with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone', not Name or the card's name"):
+        pe.name_layer(bone)                                                     # without the card's name
+    assert pe.name_layer(bone, card_name(BONE)).name == "Wham Bam Bone" and pe.read_name(bone, card_name(BONE)) == "Wham Bam Bone"
+    parsed = pe.parse_card(parser, _card(clone, BONE)[0], BONE)
+    assert pe.classify(parsed, {"name": "Wham Bam Bones"}, bone).jobs == {"name": "Wham Bam Bones"}
+    virus = PSDImage.open(_card(clone, VIRUS)[0])
+    assert pe.name_layer(virus).parent is virus and pe.read_name(virus) == "Computer Virus appears!"
+    for rel, why in ((AZAMOTH_KING, "2 title layers"), (CANNON, "the title is split over several layers")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        with pytest.raises(pe.Refused, match=why) as refused:
+            pe.name_layer(psd, card_name(rel))
+        assert refused.value.code == "unsupported-card" and pe.read_name(psd, card_name(rel)) is None
+        parsed = pe.parse_card(parser, _card(clone, rel)[0], rel)
+        assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
+
+
+def test_a_title_named_after_the_card_outside_text(clone, parser):
+    """With no title under Text (55 status effects and 3 creatures without a Text group, 3 Hollow Knight titles beside
+    it), the title is the visible text layer named after the card in the title region, at the root or in any group;
+    letters and digits decide ('Mr. Jawsum' on Mr Jawsum). The parser reads the same layer."""
+    for rel, path, title in ((AFRAID, "Afraid", "Afraid"), (JAWSUM, "Group 3/Group 2/Mr. Jawsum", "Mr. Jawsum"),
+                             (SOUL_MASTER, "Soul Master", "Soul Master")):
+        psd_path = _card(clone, rel)[0]
+        psd = PSDImage.open(psd_path)
+        layer = pe.name_layer(psd, card_name(rel))
+        assert _layer_path(layer) == path and pe.read_name(psd, card_name(rel)) == title
+        parsed = pe.parse_card(parser, psd_path, rel)
+        assert parsed["card"].get("display_name") == (None if title == card_name(rel) else title)
+        assert pe.classify(parsed, {"name": title}, psd).redundant == ["name"]
+        assert pe.classify(parsed, {"name": title + "s"}, psd).jobs == {"name": title + "s"}
+    with pytest.raises(pe.Refused, match="no Text group"):
+        pe.name_layer(PSDImage.open(_card(clone, AFRAID)[0]))                  # without the card's name
+
+
+class _Fake:
+    """A layer or group with what the title finder reads (bbox 100 px tall from top)."""
+    def __init__(self, name, top=0, kind="type", visible=True, children=(), text=None):
+        self.name, self.kind, self.visible, self.text = name, kind, visible, name if text is None else text
+        self.bbox, self.parent, self.children, self.height = (0, top, 400, top + 100), None, list(children), 1000
+        for child in self.children:
+            child.parent = self
+
+    def is_visible(self):
+        return self.visible
+
+    def is_group(self):
+        return self.kind == "group"
+
+    def __iter__(self):
+        return iter(self.children)
+
+    def descendants(self):
+        for child in self.children:
+            yield child
+            if child.is_group():
+                yield from child.descendants()
+
+
+def _layer_path(layer) -> str:
+    """"Group/Sub/Layer" by name, a real layer's or a _Fake's."""
+    names = []
+    while layer.parent is not None:
+        names.append(layer.name)
+        layer = layer.parent
+    return "/".join(reversed(names))
+
+
+def test_the_title_outside_text_is_the_single_visible_candidate():
+    """Outside Text, only visible text layers in the title region named after the card are candidates; two refuse (a
+    bake would change one), and a Name or a layer under Text named after the card still comes first."""
+    def found(*layers):
+        psd = _Fake("", kind="group", children=layers)
+        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+        return [_layer_path(layer) for layer in pe.PSDParser.title_layers(psd, texts, "Mr Jawsum")]
+    assert found(_Fake("Mr. Jawsum", 20)) == ["Mr. Jawsum"]
+    assert found(_Fake("Group", kind="group", children=[_Fake("MR JAWSUM", 20)])) == ["Group/MR JAWSUM"]
+    assert found(_Fake("Mr Jawsum", 500)) == []                                 # below the title region
+    assert found(_Fake("Mr Jawsum", 20, visible=False), _Fake("Mr Jawsum", 20, kind="pixel")) == []
+    assert found(_Fake("Mr Jaws", 20), _Fake("Jawsum", 20)) == []                # named after part of it
+    assert found(_Fake("Mr Jawsum", 20), _Fake("Text", kind="group", children=[_Fake("Name", 30)])) == ["Text/Name"]
+    assert found(_Fake("Mr Jawsum", 20), _Fake("Text", kind="group", children=[_Fake("Mr Jawsum", 600)])) == ["Text/Mr Jawsum"]
+    two = _Fake("", kind="group", children=[_Fake("Mr Jawsum", 20), _Fake("Group", kind="group", children=[_Fake("Mr. Jawsum", 40)])])
+    with pytest.raises(pe.Refused, match="2 title layers"):
+        pe.name_layer(two, "Mr Jawsum")
+    assert pe.read_name(two, "Mr Jawsum") is None
+
+
+def test_ability_layer_wherever_the_card_keeps_it(clone):
+    """ability_layer takes the single visible Ability layer in any group or at the root (NEXT_IDEAS 5b A: 92 cards keep it
+    outside the Text group); its FX layers go directly above its top-level group, the layer itself at the root."""
+    marx = PSDImage.open(_card(clone, MARX)[0])
+    layer = pe.ability_layer(marx)
+    assert layer.parent is marx and pe._top(layer) is layer
+    assert [fx.name for fx in pe.fx_layers(marx, layer)] == ["Ability FX: Glued"]
+    doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    assert pe._top(pe.ability_layer(doomer)) is pe._text_group(doomer)
+
+
+def test_a_title_or_ability_printed_twice_refuses(clone):
+    """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
+    two offset copies of its ability): a bake would change one and leave the copies. An empty layer has no copies
+    (Anubisath's empty Ability beside an empty 'Layer 1')."""
+    with pytest.raises(pe.Refused, match="the title is printed again by 'Name copy'") as refused:
+        pe.name_layer(PSDImage.open(_card(clone, EDEN)[0]), card_name(EDEN))
+    assert refused.value.code == "unsupported-card"
+    with pytest.raises(pe.Refused, match="the ability is printed again by 'Attacks are piercing") as refused:
+        pe.ability_layer(PSDImage.open(_card(clone, SOMETHING)[0]))
+    assert refused.value.code == "unsupported-card"
+    assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
+
+
+def test_a_copy_the_art_hides_does_not_refuse(clone):
+    """Only a copy people can see refuses: Doctor Zomboss's 'images/Name' sits under the art (the card renders the same
+    without it), so its Text/Name bakes; Mosling's faint watermark still shows and refuses."""
+    zomboss = PSDImage.open(_card(clone, ZOMBOSS)[0])
+    layer = pe.name_layer(zomboss, card_name(ZOMBOSS))
+    assert layer.parent is pe._text_group(zomboss) and pe.read_name(zomboss, card_name(ZOMBOSS)) == "Doctor Zomboss"
+    hidden = next(other for other in zomboss.descendants() if other.name == "Name" and other.parent.name == "images")
+    assert hidden.is_visible() and pe.collapse(hidden.text) == "Doctor Zomboss" and not pe._shows(zomboss, hidden)
+    with pytest.raises(pe.Refused, match="the title is printed again by 'Name'"):
+        pe.name_layer(PSDImage.open(_card(clone, MOSLING)[0]), card_name(MOSLING))
 
 
 def test_name_redundancy_uses_the_printed_title(clone, parser):
@@ -508,12 +641,11 @@ def test_name_redundancy_uses_the_printed_title(clone, parser):
     assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Mini Doomer"   # prints its file name
     assert pe.classify(parsed, {"name": "Mini  Doomer\r"}, psd).redundant == ["name"]
     assert pe.classify(parsed, {"name": "Mini Doomer II"}, psd).jobs == {"name": "Mini Doomer II"}
-    rel = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                     # Name at the root: read, not editable
-    path = _card(clone, rel)[0]
-    parsed = pe.parse_card(parser, path, rel)
+    path = _card(clone, VIRUS)[0]                                          # Name at the root: read and editable
+    parsed = pe.parse_card(parser, path, VIRUS)
     assert parsed["card"]["display_name"] == pe.shown_name(parsed) == "Computer Virus appears!"
     assert pe.classify(parsed, {"name": "Computer Virus appears!"}, PSDImage.open(path)).redundant == ["name"]
-    assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).refusals[0].why == "no readable Text/Name layer"
+    assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).jobs == {"name": "Computer Virus"}
 
 
 def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
@@ -855,6 +987,37 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
+
+
+@text_edit
+@pytest.mark.parametrize("rel, record", [(BONE, "Wham Bam Bone"), (VIRUS, "Name"), (ZOMBOSS, "Name"), (AFRAID, "Afraid"),
+                                         (JAWSUM, "Mr. Jawsum")])
+def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, record, tmp_path):
+    """A title named after the card (Wham Bam Bone; Afraid's and Mr Jawsum's outside a Text group), a Name layer at the
+    root (Computer Virus) or a Text/Name with a copy under the art (Doctor Zomboss) bakes through every gate: the parser
+    reads the new title back and nothing is left to bake."""
+    psd_path = _card(clone, rel)[0]
+    new = _typo_fix(pe.read_name(PSDImage.open(psd_path), card_name(rel)))
+    parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
+    assert [(name, fields) for _, name, fields in baked.records] == [(record, TEXT_RECORD)]
+    assert baked.reparse["card"]["display_name"] == new
+    saved = PSDImage.open(baked.psd_path)
+    assert pe.read_name(saved, card_name(rel)) == new and pe.stale_stories(saved) == []
+    assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
+
+
+@text_edit
+def test_ability_bake_at_the_root_keeps_its_fx_layer_above_it(clone, parser, chart, tmp_path):
+    """Marx's root Ability bakes through every gate; 'Ability FX: Glued' comes back directly above the Ability layer,
+    where Effect Layers.jsx puts it for a root layer, not above Text."""
+    psd_path = _card(clone, MARX)[0]
+    new = pe.normalize_ability(pe.parse_card(parser, psd_path, MARX)["card"]["ability"]).replace("Glued", "Glued at once", 1)
+    parsed, baked = _bake(clone, parser, MARX, {"ability": new}, tmp_path, chart)
+    assert baked.fx == ["Ability FX: Glued"] and pe.normalize_ability(baked.reparse["card"]["ability"]) == new
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(saved)
+    fx, = pe.fx_layers(saved, layer)
+    assert layer.parent is saved and saved.index(fx) == saved.index(layer) + 1
 
 
 @text_edit

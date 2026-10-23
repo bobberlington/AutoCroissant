@@ -19,6 +19,9 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # templat
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn heart cells
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
+BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
+ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
+AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "tree")
 
@@ -90,14 +93,26 @@ def test_text_layers_and_template(records):
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
-    assert virus["template"]["name_layer"] is None and "no Name layer" in virus["template"]["deviations"]
+    assert virus["template"]["name_layer"] == "Name" and "no title layer" not in virus["template"]["deviations"]
     assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
     assert "overlay word layers" in virus["template"]["deviations"]
     lazarus = records[LAZARUS]
     assert lazarus["template"]["ability_layers"] == ["Laz/Laz/Ability", "Dead Laz/Dead Laz/Ability"]
-    assert lazarus["template"]["deviations"] == ["no Name layer", "several visible Ability layers", "ability layer outside Text",
-                                                 "stat bars drawn", "icons as images"]
+    assert lazarus["template"]["name_layer"] == "Laz/Laz/Name"
+    assert lazarus["template"]["deviations"] == ["several visible Ability layers", "ability layer outside Text", "stat bars drawn",
+                                                 "icons as images"]
     assert [e[:3] for e in lazarus["tree"]] == [["images", "group", True], ["Laz", "group", True], ["Dead Laz", "group", True]]
+
+
+def test_template_names_the_title_layer_the_parser_reads(clone):
+    """A root Name (Computer Virus) or a title named after the card (Wham Bam Bone; Afraid's at the top level) is the
+    developer's choice, no deviation (the bake takes it, ledger L6); only a card whose title the parser cannot read lists
+    one (ABBI)."""
+    for rel, layer in ((VIRUS, "Name"), (BONE, "Text/Wham Bam Bone"), (AFRAID, "Afraid"), (ABBI, None)):
+        if not (clone / rel).exists():
+            pytest.skip(f"{rel} not in the clone")
+        template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
+        assert template["name_layer"] == layer and ("no title layer" in template["deviations"]) == (layer is None)
 
 
 def test_gather_without_an_index_leaves_supplied_null(clone):

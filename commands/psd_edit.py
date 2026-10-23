@@ -53,6 +53,7 @@ PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research scor
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG (past it: a miss, told)
 PARITY_FLOOR = 25.0         # % of bad pixels past which a region's render is broken: refused; a miss under it is told (owner, 2026-10-23)
 PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
+COPY_SEEN = 1               # a copy of the title or ability shows when leaving it out moves a pixel past rounding
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
@@ -153,7 +154,7 @@ class Edit:
     region: Optional[tuple]  # padded canvas bbox the edit can reach
     moves: list = field(default_factory=list)   # (record from, record to or None, block key): effect blocks moved or cleared
     hidden: list = field(default_factory=list)  # record indices of the overlay word layers an ability edit hid
-    fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above Text, bottom to top
+    fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted first (derived state: all of the text layer's)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
 
@@ -336,34 +337,94 @@ def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
 # ========================
 # Layers
 # ========================
-def name_layer(psd: PSDImage):
-    """
-    The card's title layer: Text/Name, a visible text layer.
-
-    Returns:
-        The layer; raises Refused("unsupported-card") for the card-named, hidden and rasterized titles
-    """
-    group = _text_group(psd)
-    if group is None:
-        raise Refused("unsupported-card", "no Text group")
-    layer = next((child for child in group if child.name.strip() == "Name"), None)
-    if layer is None:
-        titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
-                  and child.bbox[1] < psd.height * 0.15]
-        raise Refused("unsupported-card", f"title layer named {titles[0]!r}, not Name" if titles else "no Text/Name layer")
-    if not _is_text_layer(layer):
-        raise Refused("unsupported-card", "rasterized name layer")
-    if not layer.is_visible():
-        raise Refused("unsupported-card", "hidden name layer")
+def _top(layer):
+    """The layer's top-level group, or the layer at the root: Effect Layers.jsx puts an FX layer directly above it."""
+    while layer.parent is not None and layer.parent.parent is not None:
+        layer = layer.parent
     return layer
 
 
-def read_name(psd: PSDImage) -> Optional[str]:
-    """The printed title, whitespace collapsed; None when the card has no readable Text/Name."""
+def _shows(psd: PSDImage, layer) -> bool:
+    """Does the card's render change without the layer (not when the art covers it: Doctor Zomboss's 'images/Name')."""
+    box = clip(layer.bbox, psd.width, psd.height)
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return False
+    shown = psd.composite(viewport=box, ignore_preview=True, apply_icc=False)
+    left_out = psd.composite(viewport=box, ignore_preview=True, apply_icc=False,
+                             layer_filter=lambda other: other.is_visible() and other is not layer)
+    return bool((np.abs(_flat(shown).astype(np.int16) - _flat(left_out).astype(np.int16)) > COPY_SEEN).any())
+
+
+def _copy(psd: PSDImage, layer) -> Optional[str]:
+    """
+    The first other visible text layer printing the layer's words where they show (a copy for an effect, a watermark):
+    an edit would change one and leave the rest. None when there is none.
+    """
+    def words(text):
+        return " ".join((text or "").replace("\x03", " ").split()).casefold()
+    own = words(layer.text)
+    if not own:
+        return None
+    return next((other.name for other in psd.descendants() if _is_text_layer(other) and other is not layer
+                 and other.is_visible() and words(other.text) == own and _shows(psd, other)), None)
+
+
+def _no_title(psd: PSDImage) -> str:
+    """Why the parser reads no title layer (name_layer's refusal)."""
+    group = _text_group(psd)
+    if group is None:
+        return "no Text group"
+    named = [child for child in group if child.name.strip() == "Name"]
+    if named:
+        if not any(_is_text_layer(child) for child in named):
+            return "rasterized name layer"
+        if not any(_is_text_layer(child) and child.is_visible() for child in named):
+            return "hidden name layer"
+        return f"{len(named)} Name layers, none in the title region"
+    titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
+              and child.bbox[1] < psd.height * 0.15]
+    return f"title layer named {titles[0]!r}, not Name or the card's name" if titles else "no Text/Name layer"
+
+
+def name_layer(psd: PSDImage, card: str = ""):
+    """
+    The card's title layer: the one visible text layer the parser reads the printed title from (PSDParser.title_layers:
+    Text/Name, else a Name layer in the title region, else a layer under Text named after the card, else one elsewhere
+    in the title region: a status effect's top-level title).
+
+    Args:
+        psd: The open card
+        card: The card's name (file stem), which a title layer may be named after
+
+    Returns:
+        The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
+        title split over layers, a copy for an effect that shows)
+    """
+    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
+    if not found:
+        raise Refused("unsupported-card", _no_title(psd))
+    if len(found) > 1:
+        raise Refused("unsupported-card", f"{len(found)} title layers")
+    if PSDParser.split_title(psd, found, title_text(found[0].text), card):
+        raise Refused("unsupported-card", "the title is split over several layers")
+    copy = _copy(psd, found[0])
+    if copy is not None:
+        raise Refused("unsupported-card", f"the title is printed again by {copy!r}")
+    return found[0]
+
+
+def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
+    """The printed title, whitespace collapsed; None when name_layer refuses."""
     try:
-        return collapse(name_layer(psd).text)
+        return collapse(name_layer(psd, card).text)
     except Refused:
         return None
+
+
+def _card_name(parsed: dict) -> str:
+    """The parse's card name (file stem)."""
+    info = parsed.get("info")
+    return info.name if info is not None else parsed["card"].get("name") or ""
 
 
 def story_sync() -> bool:
@@ -504,19 +565,20 @@ def story_style_drift(psd: PSDImage) -> list:
 
 def ability_layer(psd: PSDImage):
     """
-    The single visible Ability text layer directly under Text.
+    The single visible Ability text layer, in whatever group the developer put it (the parser reads it wherever it is).
 
     Returns:
-        The layer; raises Refused("unsupported-card") for hidden, several or stray Ability layers
+        The layer; raises Refused("unsupported-card") for none or several, or another layer printing its words where
+        they show
     """
     visible = [layer for layer in psd.descendants()
                if _is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
     if len(visible) != 1:
         raise Refused("unsupported-card", f"{len(visible)} visible Ability layers")
-    layer = visible[0]
-    if layer.parent is not _text_group(psd):
-        raise Refused("unsupported-card", "Ability layer outside the Text group")
-    return layer
+    copy = _copy(psd, visible[0])
+    if copy is not None:
+        raise Refused("unsupported-card", f"the ability is printed again by {copy!r}")
+    return visible[0]
 
 
 def icon_font(layer) -> Optional[str]:
@@ -740,7 +802,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Class
     Args:
         parsed: parse_card() of the card's PSD
         edits: The card's fields from CardEdits.parse (no _keys)
-        psd: The open PSD, needed to check Text/Name is editable for a name edit and the rows for a stat above 10
+        psd: The open PSD, needed to find the title layer for a name edit (name_layer) and the rows for a stat above 10
 
     Returns:
         Classification
@@ -772,10 +834,14 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Class
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
             if shown_name(parsed) == collapse(value):
                 out.redundant.append(name)
-            elif psd is None or read_name(psd) is None:
-                out.refusals.append(Refusal("unsupported-card", "no readable Text/Name layer"))
+            elif psd is None:
+                out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
             else:
-                out.jobs[name] = value
+                try:
+                    name_layer(psd, _card_name(parsed))
+                    out.jobs[name] = value
+                except Refused as refused:
+                    out.refusals.append(refused.refusal)
     return out
 
 
@@ -923,7 +989,8 @@ def _cut_fx(psd: PSDImage, layer, name: str, mask: np.ndarray, color: np.ndarray
 
 def _regenerate_fx(psd: PSDImage, layer, text: str, styled: list, fonts, engine: tuple) -> list:
     """
-    One FX layer per styled status word of the rasterized layer, directly above the top-level Text group in text order.
+    One FX layer per styled status word of the rasterized layer, directly above its top-level group (the Text group;
+    the layer itself at the root) in text order, where Effect Layers.jsx puts it.
 
     Args:
         psd: The card
@@ -936,7 +1003,7 @@ def _regenerate_fx(psd: PSDImage, layer, text: str, styled: list, fonts, engine:
     Returns:
         The new layers, bottom to top
     """
-    group = _text_group(psd)
+    group = _top(layer)
     offset = engine[0].from_layer(layer).text.find(text)
     if offset < 0:
         raise Refused("styled-word", "the engine's text differs from the layer's")
@@ -1189,17 +1256,19 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
                 [(_record_index(a), None if b is None else _record_index(b), bytes(key)) for a, b, key in moves])
 
 
-def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> Edit:
+def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
+                   card: str = "") -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine.
 
     Args:
         psd: The open card (edited in place)
-        which: "name" (Text/Name) or "ability" (the single visible Text/Ability)
+        which: "name" (name_layer) or "ability" (ability_layer)
         text: The new text; newlines become paragraph breaks but where the layer had a forced line break (keep_breaks);
             the layer's blank first and last paragraphs stay (keep_ends)
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
+        card: The card's name (file stem), for name_layer
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
@@ -1210,7 +1279,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     takes its swatch (the chart is the authority, an off-swatch word is normalized). A chart status's FX layers are
     derived state (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status word in the new text
     ("Blazing", "Frozen#2" for a repeat), the word's glyph pixels cut from the new raster under a copy of the chart
-    layer's effect blocks, directly above the top-level Text group as Effect Layers.jsx places them. A hand-made
+    layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx places them. A hand-made
     overlay word layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX
     layer standing in for it; one naming anything else refuses (unsupported-card). Any other FX layer refuses too, before
     anything changes (unsupported-card): a badge or token run's (queue A's gradient cards) or a word's the chart has no
@@ -1220,7 +1289,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    layer = name_layer(psd) if which == "name" else ability_layer(psd)
+    layer = name_layer(psd, card) if which == "name" else ability_layer(psd)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
@@ -1786,7 +1855,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     Re-parse the new PSD: the old parse with exactly the edited fields replaced, no new problems (a stat above 10
     reads STATS TOO HIGH by design when it sits on Top and Bottom rows; no EFFECT LAYER problem: the validator's
     coverage check is the FX layers' gate), one digit per edited row, the title read back for a name edit, and an
-    ability edit's FX layers back as declared: visible, styled, directly above Text, no overlay word layer showing.
+    ability edit's FX layers back as declared: visible, styled, directly above the ability's top-level group (_top), no
+    overlay word layer showing.
 
     Args:
         parser: offline_parser()
@@ -1808,14 +1878,15 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                     raise Refused("reparse", f"{stat}: row {row.group.name!r} shows {row.visible}")
     for edit in edits:
         if edit.field == "ability" and (edit.fx or edit.dropped or edit.hidden):
-            layer, group = ability_layer(psd), _text_group(psd)
+            layer = ability_layer(psd)
+            group = _top(layer)
             found = fx_layers(psd, layer)
             if [fx.name for fx in found] != [name for name, _ in edit.fx]:
                 raise Refused("reparse", f"FX layers after reopen: {[fx.name for fx in found]}")
             for k, fx in enumerate(found):
                 if (fx.parent is not psd or psd.index(fx) != psd.index(group) + 1 + k or not fx.is_visible()
                         or not _enabled_effects(fx, strict=True)):
-                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above Text")
+                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above {group.name!r}")
             if overlay_words(psd):
                 raise Refused("reparse", "overlay word layers still show over the ability")
     new = parse_card(parser, new_path, rel)
@@ -1846,8 +1917,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         raise Refused("reparse", "new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    if "name" in jobs and read_name(psd) != collapse(jobs["name"]):
-        raise Refused("reparse", f"Text/Name reads {read_name(psd)!r}")
+    if "name" in jobs and read_name(psd, _card_name(parsed)) != collapse(jobs["name"]):
+        raise Refused("reparse", f"the title reads {read_name(psd, _card_name(parsed))!r}")
     return new
 
 
@@ -1974,7 +2045,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         if name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     edits = [edit for edit in edits if edit.layers]

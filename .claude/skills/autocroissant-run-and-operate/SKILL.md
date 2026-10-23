@@ -481,8 +481,9 @@ commands/psd_details.py (uncompiled; stock psd-tools; no Discord or config impor
 fonts of the visible type layers with their layers and a `supplied` flag (MDW/Fonts has the face; null when no index was at hand),
 every type layer's text (200 chars), font, size, colour and visibility, effects per layer (`(off)` when disabled), smart objects,
 canvas (size, mode, depth, ICC description), type-icon style (images / tokens / mixed / none), the stat-row encoding per stat
-(template / two-row / pixel / other / none), `FX:` and overlay word layers, the template's Name and Ability layers with the
-ledger's cheap deviations, and a compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
+(template / two-row / pixel / other / none), `FX:` and overlay word layers, the title layer the parser reads (2026-10-23: a
+root `Name` or a layer named after the card is no deviation) and the Ability layers with the ledger's cheap deviations, and a
+compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
 in `psd_details.json` (repo root, committed; `{"version": 1, "cards": {sha: record}}`, one card per line so diffs stay per card).
 
 - **In `/update_stats`:** after each re-parsed card's parse, `_gather_details` opens the temp PSD once more and stores the record
