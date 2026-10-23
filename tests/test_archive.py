@@ -104,17 +104,30 @@ def test_restore_drops_an_emptied_history():
 
 
 def test_save_drops_the_restored_copy_after_stats(monkeypatch):
-    """old_stats (record kept), stats (card in), old_stats again (record out): no kill leaves it in neither."""
+    """old_stats (record kept), stats (card in), stats (a carried start), old_stats again (record out): no kill leaves
+    it in neither."""
     db = _db([_card("Gone")], seen=["Other"])
     db.prune_clean_cards(AT)
     _restore(db, "Gone")
     saved = []
     monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: saved.append((path, "Gone" in obj)))
     db.save()
-    assert saved == [(cm.OLD_STATS_PKL, True), (cm.STATS_PKL, True), (cm.OLD_STATS_PKL, False)]
+    assert saved == [(cm.OLD_STATS_PKL, True), (cm.STATS_PKL, True), (cm.STATS_PKL, True), (cm.OLD_STATS_PKL, False)]
     saved.clear()
     db.save()
     assert saved == [(cm.OLD_STATS_PKL, False), (cm.STATS_PKL, True)]          # nothing stale: two writes
+
+
+def test_save_untag_only_skips_the_second_stats_write(monkeypatch):
+    """A record kept as history (untagged, nothing carried) needs no second stats.pkl write."""
+    db = _db([_card("Gone")], seen=["Other"])
+    db.prune_clean_cards(AT)
+    _restore(db, "Gone")
+    db.add_history("Gone", db.stats["Gone"])
+    order = []
+    monkeypatch.setattr(cm, "save_pickle", lambda obj, path, lock: order.append(path))
+    db.save()
+    assert order == [cm.OLD_STATS_PKL, cm.STATS_PKL, cm.OLD_STATS_PKL] and db.old_stats["Gone"][0].archived is None
 
 
 def test_restored_copy_matches_after_a_reparse():
@@ -179,12 +192,14 @@ def test_blobless_record_is_a_copy_only_when_equal():
 
 
 def test_listed_name_with_another_tagged_version_untags_it():
-    """A /pull mix (listed card, an older tagged version): the version stays as history, untagged."""
-    old = _card("Mixed", blob="0" * 40)
-    old.archived = {"at": AT, "path": old.path, "blob": old.blob_sha, "commit": None}
-    db = _db([_card("Mixed")], old=[old])
-    assert db.stale_archives() == ["Mixed"] and db.drop_stale_archives()
-    assert db.old_stats["Mixed"] == [old] and old.archived is None
+    """A /pull mix (listed card, an older tagged version): another version stays as history, untagged; the listed
+    card's data again (another blob) is no version, so it goes."""
+    old, same = _card("Mixed", blob="0" * 40, ability="Did a thing."), _card("Same", blob="0" * 40)
+    for card in (old, same):
+        card.archived = {"at": AT, "path": card.path, "blob": card.blob_sha, "commit": None}
+    db = _db([_card("Mixed"), _card("Same")], old=[old, same])
+    assert db.stale_archives() == ["Mixed", "Same"] and db.drop_stale_archives()
+    assert db.old_stats["Mixed"] == [old] and old.archived is None and "Same" not in db.old_stats
 
 
 # ========================
@@ -343,20 +358,23 @@ def test_backfill_on_the_live_pickles(live_copy):
 # ========================
 def test_update_metadata_never_stubs_an_archived_card(monkeypatch):
     """Its PNG may still be in the tree: show the archived record, refuse edits, make no stats entry."""
+    import commands.discord_edits as de
     import commands.psd_analyzer as pa
     import commands.query_card as qc
+    import commands.utils as utils
     from types import SimpleNamespace
     sent = []
     db = _db([_card("The Morgue")], seen=["Other"])
     db.prune_clean_cards(AT)
     monkeypatch.setattr(pa, "stats_db", db)
-    monkeypatch.setattr(pa, "queue_message", lambda inter, text, **kw: sent.append(text))
+    monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
+    monkeypatch.setattr(de, "commit", lambda *a, **kw: sent.append("committed"))
     monkeypatch.setattr(db, "save", lambda: sent.append("saved"))
     monkeypatch.setattr(qc.card_repo, "git_files", {"the morgue.png": "MDW/The Morgue/The_Morgue.png"})
     monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
-    pa.manual_metadata_entry(SimpleNamespace(), "The Morgue")
+    de.manual_metadata_entry(SimpleNamespace(), "The Morgue")
     assert "is archived" in sent[0] and "Does a thing." in sent[0]
-    pa.manual_metadata_entry(SimpleNamespace(), "The Morgue", hp=3)
+    de.manual_metadata_entry(SimpleNamespace(), "The Morgue", hp=3)
     assert "can't be edited" in sent[1] and len(sent) == 2 and db.stats == {}
     assert db.old_stats["The Morgue"][0].archived and db.old_stats["The Morgue"][0].stats.hp != 3
 

@@ -121,7 +121,7 @@ variant from the layer tree, art from the clip layer) -> data file; then regener
   can reach tier A after the batch.
 - **Order.** The goldens first (Mini Doomer, The Freezer, The Lich King; `tests/goldens/`), then one series, then a class at a time; every
   batch re-scores against `cards_v1_icc` (no region worse) and records its share of byte-identical regions (section 8, M5).
-- **Harness bar.** The pipeline's parity bar (bad <= 0.5%, mae <= 1.0) admits an *edit*; A1 admits a *source change* and is stricter on
+- **Harness bar.** The pipeline's parity bar (bad <= 0.5%, mae <= 2.0 since 2026-10-22) admits an *edit*; A1 admits a *source change* and is stricter on
   purpose (0 bad pixels, every region): a card that fails A1 in any region keeps its PSD as source.
 
 ## 5. Browser preview

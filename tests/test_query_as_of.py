@@ -104,6 +104,12 @@ def test_the_latest_version_not_after_the_date():
     assert [qc.version_at(cards, end) for end in (5.0, 10.0, 10.5, 20.5, 31.0)] == [None, None, 0, 2, 3]
 
 
+def test_a_version_starts_at_its_record():
+    """A duplicate dropped into a version (card_history.carry): it starts at the record's from, not its timestamp."""
+    cards = [SimpleNamespace(timestamp=10.0), SimpleNamespace(timestamp=30.0, version={"from": 20.0, "from_commit": None})]
+    assert [qc.version_at(cards, end) for end in (15.0, 25.0, 31.0)] == [0, 1, 1]
+
+
 # ========================
 # Replies
 # ========================
@@ -132,6 +138,17 @@ def test_the_current_card_posts_its_image(db):
     assert [kw["content"] for kw in sent] == [
         f"**Tainted Bethany** as of 2026-10-21 {HEAD}the current card (version 5 of 5), from 2026-10-21.\n{qc.AS_OF_EDITS_NOTE}",
         "https://img/tainted_bethany.png"]
+
+
+def test_the_current_card_from_its_carried_start(db):
+    """Its last old version had the same data (dropped): the current card answers from that version's date."""
+    current = cm.stats_db.stats["Tainted Bethany"]
+    current.version = {"from": _at(2026, 10, 19, 16, 57, 41), "from_commit": None, "to": None, "to_commit": None,
+                       "cause": "legacy", "png_commit": None, "legacy": False}
+    cm.stats_db.old_stats["Tainted Bethany"].pop()
+    assert _texts("Tainted Bethany", "2026-10-20")[0].startswith(
+        f"**Tainted Bethany** as of 2026-10-20 {HEAD}the current card (version 4 of 4), from 2026-10-19.")
+    assert f"version 2 of 4, from 2026-02-07 (date approximate) until 2026-10-19." in _texts("Tainted Bethany", "2026-02-07")[0]
 
 
 def test_before_the_oldest_version(db):

@@ -314,24 +314,7 @@ def test_a_sheet_is_read_cell_by_cell(tmp_path):
     assert lone["cards"] == ["alpha-wolf"]
 
 
-def test_alias_rules():
-    cards = {"grand-old-knight": {"id": "grand-old-knight", "name": "Grand Old Knight", "key": "Grand Old Knight"},
-             "twin-wardens": {"id": "twin-wardens", "name": "Twin Wardens", "key": "Twin Wardens"},
-             "long-pike": {"id": "long-pike", "name": "Long Pike", "key": "Long Pike"},
-             "shadow-steel-swordsman": {"id": "shadow-steel-swordsman", "name": "Shadow Steel Swordsman",
-                                        "key": "Shadow Steel Swordsman"},
-             "pale-keeper": {"id": "pale-keeper", "name": "Pale Keeper", "key": "Pale Keeper"}}
-    names = dm.Names(cards)
-
-    def ok(cid, text, printed=False):
-        return dm.alias_ok(text, cid, names, set(names.card_forms[cid]), printed)
-    assert ok("grand-old-knight", "gok")                                          # initials
-    assert not ok("twin-wardens", "wardans") and not ok("twin-wardens", "those two")
-    assert ok("twin-wardens", "Twin Kings") and ok("long-pike", "Ironclad Lance", printed=True)
-    assert not ok("long-pike", "steelhelmet")                                     # a swapped file name
-    assert not ok("shadow-steel-swordsman", dm.typed_name("shadow_steel_sword_color.png"))
-    assert not ok("pale-keeper", "p kpr")
-    assert not ok("twin-wardens", "Grand Old Knight")                             # another card's name
+def test_typed_name():
     assert dm.typed_name("Pale_Wizard2.png") == "Pale Wizard" and dm.typed_name("PaleWizard.png") == "Pale Wizard"
 
 
@@ -517,6 +500,7 @@ def test_twins_bots_and_suspects(tmp_path):
     assert entries[0]["suspect"] == ["fang"]
     edits = json.loads((root2 / "proposal" / dm.EDITS_FILE).read_text())
     assert edits["pending"]["Fang"]["created_if_ruled"]["date"] == "2020-09-13"
+    assert not any("aliases" in f for f in [*edits["cards"].values(), *edits["pending"].values()])   # owner: none
 
 
 def test_root_inside_git_is_refused(tmp_path):

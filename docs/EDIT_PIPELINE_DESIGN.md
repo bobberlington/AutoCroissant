@@ -174,7 +174,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
-   and mean abs <= 1.0 (Mini_Doomer row: mean 0.62, max 2; the bar stays, the user 2026-10-21: section 7 idea 12). A row the
+   and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12). A row the
    fork already renders wrong (class A) is refused here, never pasted.
 4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
@@ -193,8 +193,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    gives the pixels (`numpy("color"/"shape")` after `rasterize`), `PixelLayer.fromarray` makes the layer with a unicode name
    and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
    it goes directly above the top-level `Text` group. A hand-made overlay word layer over the ability is hidden when it names a
-   styled chart status, else the card refuses `unsupported-card`. `styled-word` remains only for a psd-tools without the engine
-   pieces (`psd_edit._fx_engine`).
+   styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
+   layer holding a badge or token run (`Ability FX: (BOT)`, `Ability FX: (1CD) | (2U)`: queue A's gradient cards, 2026-10-22)
+   or a word the chart has no style for (Morpho Knight's `Smoldering`) cannot be made again exactly, so the edit refuses
+   `unsupported-card` before anything changes ("ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop",
+   `psd_edit.kept_fx`). `styled-word` remains only for a psd-tools without the engine pieces (`psd_edit._fx_engine`).
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
@@ -207,6 +210,19 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    channel first, carrying the chart's `lfx2`/`lrFX` bytes), one flag byte per hidden overlay; records are paired in file order
    once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
+   Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
+   `TextIndex` is the story's index) and rebuilds the layer's TySh from it on save, so the five titles baked that morning
+   (TySh only) reverted when the card was opened (`B.F.B.` -> `B.F.B`). The fork's `set_text`/`set_span_style` now write the
+   story too (`fix/txt2-sync`; Photoshop redoes the story's glyph layout itself); gate `bytes` also holds `gate_stories`:
+   every story holds its layer's text, only the edited layers' stories changed, the rest of Txt2 and every other
+   document-wide block are the old bytes. A card that already has a stale story is refused `unsupported-card` until
+   `python -m commands.txt2_repair` rewrites it; a fork without `TypeLayer.sync_story` edits no text (transient error).
+   The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
+   character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
+   that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
+   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). An edit on a layer
+   set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs the engine draws
+   in one colour, so the bake refuses `font` unless an opaque overlay effect covers the layer (Mini Doomer's gradient).
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
@@ -262,7 +278,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   14 with several visible styled digits (False_Knight, Tainted_Lazarus: non-template anyway).
   **Decision (the user, 2026-10-21):** the bar stays (`PARITY_MEAN_MAX` 1.0 / `PARITY_BAD_MAX` 0.5% / `PARITY_THRESH` 24); Mettaton EX's
   toggles over lit cells (mean 1.03-1.04) wait for a fork fix of the pixel bars' GradientOverlay shade (a rendering round candidate),
-  not a looser bar.
+  not a looser bar. **Revised (the user, 2026-10-22):** mean 2.0 (`PARITY_MEAN_MAX`; bad 0.5% and max 24 unchanged), so those
+  toggles, the Cannon's one-row hp (mean 1.06) and Z.O.M.G.'s title (1.28) pass the baseline; the 0.5% bad-pixel bar still refuses
+  a row the fork renders wrong (the Cannon before round 4: 5-7% bad).
 - **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
   Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
   marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
@@ -279,7 +297,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the recipe; no fork change: the glyph pixels come from the JSX's own key-copy technique over the engine's public `model`,
   `layout` and `raster` modules, `PlacedGlyph` still has no cluster index). Derived state: every `<Ability> FX: ...` layer goes
   and one comes back per styled status word (`Ability FX: Blazing`, `#n` for a repeat), above `Text`, the chart's `lfx2`/`lrFX`
-  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Proof
+  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Since
+  2026-10-22 an FX layer that is no styled chart status (a badge or token run, an unstyled word) refuses the edit too: it
+  would be dropped (19 queue A cards carry badge layers; the FX tests run on Mini Doomer from before its `Ability FX: (BOT)`). Proof
   against `Effect Layers.jsx` (Convert overlays, the 2026-10-20 trial copies under `/private/tmp/fontexplore/fx/mig/out/`) on the
   unchanged text: Gasoline `Ability FX: Blazing` IoU 0.966 with the JSX pixel cut, 99.9% of our ink on its ink, bbox equal but
   for one column (the fork's `g`), validator coverage 1.0 (the JSX's 3,422 ink pixels, ours 3,312); the chart's Blazing glow and
@@ -510,7 +530,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
    aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
    ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`). **Reprinted 2026-10-22** (run
-   39761732714: Clot White, M.O.A.B., D.D.T., B.F.B., B.A.D.; Z.O.M.G. refused `parity`, baseline mean 1.28 over the 1.0 bar).
+   39761732714: Clot White, M.O.A.B., D.D.T., B.F.B., B.A.D.; Z.O.M.G. refused `parity`, baseline mean 1.28 over the then 1.0 bar;
+   within the 2.0 bar since 2026-10-22).
 
 ## 15. Known wrong paths (fenced off)
 

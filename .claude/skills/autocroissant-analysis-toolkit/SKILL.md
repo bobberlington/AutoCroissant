@@ -145,7 +145,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:486 as of 2026-10-20; until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:486 as of 2026-10-20 (:59, its traversal in card_data.py, since 2026-10-22); until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -284,13 +284,13 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
   like a junk commit. The diff is the actual fix: every `return ..., num_updated` becomes
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
   content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is `num_changed`: `if num_changed > 0:` gates the prune
-  and `if num_changed > 0 or traverser.changed:` the save, in `update_stats`, commands/repo_traverser.py.)
+  and `if num_changed > 0 or gone or backfilled or build.changed ...:` the save, in `card_data.update`, commands/card_data.py since 2026-10-22.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
 - Bonus name-lie inside the same loop (renamed 2026-10-20): until then `num_new` ALSO counted re-parsed existing
   cards (the `else: num_new += 1`, including `cards:`/`force_update` re-parses) — "new + re-parsed", not "new" — and
   `_process_files_from_response` returned `num_new + num_moved`. Only the increment sites told you that. The counter is
-  now `num_changed` (commands/repo_traverser.py).
+  now `num_changed` (commands/card_data.py since 2026-10-22).
 
 **Conclusive result:** you can name the introducing (and, if applicable, removing) commit, quote
 the exact changed line from `git show <hash>:<file>`, and your story survives reading the
@@ -317,7 +317,7 @@ autocroissant-run-and-operate.)
    find ~/Desktop/TTSCardMaker -name '*.psd' | grep -vcE '/(Markers|MDW)/'# 813 (processed — equals stats.pkl entry count)
    ```
 
-2. **Read the loop and tag every network call** (`commands/repo_traverser.py`, verified 2026-10-20 after the split):
+2. **Read the loop and tag every network call** (`commands/repo_traverser.py`, verified 2026-10-20 after the split; the loop is in `commands/card_data.py` since 2026-10-22, unchanged):
    - `traverse_remote` — one tree GET (`fetch_tree`, :164), sent with If-None-Match
      unless `force_update` or `cards:` is set. A 304 ends the run (:165). The ETag
      (`_tree_etags`, :42) and the small-file cache (`_file_cache`, :43) live in memory only, so the
@@ -448,7 +448,8 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 (Root-cause family — duplicate archiving of unchanged cards — and incident status:
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
-(repo_traverser.py:376-377), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing.
+(`_history`, card_data.py), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing; since 2026-10-22 only
+when its data changed too (`_record_history`, `card_history.same_data`).
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -511,16 +512,16 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
-| `num_changed` gates at HEAD | `grep -n 'if num_changed > 0' commands/repo_traverser.py` (prune, then the save gate) |
+| `num_changed` gates at HEAD | `grep -n 'if num_changed > 0\|def can_prune' commands/card_data.py` (the prune gate, then the save gate) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
-| get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/repo_traverser.py; grep -n 'requests/hour' commands/github_api.py` (repo_traverser.py / github_api.py since the 2026-10-20 split) |
+| get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/card_data.py; grep -n 'requests/hour' commands/github_api.py` (card_data.py since 2026-10-22, github_api.py since the 2026-10-20 split) |
 | Queue loops drain the whole deque each 0.1 s tick; reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:847-880 on 2026-10-21: 847 at 1 s, 853/866/878 at 0.1 s) |
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
 | Problem card list (today: 20 Creature Types / tornado) | the `c.problems` one-liner in Recipe 6 |
 
-Line numbers drift with every edit to the card modules (`psd_parser.py`, `repo_traverser.py`, `card_models.py`, `psd_analyzer.py`) and `main.py` — trust the greps
+Line numbers drift with every edit to the card modules (`psd_parser.py`, `card_data.py`, `repo_traverser.py`, `card_models.py`, `psd_analyzer.py`) and `main.py` — trust the greps
 above over the numbers in this file. If `PSDParser._extract_from_layers` changes shape, gap_trace's
 mirror must be updated (see the MAINTENANCE NOTE in gap_trace.py itself). When a recipe's worked
 example stops reproducing, that is itself a finding: apply Recipe 3 to find out what changed, then
@@ -538,3 +539,5 @@ update this file.
 2026-10-21 (review): psd_parser.py citations re-pointed after the WX-78 title fix; repo_traverser.py `update_stats` :472, history append :371-372.
 
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-22 (data build): the traversal loop, its network calls and the save gates moved to the uncompiled commands/card_data.py (legacy mode for /update_stats); the recipe citations and greps re-pointed there. The API arithmetic is unchanged; a failed commit lookup now fails only its card.

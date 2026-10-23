@@ -109,6 +109,7 @@ class CardInfo:
     subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
     archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
+    version = None                            # card_history's {from, to, cause...}; no field: parsed cards pickle as before
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -166,10 +167,15 @@ class StatsDatabase:
     def save(self) -> None:
         """Save all databases to pickle files (atomically, one lock per pickle). old_stats first, and a restored card's
         archived record is dropped or untagged only after stats.pkl holds the card: a kill between saves never leaves
-        it unlisted and untagged."""
+        it unlisted and untagged. A dropped record's start lives on in the listed card (carry), so stats.pkl is written
+        again (only when a record was dropped) before old_stats.pkl: a kill between them leaves the record, dropped
+        again by the next save."""
         save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
         save_pickle(self.stats, STATS_PKL, _stats_lock)
+        stale = {name: len(self.old_stats[name]) for name in self.stale_archives()}
         if self.drop_stale_archives():
+            if any(len(self.old_stats.get(name, ())) < n for name, n in stale.items()):   # dropped: stats may carry
+                save_pickle(self.stats, STATS_PKL, _stats_lock)
             save_pickle(self.old_stats, OLD_STATS_PKL, _old_stats_lock)
 
     def load(self) -> None:
@@ -233,14 +239,18 @@ class StatsDatabase:
 
     def drop_stale_archives(self) -> bool:
         """Each stale_archives() record: kept as history untagged when add_history kept it or it is another version,
-        else dropped (a copy of the listed card). Returns whether any."""
+        else dropped (a copy of the listed card, or its data again: card_history.same_data; its earlier start goes to
+        the listed card, card_history.carry). Returns whether any."""
+        from commands.card_history import carry, same_data   # lazy: card_history imports this module
         names = self.stale_archives()
         for name in names:
             versions = self.old_stats[name]
             last = versions[len(versions) - 1]
-            if name in self.kept_archives or not _tagged_copy(last, self.stats[name]):
+            listed = self.stats[name]
+            if name in self.kept_archives or not (_tagged_copy(last, listed) or same_data(last, listed)):
                 last.archived = None
             else:
+                carry(last, listed)
                 versions.pop()
                 if not versions:
                     del self.old_stats[name]

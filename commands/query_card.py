@@ -15,6 +15,8 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL, TIMEZONE
+from commands.card_edits import ALIASES_MOVED
+from commands.card_history import start as version_start
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import raw_url
@@ -52,6 +54,8 @@ class CardRepository:
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
+        self._edits = None                               # that file, parsed (CardEdits): /alias reads its aliases
+        self._moved_hint = False                         # the latest Card Edits.json didn't parse but named ALIASES_MOVED
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self.cards_dff: DataFrame = DataFrame()
@@ -100,9 +104,9 @@ class CardRepository:
             self.blobs[path] = item.get("sha", "")
             self._add_file_to_registry(path)
 
-        # Add aliases to registry
-        self._populate_aliases()
+        # Add aliases to registry: Card Edits.json's, then aliases.pkl's until they moved there (they win, as before)
         self._populate_edit_names()
+        self._populate_aliases()
         self._populate_titles()
         self._populate_site_ids()
 
@@ -175,8 +179,14 @@ class CardRepository:
         folder = path[:path.index('/')]
         return f"{folder}/{filename}".lower()
 
+    def aliases_moved(self) -> bool:
+        """Card Edits.json says aliases.pkl moved into it (ALIASES_MOVED): the pickle's aliases no longer count."""
+        return self._moved_hint or (self._edits is not None and self._edits.aliases_moved)
+
     def _populate_aliases(self) -> None:
-        """Populate aliases into the file registry."""
+        """Populate aliases.pkl's aliases into the file registry, until they moved into Card Edits.json."""
+        if self.aliases_moved():
+            return
         for alias, target in self.git_file_alias.items():
             alias_key = f"{alias.lower()}.png"
             target = target.lower()
@@ -415,13 +425,25 @@ class CardRepository:
             return
         sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
+            text = None
             try:
-                self._edit_names = (sha, CardEdits.parse(blob_text(self.repository, sha)).names())
+                text = blob_text(self.repository, sha)
+                edits = CardEdits.parse(text)
             except Exception as e:
                 print(f"Could not read {path}: {e}")
-                return
+                if text is not None:                     # unparsed, but migrated: aliases.pkl stays off
+                    self._moved_hint = f'"{ALIASES_MOVED}"' in text
+            else:
+                self._edits, self._edit_names, self._moved_hint = edits, (sha, edits.names()), False
+        # a failed read keeps the last good names: aliases live only here once moved
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
+
+    def relink(self) -> None:
+        """Card Edits.json's names and aliases, then the printed titles, onto keys the registry lacks (after /alias delete)."""
+        for card, extra in self._edit_names[1].items():
+            self._add_lookup(card, extra)
+        self._populate_titles()
 
     def _populate_titles(self) -> None:
         """Printed titles the parser read (display_name), so /query finds "Black Clot" as well as Clot_Black."""
@@ -630,12 +652,18 @@ def parse_as_of(text: str, today: date) -> tuple:
 
 
 def version_at(versions: list, end: float) -> Optional[int]:
-    """Index of the latest version (oldest first) stamped before end; None when all are later."""
+    """Index of the latest version (oldest first) started before end (_since); None when all are later."""
     found = None
     for i, card in enumerate(versions):
-        if (getattr(card, "timestamp", 0.0) or 0.0) < end:
+        if _since(card) < end:
             found = i
     return found
+
+
+def _since(card) -> float:
+    """When a version starts: its `version` record's from (a duplicate dropped, its data kept: card_history.carry),
+    else its timestamp."""
+    return version_start(card)[0] or 0.0
 
 
 def _day(stamp) -> str:
@@ -681,7 +709,7 @@ def _as_of_match(query: str) -> Optional[tuple]:
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     """
     /query as_of: the card at the end of that day in TIMEZONE. Its versions are old_stats (oldest first) then the
-    current card; each runs from its timestamp to the next one's, the last of an archived card to its archive.
+    current card; each runs from its start (_since) to the next one's, the last of an archived card to its archive.
 
     Args:
         interaction: Discord interaction
@@ -715,12 +743,12 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     index = version_at(versions, end)
     if index is None:
         first = versions[0]
-        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(first.timestamp)}"
+        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(_since(first))}"
                                    f"{_approx(first)}.")
         return
     card = versions[index]
     which = f"version {index + 1} of {len(versions)}"
-    since = f"from {_day(card.timestamp)}{_approx(card)}"
+    since = f"from {_day(_since(card))}{_approx(card)}"
     tag = None if current is not None else getattr(versions[len(versions) - 1], "archived", None)
     if tag and index + 1 == len(versions) and end > (tag.get("at") or 0):     # no at: archived after its last version
         line = f"{head}{_archived_text(tag)}. Its last version ({which}), {since}:"
@@ -729,7 +757,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     else:
         until = ""
         if index + 1 < len(versions):
-            until = f" until {_day(versions[index + 1].timestamp)}"
+            until = f" until {_day(_since(versions[index + 1]))}"
         elif tag:
             until = f" until it was {_archived_text(tag)}"
         line = f"{head}{which}, {since}{until}."
@@ -850,75 +878,6 @@ def query_rulebook(interaction: Interaction,
                   links=[("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(search_text.strip())}")])
 
 
-def print_all_aliases() -> list[str]:
-    """Get formatted chunks of all aliases."""
-    if not card_repo.git_file_alias:
-        return ["```No aliases defined.```"]
-
-    lines = []
-    for key, val in sorted(card_repo.git_file_alias.items()):
-        lines.append(f"{key:20s} -> {val}")
-
-    full_message = "```\n" + "\n".join(lines) + "\n```"
-    return split_long_message(full_message)
-
-
-async def manage_alias(interaction: Interaction, key: Optional[str], val: Optional[str]) -> None:
-    """
-    Manage aliases for card names.
-
-    Args:
-        interaction: Discord interaction
-        key: Alias name (for create/delete operations)
-        val: Target card name (for create), or None to delete
-    """
-    # View all aliases if no parameters provided
-    if not key:
-        if not card_repo.git_file_alias:
-            await interaction.response.send_message("```No aliases defined.```")
-            return
-
-        for chunk in print_all_aliases():
-            queue_message(interaction, chunk)
-        return
-
-    key = key.strip().lower()
-
-    # Delete alias if val is None or empty
-    if not val:
-        if key not in card_repo.git_file_alias:
-            await interaction.response.send_message(f"No alias exists for '{key}'.")
-            return
-
-        target = card_repo.git_file_alias.pop(key)
-        card_repo.git_files.pop(f"{key}.png", None)
-        card_repo.save_aliases()
-        await interaction.response.send_message(f"Deleted alias: {key} -> {target}")
-        return
-
-    # Create alias
-    val = val.strip().lower()
-    if not val.endswith(".png"):
-        val = f"{val}.png"
-
-    # Find target in git_files
-    target_path = None
-    for filename, path in card_repo.git_files.items():
-        if filename.lower() == val or filename.lower().endswith(val):
-            target_path = path
-            break
-
-    if not target_path:
-        await interaction.response.send_message(f"No card found matching '{val}'. Alias not created.")
-        return
-
-    # Create alias
-    card_repo.git_files[f"{key}.png"] = target_path
-    card_repo.git_file_alias[key] = val
-    card_repo.save_aliases()
-    await interaction.response.send_message(f"Created alias: {key} -> {val}")
-
-
 async def set_match_ratio(interaction: Interaction, value: Optional[float] = None) -> None:
     """
     Set or display the fuzzy match ratio.
@@ -978,7 +937,6 @@ def init_query() -> None:
 # ========================
 __all__ = [
     'card_repo',
-    'manage_alias',
     'init_query',
     'query_ability',
     'query_ability_num_occur',

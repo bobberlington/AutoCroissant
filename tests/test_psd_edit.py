@@ -9,25 +9,31 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 """
 import json
 import sys
+from copy import deepcopy
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
+from subprocess import CalledProcessError, run
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from PIL import Image
 from psd_tools import PSDImage
-from psd_tools.constants import Resource
+from psd_tools.constants import Resource, Tag
+from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import bevel_textures, fork_reason, rounds_bytes, saves_preview, text_engine as _text_engine
+from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, fork_reason, rounds_bytes, saves_preview, story_sync as _story_sync,
+                      text_engine as _text_engine)
 
 # ========================
 # Configuration
 # ========================
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                 # template rows, no digit effects (certified golden)
+MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, chart words and unstyled words on FX layers
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
@@ -45,6 +51,8 @@ BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, i
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
+OVERLAID = {GASOLINE: "3b06f803bb0abf57859297e271177dd82855402b^",    # the last versions with the overlay word: these
+            CANNON: "587d38b401102b13d06733a5f62b01ebeb674d3f^"}      # commits hid it under the JSX's FX layer (2026-10-22)
 STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted Blood", "Curse", "Cursed Inferno", "Frozen",
           "Frozen In Time", "Glued", "Hemorrhaging", "Hexed", "Infected", "Spirit Flame", "Withering"]   # the chart's styled statuses
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
@@ -79,6 +87,18 @@ def _jsx_ink(rel: str) -> tuple:
     return entry["name"], tuple(entry["bbox"]), out
 
 
+def _overlaid(clone, rel: str, tmp_path) -> str:
+    """OVERLAID[rel]'s PSD from the clone's history, in tmp_path/overlaid/."""
+    try:
+        data = run(["git", "-C", str(clone), "show", f"{OVERLAID[rel]}:{rel}"], capture_output=True, check=True).stdout
+    except (CalledProcessError, OSError):
+        pytest.skip(f"the clone's history lacks {OVERLAID[rel]}:{rel}")
+    path = tmp_path / "overlaid" / Path(rel).name
+    path.parent.mkdir()
+    path.write_bytes(data)
+    return str(path)
+
+
 def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)), blocks=(), rect=(0, 0, 1, 1)) -> dict:
     """A layer_records() fingerprint."""
     return {"name": name, "flags": flags, "rect": rect, "channels": tuple(channels), "mask": b"", "blend": (0, 255, 0),
@@ -86,6 +106,9 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
 
 
 text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
+# a text edit: the fork's set_text also writes the layer's Txt2 story (Photoshop reads that one)
+text_edit = pytest.mark.skipif(not (_text_engine() and _story_sync()),
+                               reason=fork_reason() if not _text_engine() else "the fork's text edits leave the Txt2 story stale")
 # round 4 (tag cards-20261022): rounded bytes and textured bevels
 round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
                             reason="the fork lacks round 4's byte rounding or bevel textures")
@@ -116,8 +139,20 @@ def _card(clone, rel: str) -> tuple:
     return str(path), str(path)[:-4] + ".png"
 
 
-def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False):
-    psd, png = _card(clone, rel)
+def _plain(clone, tmp_path) -> tuple:
+    """Mini Doomer without its badge layer (PLAIN_DOOMER, the version ability edits were proven on): PSD and PNG paths."""
+    out = tmp_path / "plain"
+    out.mkdir(exist_ok=True)
+    paths = []
+    for ext in (".psd", ".png"):
+        rel = MINI_DOOMER[:len(MINI_DOOMER) - 4] + ext
+        (out / Path(rel).name).write_bytes(at_rev(clone, PLAIN_DOOMER, rel))
+        paths.append(str(out / Path(rel).name))
+    return tuple(paths)
+
+
+def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False, paths=None):
+    psd, png = paths or _card(clone, rel)
     parsed = pe.parse_card(parser, psd, rel)
     assert pe.classify(parsed, jobs, PSDImage.open(psd)).jobs == jobs
     return parsed, pe.apply_jobs(psd, png, rel, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
@@ -127,6 +162,14 @@ def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False):
 # ========================
 # Pure functions (any psd-tools)
 # ========================
+def test_parity_bar():
+    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24."""
+    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH) == (2.0, 0.5, 24)
+    assert pe._within_bar({"bad_pct": 0.5, "mean": 2.0, "max": 200})
+    assert not pe._within_bar({"bad_pct": 0.0, "mean": 2.01, "max": 7})
+    assert not pe._within_bar({"bad_pct": 0.51, "mean": 0.5, "max": 7})
+
+
 def test_jsx_fx_fixture_is_vendored_and_small():
     """The comparison's fixture ships in tests/ (no /tmp, no 20 MB trial copies): both cards, ink counts intact."""
     assert sorted(json.loads((JSX_FX / "index.json").read_text(encoding="utf-8"))) == sorted([CANNON, GASOLINE])
@@ -180,6 +223,19 @@ def test_normalize_ability_matches_the_parser():
     assert pe.normalize_ability(layer) == pe.normalize_ability(site) == "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalize_ability("") == ""
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
+
+
+def test_keep_breaks_puts_back_the_layers_breaks():
+    """The website shows an ability's \x03 as a newline and a name's breaks as spaces: kept where the edit kept them."""
+    layer = "it. \x03(BOT) Die.\rAttacks pierce."
+    assert pe.keep_breaks(layer, "it. \r(BOT) Die. Inflict Poison.\rAttacks pierce.", "ability") == \
+        "it. \x03(BOT) Die. Inflict Poison.\rAttacks pierce."
+    assert pe.keep_breaks(layer, "it.\r(BOT) Die.\rNew.\rAttacks pierce.", "ability") == \
+        "it.\x03(BOT) Die.\rNew.\rAttacks pierce."                 # a new paragraph stays one
+    assert pe.keep_breaks("Die.\rLive.", "Die.\rLive.\rAgain.", "ability") == "Die.\rLive.\rAgain."
+    assert pe.keep_breaks("Unbreakable\x03strength", "Unbreakable Strength", "name") == "Unbreakable\x03Strength"
+    assert pe.keep_breaks("Mega\rBee", "Mega Bees", "name") == "Mega\rBees"
+    assert pe.keep_breaks("B.F.B", "B.F.B.", "name") == "B.F.B."
 
 
 def test_changed_range_is_the_engines():
@@ -353,7 +409,7 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     with pytest.raises(ValueError):
         pe.set_stat(psd, parsed, "hp", -1)
     assert found["stat_hp"] == [(359, 1199, 1174, 1285)] and found["stat_spd"] == [(359, 1577, 1174, 1663)]
-    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2258)]
+    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2264)]   # 2258 before the (BOT) badge
     assert found["frame"][0] == (0, 1708, 1200, 1748) and found["ability_bg"] == [(0, 1748, 1200, 2400)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
@@ -517,7 +573,8 @@ def test_effect_rules_on_styled_rows(clone):
 def test_layer_records_fingerprint(clone):
     psd = _card(clone, MINI_DOOMER)[0]
     records = pe.layer_records(psd)
-    assert len(records) == 95 and records[93]["name"] == "Name" and records[71]["name"] == "5"
+    assert len(records) == 96 and records[93]["name"] == "Name" and records[71]["name"] == "5"
+    assert records[95]["name"] == "Ability FX: (BOT)"
     assert pe.gate_bytes(psd, psd, []) == ([], 0, 0)
 
 
@@ -635,7 +692,8 @@ def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
 def test_moved_effect_paints_the_new_digit(clone):
     """hp 5 -> 2 in memory: the fork paints the moved GradientOverlay over cells 3-10, so the colour inside digit 2's mask
     matches the official PNG inside digit 5's mask (the lit cells were bright before). With rounded bytes the baseline
-    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22); truncated it refuses on the mean (1.03)."""
+    passes parity (mean 0.556, max 7, 0% bad on 2026-10-22); truncated (mean 1.03) it refused on the mean until the bar
+    went to 2.0 that day."""
     psd_path, png_path = _card(clone, METTATON)
     png = Image.open(png_path)
     psd = PSDImage.open(psd_path)
@@ -651,29 +709,24 @@ def test_moved_effect_paints_the_new_digit(clone):
     new = inside(render, row.digits["2"], edit.region[:2])
     assert np.abs(new - inside(official, row.digits["5"], (0, 0))).max() < 3
     assert np.abs(new - inside(official, row.digits["2"], (0, 0))).max() > 20
-    if rounds_bytes():
-        _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
-        assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
-    else:
-        with pytest.raises(pe.Refused) as refused:
-            pe.baseline(PSDImage.open(psd_path), png, edit.region)
-        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.0")
+    _, measured = pe.baseline(PSDImage.open(psd_path), png, edit.region)
+    assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX and measured["max"] <= 7
+    assert (measured["mean"] < 1.0) == bool(rounds_bytes())
 
 
 @round4
-def test_cannon_atk_passes_parity_and_hp_refuses_on_the_mean(clone, parser, tmp_path):
+def test_cannon_rows_pass_parity(clone, parser, tmp_path):
     """The Cannon's digits carry ColorOverlay + a textured BevelEmboss. With round 4 every row is 0% bad (2026-10-22):
-    the two-row atk passes (mean 0.51) and bakes, the one-row hp refuses on the mean alone (1.06 against the 1.0 bar)."""
+    the two-row atk bakes (mean 0.51), and so does the one-row hp, refused on the mean alone (1.06) until the owner set the
+    bar to 2.0 that day."""
     for stat in ("atk", "hp"):
         (tmp_path / stat).mkdir()
     parsed, baked = _bake(clone, parser, CANNON, {"atk": 15}, tmp_path / "atk")
     assert baked.reparse["card"]["atk"] == 15 and baked.reparse["validator"] == parsed["validator"]   # STATS TOO HIGH: atk 12 is
     assert baked.parity["atk"]["bad_pct"] == 0 and baked.parity["atk"]["mean"] <= pe.PARITY_MEAN_MAX
-    with pytest.raises(pe.Refused) as refused:
-        _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
-    assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad 0.00% mean 1.")
-    assert float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > pe.PARITY_MEAN_MAX
-    assert not list((tmp_path / "hp").iterdir())
+    parsed, baked = _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
+    assert baked.reparse["card"]["hp"] == 2 and baked.parity["hp"]["bad_pct"] == 0
+    assert 1.0 < baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
 
 
 @round4
@@ -709,7 +762,7 @@ def test_cannon_rows_refuse_parity_without_bevel_textures(clone, parser, tmp_pat
 # ========================
 # Text (the fork: text engine)
 # ========================
-@text_engine
+@text_edit
 @pytest.mark.parametrize("rel", NAMED)
 def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     psd_path = _card(clone, rel)[0]
@@ -721,11 +774,13 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert baked.reparse["card"] == {**without, "display_name": new}      # the parser reads the new title
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved) == new
+    assert pe.stories(saved)[pe.story_index(pe.name_layer(saved))] == new + "\r"   # what Photoshop reads
+    assert pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
 
 
-@text_engine
+@text_edit
 def test_long_title_refuses_overflow(clone, chart):
     """Point text has no box: a title that runs off the canvas or onto a star badge refuses overflow (Q5's gate)."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -743,11 +798,11 @@ def test_long_title_refuses_overflow(clone, chart):
     assert edit.field == "name" and tuple(pe.name_layer(psd).bbox)[2] < 936
 
 
-@text_engine
+@text_edit
 def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
-    psd_path = _card(clone, MINI_DOOMER)[0]
-    old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart)
+    paths = _plain(clone, tmp_path)
+    old = pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"]
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart, paths=paths)
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD)]
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(old + " Inflict Poison.")
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
@@ -758,11 +813,43 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
 
 
-@text_engine
-def test_inserted_text_takes_the_body_fill(clone, chart):
+def test_kept_fx_sorts_badge_runs_and_unstyled_words(chart):
+    """Only a chart-styled status word's FX layer is derived state; badge or token runs and other words are kept work."""
+    base = SimpleNamespace(name="Ability")
+    names = ["Ability FX: (1CD) | (3U) | (OYT) | (ENDT)", "Ability FX: [fire]", "Ability FX: Blazing", "Ability FX: Frozen#2",
+             "Ability FX: Smoldering", "Ability FX: +2/4/6 ATK", "Ability FX: 1#1"]
+    fx = [SimpleNamespace(name=name) for name in names]
+    assert [pe.fx_label(base, layer) for layer in fx] == ["(1CD) | (3U) | (OYT) | (ENDT)", "[fire]", "Blazing", "Frozen",
+                                                           "Smoldering", "+2/4/6 ATK", "1"]
+    assert pe.kept_fx(fx, base, chart) == (names[:2], names[4:])
+    assert pe.kept_fx(fx, base, None) == (names[:2], names[2:])
+
+
+@text_edit
+@pytest.mark.parametrize("rel, badges", [(MINI_DOOMER, "the badge layer Ability FX: (BOT)"),
+                                         (MORPHO, "the badge layer Ability FX: (1CD) | (3U) | (OYT) | (ENDT)")])
+def test_ability_edit_refuses_to_drop_a_badge_layer(clone, parser, chart, rel, badges, tmp_path):
+    """Queue A's gradient cards keep their badge runs on "Ability FX: (BOT)"-style layers the bake cannot make again: an
+    ability edit refuses (unsupported-card) before anything changes, with or without the chart, and bakes nothing."""
+    psd_path = _card(clone, rel)[0]
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)
+    text, fx = layer.text, [f.name for f in pe.fx_layers(psd, layer)]
+    for table in (chart, None):
+        with pytest.raises(pe.Refused) as refused:
+            pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), table)
+        assert refused.value.code == "unsupported-card" and refused.value.why == f"ability edit would drop {badges}; edit in Photoshop"
+    assert layer.text == text and [f.name for f in pe.fx_layers(psd, layer)] == fx
+    with pytest.raises(pe.Refused, match="badge layer"):
+        _bake(clone, parser, rel, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
+    assert not list(tmp_path.iterdir())
+
+
+@text_edit
+def test_inserted_text_takes_the_body_fill(clone, chart, tmp_path):
     """set_text(keep="runs") gives inserted text the run before it; after a status word that is the swatch colour."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     old = pe.ability_layer(psd).text
     white, green = (1.0, 1.0, 1.0), tuple(round(v, 3) for v in chart["poison"].fill)
     pe.set_text_layer(psd, "ability", old + " Inflict Poison.", fonts, chart)
@@ -774,7 +861,7 @@ def test_inserted_text_takes_the_body_fill(clone, chart):
     assert pe.body_fill(layer, chart) == white
 
 
-@text_engine
+@text_edit
 def test_replacing_a_status_word_drops_its_colour(clone, chart):
     path = _card(clone, ASTR)[0]
     fonts = str(clone / pe.FONTS_DIR)
@@ -787,15 +874,15 @@ def test_replacing_a_status_word_drops_its_colour(clone, chart):
         assert _fills(pe.ability_layer(psd))[-len(tail):] == tail
 
 
-@text_engine
-def test_styled_status_word_gets_an_fx_layer(clone, chart):
+@text_edit
+def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     """Idea 14 in memory on Mini_Doomer: Blazing is styled on the chart, so the edit cuts "Ability FX: Blazing" from the new
     raster (the ability's own pixels under the word), directly above Text, carrying the chart layer's lfx2/lrFX bytes and a
     fresh layer id; the word keeps the swatch. FX layers are derived state: the next edit rebuilds them, a repeat is numbered
     and a removed word leaves nothing behind."""
     assert sorted(c.name for c in chart.values() if c.styled) == STYLED
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     count = len(list(psd.descendants()))
     white, red = (1.0, 1.0, 1.0), (1.0, 0.0, 0.0)
     edit = pe.set_text_layer(psd, "ability", "Inflict Blazing.", fonts, chart)
@@ -823,12 +910,12 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart):
     assert len(list(psd.descendants())) == count
 
 
-@text_engine
-def test_status_words_are_normalized_to_the_chart(clone, chart):
+@text_edit
+def test_status_words_are_normalized_to_the_chart(clone, chart, tmp_path):
     """The chart is the authority (design 14 q6): a status word the edit leaves alone takes its swatch too (a grey Poison turns
     the chart's green), and an edit touching a styled word no longer refuses (round 1's styled-word)."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     layer = pe.ability_layer(psd)
     layer.set_text("Inflict Poison. Die.", keep="runs")
     layer.set_span_style(8, 14, fill=(0.5, 0.5, 0.5))
@@ -840,7 +927,7 @@ def test_status_words_are_normalized_to_the_chart(clone, chart):
     assert _fills(pe.ability_layer(psd))[1][0] == "Blazing" and [fx.name for fx in pe.fx_layers(psd, pe.ability_layer(psd))] == ["Ability FX: Blazing"]
 
 
-@text_engine
+@text_edit
 def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
     """Fire Staff's hand-made "Smoldering" overlay carries a Stroke the chart knows nothing about: nothing could stand in for it."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -853,12 +940,12 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
         pe.set_text_layer(psd, "ability", text + " Die.", fonts, None)
 
 
-@text_engine
-def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
+@text_edit
+def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch, tmp_path):
     """styled-word now means this psd-tools cannot cut glyph pixels: with the rasterizer gone a styled word refuses before
     anything changes, an unstyled one still bakes."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     before = pe.ability_layer(psd).text
     monkeypatch.setitem(sys.modules, "psd_tools.composite.text.raster", None)
     with pytest.raises(pe.Refused, match="cannot cut glyph pixels") as refused:
@@ -867,14 +954,15 @@ def test_fx_without_the_engine_refuses_styled_word(clone, chart, monkeypatch):
     assert pe.set_text_layer(psd, "ability", "Inflict Poison.", fonts, chart).fx == []
 
 
-@text_engine
+@text_edit
 @pytest.mark.parametrize("rel, floor", [(GASOLINE, 0.95), (CANNON, 0.9)])
 def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_path):
     """The proof against Effect Layers.jsx (Convert overlays on the 2026-10-20 trial copies): regenerating the FX layer for
     the unchanged text cuts the same word (IoU 0.966 / 0.937 with the JSX pixel cut, 99.9% / 100% of our ink on its ink: the
     rest is the fork's raster against Photoshop's), hides the overlay, passes the validator's coverage (1.0) and the bytes
-    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline."""
-    psd_path = _card(clone, rel)[0]
+    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
+    clone's versions before the JSX ran on them (OVERLAID)."""
+    psd_path = _overlaid(clone, rel, tmp_path)
     psd = PSDImage.open(psd_path)
     text = pe.ability_layer(psd).text
     assert [pe.collapse(o.text) for o in pe.overlay_words(psd)] == ["Blazing"]
@@ -900,16 +988,17 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     pe.gate_reparse(parser, old, saved, rel, {}, reopened, [edit])
 
 
-@text_engine
+@text_edit
 def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, chart, tmp_path):
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
     within the parity bar, the validator clean, nothing outside the region; a second bake on the result drops Frozen and
     numbers the repeated Blazing, the old layers removed and the new ones added in the record diff."""
-    psd_path, png_path = _card(clone, MINI_DOOMER)
+    psd_path, png_path = _plain(clone, tmp_path)
     old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
     one = tmp_path / "one"
     one.mkdir()
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Blazing and Frozen."}, one, chart)
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Blazing and Frozen."}, one, chart,
+                          paths=(psd_path, png_path))
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD), ("Ability FX: Blazing", ["added"]),
                                                                      ("Ability FX: Frozen", ["added"])]
     assert baked.fx == ["Ability FX: Blazing", "Ability FX: Frozen"] and (baked.flag_bytes, baked.block_bytes) == (0, 2 * 5916)
@@ -939,19 +1028,20 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
         ("Ability FX: Blazing#1", ["added"]), ("Ability FX: Blazing#2", ["added"])]
     assert again.fx == ["Ability FX: Blazing#1", "Ability FX: Blazing#2"] and again.reparse["validator"] == []
     assert again.edits[0].dropped == ["Ability FX: Blazing", "Ability FX: Frozen"]
+    assert pe.stale_stories(PSDImage.open(again.psd_path)) == []
     print("timings", {k: round(v, 2) for k, v in baked.timings.items()}, {k: round(v, 2) for k, v in again.timings.items()})
 
 
-@text_engine
-def test_too_long_ability_refuses_overflow(clone, chart):
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+@text_edit
+def test_too_long_ability_refuses_overflow(clone, chart, tmp_path):
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
     text = pe.normalize_ability(pe.ability_layer(psd).text)
     with pytest.raises(pe.Refused) as refused:
         pe.set_text_layer(psd, "ability", " ".join([text] * 4), str(clone / pe.FONTS_DIR), chart)
     assert refused.value.code == "overflow"
 
 
-@text_engine
+@text_edit
 def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
     """Both `font` refusals, whatever this machine has installed: the fork's lookup is made to miss Termination Shock's
     OCR A Extended (Q5), then to find Anubisath's title face only loosely."""
@@ -978,3 +1068,164 @@ def test_baseline_refuses_a_region_the_fork_renders_wrong(clone, parser, tmp_pat
     with pytest.raises(pe.Refused) as refused:
         _bake(clone, parser, rel, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
     assert refused.value.code == "parity" and not list(tmp_path.iterdir())
+
+
+# ========================
+# Txt2 stories (the copy of the text Photoshop reads)
+# ========================
+def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:
+    """A pre-fix bake's PSD: the title set in TySh alone (the fork's set_text, then the old story put back)."""
+    psd = PSDImage.open(_card(clone, rel)[0])
+    layer = pe.name_layer(psd)
+    index = pe.story_index(layer)
+    items = pe._story_list(pe._txt2(psd))[2]
+    old = deepcopy(items[index])
+    layer.set_text(title)
+    items[index] = old
+    path = tmp_path / Path(rel).name
+    pe.save_psd(psd, str(path), update_preview=False)
+    return str(path), index
+
+
+@text_edit
+@pytest.mark.parametrize("rel", NAMED)
+def test_story_reader_agrees_with_the_fork(clone, rel):
+    """psd_edit reads Txt2 itself (the gates check the fork): its story per layer is the fork's story_text."""
+    psd = PSDImage.open(_card(clone, rel)[0])
+    texts = pe.stories(psd)
+    layers = [layer for layer in psd.descendants() if layer.kind == "type"]
+    assert layers and [texts[pe.story_index(layer)] for layer in layers] == [layer.story_text for layer in layers]
+    assert pe.stale_stories(psd) == []
+
+
+@text_edit
+def test_gate_stories_refuses_a_tysh_only_edit(clone, tmp_path):
+    """The 2026-10-22 flaw: the title changed in TySh, its story did not; Photoshop would show the old title."""
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    path, index = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    stale = PSDImage.open(path)
+    assert pe.stale_stories(stale) == [("Name", title + "\r", _typo_fix(title) + "\r")]
+    with pytest.raises(pe.Refused, match="Name's Txt2 story holds") as refused:
+        pe.gate_stories(PSDImage.open(_card(clone, MINI_DOOMER)[0]), stale, {index})
+    assert refused.value.code == "bytes"
+
+
+@text_edit
+def test_gate_stories_refuses_changes_beyond_the_edit(clone):
+    """Another layer's story, Txt2 outside the stories, or another document block: refused."""
+    path = _card(clone, MINI_DOOMER)[0]
+    old, new = PSDImage.open(path), PSDImage.open(path)
+    assert pe.gate_stories(old, new, set()) == []
+    ability = pe.story_index(pe.ability_layer(new))
+    features = pe._story_list(pe._txt2(new))[2][ability]["0"]["6"]["0"][0]["0"]["0"]["6"]
+    features["1"] = engine_data.Float(99.0)                     # the ability's font size, in its story alone
+    with pytest.raises(pe.Refused, match=rf"stories \[{ability}\] changed: no edit there"):
+        pe.gate_stories(old, new, {pe.story_index(pe.name_layer(new))})
+    with pytest.raises(pe.Refused, match="Ability's Txt2 story has other styles: FontSize at 0-72: layer 50.0, story 99.0"):
+        pe.gate_stories(old, new, {ability})                    # the layer's own size disagrees: Photoshop shows 99
+    pe.ability_layer(new).engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]["FontSize"] = \
+        engine_data.Float(99.0)
+    assert pe.gate_stories(old, new, {ability}) == [ability]
+    new = PSDImage.open(path)
+    pe._txt2(new)["1"]["0"]["99"] = engine_data.Integer(1)      # DocumentSettings gains a key
+    with pytest.raises(pe.Refused, match="outside its stories"):
+        pe.gate_stories(old, new, set())
+    new = PSDImage.open(path)
+    blocks = new._record.layer_and_mask_information.tagged_blocks
+    del blocks[next(key for key in blocks.keys() if key != Tag.TEXT_ENGINE_DATA)]
+    with pytest.raises(pe.Refused, match="document blocks changed"):
+        pe.gate_stories(old, new, set())
+
+
+@text_edit
+def test_ability_edit_keeps_a_forced_line_break(clone, chart, tmp_path):
+    """Mini Doomer's "it. \x03(BOT) Die.": the website's newline there stays a soft break, its paragraph runs as they were."""
+    psd = PSDImage.open(_plain(clone, tmp_path)[0])
+    layer = pe.ability_layer(psd)
+    old = layer.text
+    assert "it. \x03(BOT) Die." in old
+    pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Inflict Poison.", str(clone / pe.FONTS_DIR), chart)
+    assert layer.text == old.rstrip() + " Inflict Poison."
+    runs = [int(n) for n in layer.engine_dict["ParagraphRun"]["RunLengthArray"]]
+    model = pe._story_list(pe._txt2(psd))[2][pe.story_index(layer)]["0"]
+    assert runs == [int(run["1"].value) for run in model["5"]["0"]] == [72, len(layer.text) + 1 - 72]
+    assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []
+
+
+@text_edit
+def test_icon_font_tokens_and_colour_glyphs(clone, chart):
+    """The_Hive is set in stoogedings: a typed [fire] takes the icon font in TySh and the story; its colour glyphs
+    would come out white with no overlay over the ability (Mini Doomer's gradient covers them), so it refuses."""
+    psd = PSDImage.open(_card(clone, "Field/4 Stars/The_Hive.psd")[0])
+    layer = pe.ability_layer(psd)
+    assert pe.uses_icon_font(layer) and pe.icon_font(layer) == "stoogedings-Regular"
+    assert not pe.uses_icon_font(pe.name_layer(psd)) and not pe._overlaid(layer)
+    assert pe._overlaid(pe.ability_layer(PSDImage.open(_card(clone, MINI_DOOMER)[0])))
+    text = pe.normalize_ability(layer.text) + " Deal 1 [fire] damage."
+    with pytest.raises(pe.Refused, match="colour glyphs") as refused:
+        pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
+    assert refused.value.code == "font"
+    start = layer.text.index("[fire]")
+    fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
+    style, unit = layer.engine_dict["StyleRun"], 0
+    for n, run in zip(style["RunLengthArray"], style["RunArray"]):
+        if unit <= start < unit + int(n):
+            assert fonts[int(run["StyleSheet"]["StyleSheetData"]["Font"])] == "stoogedings-Regular"
+            assert unit + int(n) == start + len("[fire]")
+        unit += int(n)
+    assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []     # the story's font is the same
+
+
+@text_edit
+def test_story_style_drift_catches_a_tysh_only_fill(clone, tmp_path):
+    """A fill written to TySh alone: Photoshop would show the story's colour. The bake refuses such a card."""
+    path, png = _card(clone, MINI_DOOMER)
+    psd = PSDImage.open(path)
+    assert pe.story_style_drift(psd) == []
+    data = pe.ability_layer(psd).engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]
+    data["FillColor"]["Values"][1] = engine_data.Float(0.0)
+    assert pe.story_style_drift(psd) == [("Ability", "FillColor at 0-72: layer [1.0, 0.0, 1.0, 1.0], story [1.0, 1.0, 1.0, 1.0]")]
+    with pytest.raises(pe.Refused, match="Ability's Txt2 story has other styles: FillColor"):
+        pe.gate_stories(PSDImage.open(path), psd, set())
+    drifted = tmp_path / "drifted.psd"
+    pe.save_psd(psd, str(drifted), update_preview=False)
+    with pytest.raises(pe.Refused, match="other styles") as refused:      # checked before any job or parse
+        pe.apply_jobs(str(drifted), png, MINI_DOOMER, {"hp": 8}, {}, None, str(tmp_path), str(clone / pe.FONTS_DIR))
+    assert refused.value.code == "unsupported-card"
+
+
+@text_edit
+def test_gate_stories_refuses_a_dropped_text_index(clone):
+    """A layer without its TextIndex leaves its story orphaned (a fork whose edits drop it): refused, not passed."""
+    path = _card(clone, MINI_DOOMER)[0]
+    old, new = PSDImage.open(path), PSDImage.open(path)
+    layer = pe.name_layer(new)
+    index = pe.story_index(layer)
+    del layer._data.text_data[b"TextIndex"]
+    with pytest.raises(pe.Refused, match="TextIndex") as refused:
+        pe.gate_stories(old, new, {index})
+    assert refused.value.code == "bytes" and str(index) in refused.value.why
+
+
+@text_edit
+def test_bake_refuses_a_card_with_a_stale_story(clone, parser, tmp_path):
+    """A pre-fix bake's PSD is refused until txt2_repair has run on it, whatever the job."""
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    path, _ = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    parsed = pe.parse_card(parser, path, MINI_DOOMER)
+    with pytest.raises(pe.Refused, match="Txt2 story is stale") as refused:
+        pe.apply_jobs(path, _card(clone, MINI_DOOMER)[1], MINI_DOOMER, {"hp": 8}, parsed, parser, str(out),
+                      str(clone / pe.FONTS_DIR))
+    assert refused.value.code == "unsupported-card" and not any(out.iterdir())
+
+
+@text_engine
+def test_text_edit_needs_the_story_sync(clone, chart, monkeypatch):
+    """A fork whose set_text writes TySh alone never edits a card: ImportError, which the bake reports as transient."""
+    monkeypatch.setattr(pe, "story_sync", lambda: False)
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    with pytest.raises(ImportError, match="Txt2 story stale"):
+        pe.set_text_layer(psd, "name", "Mini Doomer II", str(clone / pe.FONTS_DIR), chart)
+    assert pe.read_name(psd) == "Mini Doomer"

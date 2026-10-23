@@ -1,0 +1,1518 @@
+"""
+The card data build, without Discord, pandas or config: the card repo's tree, the PSDs whose blob changed re-parsed
+(one bad PSD fails its card, never the run), then the authors file, Card Edits.json, the duplicate PNGs and the archive
+of deleted cards.
+
+Two modes. Legacy (/update_stats, repo_traverser.update_stats): the GitHub API, the root pickles and psd_details.json,
+history as /update_stats kept it (a version per changed blob or move) but only on a data change. The build
+(`python -m commands.card_data`): a local clone's tree and history, db/ JSON through card_db, versions only on data
+changes (card_history), changelog events and the gates. Design:
+docs/Campaigns/DATA_BUILD_ACTION.md (sections 7 and 13).
+"""
+from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from json import loads as json_loads
+from os import environ, fdopen, listdir, remove, walk
+from os.path import abspath, basename, dirname, isdir, isfile, join as path_join, splitext
+from re import IGNORECASE, match as re_match
+from subprocess import CalledProcessError, run
+from sys import version_info
+from tempfile import mkstemp
+from threading import local
+from typing import Callable, Optional
+
+from requests.exceptions import RequestException
+
+from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RAW_BASE,
+                           RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from commands.card_edits import CardAuthors, CardEdits
+from commands.card_models import CardInfo, StatsDatabase, card_name
+from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
+from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
+
+# ========================
+# Configuration
+# ========================
+UPDATE_RATE = 25
+DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
+LOOKUP_WORKERS = 2                                                # commit lookups ahead of parsing
+COMMITS_PAGE = 100                                                # commits per request: newest and first in one
+EXCLUDE_FOLDERS = ["Markers", "MDW"]
+PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
+
+
+# ========================
+# The build
+# ========================
+class CardBuild:
+    """
+    One build over the card repo (repo_traverser calls it RepositoryTraverser). The source is the GitHub API here
+    (_fetch_tree, _repo_text, _download, _get_remote_timestamp); GitBuild reads a local clone instead.
+
+    Args:
+        db: The database it updates in place
+        report: One message (default print); /update_stats sends it to Discord
+        progress: The running parse count (default: PROGRESS printed)
+        aliases: alias -> PNG file name (aliases.pkl), the duplicates' names until Card Edits.json has aliases_moved
+            (a duplicate's own Card Edits.json aliases count either way)
+        etags: repository -> the last kept tree ETag (/update_stats keeps it between runs for a free 304)
+        file_cache: repo path -> (blob sha, text) of the small files, kept between runs
+        legacy: History as /update_stats keeps it (a version per changed blob or move whose data changed; old paths
+            follow the card)
+    """
+    def __init__(self, db: StatsDatabase, report: Optional[Callable] = None, progress: Optional[Callable] = None,
+                 aliases: Optional[dict] = None, etags: Optional[dict] = None, file_cache: Optional[dict] = None,
+                 legacy: bool = True):
+        self.db = db
+        self.report = report or print
+        self.progress = progress or (lambda count: print(PROGRESS.format(count=count)))
+        self.aliases = aliases if aliases is not None else {}
+        self.etags = etags if etags is not None else {}
+        self.file_cache = file_cache if file_cache is not None else {}
+        self.legacy = legacy
+        self.parser: Optional[PSDParser] = None
+        self._local = local()                    # a PyGithub client per thread: one client isn't thread-safe
+        self._lookups: dict = {}                 # repo path -> Future of its commit page
+        self.edits: Optional[CardEdits] = None
+        self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
+        self.failed = 0                          # failed downloads and PSDs: the tree ETag is not kept, so the next run retries
+        self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
+        self.unreadable: list = []               # PSDs that raised while read: {path, blob, error}; their cards keep their data
+        self.only: set = set()                   # card names to re-parse anyway (/update_stats cards:)
+        self.again: set = set()                  # paths to re-parse anyway (the build: last run's pending.stale)
+        self.lost: list = []                     # files not fetched (downloads, small files): the build fails red
+        self.unlooked: list = []                 # PSDs whose commit lookup raised (legacy: a 5xx, a rate limit)
+        self.repository = ""
+        self.shas: dict = {}                     # repo path -> blob sha, from the tree
+        self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
+        self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
+        self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
+        self.details_changed = 0                 # records gathered this run
+        self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
+        self._recent: Optional[set] = None
+        self.restored: list = []                 # archived cards whose PSD is back
+        self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
+        self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the build's history)
+        self.replaced: dict = {}                 # legacy: name -> its card before, when its PSD changed or moved (history)
+
+    # ------------------------
+    # The source: GitHub
+    # ------------------------
+    def _fetch_tree(self, repository: str, etag: str):
+        """The recursive tree (a 304 on etag)."""
+        return fetch_tree(repository, etag)
+
+    def _committed_since_update(self) -> Optional[set]:
+        """Paths committed after the newest stored card timestamp (one pass over those commits), or None."""
+        if self._recent is None:
+            newest = max((c.timestamp for c in self.db.stats.values() if (c.timestamp or 0) > 0), default=0)
+            if not newest:
+                return None
+            from github import Github
+            repo = Github(login_or_token=GIT_TOKEN).get_repo(self.repository)
+            self._recent = {f.filename for commit in repo.get_commits(since=datetime.fromtimestamp(newest, timezone.utc))
+                            for f in commit.files}
+        return self._recent
+
+    def _repo(self):
+        """This thread's repo (its own client and connection; lazy: no request)."""
+        repo = getattr(self._local, "repo", None)
+        if repo is None:
+            from github import Github
+            repo = Github(login_or_token=GIT_TOKEN, per_page=COMMITS_PAGE).get_repo(self.repository, lazy=True)
+            self._local.repo = repo
+        return repo
+
+    def _commit_page(self, path: str) -> Optional[list]:
+        """A file's newest commits (all of them up to COMMITS_PAGE): one request."""
+        repo = self._repo()
+        return repo.get_commits(path=path).get_page(0) if repo else None
+
+    def _blob(self, sha: str, stream: bool = False):
+        """A file's exact content by blob sha (raw.githubusercontent can lag behind the tree)."""
+        return fetch_blob(self.repository, sha, stream=stream, timeout=120)
+
+    def _repo_text(self, path: str) -> Optional[str]:
+        """A small repo file's text; downloaded again only when its blob changed."""
+        sha = self.shas.get(path)
+        if sha is None:
+            return None
+        cached = self.file_cache.get(path)
+        if not cached or cached[0] != sha:
+            self.file_cache[path] = cached = (sha, blob_text(self.repository, sha, timeout=120))
+        return cached[1]
+
+    def _download(self, path: str, sha: str) -> Optional[str]:
+        """A PSD into a temp file, or None. fetch_blob retries a 5xx; a stream that breaks gets one more try (a 15 MB
+        stream breaks now and then)."""
+        for last in (False, True):
+            try:
+                reply = self._blob(sha, stream=True)
+            except RequestException as e:                       # tried 3 times already
+                print(f"{path}: download failed ({e})")
+                return None
+            name, done = None, False
+            try:
+                with reply:
+                    fd, name = mkstemp(suffix=".psd")
+                    with fdopen(fd, "wb") as fh:
+                        for chunk in reply.iter_content(1 << 20):
+                            fh.write(chunk)
+                done = True
+                return name
+            except (RequestException, OSError) as e:
+                print(f"{path}: download failed ({e})" + ("" if last else "; trying once more"))
+            finally:
+                if not done and name is not None and isfile(name):      # partial download
+                    remove(name)
+        return None
+
+    def _get_remote_timestamp(self,
+                              repo,
+                              path: str,
+                              name: str) -> tuple[float, Optional[str]]:
+        """
+        Get timestamp for a file from GitHub.
+
+        Uses the most recent commit for timestamp, but preserves original author
+        from the first commit if not already set.
+        """
+        if not repo:
+            return (datetime(1000, 1, 1).timestamp(), None)
+
+        pending = self._lookups.pop(path, None)                 # started beside the download
+        commits = pending.result() if pending is not None else self._commit_page(path)
+        if not commits:
+            return (datetime(1000, 1, 1).timestamp(), None)
+
+        # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
+        # (AUTHORS_PATH) corrects either afterwards.
+        if name not in self.db.stats or not self.db.stats[name].author:
+            first = (commits[len(commits) - 1] if len(commits) < COMMITS_PAGE
+                     else repo.get_commits(path=path).reversed[0])     # more than one page: fetch the last
+            return (commits[0].commit.committer.date.timestamp(), first.commit.author.name)
+
+        return (commits[0].commit.committer.date.timestamp(), None)
+
+    def _lookup_ahead(self, todo: list) -> Optional[ThreadPoolExecutor]:
+        """Commit lookups started beside the downloads (the GitHub source only)."""
+        lookups = ThreadPoolExecutor(LOOKUP_WORKERS)
+        self._lookups = {path: lookups.submit(self._commit_page, path) for path, _, _ in todo}
+        return lookups
+
+    # ------------------------
+    # The traversal
+    # ------------------------
+    def _update_old_stats_paths(self) -> None:
+        """
+        Update paths in old_stats to match current paths.
+        This ensures historical entries reflect where the card is now located.
+        """
+        for name in self.db.old_stats:
+            if name in self.db.stats:
+                current_path = self.db.stats[name].path
+                # Update all historical entries to use the current path
+                for old_card in self.db.old_stats[name]:
+                    old_card.path = current_path
+
+    def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
+        """Changed = new, moved, an older parser or a different blob. Cards saved before blob shas: committed since the last update."""
+        card = self.db.stats.get(name)
+        if card is None or card.path != path or getattr(card, "parser_version", None) != PARSER_VERSION:
+            return True                           # an older parser's card is read again once (no history: same blob)
+        if getattr(card, "blob_sha", None):
+            return card.blob_sha != sha
+        recent = self._committed_since_update()
+        if recent is None or path in recent:
+            return True
+        card.blob_sha = sha                       # unchanged: remember its blob
+        self.changed += 1
+        return False
+
+    def traverse_remote(self,
+                        repository: str,
+                        output_problematic: bool = True,
+                        force_update: bool = False) -> tuple[list[str], int]:
+        """
+        The tree, the changed PSDs, then authors, edits and duplicates.
+
+        Args:
+            repository: Repository name (owner/repo)
+            output_problematic: Whether to collect the validator's problem cards
+            force_update: Re-parse every card even if its PSD did not change
+
+        Returns:
+            (formatted problem card messages, cards changed or moved)
+        """
+        self.repository = repository
+        stale = any(getattr(c, "parser_version", None) != PARSER_VERSION for c in self.db.stats.values())
+        etag = self.etags.get(repository) if not force_update and not self.only and not stale else None
+        resp = self._fetch_tree(repository, etag or "")             # 304 when nothing changed (free)
+        if resp.status_code == 304:
+            self.report("Nothing changed in the card repo since the last update.")
+            return ([], 0)
+        resp.raise_for_status()
+        self.tree = resp.json()                         # parsed once; the helpers below read it
+        self.etag = resp.headers.get("ETag") or ""
+        self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
+        from commands import psd_details                # lazy: fontTools loads here, not at startup
+        self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts; none on a 304
+
+        self._populate_types_from_response(resp)
+        self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
+
+        self.edits = self._edits_from_response(resp, repository)
+        problems, num_changed = self._process_files_from_response(resp, repository, output_problematic, force_update)
+        self.changed += self._apply_authors(self._authors_from_response(resp, repository))
+        self.changed += self._apply_edits()
+        self.changed += self._sync_duplicates(resp)
+        self.changed += self._apply_edits()             # the duplicates' own edits
+
+        if self.legacy:                                 # the build keeps each version's own path
+            self._record_history()
+            self._update_old_stats_paths()
+        if self.failed:                                 # no 304 next time: the failed files are fetched again
+            self.etags.pop(repository, None)
+            self._send_failures()
+        elif self.font_index is None and psd_details.tree_fonts(self.shas):
+            self.etags.pop(repository, None)            # no fonts: the supplied flags are tried again next run
+        else:
+            self.etags[repository] = resp.headers.get("ETag")
+
+        return (problems, num_changed)
+
+    def _tree_items(self, response) -> list:
+        """The tree's entries: self.tree once traverse_remote parsed it, else the response's."""
+        return (self.tree if self.tree is not None else response.json()).get("tree", [])
+
+    def _populate_types_from_response(self, response) -> None:
+        """Populate card types from API response."""
+        self.db.all_types.clear()
+        for item in self._tree_items(response):
+            path = item.get("path", "")
+            if path.startswith(TYPES_DIR) and "Stars" not in path and '.' in path:
+                self.db.all_types.append(splitext(basename(path))[0].lower())
+
+    def _populate_types_from_local(self, local_path: str) -> None:
+        """Populate card types from a local clone (offline diagnostics; /update_stats itself only reads GitHub)."""
+        self.db.all_types.clear()
+        types_dir = path_join(local_path, TYPES_DIR)
+        for folder, _, files in walk(types_dir):
+            if folder.endswith(TYPES_DIR):
+                for file in files:
+                    if not file.startswith('.'):
+                        self.db.all_types.append(splitext(file)[0].lower())
+
+    @staticmethod
+    def _star_name(path: str) -> str:
+        """Types/Stars/Dst Star.png -> "dst_star" (the name the icon font uses)."""
+        return splitext(basename(path))[0].lower().replace(" ", "_")
+
+    def _icons_from_response(self, response, repository: str) -> IconVocabulary:
+        """Icon vocabulary from the GitHub tree: Types/ and Types/Stars/ names plus the font's manifest, if any."""
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        stars = [self._star_name(p) for p in paths if p.startswith(STARS_DIR + "/") and p.lower().endswith(".png")]
+        manifest = None
+        if ICON_MANIFEST_PATH in paths:
+            try:
+                manifest = json_loads(self._repo_text(ICON_MANIFEST_PATH))
+            except (RequestException, ValueError) as e:
+                if isinstance(e, RequestException):
+                    self.failed += 1
+                    self.lost.append(ICON_MANIFEST_PATH)
+                print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
+        return IconVocabulary.build(self.db.all_types, stars, manifest)
+
+    def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
+        """The card repo's authors file (the first of AUTHORS_PATHS in the tree), or None if missing or unreadable."""
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        path = next((p for p in AUTHORS_PATHS if p in paths), None)
+        if path is None:
+            return None
+        try:
+            return CardAuthors.parse(self._repo_text(path))
+        except RequestException as e:
+            self.failed += 1
+            self.lost.append(path)
+            print(f"Could not read {path}; authors stay as they are: {e}")
+            return None
+
+    def _apply_authors(self, authors: Optional[CardAuthors]) -> int:
+        """Set every card's author from the authors file (all cards, not just re-parsed ones). Returns how many changed."""
+        if authors is None:
+            return 0
+        changed = 0
+        for name, card in self.db.stats.items():
+            author = authors.resolve(name, card.author)
+            if author != card.author:
+                card.author = author
+                changed += 1
+        if changed:
+            print(f"{changed} authors set from {AUTHORS_PATH}.")
+        return changed
+
+    def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
+        """The card repo's website fixes (the first of EDITS_PATHS in the tree), or None if missing or unreadable."""
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        path = next((p for p in EDITS_PATHS if p in paths), None)
+        if path is None:
+            return None
+        try:
+            return CardEdits.parse(self._repo_text(path))
+        except (RequestException, ValueError) as e:
+            if isinstance(e, RequestException):
+                self.failed += 1
+                self.lost.append(path)
+            print(f"Could not read {path}; edits stay as they are: {e}")
+            return None
+
+    def _sync_duplicates(self, response) -> int:
+        """
+        Duplicates: <Name>N.png next to <Name>.psd with no PSD of its own (A_Snack2.png "Breakfast"). Each is
+        recorded as a copy of the original's card with duplicate_of set. Returns how many entries changed.
+        """
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        lower = {p.lower() for p in paths}
+        found = {}
+        for path in paths:
+            m = re_match(r"(.+?)(\d+)\.png$", path, IGNORECASE)
+            if (not m or any(folder in EXCLUDE_FOLDERS for folder in path.split("/")) or RULEBOOK_DIR in path
+                    or f"{m.group(1)}{m.group(2)}.psd".lower() in lower or f"{m.group(1)}.psd".lower() not in lower):
+                continue
+            original = basename(m.group(1)).replace("_", " ")
+            if original in self.db.stats and not self.db.stats[original].duplicate_of:
+                found[card_name(path)] = (original, int(m.group(2)), basename(path).lower())
+        before = {n: repr(c) for n, c in self.db.stats.items() if getattr(c, "duplicate_of", None)}
+        for name in before:
+            if name not in found:
+                del self.db.stats[name]
+        siblings: dict = {}
+        for name, (original, number, _) in found.items():
+            siblings.setdefault(original, []).append(number)
+        moved = self.edits is not None and self.edits.aliases_moved     # aliases.pkl moved into Card Edits.json
+        for name, (original, number, png) in found.items():
+            src = self.db.stats[original]
+            card = deepcopy(src)
+            card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
+            own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
+            card.display_name = self._duplicate_name(png, src, number, sorted(siblings[original]),
+                                                     {} if moved else self.aliases, own)
+            self.db.stats[name] = card
+            self.db.seen_cards.append(name)             # not pruned as a missing PSD
+        return sum(1 for n in found if before.get(n) != repr(self.db.stats[n])) + sum(1 for n in before if n not in found)
+
+    @staticmethod
+    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None,
+                        own: Optional[list] = None) -> str:
+        """
+        The longest alias of this PNG (aliases.pkl's pointing at it, and own: its Card Edits.json entry's), else the
+        PSD's hidden title in order, else the original's name.
+        """
+        found = [a for a, target in (aliases or {}).items() if target.lower() == png] + [a for a in own or [] if a.strip()]
+        if found:
+            return " ".join(w[:1].upper() + w[1:] for w in max(found, key=len).replace("_", " ").split())
+        titles = getattr(original, "alt_names", None) or []
+        if len(titles) == len(numbers):
+            return titles[numbers.index(number)]
+        return original.display_name or original.name
+
+    def _apply_edits(self) -> int:
+        """Apply the website fixes to every card. Returns how many changed."""
+        if self.edits is None:
+            return 0
+        changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
+        if changed:
+            print(f"{changed} cards changed by {EDITS_PATH}.")
+        return changed
+
+    def _icons_from_local(self, local_path: str) -> IconVocabulary:
+        """Icon vocabulary from a local clone: Types/ and Types/Stars/ names plus the font's manifest, if any."""
+        stars_dir = path_join(local_path, STARS_DIR)
+        stars = [self._star_name(f) for f in listdir(stars_dir) if f.lower().endswith(".png")] if isdir(stars_dir) else []
+        manifest = None
+        manifest_path = path_join(local_path, ICON_MANIFEST_PATH)
+        if isfile(manifest_path):
+            try:
+                with open(manifest_path, encoding="utf-8") as fh:
+                    manifest = json_loads(fh.read())
+            except (OSError, ValueError) as e:
+                print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
+        return IconVocabulary.build(self.db.all_types, stars, manifest)
+
+    def _todo(self, response, force_update: bool) -> tuple[list, int]:
+        """The tree's card PSDs to re-parse (path, name, blob) and how many stay; archived names back are restored."""
+        todo, num_old = [], 0
+        for item in self._tree_items(response):
+            path = item.get("path", "")
+            if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
+                continue
+            name = card_name(path)
+            self.db.seen_cards.append(name)
+            if name not in self.db.stats and self.db.restore(name, path, item.get("sha")):  # same blob: no download
+                self.restored.append(name)
+                self.changed += 1
+            if (force_update or CardAuthors.key(name) in self.only or path in self.again
+                    or self._psd_changed(name, path, item.get("sha"))):
+                todo.append((path, name, item.get("sha")))
+            else:
+                num_old += 1
+        return (todo, num_old)
+
+    def _process_files_from_response(self,
+                                     response,
+                                     repository: str,
+                                     output_problematic: bool,
+                                     force_update: bool) -> tuple[list[str], int]:
+        """Re-parse the PSDs whose blob changed (all with force_update). Unchanged cards cost no requests."""
+        problematic_cards = []
+        num_updated = num_changed = num_moved = 0
+        todo, num_old = self._todo(response, force_update)
+
+        pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
+        downloads = [pool.submit(self._download, path, sha) for path, _, sha in todo]
+        lookups = self._lookup_ahead(todo)              # commit lookups overlap the downloads too
+        try:
+            for (path, name, sha), download in zip(todo, downloads):
+                local_file = download.result()
+                if local_file is None:
+                    if self._held(path, name):                  # the build: past its download budget, read next run
+                        continue
+                    self.failed += 1
+                    self.failed_new += name not in self.db.stats or name in self.restored
+                    self.lost.append(path)
+                    continue
+                try:
+                    timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
+                except Exception as e:                          # a 5xx or rate limit: no date, the card waits
+                    remove(local_file)
+                    self._not_looked_up(path, name, e)
+                    continue
+                try:
+                    card = self.parser.parse(local_file, path)
+                    self._gather_details(local_file, path, name, sha)
+                except Exception as e:                          # one bad PSD: its card keeps its data, the run goes on
+                    self._unreadable(path, name, sha, e)
+                    continue
+                finally:
+                    remove(local_file)
+                old = self.db.stats.get(name)
+                if old is None or getattr(old, "blob_sha", None) != sha:
+                    self.new_blobs.setdefault(sha, name)
+                if old is None:
+                    num_changed += 1
+                else:
+                    self._history(name, old, path, sha)
+                    if old.path != path:
+                        num_moved += 1
+                    else:
+                        num_changed += 1
+                self.reparsed[name] = (old, path, sha)
+                card.timestamp = timestamp
+                card.blob_sha = sha
+                if author and not card.author:
+                    card.author = author
+                if self.edits:
+                    self.edits.apply(name, card)
+                self.db.stats[name] = card
+
+                if output_problematic:
+                    problems = CardValidator.validate(card)
+                    if problems:
+                        problematic_cards.append((path, card, problems))
+
+                num_updated += 1
+                if num_updated % UPDATE_RATE == 0:
+                    self.progress(num_updated)
+        finally:
+            self._lookups = {}
+            if lookups is not None:
+                lookups.shutdown(wait=False, cancel_futures=True)
+            for download in downloads:
+                download.cancel()
+            pool.shutdown(wait=True)
+            for download in downloads:                          # temp files left by an error
+                if download.done() and not download.cancelled() and download.result() and isfile(download.result()):
+                    remove(download.result())
+
+        self.report(f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
+        return (self._format_problems(problematic_cards), num_changed + num_moved)
+
+    def _held(self, path: str, name: str) -> bool:
+        """Whether a PSD without a file was held back on purpose (GitBuild's budget), not failed."""
+        return False
+
+    def _history(self, name: str, old: CardInfo, path: str, sha: str) -> None:
+        """Legacy: the card before, when its PSD changed or moved, is history if its data did (_record_history, after the
+        authors and edits). The build decides after edits too (card_history)."""
+        if self.legacy and (old.path != path or getattr(old, "blob_sha", None) != sha):
+            self.replaced.setdefault(name, old)
+
+    def _record_history(self) -> None:
+        """Legacy: each replaced card becomes a version when its data changed; the same data is no version (the blob,
+        path, date and parse bookkeeping are no data), the card keeping its start for as_of (card_history.carry)."""
+        from commands.card_history import carry, same_data
+        for name, old in self.replaced.items():
+            card = self.db.stats.get(name)
+            if card is None:
+                continue
+            if same_data(old, card):
+                carry(old, card)
+            else:
+                self.db.add_history(name, old)
+        self.replaced = {}
+
+    def _archive_sources(self, names: list) -> None:
+        """
+        Each archived card's deleting commit (its path's newest, one request, run side by side) and, for a rename,
+        the new name: the card new or changed this run with its blob, else the commit's rename of the path (its files
+        read once per commit, only when this run parsed a new blob or restored a card). A failure leaves them unset.
+        """
+        tags = {name: self.db.archive_tag(name) for name in names}
+        tags = {name: tag for name, tag in tags.items() if tag}
+        fresh = set(self.new_blobs.values()) | set(self.restored)
+        renames: dict = {}                                      # commit sha -> {old path: new name}
+        with ThreadPoolExecutor(LOOKUP_WORKERS) as pool:
+            pages = {name: pool.submit(self._commit_page, tag["path"]) for name, tag in tags.items()}
+        for name, tag in tags.items():
+            renamed = self.new_blobs.get(tag["blob"]) if tag.get("blob") else None
+            try:
+                commits = pages[name].result()
+                if commits:
+                    sha = tag["commit"] = commits[0].sha
+                    if renamed is None and fresh:
+                        if sha not in renames:
+                            renames[sha] = {f.previous_filename: card_name(f.filename)
+                                            for f in commits[0].files if f.status == "renamed"}
+                        renamed = renames[sha].get(tag["path"])
+                        renamed = renamed if renamed in fresh else None
+            except Exception as e:
+                print(f"{tag['path']}: deleting commit not found ({e})")
+            if renamed:
+                tag["renamed_to"] = renamed
+
+    def _unreadable(self, path: str, name: str, sha: str, error: Exception) -> None:
+        """Count a PSD that raised as failed (a new name holds the prune, like a failed download); one console line."""
+        print(f"{path}: not read ({error}); its card keeps its last version")
+        self.failed += 1
+        self.failed_new += name not in self.db.stats or name in self.restored
+        self.unreadable.append({"path": path, "blob": sha, "error": str(error)[:300]})
+
+    def _not_looked_up(self, path: str, name: str, error: Exception) -> None:
+        """A PSD whose commit lookup raised: failed like a download (retried next run), its card unchanged."""
+        print(f"{path}: commits not looked up ({error}); its card keeps its last version")
+        self.failed += 1
+        self.failed_new += name not in self.db.stats or name in self.restored
+        self.lost.append(path)
+        self.unlooked.append(path)
+
+    def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
+        """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
+        try:
+            from commands import psd_details                # lazy: fontTools (through font_check) loads with the first parse
+            self.details[sha] = psd_details.gather(local_file, path, name, self.font_index, self.db.all_types)
+            self.details_changed += 1
+        except Exception as e:
+            print(f"{path}: details not gathered ({e})")
+
+    def _send_failures(self) -> None:
+        """The failed downloads, the failed commit lookups, then the PSDs that could not be read (by path)."""
+        unread, unlooked = len(self.unreadable), len(self.unlooked)
+        downloads = self.failed - unread - unlooked
+        if unlooked:
+            self.report(f"Could not look up the commits of {unlooked} PSD{'' if unlooked == 1 else 's'} ("
+                        + ", ".join(self.unlooked[:10]) + (", ..." if unlooked > 10 else "") + "); "
+                        + ("its card keeps its" if unlooked == 1 else "their cards keep their")
+                        + " last version and the next /update_stats tries again.")
+        if downloads:
+            self.report(f"Could not download {downloads} file{'' if downloads == 1 else 's'} from the card repo; "
+                        "the next /update_stats tries again.")
+        if unread:
+            self.report(f"Could not read {unread} PSD{'' if unread == 1 else 's'} from the card repo ("
+                        + ", ".join(u["path"] for u in self.unreadable) + "); "
+                        + ("its card keeps its" if unread == 1 else "their cards keep their")
+                        + " last version and the next /update_stats tries again.")
+
+    @staticmethod
+    def _format_problems(
+        problematic_cards: list[tuple[str, CardInfo, list[str]]]
+    ) -> list[str]:
+        """Format problematic cards for display."""
+        return [
+            f"{path}\n```\n" + '\n'.join(problems) + "\n```"
+            for path, _, problems in problematic_cards
+        ]
+
+
+# ========================
+# Helper Functions
+# ========================
+def can_prune(build: CardBuild) -> bool:
+    """Whether the run saw the whole repo: no 304, no truncated tree, no failed new-name PSD, at least one card."""
+    tree = build.tree
+    if tree is None or build.failed_new:
+        return False
+    if tree.get("truncated") or not build.db.seen_cards:
+        print("Card repo tree truncated or without cards; no card archived.")
+        return False
+    return True
+
+
+def archived_names(db: StatsDatabase, names: list) -> list:
+    """Archived names for the message, a rename's new name beside it."""
+    out = []
+    for name in names:
+        tag = db.archive_tag(name)
+        new = tag.get("renamed_to") if tag else None
+        out.append(f"{name} (now {new})" if new else name)
+    return out
+
+
+def report_archive(build: CardBuild, gone: list, backfilled: list) -> None:
+    """The archived, backfilled and restored names, one message each."""
+    if gone:
+        build.report("Archived (PSD deleted from the card repo): " + ", ".join(archived_names(build.db, gone)))
+    if backfilled:
+        build.report(f"Archived {len(backfilled)} card{'' if len(backfilled) == 1 else 's'} deleted before this update: "
+                     + ", ".join(backfilled))
+    if build.restored:
+        build.report("Restored (PSD back in the card repo): " + ", ".join(sorted(build.restored)))
+
+
+# ========================
+# Legacy mode (/update_stats)
+# ========================
+def update(build: CardBuild, repository: str, output_problematic: bool = True, force_update: bool = False) -> list[str]:
+    """
+    Legacy mode: build.db (loaded from the root pickles) brought to the GitHub tree, then saved there with
+    psd_details.json, exactly as /update_stats always did.
+
+    Args:
+        build: A legacy CardBuild over the loaded database (seen_cards cleared, `only` set)
+        repository: owner/name of the card repo
+        output_problematic: Whether to collect the validator's problem cards
+        force_update: Re-parse every card
+
+    Returns:
+        The formatted problem card messages
+    """
+    from commands import psd_details                # lazy: fontTools loads here, not at startup
+    from commands.card_history import dedupe
+    db = build.db
+    at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
+    build.details = psd_details.load()
+    deduped = dedupe(db.stats, db.old_stats)         # versions archived twice before 2026-10-22 (none after once)
+    if deduped:
+        cards = len({name for name, _ in deduped})
+        build.report(f"History: {len(deduped)} duplicate version{'' if len(deduped) == 1 else 's'} removed "
+                     f"({cards} card{'' if cards == 1 else 's'}).")
+    problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
+
+    gone, backfilled = db.prune_clean_cards(at) if can_prune(build) else ([], [])
+    if gone:
+        build._archive_sources(gone)
+    report_archive(build, gone, backfilled)
+    if num_changed > 0 or gone or backfilled or build.changed or deduped or db.stale_archives():
+        db.save()
+    if build.tree is not None:                      # new blobs in; gone blobs out unless truncated or archived
+        refilled = psd_details.refill(build.details, build.font_index) if build.font_index is not None else 0
+        keep = set(build.shas.values()) | {c.archived["blob"] for c in db.archived().values() if c.archived.get("blob")}
+        keep |= {c.blob_sha for c in db.stats.values() if getattr(c, "blob_sha", None)}   # a failed PSD's card keeps its record
+        pruned = 0 if build.tree.get("truncated") else psd_details.prune(build.details, keep)
+        if pruned or build.details_changed or refilled:
+            psd_details.save(build.details)
+    return problem_cards
+
+
+# ========================
+# The build (python -m commands.card_data)
+# ========================
+# what card-sync.yml checks out of AutoCroissant: the build's import closure, then the bake's and the save's
+# (tests/test_card_data.py runs --help on the three CLIs with exactly this list)
+SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/card_db.py", "commands/changelog.py",
+                "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
+                "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
+                "requirements-card-data.txt",
+                "commands/card_bake.py", "commands/psd_edit.py", "commands/git_commit.py", "commands/repo_history.py",
+                "commands/tts_save.py")
+BOT_REPO = "bobberlington/AutoCroissant"
+BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
+RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left
+MIN_CARDS = 100                                                   # G1: build_site's MIN_CARDS
+FLOOR_SHARE = 0.95                                                # G1: of the cards before
+ARCHIVE_MIN, ARCHIVE_SHARE = 5, 0.01                              # G2: archived per run, at most max(5, 1%)
+REPARSE_MAX = 25                                                  # G4: same-blob re-parses without approval
+QUALITY_SLACK = 3                                                 # G5: cards that may lose a type, ability or stats
+DETAILS_SHARE = 0.05                                              # G5: psd_details records that may go
+EXIT_OK, EXIT_ERROR, EXIT_GATE = 0, 1, 2
+NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}                              # a missing blob fails instead of being fetched
+ALIASES_REF = "main"                                              # aliases.pkl's AutoCroissant ref (ignored once Card Edits.json has aliases_moved)
+
+
+def _git(repo: str, *args: str) -> str:
+    """git -C repo ..., never fetching a blob; raises CalledProcessError on a failure."""
+    done = run(["git", "-C", repo, *args], capture_output=True, env={**environ, **NO_LAZY})
+    if done.returncode != 0:
+        raise CalledProcessError(done.returncode, ["git", *args], done.stdout, done.stderr)
+    return done.stdout.decode("utf-8", "replace")
+
+
+def ls_tree(repo: str, head: str) -> dict:
+    """The recursive tree at head in the API's shape (path, mode, type, sha; directories too). Never truncated, no API."""
+    items = []
+    for entry in _git(repo, "ls-tree", "-r", "-t", "-z", head).split("\0"):
+        if entry:
+            info, path = entry.split("\t", 1)
+            mode, kind, sha = info.split()
+            items.append({"path": path, "mode": mode, "type": kind, "sha": sha})
+    return {"sha": _git(repo, "rev-parse", f"{head}^{{tree}}").strip(), "tree": items, "truncated": False}
+
+
+class _TreeReply:
+    """fetch_tree's reply, from git: always 200, no ETag."""
+    status_code = 200
+
+    def __init__(self, tree: dict):
+        self._tree, self.headers = tree, {}
+
+    def json(self) -> dict:
+        return self._tree
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+class GitBuild(CardBuild):
+    """
+    The build's source: a full clone of the card repo (git ls-tree and cat-file, never a lazy fetch) and its GitIndex.
+    A blob comes from --blobs, then the clone, then the REST API within the budget; a card's timestamp is its blob's
+    intro and a new card's author the first commit's at its path (card_history).
+    """
+    def __init__(self, db: StatsDatabase, checkout: str, head: str = "HEAD", index=None, blobs: str = "",
+                 budget: int = BUDGET, **kwargs):
+        from commands.card_history import GitIndex
+        super().__init__(db, legacy=False, **kwargs)
+        self.checkout, self.blobs, self.budget = checkout, blobs, budget
+        self.head = _git(checkout, "rev-parse", head).strip()
+        self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
+        self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
+        self.rest = 0                            # REST downloads started
+        self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
+        self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
+        self.still_failed: list = []             # of those, skipped this run (same blob): still failed
+        self._rate_low = False
+        self._rate_held: set = set()
+
+    def _fetch_tree(self, repository: str, etag: str):
+        return _TreeReply(ls_tree(self.checkout, self.head))
+
+    def _store(self, sha: str) -> str:
+        """The local object store that has this blob ("" when none)."""
+        for store in (self.blobs, self.checkout):
+            if store and run(["git", "-C", store, "cat-file", "-e", sha], capture_output=True,
+                             env={**environ, **NO_LAZY}).returncode == 0:
+                return store
+        return ""
+
+    def _repo_text(self, path: str) -> Optional[str]:
+        sha = self.shas.get(path)
+        if sha is None:
+            return None
+        store = self._store(sha)
+        return _git(store, "cat-file", "blob", sha) if store else super()._repo_text(path)
+
+    def _todo(self, response, force_update: bool) -> tuple[list, int]:
+        todo, num_old = super()._todo(response, force_update)
+        kept = []
+        for path, name, sha in todo:
+            known = self.failed_before.get((path, sha))
+            if (known is not None and known.get("parser_version") == PARSER_VERSION and not force_update
+                    and CardAuthors.key(name) not in self.only):
+                self.still_failed.append(dict(known))           # unread until its blob, the parser or `cards` changes
+                self.failed_new += name not in self.db.stats or name in self.restored
+                continue
+            if not self._store(sha):
+                if self.rest >= self.budget:
+                    self._hold(path, name)
+                    continue
+                self.rest += 1
+            kept.append((path, name, sha))
+        return (kept, num_old)
+
+    def _hold(self, path: str, name: str) -> None:
+        self.stale.append(path)
+        self.failed_new += name not in self.db.stats or name in self.restored     # a held rename archives nothing
+
+    def _held(self, path: str, name: str) -> bool:
+        if path not in self._rate_held:
+            return False
+        self._hold(path, name)
+        return True
+
+    def _blob(self, sha: str, stream: bool = False):
+        reply = super()._blob(sha, stream)
+        left = (getattr(reply, "headers", None) or {}).get("X-RateLimit-Remaining")
+        if left is not None and str(left).isdigit() and int(left) < RATE_FLOOR:
+            self._rate_low = True
+        return reply
+
+    def _download(self, path: str, sha: str) -> Optional[str]:
+        store = self._store(sha)
+        if not store:
+            if self._rate_low:
+                self._rate_held.add(path)
+                return None
+            return super()._download(path, sha)
+        fd, name = mkstemp(suffix=".psd")
+        try:
+            with fdopen(fd, "wb") as fh:
+                done = run(["git", "-C", store, "cat-file", "blob", sha], stdout=fh, env={**environ, **NO_LAZY})
+            if done.returncode == 0:
+                return name
+            print(f"{path}: blob {sha[:8]} not readable from {store}")
+        except OSError as e:
+            print(f"{path}: {e}")
+        remove(name)
+        return None
+
+    def _get_remote_timestamp(self, repo, path: str, name: str) -> tuple[float, Optional[str]]:
+        """The blob's intro (a move or the same bytes again is no new date); a new card's author: the first commit's."""
+        intro = self.index.blob_intro(self.shas.get(path))
+        at = intro.at if intro is not None else self.at
+        if name not in self.db.stats or not self.db.stats[name].author:
+            first = self.index.first.get(path)
+            return (at, first.author if first is not None else None)
+        return (at, None)
+
+    def _repo(self):
+        return None
+
+    def _commit_page(self, path: str) -> Optional[list]:
+        return None
+
+    def _committed_since_update(self) -> Optional[set]:
+        return None
+
+    def _lookup_ahead(self, todo: list) -> Optional[ThreadPoolExecutor]:
+        return None
+
+    def file_commit(self, path: str):
+        """The newest commit of a file at head, as a card_history.Commit (None when it has none)."""
+        from commands.card_history import Commit
+        line = _git(self.checkout, "log", "-1", "--format=%H%x09%ct%x09%an", self.head, "--", path).strip()
+        if not line:
+            return None
+        sha, at, author = (line.split("\t", 2) + ["", ""])[:3]
+        known = self.index.by_sha.get(sha)
+        return known if known is not None else Commit(len(self.index.commits), sha, float(at), author)
+
+
+@dataclass
+class Outcome:
+    """A build's result: the exit code, the counts, the refused gates and the texts for the summary and commit."""
+    code: int = EXIT_OK
+    counts: dict = field(default_factory=dict)
+    refused: dict = field(default_factory=dict)       # gate -> why
+    lifted: dict = field(default_factory=dict)        # gate -> the input that lifted it
+    lines: list = field(default_factory=list)         # one per card event
+    errors: list = field(default_factory=list)        # why the build failed (files not fetched)
+    problems: list = field(default_factory=list)      # {card, path, notes} of re-parsed cards
+    written: bool = False
+    manifest: dict = field(default_factory=dict)
+
+
+def _archived(stats: dict, old_stats: dict) -> dict:
+    """StatsDatabase.archived() over plain dicts (the build's snapshot)."""
+    return {name: versions[len(versions) - 1] for name, versions in old_stats.items()
+            if versions and name not in stats and getattr(versions[len(versions) - 1], "archived", None)}
+
+
+def gates(before: dict, after: dict, details_before: int, details_after: int, archived: list, same_blob: list,
+          full: bool, only: set, allow_archive: bool) -> tuple[dict, dict]:
+    """
+    G1, G2, G4 and G5 (G3 checks the written files, G6 the data tip).
+
+    Returns:
+        ({gate: why refused}, {gate: what lifted it})
+    """
+    refused, lifted = {}, {}
+    cards = [n for n, c in after.items() if not getattr(c, "duplicate_of", None)]
+    had = [n for n, c in before.items() if not getattr(c, "duplicate_of", None)]
+    if len(cards) < MIN_CARDS or (had and len(cards) < FLOOR_SHARE * len(had)):
+        refused["G1"] = f"{len(cards)} cards (before {len(had)}; the floor is {MIN_CARDS} and {FLOOR_SHARE:.0%})"
+    ceiling = max(ARCHIVE_MIN, int(ARCHIVE_SHARE * len(had)))
+    if len(archived) > ceiling:
+        if allow_archive:
+            lifted["G2"] = "allow_archive"
+        else:
+            refused["G2"] = f"{len(archived)} cards archived (at most {ceiling}): {', '.join(sorted(archived)[:10])}"
+    unapproved = [n for n in same_blob if CardAuthors.key(n) not in only]
+    if len(unapproved) > REPARSE_MAX:
+        if full:
+            lifted["G4"] = "full"
+        else:
+            refused["G4"] = f"{len(unapproved)} cards re-parsed with an unchanged blob (more than {REPARSE_MAX}): approve with full"
+
+    def worse(test) -> list:
+        return sorted(n for n in cards if n in before and not test(before[n]) and test(after[n]))
+    lost = {"UNKNOWN type": worse(lambda c: c.card_type == "unknown"),
+            "ability text lost": worse(lambda c: not (c.ability or "").strip()),
+            "every stat lost": worse(lambda c: all(v < 0 for v in (c.stats.hp, c.stats.defense, c.stats.attack, c.stats.speed)))}
+    new_unknown = sum(1 for n in cards if after[n].card_type == "unknown") - sum(1 for n in had if before[n].card_type == "unknown")
+    notes = [f"{what}: {', '.join(names[:10])}" for what, names in lost.items()
+             if len(names) > QUALITY_SLACK and (what != "UNKNOWN type" or new_unknown > QUALITY_SLACK)]
+    if details_before and details_after < (1 - DETAILS_SHARE) * details_before:
+        notes.append(f"psd_details records {details_before} -> {details_after}")
+    listed = {CardAuthors.key(n) for names in lost.values() for n in names}
+    if notes:
+        if full or (listed and listed <= only):
+            lifted["G5"] = "full" if full else "cards"
+        else:
+            refused["G5"] = "; ".join(notes)
+    return (refused, lifted)
+
+
+def _restore(db_dir: str, sha: str) -> tuple:
+    """A data commit's stats, old_stats, details and manifest (db/ at that commit of its own repo; fetched when a
+    shallow checkout lacks it)."""
+    from commands.card_db import MANIFEST_JSON, OLD_STATS_JSON, STATS_JSON, parse_old_stats, parse_stats
+    if run(["git", "-C", db_dir, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True).returncode != 0:
+        _git(db_dir, "fetch", "-q", "--depth", "1", "origin", sha)
+    prefix = _git(db_dir, "rev-parse", "--show-prefix").strip()
+    text = {name: _git(db_dir, "show", f"{sha}:{prefix}{name}") for name in (STATS_JSON, OLD_STATS_JSON, "psd_details.json")}
+    details = json_loads(text["psd_details.json"]).get("cards") or {}
+    try:
+        manifest = json_loads(_git(db_dir, "show", f"{sha}:{prefix}{MANIFEST_JSON}"))
+    except CalledProcessError:
+        manifest = {}
+    return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details, manifest)
+
+
+def _bot_file(ref: str, name: str, folder: str, required: bool = True) -> str:
+    """AutoCroissant's file at a ref, downloaded into folder ("" when optional and missing)."""
+    from commands.github_api import get_with_retry
+    reply = get_with_retry(f"{RAW_BASE}{BOT_REPO}/{ref}/{name}", timeout=60)
+    if reply.status_code == 404 and not required:
+        return ""
+    reply.raise_for_status()
+    path = path_join(folder, name)
+    with open(path, "wb") as fh:
+        fh.write(reply.content)
+    return path
+
+
+def _seed_folder(seed: str) -> str:
+    """The seed's folder: a local one as is, else an AutoCroissant commit whose pickles (and aliases.pkl) are
+    downloaded to a temp one."""
+    if isdir(seed):
+        return seed
+    from tempfile import mkdtemp
+    folder = mkdtemp(prefix="card-seed-")
+    for name in ("stats.pkl", "old_stats.pkl", "psd_details.json"):
+        _bot_file(seed, name, folder)
+    _bot_file(seed, "aliases.pkl", folder, required=False)
+    return folder
+
+
+def load_aliases(where: str) -> dict:
+    """aliases.pkl (alias -> PNG file name) from a path, else from AutoCroissant at that ref ("main" until step 5)."""
+    from commands.card_db import load_pickle
+    if isfile(where):
+        return load_pickle(where)
+    from tempfile import mkdtemp
+    return load_pickle(_bot_file(where, "aliases.pkl", mkdtemp(prefix="card-aliases-")))
+
+
+def _data_head(db_dir: str) -> str:
+    """The commit of the repo db/ sits in ("" when it is no git work tree or has no commit)."""
+    try:
+        return _git(db_dir, "rev-parse", "HEAD").strip()
+    except (CalledProcessError, OSError):
+        return ""
+
+
+def _remote_tip(db_dir: str) -> Optional[str]:
+    """
+    G6: the data branch's tip on origin now (git ls-remote, no API call): "" when the branch isn't there yet, None
+    when db/ has no origin (a hand run in a plain folder) and so no other writer to check.
+    """
+    try:
+        _git(db_dir, "remote", "get-url", "origin")
+    except (CalledProcessError, OSError):
+        return None
+    try:
+        branch = _git(db_dir, "symbolic-ref", "-q", "--short", "HEAD").strip() or "data"
+    except CalledProcessError:
+        branch = "data"                              # a detached checkout of the data branch
+    done = run(["git", "-C", db_dir, "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"], capture_output=True,
+               env={**environ, **NO_LAZY})
+    if done.returncode == 2:
+        return ""
+    if done.returncode != 0:
+        raise CalledProcessError(done.returncode, ["git", "ls-remote", "origin", branch], done.stdout, done.stderr)
+    return done.stdout.decode().split()[0]
+
+
+def _builder_commit() -> str:
+    try:
+        return _git(path_join(dirname(abspath(__file__)), ".."), "rev-parse", "HEAD").strip()
+    except (CalledProcessError, OSError):
+        return environ.get("BUILDER_SHA", "")
+
+
+def _commits(checkout: str, base: Optional[str], head: str) -> list:
+    """(sha, committer time, author) of base..head, oldest first (head's last 100 without a base)."""
+    span = [f"{base}..{head}"] if base else ["--max-count=100", head]
+    out = []
+    for line in _git(checkout, "log", "--reverse", "--format=%H%x09%ct%x09%an", *span).splitlines():
+        sha, at, author = (line.split("\t", 2) + ["", ""])[:3]
+        if sha:
+            out.append((sha, float(at or 0), author))
+    return out
+
+
+def _activity(repository: str) -> list:
+    """The last pushes to the card branch (one API call), newest first, as GitHub lists them."""
+    from commands.github_api import HEADERS, api_url, get_with_retry
+    reply = get_with_retry(api_url(repository, "activity"), timeout=30, headers=HEADERS,
+                           params={"ref": f"refs/heads/{CARD_BRANCH}", "activity_type": "push", "per_page": 100})
+    reply.raise_for_status()
+    return reply.json()
+
+
+def _epoch(stamp: Optional[str]) -> Optional[float]:
+    try:
+        return datetime.strptime(stamp or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def pushes(repository: str, checkout: str, commits: list) -> list:
+    """
+    The activity list's pushes that brought this build's commits, oldest first, each with the commits it holds
+    (git rev-list before..after in the clone); [] when the list can't be read (the fallback groups by author).
+    """
+    try:
+        listed = _activity(repository)
+    except (RequestException, ValueError) as e:
+        print(f"Activity list not read ({e}); pushes told by consecutive authors")
+        return []
+    new = {sha for sha, _, _ in commits}
+    out = []
+    for item in reversed(listed if isinstance(listed, list) else []):
+        after, before = item.get("after") or "", item.get("before") or ""
+        if after not in new:
+            continue
+        try:
+            held = _git(checkout, "rev-list", f"{before}..{after}" if before.strip("0") else after).split()
+        except CalledProcessError:                   # a before git doesn't have (a force push)
+            held = [after]
+        out.append({"after": after, "before": before or None, "by": (item.get("actor") or {}).get("login"),
+                    "at": _epoch(item.get("timestamp")), "commits": held})
+    return out
+
+
+def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", seed: str = "",
+          full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
+          aliases: Optional[dict] = None, dry_run: bool = False, restore: str = "", builder_ref: str = "",
+          baked: bool = False) -> Outcome:
+    """
+    One build (design section 7.1): db/ before (or the seed's pickles, refined once), the tree and index from git, the
+    changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
+    changelog events with their pushes, the gates, then db/ written with its manifest.
+
+    Args:
+        repository: owner/name of the card repo (the REST fallback, the activity list, the manifest)
+        checkout: A full clone of it (blobless is enough)
+        db_dir: The db/ folder (read, then written)
+        head: The card repo commit to build
+        blobs: A clone whose objects hold the PSD blobs (the Mac's working clone); tried first
+        seed: A folder holding stats.pkl, old_stats.pkl and psd_details.json to start from (first run, re-seed)
+        full: Re-parse every card (also G4's and G5's approval, kept in pending.full until the re-parse is done)
+        cards: Comma-separated names to re-parse
+        allow_archive: Lift G2
+        budget: REST downloads at most
+        run_url: The Actions run (manifest, commit message)
+        aliases: alias -> PNG file name (aliases.pkl), for the duplicates' names (default: the seed folder's, else
+            AutoCroissant's at ALIASES_REF)
+        dry_run: Build and report, write nothing
+        restore: A data commit whose db/ becomes the current one again
+        builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
+        baked: head is the run's local bake commit B (a push of its own, by the card sync)
+
+    Returns:
+        The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
+    """
+    from commands import changelog, psd_details
+    from commands.card_db import check_db, read_db, read_pickles, round_trip_problems, write_db
+    from commands.card_history import Refined, close_archived, date_archive, record_versions, refine
+    out = Outcome()
+    data_head = _data_head(db_dir)
+    stats, old, details, manifest_before = read_db(db_dir)
+    seeding = bool(seed) or not stats
+    if seeding and not seed:
+        raise ValueError(f"{db_dir} holds no cards: give --seed, a folder with stats.pkl and old_stats.pkl")
+    if seeding:
+        folder = _seed_folder(seed)
+        stats, old = read_pickles(folder)
+        details = psd_details.load(path_join(folder, "psd_details.json"))
+        if aliases is None and isfile(path_join(folder, "aliases.pkl")):
+            aliases = load_aliases(path_join(folder, "aliases.pkl"))
+    if aliases is None and not restore:
+        aliases = load_aliases(ALIASES_REF)
+    pending_before = (manifest_before.get("pending") or {}) if not seeding and not restore else {}
+    carried = pending_before.get("full") or None              # a budgeted full re-parse going on
+    if carried and carried.get("parser_version") != PARSER_VERSION:
+        carried = None                                        # a newer parser needs its own approval
+    approved = full or bool(carried)
+    db = StatsDatabase()
+    db.stats, db.old_stats = stats, old
+    run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget, aliases=aliases)
+    index = run_build.index
+    seeded = refine(db.stats, db.old_stats, index) if seeding else None
+    restored_manifest: dict = {}
+    if restore:
+        db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
+    before, before_old = deepcopy(db.stats), deepcopy(db.old_stats)
+    archived_before = _archived(before, before_old)
+    details_before = len(details)
+
+    run_build.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
+    run_build.again = set(pending_before.get("stale") or [])  # held by the last run's budget: read now
+    run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}
+    run_build.details = details
+    edits = authors = None
+    if not restore:
+        run_build.traverse_remote(repository, True, full)
+        pruning = can_prune(run_build)
+        gone, backfilled = db.prune_clean_cards(run_build.at) if pruning else ([], [])
+        if pruning:
+            date_archive(db.stats, db.old_stats, index, Refined())
+            for name in gone:                               # a new card with its blob this run: a rename
+                tag = db.old_stats[name][len(db.old_stats[name]) - 1].archived
+                if not tag.get("renamed_to") and run_build.new_blobs.get(tag.get("blob") or ""):
+                    tag["renamed_to"] = run_build.new_blobs[tag["blob"]]
+            close_archived(db.old_stats, list(gone) + list(backfilled), index)
+        edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
+        record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
+        db.drop_stale_archives()
+        if run_build.font_index is not None:
+            psd_details.refill(details, run_build.font_index)
+        keep = set(run_build.shas.values()) | {c.archived["blob"] for c in db.archived().values() if c.archived.get("blob")}
+        keep |= {c.blob_sha for c in db.stats.values() if getattr(c, "blob_sha", None)}
+        psd_details.prune(details, keep)
+    else:
+        gone = []
+    if run_build.lost:                                    # a 5xx or rate limit: red, nothing written, the next run retries
+        out.code = EXIT_ERROR
+        out.errors.append(f"not fetched: {', '.join(run_build.lost[:10])}" + (", ..." if len(run_build.lost) > 10 else ""))
+        return out
+
+    edits_by = {}
+    if run_build.edits is not None:
+        edits_by = {n: run_build.edits.meta.get(CardAuthors.key(n), {}).get("_by") for n in db.stats}
+    file_commits = {"edited": edits.sha if edits else None, "authors": authors.sha if authors else None}
+    new_events = changelog.events(before, db.stats, archived_before, db.archived(), run_build.reparsed,
+                                  {n: b for n, b in edits_by.items() if b}, index, file_commits)   # card changes only
+    if restore:
+        new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
+    elif new_events:
+        base = manifest_before.get("card_commit") if not seeding else None
+        if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
+            base = None
+        commits = _commits(checkout, base, run_build.head)
+        new_events = changelog.assign_pushes(new_events, pushes(repository, checkout, commits), commits, base,
+                                             {run_build.head} if baked else None)
+    for name in sorted(run_build.reparsed):
+        card = db.stats.get(name)
+        notes = CardValidator.validate(card) if card is not None else []
+        if notes:
+            out.problems.append({"card": name, "path": card.path, "notes": notes})
+
+    same_blob = [n for n, (o, _, sha) in run_build.reparsed.items() if o is not None and getattr(o, "blob_sha", None) == sha]
+    out.refused, out.lifted = gates(before, db.stats, details_before, len(details), gone, same_blob, approved,
+                                    run_build.only, allow_archive)
+    if carried and not full:
+        out.lifted = {g: f"full (approved by {carried.get('approved_run') or 'an earlier run'})" if why == "full" else why
+                      for g, why in out.lifted.items()}
+    bad = round_trip_problems(db.stats, db.old_stats)
+    if bad:
+        out.refused["G3"] = f"records change through a round trip: {', '.join(bad[:10])}"
+
+    kinds = [e["kind"] for e in new_events]
+    out.counts = {"cards": len(db.stats), "versions": sum(len(v) for v in db.old_stats.values()),
+                  "archived": len(db.archived()), "details": len(details), "changed": kinds.count("changed"),
+                  "new": kinds.count("new"), "failed": run_build.failed + len(run_build.still_failed), "baked": 0}
+    failed = sorted([{"path": u["path"], "blob": u["blob"], "error": u["error"], "parser_version": PARSER_VERSION}
+                     for u in run_build.unreadable] + run_build.still_failed, key=lambda f: f["path"])
+    stale = sorted(run_build.stale)
+    still = None
+    if stale and approved:                                # the approval goes on with the re-parse
+        still = carried if carried and not full else {"parser_version": PARSER_VERSION, "approved_run": run_url or None}
+    posted = changelog.read_posted(db_dir)
+    numbered = changelog.number(new_events, max((e.get("seq", 0) for e in changelog.read_events(db_dir)), default=0),
+                                posted.get("seq", 0), build=run_url or None, card_commit=run_build.head)
+    out.lines = [_plain_line(e) for e in numbered]
+    out.manifest = {
+        "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
+        "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at, "main_commit": None,
+        "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
+                    "psd_tools": _version("psd-tools"), "python": ".".join(map(str, version_info[:2]))},
+        "seed": ((({"repo": BOT_REPO, "commit": seed} if not isdir(seed) else {"pickles": seed}) if seeding
+                  else manifest_before.get("seed"))),
+        "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
+                                                                   ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
+                                                                   ("types_tree", TYPES_DIR), ("fonts_tree", "MDW/Fonts"))},
+        "counts": out.counts,
+        "pending": {"stale": stale, "failed": failed, "full": still, "repin": []},
+        "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
+        "restored_from": restore or None}
+    if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
+        for key in ("card_commit", "card_commit_at", "inputs", "seed"):
+            out.manifest[key] = restored_manifest.get(key, out.manifest[key])
+        kept = restored_manifest.get("pending") or {}
+        out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None, "repin": []}
+    if seeded is not None:
+        out.lines = seeded.lines() + out.lines
+    if out.refused:
+        out.code = EXIT_GATE
+        return out
+    if dry_run:
+        return out
+    tip = _remote_tip(db_dir)
+    if tip is not None and tip != data_head:
+        out.refused["G6"] = (f"the data branch is at {tip[:8] or 'nothing'} on origin, this build started from "
+                             f"{data_head[:8] or 'nothing'} (another writer)")
+        out.code = EXIT_GATE
+        return out
+    from commands.card_db import old_stats_text, stats_text
+    unchanged = (not seeding and not restore and not numbered and manifest_before.get("card_commit") == run_build.head
+                 and manifest_before.get("pending") == out.manifest["pending"]
+                 and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
+                 and psd_details.text_of(details) == _text(db_dir, "psd_details.json"))
+    if unchanged:
+        return out
+    write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest)
+    if numbered:
+        changelog.append_events(db_dir, numbered)
+    problems = check_db(db_dir)
+    if problems:
+        out.refused["G3"] = "; ".join(problems)
+        out.code = EXIT_GATE
+    out.written = True
+    return out
+
+
+def rewrite_commit(db_dir: str, checkout: str, old: str, new: str, message: str = "") -> dict:
+    """
+    Stage 4's B-to-M rewrite: the run's local bake commit B became main commit M (the same card files plus the save),
+    so every reference to B in db/ (version starts and ends, PNG pins, archive tags, card dates, the events, their
+    push and the manifest) becomes M, B's time M's. The manifest gains main_commit, counts.baked (the PSDs B changed)
+    and pending.repin (the PNGs B changed: their save links are pinned by the next run). The data commit's message
+    file, if given, names M too.
+
+    Returns:
+        The manifest written
+    """
+    from commands import changelog, psd_details
+    from commands.card_db import read_db, write_db
+    old, new = _git(checkout, "rev-parse", old).strip(), _git(checkout, "rev-parse", new).strip()
+    old_at = float(_git(checkout, "show", "-s", "--format=%ct", old).strip())
+    new_at = float(_git(checkout, "show", "-s", "--format=%ct", new).strip())
+    stats, old_stats, details, manifest = read_db(db_dir)
+
+    def fix(card) -> None:
+        info = getattr(card, "version", None) or {}
+        for sha_key, at_key in (("from_commit", "from"), ("to_commit", "to")):
+            if info.get(sha_key) == old:
+                info[sha_key], info[at_key] = new, new_at
+        if info.get("png_commit") == old:
+            info["png_commit"] = new
+        if info.get("from_commit") == new and card.timestamp == old_at:
+            card.timestamp = new_at                  # a card baked in the run is dated by M
+        tag = getattr(card, "archived", None)
+        if tag and tag.get("commit") == old:
+            tag["commit"], tag["at"] = new, new_at
+    for card in stats.values():
+        fix(card)
+    for versions in old_stats.values():
+        for card in versions:
+            fix(card)
+    for card in stats.values():                      # a duplicate keeps its original's date
+        original = stats.get(getattr(card, "duplicate_of", None) or "")
+        if original is not None:
+            card.timestamp = original.timestamp
+
+    def fix_event(event: dict) -> dict:
+        for key in ("card_commit", "commit"):
+            if event.get(key) == old:
+                event[key] = new
+        push = event.get("push") or {}
+        if push.get("after") == old:
+            push.update(after=new, at=new_at, by=changelog.CARD_SYNC)
+        return event
+    changelog.rewrite_events(db_dir, fix_event)
+    changed = [line.split("\t", 1) for line in _git(checkout, "diff-tree", "--no-commit-id", "-r", "--name-status", old).splitlines()]
+    if manifest.get("card_commit") == old:
+        manifest["card_commit"], manifest["card_commit_at"] = new, new_at
+    manifest["main_commit"] = new
+    manifest.setdefault("counts", {})["baked"] = sum(1 for _, path in changed if path.lower().endswith(".psd"))
+    manifest.setdefault("pending", {})["repin"] = sorted(path for status, path in changed
+                                                          if path.lower().endswith(".png") and status != "D")
+    if message and isfile(message):
+        with open(message, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(message, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(old, new).replace(old[:8], new[:8]))
+    return write_db(db_dir, stats, old_stats, psd_details.text_of(details), manifest)
+
+
+def _text(folder: str, name: str) -> Optional[str]:
+    path = path_join(folder, name)
+    if not isfile(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _version(package: str) -> str:
+    try:
+        from importlib.metadata import version
+        return version(package)
+    except Exception:
+        return ""
+
+
+def _plain_line(event: dict) -> str:
+    """One event for the commit message and the job summary."""
+    kind, name = event["kind"], event.get("card") or ""
+    if kind in ("changed", "edited", "reparse", "authors"):
+        fields = ", ".join(k for k in (event.get("fields") or {}) if k != "tags")
+        verdict = f" ({event['verdict']})" if event.get("verdict") else ""
+        return f"{kind}: {name}: {fields}{verdict}"
+    if kind == "renamed":
+        return f"renamed: {name} -> {event.get('renamed_to')}"
+    if kind == "restore":
+        return f"restore: db/ of {event.get('restored_from')}"
+    return f"{kind}: {name}"
+
+
+def subject(out: Outcome, head: str) -> str:
+    """The data commit's subject: "Card data: 2 changed, 1 new, 1 archived (main 1a2b3c4d)"; a rollback names its
+    data commit."""
+    if out.manifest.get("restored_from"):
+        return f"Card data: restored from {out.manifest['restored_from'][:8]} (main {head[:8]})"
+    kinds = [line.split(":", 1)[0] for line in out.lines if ":" in line]
+    parts = [f"{kinds.count(k)} {k}" for k in ("changed", "new", "archived", "renamed", "restored", "edited", "authors", "art",
+                                                "moved", "reparse") if kinds.count(k)]
+    return f"Card data: {', '.join(parts) or 'refreshed'} (main {head[:8]})"
+
+
+def summary(out: Outcome, head: str) -> str:
+    """The job summary (Markdown): counts, refused and lifted gates, one line per card, the validator's notes."""
+    rows = " | ".join(str(out.counts.get(k, "")) for k in ("cards", "versions", "archived", "details", "changed", "new", "failed"))
+    title = "Card data build failed" if out.errors else subject(out, head)
+    text = [f"## {title}", "", "| cards | versions | archived | details | changed | new | failed |",
+            "|---|---|---|---|---|---|---|", f"| {rows} |", ""]
+    text += [f"- **Error:** {why}; nothing written, the next run tries again" for why in out.errors]
+    text += [f"- **{gate} refused:** {why}" for gate, why in out.refused.items()]
+    text += [f"- {gate} lifted by {why}" for gate, why in out.lifted.items()]
+    if out.lines:
+        text += ["", "### Cards", ""] + [f"- {line}" for line in out.lines]
+    if out.problems:
+        text += ["", "### Parser notes", ""] + [f"- {p['card']}: {', '.join(p['notes'])}" for p in out.problems]
+    return "\n".join(text) + "\n"
+
+
+def main(argv: Optional[list] = None) -> int:
+    """The CLI; exit 0 written or nothing to do, 2 a gate refused, 1 an error (a file not fetched included)."""
+    parser = ArgumentParser(prog="python -m commands.card_data",
+                            description="Build the card data (db/ JSON) from a full clone of the card repo.")
+    parser.add_argument("--repo", default="MichaelJSr/TTSCardMaker", help="owner/name of the card repo")
+    parser.add_argument("--checkout", required=True, help="a full clone of it (blobless is enough; never shallow)")
+    parser.add_argument("--head", default="HEAD", help="the commit to build (default HEAD)")
+    parser.add_argument("--blobs", default="", help="a clone holding the PSD blobs, tried first (the Mac's working clone)")
+    parser.add_argument("--db", required=True, help="the db/ folder, read then written")
+    parser.add_argument("--seed", default="", help="start from these pickles: a folder holding stats.pkl, old_stats.pkl and "
+                                                    "psd_details.json, or an AutoCroissant commit")
+    parser.add_argument("--aliases", default="", help="aliases.pkl for the duplicates' names: a path, or an AutoCroissant "
+                                                       f"ref; default the seed's, else {ALIASES_REF}'s")
+    parser.add_argument("--full", action="store_true", help="re-parse every card (approves gates G4 and G5)")
+    parser.add_argument("--cards", default="", help="comma-separated card names to re-parse")
+    parser.add_argument("--allow-archive", action="store_true", help="lift gate G2 (more cards archived than usual)")
+    parser.add_argument("--restore", default="", help="a data commit whose db/ is written back as the current one")
+    parser.add_argument("--budget", type=int, default=BUDGET, help=f"REST downloads at most (default {BUDGET})")
+    parser.add_argument("--run", default="", help="the Actions run URL (manifest, commit message)")
+    parser.add_argument("--builder-ref", default="", help="the AutoCroissant ref of this builder (manifest)")
+    parser.add_argument("--summary", default="", help="write the job summary (Markdown) here")
+    parser.add_argument("--message", default="", help="write the data commit's message here (--rewrite: names M in it)")
+    parser.add_argument("--dry-run", action="store_true", help="build and report; write no db/")
+    parser.add_argument("--baked", action="store_true", help="--head is the run's local bake commit (its own push)")
+    parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
+                                                                        "become main commit M (after the main push)")
+    args = parser.parse_args(argv)
+    from commands.github_api import token_from_env
+    token_from_env()
+    try:
+        if args.rewrite:
+            manifest = rewrite_commit(args.db, args.checkout, args.rewrite[0], args.rewrite[1], args.message)
+            print(f"db/ now names {manifest['main_commit'][:8]} for {args.rewrite[0][:8]}; "
+                  f"{len(manifest['pending']['repin'])} PNGs to re-pin.")
+            return EXIT_OK
+        aliases = load_aliases(args.aliases) if args.aliases else None
+        out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.seed, args.full, args.cards,
+                    args.allow_archive, args.budget, args.run, aliases, args.dry_run, args.restore, args.builder_ref,
+                    args.baked)
+    except (CalledProcessError, OSError, ValueError, RequestException) as e:
+        print(f"Card data build failed: {e}")
+        return EXIT_ERROR
+    head = out.manifest.get("card_commit", "")
+    print(summary(out, head), end="")
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as fh:
+            fh.write(summary(out, head))
+    if args.message and out.manifest:
+        with open(args.message, "w", encoding="utf-8") as fh:
+            fh.write("\n".join([subject(out, head), ""] + out.lines + ["", f"Builder: {BOT_REPO}@{out.manifest['builder']['commit']}"]
+                               + ([f"Build: {args.run}"] if args.run else [])) + "\n")
+    return out.code
+
+
+# ========================
+# Module Exports
+# ========================
+__all__ = [
+    'BUDGET',
+    'COMMITS_PAGE',
+    'DOWNLOAD_WORKERS',
+    'EXCLUDE_FOLDERS',
+    'EXIT_ERROR',
+    'EXIT_GATE',
+    'EXIT_OK',
+    'LOOKUP_WORKERS',
+    'PROGRESS',
+    'SPARSE_FILES',
+    'UPDATE_RATE',
+    'CardBuild',
+    'GitBuild',
+    'Outcome',
+    'archived_names',
+    'build',
+    'can_prune',
+    'gates',
+    'load_aliases',
+    'ls_tree',
+    'main',
+    'pushes',
+    'report_archive',
+    'rewrite_commit',
+    'subject',
+    'summary',
+    'update',
+]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

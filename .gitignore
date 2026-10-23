@@ -78,6 +78,7 @@ logs/
 *.csv
 *.txt
 !requirements-dev.txt
+!requirements-card-data.txt
 
 # ===================================
 # Virtual Environments
