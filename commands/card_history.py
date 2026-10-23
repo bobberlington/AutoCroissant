@@ -39,6 +39,7 @@ STAT_MAX, STAT_CAP, STARS_MAX = 10, 20, 7             # a stat above 10 needs al
 PNG_SLACK = 6 * 3600.0                                # a push's PNG export can follow its PSD by hours
 PICKLE_FILES = ("stats.pkl", "old_stats.pkl")         # the bot's committed database (PICKLE commits)
 PRINTED = ("card_type", "ability", "types", "stars", "stats")    # what a reading of the card prints
+PRINTS_NONE = ("",)                                   # _printed's ability when parser 2 found none printed
 BOT_CHECKOUT = abspath(join(dirname(abspath(__file__)), ".."))   # this AutoCroissant checkout (its PICKLE commits)
 
 
@@ -556,9 +557,9 @@ def _same_png(index: GitIndex, a_path: str, a_at: Optional[float], b_path: str, 
 def misreads(stats: dict, old_stats: dict, index: GitIndex) -> list:
     """
     Type misreads, in place: consecutive versions whose PSD blobs differ while the card's PNG stayed the same (the
-    printed card did not change) and whose data differ in the type list alone are one version read twice: the older
-    goes into the newer, its earlier start carried (the 2026-02-08 commits changed 208 PSDs, 66 of them without a new
-    PNG). Repeated until none is left, so a second call changes nothing.
+    printed card did not change between their commits) and whose data differ in the type list alone are one version
+    read twice: the older goes into the newer, its earlier start carried (the 2026-02-08 commits changed 208 PSDs, 66
+    of them without a new PNG). Repeated until none is left, so a second call changes nothing.
 
     Returns:
         (name, start, types before, types after) of each version merged
@@ -584,8 +585,8 @@ def _misread(name: str, versions: list, holder: Optional[CardInfo], index: GitIn
             blobs = (_blob_of(a, index), _blob_of(b, index))
             if None in blobs or blobs[0] == blobs[1] or not _only_types(a, b):
                 continue
-            if _same_png(index, a.path, start(a)[0], b.path, start(b)[0]):
-                found = (a, b)
+            if _same_png(index, a.path, a.timestamp, b.path, b.timestamp):      # each reading's own commit, not a
+                found = (a, b)                                                   # start carried from another
                 break
         if found is None:
             return merged
@@ -781,8 +782,11 @@ def _printed(card: CardInfo, lacks: set, allowed: bool) -> dict:
            "stars": getattr(card, "stars", None),
            "stats": tuple(getattr(stats, k, -1) for k in ("hp", "defense", "attack", "speed")) if stats is not None else None}
     skip = set(lacks) | set(out_of_range(card, allowed)) | (unknown(card) - {"display_name"})
-    if card.ability is None:
-        skip.add("ability")
+    if not out["ability"]:
+        if (getattr(card, "parser_version", None) or 0) >= 2 and card.ability == "" and "ability" not in skip:
+            out["ability"] = PRINTS_NONE            # parser 2 reads a hidden Ability layer as nothing printed
+        else:
+            skip.add("ability")                     # none read (a failed parse's empty text; data_of: none)
     if out["stars"] is None:                        # none counted: no field a reading can disagree on
         skip.add("stars")
     if out["stats"] is None or all(v == -1 for v in out["stats"]):
@@ -791,7 +795,9 @@ def _printed(card: CardInfo, lacks: set, allowed: bool) -> dict:
 
 
 def _same_printed(a: dict, b: dict) -> bool:
-    return all(a[k] == b[k] for k in a if k in b)
+    """Equal on what both know; an ability parser 2 found printed nowhere matches any older reading's words (those
+    parsers read hidden layers too)."""
+    return all(a[k] == b[k] or (k == "ability" and PRINTS_NONE in (a[k], b[k])) for k in a if k in b)
 
 
 def recover(stats: dict, old_stats: dict, index: GitIndex, snapshots: list) -> Recovered:
@@ -874,9 +880,11 @@ def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_
     placed: dict = {}                               # item index -> versions restored before it
     for k, readings in sorted(gaps.items()):
         runs = _runs_of(readings, index, allowed,
-                        (_printed(items[k - 1], set(), allowed), starts[k - 1], items[k - 1].path) if k else None)
+                        (_printed(items[k - 1], set(), allowed), items[k - 1].timestamp, items[k - 1].path) if k else None)
         after = items[k]
-        if runs and _alike(index, _form(runs[len(runs) - 1], allowed), (_printed(after, set(), allowed), starts[k], after.path)):
+        held = (_printed(after, set(), allowed), after.timestamp, after.path)
+        if runs and _alike(index, _form(runs[len(runs) - 1], allowed), held) and \
+                set(_form(runs[len(runs) - 1], allowed, best=True)[0]) <= set(held[0]):   # the version knows it all
             first = min(runs.pop(), key=lambda r: r.at)       # it prints what the version after it prints
             carry_to(after, first.at, first.commit)
             report.starts.append((name, first.at))
@@ -892,29 +900,31 @@ def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_
     old_stats[name] = out
 
 
-def _form(run_: list, allowed: bool) -> tuple:
-    """A run's printed form for _alike: (printed, start, path) of its first reading."""
-    first = run_[0]
+def _form(run_: list, allowed: bool, best: bool = False) -> tuple:
+    """A run's printed form for _alike: (printed, commit time, path) of its first reading (best: of the one that knew
+    most, _restored's)."""
+    first = max(run_, key=lambda r: (-len(r.unknown), r.order)) if best else run_[0]
     return (_printed(first.card, first.unknown, allowed), first.at, first.card.path)
 
 
 def _runs_of(readings: list, index: GitIndex, allowed: bool, before: Optional[tuple] = None) -> list:
-    """Readings in time order as runs printing the same (_alike); the ones printing what `before` (a form) prints go."""
+    """Readings in time order as runs printing the same (_alike); the ones printing what `before` (a version's form)
+    prints go, when it knew all they knew (a reading that knew less never stands for one that knew more)."""
     runs: list = []
     for reading in readings:
         mine = (_printed(reading.card, reading.unknown, allowed), reading.at, reading.card.path)
-        prev = _form(runs[len(runs) - 1], allowed) if runs else before
-        if prev is not None and _alike(index, prev, mine):
-            if runs:
-                runs[len(runs) - 1].append(reading)
+        if runs and _alike(index, _form(runs[len(runs) - 1], allowed), mine):
+            runs[len(runs) - 1].append(reading)
+        elif not runs and before is not None and _alike(index, before, mine) and set(mine[0]) <= set(before[0]):
             continue
-        runs.append([reading])
+        else:
+            runs.append([reading])
     return runs
 
 
 def _alike(index: GitIndex, a: tuple, b: tuple) -> bool:
-    """Whether two printed forms (printed, start, path) are the same card: equal on what both know, or the type list
-    alone differs while the PNG stayed (a misread)."""
+    """Whether two printed forms (printed, its reading's commit time, path) are the same card: equal on what both know,
+    or the type list alone differs while the PNG stayed (a misread)."""
     if _same_printed(a[0], b[0]):
         return True
     if {k for k in a[0] if k in b[0] and a[0][k] != b[0][k]} != {"types"}:
