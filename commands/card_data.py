@@ -1437,8 +1437,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     """
     from commands import changelog, psd_details
     from commands.card_db import check_db, read_db, read_pickles, round_trip_problems, write_db
-    from commands.card_history import (Refined, allows_high, close_archived, date_archive, out_of_range, record_versions,
-                                       refine, unknown_values)
+    from commands.card_history import (Refined, allows_high, close_archived, date_archive, kept_values, out_of_range,
+                                       record_versions, refine, unchecked, unknown_values)
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
@@ -1535,7 +1535,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if bad:
         out.refused["G3"] = f"records change through a round trip: {', '.join(bad[:10])}"
     wrong = sorted({n for n, versions in db.old_stats.items() for v in versions
-                    if out_of_range(v, allows_high(n, db.stats.get(n)))})
+                    if unchecked(v) and out_of_range(v, allows_high(n, db.stats.get(n)))})
     if wrong:                                             # the range check on history (unknown_values leaves none)
         out.refused["G3"] = "; ".join(filter(None, [out.refused.get("G3"), f"history values out of range: {', '.join(wrong[:10])}"]))
 
@@ -1578,6 +1578,9 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if impossible:
         out.lines.append(f"History values out of range set to unknown: {len(impossible)} "
                          f"({', '.join(sorted({n for n, _, _ in impossible}))})")
+    kept = kept_values(db.stats, db.old_stats)
+    if kept:                                              # read by parser 2: kept until an allow_high_stats entry
+        out.lines.append(f"History values out of range kept (an allow_high_stats entry allows them): {', '.join(kept)}")
     if out.refused:
         out.code = EXIT_GATE
         return out

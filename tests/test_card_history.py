@@ -963,6 +963,11 @@ def test_impossible_values_become_unknown_once():
     assert lazarus.stats == cm.CardStats() and spawn.stars is None and cannon.stats.attack == 12   # its card allows it
     assert lazarus.problems == ["OUT OF RANGE: stats 110/110/110/110 (unknown)"]
     assert ch.unknown_values(stats, old) == []
+    printed = _card("P", stats=cm.CardStats(12, 3, 3, 3), stars=3, timestamp=4.0, parser_version=2)
+    old["P"], stats["P"] = [printed], _card("P")      # read by parser 2: its problem was shown; kept for an allowance
+    assert ch.unknown_values(stats, old) == [] and printed.stats.hp == 12 and ch.kept_values(stats, old) == ["P"]
+    stats["P"] = _card("P", allow_high_stats=True)
+    assert ch.kept_values(stats, old) == [] and "P" in {n for n, _, _ in ch.high_values(stats, old)}
     assert "Impossible values set to unknown: 0" in ch.Refined().lines()[10]
 
 

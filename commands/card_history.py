@@ -38,6 +38,7 @@ RETIRED = ("MDW", "Markers")                          # no card folders (card_da
 STAT_MAX, STAT_CAP, STARS_MAX = 10, 99, 7             # a stat above 10 needs an allowance (allows_high); 3 digits: none
 # CardValidator.EXCESSIVE_STAT_EXCLUSIONS until parser 2 (5835139, 2026-10-21): their history's high stats were allowed
 HIGH_STATS_LISTED = frozenset({"Royal Eradicator Main Cannon", "Pix", "Tainted Lazarus", "Sonic", "Twin Emperors"})
+RANGE_PARSER = 2                                      # parser 2 (5835139): the validator's range check, allow_high_stats
 PNG_SLACK = 6 * 3600.0                                # a push's PNG export can follow its PSD by hours
 PICKLE_FILES = ("stats.pkl", "old_stats.pkl")         # the bot's committed database (PICKLE commits)
 PRINTED = ("card_type", "ability", "types", "stars", "stats")    # what a reading of the card prints
@@ -591,10 +592,17 @@ def out_of_range(card: CardInfo, allowed: bool = False) -> list:
     return found
 
 
+def unchecked(card: CardInfo) -> bool:
+    """Whether a version was read before the range check (RANGE_PARSER): a value out of range then is a misparse no
+    one saw. A later reading's was a problem when read; it stays, so an allowance added later keeps it."""
+    return (getattr(card, "parser_version", None) or 0) < RANGE_PARSER
+
+
 def unknown_values(stats: dict, old_stats: dict) -> list:
     """
     Stored versions' impossible values set to unknown (stats -1, stars None; out_of_range), in place, each noted in its
-    problems: they can't be checked (no PSD of theirs is read again). Part of the one-time cleanup.
+    problems: they can't be checked (no PSD of theirs is read again). Only the versions read before the range check
+    (unchecked); a later one's are kept and listed (kept_values). Part of the one-time cleanup.
 
     Returns:
         (name, timestamp, fields) of each version changed
@@ -603,7 +611,7 @@ def unknown_values(stats: dict, old_stats: dict) -> list:
     for name, versions in old_stats.items():
         allowed = allows_high(name, stats.get(name))
         for version in versions:
-            fields = out_of_range(version, allowed)
+            fields = out_of_range(version, allowed) if unchecked(version) else []
             if not fields:
                 continue
             was = []
@@ -617,6 +625,13 @@ def unknown_values(stats: dict, old_stats: dict) -> list:
             version.problems = [*(getattr(version, "problems", None) or []), f"OUT OF RANGE: {', '.join(was)} (unknown)"]
             changed.append((name, version.timestamp, fields))
     return changed
+
+
+def kept_values(stats: dict, old_stats: dict) -> list:
+    """History values out of range that unknown_values keeps (read by RANGE_PARSER or later; an allow_high_stats entry
+    allows a stat up to STAT_CAP), for the owner: the names, sorted."""
+    return sorted({name for name, versions in old_stats.items() for v in versions
+                   if not unchecked(v) and out_of_range(v, allows_high(name, stats.get(name)))})
 
 
 def high_values(stats: dict, old_stats: dict) -> list:
@@ -1646,6 +1661,7 @@ __all__ = [
     'date_versions',
     'dedupe',
     'high_values',
+    'kept_values',
     'knows',
     'leaf',
     'main',
@@ -1660,6 +1676,7 @@ __all__ = [
     'same_data',
     'start',
     'start_of',
+    'unchecked',
     'unknown',
     'unknown_values',
 ]

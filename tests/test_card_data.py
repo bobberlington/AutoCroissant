@@ -377,13 +377,17 @@ def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
 
 def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
     """Tainted Lazarus' 110s: the seed pass sets them unknown and says so; a value out of range left in history (the
-    range check failing to run) refuses G3."""
+    range check failing to run) refuses G3. A parser-2 reading's 12 (a problem when read) is kept and listed."""
     old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
-                                                          stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0)]})
+                                                          stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0),
+                                             cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
+                                                          stats=cm.CardStats(12, 3, 3, 3), timestamp=600.0,
+                                                          parser_version=2)]})
     (cards.seed / "old_stats.pkl").write_bytes(pickle.dumps(old))
     code, message = _build(cards, "--seed", str(cards.seed))
     assert code == cd.EXIT_OK and "Impossible values set to unknown: 1 (Mini Doomer)" in message
-    assert _read(cards)[1]["Mini Doomer"][0].stats == cm.CardStats()
+    assert "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
+    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(12, 3, 3, 3)]
     import commands.card_history as ch
     monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
     shutil.rmtree(cards.db)
