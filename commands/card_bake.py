@@ -19,9 +19,11 @@ whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-agai
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
 exit 1, no B). The recent gate diffs the clone's trees when it has the pushes' base (head may be a previous B).
-Refusals are data: one bad card never blocks another. A run bakes at most MAX_BAKES cards and starts none after BUDGET
-(the rest are refused `capped` and wait for the next run). The report goes to stdout, the artifacts (edited PSD, merged
-PNG, before/after/diff crops, the rewritten file) to the work dir. The runner supplies the token
+Refusals are data: one bad card never blocks another, and a refused stars or types edit never blocks its card's other
+fields (they bake; the refused field stays in the file with a refused verdict on the PSD the commit leaves). A run
+bakes at most MAX_BAKES cards and starts none after BUDGET (the rest are refused `capped` and wait for the next run).
+The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/diff crops, the rewritten file) to the
+work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
 fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
@@ -30,12 +32,13 @@ exits 1 (failure()). The `font` gate refuses only where a face resolves to nothi
 in for a missing or empty fonts dir (psd_edit.OK_FONTS); a `font` verdict holds until MDW/Fonts changes.
 """
 from argparse import ArgumentParser
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep
-from os.path import abspath, basename, dirname, expanduser, isdir, join, splitext
+from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch, search
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
@@ -105,6 +108,7 @@ class Card:
     creatures: bool = False                     # the entry has a creatures list (it sets the stats)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # the _psd meta written for it (baked or refused)
+    partial: list = field(default_factory=list)  # Refusals of its stars or types edit while its other fields bake
     fonts: str = ""                             # a `font` refusal's Snapshot.fonts_key: final only while MDW/Fonts holds
     pngs: str = ""                              # a PNG refusal's Snapshot.pngs_key: final only while the PNGs hold
     note: str = ""
@@ -534,6 +538,25 @@ def vocabulary(snapshot: Snapshot):
     return psd_edit.offline_parser(all_types, stars, manifest)
 
 
+def types_icons(snapshot: Snapshot, work: str, parser, names: list, printed: Optional[list] = None) -> str:
+    """
+    The Types/ PNGs a types edit may make icons from, fetched into the work dir (once a run): the types it adds to
+    the ones the card prints.
+
+    Returns:
+        The folder (psd_edit.apply_jobs' types_dir)
+    """
+    folder = join(work, TYPES_DIR)
+    wanted = set(Counter(psd_edit.canonical_type(parser, name) for name in names)
+                 - Counter(psd_edit.canonical_type(parser, name) for name in printed or []))
+    for path, (_, sha) in snapshot.tree.items():
+        if (dirname(path) == TYPES_DIR and path.lower().endswith(".png")
+                and psd_edit.canonical_type(parser, splitext(basename(path))[0]) in wanted
+                and not exists(join(folder, basename(path)))):
+            snapshot.fetch(sha, join(folder, basename(path)))
+    return folder
+
+
 def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> list:
     """
     The cards the run looks at: every entry with a PSD-kind field (one card with --card).
@@ -582,8 +605,12 @@ def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
 
 
 def _misses(card: Card) -> str:
-    """'; name baked with a pixel difference: bad 1.97%, mean 1.60, max 217' (psd_edit.miss_notes), "" for none."""
-    return "".join(f"; {note}" for note in (psd_edit.miss_notes(card.baked) if card.baked else []))
+    """
+    '; name baked with a pixel difference: bad 1.97%, mean 1.60, max 217' (psd_edit.miss_notes), and
+    '; stars not baked: unsupported-card: stars: ...' per stars or types edit refused beside the bake; "" for none.
+    """
+    notes = psd_edit.miss_notes(card.baked) if card.baked else []
+    return "".join(f"; {note}" for note in notes + [f"{r.field} not baked: {r.code}: {r.why}" for r in card.partial])
 
 
 def _describe(card: Card) -> str:
@@ -593,6 +620,9 @@ def _describe(card: Card) -> str:
         old = next((edit.old for edit in (card.baked.edits if card.baked else []) if edit.field == name), None)
         if name == "ability":
             parts.append("ability")
+        elif name == "types":
+            parts.append(f"types {', '.join(old) if old else 'none'} -> {', '.join(value)}" if old is not None
+                         else f"types -> {', '.join(value)}")
         elif name == "name":
             parts.append(f"name {old!r} -> {value!r}" if old is not None else f"name -> {value!r}")
         else:
@@ -639,7 +669,7 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     old_psd = join(folder, "old", basename(card.rel))
     snapshot.fetch(card.psd_sha, old_psd)
     parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-    classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd))
+    classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd), parser)
     if classified.jobs or classified.refusals or not classified.redundant:
         return False
     card.redundant = list(classified.redundant)
@@ -698,10 +728,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         snapshot.fetch(card.png_sha, old_png)
 
         parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd))
+        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd), parser)
         card.jobs, card.redundant = dict(classified.jobs), list(classified.redundant)
-        if classified.refusals:                 # per card all-or-nothing (section 10)
-            first, *rest = classified.refusals
+        card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
+        if len(card.partial) < len(classified.refusals) or (card.partial and not card.jobs and not card.redundant):
+            first, *rest = classified.refusals      # per card all-or-nothing (section 10), but for stars and types
+            card.partial = []
             raise Refused(first.code, "; ".join([first.why] + [f"{r.code}: {r.why}" for r in rest]))
         if not card.jobs and not card.redundant:
             return
@@ -712,13 +744,28 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 raise Transient("this runner has no text engine (psd-tools[text])")
             if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.story_sync():
                 raise Transient("this runner's psd-tools fork predates Txt2 story sync: Photoshop would undo the text")
+            if any(f in psd_edit.ICON_FIELDS for f in card.jobs) and not psd_edit.icon_engine():
+                raise Transient("this runner's psd-tools cannot copy or make layers (the fork's duplicate and fromarray)")
             colors = chart() if "ability" in card.jobs else None
             if "ability" in card.jobs and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
             new_dir = join(folder, "new")
             makedirs(new_dir, exist_ok=True)
-            card.baked = psd_edit.apply_jobs(old_psd, old_png, card.rel, card.jobs, parsed, parser, new_dir, fonts_dir,
-                                             colors, update_preview=True)
+            types_dir = types_icons(snapshot, work, parser, card.jobs["types"], parsed["card"].get("types")) \
+                if "types" in card.jobs else None
+            while True:                         # a stars or types refusal leaves the card's other fields to bake
+                try:
+                    card.baked = psd_edit.apply_jobs(old_psd, old_png, card.rel, card.jobs, parsed, parser, new_dir,
+                                                     fonts_dir, colors, update_preview=True, types_dir=types_dir)
+                    break
+                except Refused as refused:
+                    if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
+                        raise
+                    card.partial.append(refused.refusal)
+                    del card.jobs[refused.field]
+                    if not card.jobs:
+                        break
+        if card.baked is not None:
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             with open(card.baked.png_path, "rb") as fh:
@@ -734,6 +781,10 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
                             "at": _now()}
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
+        if card.partial:                        # what stays in the file: refused on the PSD this commit leaves
+            card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
+                            "psd": (card.new_psd_sha or card.psd_sha)[:8],
+                            "reason": "; ".join(f"{r.code}: {r.why}" for r in card.partial), "at": _now()}
     except Refused as refused:
         card.refusal = refused.refusal
         if refused.code == "font":              # retried once MDW/Fonts changes (pending)
@@ -840,6 +891,11 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
         if card.baked.fx:
             line += f"; FX layers: {', '.join(card.baked.fx)}"
+        icons = [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
+        if icons:
+            line += f"; {'; '.join(icons)}"
+    elif card.partial:
+        line += _misses(card)
     if card.redundant:
         line += f"; already on the card: {', '.join(card.redundant)}"
     if card.commit:
