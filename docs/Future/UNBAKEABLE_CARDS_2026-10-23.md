@@ -13,7 +13,8 @@ card and field, whether a bake works, why not, and what would fix it.
   - **colour glyphs** (round 6: fork `r6/integration` e6539a2f + AutoCroissant `work/r6-color-glyphs` eaf446e): built
     and reviewed, waiting for a fork tag and a deploy.
   - **refused-layers** (`work/refused-layers`, in progress): bake the title layer the parser already reads, and a single
-    visible Ability layer wherever it sits. Measured on its uncommitted code of 02:51, so these numbers are preliminary.
+    visible Ability layer wherever it sits. Measured on its uncommitted code of 02:51; the branch has committed
+    c5c3f19..dc2bd69 since (03:35-03:38) and is still being built, so these numbers are preliminary.
 - Everything was checked with the bake's own code, dry: nothing was written to either repo (section 6).
 
 How to read it: section 1 is the one-screen summary. Section 2 has one part per reason: a plain explanation, what would
@@ -26,16 +27,18 @@ Section 3 lists the boxes that bake but with a known pixel difference. The CSV b
 
 | Field | Cards with the field | Today: bake / can't | After soft parity + colour glyphs | After also refused-layers (preliminary) |
 |---|---|---|---|---|
-| Name | 764 | **497** / 267 | **539** (12 with a pixel note) / 225 | **646** (21 with a pixel note) / 118 |
+| Name | 764 | **486** / 278 | **528** (12 with a pixel note) / 236 | **646** (21 with a pixel note) / 118 |
 | Ability | 764 | **382** / 382 | **617** (10 with a pixel note) / 147 | **701** (13 with a pixel note, 1 not measured) / 63 |
 | HP | 417 | **372** / 45 | **376** (4 with a pixel note) / 41 | **376** (4 with a pixel note) / 41 |
 | DEF | 417 | **372** / 45 | **376** (4 with a pixel note) / 41 | **376** (4 with a pixel note) / 41 |
 | ATK | 395 | **353** / 42 | **357** (4 with a pixel note) / 38 | **357** (4 with a pixel note) / 38 |
 | SPD | 395 | **352** / 43 | **356** (4 with a pixel note) / 39 | **356** (4 with a pixel note) / 39 |
 
-- **Whole cards:** 279 of 764 cards bake every field they have today; 573 will after the pending changes.
-- **Stars and types** bake on no card: the bake can't print them yet (`psd_edit.NOT_YET`; the website and Discord both
-  refuse them).
+- **Whole cards:** 275 of 764 cards bake every field they have today; 573 will after the pending changes.
+- **Stars and types** bake on no card: the bake can't print them yet (`psd_edit.NOT_YET`). Discord refuses them
+  (`discord_edits.NOT_BAKED`), but the website's editor offers both under "On the card image" (marked "PSD pending").
+  A pending stars or types edit makes the bake refuse the whole card (`unsupported-card: stars: not yet`; `classify`
+  is all-or-nothing per card), so it also blocks that card's name, ability and stat edits.
 - **Stats** count only the cards that show that stat (items, fields and status effects without stats are left out).
 - **Not counted here** (they depend on the edit, not the card): a stat above 10 (only Royal Eradicator Main Cannon's
   ATK has the two rows for it), new text that no longer fits (section 5), and a card pushed in the last 30 minutes
@@ -56,13 +59,14 @@ Why, per field (today → after all pending changes; section 2 has the cards):
 | The title is split over several layers | 0 → 8 |  |  |  |  |  | card maker (one layer) |
 | The title's words are printed twice | 0 → 6 |  |  |  |  |  | Photoshop, or relax the check |
 | The title would touch the stars or type icons | 1 → 2 |  |  |  |  |  | Photoshop |
+| The whole title doesn't fit into one of its layers | 11 → 0 |  |  |  |  |  | card maker (one title layer) |
 | The Ability layer is outside the Text group |  | 92 → 0 |  |  |  |  | refused-layers fixes 85 of 92 |
 | No visible Ability layer |  | 7 → 7 |  |  |  |  | card maker |
 | Several visible Ability layers |  | 5 → 5 |  |  |  |  | card maker |
 | The ability's words are printed twice |  | 0 → 1 |  |  |  |  | card maker |
 | The ability's icons are pictures |  | 8 → 15 |  |  |  |  | card maker (stoogedings tokens) |
 | A badge layer would be lost (BUG 2) |  | 18 → 18 |  |  |  |  | BUG 2 fix (approved, not started) |
-| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | stays refused (owner, 10-21) |
+| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | stays refused (owner, 10-21); Goofy: BUG 2 fix |
 | Colour icons would turn one colour |  | 213 → 0 |  |  |  |  | colour glyphs (built, not released) |
 | No template stat bar |  |  | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | card maker (template bars) |
 | The stat bar is not the template's |  |  | 30 → 30 | 30 → 30 | 27 → 27 | 27 → 27 | card maker (template bars) |
@@ -78,12 +82,14 @@ What stands out:
   are status effects whose title is a top-level layer named after the card, which refused-layers does not look at.
 - What is left after the pending changes is mostly card-maker work: stat bars the bot can't use (38 cards),
   pictures instead of icon-font tokens (15 abilities), numbered PNGs (5 cards), plus the 18 badge layers waiting for
-  the approved BUG 2 fix.
-- **A bug in today's bot:** where the title is split over two or more layers, it writes the whole new title into one of
-  them. A dry run on Warcraftian Druid printed "Warcraftian Druidess" with the old "Druid" line still under it, and the
-  read-back gate passed. 15 names that bake today have a title in two or more layers like this (sections
-  2.9 and 2.10), and 5 more print the title a second time elsewhere on the card,
-  which a bake leaves unchanged (2.11). refused-layers refuses all 20, which is right.
+  the approved BUG 2 fix (19 gradient badge cards with Miracle Matter; 20 with Monkey D Goofy, the owner's count).
+- **A bug in today's bot:** where the title is split over several layers or printed twice, it writes the whole edited
+  title into the layer named Name and leaves the others. A dry run on Warcraftian Druid printed "Warcraftian Druidess"
+  with the old "Druid" line still under it, and the read-back gate passed. Of the 20 cards with such a title, 9 bake
+  today like this, wrongly: Doctor Zomboss, Moose Goose, Mosling, Tainted Eden, WX-78, Warcraftian Druid, Warcraftian
+  Hunter, Warcraftian Paladin, Warcraftian Rogue. The other 11 refuse today (2.7): 5 titles run off the card, 4 reach
+  the stars or type icons, and Autopsy Report and Warcraftian Shaman fail the read-back. refused-layers refuses all 20
+  earlier, as titles printed by several layers, split or printed twice (2.10, 2.11, 2.12), which is right.
 - **Four refused edits in Card Edits.json would bake today** (Metal General, Z.O.M.G., Star Dream, Zero Override;
   section 4). Their verdicts come from the old pixel bar and fork, and the schedule treats them as final until the PSD
   changes; a dispatched run without `--pending` re-checks them.
@@ -130,9 +136,15 @@ Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** 
 
 | Card | Folder | Field | Detail | After the pending changes |
 |---|---|---|---|---|
-| Twin Emperors | Creatures/World Of Warcraft/4 Stars | all four stats |  | no change |
+| Twin Emperors | Creatures/World Of Warcraft/4 Stars | all four stats | behind it, several bars per stat too (HP 3 bar rows, DEF 2 bar rows, ATK 2 bar rows, SPD 2 bar rows) | no change |
 
 ### Name
+
+One message for four parts: when today's title layer is missing, hidden or named otherwise (no Text group; no title
+layer the bot recognizes; the title layer has another name; the Name layer is hidden), the bake reports
+`unsupported-card: no readable Text/Name layer` (`classify`, through `read_name`). The parts split that message by
+what `name_layer` found, because that decides the fix. The parts on titles printed by several layers, split or printed
+twice are refusals of work/refused-layers, not of today's bot.
 
 #### 2.4 The title layer has another name
 
@@ -375,7 +387,28 @@ Today: **52 cards** (Name 52). After the pending changes, **38** of them bake.
 | Wolfgang | Creatures/DST/4 Stars | no visible text layer at the top | no change |
 | Zigg | Creatures/Everhood/3 Stars | 'Zigg' in layer 'Name', top level | bakes (refused-layers) |
 
-#### 2.7 The Name layer is hidden
+#### 2.7 The whole title doesn't fit into one of its layers
+
+Today: **11 cards** (Name 11). After the pending changes, **0** of them bake.
+
+- **Why:** The title is split over several text layers or printed twice (sections on split and doubled titles below). Today's bot writes the whole edited title, as the website shows it, into the one layer named Name; on these cards that refuses: the title runs off the card, reaches the stars or type icons, or the read-back still doesn't match the edit ('idempotence: still to bake: name').
+- **What would fix it:** Card maker: merge the title into one text layer named Name (line breaks inside one layer are fine). work/refused-layers refuses these cards earlier, as split or doubled titles; no code change would bake them.
+
+| Card | Folder | Detail | After the pending changes |
+|---|---|---|---|
+| Autopsy Report | Auxiliary/Items | the read-back still differs from the edit (still to bake: name); title in: 'Type: Attack Evidence submitted by Miles' in layer 'Type: Attack Evidence submitted by Miles Edgeworth.', top level; 'Autopsy Report' in layer 'Name' (in Text) | still refused: the title's words are printed twice (shown once refused-layers lands) |
+| Azamoth the Forgotten King | Creatures/ROTMG/5 Stars | runs off the card; title in: 'Forgotten King' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| Azamoth the Possessed Vessel | Auxiliary/Creatures | runs off the card; title in: 'Possessed Vessel' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| Crowned Magolor | Creatures/Kirby/5 Stars | reaches the stars or type icons; title in: 'Crowned' in layer 'Name' (in Text); 'Magolor' in layer 'Magolor' (in Text) | still refused: the title is split over several layers (shown once refused-layers lands) |
+| Massive Moss Charger | Auxiliary/Minions | runs off the card; title in: 'Moss Charger' in layer 'Name' (in Text); 'Massive' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| Oryx the Exalted God | Creatures/ROTMG/4 Stars | runs off the card; title in: 'Exalted God' in layer 'Name' (in Text); 'Oryx The' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| The Bagel | N.M.E | runs off the card; title in: 'The Bagel' in layer 'Name' (in Text); 'Or... is it' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| The Gates of Ahn'Qiraj | Field/4 Stars | reaches the stars or type icons; title in: 'The gates of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| The Temple of Ahn'Qiraj | Auxiliary/Items | reaches the stars or type icons; title in: 'The Temple of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+| Warcraftian Priest | Creatures/World Of Warcraft/4 Stars | reaches the stars or type icons; title in: 'Warcraftian' in layer 'Name' (in Text); 'Priest' in layer 'Priest' (in Text) | still refused: the title is split over several layers (shown once refused-layers lands) |
+| Warcraftian Shaman | Creatures/World Of Warcraft/4 Stars | the read-back still differs from the edit (still to bake: name); title in: 'Warcraftian' in layer 'Name' (in Text); 'Shaman' in layer 'Name' (in Text) | still refused: more than one layer prints the title (shown once refused-layers lands) |
+
+#### 2.8 The Name layer is hidden
 
 Today: **4 cards** (Name 4). After the pending changes, **0** of them bake.
 
@@ -389,7 +422,7 @@ Today: **4 cards** (Name 4). After the pending changes, **0** of them bake.
 | Sonic | Creatures/Other/4 Stars | hidden Name reads 'Sonic'; no visible title text (a picture?) | no change |
 | Wigfrid | Creatures/DST/3 Stars | hidden Name reads 'Wickerbottom'; no visible title text (a picture?) | no change |
 
-#### 2.8 The title would touch the stars or type icons
+#### 2.9 The title would touch the stars or type icons
 
 Today: **1 card** (Name 1). After the pending changes, **0** of them bake.
 
@@ -406,7 +439,7 @@ Cards that meet this reason only once the pending changes land (1; another reaso
 |---|---|---|---|---|
 | Sniffle Thwomp | Creatures/Mario/3 Stars | Name | 'Sniffle Thwomp' in layer 'Sniffle  Thwomp' (in Text) | today: the title layer has another name |
 
-#### 2.9 More than one layer prints the title
+#### 2.10 More than one layer prints the title
 
 Today: none (this reason shows only once refused-layers lands).
 
@@ -417,17 +450,17 @@ Cards that meet this reason only once the pending changes land (9; another reaso
 
 | Card | Folder | Field | Detail | Today |
 |---|---|---|---|---|
-| Azamoth the Forgotten King | Creatures/ROTMG/5 Stars | Name | 'Forgotten King' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| Azamoth the Possessed Vessel | Auxiliary/Creatures | Name | 'Possessed Vessel' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| Massive Moss Charger | Auxiliary/Minions | Name | 'Moss Charger' in layer 'Name' (in Text); 'Massive' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| Oryx the Exalted God | Creatures/ROTMG/4 Stars | Name | 'Exalted God' in layer 'Name' (in Text); 'Oryx The' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| The Bagel | N.M.E | Name | 'The Bagel' in layer 'Name' (in Text); 'Or... is it' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
+| Azamoth the Forgotten King | Creatures/ROTMG/5 Stars | Name | 'Forgotten King' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| Azamoth the Possessed Vessel | Auxiliary/Creatures | Name | 'Possessed Vessel' in layer 'Name' (in Text); 'Azamoth The' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| Massive Moss Charger | Auxiliary/Minions | Name | 'Moss Charger' in layer 'Name' (in Text); 'Massive' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| Oryx the Exalted God | Creatures/ROTMG/4 Stars | Name | 'Exalted God' in layer 'Name' (in Text); 'Oryx The' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| The Bagel | N.M.E | Name | 'The Bagel' in layer 'Name' (in Text); 'Or... is it' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
 | The Big Yellow Cat | Creatures/Omori/5 Stars | Name | 'The' in layer 'Name' (in Name); 'Cat' in layer 'Name' (in Name); 'Yellow' in layer 'Name' (in Name) | today: no title layer the bot recognizes |
-| The Gates of Ahn'Qiraj | Field/4 Stars | Name | 'The gates of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| The Temple of Ahn'Qiraj | Auxiliary/Items | Name | 'The Temple of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
-| Warcraftian Shaman | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Shaman' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
+| The Gates of Ahn'Qiraj | Field/4 Stars | Name | 'The gates of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| The Temple of Ahn'Qiraj | Auxiliary/Items | Name | 'The Temple of' in layer 'Name' (in Text); 'AHN’QiRAj' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
+| Warcraftian Shaman | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Shaman' in layer 'Name' (in Text) | today: the whole title doesn't fit into one of its layers |
 
-#### 2.10 The title is split over several layers
+#### 2.11 The title is split over several layers
 
 Today: none (this reason shows only once refused-layers lands).
 
@@ -438,16 +471,16 @@ Cards that meet this reason only once the pending changes land (8; another reaso
 
 | Card | Folder | Field | Detail | Today |
 |---|---|---|---|---|
-| Crowned Magolor | Creatures/Kirby/5 Stars | Name | 'Crowned' in layer 'Name' (in Text); 'Magolor' in layer 'Magolor' (in Text) | today: bakes (into one of the title's layers only) |
+| Crowned Magolor | Creatures/Kirby/5 Stars | Name | 'Crowned' in layer 'Name' (in Text); 'Magolor' in layer 'Magolor' (in Text) | today: the whole title doesn't fit into one of its layers |
 | Royal Eradicator Main Cannon | Creatures/FTL/5 Stars | Name | 'Main Cannon' in layer 'Name' (in Text); 'Eradicator' in layer 'Eradicator' (in Text); 'Royal' in layer 'Royal' (in Text) | today: psd-tools draws this box differently from photoshop |
 | Warcraftian Druid | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Druid' in layer 'Druid' (in Text) | today: bakes (into one of the title's layers only) |
 | Warcraftian Hunter | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Hunter' in layer 'Hunter' (in Text) | today: bakes (into one of the title's layers only) |
 | Warcraftian Paladin | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Paladin' in layer 'Paladin' (in Text) | today: bakes (into one of the title's layers only) |
-| Warcraftian Priest | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Priest' in layer 'Priest' (in Text) | today: bakes (into one of the title's layers only) |
+| Warcraftian Priest | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Priest' in layer 'Priest' (in Text) | today: the whole title doesn't fit into one of its layers |
 | Warcraftian Rogue | Creatures/World Of Warcraft/4 Stars | Name | 'Warcraftian' in layer 'Name' (in Text); 'Rogue' in layer 'Rogue' (in Text) | today: bakes (into one of the title's layers only) |
-| WX-78 | Creatures/DST/3 Stars | Name | 'wx-' in layer 'Name' (in Text) | today: bakes (into one of the title's layers only) |
+| WX-78 | Creatures/DST/3 Stars | Name | 'wx-' in layer 'Name' (in Text); '78' is a picture (smart-object layer '78' in Text) | today: bakes (into one of the title's layers only) |
 
-#### 2.11 The title's words are printed twice
+#### 2.12 The title's words are printed twice
 
 Today: none (this reason shows only once refused-layers lands).
 
@@ -458,7 +491,7 @@ Cards that meet this reason only once the pending changes land (6; another reaso
 
 | Card | Folder | Field | Detail | Today |
 |---|---|---|---|---|
-| Autopsy Report | Auxiliary/Items | Name | another visible layer 'Name' prints the same words | today: bakes (into one of the title's layers only) |
+| Autopsy Report | Auxiliary/Items | Name | another visible layer 'Name' prints the same words | today: the whole title doesn't fit into one of its layers |
 | Doctor Zomboss | Creatures/Other/5 Stars | Name | another visible layer 'Name' prints the same words | today: bakes (into one of the title's layers only) |
 | Moose Goose | Creatures/DST/3 Stars | Name | another visible layer 'Name' prints the same words | today: bakes (into one of the title's layers only) |
 | Mosling | Auxiliary/Minions | Name | another visible layer 'Name' prints the same words | today: bakes (into one of the title's layers only) |
@@ -467,7 +500,7 @@ Cards that meet this reason only once the pending changes land (6; another reaso
 
 ### Ability
 
-#### 2.12 Colour icons would turn one colour
+#### 2.13 Colour icons would turn one colour
 
 Today: **213 cards** (Ability 213). After the pending changes, **213** of them bake.
 
@@ -478,7 +511,7 @@ After the pending changes: **bakes (colour glyphs)** (209): Air Totem (Auxiliary
 
 After the pending changes: **bakes with a pixel note (colour glyphs)** (4): Cortez (Creatures/Mario/4 Stars), Masked Dedede (Creatures/Kirby/5 Stars), Panseida (Creatures/Pandas/3 Stars), The Radiance (Creatures/Hollow Knight/5 Stars).
 
-#### 2.13 The Ability layer is outside the Text group
+#### 2.14 The Ability layer is outside the Text group
 
 Today: **92 cards** (Ability 92). After the pending changes, **85** of them bake.
 
@@ -493,12 +526,12 @@ After the pending changes: **bakes with a pixel note (refused-layers)** (3): Emp
 
 After the pending changes: **bakes (pixels not measured) (refused-layers)** (1): Bugzzy (Auxiliary/Minions).
 
-#### 2.14 A badge layer would be lost (BUG 2)
+#### 2.15 A badge layer would be lost (BUG 2)
 
 Today: **18 cards** (Ability 18). After the pending changes, **0** of them bake.
 
 - **Why:** An 'Ability FX: ...' layer paints the timing badges or icons over the ability with a gradient; a bake would delete it and the bot can't rebuild it yet.
-- **What would fix it:** Code fix approved, not started: rebuild the Ability FX layers from the new text's word boxes (NEXT_IDEAS section 5, idea 4; needs text geometry and colour glyphs). Until then, edit in Photoshop.
+- **What would fix it:** Code fix approved, not started: rebuild the Ability FX layers from the new text's word boxes (NEXT_IDEAS section 5, idea 4; needs text geometry and colour glyphs). Until then, edit in Photoshop. There are 19 gradient badge cards: these 18 and Miracle Matter ('Ability FX: (1GCD)'; listed under several visible Ability layers, its first refusal). With Monkey D Goofy ('Ability FX: 1#1', listed under word layers) they are the owner's 20 BUG 2 cards.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -521,7 +554,7 @@ Today: **18 cards** (Ability 18). After the pending changes, **0** of them bake.
 | Wham Bam Bone | Creatures/Kirby/4 Stars | Ability FX: (OFS) / (BOGT) | no change |
 | Whispy Woods | Creatures/Kirby/2 Stars | Ability FX: (1CD) | no change |
 
-#### 2.15 The ability's icons are pictures
+#### 2.16 The ability's icons are pictures
 
 Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 
@@ -551,12 +584,12 @@ Cards that meet this reason only once the pending changes land (7; another reaso
 | Plague | Auxiliary/Status Effects/Debuffs/2 Stars | Ability |  | today: the ability layer is outside the text group |
 | Sickness | Auxiliary/Status Effects/Debuffs/1 Stars | Ability |  | today: the ability layer is outside the text group |
 
-#### 2.16 A word layer the status chart has no style for
+#### 2.17 A word layer the status chart has no style for
 
 Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 
 - **Why:** A hand-made word layer over the ability (an overlay or FX layer for a word such as Smoldering or +2 DEF) has no style on the status chart, so the bot can't recreate it after an edit.
-- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand.
+- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -565,11 +598,11 @@ Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 | Fire Staff | Items/Equip/2 Stars | Smoldering | no change |
 | Flameblade | Items/Equip/3 Stars | Attacks inflict 2T | no change |
 | Ice Staff | Items/Equip/2 Stars | Chilled | no change |
-| Monkey D Goofy | Creatures/Monkey D Folder/4 Stars | Ability FX: 1#1 | no change |
+| Monkey D Goofy | Creatures/Monkey D Folder/4 Stars | Ability FX: 1#1 (the owner counts this card with BUG 2) | no change |
 | Mr Krabs | Creatures/Other/4 Stars | 1 Become Back Money, 2T | no change |
 | The Watcher | Creatures/In Sound Mind/3 Stars | Despair | no change |
 
-#### 2.17 No visible Ability layer
+#### 2.18 No visible Ability layer
 
 Today: **7 cards** (Ability 7). After the pending changes, **0** of them bake.
 
@@ -586,7 +619,7 @@ Today: **7 cards** (Ability 7). After the pending changes, **0** of them bake.
 | Shadow Duelist | Auxiliary/Minions | hidden: Ability | no change |
 | Warrior Dee | Auxiliary/Minions | hidden: Text/Ability | no change |
 
-#### 2.18 Several visible Ability layers
+#### 2.19 Several visible Ability layers
 
 Today: **5 cards** (Ability 5). After the pending changes, **0** of them bake.
 
@@ -596,12 +629,12 @@ Today: **5 cards** (Ability 5). After the pending changes, **0** of them bake.
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
 | Lit Bob-omb | Auxiliary/Items | 2 layers | no change |
-| Miracle Matter | Creatures/Kirby/3 Stars | 5 layers | no change |
+| Miracle Matter | Creatures/Kirby/3 Stars | 5 layers; also a badge layer 'Ability FX: (1GCD)' (BUG 2) | no change |
 | Tainted Lazarus | Creatures/Isaac/3 Stars | 2 layers | no change |
 | Twin Emperors | Creatures/World Of Warcraft/4 Stars | 5 layers | no change |
 | Warcraftian Druid | Creatures/World Of Warcraft/4 Stars | 2 layers | no change |
 
-#### 2.19 The ability's words are printed twice
+#### 2.20 The ability's words are printed twice
 
 Today: none (this reason shows only once refused-layers lands).
 
@@ -616,7 +649,7 @@ Cards that meet this reason only once the pending changes land (1; another reaso
 
 ### Stats (HP, DEF, ATK, SPD)
 
-#### 2.20 The stat bar is not the template's
+#### 2.21 The stat bar is not the template's
 
 Today: **31 cards** (HP 30, DEF 30, ATK 27, SPD 27). After the pending changes, **0** of these 114 fields bake.
 
@@ -657,7 +690,7 @@ Today: **31 cards** (HP 30, DEF 30, ATK 27, SPD 27). After the pending changes, 
 | Whispy Woods | Creatures/Kirby/2 Stars | all four stats | 'HP DARK': digits numbered 1-10 (the other bars alike) | no change |
 | Zigg | Creatures/Everhood/3 Stars | all four stats | 'hp': only digit 5, the rest layers like 'Layer 8 copy 9' (the other bars alike) | no change |
 
-#### 2.21 Several bars for one stat
+#### 2.22 Several bars for one stat
 
 Today: **5 cards** (HP 4, DEF 4, ATK 4, SPD 5). After the pending changes, **0** of these 17 fields bake.
 
@@ -672,7 +705,7 @@ Today: **5 cards** (HP 4, DEF 4, ATK 4, SPD 5). After the pending changes, **0**
 | Tainted Lazarus | Creatures/Isaac/3 Stars | all four stats | bars: 'Hp Dark', 'Light', 'Hp Dark', 'Light' (the other bars alike) | no change |
 | Ze'mer | Creatures/Hollow Knight/5 Stars | all four stats | bars: 'hp', 'Hp Dark' (the other bars alike) | no change |
 
-#### 2.22 No template stat bar
+#### 2.23 No template stat bar
 
 Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** of these 4 fields bake.
 
@@ -683,7 +716,7 @@ Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** 
 |---|---|---|---|---|
 | Computer Virus | Creatures/Kirby/3 Stars | all four stats |  | no change |
 
-#### 2.23 The bar sits outside the card
+#### 2.24 The bar sits outside the card
 
 Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** of these 4 fields bake.
 
@@ -696,7 +729,7 @@ Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** 
 
 ### Pixel check
 
-#### 2.24 psd-tools draws this box differently from Photoshop
+#### 2.25 psd-tools draws this box differently from Photoshop
 
 Today: **68 cards** (Name 42, Ability 22, HP 4, DEF 4, ATK 4, SPD 4). After the pending changes, **79** of these 80 fields bake.
 
@@ -867,7 +900,7 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
 - **Stats above 10** need two bar rows (Top and Bottom in one `<Stat> Dark` group); only Royal Eradicator Main Cannon's
   ATK has them. Above 20 never.
 - **A title that grows into the stars or type icons** refuses (`overflow`). Jack-In-The-Box Zombie's unchanged title
-  already touches them (2.8).
+  already touches them (2.9).
 - **Try again later:** a PSD or PNG pushed in the last 30 minutes, more than 40 bakes in a run, or a branch that moved
   while the run worked. These are not verdicts.
 
@@ -875,9 +908,10 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
 
 - Scripts and raw outputs: `~/Documents/Tools/wt/scratch/unbakeable/` (`bakecheck.py` runs the bake's own steps short of
   rendering: card gates, `template_rows` + `set_stat`, `name_layer`/`ability_layer` + `set_text_layer` with the printed
-  title and the website's ability text; `paritycheck.py`; `analyze.py` merges; `gen.py` and `assemble.py` write this file
-  and the CSV). Code snapshots: main `e837f68`, `work/r6-color-glyphs` `eaf446e`, `work/refused-layers` `c31343d` +
-  uncommitted (02:51).
+  title and the website's ability text; `paritycheck.py`; `analyze.py` merges; `gen.py` and `assemble.py` write this
+  file and the CSV; `~/Documents/Tools/wt/scratch/unbakeable-fix/scripts/fulltitle.py` re-checks the split and
+  doubled titles). Code snapshots: main `e837f68`, `work/r6-color-glyphs` `eaf446e`, `work/refused-layers` `c31343d` +
+  uncommitted (02:51; committed since as `c5c3f19`..`dc2bd69`, not re-measured).
 - Corpus: the frozen copy of TTSCardMaker `6e50c3ee`. Only two card PSDs changed on origin/main since (Clot White and
   Springtrap, `7b48db05`, Txt2 title stories): both were re-checked from origin/main and their story refusal is gone.
 - Pixel check: the round-6 bot-gate scans with the bot's own measuring code and per-card ICC
@@ -890,9 +924,15 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
   nothing, so it doesn't refuse.
 - The check edits each field to its current text (the printed title; the website's ability text, which on picture-icon
   cards includes the [type] tokens an editor would send) and a stat one step down, so a refusal comes from the card,
-  not from the edit.
+  not from the edit. The 20 titles split over several layers or printed twice were checked again with the whole
+  title the website shows (a real edit sends all of it, not one layer's words), through `classify` and `apply_jobs`
+  with every gate after saving, on today's code and on round 6 (same verdicts): the title as it is, for the layout
+  gates, and with a letter added, for the read-back (`classify` skips an unchanged title). The added letter also
+  pushes Moose Goose's title into the stars or type icons; that depends on the edit's length (section 5), so it
+  counts as baking.
 - Not run on every card: the gates after saving (layer bytes, Txt2 stories, read-back, re-render). They ran in the dry
-  bakes of section 4, in the Warcraftian Druid, Mosling and Oryx trials, and in round 6's [fire] bake on the 213
-  stoogedings cards (160 baked; 50 stopped on length, section 5; 2 on the old pixel bar; 1 on an unstyled FX layer).
+  bakes of section 4, in the Warcraftian Druid, Mosling and Oryx trials, on the split and doubled titles, and in round
+  6's [fire] bake on the 213 stoogedings cards (160 baked; 50 stopped on length, section 5; 2 on the old pixel bar;
+  1 on an unstyled FX layer).
 - Earlier list: `~/Documents/Tools/wt/scratch/ideas/unbakeable_2026-10-23.txt` (frozen bot code without per-card ICC;
   this one supersedes it).
