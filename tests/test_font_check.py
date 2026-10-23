@@ -26,7 +26,6 @@ from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 WORKFLOW = CLONE / ".github" / "workflows" / "font-check.yml"
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
-ROLE = "546427268751294475"
 FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual FontSet: the face, Photoshop's two extras
 
 
@@ -241,9 +240,8 @@ def test_markdown_report():
 
 def test_discord_payload_wording():
     payload = fc.discord_payload(report())
-    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"roles": [ROLE]}
+    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"parse": []}
     assert payload["content"] == (
-        f"<@&{ROLE}>\n"
         "bobber has pushed a card without adding the BabaUI font to MDW/Fonts, bite this user.\n"
         "    Baba (6, 6, 6, 6)\n"
         "bobber has pushed a card without adding the OCRAExtended font to MDW/Fonts, bite this user.\n"
@@ -252,14 +250,14 @@ def test_discord_payload_wording():
         "    The Gates of Ahn'Qiraj (Ability)\n"
         "michael has pushed a card without adding the Pristina-Regular font to MDW/Fonts, bite this user.\n"
         "    The Gates of Ahn'Qiraj (Name)")
-    assert "<@" not in payload["content"].replace(f"<@&{ROLE}>", "", 1)         # the role once, no user mentions
+    assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert fc.discord_payload(fc.Report(checked=2)) == {}
 
 
 def test_discord_payload_fits_one_message():
     r = fc.Report(cards=[fc.Card(f"Items/Heal/1 Stars/Card_{i}.psd", "bobber", {"BabaUI": ["Ability"]}) for i in range(200)])
     content = fc.discord_payload(r)["content"]
-    assert len(content) <= 2000 and content.startswith(f"<@&{ROLE}>\n") and content.endswith("... (the rest is in the commit comment)")
+    assert len(content) <= 2000 and content.startswith("bobber has pushed") and content.endswith("... (the rest is in the commit comment)")
 
 
 def test_discord_text():
@@ -309,7 +307,7 @@ def test_cli_psd_mode(fonts_dir, tmp_path, fake_psds, capsys):
     assert data["checked"] == 2 and data["missing"] == {"JavaneseText": {"Items/A.psd": ["Ability"]}} and data["fonts"] == {"files": 3, "faces": 4}
     assert data["cards"] == [{"path": "Items/A.psd", "author": "bobber", "missing": {"JavaneseText": ["Ability"]}}]
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines()[1] == "bobber has pushed a card without adding the JavaneseText font to MDW/Fonts, bite this user."
+    assert payload["content"].splitlines()[0] == "bobber has pushed a card without adding the JavaneseText font to MDW/Fonts, bite this user."
     assert fc.main(["--fonts", str(fonts_dir), "--psd", "Items/B.psd", "--discord", str(disc)]) == 0
     assert json.loads(disc.read_text(encoding="utf-8")) == {}
 
@@ -685,7 +683,7 @@ def test_workflow_shape():
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "discord.com/api/webhooks" not in text and "secrets.DISCORD_FONT_WEBHOOK" in text and "<@&" not in text   # no URL, no mention in the yaml
+    assert "discord.com/api/webhooks" not in text and "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "<@&" not in text   # no URL, no mention in the yaml
     assert '"**/*.psd"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
     assert '--repo "$GITHUB_REPOSITORY"' in text and '--after "$GITHUB_SHA"' in text and "--whole-tree" in text and '--before "$BEFORE"' in text
     assert "contents: write" in text and '|| echo "::warning::' in text and "actions/checkout@v7" in text and "actions/cache@v6" in text

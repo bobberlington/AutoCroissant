@@ -18,7 +18,6 @@ from commands.card_models import CardInfo, CardStats, card_name
 from conftest import REPO, Reply, blob_sha_bytes as _sha
 from test_font_check import FakeGitHub
 
-ROLE = "546427268751294475"
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
 SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"
 NOTES = {                                       # what /update_stats printed on 2026-10-21 (e4e0a58) for these cards
@@ -223,11 +222,10 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
                                "notes": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"]}]}
     payload = json.loads(disc.read_text(encoding="utf-8"))
     assert payload["content"].splitlines() == [
-        f"<@&{ROLE}>",
         f"bobber has pushed God Tamer with: {NO_STARS}.",
         "bobber has pushed Computer Virus with: HP NOT FOUND; DEF NOT FOUND; ATK NOT FOUND; SPD NOT FOUND.",
         cc.CLOSING]
-    assert payload["allowed_mentions"] == {"roles": [ROLE]} and len(payload["content"]) < 2000
+    assert payload["allowed_mentions"] == {"parse": []} and len(payload["content"]) < 2000
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
     assert cc.main(["--psd", str(clone / "Auxiliary/Minions/Mini_Doomer.psd"), "--discord", str(disc)]) == 0
     assert "Nothing to report." in capsys.readouterr().out and json.loads(disc.read_text(encoding="utf-8")) == {}
@@ -340,24 +338,23 @@ def test_markdown():
 
 def test_discord_payload_wording():
     payload = cc.discord_payload(report())
-    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"roles": [ROLE]}
-    assert payload["content"] == (f"<@&{ROLE}>\n"
-                                  f"bobber has pushed God Tamer with: {NO_STARS}.\n"
+    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"parse": []}
+    assert payload["content"] == (f"bobber has pushed God Tamer with: {NO_STARS}.\n"
                                   "michael has pushed Computer Virus with: HP NOT FOUND; DEF NOT FOUND.\n"
                                   "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, "
                                   "several creatures) also show on the website as Parser notes.")
     assert "website shows these" not in payload["content"]        # the validator's notes never reach the website's Parser notes
-    assert "<@" not in payload["content"].replace(f"<@&{ROLE}>", "", 1)         # the role once, no user mentions
+    assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert cc.discord_payload(cc.Report(checked=2, errors=["x.psd: could not be read (boom)"])) == {}
 
 
 def test_discord_payload_fits_one_message():
     r = cc.Report(cards=[cc.Card(f"Items/Heal/1 Stars/Card_{i}.psd", "bobber", ["HP NOT FOUND", "DEF NOT FOUND"]) for i in range(200)])
     content = cc.discord_payload(r)["content"]
-    assert len(content) <= 2000 and content.startswith(f"<@&{ROLE}>\nbobber has pushed Card 0 with: ")
+    assert len(content) <= 2000 and content.startswith("bobber has pushed Card 0 with: ")
     lines = content.splitlines()
     assert lines[len(lines) - 1] == cc.CLOSING and re.fullmatch(r"\.\.\. and \d+ more cards", lines[len(lines) - 2])
-    kept = len(lines) - 3
+    kept = len(lines) - 2                                  # cards, then "... and N more", then CLOSING
     assert int(lines[len(lines) - 2].split()[2]) == 200 - kept and kept > 20
 
 
@@ -421,7 +418,7 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     text = capsys.readouterr().out
     assert f"- `Items/Heal/1 Stars/B.psd` (pusher): {NO_STARS}\n" in text and "A.psd" not in text
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines()[1] == f"pusher has pushed B with: {NO_STARS}."
+    assert payload["content"].splitlines()[0] == f"pusher has pushed B with: {NO_STARS}."
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
 
 
