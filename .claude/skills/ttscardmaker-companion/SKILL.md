@@ -237,7 +237,7 @@ skips the glyph, but the entry stays.
 Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 
 1. One-time setup: `python3 -m venv MDW/Fonts/stoogedings-src/.venv && MDW/Fonts/stoogedings-src/.venv/bin/pip install -r MDW/Fonts/stoogedings-src/requirements.txt`
-2. Build (no arguments; it finds the repo from its own location; about 13 s):
+2. Build (no arguments; it finds the repo from its own location; about 13 s, with `:glow` about 32 s of CPU):
    `MDW/Fonts/stoogedings-src/.venv/bin/python MDW/Fonts/stoogedings-src/build_stoogedings.py`
    Expected output today: `built …/stoogedings.ttf: 5.7 MB, 91 icons, 1024 token spellings` (with `:glow`:
    `7.0 MB, 91 icons, 1536 token spellings`).
@@ -289,7 +289,7 @@ build script's docstring:
 | GSUB single, ligature, multiple and chaining-contextual lookups all work in Photoshop under `liga` (CASE's multi-letter contexts: not checked yet, `case_badge_check.jsx`) | The whole design relies on liga. Leave ligatures on in the Character panel |
 | CoreText (Apple apps) draws plain outlines **above** SVG glyphs | In Preview, Pages and similar apps, `:sticker` shows only the outline. Photoshop is the target, so this is accepted |
 | CoreText ignores an SVG `<use>` that points at an `<image>` | Each color glyph embeds its PNG directly |
-| CoreText draws an SVG glyph past its `glyf` box (2026-10-23: a halo drawn whole with a smaller outline) | Photoshop draws it whole too (glow test 2026-10-23), so nothing clips the halo of §1.8 |
+| CoreText draws an SVG glyph whole, past the line box (2026-10-23, the 0.3 em halos: clipping to the line box changes 0 pixels) | Photoshop draws it whole too (glow test 2026-10-23), so nothing clips the halo of §1.8; its `glyf` (the whole halo) only serves non-SVG renderers |
 
 ### 1.6 Four consumers, four matching rules
 
@@ -301,7 +301,7 @@ same spellings; the website is still more lenient:
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
 | AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant`; the variants are `ICON_VARIANTS` (`glow`, `darkglow` on branch work/glow-tokens), all but `no` read as the plain icon | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
-| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`; any other variant (`:glow` too) is the plain icon in text.js, and `share_text` (build_site.py) flattens `no|tint|sticker|glow|darkglow`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
+| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`; any other variant (`:glow` too) is the plain icon in text.js, and `share_text` (build_site.py) flattens `no|tint|sticker|glow|darkglow` in any ASCII case (2026-10-23). More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
 Emoji names differ from manifest keys in exactly two cases: `fragile equip` → `fragile_equip`, and
 `thunderfury_blessed_blade_of_the_starseeker` → `thunderfury_blessed_blade_of_the`. The 126 emojis are
@@ -355,7 +355,8 @@ the plain icon, so the halo stays inside its own advance. Each halo is a PNG (`G
   the `d` glyph).
 - **Extension lookups.** The packer makes the two new lookups Extension (type 7): GSUB grows from 62 to 88 KB. They are
   separate because TOKENS alone (41 KB, one subtable) would have grown to 65 KB, near the 64 KB subtable limit.
-- **Size:** 6,966,396 bytes (+1,230,192, +21%), build about 75 s.
+- **Size:** 6,966,396 bytes (+1,230,192, +21%), build about 32 s of CPU; wall time follows the machine's load (75-110 s
+  on a busy Mac, 2026-10-23).
 
 **Proof, 2026-10-23** (old font 38a19d81 vs the 0.3 em font 3f6d3317, after the 0.1 em one 8a0d9d46 passed the same;
 scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py`, `halo_geometry.py` in

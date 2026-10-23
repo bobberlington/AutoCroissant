@@ -345,5 +345,7 @@ def test_site_previews_flatten_variants(glow_build):
     finally:
         sys.path.remove(str(build))
     for v in ICON_VARIANTS:
-        text = site.share_text({"type": "item", "ability": f"Burn [fire{':' + v if v else ''}]"})
-        assert text.endswith("Burn non-Fire" if v == "no" else "Burn Fire"), v
+        for s in spellings(v):   # any letter case, as the font ([fire:DarkGlow])
+            text = site.share_text({"type": "item", "ability": f"Burn [fire{':' + s if s else ''}]"})
+            assert text.endswith("Burn non-Fire" if v == "no" else "Burn Fire"), s
+    assert site.share_text({"type": "item", "ability": "Burn [fire:ſticker]"}).endswith("[fire:ſticker]")   # ASCII case only
