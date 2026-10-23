@@ -573,7 +573,8 @@ def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
     if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key():
         return False
     if (reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}") \
-            and verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key):
+            and (verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key)
+                 or (card.rel and verdict.get("printed") is not False)):     # written before the redundancy check ran
         return False
     return True
 
@@ -622,6 +623,24 @@ def _message(cards: list) -> str:
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
 
+def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> bool:
+    """
+    The redundancy check before the duplicate and no-PNG gates: when the PSD already prints every PSD-kind value of the
+    entry (NME Stock's name), the values are dropped like any redundant field (no PNG is needed for that) and the
+    card goes no further. False when one would need a bake (the gate refuses it then).
+    """
+    old_psd = join(folder, "old", basename(card.rel))
+    snapshot.fetch(card.psd_sha, old_psd)
+    parsed = psd_edit.parse_card(parser, old_psd, card.rel)
+    classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd))
+    if classified.jobs or classified.refusals or not classified.redundant:
+        return False
+    card.redundant = list(classified.redundant)
+    card.expect = {card.rel: card.psd_sha, **({card.png: snapshot.sha(card.png)} if card.png else {})}
+    card.dropped = list(card.redundant)
+    return True
+
+
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
               recent: Callable[[], Optional[set]]) -> None:
     """
@@ -658,6 +677,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png or duplicates:
             card.pngs = snapshot.pngs_key(card.rel, card.key)
+            if _printed_already(snapshot, card, parser, folder):    # nothing to bake: dropped though no PNG can be
+                return
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
         if duplicates:
@@ -740,6 +761,7 @@ def share_of(card: Card) -> Optional[Share]:
         return None
     card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], **({"fonts": card.fonts} if card.fonts else {}),
                     **({"pngs": card.pngs} if card.pngs else {}),
+                    **({"printed": False} if card.pngs and card.rel else {}),    # the redundancy check ran first
                     "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
     def refuse(text: str) -> Optional[str]:
