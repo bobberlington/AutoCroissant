@@ -393,6 +393,15 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     Returns:
         The names whose card changed
     """
+    from commands.card_runner import bake_lock      # lazy: the CLI (migrate) needs no Discord
+    if bake_lock.locked():
+        print("Discord edit: its in-memory refresh waits for the running /update_stats or bake")
+    with bake_lock:                                 # never saves stats.pkl inside a build (repo_traverser holds it)
+        return _refresh(names, edits_text, authors_text)
+
+
+def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> list:
+    """refresh's body, under bake_lock."""
     from commands.card_data import CardBuild
     from commands.psd_analyzer import stats_db
     from commands.query_card import card_repo
