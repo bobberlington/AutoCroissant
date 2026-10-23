@@ -1118,6 +1118,19 @@ def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, c
     assert cd.clean_history(db, cd.history_index())[2] == [] and db.old_stats["Lost Card"][0].archived is None
 
 
+def test_a_failing_history_cleanup_skips_with_one_line(github, monkeypatch, capsys):
+    """The one-time cleanup runs at every /update_stats: an unexpected error in it is one line, never a failed run."""
+    import commands.card_data as cd
+
+    def boom(*a, **kw):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(cd, "clean_history", boom)
+    _run()
+    out = capsys.readouterr().out
+    assert "History cleanup skipped (RuntimeError: boom)." in out and "Card statistics update complete!" in out
+    assert set(_saved()[0]) >= {"Mini Doomer", "The Freezer"}
+
+
 def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     """Every stats.pkl reader skips an archived card: the query dataframes and DSL, /query's card lookup, titles,
     /list_orphans, /mass_replace, the exports and the problem reports. aliases.pkl keeps its aliases."""

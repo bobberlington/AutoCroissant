@@ -978,9 +978,12 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     db = build.db
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     build.details = psd_details.load()
-    index = history_index()
-    cleaned = clean_history(db, index, bot_pickles() if index is not None else None)   # one-time (2026-10-23)
-    line = history_line(*cleaned, db=db)
+    try:                                            # one-time (2026-10-23); a failure skips it with one line
+        index = history_index()
+        line = history_line(*clean_history(db, index, bot_pickles() if index is not None else None), db=db)
+    except Exception as e:                          # noqa: BLE001 - the cleanup never stops an update
+        line = None
+        build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
     if line:
         build.report(line)
     problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
