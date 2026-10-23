@@ -110,7 +110,7 @@ stats_commands = {
                                                   "- del_entry: Hide the card on the website and in queries\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
                                                   "- No parameters (except query) shows current metadata, its creation date (created) included",
-    "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
+    "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data (archived cards too, by their own name).\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
     "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only). "
                                                        "One commit to the card repo: author rewrites site/Card Authors.txt; the other fields write each card's entry in site/Card Edits.json.",

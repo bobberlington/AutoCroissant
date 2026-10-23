@@ -309,6 +309,14 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     old = _ask("Tainted Bethany", "2026-02-01")[0]
     assert old["links"][1] == ("Image (2026-01-30)", f"https://raw.githubusercontent.com/{qc.card_repo.repository}/"
                                                      f"{first}/{png}")
+    import commands.repo_history as rh
+    import subprocess
+    work = tmp_path / "cards"                                              # deleted later: never the deleting commit
+    subprocess.run(["git", "-C", str(work), "rm", "-q", f"{BETHANY}.png"], check=True)
+    subprocess.run(["git", "-C", str(work), "-c", "user.name=a", "-c", "user.email=a@x", "commit", "-q", "-m", "gone"],
+                   check=True, env={**__import__("os").environ, "GIT_COMMITTER_DATE": f"@{int(_at(2026, 10, 22, 8))} +0000"})
+    subprocess.run(["git", "-C", str(tmp_path / "history.git"), "fetch", "-q", str(work), "+main:main"], check=True)
+    assert rh.commit_before(qc.card_repo.repository, f"{BETHANY}.png", _at(2026, 10, 23))[0] == second
 
 
 # ========================
