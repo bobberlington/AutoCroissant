@@ -326,6 +326,19 @@ def _top(layer):
     return layer
 
 
+def _copies(psd: PSDImage, layer) -> list:
+    """
+    The other visible text layers with pixels printing the layer's words (a copy for an effect, a watermark): an edit
+    would change one and leave the rest.
+    """
+    words = " ".join((layer.text or "").replace("\x03", " ").split()).casefold()
+    if not words:
+        return []
+    return [other.name for other in psd.descendants() if _is_text_layer(other) and other is not layer and other.is_visible()
+            and other.bbox[2] > other.bbox[0] and other.bbox[3] > other.bbox[1]
+            and " ".join((other.text or "").replace("\x03", " ").split()).casefold() == words]
+
+
 def _no_title(psd: PSDImage) -> str:
     """Why the parser reads no title layer (name_layer's refusal)."""
     group = _text_group(psd)
@@ -354,7 +367,7 @@ def name_layer(psd: PSDImage, card: str = ""):
 
     Returns:
         The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
-        title split over layers)
+        title split over layers, a copy for an effect)
     """
     found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
     if not found:
@@ -363,6 +376,9 @@ def name_layer(psd: PSDImage, card: str = ""):
         raise Refused("unsupported-card", f"{len(found)} title layers")
     if PSDParser.split_title(psd, found, title_text(found[0].text), card):
         raise Refused("unsupported-card", "the title is split over several layers")
+    copies = _copies(psd, found[0])
+    if copies:
+        raise Refused("unsupported-card", f"the title is printed again by {copies[0]!r}")
     return found[0]
 
 
@@ -521,12 +537,15 @@ def ability_layer(psd: PSDImage):
     The single visible Ability text layer, in whatever group the developer put it (the parser reads it wherever it is).
 
     Returns:
-        The layer; raises Refused("unsupported-card") for none or several
+        The layer; raises Refused("unsupported-card") for none or several, or another layer printing its words
     """
     visible = [layer for layer in psd.descendants()
                if _is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
     if len(visible) != 1:
         raise Refused("unsupported-card", f"{len(visible)} visible Ability layers")
+    copies = _copies(psd, visible[0])
+    if copies:
+        raise Refused("unsupported-card", f"the ability is printed again by {copies[0]!r}")
     return visible[0]
 
 

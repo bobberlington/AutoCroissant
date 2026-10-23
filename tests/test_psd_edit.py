@@ -53,6 +53,8 @@ BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, i
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"               # its Name layer sits at the root
 MARX = "Creatures/Kirby/5 Stars/Marx.psd"                          # its Ability sits at the root, 'Ability FX: Glued' over it
+EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"                  # 'Name copy' and 'Name copy 2' print the title again
+SOMETHING = "Creatures/Omori/3 Stars/SOMETHING.psd"                # two offset copies print the ability again
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -487,6 +489,19 @@ def test_ability_layer_wherever_the_card_keeps_it(clone):
     assert [fx.name for fx in pe.fx_layers(marx, layer)] == ["Ability FX: Glued"]
     doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     assert pe._top(pe.ability_layer(doomer)) is pe._text_group(doomer)
+
+
+def test_a_title_or_ability_printed_twice_refuses(clone):
+    """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
+    two offset copies of its ability): a bake would change one and leave the copies. An empty layer has no copies
+    (Anubisath's empty Ability beside an empty 'Layer 1')."""
+    with pytest.raises(pe.Refused, match="the title is printed again by 'Name copy'") as refused:
+        pe.name_layer(PSDImage.open(_card(clone, EDEN)[0]), card_name(EDEN))
+    assert refused.value.code == "unsupported-card"
+    with pytest.raises(pe.Refused, match="the ability is printed again by 'Attacks are piercing") as refused:
+        pe.ability_layer(PSDImage.open(_card(clone, SOMETHING)[0]))
+    assert refused.value.code == "unsupported-card"
+    assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
 
 
 def test_name_redundancy_uses_the_printed_title(clone, parser):
