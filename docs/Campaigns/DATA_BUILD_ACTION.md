@@ -490,9 +490,11 @@ github_api reads it inside a try/except and takes the token from the environment
     its card, stars outside 0..7) becomes unknown (stats -1, stars None), the old value kept in an `OUT OF RANGE: ...`
     problem; the build runs it after its versions and G3 refuses any left (the range check), the seed report counts it;
   - with the history clone: `misreads`: consecutive versions whose PSD blobs differ while the card's PNG blob is the
-    same at both readings' commits (+6 h, at least 6 h apart) and whose data differ in the type list alone are one
-    version read twice: the older goes into the newer (which knew all else it did), its start carried; the list is
-    printed;
+    same when the older one's bytes came to its path and at the newer one's start (+6 h each, at least 6 h apart: a
+    push's PNG export can trail its PSD) and whose data differ in the type list alone are one version read twice: the
+    older goes into the newer (which knew all else it did), its start carried; the list is printed. Run before or
+    after `dedupe` (main's or this cleanup's), in the bot or the seed, the result is the same (rehearsed: 1081 versions
+    each way);
   - `normalize`: a stored version's series is filled from the version after it when it had none (an item's series is typed
     in later; a creature's comes from its folder, never filled), or moved under the parent the split gave it; retired type
     icons renamed; a version's copy of the card's creation date dropped (the card and an archived record keep it);

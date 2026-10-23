@@ -567,7 +567,7 @@ case, icon tokens and punctuation aside), types, stars, stats or card type no ne
 legacy version (`version.restored_from` its PICKLE), one that prints the same only moves the next version's start
 earlier (the version knowing all it knew); the cards gone before archiving are archived from their last reading
 (`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW). Consecutive versions whose
-PSD changed, PNG did not between their commits and types alone differ are one misread (`misreads`), and impossible
+PSD changed, PNG did not (from the older reading to the newer one's start) and types alone differ are one misread (`misreads`), and impossible
 history values (a stat above 20, above 10 without allow_high_stats, stars outside 0..7) become unknown with an
 `OUT OF RANGE: ...` problem keeping the old value (`unknown_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
