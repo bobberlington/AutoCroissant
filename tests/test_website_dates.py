@@ -73,3 +73,14 @@ def test_a_same_data_resave_keeps_the_websites_dates(an):
     assert len(db.old_stats["A"]) == 1 and ch.start(db.stats["A"]) == (200.0, None)
     assert _site(an, db.stats, db.old_stats) == _site(an, {"A": kept[1]}, kept[0])
     assert db.stats["A"].timestamp == 300.0                        # the card's own date (the site's "updated") stays
+
+
+def test_a_carried_start_still_folds_a_re_read(an):
+    """Bob-ulk: a version read again at the same commit by a newer parser gives way to the newer reading. The cleanup drops
+    that reading's copy and the card holds its start; the site folds by that start (when), so the page doesn't change."""
+    stats = {"A": _card("New.", 3, "b4", 400.0)}
+    old = defaultdict(list, {"A": [_card(blob_sha="b1", timestamp=100.0), _card("New.", 3, "b1", 100.0)]})
+    before = _site(an, *deepcopy((stats, old)))
+    assert before[0] == [] and before[2] == 100.0
+    assert ch.dedupe(stats, old) == [("A", 100.0)] and ch.start(stats["A"]) == (100.0, None)
+    assert _site(an, stats, old) == before
