@@ -8,6 +8,7 @@ work/site-password). The node checks skip without node.
 """
 import base64
 import importlib.util
+import io
 import json
 import shutil
 from os import environ
@@ -54,7 +55,8 @@ BAD = {                                           # name -> (file name stem, raw
     "login in another case": ("MichaelJSr", good(login="michaeljsr")),
     "kdf": ("MichaelJSr", good(kdf="PBKDF2")),
     "too few iterations": ("MichaelJSr", good(iterations=999_999)),
-    "too many iterations": ("MichaelJSr", good(iterations=10_000_001)),
+    "too many iterations": ("MichaelJSr", good(iterations=5_000_001)),
+    "login with a newline": ("MichaelJSr\n", good(login="MichaelJSr\n")),
     "iterations a float": ("MichaelJSr", good(iterations=2e6)),
     "iterations True": ("MichaelJSr", good(iterations=True)),
     "salt 15 bytes": ("MichaelJSr", good(salt=B64(15))),
@@ -105,6 +107,25 @@ def test_read_and_write_never_fail(bs, tmp_path, monkeypatch, capsys):
     assert json.loads((dist / "michaeljsr.json").read_text(encoding="utf-8")) == good()
     bs.write_logins(str(tmp_path / "none"), [])
     assert not (tmp_path / "none").exists()
+
+
+def test_names_differing_in_case_publish_neither(bs, tmp_path, monkeypatch, capsys):
+    """ALICE.json next to Alice.json: neither reaches data/logins/ (the sign-in asks GitHub for each), with a warning.
+    The folder is faked: a Mac's file system can't hold both names."""
+    monkeypatch.setattr(bs, "REPO", str(tmp_path))
+    (tmp_path / bs.LOGINS_DIR).mkdir(parents=True)
+    names = ["ALICE.json", "Alice.json", "Bob.json"]
+    monkeypatch.setattr(bs.os, "listdir", lambda folder: list(names))
+    monkeypatch.setattr(bs.os.path, "isfile", lambda path: True)
+    monkeypatch.setattr(bs.os.path, "getsize", lambda path: 100)
+    monkeypatch.setattr(bs, "open", lambda path, **kw: io.StringIO(json.dumps(good(Path(path).stem))), raising=False)
+    assert [e["login"] for e in bs.read_logins()] == ["Bob"]
+    assert "Alice.json: another file has this login in another case" in capsys.readouterr().out
+
+
+def test_at_with_a_trailing_newline_is_ignored(bs):
+    entry, notes = bs.clean_login(good(at="2026-10-23T01:45:00Z\n"), "MichaelJSr")
+    assert entry == good(at=...) and len(notes) == 1
 
 
 def node(tmp_path, body: str):
