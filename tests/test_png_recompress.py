@@ -62,3 +62,16 @@ def test_the_batch_rewrites_the_heavy_card_pngs(checkout, tmp_path, capsys):
     assert set(_git(root, "diff", "--name-only").splitlines()) == {f"Items/Heal/2 Stars/{n}" for n in ("Fat.png", "Fat2.png", "Edited.png")}
     assert batch.main(["--clone", str(root), "--apply", "--workers", "1", "--report", str(report)]) == 0   # rewritten: not HEAD's
     assert [row["outcome"] for row in json.loads(report.read_text())].count("recompressed") == 0
+
+
+def test_the_batch_message_names_each_png_in_a_trailer(checkout, tmp_path):
+    """--message: the batch commit's text, one Recompressed trailer per rewritten PNG (git parses them: TTSCardMaker
+    build_site shows no new image version for those)."""
+    root, files = checkout
+    text = tmp_path / "message.txt"
+    assert batch.main(["--clone", str(root), "--apply", "--workers", "1", "--message", str(text)]) == 0
+    message = text.read_text()
+    assert message.startswith("Card PNGs: 2 recompressed losslessly (0.00 GB -> 0.00 GB, the same pixels)\n\n")
+    trailers = subprocess.run(["git", "interpret-trailers", "--parse"], input=message, capture_output=True, text=True,
+                              check=True).stdout
+    assert trailers == "".join(f"Recompressed: Items/Heal/2 Stars/{name}\n" for name in ("Fat.png", "Fat2.png"))

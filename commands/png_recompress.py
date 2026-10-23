@@ -1,12 +1,13 @@
 """
-The one batch pass over the card repo's PNGs (owner, 2026-10-23: Photoshop's exports are 3-4x bigger): every card PNG at
-a checkout's HEAD that oxipng makes more than png_export.RECOMPRESS_MIN (10%) and RECOMPRESS_BYTES smaller, losslessly
-(png_export.optimize, checked by same_png: the same header, pixels and chunks), is rewritten in the working tree. From
-then on the push guards do the same for every PNG a push brings. Nothing is committed or pushed: the landing commits the
-rewritten PNGs (as AutoCroissant, so the push guards skip the commit). A file that is not HEAD's blob (edited, or outside
-a sparse checkout) is skipped.
+The one batch pass over the card repo's PNGs (owner, 2026-10-23; Photoshop's exports measured 4.8x too big): every card
+PNG at a checkout's HEAD that oxipng makes more than png_export.RECOMPRESS_MIN (10%) and RECOMPRESS_BYTES (64 KiB) smaller
+(our thresholds), losslessly (png_export.optimize, checked by same_png: the same header, pixels and chunks), is rewritten
+in the working tree. From then on the push guards do the same for every PNG a push brings. Nothing is committed or
+pushed: the landing commits the rewritten PNGs as AutoCroissant (the push guards skip the commit) with --message's text,
+one Recompressed trailer per PNG (the website then shows no new image version). A file that is not HEAD's blob (edited,
+or outside a sparse checkout) is skipped.
 
-    python -m commands.png_recompress --clone <checkout> [--apply] [--workers N] [--report <file.json>]
+    python -m commands.png_recompress --clone <checkout> [--apply] [--workers N] [--report <file.json>] [--message <file>]
 
 Without --apply nothing is written (the savings are measured). Needs pyoxipng; no Discord, network or config.
 """
@@ -19,7 +20,7 @@ from subprocess import run
 from typing import Optional
 
 import commands.png_export as png_export
-from commands.card_guards import card_png
+from commands.card_guards import RECOMPRESSED, card_png
 from commands.github_api import blob_sha
 
 # ========================
@@ -94,6 +95,14 @@ def summary(rows: list) -> list:
     return lines
 
 
+def message(rows: list) -> str:
+    """The batch commit's message: the subject with the count and sizes, one Recompressed trailer per PNG."""
+    done = [r for r in rows if r["outcome"] == "recompressed"]
+    before, after = sum(r["before"] for r in done), sum(r["after"] for r in done)
+    subject = f"Card PNGs: {len(done)} recompressed losslessly ({before / 1e9:.2f} GB -> {after / 1e9:.2f} GB, the same pixels)"
+    return subject + "\n\n" + "".join(f"{RECOMPRESSED}: {path}\n" for path in sorted(r["path"] for r in done))
+
+
 # ========================
 # Command line
 # ========================
@@ -106,6 +115,7 @@ def main(args: Optional[list] = None) -> int:
     cli.add_argument("--apply", action="store_true", help="rewrite the PNGs in the working tree (else measure only)")
     cli.add_argument("--workers", type=int, default=WORKERS, metavar="N", help=f"processes (default {WORKERS})")
     cli.add_argument("--report", default="", metavar="FILE", help="every PNG's outcome and sizes as JSON")
+    cli.add_argument("--message", default="", metavar="FILE", help="the commit message for the recompressed PNGs")
     options = cli.parse_args(args)
     items = [(options.clone, path, blob, options.apply) for path, blob in sorted(card_pngs(options.clone).items())]
     with ProcessPoolExecutor(max(1, options.workers)) as pool:
@@ -113,6 +123,9 @@ def main(args: Optional[list] = None) -> int:
     if options.report:
         with open(options.report, "w", encoding="utf-8") as fh:
             dump(rows, fh, indent=1)
+    if options.message:
+        with open(options.message, "w", encoding="utf-8") as fh:
+            fh.write(message(rows))
     print("\n".join(summary(rows)))
     return 1 if any(r["outcome"] == "not the same" for r in rows) else 0
 
@@ -127,6 +140,7 @@ if __name__ == "__main__":
 __all__ = [
     'card_pngs',
     'main',
+    'message',
     'one',
     'summary',
 ]

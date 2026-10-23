@@ -6,8 +6,8 @@ against the card standards (fonts included) and fixes only the 0-pixel classes. 
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
-Every card PNG the push brought is recompressed losslessly in that commit when it shrinks by more than 10% (owner,
-2026-10-23: png_export.recompress, the same pixels), and so is every PNG the bot writes.
+Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
+the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] [--fonts <dir>] --out <dir>
@@ -25,6 +25,7 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from json import dump, dumps, load, loads
 from os import cpu_count, environ, makedirs
 from os.path import basename, dirname, join, splitext
@@ -58,6 +59,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
+RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
 BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besides git_commit.AUTHOR: never guarded
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
@@ -451,7 +453,8 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             jobs.append(Job(psd, "png-only", "", tree[psd][1], path, change.old, change.new, login=login, commit=commit,
                             pushed=pushed(psd)))
         elif change.status == "D":
-            jobs.append(Job(psd, "png-deleted", "", tree[psd][1], path, change.old, login=login, commit=commit))
+            jobs.append(Job(psd, "png-deleted", "", tree[psd][1], path, change.old, login=login, commit=commit,
+                            pushed=pushed(psd)))  # its numbered PNGs too: one entry per PSD
     covered = {path for job in jobs for path in job.pushed}
     alone: dict = {}                            # numbered PNGs pushed without their PSD or its PNG: recompressed only
     for path, change in sorted(pngs.items()):
@@ -533,10 +536,17 @@ def _size(n: int) -> str:
     return f"{n / 1e6:.1f} MB" if n >= 1e6 else f"{n / 1e3:.0f} KB"
 
 
-def _recompress(out: str, result: Result, path: str, data: bytes) -> None:
-    """A PNG the push brought, recompressed losslessly when more than RECOMPRESS_MIN smaller (owner, 2026-10-23): a write
-    of its own kind, resting on that PNG alone and never told on Discord."""
-    smaller = png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) -> None:
+    """A PNG the push brought (read() gives it), recompressed losslessly (owner, 2026-10-23) when more than RECOMPRESS_MIN
+    and RECOMPRESS_BYTES smaller (our thresholds): a write of its own kind, resting on that PNG alone and never told on
+    Discord. A failure is a comment note, never the card's error (which Discord would tell)."""
+    try:
+        data = read()
+        smaller = png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+    except Exception as error:                  # it only saves bytes: the card goes on
+        print(format_exc(), file=stderr)
+        result.notes.append((f"{basename(path)} not recompressed ({type(error).__name__}: {error})", False))
+        return
     if smaller is not None:
         result.writes.append({"path": path, "file": _save(out, path, smaller), "sha": blob_sha(smaller), "kind": "recompress",
                               "line": f"recompressed losslessly ({_size(len(data))} -> {_size(len(smaller))}, the same pixels)"})
@@ -580,7 +590,7 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> R
 
 def _run(source: Source, job: Job, context, parser, out: str, result: Result) -> None:
     for path, sha in sorted(job.pushed.items()):
-        _recompress(out, result, path, source.blob(sha))
+        _recompress(out, result, path, partial(source.blob, sha))
     if job.case == "numbered":
         return
     if job.case == "deleted":
@@ -652,7 +662,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     if job.case in ("pair", "png-only", "whole") and job.png_new:
         data = source.blob(job.png_new)
         if job.case != "whole":
-            _recompress(out, result, job.png, data)
+            _recompress(out, result, job.png, lambda: data)
         png = png_export.open_png(data)
         measured = png_export.png_check(new, png)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
@@ -717,7 +727,7 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "commit": result.job.commit, "export": result.export, "r10": result.r10, "issues": result.issues,
                  "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
                  "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
-                 "changes": result.changes, "expect": _expect(result.job)}
+                 "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed)}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -986,7 +996,8 @@ def landed_markdown(data: dict, landed: dict) -> str:
 
 
 def message(landed: list, after: str) -> str:
-    """The bot commit's message: subject with the counts, one line per file, the Guarded-push trailer."""
+    """The bot commit's message: subject with the counts, one line per file, then the trailers: one Recompressed per PNG
+    only recompressed, the Guarded-push."""
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd")
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
@@ -995,15 +1006,18 @@ def message(landed: list, after: str) -> str:
                                          plural(smaller, "PNG") + " recompressed" if smaller else "") if part)
     lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
-    return f"{SUBJECT}: {counts} (push {after[:8]})\n\n" + "\n".join(lines) + f"\n{TRAILER}: {after}\n"
+    trailers = sorted(f"{RECOMPRESSED}: {w['path']}" for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
+    trailers.append(f"{TRAILER}: {after}")
+    return f"{SUBJECT}: {counts} (push {after[:8]})\n\n" + "\n".join(lines) + "\n\n" + "\n".join(trailers) + "\n"
 
 
 def _rests_on(entry: dict, write: dict) -> list:
     """The paths a write rests on: a PSD fix (0 pixels) on its PSD alone, a recompressed PNG on itself, a PNG on the whole
-    card (PSD, PNG, numbered)."""
+    card (PSD, PNG, numbered) but the numbered PNGs the push brought (only their recompressions rest on them)."""
     if write["kind"] == "psd":
         return [entry["psd"]]
-    return [write["path"]] if write["kind"] == "recompress" else sorted(entry["expect"])
+    pushed = set(entry.get("pushed", ()))
+    return [write["path"]] if write["kind"] == "recompress" else sorted(p for p in entry["expect"] if p not in pushed)
 
 
 class Head:
@@ -1298,6 +1312,7 @@ __all__ = [
     'Head',
     'Job',
     'LINE',
+    'RECOMPRESSED',
     'Result',
     'SPARSE_FILES',
     'Source',

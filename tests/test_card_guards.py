@@ -469,7 +469,10 @@ def test_message():
     assert "Items/X.png: re-exported by the bot's render of the PSD (12 px changed) (Zomoroko, 7cb4c867)" in text
     assert text.rstrip().endswith(f"Guarded-push: {'f' * 40}") and "Edit-by" not in text
     landed[0]["writes"].append({"path": "Items/Z.png", "kind": "recompress", "line": "recompressed losslessly (9.0 MB -> 2.0 MB)"})
-    assert cg.message(landed, "f" * 40).splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
+    text = cg.message(landed, "f" * 40)
+    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
+    trailers = subprocess.run(["git", "interpret-trailers", "--parse"], input=text, capture_output=True, text=True, check=True).stdout
+    assert trailers == f"Recompressed: Items/Z.png\nGuarded-push: {'f' * 40}\n"     # what git (and build_site) reads
 
 
 # ========================
@@ -944,6 +947,66 @@ def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatc
     report = cg.land(plan)
     assert report["dropped"] == [["Fat", "superseded: X/Fat.png changed on the branch", "X/Fat.png"]]
     assert report["told"] == {"X/Fat.psd": []} and cg.finish(plan, report) == {}
+
+
+def test_a_pushed_numbered_png_holds_back_only_its_recompression(tmp_path, monkeypatch):
+    """Snack.psd pushed with a heavy Snack2.png (stale: the bot re-exports Snack.png). The author re-pushes Snack2.png in
+    the window: its recompression is dropped, Snack.png's re-export (which never read Snack2.png) still lands."""
+    out = tmp_path / "plan"
+    snack2 = "X/Snack2.png"
+    job = cg.Job("X/Snack.psd", "stale", "s0", "s1", "X/Snack.png", png_old="p1", pushed={snack2: "n2"}, login="Alice",
+                 commit="a" * 40)
+    result = cg.Result(job, export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
+    entry = {"writes": result.writes}
+    _write(out, entry, "X/Snack.png", "png", b"png", "re-exported")
+    _write(out, entry, snack2, "recompress", b"small", "recompressed losslessly")
+    (planned,) = cg.plan([result], "o/r", "e" * 40, "f" * 40, "on")["cards"]
+    assert planned["expect"][snack2] == "n2" and planned["pushed"] == [snack2]
+    plan = _full_plan(tmp_path, [planned])
+    hub = FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1"), snack2: ("100644", "theirs")})
+    hub.install(monkeypatch)
+    report = cg.land(plan)
+    assert report["landed"] == ["Snack"] and hub.commits[0][1] == ["X/Snack.png"]
+    assert report["dropped"] == [["Snack", f"superseded: {snack2} changed on the branch", snack2]]
+    assert report["told"] == {"X/Snack.psd": []}
+
+
+def test_a_deleted_png_and_its_pushed_numbered_png_are_one_card(cards):
+    """A push deleting Snack.png and changing Snack2.png: one job for Snack.psd (png-deleted, Snack2.png recompressed in
+    it), not a second "numbered" one whose notes would replace the first's in the comment."""
+    root, base, alice, bot = cards
+    _git(root, "rm", "-q", f"{FOLDER}/Snack.png")
+    _png(root, f"{FOLDER}/Snack2.png", card(colour=(0, 0, 255)))
+    push = _commit(root, "Snack's PNGs", author="Alice")
+    source = cg.Source(str(root))
+    jobs = [job for job in cg.plan_jobs(source, bot, push, "actor")[0] if job.psd == f"{FOLDER}/Snack.psd"]
+    assert [(job.case, list(job.pushed)) for job in jobs] == [("png-deleted", [f"{FOLDER}/Snack2.png"])]
+
+
+def test_a_failed_recompression_is_a_comment_note(monkeypatch, tmp_path):
+    """A PNG that cannot be read or recompressed: a comment note, never the card's error (Discord and the run's "card
+    errors" would tell it); oxipng raising anything gives no recompression."""
+    class Broken:
+        def blob(self, sha):
+            raise OSError("blob unreadable")
+    job = cg.Job("X/Snack.psd", "numbered", "", "s1", login="Alice", commit="a" * 40, pushed={"X/Snack2.png": "n2"})
+    result = cg.run_job(Broken(), job, None, None, str(tmp_path), "on")
+    assert result.error == "" and not result.writes and result.told("on") == []
+    assert result.notes == [("Snack2.png not recompressed (OSError: blob unreadable)", False)]
+
+    class Oxipng:
+        class PngError(Exception):
+            pass
+
+        class StripChunks:
+            none = staticmethod(lambda: None)
+
+        @staticmethod
+        def optimize_from_memory(data, **options):
+            raise RuntimeError("thread panicked")
+    monkeypatch.setattr(pe, "_oxipng", lambda: Oxipng)
+    heavy = photoshop_png(art("RGB", (40, 60)))
+    assert pe.optimize(heavy) is None and pe.recompress(heavy) is None
 
 
 def test_a_faint_beside_mismatch_note_names_the_case(cards, tmp_path):

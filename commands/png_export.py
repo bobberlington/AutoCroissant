@@ -20,7 +20,7 @@ draw those.
     recompress(data, minimum, floor) -> bytes or None        the PNG losslessly smaller (oxipng, checked), or None
     same_png(a, b) -> bool                                   the same image: header, pixels and every other chunk
 
-Every PNG the guards write is recompressed losslessly (owner, 2026-10-23: Photoshop's exports are 3-4x bigger).
+Every PNG the guards write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x too big).
 
 No Discord, network or config.
 """
@@ -71,7 +71,7 @@ G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own 
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
 MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
-RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed when this much smaller (owner, 2026-10-23)
+RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed when this much smaller (ours: the owner set none)
 RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
 OXIPNG_LEVEL = 2                                # oxipng's default preset (4.8x on Photoshop's exports; level 4 adds 1%)
 OXIPNG_TIMEOUT = 120                            # seconds per PNG: oxipng keeps its best so far
@@ -348,7 +348,7 @@ def optimize(data: bytes) -> Optional[bytes]:
     and RGBA only), every chunk kept. Unchecked: recompress checks it.
 
     Returns:
-        The new file (maybe not smaller); None without pyoxipng, for a PNG not 8-bit, or when oxipng fails
+        The new file (maybe not smaller); None without pyoxipng, for a PNG not 8-bit, or when oxipng fails in any way
     """
     oxipng = _oxipng()
     if oxipng is None or not data.startswith(SIGNATURE) or data[12:16] != b"IHDR" or len(data) < 33 or data[24] != 8:
@@ -357,8 +357,12 @@ def optimize(data: bytes) -> Optional[bytes]:
         return oxipng.optimize_from_memory(data, level=OXIPNG_LEVEL, bit_depth_reduction=False, color_type_reduction=False,
                                            palette_reduction=False, grayscale_reduction=False,
                                            strip=oxipng.StripChunks.none(), timeout=OXIPNG_TIMEOUT)
-    except oxipng.PngError:
+    except Exception:                           # PngError, or anything else oxipng raises: no recompression
         return None
+    except BaseException as error:              # a Rust panic: pyo3's PanicException is no Exception
+        if type(error).__name__ == "PanicException":
+            return None
+        raise
 
 
 def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:

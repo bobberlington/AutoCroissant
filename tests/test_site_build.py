@@ -255,3 +255,48 @@ def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, m
     melon, dup = cards["Watermelon"], cards["Inconspicuous Watermelon"]
     assert dup["ability"] == "Heal 1." and "hv" not in dup and dup["id"] not in out["history.json"]
     assert out["history.json"][melon["id"]] == [{"ts": repo["t"][0], "ability": "Heal 1."}]
+
+
+def test_a_recompression_is_no_new_image_version(bs, tmp_path, monkeypatch):
+    """The push guards' commit and the batch name the PNGs they only recompressed in Recompressed trailers (the same
+    image): no image version for those; the guards' re-export in the same commit is one, and a person's commit is
+    always one, trailer or not."""
+    import commands.card_guards as cg
+    import commands.png_recompress as batch
+    from PIL import Image
+    root = tmp_path / "cards"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    snack, bread = f"{MELON}.png", f"{ALPHA}.png"
+
+    def save(path, shade, level=6):
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (60, 84), (shade, 40, 90)).save(root / path, compress_level=level)
+
+    def commit(message, author="Maker"):
+        email = "autocroissant@gmail.com" if author == "AutoCroissant" else "maker@example.com"
+        env = {**environ, "GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": author,
+               "GIT_COMMITTER_EMAIL": email}
+        subprocess.run(["git", "-C", str(root), "add", "-A"], env=env, check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message], env=env, check=True)
+        return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+    save(snack, 10), save(bread, 10)
+    c1 = commit("Cards")
+    save(snack, 20)
+    c2 = commit("Snack art")
+    save(snack, 20, 0), save(bread, 30)                     # the guards: Snack.png recompressed, Bread.png re-exported
+    c3 = commit(cg.message([{"login": "Maker", "commit": c2, "writes": [
+        {"path": snack, "kind": "recompress", "line": "recompressed losslessly (9.0 MB -> 2.0 MB, the same pixels)"},
+        {"path": bread, "kind": "png", "line": "re-exported by the bot's render of the PSD (12 px changed)"}]}], c2),
+        "AutoCroissant")
+    save(snack, 20, 9), save(bread, 30, 0)                  # the batch
+    c4 = commit(batch.message([{"path": p, "outcome": "recompressed", "before": 9, "after": 2} for p in (snack, bread)]),
+                "AutoCroissant")
+    save(snack, 40)
+    c5 = commit(f"Snack again\n\n{cg.RECOMPRESSED}: {snack}")
+    monkeypatch.setattr(bs, "HISTORY_REPO", str(root))
+    history = bs.git_history()
+    found = bs.image_versions([snack, bread], history)
+    assert {path: [commit[0] for commit, _ in rows] for path, rows in found.items()} == {snack: [c5, c2, c1], bread: [c3, c1]}
+    assert {sha: entries for sha, _, _, _, _, entries, _ in history}[c4] == []     # the batch changed no image
