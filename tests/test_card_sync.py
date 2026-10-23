@@ -364,6 +364,20 @@ def test_cards_dispatch_follows_the_run_then_syncs(github, tmp_path):
     assert all(TOKEN not in s for s in said + _edits())
 
 
+@pytest.mark.parametrize("full", [False, True])
+def test_card_syncs_own_retry_is_followed(github, tmp_path, full):
+    """Main moved during the run: it ends green with its data dropped and dispatches its retry, which is followed."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
+    github.runs = [_run(42, "queued", login=cs.BOT_LOGIN), _run(41)]
+    github.states[42] = [_run(42, "in_progress", login=cs.BOT_LOGIN), _run(42, login=cs.BOT_LOGIN)]
+    cs.update(ME, force_update=full, cards="" if full else "A")
+    said, url = _said(), "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/"
+    assert said[1] == (f"The card repo changed during run <{url}41>, so Card sync dropped its data and started again: "
+                       f"<{url}42>" + (" (without the full re-parse: ask again once it is done)." if full else "."))
+    assert said[2] == f"Card sync run finished: <{url}42>" and len(github.posts) == 1
+
+
 def test_full_dispatch_without_run_details_finds_its_run(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     github.runs = [_run(7, event="schedule")]

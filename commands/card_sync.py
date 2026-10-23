@@ -391,11 +391,22 @@ def _again(run: dict) -> tuple:
     return (True, "")
 
 
+def _retry_of(run: dict) -> Optional[dict]:
+    """Card sync's own retry of a run (main moved during it, so its data was dropped), or None."""
+    try:
+        runs = _runs(CARD_REPO, _headers())
+    except (RequestException, ValueError):
+        return None
+    return next((r for r in reversed(runs) if (r.get("id") or 0) > (run.get("id") or 0)
+                 and r.get("event") == "workflow_dispatch" and (r.get("actor") or {}).get("login") == BOT_LOGIN), None)
+
+
 def request_run(interaction, full: bool, names: list) -> Optional[dict]:
     """
     /update_stats force_update or cards: a Card sync run dispatched (full, or these cards) and followed until it ends
     (WAIT_MINUTES at most). A run cancelled before it started (replaced by a newer pending one) is dispatched once
-    more, or said (_again). Without ACTIONS_TOKEN, the link and the gh command.
+    more, or said (_again); Card sync's own retry (main moved during the run) is followed too. Without ACTIONS_TOKEN,
+    the link and the gh command.
 
     Returns:
         The last run, or None
@@ -440,6 +451,16 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
                 say(interaction, why)
                 return run
             say(interaction, "The run was replaced by a scheduled card sync before it started; starting it again.")
+        retry = _retry_of(run) if run.get("conclusion") == "success" else None
+        if retry is not None:
+            say(interaction, f"The card repo changed during run <{run.get('html_url')}>, so Card sync dropped its data and "
+                             f"started again: <{retry.get('html_url')}>"
+                             + (" (without the full re-parse: ask again once it is done)." if full else "."))
+            run = follow(interaction, retry, started)
+            if run is None:
+                say(interaction, f"The Card sync run is still going after {WAIT_MINUTES} minutes; /update_stats "
+                                 "loads its data once it lands.")
+                return None
         if run.get("conclusion") == "success":
             say(interaction, f"Card sync run finished: <{run.get('html_url')}>")
         else:

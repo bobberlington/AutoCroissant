@@ -743,7 +743,8 @@ github_api reads it inside a try/except and takes the token from the environment
   without it) or else is the newest dispatched run not listed before. A cancelled run is dispatched once more only when
   the newer pending run is a scheduled one (ours does its work too) or nothing newer is pending; when another dispatch is
   pending it is said (dispatching again would cancel that one), and one seen running, or with nothing newer at all, was
-  cancelled by hand. One
+  cancelled by hand. Card sync's own retry (main moved during the run: a green run with its data dropped, then a
+  dispatch by github-actions[bot]) is followed too; it never carries `full`, so the reply says to ask again. One
   followed run at a time. Progress edits stop after 14 minutes (the interaction's 15).
 - **Discord edits** keep committing and applying in memory, but no longer save stats.pkl. A sync of a run that started
   before the edit's commit shows the card without it until the next run (30 minutes at most), as does a restart.
