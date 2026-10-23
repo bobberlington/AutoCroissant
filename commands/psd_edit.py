@@ -655,6 +655,34 @@ def keep_breaks(old: str, new: str, which: str) -> str:
     return "".join(out)
 
 
+def keep_ends(old: str, new: str) -> str:
+    """
+    The new text with the layer's blank first and last paragraphs back: the website and Discord trim an ability's ends,
+    so setting it as given would drop PoD10BFB's leading empty paragraph (a spacing line) and move the text up.
+
+    Args:
+        old: The layer's text
+        new: The text to set
+
+    Returns:
+        new, with old's leading breaks (through its last break before any text) and trailing ones (from its first break
+        after the text) when new has none there
+    """
+    blank = " \t\r\x03"
+    if not old.strip(blank) or not new.strip(blank):
+        return new
+    head = old[:len(old) - len(old.lstrip(blank))]
+    tail = old[len(old.rstrip(blank)):]
+    head = head[:max(head.rfind("\r"), head.rfind("\x03")) + 1]
+    cut = [i for i in (tail.find("\r"), tail.find("\x03")) if i >= 0]
+    tail = tail[min(cut):] if cut else ""
+    if head and new[0] not in blank:
+        new = head + new
+    if tail and new[len(new) - 1] not in blank:
+        new = new + tail
+    return new
+
+
 def _word_bounds(text: str, start: int, end: int) -> tuple:
     """[start, end) widened to whole words, so "Poison" -> "Poisoned" restyles the whole word."""
     while start > 0 and LETTER.match(text[start - 1]):
@@ -1083,7 +1111,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     Args:
         psd: The open card (edited in place)
         which: "name" (Text/Name) or "ability" (the single visible Text/Ability)
-        text: The new text; newlines become paragraph breaks but where the layer had a forced line break (keep_breaks)
+        text: The new text; newlines become paragraph breaks but where the layer had a forced line break (keep_breaks);
+            the layer's blank first and last paragraphs stay (keep_ends)
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
@@ -1109,7 +1138,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     layer = name_layer(psd) if which == "name" else ability_layer(psd)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
-    text = keep_breaks(old_text, text, which)
+    text = keep_ends(old_text, keep_breaks(old_text, text, which))
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
@@ -1815,6 +1844,7 @@ __all__ = [
     'gate_stories',
     'icon_font',
     'keep_breaks',
+    'keep_ends',
     'kept_fx',
     'layer_records',
     'merge_png',
