@@ -93,7 +93,8 @@ def _is_bot(by) -> bool:
 def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edit.js editsFile: Card Edits.json with ops applied. A touched entry is matched like the authors file, lists its
-    fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets), then _by and _at
+    fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets, _credit less the fields
+    no longer in _bot), then _by and _at
     (replaced); an entry left without keys goes. An entry the bot stamped lists its fields in _bot first, when another
     editor edits it.
 
@@ -131,6 +132,14 @@ def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
                 current[BOT_FIELDS] = left
             else:
                 current.pop(BOT_FIELDS)
+        if CREDIT in current:                                   # a _bot field's Discord editor goes with it (edit.js)
+            bot = current.get(BOT_FIELDS) if isinstance(current.get(BOT_FIELDS), list) else []
+            was = current[CREDIT] if isinstance(current[CREDIT], dict) else {}
+            credit = {f: v for f, v in was.items() if f in bot}
+            if credit:
+                current[CREDIT] = credit
+            else:
+                current.pop(CREDIT)
         cards.pop(key, None)
         names = [f for f in ORDER if f in current] + [f for f in current if f not in FIELDS]
         if names:

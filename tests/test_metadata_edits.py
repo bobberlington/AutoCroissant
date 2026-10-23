@@ -561,8 +561,8 @@ def test_discord_fields_in_an_editors_entry_are_credited_apart():
     psd = json.loads(de._stamped(text, [{"key": "Goombella", "set": {"hp": 4}, "unset": []}], last, "discord:b"))
     assert psd["cards"]["Goombella"] == {"series": "Kirby", "hp": 4, "ability": "Hit.", "_bot": ["series"],
                                          "_credit": {"series": {"_by": BY, "_at": later}}, "_by": "discord:b", "_at": last}
-    web = de.edits_file(text, series("Goombella", "Mario"), last, "w2")       # edit.js: the field is w2's, _credit stale
-    assert "_bot" not in json.loads(web)["cards"]["Goombella"]
+    web = de.edits_file(text, series("Goombella", "Mario"), last, "w2")       # edit.js: the field is w2's, its credit goes
+    assert "_bot" not in json.loads(web)["cards"]["Goombella"] and "_credit" not in json.loads(web)["cards"]["Goombella"]
     tidy = json.loads(de._stamped(web, [{"key": "Goombella", "set": {"aliases": ["G"]}, "unset": []}], last, BY))
     assert tidy["cards"]["Goombella"] == {"series": "Mario", "ability": "Hit.", "aliases": ["G"], "_bot": ["aliases"],
                                           "_credit": {"aliases": {"_by": BY, "_at": last}}, "_by": "w2", "_at": last}
@@ -572,7 +572,7 @@ def test_discord_fields_in_an_editors_entry_are_credited_apart():
 
 def test_an_entry_left_with_only_its_credit_goes():
     """An entry whose last field goes leaves no stamps behind, its _credit included (edits_file, as edit.js, keeps a
-    _credit-only entry: edit.js doesn't know _credit)."""
+    credited _bot field's entry)."""
     held = {"hp": 6, "aliases": ["X"], "_bot": ["aliases"], "_credit": {"aliases": {"_by": "discord:a", "_at": AT}},
             "_by": "web", "_at": AT}
     text = dump_edits({"about": ABOUT, "cards": {"G": held, "H": {"hp": 1, "_by": "web", "_at": AT}}})
@@ -585,6 +585,19 @@ def test_an_entry_left_with_only_its_credit_goes():
     assert "G" not in after["cards"] and after["cards"]["H"] == {"hp": 1, "_by": "web", "_at": AT}
     psd = dump_edits({"about": ABOUT, "cards": {"G": {"hp": 6, "_psd": {"refused": "x"}, "_by": "web", "_at": AT}}})
     assert unset(psd, "hp")["cards"]["G"] == {"_psd": {"refused": "x"}, "_by": "discord:b", "_at": "T2"}    # as edit.js
+
+
+def test_edits_file_prunes_credit_as_edit_js():
+    """edits_file keeps a _credit field only while it is in _bot; an empty or malformed _credit goes (edit.js editsFile)."""
+    cred = {"aliases": {"_by": "discord:a", "_at": AT}, "series": {"_by": "discord:b", "_at": AT}}
+    held = {"hp": 6, "series": "S", "aliases": ["X"], "_bot": ["series", "aliases"], "_credit": cred, "_by": "web", "_at": AT}
+    text = dump_edits({"about": ABOUT, "cards": {"G": held}})
+    one = json.loads(de.edits_file(text, [{"key": "G", "set": {"series": "T"}, "unset": []}], "T1", "web"))["cards"]["G"]
+    assert one["_bot"] == ["aliases"] and one["_credit"] == {"aliases": cred["aliases"]}
+    both = json.loads(de.edits_file(text, [{"key": "G", "set": {"series": "T", "aliases": ["Y"]}, "unset": []}], "T1", "web"))
+    assert "_bot" not in both["cards"]["G"] and "_credit" not in both["cards"]["G"]
+    bad = dump_edits({"about": ABOUT, "cards": {"G": {**held, "_credit": ["x"]}}})
+    assert "_credit" not in json.loads(de.edits_file(bad, [{"key": "G", "set": {"hp": 7}, "unset": []}], "T1", "web"))["cards"]["G"]
 
 
 def test_alias_refuses_aliases_pkl_until_the_migration(repo, monkeypatch):
