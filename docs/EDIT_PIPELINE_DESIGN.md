@@ -235,7 +235,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    nothing). Two rows (idea 13): Top shows the value and Bottom 0 up to 10, then Top none
    and Bottom value - 10 (`psd_edit.set_stat`). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
-   swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
+   swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
+   the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
    `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
    redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers
    (idea 14, 2026-10-21; BUG 2, 2026-10-23): the bake does what `Effect Layers.jsx`'s Update all does. The model, from the
@@ -277,8 +278,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (review 2026-10-23: Heavy Mole, Wham Bam Bone, Mini Doomer). A badge the edit typed in the icon font joins the badge
    layer's name (each badge layer names every badge of its card; the layer draws every colour glyph): PoD11ZOMG's
    "(2U)" made "(3U)" renames `(1GCD) | (2U) | (2CD)` to `(1GCD) | (2CD) | (3U)`. A
-   `"status"` layer whose style draws other effects than the chart's takes the chart's blocks (owner question 6: an edit
-   normalizes status words to the chart's colour and effect; 8 L7 cards, below). Text typed into a `"styled"` layer's own
+   rebuilt layer keeps its own style, the chart's or not (q6: own style kept, unattended call 2026-10-23, owner to
+   confirm; the owner's standing ruling is to give the developers freedom and handle their choices generally): the 8
+   L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
+   a new layer takes the chart's (below). Text typed into a `"styled"` layer's own
    words (a match holding characters it covered) takes the phrase's colour, its first drawn run (08b1152a); a new match
    keeps the colour of what it replaces. A styled status word no FX layer covers gets a new one
    (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
@@ -286,7 +289,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    chart layer's `lfx2`/`lrFX` deep-copied, a fresh layer id (the seed resource moves past it), directly above the ability's
    top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
    the ability is hidden when it names a styled chart status, else the card refuses `unsupported-card`. The report tells
-   every FX layer deleted, renamed, restyled or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
+   every FX layer deleted, renamed or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
    remains for a psd-tools without the engine pieces (`psd_edit._fx_engine`) and for FX words with no pixels.
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
@@ -298,7 +301,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    one record and land on the other, or leave only when cleared), a text edit one record + its channels; an ability edit's FX
    layers: exactly the declared `<Ability> FX: ...` records gone and the new ones come (pixel records, transparency
    channel first, carrying the chart's `lfx2`/`lrFX` bytes), a rebuilt one its rect and channels only, plus its unicode
-   name when a phrase left and the chart's effect blocks byte for byte when restyled (`_fx_rebuilt`), one flag byte per
+   name when a phrase left; never an effect block, its blending or opacity (`_fx_rebuilt`, q6), one flag byte per
    hidden overlay; records are paired in file order once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
    Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
@@ -429,7 +432,17 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   cards' converted overlays keep their records, styles and places, and a repeat is cut into the same layer (`Blazing`
   over both, as the JSX's phraseRanges does), no longer `Blazing#1`/`#2`. Dry census with every gate (UNBAKEABLE_CARDS
   BUG 2 block): 32 of the corpus's 34 FX cards and 58 of main's 68 bake an ability edit; an Update-all no-op leaves 47 of
-  55 cards byte for byte in their FX records and PNG, the other 8 the L7 cards restyled to the chart (q6). Review
+  55 cards byte for byte in their FX records and PNG, the other 8 the L7 cards restyled to the chart (q6, then). **q6: own
+  style kept, unattended call 2026-10-23, owner to confirm:** a rebuilt FX layer keeps its own style (`_rebuild_fx`
+  restyles nothing; `gate_bytes` lets no effect block change on a rebuilt record); only a new layer takes the chart's.
+  Re-run on the 8 L7 cards (copies of TTSCardMaker main, `~/Documents/Tools/wt/bf-fx-q6-scratch/`, `runs/{old,new}.json`):
+  the Update-all no-op now leaves all 8 PNGs pixel for pixel and every FX record whole (before: 8,871-65,014 px
+  changed, 0-31,725 past 24); the website no-op leaves 4 identical (Doctor Zomboss, Snow Bunny,
+  Freeze Spell, Pandora's Box) and the other 4 change only where an off-swatch status word takes the chart's fill (the
+  2026-10-21 rule; its FX layer cut again under its own style): Royal Eradicator Main Cannon 2,775 px past 24, Standstill
+  2,438, Zero 575, Oryx 44, all within the parity bar; a moved word bakes on all 8, their FX records changing only rect
+  and channels. Tests: `test_noop_ability_bake_keeps_an_l7_fx_layers_own_style` (Snow Bunny, PNG pixel-identical),
+  `test_rebuilt_fx_layer_keeps_its_own_style`, `test_gate_bytes_keeps_a_rebuilt_fx_records_style`. Review
   (2026-10-23): Update all's literal rule would move a chart-style layer named by count (`1#1`) or matched inside a word
   to a new whole word, so those follow their kept characters (`follow_fx`) or refuse; a badge typed as body text onto a
   badge layer refuses; census re-run with a phrase typed again and "Draw 1 card." in front (same results otherwise). Effect

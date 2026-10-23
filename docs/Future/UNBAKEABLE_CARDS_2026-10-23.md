@@ -47,15 +47,26 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
 | corpus, 34 FX cards | **32**: 17 of section 2.15's 18 badge cards, Monkey D Goofy and the 14 chart-word cards | Morpho Knight (its Burning, +2/4/6 ATK, Smoldering strokes), Miracle Matter (5 visible Ability layers, 2.19) |
 | TTSCardMaker main, 68 FX cards | **58** | 8 FX layers the chart has no style for (Morpho Knight, The Watcher, Computer Virus, Mr Krabs's `2T`, Palace of Shadow's `+2 DEF`, Fire Staff, Ice Staff, Flameblade), Miracle Matter, Apex Predator (no visible Ability layer) |
 
-- **No-op:** on main 47 of 55 Update-all no-ops leave every FX record and the PNG byte for byte; the other 8 are the L7
+- **No-op:** on main 47 of 55 Update-all no-ops leave every FX record and the PNG byte for byte; the other 8 were the L7
   cards whose FX layers kept their old overlay's style (Royal Eradicator Main Cannon, Zero, Doctor Zomboss, Oryx,
-  Snow Bunny, Freeze Spell, Pandora's Box, Standstill): the chart's style replaces it (owner question 6), told in the
-  report. The website no-op adds 5 cards whose status words take the chart's swatch (Ancient Fuelweaver, Monkey D
+  Snow Bunny, Freeze Spell, Pandora's Box, Standstill), restyled to the chart's style by any ability bake. **q6: own
+  style kept, unattended call 2026-10-23, owner to confirm** (the owner's standing ruling: give the developers freedom
+  and handle their choices generally): a rebuilt FX layer keeps its own style, only a new one takes the chart's, and
+  gate `bytes` lets no effect block change on a rebuilt record. Re-run on those 8 (copies of TTSCardMaker main, scripts
+  and JSON `~/Documents/Tools/wt/bf-fx-q6-scratch/`, `runs/{old,new}.json`, fork `cards-20261023b`):
+
+  | Edit | Before (restyled) | Own style kept |
+  |---|---|---|
+  | Update-all no-op | 8 of 8 PNGs changed: 8,871-65,014 px, 0-31,725 past 24 (Doctor Zomboss 28,069, Snow Bunny 21,447) | **8 of 8 pixel-identical**, every FX record whole |
+  | Website no-op | 8 of 8 changed, 48-32,509 px past 24 | 4 pixel-identical (Doctor Zomboss, Snow Bunny, Freeze Spell, Pandora's Box); 4 change only where an off-swatch status word takes the chart's fill (the 2026-10-21 rule), its FX layer cut again under its own style: Royal Eradicator Main Cannon 2,775 px past 24, Standstill 2,438, Zero 575, Oryx 44, all within the parity bar |
+  | A word before an FX word deleted | 8 bake, every FX record's effect blocks replaced | 8 bake, FX records change rect and channels at most (Snow Bunny's and Pandora's Box's kept whole) |
+
+  The website no-op adds 5 cards whose status words take the chart's swatch (Ancient Fuelweaver, Monkey D
   Goofy's Become Back Money, Undyne, Pananda Peel, Flower Of Decay) and Warcraftian Hunter, whose website text lacks
   its column spaces. On the corpus the 6 layers the B1 batch leaked badge pills into (std-batch2 FX.md: The Radiance,
   Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too: the website no-op leaves 22 of
   the corpus's 31 cards identical, the Update-all no-op 23 of 30 (Warcraftian Hunter's refuses `reparse`, its column
-  spaces); on main the website no-op leaves 42 of 56.
+  spaces); on main the website no-op leaves 42 of 56 (46 with q6: only these 8 cards were restyled).
   PoD06Rainbow Bloon's and The Radiance's no-ops refuse `parity` (a render that changes nothing on a box past the bar,
   section 10); their real edits bake.
 - **Real edits (main):** a moved word bakes on 46 cards (13 have no plain word before an FX word): 22 FX layers kept
@@ -88,7 +99,7 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
     13 of 34. "Draw 1 card. " put in front: main 48 bake, 20 refused (9 overflow, 8 no chart style, Goofy, Miracle
     Matter, Apex Predator); corpus 28 of 34.
 - **Photoshop cross-check (copies under `~/std-work-1022/fx-1023/`):** Effect Layers.jsx's Update all run in Photoshop on 8
-  baked copies (badges moved and renamed, chart words moved, a restyle) rebuilt the same layers: same boxes, style and
+  baked copies (badges moved and renamed, chart words moved, a restyle since dropped, q6) rebuilt the same layers: same boxes, style and
   place, ink IoU 0.955-1.0 (ours 0-132 faint edge pixels more), no differing pixel on the shared ink. Photoshop renders
   the rebuilt layers as the bake's PNG shows them (0% of FX ink past 24 on 6 cards; the PoD cards' Photoshop exports
   differ from their official PNGs everywhere, 3.9-6.7%), and a moved layer as the original did at its old place (mean
