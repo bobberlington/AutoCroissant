@@ -106,11 +106,37 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
 | `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count) | field removed |
 | `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
-| `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | refused ("not yet") | - |
-| `types` | PSD (icon layers or font tokens) | refused ("not yet") | - |
+| `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
+| `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
 | `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
 | `type` `subtype` `series` | folder | never touched | stay |
 | `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
+
+**Stars and types (2026-10-23, owner: "teach the bake instead of blocking the card").** `psd_edit.plan_stars` /
+`plan_types` work an edit out on the open card; a layout they don't know refuses that field only (`Refusal.field`), and
+`card_bake` bakes the card's other fields, leaving the refused one in the file with a refused verdict on the PSD the
+commit leaves (final, so not pending). Stars, in the one `Stars` group that draws them: a count's own folder (`3 stars`
+beside `5 stars`, the templates' 1-5 layouts) shows and the shown one hides; else, where the stars sit one by one, fewer
+hide the last in reading order (rows top to bottom, each right to left), more show the card's own hidden stars first and
+then copy the last star layer (`Layer.duplicate`, smart-object transform, `fxrp` and the layers clipped to it moved with
+it) at the layout's spacing, the first that stays clear: rows of two with an odd one centred under them
+(Status_Effect_Template's `3 star`) or over them (The Claw; the odd one moves aside when a pair fills its row, a lone
+star is a pair's right one), a row or column carried on, a zigzag carried on (the bloons, Dark Esau, Mettaton), a lone
+star's column. Fewer hide the first in reading order instead when only that leaves a layout (The Claw's top one). A
+layer in the Stars group named after a type icon (Pike Beam's) is no star to hide or copy. Types, in the header row
+the parser reads (image layers named after a `Types/` icon, above the midline): kept icons stay, a removed one hides and
+the row closes up (a kept icon past the new end moves to the first free spot, centre on centre), a new one takes the
+next spot: the card's own hidden layer of that type when it is the spot's size (the templates keep one per type), else
+a pixel layer made from `Types/<name>.png` fitted into the spot and styled like the icon it replaces (its effects,
+blending and the layers clipped to it, a Curves say). Spots past the last icon carry the row on at its spacing, or go
+under a lone icon (Item_Template's column); when those would touch the text or stars, a row starts a second row under
+its first icon (Abigail) and a lone icon takes its right. A star or icon must stay on the card, off the text and type icons (stars) or the text and
+stars (icons), and the parser must count exactly the edit. Gates on top of the usual ones: `gate_outside` renders the
+whole card before and after each stars or types edit (no ICC, no preview) and refuses a pixel changed outside the
+edit's region (a star's clipped Curves left on another layer is how it showed up on Mini Doomer); `gate_bytes` takes a
+copy only as its source's record moved (new id and name), a moved layer only with its rect and mask moved and its
+transform and anchor blocks changed, a made icon only as a pixel record with the reference's effect blocks; the
+re-parse reads the stars back and the types in any order.
 
 Classification is value-aware: PSD-kind only when the value differs from a fresh offline parse of the PSD (the goldens' route,
 `tests/golden_cards.py:62-76`: `PSDParser` on an empty `StatsDatabase` + `IconVocabulary.build` from the committing tree's
@@ -494,7 +520,8 @@ carry enabled effects (which one the row shows is ambiguous) and the overlay wor
 +2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
-Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
+Per card all-or-nothing, but for stars and types (2026-10-23): their refusal is the field's, the card's other fields
+bake and the commit line says `stars not baked: <why>`; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
 them leaves nothing behind (`$RUNNER_TEMP`), the next run recomputes. A commit that fails (`head-moved` after 3 tries, a
 GitHub error) is a run note: no card gets a verdict (a refused card's line says its verdict was not written), the gate
