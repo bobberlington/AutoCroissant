@@ -629,3 +629,21 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     last = {e["kind"]: e for e in events if e["card"] == "Mini Doomer" and e["at"] == max(x["at"] for x in events)}
     assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
     assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
+
+
+def test_no_aliases_pkl_once_the_aliases_moved(cards, monkeypatch):
+    """Card Edits.json with aliases_moved: aliases.pkl is never read, so a build runs on after AutoCroissant deletes it
+    (step 10: its raw URL answers 404); a duplicate's name comes from its own entry."""
+    from requests.exceptions import HTTPError
+
+    def gone(ref, name, folder, required=True):
+        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
+    monkeypatch.setattr(cd, "_bot_file", gone)
+    monkeypatch.setattr(cd, "ALIASES_REF", "main")
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"aliases_moved": True, "cards": {
+        "Mini Doomer2": {"aliases": ["tiny doom"], "_by": "AutoCroissant"}, "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--full")[0] == cd.EXIT_OK                                 # no seed: once AutoCroissant main's
+    assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
