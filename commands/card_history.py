@@ -56,6 +56,7 @@ class GitIndex:
     pngs: dict = field(default_factory=dict)          # PNG path -> Commits that changed it, newest first
     pngs_lower: dict = field(default_factory=dict)    # the same by lower-cased path (a PNG named in another case)
     renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact rename
+    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact rename into it
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
     at_path: dict = field(default_factory=dict)       # path -> [(Commit, blob)] that put a blob there, newest first
 
@@ -69,6 +70,7 @@ class GitIndex:
             for blob, old in gone.items():
                 if blob in added and old not in index.renames:
                     index.renames[old] = (added[blob], commit)
+                    index.renamed_from.setdefault(added[blob], old)
 
         for token in text.split("\0"):
             token = token.lstrip("\n")
@@ -127,6 +129,16 @@ class GitIndex:
         """The oldest commit that added this blob at any path (a move or a re-commit of the same bytes is no change)."""
         found = self.intro.get(blob) if blob else None
         return found[0] if found else None
+
+    def origin(self, path: str, once: bool = False) -> str:
+        """The path an exact rename (or a chain of them; once: the newest only) brought path from, else path."""
+        seen = {path}
+        while path in self.renamed_from and self.renamed_from[path] not in seen:
+            path = self.renamed_from[path]
+            seen.add(path)
+            if once:
+                break
+        return path
 
     def blob_at(self, path: str, at: Optional[float]) -> Optional[tuple]:
         """(Commit, blob) of the one commit at `at` that put a blob at path (a legacy version's stored timestamp is its
@@ -505,7 +517,9 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
     """Names gone from stats: the last version tagged archived (backfill) if untagged (not with backfill False:
     /update_stats leaves that to its guarded prune); every tag's at and commit from its path's deleting commit,
     renamed_to from an exact rename whose new card is listed (else from its PNG's exact rename: a rename that also
-    edited the PSD), moved_to from an exact rename into a folder of no cards (MDW/The Morgue: retired, not deleted)."""
+    edited the PSD), moved_to from an exact rename into a folder of no cards (MDW/The Morgue: retired, not deleted).
+    A deletion or rename older than the record's own reading, or an index that lacks the tag's commit (a clone not
+    fetched since: a path deleted, added back and deleted again), changes nothing."""
     for name, versions in old_stats.items():
         if not versions or name in stats:
             continue
@@ -519,12 +533,15 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
                              "commit": None, "backfill": True}
             report.tagged.append(name)
         tag = last.archived
+        read = getattr(last, "timestamp", None) or 0.0
+        stale = bool(tag.get("commit")) and tag["commit"] not in index.by_sha      # the index predates the tag's commit
         gone = index.deleted.get(tag.get("path") or "")
-        if gone is not None and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
+        if gone is not None and not stale and gone.at >= read and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
             tag["at"], tag["commit"] = gone.at, gone.sha
             report.tags_dated.append(name)
         moved = index.renames.get(tag.get("path") or "")
         art = index.renames.get(splitext(tag.get("path") or "")[0] + ".png") if moved is None else None
+        moved, art = [found if found and not stale and found[1].at >= read else None for found in (moved, art)]
         if moved and not tag.get("renamed_to") and card_name(moved[0]) in stats:
             tag["renamed_to"] = card_name(moved[0])
             report.renamed.append((name, tag["renamed_to"]))
@@ -715,6 +732,35 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     return made
 
 
+def record_edits(db, before: dict, at: float, commit: Optional[str] = None) -> list:
+    """
+    Legacy (/update_stats, a Discord edit's in-memory refresh): an applied database edit that changed a card's data
+    (its card before knew something it doesn't: knows) keeps the card before as a version; the card's version starts
+    at the edit (its commit's time, never before the version it ends; cause edit). Duplicates get none.
+
+    Args:
+        db: The StatsDatabase after the edits (changed in place)
+        before: {name: its card before the edits (a copy)}
+        at: When the edit was made (the edits file's commit time, else now)
+        commit: That commit's sha, if known
+
+    Returns:
+        The names given a version
+    """
+    made = []
+    for name, old in before.items():
+        card = db.stats.get(name)
+        if card is None or getattr(card, "duplicate_of", None) or knows(card, old):
+            continue
+        prior = start(old)[0]
+        when = at if prior is None or at >= prior else prior
+        db.add_history(name, old)
+        card.version = meta(None, when, "edit")
+        card.version["from_commit"] = commit
+        made.append(name)
+    return made
+
+
 def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
     """The last version of each card archived this build ends at its deleting commit (the tag's at and commit), its
     PNG pinned to that moment."""
@@ -784,6 +830,7 @@ __all__ = [
     'meta',
     'normalize',
     'psd_changed',
+    'record_edits',
     'record_versions',
     'refine',
     'same_data',

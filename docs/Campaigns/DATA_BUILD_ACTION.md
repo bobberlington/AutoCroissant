@@ -466,20 +466,52 @@ github_api reads it inside a try/except and takes the token from the environment
   know is no difference (`unknown`): the title of a version read before parser 2 (it read no titles), the stars of a
   `NO STARS FOUND` parse, the types of a `MISSPELT TYPE` one, the ability of `NO ABILITY LAYER`. A series the 2026-10-20
   split moved under a parent (the same subseries-or-series) is no difference. The changelog's steps use the same rules.
+  The rule only runs one way (`knows(a, b)`: a knew every field b knew, with b's value): the reading that knew more
+  absorbs the one that knew less, never the reverse. So a commit with a broken ability, star or type layer keeps the
+  card before as a version (`_record_history`, `record_versions`, the untag step), and the cleanup never folds a
+  version into a reading that knew less or links two versions whose known values differ.
 - **The one-time cleanup** (`clean_history`, also the seed pass's first step):
   - `normalize`: a stored version's series is filled from the version after it when it had none (an item's series is typed
     in later; a creature's comes from its folder, never filled), or moved under the parent the split gave it; retired type
     icons renamed; a version's copy of the card's creation date dropped (the card and an archived record keep it);
   - `collapse`: an earlier reading of the same commit goes first (two versions at one start, no other blob: the older
-    parser's or the pre-edit reading; nothing carried), then runs of the same data. A run joins only versions the same as
-    every member, so an unknown title never joins two known ones; a run of exactly equal versions keeps its first, a run
-    that is only the same because a reading knew less keeps the reading that knew the most;
+    parser's or the pre-edit reading, when the later one knew all it did; nothing carried), then runs of the same data. A
+    run needs a member that knew all the others did (`_knower`), so an unknown title never joins two known ones; a run of
+    exactly equal versions keeps its first, a run that is only the same because a reading knew less keeps the reading
+    that knew the most; the card after it (or an archived record) takes a run only when it knew all of it;
   - with the bot's history clone (`HISTORY_CLONE`; skipped without one): `date_archive`, so an archive tag made by the
     run's clock takes its deleting commit's date, an exact rename's `renamed_to` (else its PNG's exact rename), or
     `moved_to` for a PSD moved into MDW (retired, not deleted).
   Measured on the jetson's 15:41 pickles at TTSCardMaker 6e50c3ee: 755 -> 446 versions, 448 -> 354 names (309 dropped on
   293 cards, 63 normalized), 289 version records; ZOEY!!!!! (renamed to Z!!!!! in 35adb383) and White Palace (moved to
   MDW/The Morgue in b6330730) dated from git.
+- **Open history decisions (2026-10-23; owner).** Findings in `wt/scratch/history-1023/all-findings.json`:
+  - **Cards dropped before archiving existed** (archive-1, INT-1): 64 names live only in older PICKLEs. A one-time
+    recovery from the PICKLE history (newest record per name, tagged `backfill`, then dated by `date_archive`) needs a
+    scope: (a) all 64; (b) the ~31 true deletions and MDW moves, folding the 33 exact renames into their new names'
+    history; (c) none, an accepted loss. INT-1's variant: (a) the 2 name-keyed Morgue cards (Ech, Cho'Gath), (b) plus
+    the early deletions and Morgue/Unfinished moves, (c) plus the renames.
+  - **59 types-only steps** (dupes2-png-unchanged-type-misreads): the PSD changed, the PNG did not, only `types` differ
+    (58 at the 2026-02-08 actionpoints commits). Is an unchanged PNG proof of a misread (then fold them, keeping the
+    earliest start), or re-parse the old blobs?
+  - **INT-4**: Tainted Lazarus v0/v1 (stats 110) and Spawn of the Forbidden One v0/v1 (10 stars) are legacy readings;
+    re-parse their git blobs (3feae2ef, 2de375f8, 64304b30, e4e1347b) or set the values unknown.
+  - **DATES3-1**: Spawn of the Forbidden One's 2026-06-19 reading (blob 91c4624d, d8e94877) was replaced without
+    history by PICKLE 795fd23; insert its re-parsed reading as a version.
+  - **Side files**: the 4 cards still credited to their renamer in Card Authors.txt (The Abyss Watchers, Pontiff
+    Sulyvahn: hdckighfkvhvgmk; Firebomb, Maxim Tomato: MichaelJSr), and the lines that match no card (White Palace in
+    Card Authors.txt; Gust of Trees, Stubborn Queen in Card Creation Dates.json). `/update_stats` prints them each run.
+  - **dupes-5**: the 4 rulebook pages (09, 11, 12 Reactions2, 22 Negation) keep versions that change nothing printed
+    (hidden text read by the old parser) until their old blobs are re-read once; there is no idempotent marker for that
+    inside `/update_stats`, so it is a one-off on copies.
+  - **Landing order**: land work/history-fixes before main's first post-deploy `/update_stats`. Otherwise main's dedupe
+    keeps Tainted Bethany's blob-less pre-parser-2 reading of 2026-10-19 and drops the c532847b parser-2 one; the data
+    shown is the same, only the blob and parser record differ (nothing can bring the dropped record back).
+  - **Seed dates by the bytes' first commit at any path** (`blob_intro`, unchanged): 47 cards' earliest start moves
+    earlier, to when their PSD's bytes first appeared under another path or name (Shell Shield 2025-02-10 -> 2023-11-05,
+    its first commit in the misspelt `Auxillary/` folder; Dr Robotnik's Roboticizer 2025-09-02 -> 2023-11-06, named
+    Roboticizer then). A move or rename keeps the version going, so this is by the rule; say so if the owner wants a
+    name's history to start at its own path.
 - **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
   every old path to the current one) is removed from both modes (legacy too, 2026-10-23), so each version keeps the path it
   was parsed at. Both readers key history by
@@ -762,10 +794,12 @@ A duplicate's change is listed under its original.
   current card's own commit says "Image: today's (that day's is not known)". `version.png_commit` (the PNG at `to`)
   stays for the website.
 - **Legacy versions** say "(date approximate)".
-- **It ships first (step 3) on today's old_stats.** There, `from` is the stored timestamp and `to` is the next version's. Until the
-  build records `edit` versions, the reply says "Database edits (website, /update_metadata) are not dated yet: a version
-  shows those it had when it was replaced, the current card today's." (no cutover date exists before step 8). An older
-  version shows its stored data and, with the history clone, an Image button.
+- **It ships first (step 3) on today's old_stats.** There, `from` is the stored timestamp and `to` is the next version's.
+  Legacy `/update_stats` and a Discord edit's in-memory refresh record `edit` versions since 2026-10-23
+  (`card_history.record_edits`: an applied edit that changed a data field keeps the card before, the card's version
+  starting at the edits file's newest commit, else the run's time), so the reply says "Database edits (website,
+  /update_metadata) are versions of their own only since late October 2026: an older version shows those it had when it
+  was replaced." An older version shows its stored data and, with the history clone, an Image button.
 - **The live check card** is Tainted Bethany: 4 old versions dated 2026-01-30, 02-07, 10-19, 10-19 in `TIMEZONE` (01-31,
   02-08, 10-19, 10-19 in UTC). Only the fourth has a blob, so the first three say "(date approximate)". Versions 3 and 4 share
   a timestamp, so version 3 is never picked until the seed pass drops duplicates.

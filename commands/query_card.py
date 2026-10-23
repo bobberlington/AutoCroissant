@@ -35,8 +35,8 @@ _alias_lock = Lock()                                     # one writer for aliase
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
-AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are not dated yet: a version shows those it had "
-                    "when it was replaced, the current card today's.")
+AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are versions of their own only since late October "
+                    "2026: an older version shows those it had when it was replaced.")
 
 
 @dataclass

@@ -335,6 +335,24 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     stats, old = _read(cards)[:2]
     assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
         "The Big Freezer"
+    assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
+
+
+def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
+    """The Freezer renamed while its PSD was edited (another blob), its PNG renamed unchanged: the new card is parsed
+    with the old one (its author, not the renamer's), and the archive names it."""
+    put(cards.repo, "Field/1 Stars/The_Freezer.png", b"freezer art")
+    commit(cards.repo, "alice", 1100)
+    _build(cards, "--seed", str(cards.seed))
+    big = "Field/1 Stars/The_Big_Freezer"
+    git(cards.repo, "mv", "Field/1 Stars/The_Freezer.png", f"{big}.png")
+    git(cards.repo, "rm", "-q", FREEZER)
+    put(cards.repo, f"{big}.psd", cards.psds[OTHER])
+    commit(cards.repo, "dave", 2000)
+    assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK
+    stats, old = _read(cards)[:2]
+    assert stats["The Big Freezer"].author == "alice"
+    assert old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == "The Big Freezer"
 
 
 def test_dry_run_and_errors(cards, tmp_path):
