@@ -10,7 +10,8 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
 file with a PSD-kind field: refuse `recent` (PSD or PNG pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
-(psd_edit.apply_jobs; an ability edit also regenerates the status words' FX layers from the chart, section 7 idea 14).
+(psd_edit.apply_jobs; an ability edit also makes its FX layers again, Effect Layers.jsx's Update all: section 7 idea 14,
+BUG 2).
 Then one commit on the branch's current head (land): every baked card's PSD and PNG and the file rewritten with the
 baked and redundant fields removed and the `_psd` verdicts written (a Python port of edit.js editsFile), through
 git_commit (the GitHub API, or git objects in the history clone pushed over SSH when the token can't write). A card
@@ -894,6 +895,8 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
         if card.baked.fx:
             line += f"; FX layers: {', '.join(card.baked.fx)}"
+        for note in getattr(card.baked, "fx_notes", []):    # an FX layer deleted, renamed or restyled (BUG 2)
+            line += f"; {note}"
         icons = [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
         if icons:
             line += f"; {'; '.join(icons)}"

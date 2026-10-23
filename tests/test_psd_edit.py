@@ -1021,16 +1021,19 @@ def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, reco
 
 @text_edit
 def test_ability_bake_at_the_root_keeps_its_fx_layer_above_it(clone, parser, chart, tmp_path):
-    """Marx's root Ability bakes through every gate; 'Ability FX: Glued' comes back directly above the Ability layer,
-    where Effect Layers.jsx puts it for a root layer, not above Text."""
+    """Marx's root Ability bakes through every gate; 'Ability FX: Glued' stays where it is, above the Ability layer and
+    its hidden "Glued" overlay at the root (Effect Layers.jsx's place for a root layer, not above Text): its word was not
+    redrawn, so its record stays whole."""
     psd_path = _card(clone, MARX)[0]
     new = pe.normalize_ability(pe.parse_card(parser, psd_path, MARX)["card"]["ability"]).replace("Glued", "Glued at once", 1)
     parsed, baked = _bake(clone, parser, MARX, {"ability": new}, tmp_path, chart)
-    assert baked.fx == ["Ability FX: Glued"] and pe.normalize_ability(baked.reparse["card"]["ability"]) == new
+    assert baked.edits[0].fx_names == ["Ability FX: Glued"] and pe.normalize_ability(baked.reparse["card"]["ability"]) == new
+    assert baked.fx == [] and "Ability FX: Glued" not in [name for _, name, _ in baked.records]
     saved = PSDImage.open(baked.psd_path)
     layer = pe.ability_layer(saved)
     fx, = pe.fx_layers(saved, layer)
-    assert layer.parent is saved and saved.index(fx) == saved.index(layer) + 1
+    old = PSDImage.open(psd_path)
+    assert layer.parent is saved and saved.index(fx) == old.index(pe.fx_layers(old, pe.ability_layer(old))[0]) == saved.index(layer) + 2
 
 
 @text_edit
@@ -1066,36 +1069,191 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
 
 
-def test_kept_fx_sorts_badge_runs_and_unstyled_words(chart):
-    """Only a chart-styled status word's FX layer is derived state; badge or token runs and other words are kept work."""
+def test_kept_fx_lists_the_fx_layers_without_a_chart_style(chart):
+    """BUG 2: an ability edit makes every FX layer again but one the chart has no style for: badge or token runs keep
+    their own (none), a styled chart status takes the chart's, another word needs a chart status's style on its layer
+    (Monkey D Goofy's "1#1" under Become Back Money's gradient); Smoldering's stroke, +2/4/6 ATK's, refuse (owner
+    2026-10-21)."""
     base = SimpleNamespace(name="Ability")
     names = ["Ability FX: (1CD) | (3U) | (OYT) | (ENDT)", "Ability FX: [fire]", "Ability FX: Blazing", "Ability FX: Frozen#2",
              "Ability FX: Smoldering", "Ability FX: +2/4/6 ATK", "Ability FX: 1#1"]
     fx = [SimpleNamespace(name=name) for name in names]
     assert [pe.fx_label(base, layer) for layer in fx] == ["(1CD) | (3U) | (OYT) | (ENDT)", "[fire]", "Blazing", "Frozen",
                                                            "Smoldering", "+2/4/6 ATK", "1"]
-    assert pe.kept_fx(fx, base, chart) == (names[:2], names[4:])
-    assert pe.kept_fx(fx, base, None) == (names[:2], names[2:])
+    assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["badge", "badge", "status", "status", "", "", ""]
+    assert pe.kept_fx(fx, base, chart) == names[4:]
+    assert pe.kept_fx(fx, base, None) == names[2:]
+    goofy = SimpleNamespace(name="Ability FX: 1#1", tagged_blocks=chart["become back money"].blocks)
+    assert pe.fx_kind(goofy, base, chart) == "styled" and pe.kept_fx([goofy], base, chart) == []
+    assert pe.fx_phrases(base, fx[0]) == ["(1CD)", "(3U)", "(OYT)", "(ENDT)"] and pe.fx_phrases(base, fx[3]) == ["Frozen#2"]
+
+
+def test_phrase_ranges_follow_the_jsx():
+    """Effect Layers.jsx's phraseRanges: any case, any blanks between words, whole words first, else every match, #n the
+    nth; the parser's EFFECT LAYER WORDS NOT IN TEXT counts alike."""
+    goofy = "Attacks inflict either 3T2 Smeckeldorfed or 3T1 Become Back Money.\r(1CD) Draw"
+    assert pe.phrase_ranges(goofy, ["1#1"]) == [(46, 47)] and pe.phrase_ranges(goofy, ["become back money"]) == [(48, 65)]
+    assert pe.phrase_ranges(goofy, ["1"]) == [(46, 47), (68, 69)] and pe.phrase_ranges(goofy, ["1#3", "Poison"]) == []
+    text = "Blazing blazingly blazing\x03Frozen In  Time"
+    assert pe.phrase_ranges(text, ["Blazing", "frozen in time", "Blazing#2"]) == [(0, 7), (18, 25), (26, 41), (18, 25)]
+    assert pe.phrase_ranges("Blazingly", ["Blazing"]) == [(0, 7)]
 
 
 @text_edit
-@pytest.mark.parametrize("rel, badges", [(MINI_DOOMER, "the badge layer Ability FX: (BOT)"),
-                                         (MORPHO, "the badge layer Ability FX: (1CD) | (3U) | (OYT) | (ENDT)")])
-def test_ability_edit_refuses_to_drop_a_badge_layer(clone, parser, chart, rel, badges, tmp_path):
-    """Queue A's gradient cards keep their badge runs on "Ability FX: (BOT)"-style layers the bake cannot make again: an
-    ability edit refuses (unsupported-card) before anything changes, with or without the chart, and bakes nothing."""
-    psd_path = _card(clone, rel)[0]
+def test_ability_edit_refuses_fx_layers_the_chart_has_no_style_for(clone, parser, chart, tmp_path):
+    """Morpho Knight's badge layer is made again now (BUG 2), but its Burning, +2/4/6 ATK and Smoldering layers carry
+    strokes the chart has no style for (owner 2026-10-21): an ability edit refuses (unsupported-card) before anything
+    changes, with or without the chart, and bakes nothing."""
+    psd_path = _card(clone, MORPHO)[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
     text, fx = layer.text, [f.name for f in pe.fx_layers(psd, layer)]
-    for table in (chart, None):
-        with pytest.raises(pe.Refused) as refused:
-            pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), table)
-        assert refused.value.code == "unsupported-card" and refused.value.why == f"ability edit would drop {badges}; edit in Photoshop"
+    with pytest.raises(pe.Refused) as refused:
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), chart)
+    assert refused.value.code == "unsupported-card" and refused.value.why == (
+        "ability edit would drop FX layers the chart has no style for: Ability FX: Burning, Ability FX: +2/4/6 ATK, "
+        "Ability FX: Smoldering; edit in Photoshop")
+    with pytest.raises(pe.Refused, match="status word layers over the ability"):
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), None)
     assert layer.text == text and [f.name for f in pe.fx_layers(psd, layer)] == fx
-    with pytest.raises(pe.Refused, match="badge layer"):
-        _bake(clone, parser, rel, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
+    with pytest.raises(pe.Refused, match="no style for"):
+        _bake(clone, parser, MORPHO, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
     assert not list(tmp_path.iterdir())
+
+
+def _noop(clone, parser, chart, rel, tmp_path):
+    """apply_jobs with the ability layer's own text (classify would call it redundant): (psd path, png path, Baked)."""
+    psd_path, png_path = _card(clone, rel)
+    text = pe.ability_layer(PSDImage.open(psd_path)).text.replace("\r", "\n")
+    parsed = pe.parse_card(parser, psd_path, rel)
+    return psd_path, png_path, pe.apply_jobs(psd_path, png_path, rel, {"ability": text}, parsed, parser, str(tmp_path),
+                                             str(clone / pe.FONTS_DIR), chart, update_preview=False)
+
+
+def _same_png(a, b) -> bool:
+    return np.array_equal(np.asarray(Image.open(a).convert("RGBA")), np.asarray(Image.open(b).convert("RGBA")))
+
+
+@text_edit
+def test_noop_ability_bake_keeps_the_badge_layer(clone, parser, chart, tmp_path):
+    """BUG 2 on Mini Doomer's gradient badge layer: a no-op ability bake passes every gate (gate_fx too) and keeps
+    'Ability FX: (BOT)' byte for byte, none of its words redrawn, the PNG pixel for pixel. Cut again by force from the
+    unchanged raster, it is the layer Effect Layers.jsx cut, byte for byte: the key takes the badge's colour glyph on
+    purpose (its phrase is a badge run)."""
+    psd_path, png_path, baked = _noop(clone, parser, chart, MINI_DOOMER, tmp_path)
+    edit, = baked.edits
+    assert edit.fx_names == ["Ability FX: (BOT)"] and (edit.rebuilt, edit.dropped, edit.fx, edit.notes) == ([], [], [], [])
+    assert "Ability FX: (BOT)" not in [name for _, name, _ in baked.records] and _same_png(png_path, baked.png_path)
+    from psd_tools.composite.text import FontMap
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)
+    old, = pe.fx_layers(psd, layer)
+    box, before = tuple(old.bbox), _raster(old, old.bbox)
+    plans = pe.plan_fx(layer, [old], chart)
+    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)], aliases=pe.FONT_ALIASES)
+    kept = pe.kept_chars(layer.text, layer.text)
+    assert pe._kept(plans[0], plans[0].ranges, None, kept) and not pe._kept(plans[0], plans[0].ranges, tuple(layer.bbox), kept)
+    rebuilt, dropped, covered, notes = pe._rebuild_fx(psd, layer, layer.text, plans, tuple(layer.bbox), kept, fonts,
+                                                      pe._fx_engine())
+    assert [(fx, name, style) for fx, name, style in rebuilt] == [(old, "Ability FX: (BOT)", {})] and dropped == notes == []
+    assert covered == [(layer.text.index("(BOT)"), layer.text.index("(BOT)") + 5)]
+    assert tuple(old.bbox) == box and np.array_equal(_raster(old, box), before)
+
+
+@text_edit
+def test_ability_bake_moves_the_badge_layer_with_its_badge(clone, parser, chart, tmp_path):
+    """BUG 2: Mini Doomer's centred "(BOT) Die." made "(BOT) Then die at once." moves the badge left; its FX layer is cut
+    again in place from the new raster (rect and channels, its record otherwise whole) over the badge's new place, every
+    gate passing: the parse, the validator's coverage, gate_fx's glyph boxes and the Ability's own pixels."""
+    psd_path = _card(clone, MINI_DOOMER)[0]
+    old = PSDImage.open(psd_path)
+    before, = pe.fx_layers(old, pe.ability_layer(old))
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]).replace("Die.", "Then die at once.")
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": text}, tmp_path, chart)
+    edit, = baked.edits
+    (_, ability, fields), (_, name, fx_fields) = baked.records
+    assert ability == "Ability" and {"blocks", "channels"} <= set(fields) <= set(TEXT_RECORD)
+    assert (name, fx_fields) == ("Ability FX: (BOT)", ["channels", "rect"])
+    assert baked.fx == edit.fx_names == ["Ability FX: (BOT)"] and edit.rebuilt[0][1:] == ("Ability FX: (BOT)", "Ability FX: (BOT)", {})
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(saved)
+    fx, = pe.fx_layers(saved, layer)
+    assert fx.bbox[0] < before.bbox[0] and fx.bbox[1] == before.bbox[1] and fx.layer_id == before.layer_id
+    assert saved.index(fx) == old.index(before) and pe.PSDParser._pixel_coverage(fx, layer) == 1.0
+    assert baked.reparse["validator"] == [] and baked.region[0] <= fx.bbox[0] and baked.region[2] >= before.bbox[2]
+
+
+@text_edit
+def test_ability_bake_drops_the_fx_layer_of_a_word_it_removes(clone, parser, chart, tmp_path):
+    """BUG 2: a badge that leaves the text leaves its FX layer's name (PoD11ZOMG's "(1GCD) | (2U) | (2CD)" becomes
+    "(2U) | (2CD)", told in the report); a layer whose words all left goes (Mini Doomer's "(BOT)"), told too."""
+    zomg = "Auxiliary/Minions/PoD11ZOMG.psd"
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, zomg)[0], zomg)["card"]["ability"]).replace("(1GCD)", "", 1)
+    one = tmp_path / "one"
+    one.mkdir()
+    parsed, baked = _bake(clone, parser, zomg, {"ability": text}, one, chart)
+    assert [(name, fields) for _, name, fields in baked.records][1:] == [
+        ("Ability FX: (1GCD) | (2U) | (2CD)", ["blocks", "channels", "name", "rect"])]
+    assert baked.fx == ["Ability FX: (2U) | (2CD)"] and baked.fx_notes == [
+        "Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': (1GCD) left the ability"]
+    assert baked.reparse["validator"] == []
+    two = tmp_path / "two"
+    two.mkdir()
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER)["card"]["ability"]).replace("(BOT) ", "")
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": text}, two, chart)
+    assert [(name, fields) for _, name, fields in baked.records][1:] == [("Ability FX: (BOT)", ["removed"])]
+    assert baked.fx == [] and baked.edits[0].dropped == ["Ability FX: (BOT)"] and baked.edits[0].fx_names == []
+    assert baked.fx_notes == ["Ability FX: (BOT) deleted: its words left the ability"]
+
+
+LEAKY = "6e50c3ee"          # The Radiance's 'Ability FX: Infected' with the B1 batch's leaked badge pills (std-batch2 FX.md)
+
+
+@text_edit
+def test_ability_bake_cuts_a_leaky_fx_layer_again(clone, parser, chart, tmp_path):
+    """The B1 batch's L7b leaked badge pills into The Radiance's 'Ability FX: Infected' (std-batch2 FX.md; clean on main
+    since): an edit that leaves the word alone still cuts the layer again, clean, as today's Effect Layers.jsx would
+    (11faa634), and says so; gate_fx would refuse the leaky layer kept."""
+    rel = "Creatures/Hollow Knight/5 Stars/The_Radiance.psd"
+    leaky = tmp_path / "leaky"
+    leaky.mkdir()
+    paths = []
+    for ext in (".psd", ".png"):
+        (leaky / ("The_Radiance" + ext)).write_bytes(at_rev(clone, LEAKY, rel[:-4] + ext))
+        paths.append(str(leaky / ("The_Radiance" + ext)))
+    old = PSDImage.open(paths[0])
+    before, = pe.fx_layers(old, pe.ability_layer(old))
+    text = pe.normalize_ability(pe.parse_card(parser, paths[0], rel)["card"]["ability"]) + " Die."
+    out = tmp_path / "out"
+    out.mkdir()
+    parsed, baked = _bake(clone, parser, rel, {"ability": text}, out, chart, paths=paths)
+    assert baked.fx_notes == ["Ability FX: Infected cut again: it held pixels its words do not (a badge's, std-batch2 FX.md)"]
+    saved = PSDImage.open(baked.psd_path)
+    after, = pe.fx_layers(saved, pe.ability_layer(saved))
+    assert after.layer_id == before.layer_id and _ink(after, saved).sum() < 0.3 * _ink(before, old).sum()
+
+
+@text_edit
+def test_goofys_styled_one_is_made_again(clone, parser, chart, tmp_path):
+    """Monkey D Goofy's "Ability FX: 1#1" (the owner's 20th BUG 2 card) carries the chart's Become Back Money gradient, so an
+    ability edit makes it again; once its "1" leaves the text the JSX would cut the "1" of a badge with every badge, so
+    the edit refuses. Text typed into its phrase takes the phrase's colour, the first drawn run (Effect Layers.jsx's
+    overlay colour, 08b1152a): the "2" of "3T2 Smeckeldorfed" made a "1" is no longer Smeckeldorfed's teal."""
+    goofy = "Creatures/Monkey D Folder/4 Stars/Monkey_D_Goofy.psd"
+    psd_path = _card(clone, goofy)[0]
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, goofy)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, goofy, {"ability": old + " Die."}, tmp_path, chart)
+    assert baked.edits[0].fx_names == ["Ability FX: Become Back Money", "Ability FX: 1#1"]
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(psd_path)
+    with pytest.raises(pe.Refused, match="1#1: its words now fall in a badge or token") as refused:
+        pe.set_text_layer(psd, "ability", old.replace("3T1", "3T"), fonts, chart)
+    assert refused.value.code == "unsupported-card"
+    psd = PSDImage.open(psd_path)
+    gold = pe._char_styles(pe.ability_layer(psd))[0][old.index("3T1") + 2]
+    edit = pe.set_text_layer(psd, "ability", old.replace("3T2", "3T1"), fonts, chart)
+    assert edit.fx_names == ["Ability FX: Become Back Money", "Ability FX: 1#1"]
+    assert pe._char_styles(pe.ability_layer(psd))[0][old.index("3T2") + 2] == gold
 
 
 @text_edit
@@ -1227,8 +1385,8 @@ def test_replacing_a_status_word_drops_its_colour(clone, chart):
 def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     """Idea 14 in memory on Mini_Doomer: Blazing is styled on the chart, so the edit cuts "Ability FX: Blazing" from the new
     raster (the ability's own pixels under the word), directly above Text, carrying the chart layer's lfx2/lrFX bytes and a
-    fresh layer id; the word keeps the swatch. FX layers are derived state: the next edit rebuilds them, a repeat is numbered
-    and a removed word leaves nothing behind."""
+    fresh layer id; the word keeps the swatch. The next edit makes it again as Effect Layers.jsx's Update all does (BUG 2):
+    in place, a repeat cut into the same layer, and a removed word leaves nothing behind."""
     assert sorted(c.name for c in chart.values() if c.styled) == STYLED
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_plain(clone, tmp_path)[0])
@@ -1250,12 +1408,14 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     cut, under = one.numpy("shape")[..., 0], layer.numpy("shape")[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0, 0]
     assert np.array_equal(cut[cut > 0], under[cut > 0])                        # copied from the raster, not re-rendered
     assert edit.region[0] <= x0 - GLOW and edit.region[2] >= x1 + GLOW and edit.region[3] >= y1 + GLOW
+    ink = pe.PSDParser._pixel_coverage(one, layer), int((one.numpy("shape") > 0.5).sum())
     edit = pe.set_text_layer(psd, "ability", "Inflict Blazing. Blazing again.", fonts, chart)
-    names = [fx.name for fx in pe.fx_layers(psd, pe.ability_layer(psd))]
-    assert names == ["Ability FX: Blazing#1", "Ability FX: Blazing#2"] == [n for n, _ in edit.fx] and edit.dropped == ["Ability FX: Blazing"]
-    assert [psd.index(fx) for fx in pe.fx_layers(psd, pe.ability_layer(psd))] == [psd.index(text) + 1, psd.index(text) + 2]
+    again, = pe.fx_layers(psd, pe.ability_layer(psd))
+    assert again is one and again.name == "Ability FX: Blazing" and (edit.fx, edit.dropped) == ([], [])
+    assert [name for _, _, name, _ in edit.rebuilt] == edit.fx_names == ["Ability FX: Blazing"] and psd.index(one) == psd.index(text) + 1
+    assert int((one.numpy("shape") > 0.5).sum()) > 1.8 * ink[1] and pe.PSDParser._pixel_coverage(one, pe.ability_layer(psd)) == 1.0
     edit = pe.set_text_layer(psd, "ability", "Inflict Poison.", fonts, chart)
-    assert pe.fx_layers(psd, pe.ability_layer(psd)) == [] and edit.fx == [] and edit.dropped == names
+    assert pe.fx_layers(psd, pe.ability_layer(psd)) == [] and edit.fx == [] and edit.dropped == ["Ability FX: Blazing"]
     assert len(list(psd.descendants())) == count
 
 
@@ -1361,12 +1521,14 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
 @pytest.mark.skipif(not colour_glyphs(), reason="the fork draws SVG colour glyphs in one colour")
 def test_fx_layers_leave_colour_glyphs_out(clone, chart):
     """Gasoline's [fire] token keeps its SVG colours in a key copy: the all-black key finds it, and it stays out of the
-    regenerated Blazing layer, which matches the clean one Effect Layers.jsx cut before the badges (std-batch2 FX.md)."""
+    regenerated Blazing layer, which matches the clean one Effect Layers.jsx cut before the badges (std-batch2 FX.md).
+    Its own Blazing layer taken away first, the edit makes it anew (new_fx)."""
     psd = PSDImage.open(_card(clone, GASOLINE)[0])
     layer = pe.ability_layer(psd)
     assert pe.uses_icon_font(layer) and "[fire]" in layer.text
     old, = pe.fx_layers(psd, layer)
     theirs = _ink(old, psd)
+    old.parent.remove(old)
     edit = pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text), str(clone / pe.FONTS_DIR), chart)
     assert [name for name, _ in edit.fx] == [old.name] == ["Ability FX: Blazing"]
     mine, = pe.fx_layers(psd, pe.ability_layer(psd))
@@ -1377,8 +1539,8 @@ def test_fx_layers_leave_colour_glyphs_out(clone, chart):
 @text_edit
 def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, chart, tmp_path):
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
-    within the parity bar, the validator clean, nothing outside the region; a second bake on the result drops Frozen and
-    numbers the repeated Blazing, the old layers removed and the new ones added in the record diff."""
+    within the parity bar, the validator clean, nothing outside the region; a second bake on the result deletes Frozen's
+    and cuts the repeated Blazing into its layer again in place (BUG 2), the record diff saying so."""
     psd_path, png_path = _plain(clone, tmp_path)
     old = pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]
     one = tmp_path / "one"
@@ -1410,10 +1572,9 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
     again = pe.apply_jobs(baked.psd_path, baked.png_path, MINI_DOOMER, {"ability": text}, parsed, parser, str(two),
                           str(clone / pe.FONTS_DIR), chart, update_preview=False)
     assert [(name, fields) for _, name, fields in again.records] == [
-        ("Ability", TEXT_RECORD), ("Ability FX: Blazing", ["removed"]), ("Ability FX: Frozen", ["removed"]),
-        ("Ability FX: Blazing#1", ["added"]), ("Ability FX: Blazing#2", ["added"])]
-    assert again.fx == ["Ability FX: Blazing#1", "Ability FX: Blazing#2"] and again.reparse["validator"] == []
-    assert again.edits[0].dropped == ["Ability FX: Blazing", "Ability FX: Frozen"]
+        ("Ability", TEXT_RECORD), ("Ability FX: Blazing", ["channels", "rect"]), ("Ability FX: Frozen", ["removed"])]
+    assert again.fx == ["Ability FX: Blazing"] and again.reparse["validator"] == [] and again.block_bytes == 0
+    assert again.edits[0].dropped == ["Ability FX: Frozen"] and again.fx_notes == ["Ability FX: Frozen deleted: its words left the ability"]
     assert pe.stale_stories(PSDImage.open(again.psd_path)) == []
     print("timings", {k: round(v, 2) for k, v in baked.timings.items()}, {k: round(v, 2) for k, v in again.timings.items()})
 

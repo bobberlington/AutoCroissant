@@ -710,6 +710,20 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
 
 
+def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
+    """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted, renamed or restyled."""
+    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
+    baked = SimpleNamespace(edits=[SimpleNamespace(field="ability", old="a")], parity={"ability": ok}, rerender={"ability": ok},
+                            flag_bytes=0, changed_pixels=9, fx=["Ability FX: (2U) | (2CD)"],
+                            fx_notes=["Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': (1GCD) left the ability",
+                                      "Ability FX: Blazing deleted: its words left the ability"])
+    card = cb.Card("PoD11ZOMG", "PoD11ZOMG", {"ability": "b"}, rel="Auxiliary/Minions/PoD11ZOMG.psd", jobs={"ability": "b"},
+                   baked=baked)
+    line = cb._card_line(card, True)
+    assert ("; FX layers: Ability FX: (2U) | (2CD); Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': "
+            "(1GCD) left the ability; Ability FX: Blazing deleted: its words left the ability; not committed (dry run)") in line
+
+
 def test_old_bar_pixel_verdicts_are_retried(github):
     """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
     now; one past the floor, or a render that shows no change, stays final."""
@@ -990,9 +1004,9 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
 
 
 @fork_text
-def test_ability_bake_refuses_a_badge_card(github, clone):
-    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit would drop it, so the card is refused
-    with the reason in its verdict and nothing of it lands."""
+def test_ability_bake_rebuilds_a_badge_card(github, clone):
+    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit bakes (BUG 2), and the report says the
+    layer went with the badge the edit removed."""
     chart = clone / pe.STATUS_CHART
     if not chart.exists():
         pytest.skip("no status chart")
@@ -1001,8 +1015,8 @@ def test_ability_bake_refuses_a_badge_card(github, clone):
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
     text, commits = cb.run(dry_run=True)
-    assert commits == [] and "## Refused (1)" in text
-    assert "unsupported-card: ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop" in text
+    assert commits == [] and "## Baked (1)" in text and "Would commit: Card edits: 1 baked." in text
+    assert "; Ability FX: (BOT) deleted: its words left the ability; not committed (dry run)" in text
 
 
 # ========================
