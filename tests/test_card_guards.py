@@ -1083,12 +1083,13 @@ def test_a_real_r11_fix_lands_for_a_pair(clone, tmp_path, monkeypatch):
     push = _commit(root, "Mini Doomer", author="Alice")
     out = tmp_path / "out"
     told = cg.check(str(root), push, base, mode="on", out=str(tmp_path / "told"), workers=1)["cards"][0]
-    assert [w["kind"] for w in told["writes"]] == ["recompress"]                     # the re-saved PNG (level 1)
+    squeezed = ["recompress"] if find_spec("oxipng") else []      # the re-saved PNG (level 1), by pyoxipng
+    assert [w["kind"] for w in told["writes"]] == squeezed
     assert "layer names to correct: 'NAME' -> 'Name' (new)" in told["told"]                 # the owner's rule today
     monkeypatch.setattr(cg.standards, "AUTO_FIX", ("R9", "R11"))
     data = cg.check(str(root), push, base, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
-    assert entry["case"] == "pair" and [w["kind"] for w in entry["writes"]] == ["recompress", "psd"], entry
+    assert entry["case"] == "pair" and [w["kind"] for w in entry["writes"]] == squeezed + ["psd"], entry
     assert entry["expect"][f"{rel}.png"] == cg.Source(str(root)).tree(push)[f"{rel}.png"][1]
     assert "The bot will fix: " in data["markdown"]
     assert cg.main(["land", "--plan", str(out / "plan.json"), "--local", str(root)]) == 0
