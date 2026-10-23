@@ -447,8 +447,8 @@ github_api reads it inside a try/except and takes the token from the environment
   - `cause` is one of `psd` (the blob changed), `reparse` (same blob, newer parser), `moved` (the same blob in another
     folder, whose folder-derived data changed: stars, card type, subtype or series), `edit` (`Card Edits.json`), `authors`
     (`Card Authors.txt`) or `legacy`. A move that changes no data field is no version (below).
-  - `from` is the blob's intro (for psd and reparse) or the commit of the edits or authors file. `to` is the next version's
-    `from`, or the deleting commit.
+  - `from` is the blob's intro (for psd and reparse; after a revert, the revert: `GitIndex.blob_since`) or the commit of
+    the edits or authors file. `to` is the next version's `from`, or the deleting commit.
   - `png_commit` is the newest commit of the card's PNG at `to`, so `/query as_of` can link the image of that day with no git on
     the jetson.
 - **Art-only changes are not versions.** A blob change with identical data becomes an `art` changelog event and updates the
@@ -464,17 +464,22 @@ github_api reads it inside a try/except and takes the token from the environment
   its name now (`TYPE_RENAMES`: `offense` became `Negation.png`, the same bytes, in 9649b4d). A field a reading could not
   know is no difference (`unknown`): the title of a version read before parser 2 (it read no titles), the stars of a
   `NO STARS FOUND` parse, the types of a `MISSPELT TYPE` one, the ability of `NO ABILITY LAYER`. A series the 2026-10-20
-  split moved under a parent (the same subseries-or-series) is no difference. The changelog's steps use the same rules.
-  The rule only runs one way (`knows(a, b)`: a knew every field b knew, with b's value): the reading that knew more
-  absorbs the one that knew less, never the reverse. So a commit with a broken ability, star or type layer keeps the
-  card before as a version (`_record_history`, `record_versions`, the untag step), and the cleanup never folds a
-  version into a reading that knew less or links two versions whose known values differ.
+  split moved under a parent (the same subseries-or-series) is no difference. The changelog's steps
+  (`changelog.field_changes`) use the same forms but run both ways: a field either reading could not know is left out
+  of the step, so a step to a reading that knew less lists no change in it. The history's rule only runs one way
+  (`knows(a, b)`: a knew every field b knew, with b's value): the reading that knew more absorbs the one that knew less,
+  never the reverse. So a commit with a broken ability, star or type layer keeps the card before as a version
+  (`_record_history`, `record_versions`, the untag step), and the cleanup never folds a version into a reading that
+  knew less or links two versions whose known values differ.
 - **The one-time cleanup** (`clean_history`, also the seed pass's first step):
   - `normalize`: a stored version's series is filled from the version after it when it had none (an item's series is typed
     in later; a creature's comes from its folder, never filled), or moved under the parent the split gave it; retired type
     icons renamed; a version's copy of the card's creation date dropped (the card and an archived record keep it);
   - `collapse`: an earlier reading of the same commit goes first (two versions at one start, no other blob: the older
-    parser's or the pre-edit reading, when the later one knew all it did; nothing carried), then runs of the same data. A
+    parser's or the pre-edit reading, when the later one knew all it did; nothing carried), never the card before a
+    version an edit or authors change made (cause `edit`, `authors`: `record_edits` and `record_versions` start it no
+    earlier than the version it ends, so at that start when the edits file's newest commit is older, as an edits commit
+    merged after a PSD push), then runs of the same data. A
     run needs a member that knew all the others did (`_knower`), so an unknown title never joins two known ones; a run of
     exactly equal versions keeps its first, a run that is only the same because a reading knew less keeps the reading
     that knew the most; the card after it (or an archived record) takes a run only when it knew all of it;
@@ -506,11 +511,32 @@ github_api reads it inside a try/except and takes the token from the environment
   - **Landing order**: land work/history-fixes before main's first post-deploy `/update_stats`. Otherwise main's dedupe
     keeps Tainted Bethany's blob-less pre-parser-2 reading of 2026-10-19 and drops the c532847b parser-2 one; the data
     shown is the same, only the blob and parser record differ (nothing can bring the dropped record back).
-  - **Seed dates by the bytes' first commit at any path** (`blob_intro`, unchanged): 47 cards' earliest start moves
-    earlier, to when their PSD's bytes first appeared under another path or name (Shell Shield 2025-02-10 -> 2023-11-05,
-    its first commit in the misspelt `Auxillary/` folder; Dr Robotnik's Roboticizer 2025-09-02 -> 2023-11-06, named
-    Roboticizer then). A move or rename keeps the version going, so this is by the rule; say so if the owner wants a
-    name's history to start at its own path.
+  - **Seed dates by the bytes' first commit at any path** (`GitIndex.blob_since`): a version's or card's start is its
+    blob's first commit at any path, unless its path (or the path an exact rename brought the bytes from) held other
+    bytes after that: then the commit that put them back (2026-10-23; the 2025-04-04 revert of 112 PSDs, as legacy
+    dates them). On the cleaned 15:41 copy at 6e50c3ee the seed and the build no longer date 9 versions and 3 cards
+    (Balloon Boy, Old Freddy, Dark Mind Eye; King Dedede's 9fa2e2df version, Holo Defense API's renamed after its
+    revert) across other bytes (12 before, 0 now; idempotent). 31 names' earliest start still moves earlier than
+    legacy's, to when their PSD's bytes first appeared under another path or name (Shell Shield 2025-02-10 ->
+    2023-11-05, its first commit in the misspelt `Auxillary/` folder; 13 rulebook pages). A move or rename keeps the
+    version going, so this is by the rule; say so if the owner wants a name's history to start at its own path.
+  - **Kept by the rules** (no change; say so to change them): dupes-3/INT-2, the 6 versions dated before their PSD's
+    first commit (the Ahn'Qiraj cards' author times of rebased commits 48a9d42 and d5d8a04; Z!!!!! v0 of 2026-04-15
+    matches no commit): the earliest date stays, and Z!!!!! v0's data differs from the version after it. dupes-4, the
+    ZOEY!!!!! -> Z!!!!! exact rename: each name keeps its own history, the old one archived with `renamed_to`, so
+    ZOEY v1 and Z!!!!! v1 (the same data) stay one under each name.
+  - **Done on other branches** (the AutoCroissant ones merge this one; read them with it): work/history-recovery:
+    D1/C1/DATES2-1, the lost pre-2026-02 and 2025 history of current cards (397 versions, the highest-severity finding),
+    recovered from the bot's PICKLE commits, with archive-1/INT-1/D4, the types-only misreads, INT-4 and DATES3-1;
+    archive-r2-dup-dropped (an alt-art duplicate archived like any card); INT3-1 (space-named card files take
+    underscore lookups, e4cd227); INT-R2-2 (Auxiliary/Creatures stars from the PSD, then a `cards:` re-read); INT-R2-5
+    (the bake's redundancy check first, bb183d0). TTSCardMaker work/history-dupof: INT-3, Stubborn Queen and Gust of
+    Trees as `dup_of` duplicates (no database entry until then; their Card Creation Dates.json lines match no card).
+    TTSCardMaker work/mario-series: INT-R2-3 (41 Mario cards to series Mario plus a subseries). The website,
+    TTSCardMaker work/site-history with AutoCroissant work/site-history's site tests: C2 and the viewer's carried start
+    (cards.json `since`), C5 (committer time), C3-site-local-day (Pacific dates), C3-dup-history-split (a duplicate's
+    History). Still open, no branch: INT-R2-4, Computer Virus has no stat rows (a PSD or Card Edits `creatures` fix;
+    BUGS_AND_IMPROVEMENTS D1).
 - **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
   every old path to the current one) is removed from both modes (legacy too, 2026-10-23), so each version keeps the path it
   was parsed at. Both readers key history by
