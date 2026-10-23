@@ -55,6 +55,10 @@ PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mi
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
+# How type layers' edges blend, tried in order by baseline(): the fork reads each layer's off the PSD's preview; a
+# PNG exported in another Photoshop session than the preview's may show them all in the text gamma, or all straight.
+# Under "preview" the edited layers are pinned to the gamma (text_kwargs()): the old preview does not show them
+TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
@@ -230,6 +234,11 @@ def text_engine() -> bool:
 def _record_index(layer) -> int:
     records = layer._psd._record.layer_and_mask_information.layer_info.layer_records
     return next(i for i, record in enumerate(records) if record is layer._record)
+
+
+def edited_ids(edits: list) -> tuple:
+    """Layer IDs of the edits' layers (text_kwargs()): the same in the edited PSD and the saved one."""
+    return tuple(layer.layer_id for edit in edits for layer in edit.layers)
 
 
 def _enabled_effects(layer, strict: bool = False) -> list:
@@ -1361,7 +1370,34 @@ def export_icc(psd: PSDImage, png: Image.Image) -> bool:
     return vote is None or vote[1] < ICC_MIN_PX or vote[0] < ICC_RAW_VOTE
 
 
-def render_region(psd: PSDImage, region: tuple, icc: bool = True) -> Image.Image:
+def text_blends(psd: PSDImage) -> list:
+    """The TEXT_BLENDS keys the fork's psd.composite() takes, in order ("preview", its default, always)."""
+    parameters = signature(psd.composite).parameters
+    return [text for text, kwargs in TEXT_BLENDS.items() if all(name in parameters for name in kwargs)]
+
+
+def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
+    """
+    psd.composite()'s keywords for a TEXT_BLENDS key. Under "preview" the edited type layers are pinned to the text
+    gamma: the preview still shows their old text, and Photoshop blends a layer it redraws in the gamma.
+
+    Args:
+        psd: The card
+        text: A TEXT_BLENDS key
+        edited: Layer IDs of the edited layers
+
+    Returns:
+        The keywords
+    """
+    kwargs = dict(TEXT_BLENDS[text])
+    parameters = signature(psd.composite).parameters
+    if text == "preview" and edited and "layer_text_gamma" in parameters:
+        kwargs["layer_text_gamma"] = dict.fromkeys(edited, parameters["text_gamma"].default)
+    return kwargs
+
+
+def render_region(psd: PSDImage, region: tuple, icc: bool = True, text: str = "preview",
+                  edited: tuple = ()) -> Image.Image:
     """
     psd.composite over a viewport, never from the stored preview and never forced (section 15).
 
@@ -1369,14 +1405,16 @@ def render_region(psd: PSDImage, region: tuple, icc: bool = True) -> Image.Image
         psd: The card
         region: Canvas bbox to render
         icc: Convert by the embedded profile (export_icc(): how the card's PNG was exported)
+        text: A TEXT_BLENDS key (baseline()'s choice)
+        edited: text_kwargs()'s
 
     Returns:
         The render, region-sized
     """
-    return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc)
+    return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc, **text_kwargs(psd, text, edited))
 
 
-def render_pair(psd: PSDImage, region: tuple, icc: bool = True) -> tuple:
+def render_pair(psd: PSDImage, region: tuple, icc: bool = True, text: str = "preview", edited: tuple = ()) -> tuple:
     """
     One render of the region, as render_region() returns it and in the PSD's own values (what its preview stores).
 
@@ -1384,11 +1422,13 @@ def render_pair(psd: PSDImage, region: tuple, icc: bool = True) -> tuple:
         psd: The card
         region: Canvas bbox to render
         icc: render_region()'s
+        text: render_region()'s
+        edited: render_region()'s
 
     Returns:
         (render, raw): raw before the embedded profile's sRGB conversion; the same image without a profile or icc
     """
-    raw = psd.composite(viewport=region, ignore_preview=True, apply_icc=False)
+    raw = psd.composite(viewport=region, ignore_preview=True, apply_icc=False, **text_kwargs(psd, text, edited))
     if not icc or Resource.ICC_PROFILE not in psd.image_resources:
         return raw, raw
     return post_process(raw, None, psd.image_resources.get_data(Resource.ICC_PROFILE)), raw
@@ -1405,13 +1445,18 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True) -
         icc: render_region()'s
 
     Returns:
-        (render, measurement); raises Refused("parity") when the fork already renders the region wrong
+        (render, measurement); the measurement's "text" is the first text_blends() key whose render is within the
+        bar. Raises Refused("parity") with the preview blend's measurement when none is
     """
-    render = render_region(psd, region, icc)
-    measured = _measure(render, png.crop(region))
-    if not _within_bar(measured):
-        raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d" % (measured["bad_pct"], measured["mean"], measured["max"]))
-    return render, measured
+    first = None
+    for text in text_blends(psd):
+        render = render_region(psd, region, icc, text)
+        measured = _measure(render, png.crop(region))
+        if _within_bar(measured):
+            measured["text"] = text
+            return render, measured
+        first = first or measured
+    raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d" % (first["bad_pct"], first["mean"], first["max"]))
 
 
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
@@ -1764,7 +1809,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
 
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
-                     icc: bool = True) -> dict:
+                     icc: bool = True, texts: Optional[dict] = None) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it matches the merged PNG within
     the parity bar (not byte-equal: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -1776,6 +1821,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         merged: The merged PNG
         edits: The applied Edits
         icc: render_region()'s
+        texts: {field: render_region() text}; "preview" for a field not in it
 
     Returns:
         {field: region measurement}
@@ -1784,8 +1830,10 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     if again.jobs:
         raise Refused("idempotence", "still to bake: " + ", ".join(sorted(again.jobs)))
     out = {}
+    edited = edited_ids(edits)
     for edit in edits:
-        measured = _measure(render_region(psd, edit.region, icc), merged.crop(edit.region))
+        text = (texts or {}).get(edit.field, "preview")
+        measured = _measure(render_region(psd, edit.region, icc, text, edited), merged.crop(edit.region))
         if not _within_bar(measured):
             raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f" % (edit.field, measured["bad_pct"], measured["mean"]))
         out[edit.field] = measured
@@ -1892,16 +1940,18 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     merged, parity, changed_pixels, patches = png, {}, 0, []
     preview = stored_preview(old) if update_preview else None
     icc = export_icc(old, png)
+    edited = edited_ids(edits)
     timings["baseline"] = timings["render"] = 0.0
     for edit in edits:
         start = perf_counter()
         base, parity[edit.field] = baseline(old, png, edit.region, icc)
+        text = parity[edit.field]["text"]
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
         if preview is None:
-            render = render_region(new, edit.region, icc)
+            render = render_region(new, edit.region, icc, text, edited)
         else:
-            render, raw = render_pair(new, edit.region, icc)
+            render, raw = render_pair(new, edit.region, icc, text, edited)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
         if preview is not None:
@@ -1926,7 +1976,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
-    gate_idempotence(reparse, jobs, reopened, merged, edits, icc)
+    gate_idempotence(reparse, jobs, reopened, merged, edits, icc, {field: m["text"] for field, m in parity.items()})
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
                  block_bytes, [name for edit in edits for name, _ in edit.fx], icc)
@@ -1953,6 +2003,7 @@ __all__ = [
     'STAT_FIELDS',
     'STAT_MAX',
     'StatusColor',
+    'TEXT_BLENDS',
     'TEXT_FIELDS',
     'TemplateRow',
     'ability_layer',
@@ -1976,6 +2027,7 @@ __all__ = [
     'gate_shape',
     'gate_size',
     'gate_stories',
+    'edited_ids',
     'icc_vote',
     'icon_font',
     'keep_breaks',
@@ -1998,7 +2050,9 @@ __all__ = [
     'set_stat',
     'stale_stories',
     'stat_value',
+    'text_blends',
     'text_engine',
+    'text_kwargs',
     'set_text_layer',
     'status_fills',
     'status_spans',
