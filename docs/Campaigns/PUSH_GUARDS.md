@@ -324,6 +324,12 @@ one ends "export it in Photoshop").
   PSD): D is where Photoshop's image differs from that PNG past 2 levels. No pixel past the parity threshold: current
   (5.3). Else the whole card is rendered, the PNG takes the render over D only (elsewhere it already shows the PSD), then
   G6 (b) over D (review 7, section 17).
+- Since 2026-10-23 both are also held per text and stat box (`png_export._boxes_drawn`; section 18): every visible,
+  non-empty type layer drawn at some opacity and every stat row, padded as R is. A box past the floor refuses ("PNG not
+  made: the bot's drawing of the Ability text does not match the PSD's own image (34.9% of pixels there); export it in
+  Photoshop"), and so does a text box drawn blank: more than 25% of its letters' own pixels (Photoshop's raster of the
+  layer, alpha past 0.5) off, and hiding the layer moves no pixel of the render ("PNG not made: the bot draws nothing for
+  the Ability text, which the PSD's own image shows; export it in Photoshop").
 - The PNG is written beside the PSD, with the PSD's stem in its case.
 
 **5.6 What the bake's gates become.**
@@ -1037,6 +1043,26 @@ grossly wrong, and tell the miss in the report and the comment. Built on AutoCro
   `png_export.miss_notes` words it: "made with a pixel difference (the old PSD drawn against the old PNG): bad 1.35%,
   mean 1.00, max 79", "(against the PSD's own image)" for G6 (b). The line goes on the card's guard-1 line in the comment
   and on the PNG's line in the bot commit, never on Discord.
+- **A card drawn whole is held per box** (review 2026-10-23). Over the whole card a blank text box stays far under the
+  floor: on real cards with the bake's hidden-layer simulation, Shield of the Guilty's Ability drawn blank was 2.32% of
+  the card (mean 4.88), its Text group 3.01%; The Freezer's 7.67% and 10.11%; each was made with only a whole-card note
+  (the old bar refused them all). So `export_new` and the beside case also measure each text and stat box (5.5): past the
+  floor refuses (The Freezer's Text blank: its Ability box 34.9% bad), and a text box drawn blank refuses as the bake's
+  blank render does (Shield's Ability: 10.57% of its box, 100% of its letters' pixels, refused; beside a PNG showing
+  another ability, 11.65% over D, refused). Blank means both: the floor counted over the layer's letters (Photoshop's own
+  raster of it), and no rendered pixel moves when the layer is hidden. Hiding alone misfired in the first sweep: Sabre's
+  Ability layer holds no text and moves nothing, so empty layers are no box; a layer covered by a copy moves nothing
+  either, but its letters show, so the letters' count keeps it a miss. A box missing the bar under the floor is told per
+  box ("made with a pixel difference (the Name text against the PSD's own image): bad 1.92%, mean 1.55, max 217", The
+  Freezer as a new card, whose whole card is within the bar); the whole-card note only when no box missed. The extra
+  render (the box with the layer hidden) runs only for a box whose letters are past the floor. Like the bake's, the
+  blank-box refusal goes past the owner's literal floor and is the owner's to keep or drop; a box drawn shifted or in a
+  wrong font under the floor is still made and told. Measured on 114 real cards pushed as new cards (the bot-gate scan's
+  80 parity misses and every fifth card it refused for structure; fork pin `cards-20261022b`,
+  `scratch/soft-parity/newcard/sweep_{old,new}.jsonl`): all 114 made before and after; 55 now carry a box note (5 had a
+  whole-card note); 98 of 712 boxes miss the bar, the worst 6.78% bad (PoD06Rainbow_Bloon's Health label), the worst
+  letters 22.05% (the same box, drawn, so no blank); no hidden render ran; 23.8 s per card median both ways (the Mac
+  under load).
 - **Still refused, under the floor too.** G5 (outside R, and inside R when Photoshop's old image disagrees with the old
   PNG too): the old PNG was already stale, Photoshop's own image says so, and no psd-tools fix makes the PNG right. G6
   "changed where the bot sees no layer change": the PNG would not show the author's change (a type layer whose stored
@@ -1050,11 +1076,15 @@ grossly wrong, and tell the miss in the report and the comment. Built on AutoCro
   the bot bakes PoD09DDT and PoD10BFB (G6, unseen; bot commits are never guarded). PNG pushed first: 34 of 34 current.
 - **Tests** (fail without the change): `test_a_drawing_miss_under_the_floor_is_written_and_told` (one row 30 levels off:
   4.76% bad, made and told; ten rows: 47.6%, refused), `test_a_new_card_drawn_with_a_miss_is_made` (new and beside),
+  `test_a_new_card_drawn_blank_in_a_text_box_is_refused` (Shield new and beside, The Freezer's Text group),
+  `test_a_new_card_tells_its_missed_box` (The Freezer's title), `test_a_new_card_with_an_empty_text_layer_is_made`
+  (Sabre),
   `test_g5_stays_a_refusal_under_the_floor`, `test_the_refusals_of_the_replay` (Defcon Panda now made, its baseline miss
   told), `test_a_drawing_miss_is_told_in_the_comment_and_the_commit` (card_guards: the comment, the bot commit's line,
   nothing on Discord).
 - **A blank drawing** (review 2026-10-23; the bake refuses a missed box whose render shows no change, `work/soft-parity`):
-  here F empty while Photoshop's image moved is G6 "changed where the bot sees no layer change", refused at any floor.
+  in `export` F empty while Photoshop's image moved is G6 "changed where the bot sees no layer change", refused at any
+  floor; a card drawn whole (new, or beside its PNG) has no old render, so its boxes are checked instead (above).
   Not caught, unmeasured: one push that changes a layer the fork draws and a text layer it draws blank in the same box;
   F is the first layer's, and the cross-check over F and D can stay under the floor, so the PNG is made with the old text
   and the miss told. A tool save with a stale composite and a blank drawing has no F and no D: "PNG still current"
