@@ -19,7 +19,7 @@ from re import compile as re_compile
 from typing import Optional
 from urllib.parse import quote
 
-from global_config import SITE_URL, TIMEZONE
+from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_db import write_text
 from commands.card_history import TYPE_RENAMES, unknown
 from commands.card_models import CardInfo
@@ -38,7 +38,7 @@ USES = re_compile(r"\((\d+)U\)")                         # more is stronger
 KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore")
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
-              "unknown": "Other"}                        # site/assets/app.js KIND_LABEL
+              "unknown": "Other", "rulebook": "Rulebook page"}   # site/assets/app.js KIND_LABEL, and the rulebook's pages
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
             (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
             (("restore",), "Rollback"))                  # re-reads: one line
@@ -399,10 +399,25 @@ def advance(db: str, seq: int, push: Optional[str] = None) -> None:
 # ========================
 # The posts (one per push)
 # ========================
-def card_link(name: str, site: str, ids: Optional[dict] = None) -> str:
-    """The card's share page (SITE/c/<id>/), else a search for it."""
+def site_ids(data) -> dict:
+    """The website's cards.json -> {card name: share id}, keyed by each card's `key` (the database's name; its `name`
+    is the shown title), else its name."""
+    cards = data.get("cards", data) if isinstance(data, dict) else data
+    return {c.get("key") or c.get("name"): c["id"] for c in cards or [] if isinstance(c, dict) and c.get("id")}
+
+
+def is_rulebook(event: dict) -> bool:
+    """Whether an event's card is a rulebook page (build_site's rule: its type, or a Rulebook folder)."""
+    return event.get("card_type") == "rulebook" or RULEBOOK_DIR in (event.get("path") or "").split("/")
+
+
+def card_link(name: str, site: str, ids: Optional[dict] = None, rulebook: bool = False) -> str:
+    """The card's share page (SITE/c/<id>/); a rulebook page (not in cards.json): the rulebook searched for it; else a
+    search for the card."""
     card_id = (ids or {}).get(name)
-    return f"{site}/c/{card_id}/" if card_id else f"{site}/#/cards?q={quote(name)}"
+    if card_id:
+        return f"{site}/c/{card_id}/"
+    return f"{site}/#/rules?q={quote(name)}" if rulebook else f"{site}/#/cards?q={quote(name)}"
 
 
 def _md(text: str) -> str:
@@ -442,7 +457,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     kind = event["kind"]
     if kind == "restore":
         return f"Card data restored from {_md((event.get('restored_from') or '?')[:8])}"
-    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids)})"
+    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids, is_rulebook(event))})"
     if kind == "new":
         stars = f", {event['stars']}\u2605" if event.get("stars") else ""
         by = f" by {_md(event['by'])}" if event.get("by") else ""
@@ -602,8 +617,7 @@ def main(argv: Optional[list] = None) -> int:
         if args.ids:
             with open(args.ids, encoding="utf-8") as fh:
                 data = loads(fh.read())
-            cards = data.get("cards", data) if isinstance(data, dict) else data
-            ids = {c.get("name"): c.get("id") for c in cards if isinstance(c, dict) and c.get("id")}
+            ids = site_ids(data)
         repository = args.repo
         if not repository and isfile(join(args.db, "manifest.json")):
             with open(join(args.db, "manifest.json"), encoding="utf-8") as fh:
@@ -636,6 +650,7 @@ __all__ = [
     'events',
     'field_changes',
     'fields_of',
+    'is_rulebook',
     'link_of',
     'main',
     'messages',
@@ -645,6 +660,7 @@ __all__ = [
     'read_events',
     'read_posted',
     'rewrite_events',
+    'site_ids',
     'size',
     'tags_of',
     'version_changes',
