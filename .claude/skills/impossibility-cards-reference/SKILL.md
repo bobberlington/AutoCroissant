@@ -237,6 +237,9 @@ not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is s
 Emperors' empty "1" in "shared health"). If a stat was found but every digit layer is hidden, the
 value defaults to **10**: that is how maxed stats are encoded in the template. Never found → stays
 −1 (only seeded for creatures/minions), which the validator reports.
+The parser never checks where a row lies: Green Mage's four bars sit below its canvas (they darken
+nothing; its printed cells are pixel layers), so its stored ATK is 10 while the card prints 6
+(BUGS D8, 2026-10-23); the bake refuses its stat edits (`... lies outside the card`).
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
