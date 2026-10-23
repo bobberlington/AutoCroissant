@@ -782,7 +782,8 @@ def test_effect_rules_on_styled_rows(clone):
 def test_a_bar_outside_the_card_refuses(clone):
     """Green Mage's four bars lie below its 2400 px canvas (the printed cells are pixel layers): a toggle there would change
     nothing on the card, so every stat refuses `unsupported-card` before a layer changes (it was a ValueError from the empty
-    render region: an `error` that failed the run). Pure Vessel's masks start on the canvas and reach past it: it toggles."""
+    render region: an `error` that failed the run). Pure Vessel's masks start on the canvas and reach past it: it toggles (its
+    bake: test_card_bake's test_a_bar_outside_the_card_is_a_final_refusal)."""
     path = _card(clone, GREEN_MAGE)[0]
     parsed = {"card": {"hp": 7, "def": 4, "atk": 10, "spd": 7}}
     for stat, value in (("hp", 3), ("def", 5), ("atk", 6), ("spd", 10)):
@@ -796,6 +797,19 @@ def test_a_bar_outside_the_card_refuses(clone):
     edit = pe.set_stat(pure, {"card": {"hp": 7}}, "hp", 3)
     x0, y0, x1, y1 = edit.region
     assert [layer.name for layer in edit.layers] == ["3", "7"] and 0 <= x0 < x1 <= pure.width and 0 <= y0 < y1 <= pure.height
+
+
+def test_a_digit_outside_the_card_refuses(clone):
+    """One digit's mask wholly off the canvas, the rest of the bar on it (no card today): hiding only that digit (5 -> 10) gave
+    an empty region (a ValueError at the render, an `error`); it refuses `unsupported-card` naming the digit, before a layer changes."""
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    row = pe.template_rows(psd, "hp")[0]
+    five = row.digits["5"]
+    five.mask.offset = (five.mask.left, psd.height + 10)          # below the canvas
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: hp: digit 5 of the bar 'Hp Dark' lies outside the card \(digit "
+                                         r"masks \(764, 2410, 1173, 2494\) on the 1200x2400 canvas\)"):
+        pe.set_stat(psd, {"card": {"hp": 5}}, "hp", 10)
+    assert row.visible == [5] and five.visible
 
 
 def test_layer_records_fingerprint(clone):

@@ -231,6 +231,12 @@ def _pad(box, reach: int, psd: PSDImage) -> tuple:
     return clip((box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach), psd.width, psd.height)
 
 
+def _off_canvas(box, psd: PSDImage) -> bool:
+    """Whether a bbox has nothing on the canvas (wholly outside it, or empty): clipped, it is empty."""
+    x0, y0, x1, y1 = clip(box, psd.width, psd.height)
+    return x1 <= x0 or y1 <= y0
+
+
 def _alpha(layer) -> Optional[np.ndarray]:
     """The layer's alpha (H, W) in 0..1 over its bbox; None when the layer has no pixels to read (vectors)."""
     try:
@@ -1451,16 +1457,21 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         value: 0-10 (one row) or 0-20 (two rows)
 
     Returns:
-        Edit over the toggled digits; raises Refused for other row shapes, a bar wholly off the canvas and ambiguous
-        effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect stacks (parity)
+        Edit over the toggled digits; raises Refused for other row shapes, a digit mask (or the whole bar) off the
+        canvas and ambiguous effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect
+        stacks (parity)
     """
     rows = template_rows(psd, stat)
     for row in rows:                            # Green_Mage: masks below the canvas, the cells drawn as pixels
-        x0, y0, x1, y1 = union_box([tuple(layer.mask.bbox) for layer in row.digits.values()])
-        if x1 <= 0 or y1 <= 0 or x0 >= psd.width or y0 >= psd.height:
-            raise Refused("unsupported-card", f"{stat}: the bar {row.group.name!r} lies outside the card (digit masks "
-                                              f"{(x0, y0, x1, y1)} on the {psd.width}x{psd.height} canvas): a toggle "
-                                              "would change nothing on the card")
+        boxes = {name: tuple(layer.mask.bbox) for name, layer in row.digits.items()}
+        off = sorted(name for name, box in boxes.items() if _off_canvas(box, psd))
+        if off:                                 # a toggle there changes nothing (and its region would be empty)
+            what = (f"the bar {row.group.name!r} lies" if len(off) == len(boxes) else
+                    f"digit {off[0]} of the bar {row.group.name!r} lies" if len(off) == 1 else
+                    f"digits {', '.join(off)} of the bar {row.group.name!r} lie")
+            raise Refused("unsupported-card", f"{stat}: {what} outside the card (digit masks "
+                                              f"{union_box([boxes[name] for name in off])} on the {psd.width}x{psd.height} "
+                                              "canvas): a toggle would change nothing on the card")
     old = stat_value(rows)
     if parsed["card"].get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the row shows {old}")
