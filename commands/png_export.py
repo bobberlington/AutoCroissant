@@ -43,6 +43,7 @@ G5 = ("PNG not made: the PSD and its old PNG already disagreed outside your chan
       "export it in Photoshop")
 G6 = ("PNG not made: the PSD was not saved by Photoshop and the bot could not check its stored image; "
       "export it in Photoshop")
+G6_NEW = "PNG not made: the bot could not check the new PSD's stored image against its layers; export it in Photoshop"
 G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); open and save it "
             "in Photoshop with Maximize Compatibility, or export the PNG")
 G7 = "PNG not made: the card changed size"
@@ -348,7 +349,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         if old is not None:
             result.numbers["baseline"] = referee(old, old_png, box, icc)
         if not _within(result.numbers["referee"]) or not _within(result.numbers.get("baseline", result.numbers["referee"])):
-            return _refuse(result, G6, "G6")
+            return _refuse(result, G6 if old is not None else G6_NEW, "G6")
     # G7: the PNG's shape
     try:
         psd_edit.gate_shape(old_png, out, new)
@@ -427,10 +428,10 @@ def export_new(new: PSDImage, run_referee: bool = True) -> Export:
     result.changed_px = out.width * out.height
     result.box = (0, 0, out.width, out.height)
     if not run_referee:
-        return _refuse(result, G6, "G6")
+        return _refuse(result, G6_NEW, "G6")
     result.numbers["referee"] = referee(new, out, result.box, True)
     if not _within(result.numbers["referee"]):
-        return _refuse(result, G6, "G6")
+        return _refuse(result, G6_NEW, "G6")
     result.outcome, result.image, result.data = "re-exported", out, encode(out, None)
     return result
 
@@ -475,6 +476,8 @@ __all__ = [
     'delta_transfer',
     'dilate',
     'encode',
+    'G6_NEW',
+    'G6_STALE',
     'export',
     'export_new',
     'fingerprints',

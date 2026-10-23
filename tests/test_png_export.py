@@ -163,7 +163,7 @@ def test_a_new_card_is_made_and_refereed(tmp_path):
     new = fixture_psd(tmp_path, card(), "new")
     found = pe.export_new(new)
     assert found.outcome == "re-exported" and found.writer == "new" and pe.open_png(found.data).mode == "RGB"
-    assert pe.export_new(new, run_referee=False).gate == "G6"
+    assert (pe.export_new(new, run_referee=False).gate, pe.export_new(new, run_referee=False).why) == ("G6", pe.G6_NEW)
 
 
 def test_png_check(tmp_path):
