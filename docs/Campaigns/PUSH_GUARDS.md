@@ -296,8 +296,8 @@ one ends "export it in Photoshop").
 - **current:** no write; job summary only. Also when the PNG in the tree already shows the pushed PSD (review 6): the
   author pushed the PNG first and the PSD minutes later in a push of its own. Over F the PNG is nearer the new render than
   the old, within the bar there, and within the bar of Photoshop's image over the card (`png_ahead`), so the bot does not
-  re-export over the author's export. A new PSD beside its PNG (5.5) is current when no pixel of the PNG is past the
-  parity threshold (24 levels) from Photoshop's image: nothing is rendered.
+  re-export over the author's export. A new PSD beside its PNG (5.5) is current when no pixel of the PNG is more than
+  BESIDE_CUT (8 levels; owner 2026-10-23, author exports differ by at most 4) from Photoshop's image: nothing is rendered.
 - **refused:** report line and Discord ("PNG not made: ...; export it in Photoshop").
 - **superseded:** summary only.
 - **error:** the card's line on Discord ("the bot could not finish checking it (MemoryError); PNG not made: export it in

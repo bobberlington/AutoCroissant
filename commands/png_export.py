@@ -37,6 +37,7 @@ from commands.psd_regions import fx_pad
 # Configuration
 # ========================
 TOL = 2                                         # |diff| a pixel may show and still be unchanged (ICC rounding)
+BESIDE_CUT = 8                                  # new PSD beside its PNG: within this, the PNG is current (owner)
 VOLATILE = (b"shmd", b"SoLd", b"PlLd", b"TySh", b"lnsr")   # blocks Photoshop rewrites on every save (2.2)
 DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
@@ -406,7 +407,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
 def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
     """
     A new PSD beside an existing PNG (no old PSD, so no baseline). D is where Photoshop's image differs from the PNG past
-    TOL. No pixel past the parity threshold: the PNG already shows the PSD (pushed first), current, nothing rendered.
+    TOL. No pixel past BESIDE_CUT: the PNG already shows the PSD (pushed first), current, nothing rendered.
     Else the whole card is rendered and the PNG takes it over D only (elsewhere it already shows the PSD), then G6 (b).
     """
     result.vote = psd_edit.icc_vote(new, old_png)               # that PNG's own export
@@ -416,7 +417,7 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     diff = _diff(truth, old_png)
     moved = diff > TOL
     result.numbers.update(composite_px=int(moved.sum()), png_vs_psd=_stats(diff))
-    if int(diff.max()) <= psd_edit.PARITY_THRESH:              # export noise at most: never redrawn by the fork
+    if int(diff.max()) <= BESIDE_CUT:                           # export noise at most: never redrawn by the fork
         result.numbers["png_ahead"] = {"card": result.numbers["png_vs_psd"]}
         return result
     box = (0, 0, new.width, new.height)

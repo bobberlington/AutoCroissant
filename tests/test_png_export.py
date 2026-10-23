@@ -175,16 +175,26 @@ def test_a_png_pushed_before_its_psd_is_current(tmp_path, monkeypatch, photoshop
 
 def test_a_new_psd_beside_its_own_png_is_current(tmp_path, monkeypatch):
     """A new PSD beside the PNG the author pushed first (or a PNG-only card's PSD): the PNG already shows Photoshop's
-    image, export noise at most (no pixel past the parity threshold), so nothing is rendered, made or told."""
+    image, export noise at most (no pixel past BESIDE_CUT), so nothing is rendered, made or told."""
     monkeypatch.setattr(psd_edit, "render_region", lambda *a, **k: pytest.fail("rendered a PNG that is current"))
     new = fixture_psd(tmp_path, card(), "new")
     found = pe.export(None, new, card())
     assert (found.outcome, found.changed_px, found.data, found.writer) == ("current", 0, b"", "new")
     assert found.numbers["composite_px"] == 0 and "png_ahead" in found.numbers
     noisy = card()
-    ImageDraw.Draw(noisy).rectangle((40, 60, 44, 64), fill=(200, 30, 30 + psd_edit.PARITY_THRESH))
+    ImageDraw.Draw(noisy).rectangle((40, 60, 44, 64), fill=(200, 30, 30 + pe.BESIDE_CUT))
     found = pe.export(None, new, noisy)
     assert (found.outcome, found.numbers["composite_px"], found.data) == ("current", 25, b"")
+
+
+def test_a_small_recolour_beside_its_png_is_rendered(tmp_path):
+    """Owner (2026-10-23): past BESIDE_CUT (8 levels) a new PSD beside its PNG is no longer 'current': a 20-level
+    recolour gets the fork's render (or a refusal), never a silent pass."""
+    new = fixture_psd(tmp_path, card(), "new")
+    recoloured = card()
+    ImageDraw.Draw(recoloured).rectangle((40, 60, 44, 64), fill=(200, 30, 50))
+    found = pe.export(None, new, recoloured)
+    assert found.outcome != "current" and "png_ahead" not in found.numbers
 
 
 def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved(tmp_path, monkeypatch):
