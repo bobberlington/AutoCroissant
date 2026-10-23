@@ -1,8 +1,9 @@
-from asyncio import iscoroutinefunction, get_running_loop, to_thread as asyncio_to_thread
+from asyncio import get_running_loop, to_thread as asyncio_to_thread
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from discord import File, Interaction, Object
 from functools import wraps
+from inspect import iscoroutinefunction
 from io import BytesIO
 from numpy import ndarray, array, asarray
 from os import listdir

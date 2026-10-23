@@ -341,7 +341,7 @@ class CardRepository:
             results = [self.ability_search_engine(q.strip()) for q in queries]
             result = results[0]
             for r in results[1:]:
-                result = merge(result, r, left_index=True, right_index=True, how="inner", copy=False)
+                result = merge(result, r, left_index=True, right_index=True, how="inner")
             return result
 
         # Handle stat queries
