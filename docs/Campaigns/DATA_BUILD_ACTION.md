@@ -847,9 +847,9 @@ github_api reads it inside a try/except and takes the token from the environment
   /update_metadata Tainted Bethany (hp, ability)`, with an `Edit-by` trailer and `_by`/`_at` on the entry. Fields map like this:
   - `author` → a `[cards]` line in `site/Card Authors.txt`;
   - `ability`, `stars`, `types`, `hp`/`def`/`atk`/`spd` → `Card Edits.json` fields of the "psd" kind. They persist, show
-    "PSD pending" like a website edit, and the next Card sync bakes them into the PSD. Until the bake prints stars and
-    types (psd_edit `NOT_YET`), `/update_metadata` refuses them: a pending one makes the bake refuse the card's every
-    other PSD edit;
+    "PSD pending" like a website edit, and the next Card sync bakes them into the PSD. Stars and types too since
+    2026-10-23 (the bake prints them; a layout it can't follow is refused for that field alone, the card's other edits
+    still bake);
   - `subtype`, `series`, `card_type` → `subtype`, `series`, `type` (the "folder" kind);
   - `subseries` → `subseries`;
   - `del_entry` → `hidden: true`.
@@ -1272,8 +1272,8 @@ except 6, which is one day, not 14:
      that persist, show "PSD pending" and are baked by the next Card sync;
    - `del_entry` becomes `hidden: true`;
    - the Discord-only values found at step 5 are carried into `Card Edits.json`.
-   - *Not as answered, to put to the owner:* stars and types are refused from Discord until the bake prints them (§11;
-     psd_edit `NOT_YET` would refuse the card's whole bake), which drops a live Discord option. The carry is 596 series values
+   - *Not as answered, to put to the owner:* stars and types were refused from Discord until the bake printed them (§11);
+     answered 2026-10-23: the bake prints them, and `/update_metadata` takes them again. The carry is 596 series values
      (`Card Edits.json` 43 entries to 632); confirm before TTSCardMaker lands.
 3. **Aliases move from aliases.pkl into `Card Edits.json` `aliases`** (60 today), and `/alias` commits there. Answered: yes (aliases too).
 4. **`ACTIONS_TOKEN` on the jetson** (fine-grained, TTSCardMaker only, Actions read and write), so that `/update_stats

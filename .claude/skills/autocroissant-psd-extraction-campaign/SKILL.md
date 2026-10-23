@@ -562,8 +562,7 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 **What the code shows about manual entries vs the next sweep** (re-read 2026-10-22 on branch
 work/discord-writers; state no more than this): `manual_metadata_entry` (commands/discord_edits.py) makes one commit to
 the card repo: `author` as a `[cards]` line in `site/Card Authors.txt`, every other field as the card's entry in
-`site/Card Edits.json` (ability and hp/def/atk/spd are "psd" kind: pending until a card bake prints them; stars and types
-are refused for now). It then applies the edit in memory and saves stats.pkl. A missing card gets no stub row: a card
+`site/Card Edits.json` (ability, stars, types and hp/def/atk/spd are "psd" kind: pending until a card bake prints them). It then applies the edit in memory and saves stats.pkl. A missing card gets no stub row: a card
 with only a PNG gets the Card Edits.json entry (the website shows it) and no database row. Because every build and
 re-parse re-applies Card Edits.json and Card Authors.txt, the edit is durable: it survives a changed blob,
 `cards:` and `force_update:True`. Durable fixes still belong in the parser or the source PSD when the PSD is wrong;
