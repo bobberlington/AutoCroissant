@@ -401,6 +401,16 @@ def test_a_cancelled_run_is_said_when_running_it_again_would_cancel_another(gith
     assert any(s.startswith("Card data") for s in _said())          # the sync still runs
 
 
+def test_a_run_cancelled_by_hand_while_running_is_not_dispatched_again(github, tmp_path):
+    """Seen running, then cancelled, with a newer scheduled run going: cancelled by hand, so said, not run again."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 75, _run(75, "queued"), _run(75, "in_progress"), _run(75, conclusion="cancelled"))
+    github.runs = [_run(76, "in_progress", event="schedule"), _run(75, conclusion="cancelled")]
+    cs.update(ME, cards="A")
+    assert len(github.posts) == 1 and "Card sync run <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/75> " \
+        "was cancelled." in _said()
+
+
 def test_cancelled_twice_is_said(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 80, _run(80, conclusion="cancelled"))

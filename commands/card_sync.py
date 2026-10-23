@@ -350,10 +350,11 @@ def follow(interaction, run: dict, started: float) -> Optional[dict]:
     edits (EDIT_MINUTES).
 
     Returns:
-        The ended run, or None after WAIT_MINUTES
+        The ended run ("ran": seen started), or None after WAIT_MINUTES
     """
-    shown = None
+    shown, ran = None, False
     while run.get("status") != "completed":
+        ran = ran or run.get("status") not in WAITING
         if monotonic() - started >= WAIT_MINUTES * 60:
             return None
         state = _state(CARD_REPO, run)
@@ -365,17 +366,20 @@ def follow(interaction, run: dict, started: float) -> Optional[dict]:
             run = _json(api_url(CARD_REPO, f"actions/runs/{run.get('id')}"), _headers())
         except (RequestException, ValueError) as e:  # looked at again next time
             print(f"Card sync run not read: {e}")
-    return run
+    return {**run, "ran": ran}
 
 
 def _again(run: dict) -> tuple:
     """
     A cancelled run: the concurrency group keeps one run pending, so a newer one replaced it before it started. Run it
-    again when that cancels nothing but a scheduled run (ours does its work too), else say who replaced it.
+    again when that cancels nothing but a scheduled run (ours does its work too), else say who replaced it. One seen
+    running, or with nothing newer, was cancelled by hand.
 
     Returns:
         (dispatch again, why not)
     """
+    if run.get("ran"):
+        return (False, f"Card sync run <{run.get('html_url')}> was cancelled.")
     newer = [r for r in _runs(CARD_REPO, _headers()) if (r.get("id") or 0) > (run.get("id") or 0)]
     if not newer:
         return (False, f"Card sync run <{run.get('html_url')}> was cancelled.")
