@@ -115,6 +115,26 @@ def test_layers_moved_into_a_group_or_restacked(tmp_path):
     assert pdf.changes(a, _card(tmp_path, "restack", restack)) == ["Base restacked"]
 
 
+def test_an_ungrouped_group(tmp_path):
+    """Ungroup (Ctrl+Shift+G): the group goes and its layers take its place; the layers beside it kept their order."""
+    def ungroup(psd):
+        stars = psd.find("Stars")
+        inside = list(stars)
+        for star in inside:
+            stars.remove(star)
+        psd.remove(stars)
+        psd.extend(inside)
+    assert pdf.changes(_card(tmp_path, "a"), _card(tmp_path, "b", ungroup)) == [
+        "removed Stars group", "star x2 moved out of Stars"]
+
+
+def test_an_unnamed_layer(tmp_path):
+    def edit(psd):
+        square = psd.find("Square")
+        square.name, square.visible = "", False
+    assert pdf.changes(_card(tmp_path, "a"), _card(tmp_path, "b", edit)) == ["unnamed layer hidden", "Square renamed ''"]
+
+
 # ========================
 # Text
 # ========================
@@ -138,6 +158,12 @@ def test_text_change_names_icons_and_drops_invisible_characters():
         "﻿Deal 1  DMG to a target creature on the opposing field of play."
     assert pdf.text_change(old, new, {"": "fire"}) == "'1 DMG' -> '1 [fire] DMG'"
     assert pdf.text_change(old, new) == "'1 DMG' -> '1 [icon] DMG'"
+
+
+def test_a_text_that_reads_the_same():
+    assert pdf._unseen("\ufeff(1GCD)", "(1GCD)") == "invisible character removed"
+    assert pdf._unseen("(1GCD)", "\u200b(1GCD)\u200b") == "invisible characters added"
+    assert pdf._unseen("\ufeffa b", "a\nb") == "line breaks or spacing changed"
 
 
 def test_line_cuts_whole_phrases():
@@ -203,3 +229,18 @@ def test_a_style_change_names_its_words(clone):
 def test_a_box_resized(clone):
     changes = pdf.changes(*_pair(clone, "f58418a5", "09131c67", "Creatures/Mario/2 Stars/Koops.psd"))
     assert changes == ["Ability text: '(FTE2T)(3' -> '(1/2CD)(3', '(E2T)(4' -> '(2CD)(4'", "Ability box shorter by 624 px"]
+
+
+def test_an_invisible_character_removed(clone):
+    """Cake Mix: a BOM before '(1GCD' went, nothing else."""
+    assert pdf.changes(*_pair(clone, "91fcda38", "56a79f4f", "Items/Heal/2 Stars/Cake_Mix.psd")) == [
+        "Ability invisible character removed"]
+
+
+def test_smart_filters_renumbered_by_a_save_say_nothing(clone):
+    """Bone's Loans: the save renumbered Layer 2's Puppet Warp (filterID 1002 -> 632), its settings the same. Pep Drink's
+    Perspective Warp really moved (49 px), beside a new filterID and validAtPosition."""
+    assert pdf.changes(*_pair(clone, "21c1c98f", "7cb4c867", "Items/Equip/1 Stars/Bone's Loans.psd")) == [
+        "Ability text: '(1PGT)' -> '(1GCD)'"]
+    assert "tumblr_nguxntKncE1u258ivo1_500 smart filters changed" in pdf.changes(
+        *_pair(clone, "91fcda38", "56a79f4f", "Items/Heal/2 Stars/Pep_Drink.psd"))

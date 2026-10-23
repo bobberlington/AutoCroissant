@@ -33,6 +33,7 @@ from commands.psd_regions import overlay_words
 # ========================
 NOISE = {b"shmd", b"lnsr", b"lyvr", b"cinf", b"lspf", b"lclr", b"fxrp", b"lrFX", b"PlLd", b"vowv", b"lyid", b"luni"}
 # (rewritten by every save, or read elsewhere: lyid pairs, luni names)
+FILTER_NOISE = {b"filterID", b"validAtPosition"}   # smart filter ids and cache flag, renumbered by a save
 SEEN = {b"TySh", b"lfx2", b"lfxs", b"lmfx", b"SoLd", b"SoLE", b"lsct", b"iOpa", b"vmsk", b"vsms"}   # read by meaning
 BLENDING = {b"clbl": 1, b"infx": 0, b"knko": 0, b"brst": [], b"tsly": 1}     # blending options, defaults
 OWN_PIXELS = ("pixel",)                         # kinds whose channels are the art
@@ -270,11 +271,21 @@ def _smart(layer, facts: Facts) -> None:
     descriptor = data.data
     corners = list(descriptor.get(b"Trnf", []))
     facts.transform = tuple(round(float(v) / PX) * PX for v in corners)
-    facts.filters = _digest(plain(descriptor.get(b"filterFX"))) if b"filterFX" in descriptor else ""
+    filters = descriptor.get(b"filterFX")
+    facts.filters = _digest(_without(plain(filters), FILTER_NOISE)) if filters is not None else ""
     try:
         facts.content = _digest(layer.smart_object.data)
     except Exception:                           # a missing link: the descriptor stands for it
         facts.content = _digest(plain(descriptor.get(b"Idnt")))
+
+
+def _without(value, keys: set):
+    """Plain data without the given keys, at any depth."""
+    if isinstance(value, dict):
+        return {k: _without(v, keys) for k, v in value.items() if k not in keys}
+    if isinstance(value, list):
+        return [_without(v, keys) for v in value]
+    return value
 
 
 def facts_of(psd: PSDImage) -> dict:
@@ -344,9 +355,13 @@ def _readable(text: str, codepoints: Optional[dict]) -> str:
             out.append(f"[{codepoints[char]}]")
         elif 0xE000 <= ord(char) <= 0xF8FF:
             out.append("[icon]")
-        elif category(char) != "Cf":           # BOM, zero-width space
+        elif not _invisible(char):
             out.append(char)
     return sub(r"\s+", " ", "".join(out)).strip()
+
+
+def _invisible(char: str) -> bool:
+    return category(char) == "Cf"               # BOM, zero-width space
 
 
 def _quote(words: list) -> str:
@@ -424,6 +439,16 @@ def _describe(key: str, name: str, x, y) -> str:
     return f"{label} {shown(x)} -> {shown(y)}"
 
 
+def _unseen(old: str, new: str) -> str:
+    """The change of a text that reads the same: invisible characters only, else line breaks or spacing."""
+    seen = [[c for c in text if not _invisible(c)] for text in (old, new)]
+    if seen[0] != seen[1]:
+        return "line breaks or spacing changed"
+    count = sum(map(_invisible, new)) - sum(map(_invisible, old))
+    return ("invisible character" + ("s" if abs(count) != 1 else "") + " "
+            + ("added" if count > 0 else "removed" if count < 0 else "changed"))
+
+
 def _pct(value: int) -> str:
     return f"{round(value * 100 / 255)}%"
 
@@ -447,7 +472,7 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict]) -> list:
         if change:
             out.append((TEXT, "{} text: " + change))
         elif a.text != b.text:
-            out.append((TEXT, "{} line breaks or spacing changed"))
+            out.append((TEXT, "{} " + _unseen(a.text, b.text)))
         style = _style_change(a, b, codepoints)
         if style:
             out.append((LOOK, "{} " + style))
@@ -568,10 +593,10 @@ def _order(a: dict, b: dict, pairs: dict) -> list:
     out, groups = [], {}
     for key_a, key_b in pairs.items():
         x, y = a[key_a], b[key_b]
-        parent = pairs.get(x.parent, "") if x.parent else ""     # old parent now ("": removed or top)
+        parent = pairs.get(x.parent) if x.parent else ""        # old parent now ("": top, None: removed)
         if parent != y.parent:
-            out.append((ORDER, "{} moved into " + b[y.parent].name if y.parent else
-                        "{} moved out of " + a[x.parent].name, key_b))
+            out.append((ORDER, "{} moved into " + _name(b[y.parent]) if y.parent else
+                        "{} moved out of " + _name(a[x.parent]), key_b))
         else:
             groups.setdefault(y.parent, []).append((x.index, y.index, key_b))
     for siblings in groups.values():
@@ -594,15 +619,19 @@ def _labels(tables: tuple, overlays: set) -> dict:
         for facts in table.values():
             places.setdefault(facts.name, set()).add(facts.parent)
         for key, facts in table.items():
-            label = facts.name
+            label = _name(facts)
             if len(places[facts.name]) > 1 and facts.parent in table:
-                label = f"{table[facts.parent].name}/{facts.name}"
+                label = f"{_name(table[facts.parent])}/{label}"
             if key in overlays:
                 label += " overlay"
-            elif facts.kind == "group" and "group" not in facts.name.lower():
+            elif facts.kind == "group" and "group" not in _name(facts).lower():
                 label += " group"
             out.setdefault(key, label)
     return out
+
+
+def _name(facts: Facts) -> str:
+    return facts.name or ("unnamed group" if facts.kind == "group" else "unnamed layer")
 
 
 def _join(subjects: list) -> str:
@@ -628,10 +657,10 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None) -> 
     """
     out = []
     if old.size != new.size:
-        out.append((GEOMETRY, f"canvas {old.width}x{old.height} -> {new.width}x{new.height}", ""))
+        out.append((GEOMETRY, f"canvas {old.width}x{old.height} -> {new.width}x{new.height}", None))
     if (old.color_mode, old.depth) != (new.color_mode, new.depth):
         out.append((CONTENT, f"colour mode {getattr(old.color_mode, 'name', old.color_mode)} {old.depth}-bit -> "
-                             f"{getattr(new.color_mode, 'name', new.color_mode)} {new.depth}-bit", ""))
+                             f"{getattr(new.color_mode, 'name', new.color_mode)} {new.depth}-bit", None))
     a, b = facts_of(old), facts_of(new)
     pairs = {key: key for key in a if key in b}
     removed = [key for key in a if key not in b]
@@ -666,7 +695,7 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None) -> 
     for rank, template, subject in out:
         merged.setdefault((template, rank), []).append(subject)
     phrases = sorted(merged.items(), key=lambda item: (item[0][1], list(merged).index(item[0])))
-    return [template.replace("{}", _join(subjects), 1) if subjects[0] else template
+    return [template.replace("{}", _join(subjects), 1) if subjects[0] is not None else template
             for (template, _), subjects in phrases]
 
 
