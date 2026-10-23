@@ -173,9 +173,10 @@ the jetson's `ACTIONS_TOKEN`).
   history starts at its bytes' first commit at any path; the 4 renamer credits (Abyss Watchers and Pontiff Sulyvahn:
   hdckighfkvhvgmk; Firebomb and Maxim Tomato: MichaelJSr); the dangling side-file lines (White Palace in Card Authors.txt;
   Gust of Trees and Stubborn Queen in Card Creation Dates.json), printed by every run as "match no card".
-- **To tell him:** BUGS D4's owner notes (a card back after a deletion gap keeps its first start); the `_bot` field (schema addition); ability bakes refused on the gradient badge cards (BUG 2); 4 cards
-  keep their hidden-layer text (they print it as visible layers); the Website edits cap of 100; per-field credit on 14
-  entries; Computer Virus left flagged.
+- **To tell him:** BUGS D4's owner notes (a card back after a deletion gap keeps its first start); the `_bot` field
+  (schema addition); ability bakes refused on the gradient badge cards (BUG 2); 4 cards keep their hidden-layer text
+  (they print it as visible layers); the Website edits cap of 100; per-field credit on 14 entries; Computer Virus left
+  flagged.
 - **Older items:** BabaUI font (Baba.psd); Photoshop-authored fixtures (a bevel texture, a smart object with a painted
   filter mask); the live TTS check (a teammate takes a card back out of another colour's zone; a mod-cached player sees an
   updated card); inline-editing extras (stars, token picker, tag completion, type palette, rulebook text); campaign
