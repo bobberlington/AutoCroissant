@@ -35,6 +35,7 @@ from golden_cards import VOCAB  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
+RED_KNIFE = "Auxiliary/Items/Red_Knife.psd"            # its title misses the parity bar (outer glow noise)
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
@@ -729,26 +730,27 @@ def test_old_bar_pixel_verdicts_are_retried(github):
 
 
 @fork_text
-def test_freezer_title_bakes_with_a_pixel_note(github, tmp_path):
-    """End to end: The Freezer's title misses the parity bar (bad 1.97%, mean 1.60 on 2026-10-23) and bakes; the commit
-    note says so per edited box; the PSD, PNG and file land in one commit."""
+def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, clone, tmp_path):
+    """End to end: Red_Knife's title (its outer glow's noise, which no render matches) misses the parity bar and bakes;
+    the commit note says so per edited box; the PSD, PNG and file land in one commit."""
     from psd_tools import PSDImage
     files = github.files_at(github.head)
-    (tmp_path / "freezer.psd").write_bytes(files[FREEZER])
-    title = pe.read_name(PSDImage.open(str(tmp_path / "freezer.psd")))
+    files.update(_card_files(clone, RED_KNIFE))
+    (tmp_path / "knife.psd").write_bytes(files[RED_KNIFE])
+    title = pe.read_name(PSDImage.open(str(tmp_path / "knife.psd")))
     name = title[:len(title) - 1] + ("e" if title[len(title) - 1] != "e" else "a")
-    files[cb.EDITS_PATHS[0]] = _edits({"The Freezer": {"name": name, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: The Freezer")
+    files[cb.EDITS_PATHS[0]] = _edits({"Red Knife": {"name": name, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Red Knife")
     text, commits = cb.run()
     message = github.commits[commits[0]]["message"]
-    line = re.search(r"^- The Freezer: name .* -> .*; name baked with a pixel difference: bad ([\d.]+)%, mean ([\d.]+), max (\d+)$",
+    line = re.search(r"^- Red Knife: name .* -> .*; name baked with a pixel difference: bad ([\d.]+)%, mean ([\d.]+), max (\d+)$",
                      message, re.MULTILINE)
     assert len(commits) == 1 and message.startswith("Card edits: 1 baked\n") and line, message
     bad, mean = float(line.group(1)), float(line.group(2))
     assert (bad > pe.PARITY_BAD_MAX or mean > pe.PARITY_MEAN_MAX) and bad <= pe.PARITY_FLOOR
     assert "; name baked with a pixel difference: bad " in text.split("## Baked (1)", 1)[1]
     after = github.files_at(github.head)
-    assert sorted(p for p in after if after[p] != files.get(p)) == [FREEZER[:len(FREEZER) - 4] + ".png", FREEZER, cb.EDITS_PATHS[0]]
+    assert sorted(p for p in after if after[p] != files.get(p)) == sorted([RED_KNIFE[:len(RED_KNIFE) - 4] + ".png", RED_KNIFE, cb.EDITS_PATHS[0]])
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):

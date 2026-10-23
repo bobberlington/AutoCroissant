@@ -10,7 +10,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 import json
 import sys
 from copy import deepcopy
-from importlib.util import module_from_spec, spec_from_file_location
+from importlib.util import find_spec, module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
 from subprocess import CalledProcessError, run
@@ -135,6 +135,8 @@ text_edit = pytest.mark.skipif(not (_text_engine() and _story_sync()),
 # round 4 (tag cards-20261022): rounded bytes and textured bevels
 round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
                             reason="the fork lacks round 4's byte rounding or bevel textures")
+# the copy check composites the card: gradient fills need scipy (psd-tools[composite])
+composites = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy)")
 # a text edit redraws only what changed (the fork's rasterize(keep=))
 spliced = pytest.mark.skipif(not (_text_engine() and _story_sync() and pe.splices()),
                              reason="the fork redraws a text layer whole (no rasterize(keep=))")
@@ -612,6 +614,7 @@ def test_ability_layer_wherever_the_card_keeps_it(clone):
     assert pe._top(pe.ability_layer(doomer)) is pe._text_group(doomer)
 
 
+@composites
 def test_a_title_or_ability_printed_twice_refuses(clone):
     """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
     two offset copies of its ability): a bake would change one and leave the copies. An empty layer has no copies
@@ -625,6 +628,7 @@ def test_a_title_or_ability_printed_twice_refuses(clone):
     assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
 
 
+@composites
 def test_a_copy_the_art_hides_does_not_refuse(clone):
     """Only a copy people can see refuses: Doctor Zomboss's 'images/Name' sits under the art (the card renders the same
     without it), so its Text/Name bakes; Mosling's faint watermark still shows and refuses."""
@@ -1003,7 +1007,8 @@ def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, reco
     psd_path = _card(clone, rel)[0]
     new = _typo_fix(pe.read_name(PSDImage.open(psd_path), card_name(rel)))
     parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
-    assert [(name, fields) for _, name, fields in baked.records] == [(record, TEXT_RECORD)]
+    assert [name for _, name, _ in baked.records] == [record]
+    assert {"blocks", "channels"} <= set(baked.records[0][2]) <= set(TEXT_RECORD)     # rect: only when the box moved
     assert baked.reparse["card"]["display_name"] == new
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved, card_name(rel)) == new and pe.stale_stories(saved) == []
@@ -1485,10 +1490,10 @@ def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, 
     new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
     real = pe.set_text_layer
 
-    def stretched(psd, which, text, fonts_dir, chart=None):
-        edit = real(psd, which, text, fonts_dir, chart)
+    def stretched(psd, which, text, fonts_dir, chart=None, card=""):
+        edit = real(psd, which, text, fonts_dir, chart, card)
         if which == "ability":
-            edit.region = pe.union_box([edit.region, pe.name_layer(psd).bbox])
+            edit.region = pe.union_box([edit.region, pe.name_layer(psd, card).bbox])
         return edit
     monkeypatch.setattr(pe, "set_text_layer", stretched)
     with pytest.raises(pe.Refused) as refused:
