@@ -112,7 +112,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       glyphs are in the fork now). Until then 18-20 gradient badge cards refuse ability bakes.
 - [ ] Re-check the 4 stale verdicts (Metal General, Z.O.M.G., Star Dream, Zero Override) without `--pending` (Z.O.M.G.
       baked in e1a491be).
-- [ ] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? `txt2_repair.py --check`; repair if so.
+- [x] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? No: in sync since 5a9e0fcf; 0 of 904
+      PSDs stale at 6a54b4f6 (2026-10-23).
 - [ ] Green Mage: stat rows below the canvas (an error, not a verdict).
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; colour
       glyphs landed in round 6, so this is unblocked).

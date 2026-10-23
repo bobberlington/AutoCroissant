@@ -29,6 +29,8 @@ card and field, whether a bake works, why not, and what would fix it.
 - Ability bakes gave the edited words the layer's commonest colour (Pizza's '1' -> '2' went from yellow to cyan) and,
   with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
+- Section 2.1 is empty: the badges re-run (`5a9e0fcf`) left the four PoD titles in sync, the edited title (with its
+  trailing dot) in both copies. `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stale stories, 0 style drift.
 
 How to read it: section 1 is the one-screen summary. Section 2 has one part per reason: a plain explanation, what would
 fix it, and the cards (alphabetical, with their folder). A card counts once per field, under the first reason the bake
@@ -114,6 +116,7 @@ What stands out:
 #### 2.1 Photoshop's copy of the text is out of date
 
 Today: **4 cards** (Name 4, Ability 4, HP 4, DEF 4, ATK 4, SPD 4). After the pending changes, **0** of these 24 fields bake.
+Since `5a9e0fcf` (2026-10-23): **0 cards**, all four in sync on origin/main.
 
 - **Why:** Photoshop keeps a second copy of every text layer's words (the Txt2 story); on this card it holds older text than the layer, so Photoshop would show the old words after a bake.
 - **What would fix it:** Code tool: `python -m commands.txt2_repair` on the card (one commit).
