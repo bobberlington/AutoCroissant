@@ -192,6 +192,8 @@ class CardEdits:
         if "creatures" in fields:                   # set first, so a single-stat edit can still change creature 1
             fields = {"creatures": fields.pop("creatures"), **fields}
         saved = {key: self.get(card, key) for key in fields}
+        if "creatures" in fields and saved["creatures"] is None:    # it sets the stats: undone, they come back
+            saved.update({key: self.get(card, key) for key in self.STATS if key not in saved})
         if fields:
             saved["problems"] = list(card.problems)
             answered = tuple(p for key in fields for p in self.FIXED_BY.get(key, ()))

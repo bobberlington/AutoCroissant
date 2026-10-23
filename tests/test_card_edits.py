@@ -136,6 +136,18 @@ def test_creatures_then_single_stat():
     assert card.stats.to_dict() == {"hp": 9, "def": 4, "atk": 5, "spd": 5}
 
 
+def test_creatures_edit_undone_brings_back_the_stats():
+    """A card whose PSD reads no creatures: undoing a creatures edit gives back its own stats, not creature 1's."""
+    from commands.card_edits import as_parsed
+    card = _card(stats=CardStats(hp=6, defense=2, attack=3, speed=4))
+    original = repr(card)
+    _edits({"Foo Bar": {"creatures": [{"hp": 7, "def": 4, "atk": 5, "spd": 5}, {"hp": 5}]}}).apply("Foo Bar", card)
+    assert card.stats.to_dict() == {"hp": 7, "def": 4, "atk": 5, "spd": 5}
+    parsed = as_parsed(card)
+    assert parsed.creatures is None and parsed.stats.to_dict() == {"hp": 6, "def": 2, "atk": 3, "spd": 4}
+    assert CardEdits().apply("Foo Bar", card) is True and repr(card) == original
+
+
 # ========================
 # Two kinds of edits (EDIT_PIPELINE_DESIGN section 3)
 # ========================
