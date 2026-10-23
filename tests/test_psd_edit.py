@@ -24,7 +24,7 @@ from psd_tools.constants import Resource, Tag
 from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
-from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
+from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
 from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, rounds_bytes, saves_preview,
                       story_sync as _story_sync, text_engine as _text_engine)
 
@@ -1117,12 +1117,39 @@ def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
 
 @text_engine
 def test_baseline_refuses_a_region_the_fork_renders_wrong(clone, parser, tmp_path):
-    """The Freezer's title (KrabbyPatty over the Text group's effects) misses the parity bar: refused, never pasted."""
-    rel = "Field/1 Stars/The_Freezer.psd"
+    """Red_Knife's title (its outer glow's noise, which no render matches) misses the parity bar: refused, never pasted."""
+    rel = "Auxiliary/Items/Red_Knife.psd"
     psd_path = _card(clone, rel)[0]
     with pytest.raises(pe.Refused) as refused:
         _bake(clone, parser, rel, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
     assert refused.value.code == "parity" and not list(tmp_path.iterdir())
+
+
+@text_engine
+def test_baseline_reads_a_kept_raster_off_the_preview(clone):
+    """The Freezer's title: Photoshop composited it straight (a raster kept through a session), and only its preview
+    says so; the default blend reads that and is within the bar, the text gamma alone is not."""
+    psd_path, png_path = _card(clone, "Field/1 Stars/The_Freezer.psd")
+    psd, png = PSDImage.open(psd_path), Image.open(png_path).convert("RGBA")
+    region = pe._pad(tuple(pe.name_layer(psd).bbox), fx_pad(pe.name_layer(psd)), psd)
+    _, measured = pe.baseline(psd, png, region, pe.export_icc(psd, png))
+    assert measured["text"] == "preview"
+    assert not pe._within_bar(pe._measure(pe.render_region(psd, region, pe.export_icc(psd, png), "gamma"), png.crop(region)))
+
+
+@text_engine
+def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone):
+    """Shell_Shock's Ability: its preview shows the edge straight, its PNG (another session's) in the text gamma.
+    The preview's blend misses the bar and baseline() takes the gamma's instead."""
+    psd_path, png_path = _card(clone, "Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd")
+    psd, png = PSDImage.open(psd_path), Image.open(png_path).convert("RGBA")
+    layer = pe.ability_layer(psd)
+    region = pe._pad(tuple(layer.bbox), fx_pad(layer), psd)
+    icc = pe.export_icc(psd, png)
+    assert not pe._within_bar(pe._measure(pe.render_region(psd, region, icc), png.crop(region)))
+    render, measured = pe.baseline(psd, png, region, icc)
+    assert measured["text"] == "gamma" and pe._within_bar(measured)
+    assert np.array_equal(np.asarray(render), np.asarray(pe.render_region(psd, region, icc, "gamma")))
 
 
 # ========================
