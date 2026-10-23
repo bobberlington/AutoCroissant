@@ -182,6 +182,18 @@ def test_photoshop_resave_noise_is_left_out(clone, rel, expected):
     assert pdf.changes(old, new) == [expected]
 
 
+def test_a_mask_switched_off(clone):
+    data = at_rev(clone, COOLDOWNS[1], GLAIVE)
+    old, new = PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(data))
+    beam = next(layer for layer in new.descendants() if layer.name == "Laser Beam")
+    key = f"id:{beam.layer_id}"
+    assert pdf.facts_of(old)[key].mask == pdf.facts_of(new)[key].mask          # the digest is stable
+    beam._record.mask_data.flags.mask_disabled = True
+    saved = BytesIO()
+    new.save(saved)
+    assert pdf.changes(old, PSDImage.open(BytesIO(saved.getvalue()))) == ["Laser Beam mask changed"]
+
+
 def test_a_style_change_names_its_words(clone):
     """The badge batch of 2026-10-22 set the tag in stoogedings and left the text as it was."""
     assert pdf.changes(*_pair(clone, "af826714", "587d38b4", "Auxiliary/Items/Dreamshield.psd")) == [

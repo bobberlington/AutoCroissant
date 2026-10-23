@@ -92,7 +92,6 @@ class Facts:
     effects_on: bool = True
     blending: tuple = ()
     other: dict = field(default_factory=dict)   # tag -> digest of blocks not otherwise read
-    children: int = 0                           # a group's descendants
     layer: object = field(default=None, repr=False, compare=False)
 
 
@@ -166,8 +165,8 @@ def _mask(layer) -> str:
     data = layer._record.mask_data
     if data is None:
         return ""
-    return _digest(data.left, data.top, data.right, data.bottom, data.background_color, data.flags.tobytes()
-                   if hasattr(data.flags, "tobytes") else data.flags, _channels(layer, True))
+    return _digest(data.left, data.top, data.right, data.bottom, data.background_color, plain(data.flags),
+                   _channels(layer, True))
 
 
 def _engine(value):
@@ -321,8 +320,6 @@ def facts_of(psd: PSDImage) -> dict:
             raw = bytes(key)
             if raw not in NOISE and raw not in SEEN and raw not in BLENDING:
                 facts.other[raw] = _block(blocks, key)
-        if layer.is_group():
-            facts.children = sum(1 for _ in layer.descendants())
         facts.layer = layer
         out[facts.key] = facts
     return out
@@ -496,13 +493,11 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict]) -> list:
     if a.blending != b.blending:
         out.append((LOOK, "{} blending options changed"))
     out += _effect_changes(a, b)
-    settings = {key for key in set(a.other) | set(b.other) if a.other.get(key) != b.other.get(key)}
-    if settings:
-        known = settings & {b"vscg", b"vstk", b"vogk", b"SoCo", b"GdFl", b"PtFl"}
-        if known or b.kind not in ("pixel", "type", "smartobject", "group", "shape"):
-            out.append((CONTENT, "{} settings changed"))
-        for key in sorted(settings - known) if b.kind in ("pixel", "type", "smartobject", "group", "shape") else []:
-            out.append((OTHER, "{} " + _tag(key) + " changed"))
+    settings = sorted(key for key in set(a.other) | set(b.other) if a.other.get(key) != b.other.get(key))
+    if settings and b.kind not in ("pixel", "type", "smartobject", "group"):
+        out.append((CONTENT, "{} settings changed"))  # an adjustment's, fill's or shape's own blocks
+    else:
+        out += [(OTHER, "{} " + _tag(key) + " changed") for key in settings]
     return out
 
 
@@ -513,7 +508,7 @@ def _same(a: Facts, b: Facts, differ: bool, mask: bool) -> bool:
         return True
     try:
         x, y = (a.layer.mask, b.layer.mask) if mask else (a.layer, b.layer)
-        if mask and (x.bbox != y.bbox or x.background_color != y.background_color):
+        if mask and (x.bbox != y.bbox or x.background_color != y.background_color or x.disabled != y.disabled):
             return False
         one, two = x.topil(), y.topil()
         if one is None or two is None:
