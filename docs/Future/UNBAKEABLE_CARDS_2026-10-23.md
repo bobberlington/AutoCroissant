@@ -30,6 +30,25 @@ card and field, whether a bake works, why not, and what would fix it.
   with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
 
+**Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
+`plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
+dry with every gate on copies of the frozen corpus (`corpus-6e50c3ee`, 764 cards; fork `cards-20261023`; script and
+CSV in `~/Documents/Tools/wt/scratch/followups/stars-types/census-bake/`):
+
+| Edit | Cards | Bake | Refused (why) |
+|---|---|---|---|
+| stars + 1 | 764 | **146** | 592 the `N Stars` folder sets them (creatures 297, items 182, status effects 64, fields 49: a move, ledger S9); 22 a star layout it can't follow (14 two-over-three, quincunx, diamond and other shapes; 3 several stars in one group; 2 no Stars group; 1 two Stars groups; 1 smart filters; 1 would touch the title); 4 a stale Txt2 story (`txt2_repair` first) |
+| stars - 1 | 144 (2+ stars) | **132** | 6 layout, 6 stale Txt2 |
+| types add | 764 | **669** | 77 no type icon to line one up with; 4 off the canvas; 7 would touch the title or stars; 6 stale Txt2; 1 Sonic's stats read above 10 |
+| types remove | 687 (1+ icon) | **674** | 2 off the canvas; 1 a frame (Magnum Opus's field); 2 render past the 25% floor (Tainted Bethany, Dark Mind Eye); 1 changes pixels outside its box (Crowned Magolor); 6 stale Txt2; 1 Sonic |
+| types swap | 687 | 685 planned (not baked) | 1 frame, 1 off the canvas |
+
+Of the 172 cards whose stars the parser counts from the PSD, 146 bake a star more and a star fewer, 159 one of the
+two; 665 cards bake both a type added and one removed, 678 one of them. 21 bakes carry a pixel note. No card prints
+its type row as icon tokens ([fire] in header text: 0 on the corpus and on TTSCardMaker `96d61368`), so a token row is
+refused (`types: printed as icon tokens`). A bake took 9 s (median; 45 s at most on a loaded Mac), two or three
+whole-card renders of it for `gate_outside`.
+
 How to read it: section 1 is the one-screen summary. Section 2 has one part per reason: a plain explanation, what would
 fix it, and the cards (alphabetical, with their folder). A card counts once per field, under the first reason the bake
 stops at today; the last column says what the pending changes do to it. A card can sit in several parts, one per field.
@@ -48,10 +67,8 @@ Section 3 lists the boxes that bake but with a known pixel difference. The CSV b
 | SPD | 395 | **352** / 43 | **356** (4 with a pixel note) / 39 | **356** (4 with a pixel note) / 39 |
 
 - **Whole cards:** 275 of 764 cards bake every field they have today; 573 will after the pending changes.
-- **Stars and types** bake on no card: the bake can't print them yet (`psd_edit.NOT_YET`). Discord refuses them
-  (`discord_edits.NOT_BAKED`), but the website's editor offers both under "On the card image" (marked "PSD pending").
-  A pending stars or types edit makes the bake refuse the whole card (`unsupported-card: stars: not yet`; `classify`
-  is all-or-nothing per card), so it also blocks that card's name, ability and stat edits.
+- **Stars and types** baked on no card on this list's day (`psd_edit.NOT_YET`; a pending one refused the whole card).
+  Since `work/stars-types-bake` (above) they bake, and a refused one is refused for its field alone.
 - **Stats** count only the cards that show that stat (items, fields and status effects without stats are left out).
 - **Not counted here** (they depend on the edit, not the card): a stat above 10 (only Royal Eradicator Main Cannon's
   ATK has the two rows for it), new text that no longer fits (section 5), and a card pushed in the last 30 minutes
