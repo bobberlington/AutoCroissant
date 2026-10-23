@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, and a guild-admin table.
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot after the data-build cutover: "cutover", "CARD_SYNC", "card sync", "card_data/", "ACTIONS_TOKEN" (/update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /push retired, /fonts from the data).
 ---
 
 # AutoCroissant: Run and Operate
@@ -143,6 +143,9 @@ exec python3 main.py`), but its contents are per-machine and UNVERIFIED (the jet
 
 ## 5. The self-update flow (/push, /pull, /update)
 
+This section is the bot before the cutover (`CARD_SYNC` off, global_config.py); with it on, /push only replies with the Card
+sync link, /update pulls and restarts without a push, and /pull keeps no local file on a conflict: section 12.
+
 All three are admin-gated. This is how the bot updates ITSELF from Discord. Remote: fetch over
 https, push over `ssh://git@github.com/bobberlington/AutoCroissant.git` (verified `git remote -v`);
 the gitignored `.ssh/` directory in the repo root holds the deploy key (never commit or print it).
@@ -280,6 +283,9 @@ Re-parses changed card PSDs from the TTSCardMaker repo on GitHub into `stats.pkl
 repo_traverser.py:59 (the bake lock, the Discord messages, the follow-ups); since 2026-10-22 the traversal itself is
 `card_data.update` in legacy mode (commands/card_data.py, uncompiled, shared with the planned Card sync Action's build);
 slash wrapper main.py:374-386.
+
+After the cutover (`CARD_SYNC` on) `/update_stats` re-parses nothing: it loads the data the Card sync Action built (section 12).
+This section describes it before.
 
 > **OPERATING RULE (as of 2026-10-20): just run `/update_stats`.** It always reads GitHub (remote mode).
 > Local mode (walking the clone on disk, the old `use_local_repo` / `use_local_timestamp` options) was
@@ -422,6 +428,8 @@ present. It reports and never rejects: a missing font is a message to a person, 
   the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
   adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
   card PSD by blob (~813 downloads).
+- **After the cutover** (`CARD_SYNC` on) `/fonts` reads the card data's `psd_details.json` instead (section 12): no PSD or font is
+  downloaded, and `font_names.json` is no longer used.
 - **By hand: `/fonts`** (anyone). Runs in a thread against the card repo's current tree through the API with the per-blob
   cache `font_names.json` (blob sha -> the fonts a PSD asks for / the faces a font file supplies; gitignored). The first run
   downloads the fonts (270 files, 215 MB) and at most `BATCH` = 200 PSDs (a 15 MB blob took 1.4 s on the dev Mac; the whole
@@ -569,6 +577,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Card bake work dir | /bake_cards (commands/card_runner.py -> card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo; none under the PSD hold) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `psd_details.json` | /update_stats (commands/psd_details.py; `python -m commands.psd_details --clone` backfills) | repo root (+ `psd_details.json.tmp` while saving): PSD blob sha -> the card's PSD facts for the website's Details dropdown; pruned to the tree on every update that read it | YES — with the pickles in every PICKLE commit (/push); kept local on a /pull conflict |
+| `card_data/` | after the cutover (`CARD_SYNC` on): startup and every /update_stats (commands/card_sync.py, `card_db.sync`) | repo root: the card repo's `data` branch's `db/` (`stats.json`, `old_stats.json`, `psd_details.json`, `manifest.json`) plus `sync.json` (the data commit held and its ETag); each file replaced atomically, the manifest and `sync.json` last | NO (gitignored) — the Card sync Action's output; delete it and the next sync fetches it again (about 3.5 MB); `python -m commands.card_db export-pickles card_data <dir>` turns it into pickles |
 | `font_names.json` | /fonts (commands/font_check.py) | repo root (+ `font_names.json.tmp` while saving): blob sha -> the fonts a card PSD asks for or a font file supplies; pruned to the current tree on every run | NO (gitignored) — per-machine; if deleted, the next /fonts downloads every PSD again in batches |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the pickles |
@@ -713,6 +722,48 @@ text instead of a code block, because code blocks don't render emojis.
 - **Not yet run against live Discord** (offline fake-client test only, docs/BUGS_AND_IMPROVEMENTS.md V1). On the
   first live start, check the terminal line above, then run `/query_rulebook` on a page with icons.
 
+## 12. After the cutover: the bot reads Card sync's data (`CARD_SYNC`)
+
+Built 2026-10-22 (branch `work/cutover-bot`; design docs/Campaigns/DATA_BUILD_ACTION.md §11 and §14 step 8). **Off until the
+cutover**: every section above is the bot with it off, and with it off the bot is byte-identical to the one before this code
+(the suite, the rehearsal harness and a surface diff of every slash text, /help and /website showed no difference).
+
+**The switch** is one constant, `CARD_SYNC` in global_config.py, `False` until the cutover commit sets it `True`. Nothing to
+remember at runtime and no flag file: not the data branch's presence either, since the shadow (step 7) creates `data` days
+before the cutover. Code reads `global_config.CARD_SYNC` at call time; the slash command texts are picked at import, so the
+deploy's restart applies them. Rollback: revert that commit (DATA_BUILD_ACTION §13), deploy.
+
+**The cutover sitting, the bot's part** (after §14 step 8's reconcile: clean `git status` on the jetson, its last /push on
+origin):
+1. `ACTIONS_TOKEN` in the jetson's config.py (fine-grained, TTSCardMaker only, Actions read and write; never print it).
+2. Discord, as the owner: `/remove_reminder reminder_id:054b5933` (05:30 /push) and `/remove_reminder reminder_id:d2664752`
+   (05:00 /update_stats); then `/set_reminder when:<a time at :12 or :42> frequency:30m command:/update_stats`, a few minutes
+   after each Card sync (cron `4,34 * * * *`). Keep 134e3b24.
+3. The cutover commit (`CARD_SYNC = True`), then the deploy: pull, `build_ext`, restart (memory `jetson-server`).
+4. Check: the log shows "Card data loaded ..." at startup; `/update_stats` says "Card data is already current: built … from
+   TTSCardMaker@…"; `/query` the three goldens; `/fonts`.
+
+**What each command does with it on** (commands/card_sync.py, uncompiled):
+
+| Command | With `CARD_SYNC` on |
+|---|---|
+| startup (`init_psd`) | `card_data/` loaded (no network), then one sync; with neither, the root pickles (frozen since the cutover; gone at step 10). The startup sync queues nothing: on_ready queues the card list, image links and emojis itself |
+| `/update_stats` | `card_db.sync`: one conditional `GET repos/MichaelJSr/TTSCardMaker/commits/data` (sha media type, `If-None-Match` from `card_data/sync.json`; a 304 is free); on a new commit its `db/manifest.json` and only the data files whose sha256 differ, raw at that commit, each checked against the manifest and parsed before any is written. Then the database is reloaded from JSON, never a pickle, and the card list (a 304 when the tree is unchanged), query tables, type emojis and image links are refreshed |
+| `/update_stats` reply | "Card data built 12 min ago from TTSCardMaker@1a2b3c4d (run: <…>): 3 changed, 1 new, 1 archived; reloaded." (counted against the database it held, duplicates left out), "Card data is already current: built …", or "Card data loaded: built …" (it held the pickles). Then, when they apply: "Re-parse in progress: N cards still to re-parse"; "Could not read N PSDs (…)"; "The card repo has card changes since: the next card sync (every 30 minutes, at :04 and :34) picks them up" or "the card sync running now picks them up (<run>)" (one compare request); "The last card sync failed: <run>; the bot keeps the last good card data" (dry runs and cancelled runs left out). `output_problematic_cards` shows the new build's `manifest.problems` (only when new data loaded) |
+| `/update_stats` from a reminder | quiet: the reply goes to the console only (and no status requests), unless the sync failed or new data has problem cards |
+| `force_update` / `cards:` | admin only (a non-admin gets "You do not have permission.", a non-admin's reminder too). Dispatches Card sync with `ACTIONS_TOKEN`: `dry_run=false` and `full=true`, or `cards=<names>`; the run comes from the dispatch reply (`return_run_details`) or else is the newest dispatched run not listed before (a minute at most). Looked at every 15 s for 30 minutes at most, the state ("waiting for its turn", "running: Build") edited into the reply for its first 14 minutes (Discord's interaction lasts 15). Then the sync. A full re-parse continues over the next scheduled runs (the "Re-parse in progress" line) |
+| a cancelled run | the concurrency group keeps one run pending, so a newer one replaced it before it started: dispatched once more when that cancels nothing but a scheduled run; said ("replaced by a newer request (<run>) … ask again once it is done") when another dispatch is pending, and "was cancelled." when nothing newer exists (cancelled by hand). A second cancel is said |
+| no `ACTIONS_TOKEN` | the reply links the Action and gives `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false` (or `-f cards="…"`), then syncs. A refused token (401, 403, 404) is said the same way; the token is never printed |
+| `/push` | replies "Nothing to push: the card data is built by the Card sync Action …" with the Action's link; no git. Removed at step 10 |
+| `/update` | pull, then restart; no pickle push |
+| `/pull` | a conflict takes the remote's file for every path ("AUTO-RESOLVE: Merge conflict resolved (accepted remote)"); no pickle rescue. Normally a fast-forward: the bot commits nothing any more |
+| `/fonts` | from `card_data/psd_details.json`: each current card PSD's fonts with `supplied: false` (the build judged them against MDW/Fonts); a PSD without a record, or with fonts not judged, is an error line. First line "From the card data (built …): N card PSDs." |
+| `/update_metadata`, `/mass_replace`, `/alias` | commit to the card repo and apply in memory as before; stats.pkl is no longer saved. A sync of a run that started before the edit's commit shows the card without it until the next run (30 minutes at most); a restart likewise |
+| `/website` | "… the next card sync applies it (every 30 minutes)." |
+
+**API cost:** one conditional request per sync (free when nothing moved); raw downloads on a new commit are not API calls;
+an /update_stats that speaks adds two status requests (the run list, a compare); a followed run about two requests per look.
+
 ## When NOT to use this skill
 
 - Building or fixing the Python environment, ffmpeg/opus, Cython builds, requirements split ->
@@ -770,6 +821,7 @@ re-find volatile facts with these before trusting them:
 | Pickle names / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
+| The cutover switch and its readers (off until the cutover commit) | `grep -n "^CARD_SYNC\|^DATA_BRANCH\|^CARD_DATA_DIR" global_config.py`; `grep -rn "global_config.CARD_SYNC" main.py commands/` |
 | Card/rulebook dataframe counts, newest pickle timestamp | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
 
 Maintenance: update the date stamps and counts above whenever the pickles are refreshed or commands
@@ -808,3 +860,7 @@ saving bullet names the per-PSD failure messages (an unreadable PSD, a failed co
 abort.
 2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.
 2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.
+2026-10-22 (cutover, bot side): section 12 (the `CARD_SYNC` switch, off until the cutover commit; commands/card_sync.py and
+`card_db.sync`), pointers in sections 5, 7 and the Font check subsection, the `card_data/` row in section 8 and a
+re-verification row. main.py grew by 13 lines (an import at the top, the switched texts at /pull, /push, /update, /website and
+/update_stats, the option gate) and update_bot.py by 14: cited lines after those points drift; re-find them with the greps.

@@ -44,6 +44,10 @@ exactly one writer. Grafted onto it:
   default; §6 describes it as built) and work/changes-tabs (the Changelog and Database edits tabs).
 - **Step 7, the shadow, is next.** Step 8, the cutover, waits on `ACTIONS_TOKEN` in the jetson's config.py and the owner's
   reminder swap. Step 10 follows within a day of clean runs.
+- **Step 8's bot side built, switched off** (AutoCroissant work/cutover-bot, on work/history-fixes): the `card_db.sync()`
+  reader, /update_stats as a sync plus Card sync dispatches, the /push reply, /pull, /update, /fonts from the data and
+  admin-only `force_update`/`cards`, all behind one constant, `CARD_SYNC` in global_config.py (§11, "As built"). With it off
+  the bot is byte-identical to before; the cutover commit is that constant set to `True`.
 - **Owner decision: 624 database-only series values.** They were typed in Discord (`/update_metadata series`, `/mass_replace
   series`, 2025-10-29 to 2026-06-20; 86 distinct values) and no card-repo file holds them. The parser keeps them from the
   database, so no re-parse loses them, but a build from scratch without a seed would. 28 sit under a `Card Edits.json` series
@@ -686,6 +690,35 @@ github_api reads it inside a try/except and takes the token from the environment
   134e3b24.
 - **Unchanged:** emojis and the history clone.
 
+**As built (2026-10-22, AutoCroissant work/cutover-bot; commands/card_sync.py, `card_db.sync`; run-and-operate §12).**
+- **The switch.** `CARD_SYNC` in global_config.py, `False` until the cutover commit sets it `True`: nothing to remember and
+  no runtime flag. Not the data branch's presence: step 7 creates `data` while the jetson still builds. Every switched path
+  reads `global_config.CARD_SYNC` at call time; the slash texts are picked at import (the deploy restarts). With it off the
+  bot is unchanged: the full suite, the rehearsal harness (byte-identical pickles and logs against work/history-fixes,
+  twice) and a diff of every slash text, /help category and /website reply.
+- **The reader** is as designed, plus `card_data/sync.json` (the data commit held and the request's ETag, so the first sync
+  after a restart is a 304 too). Each downloaded file is parsed before any is written, the manifest and `sync.json` last;
+  a copy that no longer matches its manifest is fetched again without `If-None-Match`. Startup loads `card_data/` first,
+  then syncs; with neither (GitHub down at the first boot), the frozen root pickles.
+- **The reply** counts changed, new and archived cards against the database the bot held (several runs between two syncs
+  count together; duplicates left out), and `output_problematic_cards` shows `manifest.problems` only when new data loaded
+  (the problems of the last run only). The status lines cost two requests (the run list, a compare of `card_commit` with
+  main, on card input paths only).
+- **Reminders are quiet:** a reminder's plain `/update_stats` replies to the console only, unless the sync fails or new data
+  has problem cards, so the 30-minute reminder posts nothing on a normal day.
+- **Dispatches** pass `dry_run=false` explicitly (so they are live before and after card-sync.yml's default flips) and
+  `full=true` or `cards`. The run is taken from the dispatch reply (`return_run_details`; a 422 naming it is sent again
+  without it) or else is the newest dispatched run not listed before. A cancelled run is dispatched once more only when
+  the newer pending run is a scheduled one (ours does its work too) or nothing newer is pending; when another dispatch is
+  pending it is said (dispatching again would cancel that one), and with nothing newer at all it was cancelled by hand. One
+  followed run at a time. Progress edits stop after 14 minutes (the interaction's 15).
+- **Discord edits** keep committing and applying in memory, but no longer save stats.pkl. A sync of a run that started
+  before the edit's commit shows the card without it until the next run (30 minutes at most), as does a restart.
+- **/fonts** reports the fonts the build marked `supplied: false` in `card_data/psd_details.json`; a PSD without a record or
+  with fonts not judged is an error line. Nothing is downloaded.
+- **Not built:** the reminder swap and `ACTIONS_TOKEN` (the owner's, step 8); step 10's deletions; the TTSCardMaker side
+  (site.yml's data checkout, card-sync.yml's step 8 switches).
+
 ## 12. Changelog, Database edits, analytics, `/query as_of`, archive
 
 ### 12.1 Changelog
@@ -849,8 +882,9 @@ git clone -q --bare --filter=blob:none https://github.com/MichaelJSr/TTSCardMake
 2. On the Mac, run `python -m commands.card_db export-pickles <data tip> . --git <a checkout of data>`, commit the three
    files it writes (`stats.pkl`, `old_stats.pkl`, `psd_details.json`; `aliases.pkl` is not in db/ and stays) as `PICKLE` to
    AutoCroissant and push. The jetson then resumes from the Action's latest data, so nothing is lost.
-3. Revert the bot cutover commit, deploy it (pull, `build_ext`, restart), and re-add the 05:00 /update_stats and 05:30 /push
-   reminders.
+3. Revert the bot cutover commit (`CARD_SYNC` back to `False`), deploy it (pull, `build_ext`, restart), and re-add the 05:00
+   /update_stats and 05:30 /push reminders. Before the revert, `python -m commands.card_db export-pickles card_data .` on the
+   jetson gives the same pickles step 2 commits (its `card_data/` is the data tip's db/).
 4. Disable card-sync.yml and restore tts-save.yml and card-edits.yml from history (one revert of the cutover's TTSCardMaker
    commit).
 
@@ -973,7 +1007,8 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
        shadow event, so Discord starts with the pushes after the cutover (the shadow period stays on the website's
        Changelog);
      - delete tts-save.yml and card-edits.yml in the same TTSCardMaker commit;
-     - the bot cutover commit: the reader, `/update_stats`, `/push`, `/pull`, `/fonts`, admin-only `force_update`;
+     - the bot cutover commit: `CARD_SYNC = True` in global_config.py (the reader, `/update_stats`, `/push`, `/pull`,
+       `/fonts` and admin-only `force_update` are on main already, switched off: work/cutover-bot);
      - jetson deploy.
    - *Verify:*
      - the site footer reads "Card data built … from TTSCardMaker@…", with the same card count and no new warnings;
@@ -1068,7 +1103,8 @@ except 6, which is one day, not 14:
   - `global_config.py`, `main.py`, `setup.py`;
   - `tests/conftest.py`, `tests/test_update_stats.py`, `tests/test_card_bake.py`;
   - `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` and `inspect_pickle.py`;
-  - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt`.
+  - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt`; at step 8
+    `commands/card_sync.py` (the bot's side) and `tests/test_card_sync.py`.
 - TTSCardMaker (`~/Desktop/TTSCardMaker`):
   - `.github/workflows/site.yml`, `card-edits.yml` and `tts-save.yml` (both folded into card-sync.yml), `card-check.yml`,
     `font-check.yml`;
