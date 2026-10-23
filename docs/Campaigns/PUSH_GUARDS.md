@@ -26,9 +26,12 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
    ping and wording kept. Since 2026-10-23 card-check.yml posts there too, with no ping; `DISCORD_FONT_WEBHOOK` is deleted.
 3. *The guard tells font issues (R7)* in its standards-channel post too.
 
-**The owner's ruling (2026-10-23): R3 and R4 dropped.** The template layout (one visible Ability layer inside the Text
-group; the title in `Text/Name`) is the developers' freedom, and the bake handles those layouts. The two rules, their
-waivers and `card_guards.added()` (the new-card rules, R4's only use) are gone; every other rule stays.
+**The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
+group or not) and which layer holds the title (`Text/Name` or one named after the card) are the developers' freedom, and
+the bake handles those layouts. The ruling was first applied as dropping both rules whole (2ada357); R3 and R4 are back
+for the real issues only, the ones the bot can't read or bake past: no visible Ability layer, several visible Ability
+layers, and a hidden or rasterized Name layer the title can't be read from (section 6.1), with their waivers and
+`card_guards.added()` (R4's new-card rules).
 
 **What the measurements changed in the design (section 2).** (The first two bullets argued for the composite as the PNG's
 source; ruling 1 overrules them: the PNG is the fork's render, section 17. They stand as measurements.)
@@ -198,8 +201,8 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 |---|---|---|
 | PSD modified, PNG not | stale candidate (section 5; G5's burst anchor) | check |
 | PSD modified, PNG modified | none | check; R10 (PNG matches the composite; comment only) |
-| PSD added, no PNG in the tree | new-card export (5.5) | check |
-| PSD added with its PNG (the usual new card), or with its PNG deleted | none | check; R10 |
+| PSD added, no PNG in the tree | new-card export (5.5) | check, with the new-card rules (R4) |
+| PSD added with its PNG (the usual new card), or with its PNG deleted | none | check, with the new-card rules (R4); R10 |
 | PSD added, a PNG of that stem already in the tree and not in the push | stale candidate against that PNG | check |
 | PSD renamed (one blob deleted and added under another path, same sha), no PNG at the new path | copy the old PNG's bytes to the new path (no new blob); report the old PNG as left behind (comment only) | none (same blob) |
 | PSD renamed with changes (different sha) | a delete plus an add: new-card export; the old PNG is reported as left behind | check |
@@ -362,13 +365,16 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 - "At 6e50c3ee" counts every card that rule flags in the whole tree today; after waivers is what a push of that card would
   report.
 - Lists are in `rules_summary.json`.
-- R3 (one visible `Text/Ability` layer, L5) and R4 (`Text/Name` holds the title, L6) were dropped by the owner on
-  2026-10-23 (the developers' freedom; the bake handles those layouts). At 6e50c3ee they flagged 47 and 150 cards.
+- R3 and R4 checked the template layout too (L5: the Ability layer under `Text`; L6: the title in `Text/Name`), 47 and
+  150 cards at 6e50c3ee. The owner dropped the layout on 2026-10-23 (the developers' freedom; the bake handles those
+  layouts); the rows below are what stays, the real issues.
 
 | Rule | Standard (ledger) | Class | Scope | At 6e50c3ee | After waivers |
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
+| R3 | one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes): none ("no visible Ability text layer (hidden or missing)") or several is told | report | 651 | 12: 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax, Apex_Predator; the parser reads the 4 re-laid ones from their pieces), 5 several (Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid); the same at 96d61368 | 7 (the 5 several-Ability cards waived, Q2) |
+| R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
@@ -388,10 +394,11 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 
 **6.2 Waivers.**
 - **Class waivers** are the owner's decisions, kept in code (`card_standards.WAIVED`), each with its date and ledger entry:
+  - Q2: several-Ability and multi-creature cards (R3);
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
+  - "leave the Name layers" (R4 existing);
   - BabaUI.
-  (Q2, several-Ability and multi-creature cards, and "leave the Name layers" went with R3 and R4 on 2026-10-23.)
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
   the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
@@ -861,8 +868,8 @@ jobs:
   its `SPARSE_FILES`; timeouts 120/90/60.
 
 **Review fixes, second pass (2026-10-22):**
-- A PSD added with its PNG (case pair, no old blob) got R4 waived as an existing card; `card_guards.added()` gave every
-  added PSD the new-card rules (both removed with R4 on 2026-10-23) (`test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules`, measured first with God_Tamer's
+- A PSD added with its PNG (case pair, no old blob) got R4 waived as an existing card; `card_guards.added()` gives every
+  added PSD the new-card rules (removed with R4 by 2ada357, back with R4's real issues the same day) (`test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules`, measured first with God_Tamer's
   layers on a scratch repo).
 - `card_standards.fix` named its temporaries by card key in a shared folder: two cards of one key in different folders,
   fixed at once in the process pool, could swap bytes. Each call now works in its own `mkdtemp` folder

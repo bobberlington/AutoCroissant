@@ -1,8 +1,8 @@
 """
 card_standards (guard 2 of the push guards): the rules on real cards of the clone (as of 6e50c3ee, from its history; the counts of
-docs/Campaigns/PUSH_GUARDS.md section 6 per card, less R3 and R4, dropped 2026-10-23), the owner's waivers, "(new)" against
-the old blob, and the two 0-pixel fixes on copies: R11's rename (told until the owner adds it to AUTO_FIX; only the
-names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
+docs/Campaigns/PUSH_GUARDS.md section 6 per card, R3 and R4 without the template layout dropped 2026-10-23), the owner's
+waivers, "(new)" against the old blob, R4's new-card and regression cases, and the two 0-pixel fixes on copies: R11's
+rename (told until the owner adds it to AUTO_FIX; only the names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
 from io import BytesIO
@@ -25,13 +25,16 @@ MEASURED = "6e50c3ee"                                        # the whole-tree ru
 STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title story out of sync (7b48db05 repaired it)
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
-    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),
-    ("Auxiliary/Items/Lit_Bob-omb.psd", set(), set()),            # several Ability layers: the template layout, no rule
+    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),      # its Ability outside Text and title in Stat Txt: layout
+    ("Auxiliary/Items/Lit_Bob-omb.psd", set(), {"R3"}),           # 2 visible Ability layers (Q2)
+    ("Auxiliary/Minions/Shadow_Duelist.psd", {"R3"}, set()),      # its Ability layer hidden
+    ("Creatures/Other/4 Stars/Sonic.psd", set(), {"R4"}),          # hidden Name, the title a pixel layer
+    ("Creatures/Pandas/2 Stars/Pandanoko.psd", {"R1"}, {"R4"}),    # rasterized Name
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
     ("Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd", {"R2"}, set()),
     ("Items/Equip/2 Stars/Fire_Staff.psd", set(), {"R5"}),
-    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R7"}),
-    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2"}),
+    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4", "R7"}),
+    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2", "R3"}),
 )
 
 
@@ -106,6 +109,11 @@ def test_wording(clone, context):
     assert lines == ['"Blazing" is an overlay text layer, not an Ability FX: layer']
     rel = "Items/Active/2 Stars/Dirty_Bed.psd"
     assert [i.line() for i in cs.check(_open(clone, rel), rel, context)] == ["timing tag (1GCD) not set in the stoogedings badge font"]
+    for rel, code, line in (("Auxiliary/Minions/Shadow_Duelist.psd", "R3", "no visible Ability text layer (hidden or missing)"),
+                            ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "R3", "5 visible Ability layers (one is the standard)"),
+                            ("Items/Equip/2 Stars/Man_Serpent_Shield.psd", "R4", "the Name layer is hidden"),
+                            ("Creatures/Other/5 Stars/Tyler.psd", "R4", "the Name layer is rasterized")):   # a smart object
+        assert [i.line() for i in cs.check(_open(clone, rel), rel, context) if i.code == code] == [line], rel
 
 
 def test_r7_is_told_in_the_standards_post(clone, context, monkeypatch):
@@ -134,6 +142,31 @@ def test_new_marks_against_the_old_blob(clone, context):
     marked = cs.check(psd, rel, context, old=clean)
     assert {i.code for i in marked if i.new and not i.waived} == {"R5"}
     assert all(i.line().endswith(" (new)") for i in marked if i.new)
+
+
+def _saved(psd, path) -> PSDImage:
+    psd_edit.save_psd(psd, str(path), update_preview=False)
+    return PSDImage.open(str(path))
+
+
+def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
+    """R3 and R4 keep the real issues: no visible Ability layer, and a Name layer the title can't be read from (told for
+    a new card or a push that causes it; an existing card's waived). A title named otherwise is the developer's layout."""
+    rel = "Creatures/Other/4 Stars/Sonic.psd"
+    (name,) = [i for i in cs.check(_open(clone, rel), rel, context, added=True) if i.code == "R4"]
+    assert not name.waived and cs.reported([name]) == [name]
+    old = _open(clone, MINI_DOOMER)
+    hidden = _open(clone, MINI_DOOMER)
+    psd_edit.name_layer(hidden).visible = False
+    psd_edit.ability_layer(hidden).visible = False
+    issues = cs.check(_saved(hidden, tmp_path / "hidden.psd"), MINI_DOOMER, context, old=old)
+    assert [(i.code, i.line()) for i in cs.reported(issues) if i.code in ("R3", "R4")] == [
+        ("R3", "no visible Ability text layer (hidden or missing) (new)"), ("R4", "the Name layer is hidden (new)")]
+    renamed = _open(clone, MINI_DOOMER)
+    psd_edit.name_layer(renamed).name = "Title"
+    assert psd_edit.read_name(renamed, "Mini_Doomer") is None
+    issues = cs.check(_saved(renamed, tmp_path / "renamed.psd"), MINI_DOOMER, context, old=old, added=True)
+    assert not [i for i in issues if i.code in ("R3", "R4")]
 
 
 def test_problems_ok_cards_are_waived_by_class_only(clone, context):

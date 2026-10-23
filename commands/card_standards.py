@@ -1,11 +1,12 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
-docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1, R2, R5-R9 and R11 run over an open PSD (R10, the PNG against the
-PSD, is png_export.png_check; R3 and R4, the template layout, were dropped by the owner on 2026-10-23). R9 (Txt2 stories)
-is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built and gated but
-reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
+docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R9 and R11 run over an open PSD (R10, the PNG against the PSD, is
+png_export.png_check). R3 and R4 keep only the real issues (no or several visible Ability layers; a hidden or rasterized
+Name layer the title can't be read from): the template layout they also checked was dropped by the owner on 2026-10-23.
+R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
+and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
-    check(psd, rel, context, old=None) -> [Issue]
+    check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None) -> Fixed            the 0-pixel fixes, gated (one PSD's new bytes)
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
 
@@ -59,6 +60,9 @@ SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of
 NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
     "R2": {"cards": {"tainted lazarus"}, "why": "its header icon (2026-10-22)"},
+    "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix"},
+           "why": "several-Ability and multi-creature cards stay deviations (question 2, 2026-10-21)"},
+    "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
     "R7": {"fonts": {"BabaUI"}, "why": "BabaUI is deferred by the owner (L13)"},
 }
@@ -71,7 +75,7 @@ WAIVED = {                                      # the owner's class waivers (sec
 class Issue:
     """One standards finding on one PSD."""
     code: str                                   # R1..R11
-    text: str                                   # for card makers: "the stars are not in a group named Stars"
+    text: str                                   # for card makers: "the Name layer is hidden"
     items: tuple = ()                           # what it is about (tags, layer names): "(new)" compares these
     fix: bool = False                           # AUTO_FIX and fixable here
     waived: str = ""                            # the waiver's reason
@@ -210,6 +214,43 @@ def rule_icons(psd: PSDImage, types) -> Optional[Issue]:
                        f"{_list(['[' + n + ']' for n in names])} in the stoogedings font", names)
 
 
+def rule_ability(psd: PSDImage) -> Optional[Issue]:
+    """R3: one visible Ability text layer, in any group (what psd_edit.ability_layer bakes); none or several is told."""
+    count = sum(1 for layer in psd.descendants()
+                if psd_edit._is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability")
+    if count == 1:
+        return None
+    why = f"{count} visible Ability layers"
+    if not count:
+        return Issue("R3", "no visible Ability text layer (hidden or missing)", (why,))
+    return Issue("R3", f"{count} visible Ability layers (one is the standard)", (why,))
+
+
+def title_problem(psd: PSDImage, card: str) -> Optional[str]:
+    """
+    Why no title can be read, when a Name layer is the cause: "hidden name layer" or "rasterized name layer". None when
+    the parser reads a title (PSDParser.title_layers), or when no layer is named Name (the title's layout is the
+    developer's, owner 2026-10-23).
+    """
+    if PSDParser.title_layers(psd, [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)], card):
+        return None
+    named = [layer for layer in psd.descendants() if not layer.is_group() and layer.name.strip().lower() == "name"]
+    if not named or any(psd_edit._is_text_layer(layer) and layer.is_visible() for layer in named):
+        return None
+    if any(not psd_edit._is_text_layer(layer) for layer in named):
+        return "rasterized name layer"
+    return "hidden name layer"
+
+
+def rule_name(psd: PSDImage, card: str) -> Optional[Issue]:
+    """R4: the title is not left in a hidden or rasterized Name layer (no title read)."""
+    why = title_problem(psd, card)
+    if why is None:
+        return None
+    return Issue("R4", {"hidden name layer": "the Name layer is hidden",
+                        "rasterized name layer": "the Name layer is rasterized"}[why], (why,))
+
+
 def rule_overlays(psd: PSDImage, chart: Optional[dict]) -> list:
     """R5: status words styled by Ability FX: layers, not overlay text layers (L7); chart-less ones are waived."""
     report, waived = [], []
@@ -294,7 +335,7 @@ def rule_names(psd: PSDImage) -> Optional[Issue]:
 # ========================
 # Public API Functions
 # ========================
-def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = None) -> list:
+def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = None, added: bool = False) -> list:
     """
     The standards issues of one card PSD.
 
@@ -302,7 +343,8 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         psd: The pushed PSD
         rel: Its repo path (the class: scope, waivers)
         context: Types/, fonts, chart
-        old: The PSD before the push ("(new)" marks)
+        old: The PSD before the push (R4 regressions; "(new)" marks)
+        added: A new card (R4 applies in full)
 
     Returns:
         [Issue] in rule order, waived ones included (waived set); [] for a rule page
@@ -322,6 +364,19 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
 
     run("R1", rule_tags, psd)
     run("R2", rule_icons, psd, context.types)
+    if kind in SCOPE:
+        stem = basename(rel)
+        card = stem[:len(stem) - 4]
+        run("R3", rule_ability, psd)
+        run("R4", rule_name, psd, card)
+        name = out[len(out) - 1]
+        if name is not None and name.code == "R4" and not added:
+            try:
+                regression = old is not None and rule_name(old, card) is None
+            except Exception:                   # an unreadable old blob: the existing card's waiver
+                regression = False
+            if not regression:
+                name.waived = WAIVED["R4"]["why"]
     run("R5", rule_overlays, psd, context.chart)
     if kind in STARS_KINDS:
         run("R6", rule_stars, psd)
@@ -497,4 +552,5 @@ __all__ = [
     'rename',
     'reported',
     'run_fonts',
+    'title_problem',
 ]

@@ -209,8 +209,9 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "errors": 0,
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 8, "writes": 4, "errors": 0,
                        "card_errors": 0} and summary["told"] >= 1
+    assert by["Bread"]["told"] == ["no visible Ability text layer (hidden or missing)"]   # R3: the fixtures have none
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
     assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
@@ -292,14 +293,24 @@ def test_a_drawing_miss_is_told_in_the_comment_and_the_commit(cards, tmp_path, m
     assert not [t for t in snack["told"] if "pixel difference" in t] and "pixel difference" not in json.dumps(data["discord"])
 
 
-def test_a_new_psd_pushed_with_its_png_is_a_pair(cards, tmp_path):
-    """A PSD added with its PNG (status A) is case pair; one pushed alone is case new."""
+def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path, monkeypatch):
+    """A PSD added with its PNG (case pair, status A) is a new card: R4 (a hidden or rasterized Name layer) is told, not
+    waived, as for one pushed alone; an existing card's stays waived."""
     root, base, alice, bot = cards
+    monkeypatch.setattr(cg.standards, "title_problem", lambda psd, card: "hidden name layer")   # the fixtures have no Name
     psd, png = (root / FOLDER / "Bread.psd").read_bytes(), (root / FOLDER / "Bread.png").read_bytes()
-    push = _plumb(root, {f"{FOLDER}/Fresh.psd": psd, f"{FOLDER}/Fresh.png": png, f"{FOLDER}/Alone.psd": psd}, "two new cards")
+    push = _plumb(root, {f"{FOLDER}/Fresh.psd": psd, f"{FOLDER}/Fresh.png": png, f"{FOLDER}/Alone.psd": psd,
+                         f"{FOLDER}/Lonely.psd": psd}, "two new cards, one old")
     data = cg.check(str(root), push, bot, mode="report", out=str(tmp_path / "out"), workers=1)
     by = {c["card"]: c for c in data["cards"]}
-    assert by["Fresh"]["case"] == "pair" and by["Alone"]["case"] == "new"
+    assert by["Fresh"]["case"] == "pair" and by["Alone"]["case"] == "new" and by["Lonely"]["case"] == "stale"
+    for name in ("Fresh", "Alone"):
+        (r4,) = [i for i in by[name]["issues"] if i["code"] == "R4"]
+        assert not r4["waived"] and r4["told"] and r4["line"] == "the Name layer is hidden" and r4["line"] in by[name]["told"]
+    (r4,) = [i for i in by["Lonely"]["issues"] if i["code"] == "R4"]
+    assert r4["waived"] and not r4["told"] and r4["line"] not in by["Lonely"]["told"]
+    assert cg.added(cg.Job("X.psd", "psd-only")) and not cg.added(cg.Job("X.psd", "pair", psd_old="s"))
+    assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
 
 
 def test_a_new_psd_beside_its_pushed_png_tells_nothing(cards, tmp_path):
@@ -423,9 +434,9 @@ def test_font_issues_are_told_in_the_standards_post(cards, tmp_path, monkeypatch
     (bread,) = data["cards"]
     (font,) = [issue for issue in bread["issues"] if issue["code"] == "R7"]
     assert font["discord"] and font["told"] and not font["waived"]
-    assert bread["told"] == ["font ComicSansMS not in MDW/Fonts"]
-    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: "
-                                                 "font ComicSansMS not in MDW/Fonts. [")
+    assert bread["told"] == ["no visible Ability text layer (hidden or missing)", "font ComicSansMS not in MDW/Fonts"]
+    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: no visible "
+                                                 "Ability text layer (hidden or missing); font ComicSansMS not in MDW/Fonts. [")
     assert json.loads((out / "summary.json").read_text())["told"] == 1
 
 

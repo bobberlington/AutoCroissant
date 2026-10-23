@@ -550,8 +550,8 @@ renders the changed layers in the card's ICC export mode and the old PNG takes t
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
 card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
-until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4, the template layout of the Ability and Name layers, were
-dropped by the owner on 2026-10-23: the developers' freedom, the bake handles those layouts), one commit comment, one Discord post to the standards channel
+until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, no or several visible Ability layers and a
+hidden or rasterized Name layer: their template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
 both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
