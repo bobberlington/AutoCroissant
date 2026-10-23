@@ -555,9 +555,15 @@ stored before once (`card_history.dedupe`: the first of a run stays, a run equal
 ability none, the retired type `offense` is `negation`), a field a reading could not know is no difference (a title
 before parser 2; stars, types or ability its parse reported a problem with) nor is the series split's move under a parent;
 stored versions' series are filled from the next version (items) or moved under that parent, and an earlier reading of
-the same commit (one start, no other blob) goes first. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+the same commit (one start, no other blob) goes first. The rule runs one way (`card_history.knows`): the reading that knew
+more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer keeps the
+card before as a version. An applied database edit that changes a card's data (Card Edits.json at /update_stats, a
+Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`, since
+2026-10-23). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
-`archived = {"at": run epoch, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
+`archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
+(`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
+history clone's `clean_history`, 2026-10-23)
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename), `"moved_to"` when it moved into MDW
 (retired; set from the history clone, 2026-10-23), and `"backfill": True` on names that left
 stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind
@@ -565,7 +571,12 @@ stats.pkl before archiving existed (tagged by the first full run; one on 2026-10
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
 means current cards, so no query, export, alias or website reader sees them. A PSD back under the name at the tag's
 path or with its blob is restored (`restore()` copies the record into stats, tag cleared, no download when the blob is
-the same); another PSD under the name is a new card (its own author), the record staying as history. Duplicates are
+the same); another PSD under the name is a new card (its own author), the record staying as history. A listed card's
+PSD under a new name (its blob; the data build also its PNG's exact rename) is parsed with the old card
+(`renamed_from`), so it keeps that card's author, series and subseries, not the renamer's credit or the folder's series;
+the data build credits a new card's first author at the oldest path of its exact renames (`GitIndex.origin`). Side-file
+lines (Card Authors.txt, Card Edits.json, Card Creation Dates.json) under no listed name are printed each run, and an
+archived card's are named in the archive report (move them to the new name or drop them). Duplicates are
 never archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
 still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
