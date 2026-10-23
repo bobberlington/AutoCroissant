@@ -25,7 +25,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 7,235,496 with `:glow` on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,709,616 with `:glow` on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
@@ -336,16 +336,17 @@ size 120 px, linear contour, layer knocks out shadow. The icon is 91×93 px and 
 0.33 at 20 px, 0.20 at 40 px, 0.10 at 60 px and 0 by about 110 px. This emulation fits it with rmse 0.002: grow the
 matte by spread × size, blur with a Gaussian of sigma 0.42 × (1 − spread) × size, multiply by the opacity.
 
-**The size is cut (ruling pending).** At token size that glow reaches 1.26 em. Photoshop clips SVG glyphs to the line
+**The size is cut (pending a Photoshop test of a bigger halo).** At token size that glow reaches 1.26 em. Photoshop clips SVG glyphs to the line
 box (§4): ascent 1077, descent 281 units, and an icon's bottom is at −180, so 0.1 em fits under it. The build uses
 `GLOW_SIZE` 100 units with the same spread, opacity and model: a tight soft rim, not the card's wide cloud. Larger
 sizes need taller font metrics (which move text) or an effect layer (§6).
 `~/Documents/Tools/wt/scratch/rulings/glow/glow_size_comparison.png` compares the card, 0.1, 0.3 and 1.26 em, and 1.26
-em clipped as Photoshop would.
+em clipped as Photoshop would. Whether Photoshop really clips a bigger halo is the open test:
+`~/Documents/Tools/wt/scratch/rulings-0300/PHOTOSHOP_GLOW_TEST.md` (0.3 em font, `glow_big_check.jsx`).
 
 **The glyphs.** Per icon: `icon_x.glow`, `icon_x.glow_bg`, `icon_x.darkglow`, `icon_x.darkglow_bg`, and one shared
 `glow_space`. A token draws [halo, advance `GLOW_SIZE` − `SIDE`][color icon][`glow_space`]. It is 120 units wider than
-the plain icon, so the halo stays inside its own advance. Each halo is a PNG (8 units per px, RGBA) in an OT-SVG
+the plain icon, so the halo stays inside its own advance. Each halo is a PNG (`GLOW_UPP` 12 units per px, RGBA; owner 2026-10-23: 8 cost 0.53 MB more and looked the same) in an OT-SVG
 `<image>`, one per icon and color. Its `glyf` is the whole halo's outline, so the non-SVG fallback is a blob, like
 `:sticker`'s.
 - **Nothing old changes.** The new glyphs come after the `.tk` glyphs and the two new lookups go last. Every old glyph
@@ -353,9 +354,9 @@ the plain icon, so the halo stays inside its own advance. Each halo is a PNG (8 
   metrics are unchanged; `head` yMin/yMax grow to −278/920.
 - **Extension lookups.** The packer makes the two new lookups Extension (type 7): GSUB grows from 62 to 88 KB. They are
   separate because TOKENS alone (41 KB, one subtable) would have grown to 65 KB, near the 64 KB subtable limit.
-- **Size:** 7,235,496 bytes (+1,499,292, +26%), build about 20 s. Byte-identical in ac-py314-fork and ac-py314-psd125.
+- **Size:** 6,709,616 bytes (+973,412, +17%), build about 20 s. Byte-identical in ac-py314-fork and ac-py314-psd125.
 
-**Proof, 2026-10-23** (old font 38a19d81 vs new 9f7ec894; scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py` in
+**Proof, 2026-10-23** (old font 38a19d81 vs new 8a0d9d46; scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py` in
 `~/Documents/Tools/wt/scratch/rulings/glow/scripts/`):
 - **HarfBuzz** (uharfbuzz 0.56.3), under default features, `liga` off and `rlig` off:
   - all 2560 glow spellings (every name and alias, 4 separators, 5 case mixes, both variants: 182 icon × variant
@@ -366,9 +367,10 @@ the plain icon, so the halo stays inside its own advance. Each halo is a PNG (8 
   - 4,401 random mixes with a glow token shape as before outside the tokens, and as the triple inside.
 - **CoreText** (a Swift tool that loads the file, no install), `liga` on and off: the same sets, all pass.
 - **Renders:** CoreText draws the halo whole, and clipping to the line box changes 0 pixels. Samples on four
-  backgrounds: `scratch/rulings/glow/samples/`.
+  backgrounds: `scratch/rulings/glow/samples/`; 8 vs 12 units per px side by side (max 13/255 per channel at 100 px,
+  5/255 at 30 px): `scratch/rulings-0300/samples/`.
 - **Photoshop: not checked** (a batch owned it; the font is not installed). Install the font, restart Photoshop and run
-  `~/Documents/Tools/wt/scratch/rulings/glow/glow_check.jsx`: it samples the halo beside and under the icon and writes
+  `~/Documents/Tools/wt/scratch/rulings-0300/glow_check.jsx`: it samples the halo beside and under the icon and writes
   `glow_check.log` and `.png` next to itself (its rules pass on a CoreText render). A FAIL under the icon only means
   the line box clips it.
 - `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
