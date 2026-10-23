@@ -1,6 +1,7 @@
 """card_data: the Action's sparse copy (--help, the import closure), the gates G1-G6, the exit codes, and offline builds
 on a temporary git repo of golden PSDs (new, changed, moved, archived, an unreadable PSD, the budget, restore)."""
 import json
+from collections import defaultdict
 import os
 import pickle
 import re
@@ -336,6 +337,8 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
         "The Big Freezer"
     assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
+    big = stats["The Big Freezer"]                                      # dated from the rename: the archive holds before
+    assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0) and old["The Freezer"][0].version["to"] == 2000.0
 
 
 def test_a_new_cards_date_and_author_come_from_its_first_path(tmp_path):
@@ -370,6 +373,28 @@ def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
     stats, old = _read(cards)[:2]
     assert stats["The Big Freezer"].author == "alice"
     assert old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == "The Big Freezer"
+
+
+def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
+    """Tainted Lazarus' 110s: the seed pass sets them unknown and says so; a value out of range left in history (the
+    range check failing to run) refuses G3. A parser-2 reading's 12 (a problem when read) is kept and listed."""
+    old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
+                                                          stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0),
+                                             cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
+                                                          stats=cm.CardStats(12, 3, 3, 3), timestamp=600.0,
+                                                          parser_version=2)]})
+    (cards.seed / "old_stats.pkl").write_bytes(pickle.dumps(old))
+    code, message = _build(cards, "--seed", str(cards.seed))
+    assert code == cd.EXIT_OK and "Impossible values set to unknown: 1 (Mini Doomer)" in message
+    assert "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
+    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(12, 3, 3, 3)]
+    import commands.card_history as ch
+    monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
+    shutil.rmtree(cards.db)
+    cards.db.mkdir()
+    capsys.readouterr()
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_GATE
+    assert "history values out of range: Mini Doomer" in capsys.readouterr().out
 
 
 def test_dry_run_and_errors(cards, tmp_path):

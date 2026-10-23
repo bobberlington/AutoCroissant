@@ -33,6 +33,13 @@ ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
 EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
+# folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
+STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
+
+
+def stars_from_psd(relative_path: str) -> bool:
+    """Whether a card's stars are counted from its PSD (STARS_FROM_PSD)."""
+    return any(folder in relative_path for folder in STARS_FROM_PSD)
 
 
 def title_text(text: Optional[str]) -> str:
@@ -330,8 +337,8 @@ class PSDParser:
         Args:
             file_path: Full path to PSD file
             relative_path: Relative path in repository
-            existing: The card whose author and series it keeps (default: the stored card of its name; a renamed PSD's
-                is its old name's)
+            existing: The card whose author, series and subseries it keeps (default: its name's in the database; a
+                renamed PSD's old card)
 
         Returns:
             CardInfo object with extracted data
@@ -386,10 +393,7 @@ class PSDParser:
         card_mid_y = int(psd.height * TYPE_REGION_RATIO)
 
         is_rulepage = RULEBOOK_DIR in relative_path
-        get_stars_from_psd = any(
-            folder in relative_path
-            for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
-        )
+        get_stars_from_psd = stars_from_psd(relative_path)
 
         effect_layers = []
         text_layers = []
@@ -1089,6 +1093,7 @@ class CardValidator:
 # ========================
 __all__ = [
     'PARSER_VERSION',
+    'STARS_FROM_PSD',
     'BarRow',
     'BoundingBox',
     'CardClassifier',
@@ -1098,5 +1103,6 @@ __all__ = [
     'PSDParser',
     'StatTracker',
     'StatTrackers',
+    'stars_from_psd',
     'title_text',
 ]

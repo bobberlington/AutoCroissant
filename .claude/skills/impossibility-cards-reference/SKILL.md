@@ -109,7 +109,8 @@ the 7. They are, as of 2026-07-11: Azamoth the Possessed Vessel, Igor Roballtows
 Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen. Workaround: `type~creature`
 (contains) matches both. The same fall-through gives `Auxiliary/Rulebook/` pages type
 **"rulebook"** (48 entries). Also note the 7 "creatures" cards skip the creature-specific handling:
-no series, no −1 stat seeding, so the stat validators (section 5) never fire for them.
+no series, no −1 stat seeding, so the stat validators (section 5) never fire for them. Their printed stars (2-5) are
+counted from the PSD since 2026-10-23 (`psd_parser.STARS_FROM_PSD`); the stored cards get them at a `cards:` re-parse.
 
 ### Excluded folders
 
@@ -499,7 +500,8 @@ database-only ones (unless `/update_metadata` had set them). The pipeline's verd
 (`{"state": "baked" | "refused", "for": {field: value}, "psd": "<blob8>", "reason": ...}`; "pending" is never written, the
 website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
-`dup_of` passes `TYPES` but nothing in the bot applies it. `/update_metadata subseries:` sets the same field by hand;
+`dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
+too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule); on a card with its own PSD the bot ignores it. `/update_metadata subseries:` sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:355-361) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
@@ -560,11 +562,27 @@ the same commit (one start, no other blob) goes first, never the card before an 
 that knew more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer
 keeps the card before as a version. An applied database edit that changes a card's data (Card Edits.json at
 /update_stats, a Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`,
-since 2026-10-23). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+since 2026-10-23). The same cleanup (2026-10-23, `card_history.recover`, with the history clone and the bot's own full
+clone `BOT_CLONE`) puts back what the bot's PICKLE commits held and old_stats lost: a reading whose printed ability words
+(any case, icon tokens and punctuation aside), types, stars, stats or card type no neighbouring version prints becomes a
+legacy version (`version.restored_from` its PICKLE), one that prints the same only moves the next version's start
+earlier (the version knowing all it knew); readings are keyed by name, path and blob (the same bytes in another folder
+print another card type: Air Totem a minion, then an item), dated where the PICKLE read them (never a time the file sat
+at another path), each restored version's blob that of its start's commit; a name the 2025 PICKLEs held at two paths
+keeps its own path's (Auto Croissant, not Mini Auto Croissant's minion); the cards gone before archiving are archived
+from their last reading (`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW), and a
+renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before).
+Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
+differ are one misread (`misreads`), and impossible history values become unknown with an `OUT OF RANGE: ...` problem
+keeping the old value (`unknown_values`, only on versions read before parser 2: `unchecked`): stars outside 0..7, a
+stat above 10 without an allowance (`allows_high`: the card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS
+names, or no current card), any stat of three digits; the kept ones above 10 are listed for the owner (`high_values`),
+a parser-2 reading's out-of-range value is kept and listed by the data build (`kept_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
-history clone's `clean_history`, 2026-10-23)
+history clone's `clean_history`, 2026-10-23: for a tag linked along an exact rename chain, the step that reached its
+end; a recovered archive's `blob` is the bytes git deleted)
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename), `"moved_to"` when it moved into MDW
 (retired; set from the history clone, 2026-10-23), and `"backfill": True` on names that left
 stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind
@@ -577,8 +595,9 @@ PSD under a new name (its blob; the data build also its PNG's exact rename) is p
 (`renamed_from`), so it keeps that card's author, series and subseries, not the renamer's credit or the folder's series;
 the data build credits a new card's first author at the oldest path of its exact renames (`GitIndex.origin`). Side-file
 lines (Card Authors.txt, Card Edits.json, Card Creation Dates.json) under no listed name are printed each run, and an
-archived card's are named in the archive report (move them to the new name or drop them). Duplicates are
-never archived. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
+archived card's are named in the archive report (move them to the new name or drop them). An alt-art duplicate whose
+PNG or original left is archived too (2026-10-23; its tag at its own PNG, `duplicate_of` kept, dated like its original
+when the PNG stayed; listed apart, never counted by G2) and back when it is found again. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
 still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
 re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;

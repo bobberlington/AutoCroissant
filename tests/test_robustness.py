@@ -575,3 +575,25 @@ def test_help_and_describe_match_the_code():
     assert "(default: False)" in export.split("\n")[1] and "(default: True)" in export.split("\n")[2]
     params = {p.name: p.description for p in cmds["export_cards"].parameters}
     assert params["only_ability"].endswith("Default = False.") and params["as_csv"].endswith("Default = True.")
+
+
+def test_a_space_named_png_takes_the_underscore_lookups():
+    """N.M.E/Black Hole.png (13 card files use spaces): Card Edits.json aliases, printed titles and /alias build
+    underscore keys, which find it too."""
+    from commands.discord_edits import _png_path
+    repo = qc.CardRepository()
+    repo._add_file_to_registry("N.M.E/Black Hole.png")
+    repo._add_lookup("Black Hole", ["Void Thing"])
+    assert repo.git_files["void_thing.png"] == repo.git_files["black hole.png"] == "N.M.E/Black Hole.png"
+    assert _png_path(repo, "black_hole") == "N.M.E/Black Hole.png" and repo._find_closest_match("Black Hole") == "black_hole.png"
+
+
+def test_a_real_underscore_file_takes_back_its_name_from_a_space_named_one():
+    """A real Items/Black_Hole.png registered after N.M.E/Black Hole.png: the underscore key was only a lookup, so the
+    real file gets it, nothing becomes ambiguous; registered first, the space-named file adds no lookup."""
+    for order in (("N.M.E/Black Hole.png", "Items/Black_Hole.png"), ("Items/Black_Hole.png", "N.M.E/Black Hole.png")):
+        repo = qc.CardRepository()
+        for path in order:
+            repo._add_file_to_registry(path)
+        assert repo.git_files["black_hole.png"] == "Items/Black_Hole.png" and repo.ambiguous_names == {}
+        assert repo.git_files["black hole.png"] == "N.M.E/Black Hole.png"

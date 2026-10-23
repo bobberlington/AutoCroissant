@@ -279,9 +279,9 @@ class StatsDatabase:
 
     def prune_clean_cards(self, at: float) -> tuple:
         """
-        Archive the cards not in seen_cards (their PSD left the card repo; duplicates are derived, so just dropped by
-        _sync_duplicates): each moves to old_stats behind its earlier versions, tagged `archived`. The same pass tags
-        the untagged last versions of names gone from stats before archiving existed (backfill).
+        Archive the cards not in seen_cards (their PSD left the card repo; an alt-art duplicate whose PNG or original
+        left, its tag at its own PNG): each moves to old_stats behind its earlier versions, tagged `archived`. The same
+        pass tags the untagged last versions of names gone from stats before archiving existed (backfill).
 
         Args:
             at: The run's time (epoch seconds), kept in each tag
@@ -290,11 +290,12 @@ class StatsDatabase:
             (archived names, backfilled names), each sorted
         """
         seen = set(self.seen_cards)
-        archived = [name for name, card in self.stats.items()
-                    if name not in seen and not getattr(card, "duplicate_of", None)]
+        archived = [name for name in self.stats if name not in seen]
         for name in archived:
             card = self.stats.pop(name)
             card.archived = _archive_tag(card, at)
+            if getattr(card, "duplicate_of", None):           # a copy of its original's PSD: its own file is its PNG
+                card.archived["path"], card.archived["blob"] = duplicate_png(card), None
             versions = self.old_stats.setdefault(name, [])
             if versions and _tagged_copy(versions[len(versions) - 1], card):    # left by a kill between the two saves
                 versions[len(versions) - 1] = card
@@ -311,6 +312,12 @@ class StatsDatabase:
                 last.archived["backfill"] = True
                 backfilled.append(name)
         return (sorted(archived), sorted(backfilled))
+
+
+def duplicate_png(card: CardInfo) -> str:
+    """An alt-art duplicate's own PNG path: its name's file beside its original's PSD (A_Snack2.png)."""
+    folder = card.path[:card.path.rfind("/") + 1] if "/" in (card.path or "") else ""
+    return f"{folder}{card.name.replace(' ', '_')}.png"
 
 
 def _archive_tag(card: CardInfo, at: float) -> dict:
@@ -411,6 +418,7 @@ __all__ = [
     'CardType',
     'StatsDatabase',
     'card_name',
+    'duplicate_png',
     'get_stats_as_dict',
     'rescue_dropped',
     'save_pickle',

@@ -83,7 +83,7 @@ def main() -> int:
     is_rulepage = "Rulebook" in relative_path
     get_stars_from_psd = any(
         folder in relative_path
-        for folder in ["Auxiliary/Items", "Auxiliary/Minions", "N.M.E"]
+        for folder in ["Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E"]
     )
     texts, hidden = [], []
     for layer in psd.descendants():

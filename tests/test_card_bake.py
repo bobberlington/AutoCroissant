@@ -194,7 +194,8 @@ def files(clone):
     out[cb.ICON_MANIFEST_PATH] = json.dumps(vocab["manifest"]).encode()
     out.update(_card_files(clone, DOOMER))
     out.update(_card_files(clone, FREEZER))
-    out[SNACK], out[SNACK[:len(SNACK) - 4] + ".png"] = b"not fetched", b"not fetched either"
+    out[SNACK] = out[DOOMER]                    # read by the redundancy check before the duplicate gate (hp 5, not 1)
+    out[SNACK[:len(SNACK) - 4] + ".png"] = b"not fetched"
     out["Items/Heal/2 Stars/A_Snack2.png"] = b"a duplicate"
     out["MDW/Templates/Creature_Template.psd"] = b"excluded folder"
     out[cb.EDITS_PATHS[0]] = _edits(EDITS)
@@ -327,7 +328,7 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert text.count(f"committed `{commits[0][:8]}`") == 5                                    # card-edits.yml greps "committed `"
     assert "**Nothing baked.**" in text and f"One commit: `{commits[0][:8]}` Card edits: 1 redundant, 4 refused." in text
     blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
-    assert len(blobs) == 7      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, the file at H'
+    assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, A Snack's PSD
     assert [route for _, route in github.calls].count("activity") == 1     # the recent gate reads the pushes once a run
     assert cb.pending() == []                                               # every PSD-kind edit has its final verdict
 
@@ -576,6 +577,28 @@ def test_redundant_name_is_dropped(github):
     github.commit(files, "web", "Website edit: again")
     text, commits = cb.run()
     assert len(commits) == 1 and "Mini Doomer" not in _edits_at(github)["cards"]
+
+
+def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
+    """NME Stock: its name edit is what the PSD prints, but NME_Stock2.png shares the PSD. The redundancy check runs
+    before the duplicate gate, so the value is dropped (no bake, no PNG needed) instead of refused for good; a refusal
+    written before the check (no "printed") is looked at again."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"A Snack": {"hp": 5, "note": "n", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: A Snack")
+    text, commits = cb.run()
+    assert len(commits) == 1 and "already on the card: hp" in text
+    assert _edits_at(github)["cards"]["A Snack"] == {"note": "n", "_by": "web", "_at": AT}
+    data = _edits_at(github)
+    old = {"state": "refused", "for": {"hp": 1}, "psd": _sha(files[SNACK])[:8], "reason": "duplicate: numbered PNGs "
+           "share the PSD: A_Snack2.png", "at": AT}
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({**data["cards"], "A Snack": {"hp": 1, "_psd": old, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: old verdict")
+    assert "A Snack" in cb.pending()                                            # no "printed": looked at again
+    cb.run()
+    verdict = _edits_at(github)["cards"]["A Snack"]["_psd"]
+    assert verdict["printed"] is False and verdict["reason"].startswith("duplicate:") and "A Snack" not in cb.pending()
 
 
 def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):
@@ -895,7 +918,8 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert not [m for m, _ in github.calls if m != "GET"] and "activity" in [r for _, r in github.calls]   # the recent gate as ever
     assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
     rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
-    cards = {path: data for path, data in github.files_at(github.head).items() if path.startswith(("Auxiliary", "Field"))}
+    cards = {path: data for path, data in github.files_at(github.head).items()
+             if path.startswith(("Auxiliary", "Field")) or path == SNACK}                       # A Snack's: the redundancy check
     assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
     assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
     assert "The checkout is on it." in text

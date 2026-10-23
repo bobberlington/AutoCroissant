@@ -1107,7 +1107,7 @@ def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, c
     _run()
     tag = _saved()[1]["ZOEY!!!!!"][0].archived
     assert (tag["at"], tag["commit"], tag["renamed_to"]) == (2000.0, renaming, "Z!!!!!")
-    line = "History: 0 duplicate versions removed (0 cards), archive tag from git: ZOEY!!!!!."
+    line = "History: 0 duplicate versions removed (0 cards); archive tag from git: ZOEY!!!!!."
     assert line in capsys.readouterr().out
     _run()
     assert "History:" not in capsys.readouterr().out and _saved()[1]["ZOEY!!!!!"][0].archived == tag
@@ -1116,6 +1116,39 @@ def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, c
     db = pa.StatsDatabase()
     db.stats, db.old_stats = {}, old
     assert cd.clean_history(db, cd.history_index())[2] == [] and db.old_stats["Lost Card"][0].archived is None
+
+
+def test_a_failing_history_cleanup_skips_with_one_line(github, monkeypatch, capsys):
+    """The one-time cleanup runs at every /update_stats: an unexpected error in it is one line, never a failed run."""
+    import commands.card_data as cd
+
+    def boom(*a, **kw):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(cd, "clean_history", boom)
+    _run()
+    out = capsys.readouterr().out
+    assert "History cleanup skipped (RuntimeError: boom)." in out and "Card statistics update complete!" in out
+    assert set(_saved()[0]) >= {"Mini Doomer", "The Freezer"}
+
+
+def test_a_failing_history_cleanup_saves_none_of_it(github, psds, monkeypatch, capsys):
+    """A cleanup step that raises after an earlier one changed history (here the impossible values): none of it is
+    saved, though the run saves its own changes."""
+    import commands.card_history as ch
+
+    def boom(*a, **kw):
+        raise RuntimeError("boom")
+    _run()
+    old_card = pa.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Older.",
+                           stats=pa.CardStats(110, 110, 110, 110), timestamp=TIME - 5)
+    _seed_old_stats(old_card)
+    monkeypatch.setattr(ch, "dedupe", boom)
+    github.files[DOOMER] = psds[OTHER]                          # a change: the run saves
+    capsys.readouterr()
+    _run()
+    assert "History cleanup skipped (RuntimeError: boom)." in capsys.readouterr().out
+    first = _saved()[1]["Mini Doomer"][0]
+    assert (first.ability, first.stats.hp, first.problems) == ("Older.", 110, [])
 
 
 def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
@@ -1283,3 +1316,46 @@ def test_website_files_live_in_site():
     """The authors and edits files are read from the card repo's site/ only (moved from MDW/ on 2026-10-20)."""
     assert (pa.AUTHORS_PATHS, pa.EDITS_PATHS) == (("site/Card Authors.txt",), ("site/Card Edits.json",))
     assert (pa.AUTHORS_PATH, pa.EDITS_PATH) == ("site/Card Authors.txt", "site/Card Edits.json")
+
+
+def test_alt_art_duplicates_are_archived_never_dropped(github, psds, capsys):
+    """A duplicate whose PNG leaves is archived like any card (its tag at its own PNG), listed, and back when the PNG
+    is; one whose original's PSD leaves goes with it, dated like it."""
+    dup = "Auxiliary/Minions/Mini_Doomer2.png"
+    github.files[dup] = b"alt art"
+    _run()
+    assert _saved()[0]["Mini Doomer2"].duplicate_of == "Mini Doomer"
+    del github.files[dup]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    record = old["Mini Doomer2"][0]
+    assert "Mini Doomer2" not in stats and (record.duplicate_of, record.archived["path"]) == ("Mini Doomer", dup)
+    assert "Archived alt-art cards (their PNG or original left the card repo): Mini Doomer2 (same card as Mini Doomer)" \
+        in capsys.readouterr().out
+    github.files[dup] = b"alt art"
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer2"].archived is None and "Mini Doomer2" not in old             # back: the record goes
+    del github.files[DOOMER]
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"The Freezer"} and old["Mini Doomer2"][0].archived["at"] == old["Mini Doomer"][0].archived["at"]
+
+
+
+def test_an_alt_art_png_renamed_to_a_new_card_is_no_rename(github, psds, monkeypatch):
+    """An alt-art duplicate whose PNG the commit page shows renamed to a card new this run: archived with that commit,
+    never renamed_to (a copy's card is its original's)."""
+    dup, png = "Auxiliary/Minions/Mini_Doomer2.png", "Auxiliary/Minions/Mega_Doomer.png"
+    github.files[dup] = b"alt art"
+    _run()
+    pages = {dup: [_Commit("e" * 40, [_File(png, "renamed", dup)])]}
+    monkeypatch.setattr(pa.RepositoryTraverser, "_commit_page", lambda self, path: pages.get(path))
+    del github.files[dup]
+    github.files[png] = b"alt art"
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = psds[OTHER]       # a card new this run
+    _run()
+    stats, old = _saved()
+    tag = old["Mini Doomer2"][0].archived
+    assert "Mega Doomer" in stats and tag["commit"] == "e" * 40 and "renamed_to" not in tag

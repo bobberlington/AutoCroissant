@@ -11,6 +11,7 @@ REMIND_PKL      = "reminder.pkl"
 DETAILS_JSON    = "psd_details.json"          # PSD facts per card blob for the website's Details dropdown (committed, pushed with the pickles)
 HISTORY_JSON    = "repo_history.json"          # repo path -> commit that last changed it (derived, gitignored)
 HISTORY_CLONE   = environ.get("AUTOCROISSANT_HISTORY_CLONE", "~/Documents/TTSCardMaker-history.git")   # bare blobless clone of the card repo (env: the Action)
+BOT_CLONE       = environ.get("AUTOCROISSANT_BOT_CLONE", "")   # this bot's own full clone, for its PICKLE commits ("": the checkout holding this file)
 EMOJI_JSON      = "type_emojis.json"           # bot application id -> {type emoji name: icon blob} (gitignored)
 FONTS_CACHE     = "fonts_cache"                # MDW/Fonts' font files, refreshed by tree sha, where there is no checkout (font_check; gitignored)
 FONT_DIRS_ENV   = "PSD_TOOLS_FONT_DIRS"        # the fonts dir override (first entry), pathsep-separated: card_bake, font_check

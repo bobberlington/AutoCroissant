@@ -59,6 +59,7 @@ class CardRepository:
         self._moved_hint = False                         # the latest Card Edits.json didn't parse but named ALIASES_MOVED
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
+        self._spaced: dict[str, str] = {}                # underscore key -> the space-named file it stands for
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
@@ -95,6 +96,7 @@ class CardRepository:
         self.git_files.clear()
         self.blobs.clear()
         self.ambiguous_names.clear()
+        self._spaced.clear()
 
         # Process PNG files from repository
         for item in tree.get("tree", []):
@@ -152,8 +154,12 @@ class CardRepository:
             return self._tree, why
 
     def _add_file_to_registry(self, path: str) -> None:
-        """Add a file path to the registry, handling duplicates."""
+        """Add a file path to the registry, handling duplicates; a name with spaces also under underscores (aliases,
+        titles, /alias and the Card Edits.json lookups build underscore keys)."""
         png_filename = path[path.rindex("/") + 1:].lower()
+        if png_filename in self._spaced and self._spaced[png_filename] == self.git_files.get(png_filename):
+            del self.git_files[png_filename]            # a file of that name: no longer a space-named one's lookup
+            self._spaced.pop(png_filename, None)
 
         if png_filename in self.git_files:
             # Handle duplicate filenames by prefixing with top-level folder
@@ -173,6 +179,9 @@ class CardRepository:
             self.ambiguous_names[png_filename] = (*self.ambiguous_names[png_filename], new_filename)
         else:
             self.git_files[png_filename] = path
+        key = png_filename.replace(" ", "_")
+        if " " in png_filename and key not in self.git_files:   # a file named with spaces: underscore lookups find it
+            self.git_files[key] = self._spaced[key] = path
 
     @staticmethod
     def _get_prefixed_name(path: str, filename: str) -> str:
