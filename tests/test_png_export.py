@@ -126,6 +126,27 @@ def test_a_tool_save_is_refereed(tmp_path):
     assert pe.export(old, new, card(), run_referee=False).gate == "G6"
 
 
+@pytest.mark.parametrize("photoshop", [True, False])
+def test_a_png_pushed_before_its_psd_is_current(tmp_path, monkeypatch, photoshop):
+    """The author pushed the PNG first and the PSD minutes later in its own push: the PNG in the tree already shows the
+    pushed PSD, so nothing is made (a Photoshop save was re-exported over the author's export, a tool save refused at the
+    referee's baseline). A PNG still showing the old PSD is re-exported, a change under the parity threshold included
+    (24 levels: here 15)."""
+    if photoshop:
+        monkeypatch.setattr(pe, "photoshop_saved", lambda old, new: True)
+    old = fixture_psd(tmp_path, card(), "old")
+    for colour in ((0, 255, 0), (0, 0, 240)):
+        new = fixture_psd(tmp_path, card(colour=colour), f"new{colour[1]}")
+        ahead = pe.export(old, new, card(colour=colour))
+        assert (ahead.outcome, ahead.changed_px, ahead.data) == ("current", 21 * 21, b""), colour
+        assert ahead.numbers["png_ahead"]["new"]["max"] == 0 and ahead.numbers["png_ahead"]["old"]["mean"] > 0
+        stale = pe.export(old, new, card())
+        assert stale.outcome == "re-exported" and "png_ahead" not in stale.numbers, colour
+    half = card(colour=(0, 255, 0))                                       # the change, but stale elsewhere: not "ahead"
+    ImageDraw.Draw(half).rectangle((0, 40, 59, 89), fill=(255, 255, 0))
+    assert pe.export(old, fixture_psd(tmp_path, card(colour=(0, 255, 0)), "green"), half).gate == "G5"
+
+
 def test_g5_the_old_png_was_stale_elsewhere(tmp_path):
     """The old PNG disagrees with the old PSD outside the change: no PNG, the author exports it."""
     old = fixture_psd(tmp_path, card(), "old")

@@ -1,8 +1,8 @@
 """
 card_standards (guard 2 of the push guards): the rules on real cards of the clone (read-only opens; the counts of
 docs/Campaigns/PUSH_GUARDS.md section 6 per card), the owner's waivers, "(new)" against the old blob, the R4 new-card and
-regression cases, and the two 0-pixel fixes on copies: R11's rename (only the names change, byte for byte) and R9's Txt2
-story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
+regression cases, and the two 0-pixel fixes on copies: R11's rename (told until the owner adds it to AUTO_FIX; only the
+names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
 from pathlib import Path
@@ -159,7 +159,22 @@ def test_problems_ok_cards_are_waived_by_class_only(clone, context):
 # ========================
 # The fixes (copies)
 # ========================
-def test_r11_rename_changes_only_the_names(clone, context, tmp_path):
+def test_r11_is_told_until_the_owner_says_yes(clone, context, tmp_path):
+    """The owner's rule (2026-10-22): easy fixes only, today only R9's Txt2 sync. R11 is a remaining issue: told, not
+    fixed (the rename is built: the tests below run it as AUTO_FIX will once the owner adds it)."""
+    assert cs.AUTO_FIX == ("R9",) and set(cs.AUTO_FIX) <= set(cs.FIXABLE)
+    edited = _open(clone, MINI_DOOMER)
+    psd_edit.name_layer(edited).name = "NAME"
+    pushed = tmp_path / "pushed.psd"
+    psd_edit.save_psd(edited, str(pushed), update_preview=False)
+    issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
+    (rule,) = [i for i in issues if i.code == "R11"]
+    assert not rule.fix and rule in cs.reported(issues)
+    assert cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work")).data == b""
+
+
+def test_r11_rename_changes_only_the_names(clone, context, tmp_path, monkeypatch):
+    monkeypatch.setattr(cs, "AUTO_FIX", ("R9", "R11"))
     edited = _open(clone, MINI_DOOMER)
     psd_edit.name_layer(edited).name = "NAME"
     pushed = tmp_path / "pushed.psd"
@@ -178,9 +193,10 @@ def test_r11_rename_changes_only_the_names(clone, context, tmp_path):
     assert cs.rename(str(out), str(tmp_path / "again.psd")) == []                                  # idempotent
 
 
-def test_r11_refused_when_the_rename_changes_the_bots_reading(clone, context, tmp_path):
+def test_r11_refused_when_the_rename_changes_the_bots_reading(clone, context, tmp_path, monkeypatch):
     """The parser misses an "ability " layer: the rename would change the card's data, so the reparse gate keeps it a
     report (the bot never changes data on its own)."""
+    monkeypatch.setattr(cs, "AUTO_FIX", ("R9", "R11"))
     edited = _open(clone, MINI_DOOMER)
     psd_edit.ability_layer(edited).name = "ability "
     pushed = tmp_path / "pushed.psd"

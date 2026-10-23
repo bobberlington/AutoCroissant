@@ -7,7 +7,7 @@ previews), and a plan of the writes (plan.json) that `land` commits once, after 
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] [--fonts <dir>] --out <dir>
-    python -m commands.card_guards land --plan <out>/plan.json [--quiet-from <ISO time>] [--dry-run] [--local <clone>]
+    python -m commands.card_guards land --plan <out>/plan.json [--quiet-from <ISO time>] [--dry-run] [--local <clone>] [--rerun]
 
 check reads trees from a local clone (the Action's blobless checkout with its history; a full clone locally) and blobs
 from it or, when it lacks them, by sha through the API (verified). It writes nothing to the card repo, ever: a dry run
@@ -136,11 +136,14 @@ class Result:
         return card_name(self.job.psd)
 
     def told(self, mode: str = "on") -> list:
-        """The lines the author is told on Discord; in report mode the fixable issues too (nothing is fixed)."""
+        """The lines the author is told on Discord; in report mode the PNGs the bot would make and the fixable issues
+        too (nothing is made or fixed there)."""
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
+        if mode == "report":
+            out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png"]
         out += [f"{line} (the bot could not fix it: {why})" for line, why in self.fix_refused]
         if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
             out.append(self.r10["line"])
@@ -169,6 +172,17 @@ def card_name(path: str) -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def would_make(case: str, png: str, write: dict) -> str:
+    """Report mode's line for a PNG write the bot would make with CARD_GUARDS=on (nothing is committed there)."""
+    if write["path"] != png:
+        return f"{basename(write['path'])} not updated with the PSD: re-export it in Photoshop"
+    if case == "new":
+        return "no PNG pushed with the new PSD: export it in Photoshop"
+    if case == "rename":
+        return "PNG not renamed with the PSD: rename it too"
+    return "PNG not exported with the PSD: export it in Photoshop"
 
 
 def _key(path: str) -> tuple:
@@ -656,17 +670,21 @@ def _box(numbers: dict, box) -> str:
     return f" in {x1 - x0}x{y1 - y0} at ({x0}, {y0})"
 
 
-def _guard1_line(entry: dict) -> str:
+def _guard1_line(entry: dict, mode: str = "on") -> str:
     found = entry["export"]
     outcome = found.get("outcome")
     if not outcome:
         return ""
+    if outcome == "current" and "png_ahead" in found.get("numbers", {}):
+        return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
     if outcome == "current":
         return "PNG still current (the push moved no pixel of the composite)"
     if outcome == "refused":
         return found["why"]
+    would = " would be" if mode != "on" else ""
+    switch = " with CARD_GUARDS=on" if mode != "on" else ""
     if found.get("copied"):
-        return "PNG copied to the PSD's new name"
+        return f"PNG{would} copied to the PSD's new name{switch}"
     numbers = found.get("numbers", {})
     parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}",
              "saved by Photoshop" if found.get("writer") == "photoshop" else
@@ -674,10 +692,11 @@ def _guard1_line(entry: dict) -> str:
     if "outside" in numbers:
         parts.append(f"outside the change: mean {numbers['outside'].get('mean', 0):.2f}")
     verb = "made" if entry["case"] == "new" else "re-exported"
-    return f"PNG {verb} from the PSD's composite ({'; '.join(parts)})"
+    return f"PNG{would} {verb} from the PSD's composite ({'; '.join(parts)}){switch}"
 
 
 ALREADY = "already on the branch (an earlier run of this push landed it)"
+UNREAD = "an earlier run may have landed it (the branch could not be read)"
 
 
 def _already(landed: dict, card: str) -> set:
@@ -690,6 +709,7 @@ def _landed_head(landed: dict) -> str:
     left = len({card for card, *_ in landed.get("dropped", [])} - set(landed.get("landed", [])))
     already = {card for card, _ in landed.get("already", [])} - set(landed.get("landed", []))
     out = (f"Landed in `{sha[:8]}`: {plural(len(landed.get('landed', [])), 'card')}." if sha else
+           f"Not landed: {error.rstrip('.')}. Nothing was committed by this run; {UNREAD}." if error and landed.get("unread") else
            f"Not landed: {error.rstrip('.')}. Nothing was committed." if error else
            f"Nothing new to land: {plural(len(already), 'card')} {ALREADY}." if already else "Nothing landed.")
     return out + (f" {plural(left, 'card')} left out: changed again on the branch." if left and not error else "")
@@ -703,6 +723,8 @@ def _landing(entry: dict, landed: dict) -> list:
     if landed.get("error"):
         if already and len(already) == len(entry["writes"]):
             return [f"- Not committed again: {ALREADY}"]
+        if landed.get("unread"):
+            return [f"- Not committed by this run: {UNREAD}"]
         return ["- Not landed (the bot's commit failed): nothing above was committed for this card"]
     dropped = {path: why for card, why, path in landed.get("dropped", []) if card == entry["card"]}
     if len(dropped) == len(entry["writes"]):
@@ -734,7 +756,7 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
         out.append("No card PSD or PNG to guard.")
     for entry in data["cards"]:
         out.append(f"**{entry['card']}** (`{entry['psd']}`, {entry['login']}, `{entry['commit'][:8]}`)")
-        line = _guard1_line(entry)
+        line = _guard1_line(entry, mode)
         if line:
             out.append(f"- {line}")
         for why, path in entry["export"].get("numbered_refused", []):
@@ -751,7 +773,7 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
                 landed.get("sha") and not landed.get("error") and not any(
                     card == entry["card"] and path == entry["psd"] for card, _, path in landed.get("dropped", []))))
             verb = ("The bot would fix (CARD_GUARDS=on)" if mode != "on" else "The bot will fix" if not final else
-                    "Fixed by the bot" if psd_landed else "Not fixed")
+                    "Fixed by the bot" if psd_landed else "Not fixed by this run" if landed.get("unread") else "Not fixed")
             out.append(f"- {verb}: " + "; ".join(entry["fixed"]))
         for line, why in entry["fix_refused"]:
             out.append(f"- Not fixed: {line} ({why})")
@@ -940,9 +962,10 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     """
     What the one Discord post says after the quiet window (section 7.3), per card PSD: the check's lines, less a card whose
     PSD a person changed again (the later push's own check tells; a bot's change starts no run, so the lines stay) and a
-    PNG refusal whose PNG was pushed since; plus the writes that did not land and were not replaced by the author (the
-    bot's commit failed, a later push touched the card). A write the branch already holds (a re-run) is not told. A
-    numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
+    PNG refusal, or in report mode a PNG the bot would make, whose PNG was pushed since; plus the writes that did not land
+    and were not replaced by the author (the bot's commit failed, a later push touched the card). A write the branch
+    already holds (a re-run) is not told, nor any write when a re-run could not read the branch (an earlier attempt may
+    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
 
     Args:
         bot_moved: The PSDs whose last change on the branch is a bot commit's
@@ -967,8 +990,13 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
             if here and here(path) != expect.get(path, ""):
                 lines = [line for line in lines if line != why]
                 notes.append(f"{basename(path)} was pushed since: the refusal is withdrawn")
+        if data.get("mode") == "report":
+            for write in entry.get("writes", []):
+                if write["kind"] == "png" and here and not _holds(entry, write["path"], here(write["path"])):
+                    lines = [line for line in lines if line != would_make(entry["case"], png, write)]
+                    notes.append(f"{basename(write['path'])} was pushed since: not told")
         already = _already(landed, entry["card"])
-        for write in [] if landed.get("dry") else entry.get("writes", []):
+        for write in [] if landed.get("dry") or landed.get("unread") else entry.get("writes", []):
             why = "the bot's commit failed" if landed.get("error") else dropped.get(write["path"], "")
             if not why or write["path"] in already:
                 continue                        # landed (now or by an earlier run)
@@ -997,7 +1025,7 @@ def _read_files(out_dir: str, entries: list) -> dict:
 
 
 def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bool = False, local: str = "",
-         sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
+         rerun: bool = False, sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
     """
     After the quiet window (quiet_from + RECENT), commit a plan's writes once (G9) and settle what the one Discord post
     says (after_window). A write is left out when its card no longer holds the blobs it rests on (a PSD fix rests on its
@@ -1006,17 +1034,21 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
     (retried on a moved head, COMMIT_TRIES times); --local commits in that clone instead (nothing pushed). dry_run (report
     mode) commits nothing. Without quiet_from (a dispatch) nothing waits and the blob check alone decides: the pushes in the
     last 30 minutes would include the checked push itself. Never raises once the plan is read: any failure is the error.
+    rerun (a re-run or a dispatch: an earlier run may have landed the writes): when the branch could not be read, no
+    write is told as not made ("unread").
 
     Returns:
         {"sha": the commit or "", "landed": [card], "dropped": [[card, why, path]], "already": [[card, path]],
-         "error": why nothing was committed, "told": {psd: [Discord lines]}, "after": {psd: [comment notes]}, "dry": dry_run}
+         "error": why nothing was committed, "told": {psd: [Discord lines]}, "after": {psd: [comment notes]}, "dry": dry_run,
+         "unread": a rerun that could not read the branch}
     """
     out_dir = dirname(plan_path)
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
     repository = repository or data.get("repo") or ("" if local else CARD_REPO)
     entries = [entry for entry in data["cards"] if entry.get("writes")]
-    report = {"sha": "", "landed": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {}, "dry": dry_run}
+    report = {"sha": "", "landed": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {}, "dry": dry_run,
+              "unread": False}
     if not entries and not any(entry.get("told") for entry in data["cards"]):
         return report
     if quiet_from:
@@ -1065,7 +1097,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         if not isinstance(error, (Transient, Refused)):
             print(format_exc(), file=stderr)
         why = str(error) if isinstance(error, (Transient, Refused)) else f"{type(error).__name__}: {error}"
-        report.update(sha="", landed=[], error=why or type(error).__name__)
+        report.update(sha="", landed=[], error=why or type(error).__name__, unread=rerun and tip is None)
     if tip is not None:
         here = Head(tip)
         bot_moved = frozenset(entry["psd"] for entry in data["cards"]
@@ -1125,6 +1157,8 @@ def main(args: Optional[list] = None) -> int:
     two.add_argument("--quiet-from", default="", metavar="ISO", help="the push time: land waits until 30 min after it")
     two.add_argument("--dry-run", action="store_true", help="decide what would land, commit nothing (needed for a plan not checked with --mode on)")
     two.add_argument("--local", default="", metavar="DIR", help="commit in this clone (nothing pushed)")
+    two.add_argument("--rerun", action="store_true",
+                     help="a re-run or a dispatch: an earlier run may have landed the writes, so an unread branch tells none as not made")
     options = cli.parse_args(args)
     if options.command == "land" and not (options.dry_run or options.local):
         with open(options.plan, encoding="utf-8") as fh:
@@ -1142,7 +1176,7 @@ def main(args: Optional[list] = None) -> int:
             return 1
         print(data["markdown"], end="")
         return 0
-    report = land(options.plan, options.repo, options.quiet_from, options.dry_run, options.local)
+    report = land(options.plan, options.repo, options.quiet_from, options.dry_run, options.local, options.rerun)
     finish(options.plan, report)
     if report["error"]:
         print(f"Not landed: {report['error']}")

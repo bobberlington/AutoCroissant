@@ -296,7 +296,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         run_referee: Run the fork as referee when Photoshop did not save the PSD (False refuses instead)
 
     Returns:
-        Export: re-exported (image, data), current, or refused (why, gate)
+        Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD), or refused
+        (why, gate)
     """
     result = Export("current")
     composed = composite(new)
@@ -324,6 +325,14 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     result.numbers["png_vs_psd"] = _stats(_diff(out, old_png))
     if not result.changed_px:
         return _stale_composite(result, old, new, old_png, out, icc) if run_referee else result
+    # the PNG already shows the pushed PSD (pushed before it): over D nearer the new composite than the old, and within
+    # the bar there and over the card. Nothing to make (no churn over the author's export)
+    if before is not None and before.size == composed.size:
+        was = like_mode(convert(old, before, icc), old_png.mode)
+        to_new, to_old = _stats(_diff(out, old_png)[moved]), _stats(_diff(was, old_png)[moved])
+        if _within(to_new) and to_new["mean"] < to_old["mean"] and _within(result.numbers["png_vs_psd"]):
+            result.numbers["png_ahead"] = {"new": to_new, "old": to_old}
+            return result
     # G5: outside the change, the new PNG is the old one (else the old PNG was stale already)
     inside = np.zeros(moved.shape, bool)
     region, records = changed_layers(old, new) if old is not None else (None, 0)

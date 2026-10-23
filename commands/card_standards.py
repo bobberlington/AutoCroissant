@@ -1,8 +1,8 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R9 and R11 run over an open PSD (R10, the PNG against the PSD,
-is png_export.png_check); R9 (Txt2 stories) and R11 (exact layer names) are fixed by the fork with byte gates, the rest
-is reported. Rule pages are never checked.
+is png_export.png_check); R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename
+(exact layer names) is built and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None) -> Fixed            the 0-pixel fixes, gated (one PSD's new bytes)
@@ -51,7 +51,9 @@ PAREN = re_compile(r"\(([^()\r\n\x03]{1,12})\)")
 SCOPE = ("creature", "aux creature", "minion", "item", "aux item", "nme")   # the ledger's 651
 STARS_KINDS = ("minion", "aux item", "nme")     # stars drawn from a Stars group (L14)
 EXACT = {"ability": "Ability", "name": "Name"}  # R11: Text/Ability, Text/Name
-FIXABLE = ("R9", "R11")                         # 0-pixel by construction, gated
+FIXABLE = ("R9", "R11")                         # 0-pixel by construction, gated: what fix() can do
+AUTO_FIX = ("R9",)                              # what the bot fixes: the owner's "easy fixes only (today only R9 Txt2
+                                                # sync)", 2026-10-22; R11 is told until the owner adds it
 SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of the pushed one
 NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
@@ -73,7 +75,7 @@ class Issue:
     code: str                                   # R1..R11
     text: str                                   # for card makers: "the Ability layer is outside the Text group"
     items: tuple = ()                           # what it is about (tags, layer names): "(new)" compares these
-    fix: bool = False                           # FIXABLE and fixable here
+    fix: bool = False                           # AUTO_FIX and fixable here
     waived: str = ""                            # the waiver's reason
     new: bool = False                           # absent from the old blob
     discord: bool = True                        # R7 stays out of the post while font-check.yml pings fonts
@@ -295,7 +297,8 @@ def rule_stories(psd: PSDImage, story_sync: bool) -> Optional[Issue]:
     if not stale:
         return None
     names = _unique(name for name, _, _ in stale)
-    return Issue("R9", f"Photoshop would show old text in {_list(names)} (Txt2 story out of date)", names, fix=story_sync)
+    return Issue("R9", f"Photoshop would show old text in {_list(names)} (Txt2 story out of date)", names,
+                 fix=story_sync and "R9" in AUTO_FIX)
 
 
 def inexact_names(psd: PSDImage) -> list:
@@ -320,7 +323,7 @@ def rule_names(psd: PSDImage) -> Optional[Issue]:
     if not renames:
         return None
     pairs = tuple(f"{layer.name!r} -> {target!r}" for layer, target in renames)
-    return Issue("R11", f"layer names to correct: {', '.join(pairs)}", pairs, fix=True)
+    return Issue("R11", f"layer names to correct: {', '.join(pairs)}", pairs, fix="R11" in AUTO_FIX)
 
 
 # ========================
@@ -517,6 +520,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
 # Module Exports
 # ========================
 __all__ = [
+    'AUTO_FIX',
     'BADGE_KEYS',
     'BADGE_TAGS',
     'Context',
