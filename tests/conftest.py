@@ -139,7 +139,10 @@ def bevel_textures() -> bool:
 def colour_glyphs() -> bool:
     """The fork draws OpenType-SVG colour glyphs (stoogedings' icons) in colour (round 6's fix/r6-color-glyphs)."""
     from dataclasses import fields
-    from psd_tools.composite.text.raster import Options
+    try:
+        from psd_tools.composite.text.raster import Options
+    except ImportError:                                     # no text engine (stock psd-tools)
+        return False
     return "color_glyphs" in {field.name for field in fields(Options)}
 
 
