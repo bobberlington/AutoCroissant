@@ -3,7 +3,8 @@ card_guards (the push guards' driver): a card repo made here with git (fixture P
 bot commits left out), check end to end on it (the report, the one Discord post without mentions or previews, the plan),
 land against a fake GitHub (superseded cards, a moved head, the quiet wait) and in a local clone, the replay of the real
 push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12 Reactions2 "PNG still current"), the
-Action's sparse copy (SPARSE_FILES) and card-guards.yml's shape.
+Action's sparse copy (SPARSE_FILES), card-guards.yml's shape, and its steps' shell against a fake gh and curl (one post
+per push, the failure streak, the refused dispatch, MODE in any case).
 """
 import json
 import os
@@ -629,6 +630,37 @@ def test_a_png_pushed_in_another_case_counts(tmp_path, monkeypatch):
     assert report["after"]["X/Bar.psd"] == ["Bar.png was pushed since: the refusal is withdrawn"]
 
 
+def test_a_numbered_png_pushed_in_the_window_withdraws_its_refusal(tmp_path, monkeypatch):
+    """A numbered PNG's refusal (G8) is withdrawn as the main PNG's is when the author pushed that numbered PNG in the
+    window; another numbered PNG's refusal stands. (The main PNG's write rests on the numbered PNGs too: dropped.)"""
+    out = tmp_path / "plan"
+    one = "PNG not made for Snack2.png: the change touches its own title; re-export it in Photoshop"
+    two = "PNG not made for Snack3.png: the change touches its own title; re-export it in Photoshop"
+    snack = _entry("Snack", told=[one, two], export={"outcome": "re-exported", "changed_px": 5, "numbers": {},
+                                                     "numbered_refused": [[one, "X/Snack2.png"], [two, "X/Snack3.png"]]})
+    snack["expect"].update({"X/Snack2.png": "n2", "X/Snack3.png": "n3"})
+    _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
+    plan = _full_plan(tmp_path, [snack], mode="report")
+    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1"), "X/snack2.png": ("100644", "theirs"),
+             "X/Snack3.png": ("100644", "n3")}).install(monkeypatch)
+    report = cg.land(plan, dry_run=True)
+    assert report["told"] == {"X/Snack.psd": [two]}
+    assert report["after"]["X/Snack.psd"] == ["Snack2.png was pushed since: the refusal is withdrawn"]
+
+
+def test_context_errors_alone_ask_no_comment():
+    """summary.json's comment counts cards only: a context error (a standing MDW/Fonts index error, a manifest or status
+    chart fetch) is in the job summary, and in the comment when there is one, but puts no comment on every push."""
+    quiet = _entry("Quiet")
+    broken = _entry("Broken", error="KeyError: 'x'")
+    errors = ["MDW/Fonts index: Foo.ttf unreadable", "site/stoogedings.json: timeout"]
+    assert cg.summary({"after": "f" * 40, "cards": [quiet]}, errors)["comment"] == 0
+    assert cg.summary({"after": "f" * 40, "cards": []}, errors) == {"after": "f" * 40, "cards": 0, "told": 0, "comment": 0,
+                                                                     "writes": 0, "errors": 2, "card_errors": 0}
+    counted = cg.summary({"after": "f" * 40, "cards": [quiet, broken]}, errors + ["X/Broken.psd: KeyError: 'x'"])
+    assert counted["comment"] == 1 and counted["card_errors"] == 1 and counted["errors"] == 3
+
+
 def test_login_falls_back_to_a_github_login(monkeypatch):
     """No GitHub account on the commit: the login in a noreply email, else the pusher's login (github.actor), never the
     git author name while the API is there; a local run without a token names the git author."""
@@ -637,6 +669,8 @@ def test_login_falls_back_to_a_github_login(monkeypatch):
     source = cg.Source("", "o/cards")
     assert source.login(cg.Writer("c1", "Zom", "123+Zomoroko@users.noreply.github.com", ""), "MichaelJSr") == "Zomoroko"
     assert source.login(cg.Writer("c2", "Laptop Name", "me@example.com", ""), "MichaelJSr") == "MichaelJSr"
+    # a dispatch passes no pusher (whoever ran it did not push the card): the git author name
+    assert source.login(cg.Writer("c4", "Laptop Name", "me@example.com", ""), cg.NOBODY) == "Laptop Name"
     monkeypatch.setattr(cg, "token", lambda: "")
     assert cg.Source("", "o/cards").login(cg.Writer("c3", "Laptop Name", "me@example.com", ""), "MichaelJSr") == "Laptop Name"
 
@@ -827,8 +861,9 @@ def test_workflow_shape(clone):
     if edits.exists():
         assert re.search(r"psd-tools@([\w.-]+)\"", edits.read_text(encoding="utf-8")).group(1) == pin
     names = [s.get("name") for s in steps]
-    assert names.index("Check") < names.index("Comment on the commit") < names.index("Land") < names.index("Follow up") \
-        < names.index("Tell Discord") < names.index("Fail on card errors") < names.index("Tell Discord the run failed")
+    assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
+        < names.index("Comment on the commit") < names.index("Land") < names.index("Follow up") < names.index("Tell Discord") \
+        < names.index("Fail on card errors") < names.index("Tell Discord the run failed")
     tell = steps[names.index("Tell Discord")]
     assert tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "discord-final.json" in tell["run"]
     assert tell["if"].startswith("always() && (env.MODE == 'report' || env.MODE == 'on') && steps.check.outcome == 'success'")
@@ -840,13 +875,22 @@ def test_workflow_shape(clone):
     assert "discord.json" not in tell["run"].replace("discord-final.json", "")      # never check's early post
     assert "card_errors" in steps[names.index("Fail on card errors")]["run"]
     alert = steps[names.index("Tell Discord the run failed")]
-    assert alert["if"] == "(failure() || cancelled()) && github.event_name == 'push' && steps.tell.outputs.posted != 'true'"
+    # a re-run of a push already told (the comment's mark) never alerts: "one post per push"
+    assert alert["if"] == ("(failure() || cancelled()) && github.event_name == 'push' && steps.tell.outputs.posted != 'true' && "
+                           "steps.comment.outputs.told != 'true'")
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
+    # the streak's mark: an artifact left only when the alert told (or stayed quiet in a told streak)
+    streak = steps[names.index("Tell Discord the run failed") + 1]
+    assert streak["uses"].startswith("actions/upload-artifact") and streak["if"] == "always() && steps.alert.outputs.streak == 'true'"
+    assert streak["with"]["name"] == "${{ env.STREAK }}" and job["env"]["STREAK"] and alert["id"] == "alert"
+    refuse = steps[names.index("No push run in its window")]
+    assert refuse["if"] == "github.event_name == 'workflow_dispatch' && env.MODE == 'on'"
     assert "<@&" not in text and "ROLE" not in text and "DISCORD_FONT_WEBHOOK" not in text
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN", "DISCORD_STANDARDS_WEBHOOK"}
     check = steps[names.index("Check")]
     for flag in ("--clone", "--repo", "--after", "--author", "--fonts", "--out", "--mode", "--before", "--cards", "--whole-tree"):
         assert flag in check["run"]
+    assert check["env"]["AUTHOR"] == "${{ github.event_name == 'push' && github.actor || '' }}"   # never the dispatcher
     # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
     assert not any("runner." in str(value) for value in job["env"].values())
     assert 'OUT=$RUNNER_TEMP/guards' in steps[names.index("Start")]["run"]
@@ -855,20 +899,34 @@ def test_workflow_shape(clone):
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys
 state = os.environ["FAKE_STATE"]
 db = json.load(open(state)) if os.path.exists(state) else {"comments": {}, "next": 100, "log": []}
 args = sys.argv[1:]
 db["log"].append(" ".join(args))
 out = ""
+
+
+def jq(data):
+    # gh's --jq, by the real jq: the steps' expressions are under test too
+    expr = args[args.index("--jq") + 1]
+    return subprocess.run(["jq", "-r", expr], input=json.dumps(data), capture_output=True, text=True, check=True).stdout.rstrip("\n")
+
+
+if os.environ.get("FAKE_FAIL") and os.environ["FAKE_FAIL"] in " ".join(args):
+    json.dump(db, open(state, "w"))
+    sys.exit(1)
 if args[:2] == ["workflow", "run"]:
     pass
 elif args[:2] == ["run", "list"]:
-    out = os.environ.get("FAKE_LAST", "")
+    out = jq(json.loads(os.environ["FAKE_RUNS"])) if "FAKE_RUNS" in os.environ else os.environ.get("FAKE_LAST", "")
 elif args[0] == "api":
     method = args[args.index("--method") + 1] if "--method" in args else "GET"
     path = next(a for a in args[1:] if a.startswith("repos/"))
-    if method == "POST":
+    if path.endswith("/artifacts"):
+        marked = path.split("/")[-2] in os.environ.get("FAKE_MARKED", "").split(",")
+        out = jq({"artifacts": [{"name": "card-guards"}] + ([{"name": os.environ["STREAK"]}] if marked else [])})
+    elif method == "POST":
         db["next"] += 1
         db["comments"][str(db["next"])] = json.load(sys.stdin)["body"]
         out = str(db["next"])
@@ -946,16 +1004,49 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     state = json.loads((tmp_path / "gh.json").read_text())
     assert list(state["comments"]) == [comment_id] and state["comments"][comment_id].rstrip().endswith(job["env"]["TOLD"])
     assert (tmp_path / "posts.txt").read_text().count("settled") == 1
-    alert = steps["Tell Discord the run failed"]
-    for last, posts in (("failure", 0), ("success", 1), ("", 1)):
-        (tmp_path / "posts.txt").write_text("")
-        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_LAST": last, "GITHUB_RUN_ID": "7",
-                                                             "GITHUB_ACTOR": "Alice", "RUN": "https://github.com/o/cards/actions/runs/7"}, {})
-        sent = [json.loads(l) for l in (tmp_path / "posts.txt").read_text().splitlines() if l.strip()]
-        assert len(sent) == posts, (last, sent)
-    assert sent[0] == {"content": "Card guards: the push by Alice was not guarded (the next failures stay quiet until a run "
-                                  "succeeds). https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
-    assert "WEBHOOK" in alert["env"]
+    assert "WEBHOOK" in steps["Tell Discord the run failed"]["env"]
+
+
+def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
+    """The failure alert's streak is the STREAK artifact, not a red run: quiet only when the last finished push run told
+    Discord it failed (or stayed quiet in a told streak); a red run that posted its own lines (a card error, a failed
+    comment) leaves no mark, so the next failure is told. A re-run is quiet after an attempt that told. The wording
+    says whether the push was checked; a failed webhook call leaves no mark."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    posts, runner = tmp_path / "posts.txt", tmp_path / "runner"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
+           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": job["env"]["STREAK"], "RUNNER_TEMP": str(runner),
+           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "CHECKED": "failure",
+           "RUN": "https://github.com/o/cards/actions/runs/7"}
+    def runs(*pairs):
+        return json.dumps([{"databaseId": run, "conclusion": conclusion} for run, conclusion in pairs])
+    red = runs((5, "failure"))
+    cases = (({"FAKE_RUNS": red, "FAKE_MARKED": "5"}, 0, "true"),     # the last push run told the streak
+             ({"FAKE_RUNS": runs((7, "failure"), (6, "skipped"), (5, "timed_out")), "FAKE_MARKED": "5"}, 0, "true"),
+             ({"FAKE_RUNS": red}, 1, "true"),                          # red after its own post: nobody was told it failed
+             ({"FAKE_RUNS": runs((5, "success")), "FAKE_MARKED": "5"}, 1, "true"),   # re-run green: attempt 1's mark is stale
+             ({"FAKE_RUNS": runs((5, "cancelled")), "FAKE_MARKED": "5"}, 0, "true"),
+             ({"FAKE_RUNS": "[]"}, 1, "true"),                         # the first push run
+             ({"FAKE_RUNS": red, "FAKE_MARKED": "7", "GITHUB_RUN_ATTEMPT": "2"}, 0, "true"),   # a re-run: attempt 1 told
+             ({"FAKE_RUNS": "[]", "FAKE_CURL_STATUS": "22"}, 1, ""))   # the webhook failed: no mark, the next run tells
+    for extra, sent, streak in cases:
+        posts.write_text("")
+        shutil.rmtree(runner, ignore_errors=True)
+        out = _run_steps(steps, ["Tell Discord the run failed"], {**env, **extra}, {})["tell"]
+        lines = [json.loads(l) for l in posts.read_text().splitlines() if l.strip()]
+        assert len(lines) == sent and out.get("streak", "") == streak, (extra, lines, out)
+        assert not streak or (runner / "streak" / "told.txt").read_text().strip() == env["RUN"]      # what STREAK uploads
+    for checked, what in (("failure", "was not guarded"), ("success", "was checked, but its run failed")):
+        posts.write_text("")
+        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_RUNS": "[]", "CHECKED": checked}, {})
+        assert json.loads(posts.read_text()) == {
+            "content": f"Card guards: the push by Alice {what} (the next failures stay quiet until a run succeeds). "
+                       "https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
 
 
 def test_workflow_tells_only_the_settled_post(clone, tmp_path):
@@ -998,6 +1089,122 @@ def test_workflow_tells_only_the_settled_post(clone, tmp_path):
         result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", fail], capture_output=True, text=True,
                                 env=env, timeout=60)
         assert result.returncode == code, (errors, result.stdout)
+
+
+def _fake_tools(tmp_path) -> Path:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "curl").write_text(FAKE_CURL)
+    for tool in ("gh", "curl"):
+        (bin_dir / tool).chmod(0o755)
+    return bin_dir
+
+
+def _shell(step, env, cwd=None):
+    out = Path(env["GITHUB_OUTPUT"])
+    out.write_text("")
+    done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env, cwd=cwd,
+                          capture_output=True, text=True, timeout=60)
+    return done, dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
+
+
+def test_workflow_comment_lookup_never_posts_twice(clone, tmp_path):
+    """The Comment step reads the lookup whole (no pipe into head, which can kill gh under pipefail): with two earlier
+    comments it edits the first. A lookup that fails on a re-run, or an earlier comment it cannot read, counts as told:
+    no new comment, the step fails, and Tell Discord and the failure alert stay quiet (their `if`). On a first attempt a
+    failed lookup still comments (no earlier comment of this run can exist)."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    step = steps["Comment on the commit"]
+    out = tmp_path / "guards"
+    out.mkdir()
+    (out / "summary.json").write_text(json.dumps({"comment": 1}))
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
+    (out / "report.md").write_text("## Card guards\n\nAgain.\n")
+    state = tmp_path / "gh.json"
+    told = job["env"]["TOLD"]
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
+           "GITHUB_REPOSITORY": "o/cards", "FAKE_STATE": str(state), "GITHUB_OUTPUT": str(out / "comment.output"),
+           "GITHUB_RUN_ATTEMPT": "2"}
+
+    def seed():
+        state.write_text(json.dumps({"comments": {"101": f"## Card guards\n\nFirst.\n\n{told}\n", "102": "## Card guards\n\nOld.\n"},
+                                     "next": 102, "log": []}))
+    seed()
+    done, outputs = _shell(step, env)
+    assert done.returncode == 0 and outputs == {"told": "true", "id": "101"}, done.stderr
+    comments = json.loads(state.read_text())["comments"]
+    assert set(comments) == {"101", "102"} and comments["101"].startswith("## Card guards\n\nAgain.") and told in comments["101"]
+    for fail in ("--paginate", "comments/101 --jq"):           # the lookup, then the earlier comment's body
+        seed()
+        done, outputs = _shell(step, {**env, "FAKE_FAIL": fail})
+        assert done.returncode == 1 and outputs == {"told": "true"}, (fail, done.stderr)
+        assert json.loads(state.read_text())["comments"] == {"101": f"## Card guards\n\nFirst.\n\n{told}\n",
+                                                            "102": "## Card guards\n\nOld.\n"}
+    for name in ("Tell Discord", "Tell Discord the run failed"):
+        assert "steps.comment.outputs.told != 'true'" in steps[name]["if"]
+    state.unlink()
+    done, outputs = _shell(step, {**env, "FAKE_FAIL": "--paginate", "GITHUB_RUN_ATTEMPT": "1"})
+    assert done.returncode == 0 and outputs == {"id": "101"} and list(json.loads(state.read_text())["comments"]) == ["101"]
+
+
+def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_path):
+    """A dispatch with dry_run off on a commit whose push run is unfinished (its head is the commit or after it) would
+    post and land first: refused. A push run of an earlier commit, or none, lets it through; an unknown head (pushed
+    since the checkout) refuses."""
+    yaml = pytest.importorskip("yaml")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    step = next(s for s in job["steps"] if s.get("name") == "No push run in its window")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    shas = []
+    for n in range(2):
+        (repo / "f.txt").write_text(str(n))
+        _git(repo, "add", "f.txt")
+        _commit(repo, f"c{n}")
+        shas.append(_git(repo, "rev-parse", "HEAD"))
+    one, two = shas
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "o/cards", "GITHUB_SHA": two,
+           "FAKE_STATE": str(tmp_path / "gh.json"), "GITHUB_OUTPUT": str(tmp_path / "refuse.output")}
+    def runs(*pairs):
+        return json.dumps([{"status": status, "headSha": head} for status, head in pairs])
+    for sha, pushes, code in (("", runs(), 0), (one, runs(("in_progress", two)), 1), (two, runs(("in_progress", one)), 0),
+                              ("", runs(("queued", two)), 1), (one, runs(("completed", two)), 0),
+                              (one, runs(("completed", one), ("waiting", one), ("in_progress", two)), 1),
+                              (two, runs(("in_progress", "e" * 40)), 1)):
+        done, _ = _shell(step, {**env, "SHA": sha, "FAKE_RUNS": pushes}, cwd=repo)
+        assert done.returncode == code, (sha, pushes, done.stdout, done.stderr)
+        if code:
+            assert "is still in its quiet window" in done.stdout
+
+
+def test_workflow_lowercases_card_guards(clone, tmp_path):
+    """The job's `if` matches CARD_GUARDS in any case ("On"), argparse's choices and the shell do not: Start lowercases
+    MODE for every later step (a "Report" that stayed as typed would make Land commit), and --mode takes any case."""
+    yaml = pytest.importorskip("yaml")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    step = next(s for s in job["steps"] if s.get("name") == "Start")
+    for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
+        github_env = tmp_path / f"env-{typed}"
+        github_env.write_text("")
+        done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path),
+                                "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
+        assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
+    land = next(s for s in job["steps"] if s.get("name") == "Land")
+    assert '[ "$MODE" = report ] && args+=(--dry-run)' in land["run"]
+
+
+def test_mode_takes_any_case(cards, tmp_path):
+    root, base, alice, bot = cards
+    out = tmp_path / "out"
+    assert cg.main(["check", "--clone", str(root), "--after", bot, "--before", base, "--mode", "Report", "--cards", "bread",
+                    "--workers", "1", "--out", str(out)]) == 0
+    assert json.loads((out / "plan.json").read_text())["mode"] == "report"
 
 
 def test_workflow_lints(clone):

@@ -292,7 +292,8 @@ class Source:
     def login(self, writer: Writer, fallback: str) -> str:
         """The commit author's GitHub login: the commits API (once per commit, when a token and repo are given), else the
         login in a GitHub noreply email; with the API, an author without a GitHub account is named by the pusher's login
-        (fallback, github.actor: who pushed the card); without it (a local run), by the git author name."""
+        (fallback, github.actor: who pushed the card); without it (a local run) or without a pusher (a dispatch: whoever
+        ran it did not push the card), by the git author name."""
         if writer.commit not in self.logins:
             login, online = "", bool(self.repository and token())
             if online:
@@ -854,10 +855,11 @@ def _for_comment(entry: dict) -> bool:
 
 def summary(data: dict, errors: list) -> dict:
     """summary.json, the workflow's switches: cards checked; cards with something told (Land, the post), for the comment
-    (the Comment step) and with an error (a red run); writes planned; errors (the cards' and the context's)."""
+    (the Comment step: a context error alone, a standing font-index one say, comments on no push) and with an error (a red
+    run); writes planned; errors (the cards' and the context's)."""
     cards = data["cards"]
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
-            "comment": sum(1 for c in cards if _for_comment(c)) + len(errors), "writes": sum(len(c["writes"]) for c in cards),
+            "comment": sum(1 for c in cards if _for_comment(c)), "writes": sum(len(c["writes"]) for c in cards),
             "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
 
 
@@ -939,7 +941,8 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     What the one Discord post says after the quiet window (section 7.3), per card PSD: the check's lines, less a card whose
     PSD a person changed again (the later push's own check tells; a bot's change starts no run, so the lines stay) and a
     PNG refusal whose PNG was pushed since; plus the writes that did not land and were not replaced by the author (the
-    bot's commit failed, a later push touched the card). A write the branch already holds (a re-run) is not told.
+    bot's commit failed, a later push touched the card). A write the branch already holds (a re-run) is not told. A
+    numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
 
     Args:
         bot_moved: The PSDs whose last change on the branch is a bot commit's
@@ -959,9 +962,11 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
         if by_bot:
             notes.append("a bot commit changed the PSD since: the push's lines stand")
         export, png = entry.get("export", {}), entry.get("png", "")
-        if here and export.get("outcome") == "refused" and png and here(png) != expect.get(png, ""):
-            lines = [line for line in lines if line != export.get("why")]
-            notes.append(f"{basename(png)} was pushed since: the refusal is withdrawn")
+        refused = [(export.get("why"), png)] if export.get("outcome") == "refused" and png else []
+        for why, path in refused + [tuple(item) for item in export.get("numbered_refused", [])]:
+            if here and here(path) != expect.get(path, ""):
+                lines = [line for line in lines if line != why]
+                notes.append(f"{basename(path)} was pushed since: the refusal is withdrawn")
         already = _already(landed, entry["card"])
         for write in [] if landed.get("dry") else entry.get("writes", []):
             why = "the bot's commit failed" if landed.get("error") else dropped.get(write["path"], "")
@@ -1104,10 +1109,12 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--after", required=True, metavar="SHA", help="the push's head")
     one.add_argument("--before", default="", metavar="SHA", help="the push's previous head; empty: the first parent")
     one.add_argument("--repo", default="", metavar="OWNER/NAME", help="blobs the clone lacks and the commit logins by API")
-    one.add_argument("--author", default=NOBODY, metavar="LOGIN", help="who to name when a login is unknown (github.actor)")
+    one.add_argument("--author", default=NOBODY, metavar="LOGIN",
+                     help="the pusher, named when a login is unknown (a push's github.actor; a dispatch passes none)")
     one.add_argument("--cards", default="", metavar="NAMES", help="only these cards (comma separated, matched like Card Authors.txt)")
     one.add_argument("--whole-tree", action="store_true", help="every card PSD at --after: standards and PNG-vs-PSD")
-    one.add_argument("--mode", default="dry", choices=MODES, help="dry, report or on (CARD_GUARDS): the report's wording")
+    one.add_argument("--mode", default="dry", choices=MODES, type=str.lower,
+                     help="dry, report or on (CARD_GUARDS, any case): the report's wording")
     one.add_argument("--fonts", default="", metavar="DIR", help="MDW/Fonts (R7); skipped without")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: half the cores)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
