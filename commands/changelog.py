@@ -175,7 +175,8 @@ def is_bot(by) -> bool:
 def edit_credit(meta, fields) -> Optional[str]:
     """
     Who an edited event's fields are credited to: its entry's _by; a field in its _bot, its _credit editor (a Discord
-    edit's), else the bot (the migration's). A mix: the _by. meta: the entry's _-keys, or its _by alone.
+    edit's), else the bot (the migration's). A mix: the _by when one field is its, else the bot (it wrote them all).
+    meta: the entry's _-keys, or its _by alone.
     """
     if not isinstance(meta, dict):
         return meta
@@ -190,7 +191,9 @@ def edit_credit(meta, fields) -> Optional[str]:
         found = credit.get(name)
         return found.get("_by") if isinstance(found, dict) and isinstance(found.get("_by"), str) else BOT
     credits = {of(f) for f in fields}
-    return by if by in credits or len(credits) != 1 else credits.pop()
+    if len(credits) == 1:
+        return credits.pop()
+    return by if by in credits or not credits else BOT
 
 
 def events(before: dict, after: dict, archived_before: dict, archived_after: dict, reparsed: Optional[dict] = None,
