@@ -106,8 +106,8 @@ stats_commands = {
                                                   "Edit a card's data (admin only). Provide query to find card, then any fields to update: one commit to the card repo, "
                                                   "as the website's Edit button makes, shown by /query at once.\n"
                                                   "- author: a line in site/Card Authors.txt; every other field: the card's entry in site/Card Edits.json\n"
-                                                  "- ability, hp, defense, attack, speed: pending on the card image until the next card bake prints them\n"
-                                                  "- stars, types: not yet (the card bake can't print them); change them in the PSD\n"
+                                                  "- ability, stars, types, hp, defense, attack, speed: pending on the card image until the next card bake prints them "
+                                                  "(stars on minions, aux cards and N.M.E.: elsewhere the N Stars folder sets them; types comma-separated)\n"
                                                   "- del_entry: Hide the card on the website and in queries\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
                                                   "- No parameters (except query) shows current metadata, its creation date (created) included",

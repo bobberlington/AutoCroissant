@@ -265,10 +265,19 @@ def test_update_metadata_png_only_card_and_bad_values(repo):
     assert "Mr. Fix" not in repo.stats and "No data for this card yet" in repo.sent[2]
     de.manual_metadata_entry(repo.who, "Mr. Fix", series="Tools")                # the same again: nothing to commit
     assert len(_commits(repo.github, start)) == 1 and "nothing committed" in repo.sent[3]
-    for bad in ({"stars": 3}, {"types": "fire"}, {"types": " , ", "hp": 2}):      # the bake can't print them: refused
-        de.manual_metadata_entry(repo.who, "Mini Doomer", **bad)
-        assert "can't be set from Discord yet" in repo.sent[len(repo.sent) - 1]
+    de.manual_metadata_entry(repo.who, "Mini Doomer", types=" , ", hp=2)          # no type named: refused
+    assert "types must be" in repo.sent[len(repo.sent) - 1]
     assert len(_commits(repo.github, start)) == 1
+
+
+def test_update_metadata_takes_stars_and_types(repo):
+    """Stars and types are PSD fields like the stats (the bake prints them since 2026-10-23): pending, one commit."""
+    start = repo.github.head
+    de.manual_metadata_entry(repo.who, "Mini Doomer", stars=3, types="Wind, Fire")
+    entry = json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Mini Doomer"]
+    assert (entry["stars"], entry["types"], entry["_by"]) == (3, ["wind", "fire"], BY)
+    assert len(_commits(repo.github, start)) == 1 and "pending on the card image" in repo.sent[len(repo.sent) - 1]
+    assert repo.stats["Mini Doomer"].stars == 3 and repo.stats["Mini Doomer"].types == ["wind", "fire"]
 
 
 def test_update_metadata_skips_values_the_card_repo_has(repo, monkeypatch):

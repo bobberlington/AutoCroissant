@@ -9,10 +9,10 @@ none: their editor keeps the bake credit, and the fields the edit sets go in its
 a value the head already has is no change (no op, no restamp, no commit).
 Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
 
-Fields: author -> a [cards] line in Card Authors.txt; ability, hp/def/atk/spd -> the "psd" kind (they persist and show
-"PSD pending" on the website; the next bake prints them); stars and types are refused for now (the bake can't print them,
-and a pending one holds back the card's whole bake); subtype, series, card_type -> subtype, series, type (the "folder"
-kind); subseries; del_entry -> hidden: true. /mass_replace author rewrites the right-hand sides in Card Authors.txt where
+Fields: author -> a [cards] line in Card Authors.txt; ability, stars, types, hp/def/atk/spd -> the "psd" kind (they
+persist and show "PSD pending" on the website; the next bake prints them, and a stars or types layout it can't follow is
+refused for that field alone); subtype, series, card_type -> subtype, series, type (the "folder" kind); subseries;
+del_entry -> hidden: true. /mass_replace author rewrites the right-hand sides in Card Authors.txt where
 they stand (old's group renamed) and adds a "[people] old = new" line; its other fields write one entry per card, in one
 commit. /alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the
 migration sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
@@ -71,7 +71,6 @@ METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), 
             ("card_type", "type"), ("types", "types"))
 KINDS = {t.value.lower(): t.value for t in CardType}   # a card_type typed in Discord: one of these, any case
 SETTABLE = {k: v for k, v in KINDS.items() if v != CardType.UNKNOWN.value}     # edit.js offers no "unknown"
-NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses for now (psd_edit.NOT_YET): not taken
 MASS = {"series": "series", "subseries": "subseries", "subtype": "subtype", "card_type": "type"}   # /mass_replace -> field
 BODY_LINES = 40                                 # a commit body lists at most this many cards
 SHOWN = 60                                      # a value is cut to this many characters in a reply or commit body
@@ -558,8 +557,8 @@ def manual_metadata_entry(interaction,
         query: Card name query
         del_entry: Hide the card (hidden: true)
         author: Card author ([cards] line)
-        ability, hp, defense, attack, speed: PSD fields (pending until the bake prints them)
-        stars, types: refused for now (the bake can't print them; a pending one would hold back the card's bake)
+        ability, stars, types, hp, defense, attack, speed: PSD fields (pending until the bake prints them; types
+            comma-separated)
         subtype, series, card_type, subseries: folder and database fields
     """
     from commands.psd_analyzer import _format_metadata, stats_db
@@ -602,12 +601,6 @@ def manual_metadata_entry(interaction,
     if author is not None and original:          # the build and the site credit a duplicate with its original's author
         say(interaction, f"Not committed: **{name}** is a numbered copy of **{original}**'s card, so its author is "
                          f"{original}'s. Set the author on {original}.")
-        return
-    blocked = [f for f in given if f in NOT_BAKED]
-    if blocked:                                  # psd_edit refuses the card's whole bake while one is pending
-        say(interaction, f"Not committed: {' and '.join(blocked)} can't be set from Discord yet. The card bake can't "
-                         "print them, and while one waits in Card Edits.json the bake refuses every other edit to the "
-                         "card's PSD. Change them in the PSD.")
         return
     if given.get("type", "") not in ("", *SETTABLE.values()):
         say(interaction, f"Not committed: card_type must be one of {', '.join(SETTABLE.values())}.")
