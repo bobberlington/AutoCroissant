@@ -1002,7 +1002,8 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     """The proof against Effect Layers.jsx (Convert overlays on the 2026-10-20 trial copies): regenerating the FX layer for
     the unchanged text cuts the same word (IoU 0.953 / 0.994 with the JSX pixel cut, all of our ink on its ink or its 1 px
     edge ring: the fork's 4 x 4 samples draw Gasoline 0.08 px low, a quarter-pixel more on bottom edges), hides the overlay, passes the validator's coverage (1.0) and the bytes
-    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
+    and reopen gates. A splice keeps the word's Photoshop pixels and cuts them under the engine's key: the JSX's own cut
+    (IoU 1.0). These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
     clone's versions before the JSX ran on them (OVERLAID)."""
     psd_path = _overlaid(clone, rel, tmp_path)
     psd = PSDImage.open(psd_path)
@@ -1017,7 +1018,8 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     name, box, theirs = _jsx_ink(rel)
     ours = _ink(mine, reopened)
     assert name == mine.name and theirs.shape == ours.shape
-    assert (ours & theirs).sum() / (ours | theirs).sum() >= floor and _near(ours, theirs) >= 0.99
+    iou = (ours & theirs).sum() / (ours | theirs).sum()
+    assert (iou == 1.0) if pe.splices() else (iou >= floor and _near(ours, theirs) >= 0.99)
     assert abs(mine.bbox[0] - box[0]) <= 1 and abs(mine.bbox[1] - box[1]) <= 1 and mine.bbox[3] == box[3]
     assert pe.overlay_words(reopened) == [] and pe._enabled_effects(mine) == ["OuterGlow"]
     assert pe.PSDParser._pixel_coverage(mine, pe.ability_layer(reopened)) == 1.0

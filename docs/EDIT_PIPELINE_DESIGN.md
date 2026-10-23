@@ -190,8 +190,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
    deleted and one is cut per styled status word in the new text (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat,
    named as `Effect Layers.jsx` names them): the JSX's key copy (the word's runs white, the rest black) laid out and rasterized
-   again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1), the ability's own raster
-   gives the pixels (`numpy("color"/"shape")` after `rasterize`), `PixelLayer.fromarray` makes the layer with a unicode name
+   again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1; the key may pass a
+   spliced layer's bbox by `KEY_SLACK`), the ability's own raster gives the pixels (`numpy("color"/"shape")` after `rasterize`;
+   on a splice Photoshop's for a kept word: the JSX's own cut, IoU 1.0 on Gasoline and the Cannon against 0.953 / 0.994 from
+   the engine's pixels), `PixelLayer.fromarray` makes the layer with a unicode name
    and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
    it goes directly above the top-level `Text` group. A hand-made overlay word layer over the ability is hidden when it names a
    styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
