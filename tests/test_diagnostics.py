@@ -91,3 +91,26 @@ def test_diff_stats_matches_versions_the_seed_pass_dated(tmp_path):
     assert code == 1, out
     assert "versions added: 0 (0 names)   dropped: 0 (0 names)" in out, out
     assert "starts moved: 1" in out and "kept versions with other data: 1" in out and "  data Kirby" in out, out
+
+
+def test_diff_stats_matches_a_legacy_version_given_a_blob_and_re_dated(tmp_path):
+    """The seed pass can give a legacy version its commit's blob and re-date it to that blob's intro (and rename a
+    retired type): the same version, its start moved, not one added and one dropped (12 such on the 077337a9 rebuild).
+    """
+    stats = {"Kirby": _card("Kirby")}
+    jetson = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1743730939.0, blob_sha=None,
+                                                types=["offense"])]})
+    built = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1742636015.0, blob_sha="d" * 40,
+                                               types=["negation"])]})
+    (tmp_path / "pk").mkdir()
+    cdb.dump_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
+    cdb.dump_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
+    _db(tmp_path / "db", stats, built)
+    code, out = _run("diff_stats.py", tmp_path / "pk" / "stats.pkl", tmp_path / "db")
+    assert code == 1, out
+    assert "versions added: 0 (0 names)   dropped: 0 (0 names)" in out, out
+    assert "starts moved: 1" in out and "  start Kirby (version 1743730939.0): 1743730939.0 -> 1742636015.0" in out, out
+    built["Kirby"][0].ability = "B."                       # another reading's data: still a version added and dropped
+    _db(tmp_path / "db2", stats, built)
+    code, out = _run("diff_stats.py", tmp_path / "pk" / "stats.pkl", tmp_path / "db2")
+    assert "versions added: 1 (1 names)   dropped: 1 (1 names)" in out, out

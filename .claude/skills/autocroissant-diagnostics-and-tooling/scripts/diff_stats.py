@@ -43,6 +43,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 from commands.card_db import load_pickle, parse_old_stats, read_cards  # noqa: E402
+from commands.card_history import data_of  # noqa: E402
 
 BOOKKEEPING = ("blob_sha", "parser_version")       # not in to_dict(); a version's start is read from `version`
 
@@ -78,8 +79,9 @@ def key(card):
 def pair(a, b):
     """
     Two lists of one name's stored versions matched up: one version when the same timestamp and blob; else the same
-    blob (re-dated from git); else the same timestamp where one side has no blob (given its commit's blob: the data
-    build's seed pass, which /update_stats never does).
+    blob (re-dated from git); else, where one side has no blob (given its commit's blob: the data build's seed pass,
+    which /update_stats never does), the same timestamp, or the same data in today's forms (given a blob and
+    re-dated).
 
     Returns:
         ([(a's version, b's version)], a's unmatched, b's unmatched)
@@ -88,7 +90,8 @@ def pair(a, b):
         return getattr(card, "blob_sha", None)
     rules = (lambda x, y: key(x) == key(y),
              lambda x, y: bool(blob(x)) and blob(x) == blob(y),
-             lambda x, y: getattr(x, "timestamp", None) == getattr(y, "timestamp", None) and not (blob(x) and blob(y)))
+             lambda x, y: getattr(x, "timestamp", None) == getattr(y, "timestamp", None) and not (blob(x) and blob(y)),
+             lambda x, y: not (blob(x) and blob(y)) and same_data(x, y))
     left, right, pairs = list(range(len(a))), list(range(len(b))), []
     for rule in rules:
         for i in list(left):
@@ -98,6 +101,11 @@ def pair(a, b):
                 left.remove(i)
                 right.remove(j)
     return (pairs, [a[i] for i in left], [b[j] for j in right])
+
+
+def same_data(a, b):
+    """Two versions hold the same data in today's forms (card_history.data_of: no timestamp, path or blob)."""
+    return not isinstance(a, dict) and not isinstance(b, dict) and data_of(a) == data_of(b)
 
 
 def data(card):

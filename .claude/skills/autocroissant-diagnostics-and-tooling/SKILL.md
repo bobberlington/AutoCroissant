@@ -412,10 +412,10 @@ Measured 2026-10-23 on the post-deploy rehearsal (main's cleanup vs work/history
 
 Both sides take any form of the card data (2026-10-23, `card_db.read_cards`): pickles, a `stats.json`, a `db/`
 folder, or a data commit of `--git DIR`'s repo. The history matches one name's versions up before counting: the same
-timestamp and blob; else the same blob (re-dated from git); else the same timestamp where one side has no blob (the
-seed pass gives a legacy version its commit's blob). So the data build's bookkeeping shows as `starts moved` and
-`kept versions with other data`, not as versions added and dropped; a kept version's data is compared without its
-timestamp.
+timestamp and blob; else the same blob (re-dated from git); else, where one side has no blob (the seed pass gives a
+legacy version its commit's blob, and may re-date it to that blob's intro), the same timestamp, or the same data in
+today's forms (`card_history.data_of`). So the data build's bookkeeping shows as `starts moved` and `kept versions
+with other data`, not as versions added and dropped; a kept version's data is compared without its timestamp.
 
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.
@@ -586,8 +586,8 @@ added: 0   removed: 0   modified: 796
   field change counts: {'created': 770, 'timestamp': 308, 'ability': 8, 'display_name': 6, 'problem': 3, 'stars': 2, 'types': 1}
 -- history --
 old: 364 names 475 versions   new: 355 names 453 versions
-versions added: 26 (26 names)   dropped: 48 (45 names)
-starts moved: 70   archive tags changed: 2   kept versions with other data: 51   cards with another blob or parser: 281
+versions added: 14 (14 names)   dropped: 36 (33 names)
+starts moved: 82   archive tags changed: 2   kept versions with other data: 52   cards with another blob or parser: 281
 ```
 
 - `created` 770: the data build dates every card from `site/Card Creation Dates.json`; the jetson does too once it
@@ -596,9 +596,11 @@ starts moved: 70   archive tags changed: 2   kept versions with other data: 51  
   by the seed pass, some among the 281). Against a current jetson only the re-dated ones stay (about 30).
 - `ability`, `display_name`, `problem`, `stars`, `types`: PSD changes the jetson had not read when it pickled (plus
   Shadow Duelist and 00 Table of Contents until both writers re-read them with the current parser).
-- History: dropped = the seed pass's duplicate versions (collapse); added = this build's new versions (changes,
-  edits); starts moved = re-dated versions and carried starts; other data = versions normalized (series filled or
-  moved under a parent, retired type names); archive tags = ZOEY!!!!! and White Palace dated from git.
+- History: dropped 36 = the seed pass's duplicate versions (the build log's `Duplicate versions dropped: 36`);
+  added 14 = this build's new versions (the summary's 9 changed and 5 edited); starts moved = re-dated versions
+  (12 of them legacy versions the seed pass also gave a blob, such as Assault Panda 1743730939 -> 1742636015) and
+  carried starts; other data = versions normalized (series filled or moved under a parent, retired type names);
+  archive tags = ZOEY!!!!! and White Palace dated from git.
 - Not shown, and also expected: `version` records (the data build gives every card one; `starts moved` shows
   where it moved a start), `parsed_values` on about 600 cards (the series carried into Card Edits.json), the
   duplicates' copies of their original's `version`.
@@ -758,6 +760,7 @@ If a script is added, this document must gain a routing row, a section, and a pr
 2026-10-22 (data build): RepositoryTraverser's body moved to commands/card_data.py (`CardBuild`); the `*_from_local` helpers the scripts call are there, unchanged.
 
 2026-10-23 (work/shadow-prep): `diff_stats.py` and `inspect_pickle.py` read the data build's `db/` JSON and data
-commits (`card_db.read_cards`, `--git`), need no `config.py`, and diff_stats matches versions the seed pass dated;
+commits (`card_db.read_cards`, `--git`), need no `config.py`, and diff_stats matches versions the seed pass dated
+(also a legacy version given a blob and re-dated, by its data);
 Workflow 4 (the shadow's daily check) and its numbers were measured on a Mac rebuild from seed 077337a9;
 `tests/test_diagnostics.py` runs both scripts on pickles, a db/ folder, a stats.json and a data commit.
