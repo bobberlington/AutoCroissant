@@ -1053,5 +1053,11 @@ grossly wrong, and tell the miss in the report and the comment. Built on AutoCro
   `test_g5_stays_a_refusal_under_the_floor`, `test_the_refusals_of_the_replay` (Defcon Panda now made, its baseline miss
   told), `test_a_drawing_miss_is_told_in_the_comment_and_the_commit` (card_guards: the comment, the bot commit's line,
   nothing on Discord).
+- **A blank drawing** (review 2026-10-23; the bake refuses a missed box whose render shows no change, `work/soft-parity`):
+  here F empty while Photoshop's image moved is G6 "changed where the bot sees no layer change", refused at any floor.
+  Not caught, unmeasured: one push that changes a layer the fork draws and a text layer it draws blank in the same box;
+  F is the first layer's, and the cross-check over F and D can stay under the floor, so the PNG is made with the old text
+  and the miss told. A tool save with a stale composite and a blank drawing has no F and no D: "PNG still current"
+  (as before the ruling).
 - **Open, not this ruling's:** `test_a_faint_beside_mismatch_note_names_the_case` fails on `work/push-guards` at 0b101e9
   already (BESIDE_CUT 8 makes its 10-level PNG re-exported, not current).
