@@ -136,6 +136,13 @@ def bevel_textures() -> bool:
     return hasattr(BevelEmboss, "texture_pattern")
 
 
+def colour_glyphs() -> bool:
+    """The fork draws OpenType-SVG colour glyphs (stoogedings' icons) in colour (round 6's fix/r6-color-glyphs)."""
+    from dataclasses import fields
+    from psd_tools.composite.text.raster import Options
+    return "color_glyphs" in {field.name for field in fields(Options)}
+
+
 def saves_preview() -> bool:
     """The fork stores a given preview (round 3's perf/save-with-preview, tag cards-20261021)."""
     from inspect import signature

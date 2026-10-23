@@ -825,11 +825,24 @@ def _fx_engine() -> tuple:
     return TextModel, layout, rasterize, Options, GlyphCache, PixelLayer
 
 
+def _key_ink(model, fills, layer, fonts, engine: tuple) -> np.ndarray:
+    """A key copy of the layer's text, runs refilled by fills(run) -> [(start, end, fill)]: where its red channel reaches."""
+    _, layout, rasterize, Options, GlyphCache = engine[:5]
+    runs = [replace(run, start=a, end=b, style=replace(run.style, fill=fill)) for run in model.runs for a, b, fill in fills(run)]
+    key = replace(model, runs=tuple(runs))
+    rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(), GlyphCache(),
+                           max_alloc_bytes=layer._psd._max_alloc_bytes)
+    if tuple(bbox) != tuple(layer.bbox):
+        raise Refused("styled-word", f"the key render {tuple(bbox)} does not line up with the text layer {tuple(layer.bbox)}")
+    return rgba[..., 0] * rgba[..., 3] >= KEY_INK      # the key over black: its red channel at Photoshop's threshold level 1
+
+
 def _word_mask(layer, start: int, end: int, fonts, engine: tuple) -> np.ndarray:
     """
     Where the layer's text[start:end] inks, over the layer's bbox: Effect Layers.jsx's key copy (the word white, every
     other run black) laid out and rasterized again; a fill changes nothing in the layout, so the key's alpha is the
-    raster's own.
+    raster's own. The icon font's colour glyphs keep their SVG colours in any key, so an all-black key finds them and
+    they stay out of the mask, as in the JSX's fix for badge pixels in FX layers (std-batch2 FX.md).
 
     Args:
         layer: The rasterized text layer
@@ -841,21 +854,17 @@ def _word_mask(layer, start: int, end: int, fonts, engine: tuple) -> np.ndarray:
     Returns:
         bool (H, W); raises Refused("styled-word") when the key does not line up with the layer's pixels
     """
-    TextModel, layout, rasterize, Options, GlyphCache = engine[:5]
-    model = TextModel.from_layer(layer)
-    runs = []
-    for run in model.runs:
+    model = engine[0].from_layer(layer)
+    black, white = (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)
+
+    def word(run):
         pieces = ((run.start, min(run.end, start)), (max(run.start, start), min(run.end, end)), (max(run.start, end), run.end))
-        for a, b in pieces:
-            if a < b:
-                fill = (1.0, 1.0, 1.0) if start <= a and b <= end else (0.0, 0.0, 0.0)
-                runs.append(replace(run, start=a, end=b, style=replace(run.style, fill=fill)))
-    key = replace(model, runs=tuple(runs))
-    rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(), GlyphCache(),
-                           max_alloc_bytes=layer._psd._max_alloc_bytes)
-    if tuple(bbox) != tuple(layer.bbox):
-        raise Refused("styled-word", f"the key render {tuple(bbox)} does not line up with the text layer {tuple(layer.bbox)}")
-    return rgba[..., 0] * rgba[..., 3] >= KEY_INK      # the key over black: its red channel at Photoshop's threshold level 1
+        return [(a, b, white if start <= a and b <= end else black) for a, b in pieces if a < b]
+
+    mask = _key_ink(model, word, layer, fonts, engine)
+    if uses_icon_font(layer):
+        mask &= ~_key_ink(model, lambda run: [(run.start, run.end, black)], layer, fonts, engine)
+    return mask
 
 
 def _issue_id(psd: PSDImage, layer) -> None:
@@ -1183,7 +1192,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also colour glyphs and glow tokens),
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
         overflow; ImportError when the fork edits TySh alone (no story_sync: Photoshop would show the story's old text)
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
@@ -1261,7 +1270,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         raise Refused("font", f"not resolved exactly: {', '.join(loose)}")
     if "overflow" in report.warnings:
         raise Refused("overflow", f"{which} does not fit")
-    if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # stoogedings' icons are SVG colour glyphs
+    if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # an SVG colour glyph the fork draws in one colour
         raise Refused("font", f"{which}: colour glyphs (the icon font) would be drawn in one colour")
     bbox = tuple(layer.bbox)
     if clip(bbox, psd.width, psd.height) != bbox:

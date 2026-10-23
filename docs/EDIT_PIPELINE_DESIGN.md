@@ -221,8 +221,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
    that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
    one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). An edit on a layer
-   set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs the engine draws
-   in one colour, so the bake refuses `font` unless an opaque overlay effect covers the layer (Mini Doomer's gradient).
+   set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs. A fork that
+   draws them in colour (round 6) bakes them; where the engine draws one in one colour (an older fork, or SVG it does not
+   cover: warning `monochrome_emoji`) the bake refuses `font` unless an opaque overlay effect covers the layer (Mini
+   Doomer's gradient).
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
