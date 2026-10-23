@@ -574,13 +574,15 @@ from their last reading (`backfill`, dated from git, `renamed_to` along exact re
 renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before).
 Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
 differ are one misread (`misreads`), and impossible history values become unknown with an `OUT OF RANGE: ...` problem
-keeping the old value (`unknown_values`): stars outside 0..7, a stat above 10 without an allowance (`allows_high`: the
-card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS names, or no current card), any stat of three digits;
-the kept ones above 10 are listed for the owner (`high_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+keeping the old value (`unknown_values`, only on versions read before parser 2: `unchecked`): stars outside 0..7, a
+stat above 10 without an allowance (`allows_high`: the card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS
+names, or no current card), any stat of three digits; the kept ones above 10 are listed for the owner (`high_values`),
+a parser-2 reading's out-of-range value is kept and listed by the data build (`kept_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
-history clone's `clean_history`, 2026-10-23)
+history clone's `clean_history`, 2026-10-23: for a tag linked along an exact rename chain, the step that reached its
+end; a recovered archive's `blob` is the bytes git deleted)
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename), `"moved_to"` when it moved into MDW
 (retired; set from the history clone, 2026-10-23), and `"backfill": True` on names that left
 stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind

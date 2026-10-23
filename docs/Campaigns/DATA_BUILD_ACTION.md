@@ -483,26 +483,40 @@ github_api reads it inside a try/except and takes the token from the environment
     creature) keeps its stored versions' path's readings (2 left out). Each is dated from git: the commit at its path
     with its timestamp, else (the April 2025 PICKLEs hold file mtimes) the one blob its path held from then to the
     PICKLE, dated by the commit that put that blob at that path (a reading never stands for a time its file sat at
-    another path: Stone Spikes' bytes in Items/Offense before 2025-03-24); undatable readings are skipped. Readings of
-    one blob at one path are one (the newer parse, the earlier start); at another path they are another reading (the
+    another path: Stone Spikes' bytes in Items/Offense before 2025-03-24) since the path last held other bytes (a
+    revert dates from the revert, as `blob_since`: King Dedede's 9fa2e2df reading of 2025-04-09 starts at 243a357,
+    2025-04-03, not at a0fcf23, before the 'xvs' edits; `GitIndex.arrival(blob, path, at)`); undatable readings are
+    skipped. Readings of one blob at one path are one (the newer parse, the earlier start) within one such stretch
+    (back after other bytes: two, and a run holding both starts at the return, `_first`); at another path they are
+    another reading (the
     same bytes print another card type there: Air, Earth, Fire, Water Totem and Crystal Bits minions until 2025-08-29,
     Mettaton EX/NEO, Igor Roballtowski and Shadow Queen minions with their stars until 2025-09-01). A reading of a
-    stored version's blob at its path only moves that version's start earlier (parser-only). The others, between the
+    stored version's blob at its path only moves that version's start earlier (parser-only), never across other bytes
+    at that path (`GitIndex.held`). The others, between the
     stored versions: one
     printing what the version before it prints (ability words in any case without icon tokens or punctuation, types,
-    stars, stats, card type; a field it could not know, an impossible value or a type list alone that differs while
-    the PNG stayed aside) is nothing; a run printing the same goes into the version after it when that prints it too
-    and knew all it knew (its earlier start carried: format-only), else becomes a legacy version (the old parse's
+    stars, each stat, card type; a field it could not know (a stat read as -1 alone: Uumuu's 2025 DEF), an
+    impossible value or a type list alone that differs while the PNG stayed aside) is nothing; a run printing the same
+    goes into the version after it when that prints it too and knew all it knew (its earlier start carried: format-only), else becomes a legacy version (the old parse's
     PSD fields, the next version's series, title, author, note, hidden and creatures, `version.restored_from` the
-    PICKLE, the start's commit and that commit's blob: a pair git had). A name in neither pickle gets its readings as versions, the last tagged
-    `archived` (`backfill`) from its path's deleting commit (none in git: nothing), `renamed_to` along an exact rename
-    chain to a listed card (`GitIndex.renamed`), `moved_to` into MDW. A second run finds every reading held;
+    PICKLE, the start's commit and that commit's blob: a pair git had). A name in neither pickle gets its readings as
+    versions, the last tagged `archived` (`backfill`) from its path's deleting commit (none in git: nothing) with the
+    bytes git deleted (Chestnut's 4155a8f and Chestnutter's 9894185, edited twice after the PICKLEs' last reading; the
+    record keeps the reading's blob), `renamed_to` along an exact rename chain to a listed card (`GitIndex.renamed`),
+    `moved_to` into MDW. **One time only** (2026-10-23 review): `recover` does nothing once the database holds a
+    restored version (`recovered_before`; the bot then reads no PICKLE at all) or any PICKLE commit did, a reverted one
+    included (`Pickles.done`, the bytes `restored_from` in the commit's pickles). So a restored version removed later on
+    purpose (a fold of the types-only ones below, dupes-5) stays removed, and undoing the recovery is a pickle-only
+    revert of its PICKLE (no code revert). Idempotent besides (`once=False`): a second pass finds every reading held;
   - `unknown_values`: an impossible history value (stars outside 0..7; a stat above 10 without an allowance, INT-4's
-    rule; with one, a stat of three digits) becomes unknown (stats -1, stars None), the old value kept in an `OUT OF
-    RANGE: ...` problem; the build runs it after its versions and G3 refuses any left (the range check), the seed
-    report counts it. An allowance (`allows_high`): the card's allow_high_stats, a name on the retired
-    EXCESSIVE_STAT_EXCLUSIONS (Royal Eradicator Main Cannon, Pix, Tainted Lazarus, Sonic, Twin Emperors), or no current
-    card to tell (archived); the values it keeps above 10 are listed for the owner (`high_values`, below);
+    rule; with one, a stat of three digits) of a version read before parser 2 (`unchecked`: no `parser_version`, the
+    validator had no range check) becomes unknown (stats -1, stars None), the old value kept in an `OUT OF RANGE: ...`
+    problem; the build runs it after its versions and G3 refuses any such left (the range check), the seed report
+    counts it. A parser-2 reading's value is kept (its problem showed when it was read; an allow_high_stats entry added
+    later allows it) and the build lists the names ("History values out of range kept ...", `kept_values`). An
+    allowance (`allows_high`): the card's allow_high_stats, a name on the retired EXCESSIVE_STAT_EXCLUSIONS (Royal
+    Eradicator Main Cannon, Pix, Tainted Lazarus, Sonic, Twin Emperors), or no current card to tell (archived); the
+    values it keeps above 10 are listed for the owner (`high_values`, below);
   - with the history clone: `misreads`: consecutive versions whose PSD blobs differ while the card's PNG blob is the
     same when the older one's bytes came to its path and at the newer one's start (+6 h each, at least 6 h apart: a
     push's PNG export can trail its PSD) and whose data differ in the type list alone are one version read twice: the
@@ -522,28 +536,40 @@ github_api reads it inside a try/except and takes the token from the environment
     that knew the most; the card after it (or an archived record) takes a run only when it knew all of it;
   - with the bot's history clone (`HISTORY_CLONE`; skipped without one): `date_archive`, so an archive tag made by the
     run's clock takes its deleting commit's date, an exact rename's `renamed_to` (else its PNG's exact rename), or
-    `moved_to` for a PSD moved into MDW (retired, not deleted);
+    `moved_to` for a PSD moved into MDW (retired, not deleted); a tag linked along a chain is dated by the step that
+    reached its end, the old name's last day and where the new name starts (`intro_of`): Azamoth the Possessed King at
+    d64fc8d (the rename to Vessel, 2025-09-02 00:05), not 72e33d3 (a move within its name 1.5 h before); Pandiety at
+    b3d1e7c (the move into MDW/Unfinished), not 1a036c2 (its rename to Pandeity, a name no record holds, 44 min before);
   - with the history clone: `commits_of`: a start carried from a version stored without its commit gets the one commit
     at the version's path with that time (`blob_at`, as the seed does), so the bot's records name it too (Stone Spikes
     from 2025-08-30: 4c32fcb8).
-  The step runs at every /update_stats; an unexpected error in it is one line ("History cleanup skipped (...)."), never
-  a failed run.
+  The step runs at every /update_stats on a copy of the cards and history, put into the database only when it ran
+  through (`card_data.cleaned`, 0.03 s for the jetson's copy): an unexpected error in it is one line ("History cleanup
+  skipped (...)."), never a failed run and never half a cleanup saved.
   Measured on the jetson's 15:41 pickles at TTSCardMaker 6e50c3ee: 755 -> 446 versions, 448 -> 354 names (309 dropped on
   293 cards, 63 normalized), 289 version records; ZOEY!!!!! (renamed to Z!!!!! in 35adb383) and White Palace (moved to
-  MDW/The Morgue in b6330730) dated from git. With the recovery (work/history-recovery c1299e8, merging
-  work/history-fixes 93e3458; the bot clone at main 8861696's 32 PICKLEs; rehearsal `wt/scratch/recovery/runs/H_*`):
-  755 -> 1090 versions, 448 -> 655 names: 699 versions recovered on 553 names (by the PICKLE whose reading knew most:
-  3be93f3 4, ad4b6b4 16, d1840e6 34, d77fb6a 278, e5f5393 367; 623 on current cards, 76 on archived names), 182
+  MDW/The Morgue in b6330730) dated from git. With the recovery (work/history-recovery f12d223, merging main e837f68
+  and work/history-fixes 93e3458; the bot clone at main's 32 PICKLEs; rehearsal `wt/scratch/recovery/runs/I_*`):
+  755 -> 1089 versions, 448 -> 655 names: 698 versions recovered on 553 names (by the PICKLE whose reading knew most:
+  3be93f3 4, ad4b6b4 16, d1840e6 33, d77fb6a 278, e5f5393 367; 622 on current cards, 76 on archived names), 171
   starts moved earlier by a reading, 64 cards gone before archiving archived (38 with renamed_to, 25 moved_to into
-  MDW, 3 deleted: Amy Rose's Hammer, Sacrifice, Tainted Esau), 55 type misreads merged, 12 impossible values unknown
-  (7 names), 309 duplicates dropped, 101 normalized, 304 carried starts given their commit (3 left without one: no
-  commit at that time); 0 cards modified; the next run writes nothing; the forced re-parse adds no version (13 current
-  cards' data change: the 7 printed-star ones and the 6 DATES2-3 abilities); every one of the 755 stored versions'
-  data is still held by its name, no name lost, no earliest start later (614 earlier). Restored versions: 0 whose blob
-  and from commit git never paired, 0 at a path that did not hold their blob at their start, 6 consecutive pairs
-  sharing a blob (the minion -> item/creature moves above). The seed pass after it and the seed pass of the raw 15:41
-  pickles give the same result (0 differences; each idempotent); it re-dates 18 cards and 3 versions by the bytes'
-  first commit (below), so the bot's and the website's earliest starts differ on 22 names until the cutover.
+  MDW, with ZOEY!!!!! and White Palace; 3 deleted: Amy Rose's Hammer, Sacrifice, Tainted Esau; 17 tags hold bytes git
+  deleted after the last reading), 55 type misreads merged, 12 impossible values unknown (7 names), 309 duplicates
+  dropped, 101 normalized, 306 carried starts given their commit (3 left without one: no commit at that time); 0
+  cards modified; the next run writes nothing (the recovery is done: no PICKLE read); the forced re-parse adds no
+  version (13 current cards' data change: the 7 printed-star ones and the 6 DATES2-3 abilities); every one of the 755
+  stored versions' data is still held by its name, no name lost, no earliest start later (603 earlier). Restored
+  versions: 0 whose blob and from commit git never paired, 0 at a path that did not hold their blob at their start,
+  6 consecutive pairs sharing a blob (the minion -> item/creature moves above). The 2026-10-23 review's fixes changed:
+  105 versions (77 restored, 28 stored with a carried start) started before the 2025-03-29/04-02 'xvs' edits with the
+  same bytes back at the 2025-04-03 'revert text 1' commits (61 with another PNG between); 0 now in the bot's run, the
+  forced re-parse and both seed passes (0 without the recovery too), so 11 fewer starts move (King Dedede, The Freezer,
+  Balloon Boy, Old Freddy, HR-D3, Toriel, Necrodeus... start 2025-04-03 again); Uumuu's DEF -1 reading is no version
+  (698, not 699); 3 archive tags moved to the step that reached the chain's end (Azamoth the Possessed King and
+  Militron No Armor to d64fc8d, where their new names start; Pandiety to b3d1e7c). The seed pass after it and the seed
+  pass of the raw 15:41 pickles give the same result (0 differences; each idempotent; after the bot's run the seed
+  skips the recovery as done); it re-dates 18 cards and 3 versions by the bytes' first commit (below), so the bot's
+  and the website's earliest starts differ on 22 names until the cutover.
 - **Open history decisions (2026-10-23; owner).** Findings in `wt/scratch/history-1023/all-findings.json`. Decided the
   same day from the owner's rules (archive, never drop; skip identical versions, keep the earliest date; only printed
   text counts) and done by work/history-recovery: all 64 cards dropped before archiving existed are archived with
@@ -558,7 +584,8 @@ github_api reads it inside a try/except and takes the token from the environment
     lands their dup_of entries, which make them cards). `/update_stats` prints them each run.
   - **dupes-5**: the 4 rulebook pages (09, 11, 12 Reactions2, 22 Negation) keep versions that change nothing printed
     (hidden text read by the old parser) until their old blobs are re-read once; there is no idempotent marker for that
-    inside `/update_stats`, so it is a one-off on copies.
+    inside `/update_stats`, so it is a one-off on copies (after the recovery ran, so no PICKLE reading brings the
+    versions back: the recovery is one time only).
   - **Landing order**: land work/history-fixes before main's first post-deploy `/update_stats`. Otherwise main's dedupe
     keeps Tainted Bethany's blob-less pre-parser-2 reading of 2026-10-19 and drops the c532847b parser-2 one; the data
     shown is the same, only the blob and parser record differ (nothing can bring the dropped record back).
@@ -577,8 +604,9 @@ github_api reads it inside a try/except and takes the token from the environment
     the any-path rule, restored versions should take it too (`_locate`, `_dated`), if he picks "a name's own path",
     `start_of` should. On the cleaned 15:41 copy at 6e50c3ee the seed and the build no longer date 9 versions and 3 cards
     (Balloon Boy, Old Freddy, Dark Mind Eye; King Dedede's 9fa2e2df version, Holo Defense API's renamed after its
-    revert) across other bytes (12 before, 0 now; idempotent). With the recovery, 22 names' earliest start moves
-    earlier than the bot's, to when their PSD's bytes first appeared under another path or a name the database never
+    revert) across other bytes (12 before, 0 now; idempotent); with the recovery too since its 2026-10-23 review fix
+    (105 at d5a904e, 0 now: a PICKLE reading dates from the revert as well). With the recovery, 22 names' earliest
+    start moves earlier than the bot's, to when their PSD's bytes first appeared under another path or a name the database never
     held (Shell Shield, Dragon Mount, Unbreakable Strength 2025-02-10 -> 2023-11, the misspelt `Auxillary/` folder; 12
     rulebook pages first committed as 3_ ... 8_ and the 2 covers; 4 status effects moved within minutes; Sputnik). A move or rename keeps
     the version going, so this is by the rule; say so if the owner wants a name's history to start at its own path.
@@ -589,13 +617,14 @@ github_api reads it inside a try/except and takes the token from the environment
     Lazarus 110/110/110/110 (4 versions; its blobs re-parse to 7/4/5/5), God Tamer 7/9/10/15 and Blank Card 55/55 (no
     allowance), stars 10/15/17/36 on Spawn of the Forbidden One (3), Chestnutter, Michaels Blessing, Indoctrination.
     Say which kept ones are misreads, or which unknown ones were printed (an allow_high_stats entry keeps them).
-  - **27 restored versions differ from the next in types alone while the PNG changed** (so no misread by the rule):
-    19 Status Effects2, Abigail, Barry The Barrel, Blazing, Burning, Chilled, Computer Virus, Cortez, Drawcia Soul,
-    Engorged, Flurrie, Galacta Knight, Grimora, Hive Knight, Living Bread, Lost Kin, Mantis Lords, Mosling, Paintbrush
-    ([dark, darkmatter, light, machine] -> [nme, support]), Poison, Reverse Mushroom, Smoldering, Stuffed, Tainted
-    Lazarus (2), The Bull, Warcraftian Shaman. Many look like old-parser readings (fire/panda/machine before the debuff
-    badges) rather than printed changes; their old PSD blobs are not in the local clones, so this can't be checked
-    offline. Say whether to fold them like misreads.
+  - **26 restored versions differ from their neighbour in types alone while the PNG changed** (so no misread by the
+    rule; the PNG blob differs between the two starts in all 26, checked again by the review): 19 Status Effects2,
+    Abigail, Barry The Barrel, Blazing, Burning, Chilled, Chomp, Cortez, Drawcia Soul, Engorged, Flurrie, Galacta Knight,
+    Grimora, Hive Knight, Living Bread, Lost Kin, Mantis Lords, Mosling, Paintbrush ([dark, darkmatter, light, machine]
+    -> [nme, support]), Poison, Reverse Mushroom, Smoldering, Stuffed, Tainted Lazarus, The Bull, Warcraftian Shaman.
+    Many look like old-parser readings (fire/panda/machine before the debuff badges) rather than printed changes; their
+    old PSD blobs are not in the local clones (tc-full.git is blob:none), so this can't be checked offline. Say whether
+    to fold them like misreads: the recovery is one time only, so a fold (a new cleanup rule) sticks.
   - **Kept by the rules** (no change; say so to change them): dupes-3/INT-2, the 6 versions dated before their PSD's
     first commit (the Ahn'Qiraj cards' author times of rebased commits 48a9d42 and d5d8a04; Z!!!!! v0 of 2026-04-15
     matches no commit): the earliest date stays, and Z!!!!! v0's data differs from the version after it. dupes-4, the
