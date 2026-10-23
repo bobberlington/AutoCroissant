@@ -553,7 +553,7 @@ def _blob_of(card: CardInfo, index: GitIndex) -> Optional[str]:
 
 
 def _only_types(a: CardInfo, b: CardInfo) -> bool:
-    """Whether two versions differ in their types alone (same_data's rules for the rest)."""
+    """Whether the newer version b differs from a in its types alone and knew all a knew besides (knows)."""
     try:
         if data_of(a)["types"] == data_of(b)["types"]:
             return False
@@ -561,7 +561,7 @@ def _only_types(a: CardInfo, b: CardInfo) -> bool:
         return False
     other = deepcopy(a)
     other.types = list(getattr(b, "types", None) or [])
-    return same_data(other, b)
+    return knows(b, other)
 
 
 def _same_png(index: GitIndex, a_path: str, a_at: Optional[float], b_path: str, b_at: Optional[float]) -> bool:
