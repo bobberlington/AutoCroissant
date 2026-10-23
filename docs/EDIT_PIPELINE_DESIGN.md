@@ -44,7 +44,13 @@ the workflow facts were re-checked.
   in the edits file silences STATS TOO HIGH for Sonic and the Cannon (`commands/psd_parser.py:1031-1033`).
 - **Name.** The bot names a card from its file stem (`commands/card_models.py:209-211`) and, since 2026-10-21 (question 1,
   `PARSER_VERSION` 2), reads the printed title into `display_name` when it differs (`psd_parser._printed_title`: the visible
-  `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card; 157 of 813 cards, shown as printed, letter case included: the user's call of 2026-10-21); a Card Edits.json `name` still wins, with the title kept in `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
+  `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card, else the one layer in
+  the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus, Sans; not on rule
+  pages; any visible text layer there, in Text or not, so a card with no other title and one header label named after
+  its text would read that label: the old-vs-new census is the guard); 157 of 813 cards, shown as printed, letter case
+  included: the user's call of 2026-10-21; on 2026-10-23's 812
+  PSDs 117 before the own-text rule, 119 with it); a Card Edits.json `name` still wins, with the title kept in
+  `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
   after the card, 4 hide it (Sonic's title is a pixel layer), 5 are rasterized.
 - **Ability.** 605 cards have exactly one visible `Ability` directly under top-level `Text` (box text, Single-line composer);
   34 elsewhere, 7 hidden and re-laid out, 5 several visible, 19 empty (the categories overlap, 670 > 651: to confirm). The
@@ -67,8 +73,9 @@ the workflow facts were re-checked.
   merged preview when the document changed (`psd_image.py:295-327`; 20-45 s under load).
 - **The edits file today.** `{"about": ..., "cards": {...}}`, 56 cards: `name` 29, `series` 28, `subseries` 28, `_by`/`_at` 56.
   22 of the 29 names equal the printed title already (Sans "snas.", Kyle, Clot_Black "Black Clot"); 7 differ, read back from
-  (2026-10-21, parser read: 20 are redundant, 21 with Thunderfury aligned; Sans and Papyrus stay: their title layers are named
-  after the print, not `Name`, so the parser reads no title for them)
+  (2026-10-21, parser read: 20 are redundant, 21 with Thunderfury aligned; Sans and Papyrus stayed: their title layers are
+  named after the print, not `Name`; since 2026-10-23 the parser reads a layer named after its own text, so they are
+  redundant too: a dry bake drops both)
   `Text/Name` with the fork: Clot_White "White CLot" (typo), PoD08-12 "M.O.A.B" / "D.D.T" / "B.F.B" / "Z.O.M.G" / "B.A.D" (the
   edit adds the trailing dot), Thunderfury "[Thunderfury: Blessed Blade of the Windseeker]" (the edit drops the brackets).
   **By section 3's rule those 7 are name jobs today**; no stat or ability job exists. Whether the 7 titles are to be reprinted
@@ -105,7 +112,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
 | `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count) | field removed |
-| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
+| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renames it after the new title, as Photoshop renames a layer it named (`Edit.renamed`; `gate_bytes` allows exactly that name), so the parser still reads it; refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
 | `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
@@ -233,7 +240,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    hidden styled digit's block comes back, several such digits refuse `unsupported-card`; a hidden styled digit beside a visible
    unstyled one (Mettaton_EX Atk 6) is left alone, so the path matters (7 -> 10 -> 4 styles 4 with the 6's effect, 7 -> 4 moves
    nothing). Two rows (idea 13): Top shows the value and Bottom 0 up to 10, then Top none
-   and Bottom value - 10 (`psd_edit.set_stat`). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
+   and Bottom value - 10 (`psd_edit.set_stat`). A bar with a digit mask wholly off the canvas (or empty) refuses
+   `unsupported-card` before anything toggles, naming the digits or the whole bar (2026-10-23: Green_Mage's four bars sit
+   below its 2400 px canvas and its printed cells are pixel layers; the empty render region was a `ValueError`, an
+   `error` that failed the run). A mask that starts on the canvas and reaches past it (Pure_Vessel) bakes.
+   Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
    the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
@@ -592,7 +603,9 @@ step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digi
 carry enabled effects (which one the row shows is ambiguous) and the overlay word or FX layers the chart has no style for (Smoldering,
 +2 DEF, Despair...; since BUG 2, 2026-10-23, also an FX layer whose words would fall in a badge, a styled FX layer whose
 JSX name would move to other words, a badge typed as text onto a badge layer, a styled status word a digit touches beside a
-whole-word one, an FX layer that is no pixel layer), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
+whole-word one, an FX layer that is no pixel layer), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
+`hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`),
+`stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
 words have no pixels: a styled word gets its FX layer.
@@ -655,7 +668,10 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 1. **Yes**: the parser reads `Text/Name` into `display_name` (edits still override); the 22 name edits that equal the print
    become redundant and are dropped by the bake's redundancy rule; a baked rename leaves the file. **Done 2026-10-21**
    (`PARSER_VERSION` 2: 157 cards gain a `display_name`; 20 edits redundant now, 21 with Thunderfury; Sans and Papyrus have no
-   readable `Name` layer; the next `/update_stats` re-parses every card once).
+   readable `Name` layer; the next `/update_stats` re-parses every card once). 2026-10-23: their layers are named after their
+   own text, which the parser now reads (Papyrus "The Great Papyrus", Sans "snas."; no version bump: re-parse the two with
+   `/update_stats cards:Papyrus, Sans` and, during the shadow, a card-sync dispatch with `cards`: BUGS_AND_IMPROVEMENTS
+   V6 has the order), so both edits are redundant.
 2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`). 2026-10-21 audit: the regeneration is 9.4 s of a
    23 s bake (a full-canvas composite); the merged PNG the driver already holds is that flattened image, so a fork
    `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).

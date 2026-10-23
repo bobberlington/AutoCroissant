@@ -232,11 +232,12 @@ def _overlays(psd: PSDImage, texts: list) -> list:
 
 def _template(psd: PSDImage, texts: list, name: str, stats, icons, overlays, rulebook: bool) -> dict:
     """
-    The title layer the parser reads (Text/Name, else a root Name or one named after the card: no rename needed, L6),
-    the Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7); rule pages get no deviations.
+    The title layer the parser reads (Text/Name, else a root Name, one named after the card or after its own text: no
+    rename needed, L6), the Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7); rule pages get no
+    deviations.
     """
     text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
-    titles = PSDParser.title_layers(psd, texts, name)
+    titles = PSDParser.title_layers(psd, texts, name, own_text=not rulebook)
     abilities = [layer for layer in texts if layer.is_visible() and layer.name.strip().lower() == "ability"]
     deviations = []
     if not rulebook:

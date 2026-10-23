@@ -31,10 +31,11 @@ from psd_tools.psd.base import ListElement
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TYPE_REGION_RATIO, CardValidator,
-                                 IconVocabulary, PSDParser, stars_from_psd, title_text)
+from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TITLE_REGION_RATIO,
+                                 TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key, named_after_text,
+                                 stars_from_psd, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
-from global_config import FONT_ALIASES
+from global_config import FONT_ALIASES, RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -212,6 +213,7 @@ class Edit:
     #   which it still covers (gate_fx)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
+    renamed: Optional[str] = None  # a title layer named after its text: its new name, the new title (as Photoshop does)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
@@ -246,6 +248,12 @@ class Baked:
 # ========================
 def _pad(box, reach: int, psd: PSDImage) -> tuple:
     return clip((box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach), psd.width, psd.height)
+
+
+def _off_canvas(box, psd: PSDImage) -> bool:
+    """Whether a bbox has nothing on the canvas (wholly outside it, or empty): clipped, it is empty."""
+    x0, y0, x1, y1 = clip(box, psd.width, psd.height)
+    return x1 <= x0 or y1 <= y0
 
 
 def _alpha(layer) -> Optional[np.ndarray]:
@@ -431,8 +439,8 @@ def _copy(psd: PSDImage, layer) -> Optional[str]:
                  and other.is_visible() and words(other.text) == own and _shows(psd, other)), None)
 
 
-def _no_title(psd: PSDImage) -> str:
-    """Why the parser reads no title layer (name_layer's refusal)."""
+def _no_title(psd: PSDImage, own_text: bool = True) -> str:
+    """Why the parser reads no title layer (name_layer's refusal); own_text: title_layers' last rule applies."""
     group = _text_group(psd)
     if group is None:
         return "no Text group"
@@ -443,28 +451,34 @@ def _no_title(psd: PSDImage) -> str:
         if not any(_is_text_layer(child) and child.is_visible() for child in named):
             return "hidden name layer"
         return f"{len(named)} Name layers, none in the title region"
+    own = [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+           and layer.bbox[1] < psd.height * TITLE_REGION_RATIO and named_after_text(layer)]
+    if own_text and len(own) > 1:
+        return f"{len(own)} layers in the title region named after their text"
     titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
               and child.bbox[1] < psd.height * 0.15]
-    return f"title layer named {titles[0]!r}, not Name or the card's name" if titles else "no Text/Name layer"
+    names = "Name, the card's name or its text" if own_text else "Name or the card's name"
+    return f"title layer named {titles[0]!r}, not {names}" if titles else "no Text/Name layer"
 
 
-def name_layer(psd: PSDImage, card: str = ""):
+def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
     """
     The card's title layer: the one visible text layer the parser reads the printed title from (PSDParser.title_layers:
     Text/Name, else a Name layer in the title region, else a layer under Text named after the card, else one elsewhere
-    in the title region: a status effect's top-level title).
+    in the title region: a status effect's top-level title, else the one there named after its text: Sans's 'snas.').
 
     Args:
         psd: The open card
         card: The card's name (file stem), which a title layer may be named after
+        own_text: Whether the last rule applies (False on a rule page, as the parser: _own_text)
 
     Returns:
         The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
         title split over layers, a copy for an effect that shows)
     """
-    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
+    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card, own_text)
     if not found:
-        raise Refused("unsupported-card", _no_title(psd))
+        raise Refused("unsupported-card", _no_title(psd, own_text))
     if len(found) > 1:
         raise Refused("unsupported-card", f"{len(found)} title layers")
     if PSDParser.split_title(psd, found, title_text(found[0].text), card):
@@ -475,18 +489,29 @@ def name_layer(psd: PSDImage, card: str = ""):
     return found[0]
 
 
-def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
-    """The printed title, whitespace collapsed; None when name_layer refuses."""
+def read_name(psd: PSDImage, card: str = "", own_text: bool = True) -> Optional[str]:
+    """The printed title, whitespace collapsed; None when name_layer refuses (own_text: as name_layer's)."""
     try:
-        return collapse(name_layer(psd, card).text)
+        return collapse(name_layer(psd, card, own_text).text)
     except Refused:
         return None
+
+
+def own_text_title(layer, card: str = "") -> bool:
+    """Whether name_layer found the layer by its own text alone (title_layers' last rule): a bake renames it."""
+    return layer.name.strip() != "Name" and name_key(layer.name) != name_key(card) and named_after_text(layer)
 
 
 def _card_name(parsed: dict) -> str:
     """The parse's card name (file stem)."""
     info = parsed.get("info")
     return info.name if info is not None else parsed["card"].get("name") or ""
+
+
+def _own_text(parsed: dict) -> bool:
+    """Whether a title named after its own text counts for the parse's card: not on a rule page (its headings)."""
+    info = parsed.get("info")
+    return RULEBOOK_DIR not in ((info.path if info is not None else parsed["card"].get("path")) or "")
 
 
 def story_sync() -> bool:
@@ -1067,7 +1092,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
             else:
                 try:
-                    name_layer(psd, _card_name(parsed))
+                    name_layer(psd, _card_name(parsed), _own_text(parsed))
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
@@ -1809,10 +1834,21 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         value: 0-10 (one row) or 0-20 (two rows)
 
     Returns:
-        Edit over the toggled digits; raises Refused for other row shapes and ambiguous effects (unsupported-card),
-        values the rows cannot show (stat>10) and unreadable effect stacks (parity)
+        Edit over the toggled digits; raises Refused for other row shapes, a digit mask (or the whole bar) off the
+        canvas and ambiguous effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect
+        stacks (parity)
     """
     rows = template_rows(psd, stat)
+    for row in rows:                            # Green_Mage: masks below the canvas, the cells drawn as pixels
+        boxes = {name: tuple(layer.mask.bbox) for name, layer in row.digits.items()}
+        off = sorted(name for name, box in boxes.items() if _off_canvas(box, psd))
+        if off:                                 # a toggle there changes nothing (and its region would be empty)
+            what = (f"the bar {row.group.name!r} lies" if len(off) == len(boxes) else
+                    f"digit {off[0]} of the bar {row.group.name!r} lies" if len(off) == 1 else
+                    f"digits {', '.join(off)} of the bar {row.group.name!r} lie")
+            raise Refused("unsupported-card", f"{stat}: {what} outside the card (digit masks "
+                                              f"{union_box([boxes[name] for name in off])} on the {psd.width}x{psd.height} "
+                                              "canvas): a toggle would change nothing on the card")
     old = stat_value(rows)
     if parsed["card"].get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the row shows {old}")
@@ -1834,10 +1870,12 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                   card: str = "") -> Edit:
+                   card: str = "", own_text: bool = True) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
-    glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest.
+    glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
+    by its own text alone (own_text_title: Sans's 'snas.') takes the new title as its name, as Photoshop renames a layer
+    it named, so the parser still reads it (gate_bytes allows that name).
 
     Args:
         psd: The open card (edited in place)
@@ -1847,6 +1885,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
         card: The card's name (file stem), for name_layer
+        own_text: name_layer's (False on a rule page: _own_text)
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
@@ -1874,8 +1913,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    layer = name_layer(psd, card) if which == "name" else ability_layer(psd)
+    layer = name_layer(psd, card, own_text) if which == "name" else ability_layer(psd)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
+    own = which == "name" and own_text_title(layer, card)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
     start, end = changed_range(old_text, text)
@@ -1975,12 +2015,15 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     made = _regenerate_fx(psd, layer, text, fresh, fonts, engine) if fresh else []
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in made + [fx for fx, _ in rebuilt]]
     region = union_box([_pad(box, pad, psd) for box, pad in reach])
+    if own:                                     # else the parser would no longer find the title
+        layer.name = collapse(text)
     return Edit(which, old_text, text, [layer], [_record_index(layer)], region, story=story, band=band,
                 hidden=[_record_index(overlay) for overlay in hide],
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
-                fx_names=[fx.name for fx in fx_layers(psd, layer)] if which == "ability" else [], notes=notes, held=held)
+                fx_names=[fx.name for fx in fx_layers(psd, layer)] if which == "ability" else [], notes=notes, held=held,
+                renamed=layer.name if own else None)
 
 
 # ========================
@@ -3320,14 +3363,15 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
     Compare the layer records of the old and new PSD: only the edited layers change, and only in the fields their
     kind of edit touches (a toggle: exactly one flag byte per toggled digit, plus the effect blocks its Edit declares
     moved, the same bytes leaving one digit's record and landing on another's, or leaving only when cleared; a text
-    edit: rect, channels, EngineData; its FX layers: exactly the declared records gone and come, the new ones pixel
-    records carrying the chart's effect blocks byte for byte, the rebuilt ones their rect and channels (and the declared
-    name; never an effect block, _fx_rebuilt); a hidden overlay word layer: one flag byte; a star or
-    type icon shown or hidden: one flag byte; one moved: its rect and mask moved by the declared offset, only its
-    transform and anchor blocks changed (_record_moved); a star's copy: the source's record moved, a new id and name;
-    a type icon from Types/: a pixel record carrying the reference icon's effect blocks). Records are paired in file
-    order once the FX records declared removed and added and the copies and icons declared added are taken out. A
-    refusal over a stars or types edit's record carries its field.
+    edit: rect, channels, EngineData, and the declared name of a title named after its text (Edit.renamed); its FX
+    layers: exactly the declared records gone and come, the new ones pixel records carrying the chart's effect blocks
+    byte for byte, the rebuilt ones their rect and channels (and the declared name; never an effect block,
+    _fx_rebuilt); a hidden overlay word layer: one flag byte; a star or type icon shown or hidden: one flag byte; one
+    moved: its rect and mask moved by the declared offset, only its transform and anchor blocks changed (_record_moved);
+    a star's copy: the source's record moved, a new id and name; a type icon from Types/: a pixel record carrying the
+    reference icon's effect blocks). Records are paired in file order once the FX records declared removed and added
+    and the copies and icons declared added are taken out. A refusal over a stars or types edit's record carries its
+    field.
 
     Returns:
         ([(index, name, changed fields)] in file order ("removed" at the old index, "added" at the new one), differing
@@ -3336,15 +3380,17 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
     old, new = layer_records(old_path), layer_records(new_path)
     dropped = Counter(name for edit in edits for name in edit.dropped)
     added = {name: blocks for edit in edits for name, blocks in edit.fx}
-    allowed = {}
+    allowed, names = {}, {}
     for edit in edits:
         kind = "stat" if edit.field in STAT_FIELDS else "text"
         for index in edit.records:
-            allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind])
+            allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind] | ({"name"} if edit.renamed else set()))
+            names[index] = edit.renamed
         for index in edit.hidden:
             allowed[index] = ("overlay", ALLOWED_RECORD_FIELDS["overlay"])
-        for index, *_ in edit.rebuilt:
+        for index, _, name in edit.rebuilt:
             allowed[index] = ("fx", ALLOWED_RECORD_FIELDS["fx"])
+            names[index] = name                 # a rebuilt FX layer's declared name (_fx_rebuilt checks it too)
     rebuilt = {index: spec for edit in edits for index, *spec in edit.rebuilt}
     toggles = {index for edit in edits for index in edit.toggled}
     allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
@@ -3402,6 +3448,8 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
             kind, ok = allowed.get(j, ("", set()))
             if not set(fields) <= ok:
                 raise Refused("bytes", f"layer {j} {a['name']!r} changed {', '.join(fields)}")
+            if "name" in fields and b["name"] != names.get(j):
+                raise Refused("bytes", f"layer {j} {a['name']!r} renamed {b['name']!r}, not {names.get(j)!r}")
             if "flags" in fields:
                 differing = sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
                 if kind in ("stat", "overlay", "toggle") and differing != 1:
@@ -3569,8 +3617,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         raise Refused("reparse", "new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    if "name" in jobs and read_name(psd, _card_name(parsed)) != collapse(jobs["name"]):
-        raise Refused("reparse", f"the title reads {read_name(psd, _card_name(parsed))!r}")
+    title = read_name(psd, _card_name(parsed), _own_text(parsed)) if "name" in jobs else None
+    if "name" in jobs and title != collapse(jobs["name"]):
+        raise Refused("reparse", f"the title reads {title!r}")
     return new
 
 
@@ -3795,7 +3844,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed)))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     after = record_map(new)

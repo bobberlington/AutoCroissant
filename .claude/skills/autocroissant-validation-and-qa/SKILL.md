@@ -45,7 +45,7 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 | # | Evidence | How to measure | Baseline (2026-07-11) | What it proves |
 |---|---|---|---|---|
 | 1 | **Byte-identical golden-card parses** | `parse_one.py` / `gap_trace.py` output diff before vs after; ability text byte-compared to the stats.pkl entry | Golden inventory table in section 3 | The parser produces exactly the same output on cards known to exercise the hard paths. Byte-level: even one changed space in ability text is a real change (whitespace is load-bearing — the gaps are the type-injection signal; see the 2026-02-08 saga, 1c26747 through 3bbaa2b/4bcee6b) |
-| 1b | **Old-vs-new parser equality over EVERY PSD** (added 2026-10-19) | section 4.1 method A: import the git-HEAD `psd_analyzer` and the working-tree one side by side, parse all card PSDs with both, compare every field | 2026-10-19: 813 PSDs, **0 differences** (the icon-font change); 2026-10-21: 813 PSDs, **159 differences, every one intended** (157 `display_name` from the printed title, `STATS TOO HIGH` on Sonic and Royal Eradicator Main Cannon) | The parser change is behavior-neutral on today's corpus, with no pickles, no network, no API budget. Stronger than a sweep diff for "did my code change anything", because it isolates the code from upstream PSD edits |
+| 1b | **Old-vs-new parser equality over EVERY PSD** (added 2026-10-19) | section 4.1 method A: import the git-HEAD `psd_analyzer` and the working-tree one side by side, parse all card PSDs with both, compare every field | 2026-10-19: 813 PSDs, **0 differences** (the icon-font change); 2026-10-21: 813 PSDs, **159 differences, every one intended** (157 `display_name` from the printed title, `STATS TOO HIGH` on Sonic and Royal Eradicator Main Cannon); 2026-10-23 (title-own-text): 812 PSDs, **2 differences, both intended** (`display_name` of Papyrus and Sans) | The parser change is behavior-neutral on today's corpus, with no pickles, no network, no API budget. Stronger than a sweep diff for "did my code change anything", because it isolates the code from upstream PSD edits |
 | 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (several minutes on 2026-10-23; the fork-only tests run under `~/.venvs/ac-py314-fork`; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-23: **1346 collected** (the landing gates read 882 passed / 61 skipped on 2026-10-22 and 1161 passed / 2 failed before the TTSCardMaker push on 2026-10-23); 352 passed on 2026-10-21, 238 on 2026-10-20 | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`, `card_data.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
 | 2 | **diff_stats deltas on a full sweep** | sandbox sweep, then `diff_stats.py before.pkl after.pkl --history before_old.pkl after_old.pkl` | HEAD vs working on 2026-10-23: `818/818, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
 | 3 | **Validator problem-card count** (must not increase) | pickled surface: `inspect_pickle.py --problems`; full surface: re-validation one-liner (section 2) | 2026-10-23: pickled **0**; full validation **exactly 1** (Computer Virus, listed in section 2). 2026-07-11: 1 and 5 | Extraction quality did not regress anywhere the validator can see |
@@ -383,7 +383,15 @@ commit pages, no history: the blobs are unchanged; it also skips the tree ETag w
 quiet again. Version 2 (the printed title) is the first bump. The gate for such a change is this section's method A with
 the intended differences written down beforehand; on 2026-10-21 that was exactly 157 `display_name` additions and 2
 `STATS TOO HIGH` (Sonic spd 20, Royal Eradicator Main Cannon atk 12, both allowed by `allow_high_stats` in the edits
-file, so the live validation stays at the section 2 baselines).
+file, so the live validation stays at the section 2 baselines). A change that reads a handful of cards differently needs
+no bump: re-parse those cards with `/update_stats cards:A, B`. Before the cutover (`CARD_SYNC` off) that re-reads only
+the jetson's pickles; the shadow's data branch re-reads a card only when its blob changed or it is named in `--cards`
+(`card_data._todo`), so dispatch it too: `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f cards="A, B" -f
+dry_run=false` (with `MAIN_COMMIT` off it writes only `data`). Skipped, the shadow's daily check shows the cards'
+differences and the cutover loads the old read (then `/update_stats cards:A, B` once more after it). After the cutover
+the one `/update_stats cards:A, B` dispatches that run itself. 2026-10-23: the title named after its own text changed
+only Papyrus and Sans (`/update_stats cards:Papyrus, Sans` and the card-sync dispatch; the order with the bake is
+BUGS_AND_IMPROVEMENTS V6).
 
 **Step 5 — Promote via change-control.**
 
@@ -559,3 +567,7 @@ they never become types: a card fix, not a parser one. The trade-off: the 4-spac
 provenance); problem baselines 0 pickled / 1 full validation (Computer Virus); the suite row counts 1346 tests; row 2
 and the DB shape at a7c310e (818; 354/446) with the history recovery as the one explained old_stats growth;
 psd_parser.py and card_data.py citations re-pointed.
+
+2026-10-23 (title-own-text): row 1b's third measurement (812 PSDs, 2 intended `display_name` differences) and the
+no-bump case of the `PARSER_VERSION` rule (re-parse a handful with `/update_stats cards:`; during the shadow also a
+card-sync dispatch with `cards`, review of the same day).

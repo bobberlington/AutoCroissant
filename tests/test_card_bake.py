@@ -37,6 +37,8 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 RED_KNIFE = "Auxiliary/Items/Red_Knife.psd"            # its title misses the parity bar (outer glow noise)
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
+GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # its stat bars lie below the canvas
+PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
 WORKFLOW = CLONE / ".github" / "workflows" / "card-edits.yml"
@@ -766,6 +768,32 @@ def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, clone, tmp_path
     assert "; name baked with a pixel difference: bad " in text.split("## Baked (1)", 1)[1]
     after = github.files_at(github.head)
     assert sorted(p for p in after if after[p] != files.get(p)) == sorted([RED_KNIFE[:len(RED_KNIFE) - 4] + ".png", RED_KNIFE, cb.EDITS_PATHS[0]])
+
+
+@fork
+def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
+    """Green Mage's stat bars lie below its canvas: a stat edit is refused with the reason as a final verdict (the run
+    passes, the schedule leaves it), never an `error` that fails the run (a ValueError from the empty render, 2026-10-23).
+    Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same run."""
+    files = github.files_at(github.head)
+    files.update(_card_files(clone, GREEN_MAGE))
+    files.update(_card_files(clone, PURE_VESSEL))
+    files[cb.EDITS_PATHS[0]] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
+                                       "Pure Vessel": {"hp": 3, "note": "checked", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Green Mage, Pure Vessel")
+    report = cb.run_report()
+    cards = {card.name: card for card in report.cards}
+    mage, pure = cards["Green Mage"], cards["Pure Vessel"]
+    assert (mage.refusal.code, mage.transient, mage.traceback) == ("unsupported-card", False, "")
+    assert pure.refusal is None and pure.baked.reparse["card"]["hp"] == 3 and pure.commit == report.commit
+    assert cb.failure(report) == "" and "## Errors" not in report.text and "## Refused (1)" in report.text and report.commit
+    after = github.files_at(github.head)
+    verdicts = {name: entry["_psd"] for name, entry in _edits_at(github)["cards"].items()}
+    assert verdicts["Green Mage"]["state"] == "refused" and verdicts["Green Mage"]["for"] == {"hp": 3}
+    assert verdicts["Green Mage"]["psd"] == _sha(files[GREEN_MAGE])[:8]
+    assert verdicts["Green Mage"]["reason"].startswith("unsupported-card: hp: the bar 'Hp Dark' lies outside the card (digit masks ")
+    assert verdicts["Pure Vessel"]["state"] == "baked" and verdicts["Pure Vessel"]["reason"] == "hp 7 -> 3"
+    assert after[GREEN_MAGE] == files[GREEN_MAGE] and after[PURE_VESSEL] != files[PURE_VESSEL] and cb.pending() == []
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):

@@ -53,6 +53,12 @@ def title_text(text: Optional[str]) -> str:
     return sub(r"[\s\x00-\x1f]+", " ", (text or "").replace("\ufeff", "")).strip()
 
 
+def named_after_text(layer) -> bool:
+    """A type layer named after its own text (name_key alike), as Photoshop names a new one: 'snas.' printing 'snas.'."""
+    key = name_key(layer.name)
+    return bool(key) and key == name_key(layer.text or "")
+
+
 @dataclass
 class MutableValue:
     """A simple mutable wrapper for primitives."""
@@ -439,7 +445,7 @@ class PSDParser:
         titles = [" ".join((layer.text or "").split()) for layer in text_layers
                   if not layer.is_visible() and layer.bbox[1] < psd.height * TITLE_REGION_RATIO]
         card.alt_names = [t for t in titles if t and len(t) <= 40 and t.lower() != card.name.lower()] or None
-        card.display_name = self._printed_title(psd, text_layers, card.name)
+        card.display_name = self._printed_title(psd, text_layers, card.name, own_text=not is_rulepage)
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
@@ -454,26 +460,28 @@ class PSDParser:
             if not card.stars:
                 card.problems.append('NO STARS FOUND (put the star layers in a group named "Stars")')
 
-    def _printed_title(self, psd: PSDImage, text_layers: list, name: str) -> Optional[str]:
+    def _printed_title(self, psd: PSDImage, text_layers: list, name: str, own_text: bool = True) -> Optional[str]:
         """
         The title as the card prints it, when it differs from the file name.
 
         The title is the visible Text/Name layer (several in the title region: joined in reading order), else the
         visible Name text layers in the title region, else a visible layer under Text named after the card, else one
-        named after the card elsewhere in the title region (a status effect's top-level title). A Name layer holding
-        part of the name beside layers holding the rest (Royal Eradicator Main Cannon: "Main Cannon", "Royal",
-        "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or rasterized titles read as
-        nothing.
+        named after the card elsewhere in the title region (a status effect's top-level title), else one in the title
+        region named after its own text, the only one there (Photoshop's name for a new layer: Papyrus's 'The Great
+        Papyrus'). A Name layer holding part of the name beside layers holding the rest (Royal Eradicator Main Cannon:
+        "Main Cannon", "Royal", "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or
+        rasterized titles read as nothing.
 
         Args:
             psd: The open card
             text_layers: Its text layers
             name: The card's name (file stem)
+            own_text: Whether the last rule applies (not on a rule page: its headings are named after their text)
 
         Returns:
             The printed title, or None when it equals the name or can't be read
         """
-        found = self.title_layers(psd, text_layers, name)
+        found = self.title_layers(psd, text_layers, name, own_text)
         texts = []
         for text, _ in self._sort_by_position([(title_text(layer.text), BoundingBox.from_tuple(layer.bbox[:2])) for layer in found]):
             if text and text not in texts:              # a layer copied for an effect prints its words once
@@ -488,16 +496,19 @@ class PSDParser:
         return title
 
     @staticmethod
-    def title_layers(psd: PSDImage, text_layers: list, name: str) -> list:
+    def title_layers(psd: PSDImage, text_layers: list, name: str, own_text: bool = True) -> list:
         """
         The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
         layers under Text named after the card, else those elsewhere in the title region (a status effect's top-level
-        title); of several, those in the title region. Named after the card: letters and digits alike ('Mr. Jawsum').
+        title), else the one layer in the title region named after its own text (named_after_text: Sans's 'snas.';
+        several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region.
+        Named after the card: letters and digits alike ('Mr. Jawsum').
 
         Args:
             psd: The open card
             text_layers: Its text layers
             name: The card's name (file stem)
+            own_text: Whether the last rule applies (False on a rule page)
 
         Returns:
             The layers, in layer order
@@ -514,6 +525,10 @@ class PSDParser:
         if not found and key:
             found = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible() and layer.bbox[1] < top
                      and name_key(layer.name) == key]
+        if not found and own_text:
+            own = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible() and layer.bbox[1] < top
+                   and named_after_text(layer)]
+            found = own if len(own) == 1 else []
         if len(found) > 1:
             found = [layer for layer in found if layer.bbox[1] < top]
         return found
@@ -1159,6 +1174,7 @@ __all__ = [
     'PSDParser',
     'StatTracker',
     'StatTrackers',
+    'named_after_text',
     'stars_from_psd',
     'title_text',
 ]
