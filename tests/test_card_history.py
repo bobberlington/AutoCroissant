@@ -816,6 +816,21 @@ def test_a_types_only_step_with_the_same_png_is_a_misread(tmp_path, png_changes)
     assert ch.misreads(stats, old, index) == []
 
 
+def test_a_misread_is_judged_at_the_newer_versions_start(tmp_path):
+    """The newer reading folded into the card (its start carried, its own timestamp a later re-export's): the PNG is
+    compared where the newer data began, so the cleanups' order does not change the result."""
+    _misread_repo(tmp_path, False)
+    repo = tmp_path / "misread"
+    write(repo, "Items/B.png", b"b png re-exported")
+    commit(repo, "a", 800000)
+    index = ch.GitIndex.from_git(str(repo))
+    v0 = _card("B", path="Items/B.psd", blob_sha=blob(b"b one"), timestamp=100000.0)
+    card = _card("B", path="Items/B.psd", blob_sha="9" * 40, timestamp=900000.0, types=["counter"])
+    card.version = ch.meta(None, 200000.0, "legacy")
+    stats, old = {"B": card}, defaultdict(list, {"B": [v0]})
+    assert [n for n, *_ in ch.misreads(stats, old, index)] == ["B"] and ch.start(card)[0] == 100000.0
+
+
 def test_impossible_values_become_unknown_once():
     lazarus = _card("L", stats=cm.CardStats(110, 110, 110, 110), stars=3, timestamp=1.0)
     spawn = _card("S", stars=10, timestamp=2.0)
