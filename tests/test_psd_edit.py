@@ -10,6 +10,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 import json
 import sys
 from copy import deepcopy
+from io import BytesIO
 from importlib.util import find_spec, module_from_spec, spec_from_file_location
 from pathlib import Path
 from re import search
@@ -47,7 +48,8 @@ NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
          "Items/Support/2 Stars/Volt_Shroom.psd")                  # Text/Name + one visible Text/Ability, fonts in MDW/Fonts
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
 GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay "Blazing" type layer over the ability (OuterGlow)
-FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay "Smoldering": unstyled on the chart, nothing to cut
+FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # "Ability FX: Smoldering": unstyled on the chart, nothing to cut
+OVERLAY_STAFF = "49cf3b28^"                                        # Fire Staff before L7, its "Smoldering" an overlay text layer
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
@@ -1276,11 +1278,28 @@ def test_status_words_are_normalized_to_the_chart(clone, chart, tmp_path):
 
 @text_edit
 def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
-    """Fire Staff's hand-made "Smoldering" overlay carries a Stroke the chart knows nothing about: nothing could stand in for it."""
+    """Fire Staff's hand-made "Smoldering" overlay (before L7) carries a Stroke the chart knows nothing about: nothing could
+    stand in for it."""
     fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, FIRE_STAFF)[0])
+    psd = PSDImage.open(BytesIO(at_rev(clone, OVERLAY_STAFF, FIRE_STAFF)))
     text = pe.ability_layer(psd).text
     with pytest.raises(pe.Refused, match="overlay word layers the chart has no style for: Smoldering") as refused:
+        pe.set_text_layer(psd, "ability", text + " Die.", fonts, chart)
+    assert refused.value.code == "unsupported-card" and pe.ability_layer(psd).text == text
+    with pytest.raises(pe.Refused, match="status word layers over the ability"):
+        pe.set_text_layer(psd, "ability", text + " Die.", fonts, None)
+
+
+@text_edit
+def test_fx_layer_without_a_chart_style_refuses(clone, chart):
+    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28): the edit would drop it and the chart has no
+    style to make it again."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, FIRE_STAFF)[0])
+    layer = pe.ability_layer(psd)
+    text = layer.text
+    assert [fx.name for fx in pe.fx_layers(psd, layer)] == ["Ability FX: Smoldering"]
+    with pytest.raises(pe.Refused, match="ability edit would drop FX layers the chart has no style for: Ability FX: Smoldering") as refused:
         pe.set_text_layer(psd, "ability", text + " Die.", fonts, chart)
     assert refused.value.code == "unsupported-card" and pe.ability_layer(psd).text == text
     with pytest.raises(pe.Refused, match="status word layers over the ability"):

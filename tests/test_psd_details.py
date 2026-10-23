@@ -12,13 +12,14 @@ import pytest
 import commands.psd_details as pd
 import commands.update_bot as ub
 from commands.font_check import FontIndex, psd_fonts
-from conftest import blob_sha
+from conftest import at_rev, blob_sha
 from global_config import DETAILS_JSON
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # template rows
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn heart cells
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
+OVERLAY_VIRUS = "83728277^"                                            # Computer Virus with overlay words and image icons only
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
@@ -62,7 +63,7 @@ def test_record_shape_and_size(records, clone):
         assert all(set(t) == {"layer", "text", "font", "size", "color", "visible"} for t in record["text"])
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
-        assert record["icons"] == ("images" if rel == VIRUS else "mixed")              # image types, badge runs
+        assert record["icons"] == "mixed"                                           # image types, badge runs
         assert set(record["stats"]) == {"hp", "def", "atk", "spd"}
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
     assert _size(records[DOOMER]) < 8_000 and _size(records[CANNON]) < 8_000
@@ -94,14 +95,22 @@ def test_text_layers_and_template(records):
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
     assert virus["template"]["name_layer"] == "Name" and "no title layer" not in virus["template"]["deviations"]
-    assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
-    assert "overlay word layers" in virus["template"]["deviations"]
+    assert virus["overlays"] == [] and "overlay word layers" not in virus["template"]["deviations"]   # L7 (83728277)
+    assert virus["fx"] == ["Names/Ability FX: 3rd: Magician", "Names/Ability FX: 2nd: Puppet", "Names/Ability FX: 1st: Slime"]
     lazarus = records[LAZARUS]
     assert lazarus["template"]["ability_layers"] == ["Laz/Laz/Ability", "Dead Laz/Dead Laz/Ability"]
     assert lazarus["template"]["name_layer"] == "Laz/Laz/Name"
     assert lazarus["template"]["deviations"] == ["several visible Ability layers", "ability layer outside Text", "stat bars drawn",
                                                  "icons as images"]
     assert [e[:3] for e in lazarus["tree"]] == [["images", "group", True], ["Laz", "group", True], ["Dead Laz", "group", True]]
+
+
+def test_overlay_words_and_image_icons(clone, index):
+    """Computer Virus before 83728277: its Names words were overlay text layers, its icons images only (no badge run)."""
+    virus = pd.gather(at_rev(clone, OVERLAY_VIRUS, VIRUS), VIRUS, _name(VIRUS), index, pd.clone_types(str(clone)))
+    assert virus["icons"] == "images" and virus["fx"] == []
+    assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
+    assert "overlay word layers" in virus["template"]["deviations"]
 
 
 def test_template_names_the_title_layer_the_parser_reads(clone):
