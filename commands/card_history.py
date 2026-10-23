@@ -15,6 +15,7 @@ from os.path import abspath, join, samefile, splitext
 from subprocess import run
 from typing import Optional
 
+from global_config import MAILMAP_PATH
 from commands.card_db import dump_pickle, read_pickles, record
 from commands.card_models import CardInfo, card_name
 
@@ -25,13 +26,13 @@ from commands.card_models import CardInfo, card_name
 DATA_FIELDS = ("card_type", "display_name", "ability", "stars", "subtype", "series", "subseries", "types", "stats",
                "creatures", "author", "note", "hidden", "duplicate_of")
 CAUSES = ("psd", "reparse", "moved", "edit", "authors", "legacy")   # moved: the same blob in another folder (its data)
-LOG_FORMAT = "C%x09%H%x09%ct%x09%an"                  # one header line per commit: sha, committer time, author
+LOG_FORMAT = "C%x09%H%x09%ct%x09%aN"                  # one header line per commit: sha, committer time, author (.mailmap'd)
 NO_BLOB = "0" * 40
 
 
 @dataclass
 class Commit:
-    """One commit of the index: its place in the log (0 = newest), sha, committer time and author name."""
+    """One commit of the index: its place in the log (0 = newest), sha, committer time and author name (as .mailmap maps it)."""
     order: int
     sha: str
     at: float
@@ -109,7 +110,7 @@ class GitIndex:
         shallow = run(["git", "-C", repo, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True, env=env)
         if shallow.returncode != 0 or shallow.stdout.strip() != "false":
             raise ValueError(f"{repo}: a full (non-shallow) clone of the card repo is needed for its history")
-        done = run(["git", "-C", repo, "log", head, f"--format={LOG_FORMAT}", "--raw", "--no-abbrev", "--no-renames", "-z",
+        done = run(["git", "-C", repo, *mailmap_args(repo, head), "log", head, f"--format={LOG_FORMAT}", "--raw", "--no-abbrev", "--no-renames", "-z",
                     "--", "*.psd", "*.png"], capture_output=True, env=env, check=True)
         return cls.parse(done.stdout.decode("utf-8", "replace"))
 
@@ -127,6 +128,23 @@ class GitIndex:
             elif before_at is None or commit.at < before_at:
                 return commit.sha
         return None
+
+
+def mailmap_args(repo: str, head: str = "HEAD") -> list:
+    """
+    git's `-c mailmap.blob=<blob>` for head's .mailmap ([] without one), so %aN maps in any clone: a non-bare one reads
+    only its worktree's (a sparse checkout has none) and a blobless one may lack the blob (fetched here, the one lazy
+    fetch).
+    """
+    env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
+    found = run(["git", "-C", repo, "rev-parse", "--verify", "-q", f"{head}:{MAILMAP_PATH}"], capture_output=True, text=True,
+                env=env)
+    blob = found.stdout.strip()
+    if found.returncode != 0 or not blob:
+        return []
+    if run(["git", "-C", repo, "cat-file", "-e", blob], capture_output=True, env=env).returncode != 0:
+        run(["git", "-C", repo, "cat-file", "blob", blob], capture_output=True, check=True)
+    return ["-c", f"mailmap.blob={blob}"]
 
 
 # ========================

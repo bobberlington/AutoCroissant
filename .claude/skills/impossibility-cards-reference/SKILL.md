@@ -520,7 +520,11 @@ file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every 
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
 team's record of who made each card.
 - **Format:** two sections of `left = right` lines.
-  - `[people]`: git/GitHub name = display name.
+  - `[people]`: git/GitHub name = display name. One person's several git names are merged before it by the card
+    repo's root `.mailmap` (git's format, `Proper Name <email>`; since 2026-10-23 it maps the "Michael" commits to
+    MichaelJSr, which a `[people]` line did before): local git reads `%aN` with `-c mailmap.blob=<head's .mailmap>`
+    (`card_history.mailmap_args`; works in bare, blobless and sparse clones); the API path, which ignores .mailmap,
+    maps the first commit's author by email through `card_edits.Mailmap` (the tree's `.mailmap`, read once a run).
   - `[cards]`: Card Name = person. Matched in any case, with `_` and spaces alike.
 - **When:** every remote `/update_stats` applies it to every card, not just re-parsed ones (`_apply_authors`).
 - **Rule:** a listed card gets its listed person; any other card keeps its author. Either way the name goes through `[people]`.
@@ -528,8 +532,8 @@ team's record of who made each card.
   mappings), so applying it changed nothing.
 - **The website** applies the same rules at build time.
 
-Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20) of the first
-commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
+Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20), as `.mailmap`
+names it, of the first commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
 survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` writes the card's `[cards]`
 line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its

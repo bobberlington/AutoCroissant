@@ -27,8 +27,8 @@ from typing import Callable, Optional
 from requests.exceptions import RequestException
 
 from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH, EDITS_PATHS,
-                           ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
-from commands.card_edits import CardAuthors, CardDates, CardEdits
+                           ICON_MANIFEST_PATH, MAILMAP_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from commands.card_edits import CardAuthors, CardDates, CardEdits, Mailmap
 from commands.card_models import CardInfo, StatsDatabase, card_name
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
@@ -94,6 +94,7 @@ class CardBuild:
         self.details_changed = 0                 # records gathered this run
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
+        self.mailmap: Optional[Mailmap] = None   # the card repo's .mailmap, read once (the first new card's author)
         self.restored: list = []                 # archived cards whose PSD is back
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the build's history)
@@ -171,6 +172,12 @@ class CardBuild:
                     remove(name)
         return None
 
+    def _mailmap(self) -> Mailmap:
+        """The card repo's .mailmap (empty without one). A failed read raises: the card waits, no raw name stored."""
+        if self.mailmap is None:
+            self.mailmap = Mailmap.parse(self._repo_text(MAILMAP_PATH) or "")
+        return self.mailmap
+
     def _get_remote_timestamp(self,
                               repo,
                               path: str,
@@ -189,12 +196,13 @@ class CardBuild:
         if not commits:
             return (datetime(1000, 1, 1).timestamp(), None)
 
-        # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
-        # (AUTHORS_PATH) corrects either afterwards.
+        # New card: its author is whoever wrote the FIRST commit (not who committed it), through .mailmap as git's
+        # %aN. The authors file (AUTHORS_PATH) corrects either afterwards.
         if name not in self.db.stats or not self.db.stats[name].author:
             first = (commits[len(commits) - 1] if len(commits) < COMMITS_PAGE
                      else repo.get_commits(path=path).reversed[0])     # more than one page: fetch the last
-            return (commits[0].commit.committer.date.timestamp(), first.commit.author.name)
+            author = first.commit.author
+            return (commits[0].commit.committer.date.timestamp(), self._mailmap().name(author.name, author.email))
 
         return (commits[0].commit.committer.date.timestamp(), None)
 
@@ -950,8 +958,9 @@ class GitBuild(CardBuild):
 
     def file_commit(self, path: str):
         """The newest commit of a file at head, as a card_history.Commit (None when it has none)."""
-        from commands.card_history import Commit
-        line = _git(self.checkout, "log", "-1", "--format=%H%x09%ct%x09%an", self.head, "--", path).strip()
+        from commands.card_history import Commit, mailmap_args
+        line = _git(self.checkout, *mailmap_args(self.checkout, self.head), "log", "-1", "--format=%H%x09%ct%x09%aN", self.head,
+                    "--", path).strip()
         if not line:
             return None
         sha, at, author = (line.split("\t", 2) + ["", ""])[:3]
@@ -1113,10 +1122,12 @@ def _builder_commit() -> str:
 
 
 def _commits(checkout: str, base: Optional[str], head: str) -> list:
-    """(sha, committer time, author) of base..head, oldest first (head's last 100 without a base)."""
+    """(sha, committer time, author as .mailmap maps it) of base..head, oldest first (head's last 100 without a base)."""
+    from commands.card_history import mailmap_args
     span = [f"{base}..{head}"] if base else ["--max-count=100", head]
     out = []
-    for line in _git(checkout, "log", "--reverse", "--format=%H%x09%ct%x09%an", *span).splitlines():
+    log = _git(checkout, *mailmap_args(checkout, head), "log", "--reverse", "--format=%H%x09%ct%x09%aN", *span)
+    for line in log.splitlines():
         sha, at, author = (line.split("\t", 2) + ["", ""])[:3]
         if sha:
             out.append((sha, float(at or 0), author))

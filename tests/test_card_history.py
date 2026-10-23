@@ -103,6 +103,49 @@ def test_shallow_clone_is_refused(history, tmp_path):
         ch.GitIndex.from_git(str(shallow))
 
 
+@pytest.fixture
+def mailmapped(tmp_path):
+    """One email under two names (A by Michael, B by MichaelJSr), a .mailmap naming it MichaelJSr, C by someone else."""
+    repo = tmp_path / "mailmapped"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    who = lambda name, email="Me@X": {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name,
+                                      "GIT_COMMITTER_EMAIL": email}
+    shas = []
+    for rel, name, text in (("Items/A.psd", "Michael", b"a"), ("Items/B.psd", "MichaelJSr", b"b"),
+                            (".mailmap", "Michael", b"# one person\nMichaelJSr <me@x>\n")):
+        write(repo, rel, text)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", rel, env=who(name))
+        shas.append(git(repo, "rev-parse", "HEAD").strip())
+    write(repo, "Items/C.psd", b"c")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "c", env=who("Someone Else", "else@x"))
+    return SimpleNamespace(repo=repo, shas=shas)
+
+
+def test_index_names_authors_through_the_mailmap(mailmapped, tmp_path):
+    """%aN with head's .mailmap: in the clone, a bare blobless one and a sparse blobless checkout without the file (its
+    one blob fetched); at a head before the .mailmap, the git names as they are."""
+    git(mailmapped.repo, "config", "uploadpack.allowFilter", "true")
+    bare, sparse = tmp_path / "bare.git", tmp_path / "sparse"
+    url = f"file://{mailmapped.repo}"
+    subprocess.run(["git", "clone", "-q", "--bare", "--filter=blob:none", url, str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--sparse", "--no-checkout", url, str(sparse)], check=True)
+    git(sparse, "sparse-checkout", "set", "--no-cone", "/Items/A.psd")
+    git(sparse, "checkout", "-q", "main")
+    no_lazy = {**os.environ, "GIT_NO_LAZY_FETCH": "1"}
+    assert not (sparse / ".mailmap").exists()
+    assert subprocess.run(["git", "-C", str(sparse), "cat-file", "-e", "HEAD:.mailmap"], env=no_lazy).returncode != 0
+    for repo in (mailmapped.repo, bare, sparse):
+        index = ch.GitIndex.from_git(str(repo))
+        assert [c.author for c in index.commits] == ["Someone Else", "MichaelJSr", "MichaelJSr"], repo
+        assert index.first["Items/A.psd"].author == "MichaelJSr"
+    before = mailmapped.shas[1]                       # (a bare clone would still read HEAD's: git's default there)
+    assert ch.mailmap_args(str(sparse), before) == []
+    assert [c.author for c in ch.GitIndex.from_git(str(sparse), before).commits] == ["MichaelJSr", "Michael"]
+
+
 def test_parse_handles_odd_paths_and_merges():
     text = ("C\taaa\t10\tann\0\n:000000 100644 0000000000000000000000000000000000000000 " + "1" * 40 + " A\0Items/We\tird \"x\".psd\0"
             "C\tbbb\t5\tbo b\0")                                                           # a commit with no raw lines (a merge)
