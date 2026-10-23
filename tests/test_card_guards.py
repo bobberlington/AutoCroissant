@@ -223,7 +223,37 @@ def test_check_end_to_end(cards, tmp_path):
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
     assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
-    assert "Alice pushed Snack with these issues: PNG not exported with the PSD: export it in Photoshop; Snack2.png" in payload["content"]
+    assert "Alice pushed Snack (Square pixels changed) with these issues: PNG not exported with the PSD: export it in " \
+           "Photoshop; Snack2.png" in payload["content"]
+    # what changed inside each PSD pushed over an older one (psd_diff): a new PSD or a PNG alone has none
+    assert snack["changes"] == by["Bread"]["changes"] == by["Dropped"]["changes"] == ["Square pixels changed"]
+    assert by["New_Card"]["changes"] == by["Lonely"]["changes"] == by["New_Name"]["changes"] == []
+    assert "**Snack** (`Items/Heal/2 Stars/Snack.psd`, Alice, `" in report and "- Changed: Square pixels changed" in report
+    assert "Alice pushed New Card with these issues" in payload["content"]              # a new PSD: nothing to compare
+
+
+def test_what_changed_never_stops_a_card(cards, tmp_path, monkeypatch):
+    """psd_diff only tells: when it fails, the card is guarded as before and its lines carry no change."""
+    root, base, alice, bot = cards
+
+    def crash(*args, **kwargs):
+        raise ValueError("an unreadable layer")
+    monkeypatch.setattr(cg.psd_diff, "changes", crash)
+    data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(tmp_path / "out"), workers=1, cards={"snack"})
+    (snack,) = data["cards"]
+    assert snack["changes"] == [] and not snack["error"] and snack["export"]["outcome"] == "re-exported"
+    assert "Alice pushed Snack with these issues: PNG not exported" in data["discord"]["content"]
+
+
+def test_a_long_change_list_is_cut_to_fit_the_line():
+    entry = {"login": "Alice", "card": "Snack", "told": ["an issue"], "commit": "7" * 40,
+             "changes": [f"layer {n} hidden" for n in range(40)]}
+    content = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "o/cards")["content"]
+    changes = content[len("Alice pushed Snack ("):content.index(") with these issues")]
+    assert len(changes) <= cg.CHANGES_DISCORD and changes.endswith("more") and changes.startswith("layer 0 hidden; ")
+    assert "- Changed: layer 0 hidden" in cg.markdown({"mode": "on", "after": "a" * 40, "before": "b" * 40, "cards": [
+        {**entry, "psd": "Items/Snack.psd", "export": {}, "r10": {}, "issues": [], "fixed": [], "fix_refused": [],
+         "notes": [], "writes": []}]}, [], [], [])
 
 
 def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
@@ -363,7 +393,7 @@ def test_font_issues_are_told_in_the_standards_post(cards, tmp_path, monkeypatch
     (font,) = [issue for issue in bread["issues"] if issue["code"] == "R7"]
     assert font["discord"] and font["told"] and not font["waived"]
     assert bread["told"][-1] == "font ComicSansMS not in MDW/Fonts"          # after R3 (the fixture has no Ability layer)
-    assert data["discord"]["content"].startswith("Alice pushed Bread with these issues: ")
+    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: ")
     assert "; font ComicSansMS not in MDW/Fonts. [" in data["discord"]["content"]
     assert json.loads((out / "summary.json").read_text())["told"] == 1
 
@@ -925,8 +955,11 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     assert len(by) == 19
     assert {name for name, c in by.items() if c["export"].get("outcome") == "current"} == {"God Tamer", "Bubble", "12 Reactions2"}
     assert all(not c["writes"] for c in data["cards"])
-    assert data["discord"]["content"].startswith("MichaelJSr pushed God Tamer with these issues: the Ability layer is outside "
-                                                 "the Text group. [dc37f4ad]")
+    assert data["discord"]["content"].startswith("MichaelJSr pushed God Tamer (added Star group; Group 2 renamed 'Stars'; "
+                                                 "Star/Delicate Flower moved into Star) with these issues: the Ability "
+                                                 "layer is outside the Text group. [dc37f4ad]")
+    assert by["Bubble"]["changes"] == ["added Stars group", "starfish14 moved into Stars"]
+    assert by["12 Reactions2"]["changes"] == ["removed Item shop copy"]
     assert len(data["discord"]["content"].splitlines()) == 1
 
 

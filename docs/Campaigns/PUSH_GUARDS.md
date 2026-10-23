@@ -158,6 +158,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
     vocabulary and the waivers.
   - `commands/card_guards.py`: the driver. Push range, downloads, plan, the reports and the Discord payload, `land`, `--local`
     (for Card sync), `--whole-tree` (the audit).
+  - `commands/psd_diff.py`: what changed inside a PSD pushed over an older one, for the reports (7.5).
   - `SPARSE_FILES` is the import closure the workflow checks out. A test runs `--help` on exactly that list, as
     test_card_check does.
 - **Reused:**
@@ -441,6 +442,7 @@ told (reviews 4 and 5: a dispatch's commit may have been told by its push run). 
 a failed edit still leaves it to Follow up and the mark. A failed comment call fails the run but never stops Land: its
 `if` asks only for Check's success.)
 - `## Card guards`, then per card:
+  - what changed inside its PSD (7.5), as "- Changed: ...", up to 600 characters;
   - its issues;
   - the guard-1 outcome with D's size, the gates' numbers and the ICC mode;
   - the planned fixes.
@@ -467,9 +469,10 @@ not land.**
   GitHub noreply email, else the pusher's login (`github.actor`, who pushed the card), never the git author name while the
   API answers (review 3). A dispatch passes no pusher (whoever ran it did not push the card), so there it is the git
   author name (review 4).
-- **Format:** one line per card, with the masked link to the commit that last changed it (beyond the brief's literal
-  line: section 15, item 6):
-  `Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group; "Blazing" is an overlay text layer, not an Ability FX: layer. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
+- **Format:** one line per card, with what changed inside its PSD (7.5, up to 120 characters, whole phrases) and the
+  masked link to the commit that last changed it (beyond the brief's literal line: section 15, item 6):
+  `Zomoroko pushed Skullord (Ability text: '(1PT)' -> '(1CD)'; added Ability FX: Blazing) with these issues: the Ability layer is outside the Text group. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
+  A new PSD, a PNG alone or a PSD whose push changed nothing but Photoshop's re-save noise has no parenthesis.
 - **Not in the post:** planned fixes and re-exports in `on` (they are not issues; report mode tells them, as it makes
   nothing, 6.3) and "PNG still current".
 - **Payload:** `{"content": ..., "allowed_mentions": {"parse": []}, "flags": 4}`: nobody is pinged, and the links get no
@@ -482,6 +485,38 @@ not land.**
 - For every card: the planned PNGs and fixed PSDs, and the crops of D (before, after, diff).
 - `plan.json`, `report.md`, `discord.json` (its content, no URL); after Land `landed.json`, `report-landed.md`,
   `discord-final.json`.
+
+**7.5 What changed inside the PSD** (`commands/psd_diff.py`, 2026-10-23; NEXT_IDEAS_2026-10-22 section 5, idea 5).
+- **For** every card PSD pushed over an older version (cases stale, pair, psd-only): both PSDs are open for the guards
+  anyway, so it costs no download; 0.2-0.6 CPU-seconds a card. Plan entries carry the phrases as `changes`.
+- **Phrases**, most telling first, the same phrase for several layers merged ("fire x3, machine x2 and Blazing overlay
+  hidden"): text edits ("Name text: 'White CLot' -> 'White Clot'", the edited words of a long text with one word of
+  context, icons as [name]), layers added or removed (a group with its count), shown or hidden, renamed, moved into or
+  out of a group, restacked; a text box widened, narrowed, taller or shorter, a layer moved or resized; font, size,
+  colour, leading or alignment on the words that kept their text ("Ability font Perpetua -> stoogedings-Regular on
+  '(ENDT)'"); layer styles added, removed, on, off or changed; opacity, fill, blend, clipping; pixels, masks, shapes,
+  smart object content and filters, adjustment settings. An overlay status word (`psd_regions.overlay_words`) is named
+  "<word> overlay".
+- **Layers pair** by layer id (Photoshop keeps it across saves and renames), else by path; a layer deleted and made again
+  under the same group with its name and kind pairs with its old self.
+- **Photoshop's re-save noise is left out**, measured on the 465 PSDs of the last 20 PSD pushes (19,801 layer records
+  rewritten, most of them by nothing but the save):
+  - blocks it rewrites on every save: `shmd` (every layer), `lnsr`, `lyvr`, `cinf`, `lspf`, `lclr`, `fxrp`, `vowv`
+    (a version marker newer Photoshops add), the legacy `lrFX` and `PlLd` copies;
+  - re-rendered pixels of type, smart object, shape and fill layers (their text, content, transform and paths decide);
+  - equal pixels encoded differently (Glaive's Laser Beam mask: 22,269 then 23,144 RLE bytes, the same mask): channels
+    whose bytes differ are decoded and compared;
+  - a group opened or closed in the Layers panel (`lsct`);
+  - descriptors read by meaning: floats rounded, b"Nrml" and b"normal" alike (Tainted Lazarus's 41 styles), and in a
+    layer style only the keys both versions write (a newer Photoshop adds `gs99` to old Gradient Overlays: Heavy Mole);
+  - text compared as text, style per character, boxes and origins within 1 px.
+- **Not read:** the document's own blocks (Txt2, lnk2, cinf, GenI...). Txt2 changes on 49 of 56 plain saves, so a push
+  that only rewrote Txt2 stories (7b48db05, Clot White and Springtrap) shows no change.
+- **Report only.** A failure leaves the card's line without changes (`card_guards.changes`); nothing is gated on it. The
+  comment and the post still go up only when something else is told (the owner's rule, 7.2 and 7.3): a card with changes
+  and nothing else is in the job summary (and in the comment when the push has one), not on Discord. Telling every
+  push's changes would be a new owner decision.
+- `python -m commands.psd_diff OLD.psd NEW.psd` prints the phrases.
 
 ## 8. Dry run and switches
 
