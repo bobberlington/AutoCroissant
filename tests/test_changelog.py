@@ -15,7 +15,7 @@ T = 1_792_700_000.0                                                       # 2026
 
 def _card(name="A", **kw):
     base = dict(name=name, card_type="creature", path=f"Creatures/X/3 Stars/{name}.psd", stars=3, ability="(1CD) Hit.",
-                stats=cm.CardStats(5, 2, 3, 4), blob_sha="b1", author="Bob")
+                stats=cm.CardStats(5, 2, 3, 4), blob_sha="b1", author="Bob", parser_version=2)
     base.update(kw)
     return cm.CardInfo(**base)
 
@@ -55,6 +55,22 @@ def test_field_changes_list_the_data_fields():
     assert list(changes) == ["name", "stars", "types", "ability", "tags"]
     assert changes["name"] == ["A", "Big A"] and changes["tags"] == [["(2CD)"], ["(1CD)"]]
     assert cl.field_changes(_card(), _card(path="Elsewhere/A.psd", blob_sha="b2", timestamp=9.0)) == {}
+
+
+def test_field_changes_skip_what_a_reading_could_not_know():
+    """No phantom steps: a name before parser 2 read titles (Mol D Truffy), a series the 2026-10-20 split moved under
+    a parent (Bob-ulk), stars a parse could not find (Bubble), an empty ability's two forms, a retired icon's name."""
+    early = _card(parser_version=None, display_name=None)
+    assert cl.field_changes(early, _card(display_name="Mol D. A")) == {}
+    assert list(cl.field_changes(early, _card(display_name="Mol D. A", stars=4))) == ["stars"]
+    mario = _card(series="Mario", subseries="Paper Mario")
+    assert cl.field_changes(_card(series="Paper Mario"), mario) == {}
+    assert list(cl.field_changes(_card(series="Zelda"), mario)) == ["series", "subseries"]
+    assert cl.field_changes(_card(stars=0, problems=['NO STARS FOUND (put the star layers in a group named "Stars")']),
+                            _card(stars=1)) == {}
+    assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
+    assert cl.field_changes(_card(types=["offense"]), _card(types=["negation"])) == {}
+    assert cl.field_changes(_card(display_name="A"), _card()) == {}                 # a title equal to the name
 
 
 def test_version_changes():
@@ -213,6 +229,13 @@ def test_payload_words_links_and_order():
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
     assert cl.payload([], "https://site") is None
+
+
+def test_a_card_moved_into_mdw_posts_moved():
+    event = {"kind": "archived", "card": "White Palace", "title": "White Palace",
+             "moved_to": "MDW/The Morgue/White_Palace.psd"}
+    assert cl._line(event, "https://site", None) == "White Palace (moved to MDW/The Morgue)"
+    assert cl._line({**event, "moved_to": None}, "https://site", None) == "White Palace (PSD deleted)"
 
 
 def test_every_kind_posts_alone():

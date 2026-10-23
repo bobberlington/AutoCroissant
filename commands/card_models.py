@@ -252,6 +252,7 @@ class StatsDatabase:
             listed = self.stats[name]
             if name in self.kept_archives or not (_tagged_copy(last, listed) or same_data(last, listed)):
                 last.archived = None
+                vars(last).pop("created", None)            # plain history now: the listed card keeps its date
             else:
                 carry(last, listed)
                 versions.pop()
@@ -261,8 +262,10 @@ class StatsDatabase:
         return bool(names)
 
     def add_history(self, name: str, card: CardInfo) -> None:
-        """Append card to name's history. A last version that is its archived copy stays (untagged after the save);
-        one equal but for the path (a kill between the saves; paths follow the card) is replaced."""
+        """Append card to name's history, without the card's creation date (the card keeps it). A last version that is
+        its archived copy stays (untagged after the save); one equal but for the path (a kill between the saves) is
+        replaced."""
+        vars(card).pop("created", None)
         versions = self.old_stats.setdefault(name, [])
         if versions:
             last = versions[len(versions) - 1]

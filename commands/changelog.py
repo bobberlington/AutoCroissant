@@ -21,6 +21,7 @@ from urllib.parse import quote
 
 from global_config import SITE_URL, TIMEZONE
 from commands.card_db import write_text
+from commands.card_history import TYPE_RENAMES, unknown
 from commands.card_models import CardInfo
 
 # ========================
@@ -57,6 +58,7 @@ BOT = "AutoCroissant"                                    # the bot's _by (discor
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (discord_edits.BOT_FIELDS)
 CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (discord_edits.CREDIT)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
+UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 
 
 # ========================
@@ -83,16 +85,23 @@ def fields_of(card: CardInfo) -> dict:
         out[key] = _stat(getattr(stats, attr, None)) if stats is not None else None
     creatures = getattr(card, "creatures", None)
     out["creatures"] = [[_stat(getattr(c, attr, None)) for _, attr, _ in STATS] for c in creatures] if creatures else None
-    out["ability"] = getattr(card, "ability", None)
+    out["types"] = [TYPE_RENAMES.get(t, t) for t in out["types"]]
+    out["ability"] = getattr(card, "ability", None) or None
     out["tags"] = tags_of(out["ability"])
     out["author"], out["note"], out["hidden"] = getattr(card, "author", None), getattr(card, "note", None), bool(getattr(card, "hidden", False))
     return out
 
 
 def field_changes(old: CardInfo, new: CardInfo) -> dict:
-    """{field: [old, new]} for each changelog field that differs (FIELDS order)."""
+    """{field: [old, new]} for each changelog field that differs (FIELDS order); not a field either reading could not
+    know (card_history.unknown: the name before parser 2 read titles, a field its parse failed on), nor a series the
+    2026-10-20 split moved under a parent (the same subseries-or-series)."""
     a, b = fields_of(old), fields_of(new)
-    return {key: [a[key], b[key]] for key in FIELDS if a[key] != b[key]}
+    skip = {UNKNOWN_FIELD.get(key, key) for key in unknown(old) | unknown(new)}
+    skip |= {"tags"} if "ability" in skip else set()
+    if (a["subseries"] or a["series"]) == (b["subseries"] or b["series"]):
+        skip |= {"series", "subseries"}
+    return {key: [a[key], b[key]] for key in FIELDS if a[key] != b[key] and key not in skip}
 
 
 def _tag_steps(old: list, new: list) -> tuple:
@@ -240,7 +249,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
             tag = getattr(archived_after.get(name), "archived", None) or {}
             if name in archived_after:
                 out.append(_event("renamed" if tag.get("renamed_to") else "archived", name, old,
-                                  renamed_to=tag.get("renamed_to"), **source(sha=tag.get("commit"))))
+                                  renamed_to=tag.get("renamed_to"), moved_to=tag.get("moved_to"),
+                                  **source(sha=tag.get("commit"))))
         elif old is not None and new is not None:
             changes = field_changes(old, new)
             blobs = [getattr(old, "blob_sha", None), getattr(new, "blob_sha", None)]
@@ -448,7 +458,8 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     if kind == "moved":
         return f"{title} moved to {_md((event.get('path') or '').rsplit('/', 1)[0])}"
     if kind == "archived":
-        return f"{_md(event.get('title') or event['card'])} (PSD deleted)"
+        gone = f"moved to {_md(event['moved_to'].rsplit('/', 1)[0])}" if event.get("moved_to") else "PSD deleted"
+        return f"{_md(event.get('title') or event['card'])} ({gone})"
     return title
 
 
