@@ -224,7 +224,9 @@ Args/Returns sections for anything with non-obvious parameters — real shapes:
 has an `Args:` block (update_bot.py:143-145). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
-### 5.4 The `x[len(x) - 1]` idiom (REQUIRED in cythonized modules)
+### 5.4 The `x[len(x) - 1]` idiom (house style in cythonized modules)
+
+Since 2026-10-23 setup.py builds with `boundscheck=True` and `wraparound=True` (owner): a bad or negative index behaves as in plain Python instead of crashing; the `x[len(x)-1]` idiom stays (don't churn it). The history below explains why the idiom exists.
 
 Never write `x[-1]` (or any negative index) in the 11 modules setup.py
 compiles: analytics, card_edits, card_models, frankenstein, help, management, music_player,

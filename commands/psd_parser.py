@@ -246,6 +246,9 @@ class CardClassifier:
 
         Returns:
             Dictionary with card classification info (UNKNOWN when the path is too shallow for its folder's rule)
+
+        Raises:
+            ValueError: A star folder that doesn't start with a number
         """
         if not relative_path:
             return {"type": CardType.UNKNOWN.value}
@@ -264,12 +267,12 @@ class CardClassifier:
             "MDW": lambda: {"type": CardType.MDW.value, "ability": None},
             "Field": lambda: {
                 "type": CardType.FIELD.value,
-                "stars": int(folders[len(folders) - 1].split()[0]),
+                "stars": CardClassifier._stars(folders[len(folders) - 1]),
             },
             "Items": lambda: {
                 "type": CardType.ITEM.value,
                 "subtype": folders[len(folders) - 2].lower(),
-                "stars": int(folders[len(folders) - 1].split()[0]),
+                "stars": CardClassifier._stars(folders[len(folders) - 1]),
             },
             "Creatures": lambda: CardClassifier._classify_creatures(folders),
             "N.M.E": lambda: {"type": CardType.NME.value},
@@ -284,11 +287,19 @@ class CardClassifier:
         return {"type": CardType.UNKNOWN.value}
 
     @staticmethod
+    def _stars(folder: str) -> int:
+        """The star count a folder name starts with ("2 Stars" -> 2)."""
+        words = folder.split()
+        if not words:           # a blank folder: words[0] would read out of bounds when compiled
+            raise ValueError(f"no star count in folder {folder!r}")
+        return int(words[0])
+
+    @staticmethod
     def _classify_creatures(folders: list[str]) -> dict:
         """Classify creature cards, preserving existing series if available."""
         result = {
             "type": CardType.CREATURE.value,
-            "stars": int(folders[len(folders) - 1].split()[0]),
+            "stars": CardClassifier._stars(folders[len(folders) - 1]),
             "series": folders[len(folders) - 2].lower(),
             "hp": -1, "def": -1, "atk": -1, "spd": -1,
         }
@@ -314,7 +325,7 @@ class CardClassifier:
             if folders[2] == "Debuffs":
                 return {
                     "type": CardType.DEBUFF.value,
-                    "stars": int(folders[len(folders) - 1].split()[0]),
+                    "stars": CardClassifier._stars(folders[len(folders) - 1]),
                 }
             elif folders[2] == "Buffs":
                 return {"type": CardType.BUFF.value}
