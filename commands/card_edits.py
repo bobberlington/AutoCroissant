@@ -192,6 +192,8 @@ class CardEdits:
         if "creatures" in fields:                   # set first, so a single-stat edit can still change creature 1
             fields = {"creatures": fields.pop("creatures"), **fields}
         saved = {key: self.get(card, key) for key in fields}
+        if "creatures" in fields and saved["creatures"] is None:    # it sets the stats: undone, they come back
+            saved.update({key: self.get(card, key) for key in self.STATS if key not in saved})
         if fields:
             saved["problems"] = list(card.problems)
             answered = tuple(p for key in fields for p in self.FIXED_BY.get(key, ()))
@@ -209,6 +211,20 @@ class CardEdits:
             if extra:
                 out[key] = extra
         return out
+
+
+def as_parsed(card: CardInfo) -> CardInfo:
+    """
+    The card as its PSD reads it: a copy with its parsed_values put back (its Card Edits.json edits undone), so a
+    change of the PSD and a change of an edit can be told apart.
+    """
+    out = deepcopy(card)
+    edits = CardEdits()
+    for key, value in (getattr(card, "parsed_values", None) or {}).items():
+        if key in CardEdits.ATTRS or key in CardEdits.STATS or key in ("creatures", "problems"):
+            edits.set(out, key, value)
+    out.parsed_values = None
+    return out
 
 
 @dataclass
@@ -328,5 +344,6 @@ __all__ = [
     'CardEdits',
     'ORDER',
     'PUNCTUATION',
+    'as_parsed',
     'dump_edits',
 ]

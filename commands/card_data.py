@@ -263,6 +263,8 @@ class CardBuild:
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
         self.edits = self._edits_from_response(resp, repository)
+        if self.edits is None or not self.edits.aliases_moved:
+            self._aliases()                             # read before the PSDs: a missing aliases.pkl stops here
         problems, num_changed = self._process_files_from_response(resp, repository, output_problematic, force_update)
         authors = self._authors_from_response(resp, repository)
         self.changed += self._apply_authors(authors)
@@ -277,6 +279,7 @@ class CardBuild:
         if self.legacy:                                 # each version keeps its own path (git dates it there)
             self._record_history()
             self._record_edits(edited)
+            self.duplicate_versions()                   # after the originals' versions are final
         if self.failed:                                 # no 304 next time: the failed files are fetched again
             self.etags.pop(repository, None)
             self._send_failures()
@@ -404,11 +407,28 @@ class CardBuild:
             card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
             own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
             card.display_name = (self._duplicate_name(png, src, number, sorted(siblings[original]),
-                                                      {} if moved else self.aliases, own) if number is not None
+                                                      {} if moved else self._aliases(), own) if number is not None
                                  else self._duplicate_name(png, src, 0, [], {}, own, own_name=True))
             self.db.stats[name] = card
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n]))
+
+    def _aliases(self) -> dict:
+        """aliases.pkl's aliases (the duplicates' names until Card Edits.json has aliases_moved)."""
+        return self.aliases
+
+    def duplicate_versions(self) -> None:
+        """Each duplicate's `version` a copy of its original's, once the original has its own for this run (a re-parsed
+        original gets it after _sync_duplicates copied it): the same whether or not the original was re-parsed."""
+        for card in self.db.stats.values():
+            original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
+            if original is None or original is card:
+                continue
+            info = getattr(original, "version", None)
+            if info is None:
+                vars(card).pop("version", None)         # the class default, as an original without one
+            else:
+                card.version = deepcopy(info)
 
     @staticmethod
     def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None,
@@ -1089,10 +1109,11 @@ class GitBuild(CardBuild):
     intro and a new card's author the first commit's at its path (card_history).
     """
     def __init__(self, db: StatsDatabase, checkout: str, head: str = "HEAD", index=None, blobs: str = "",
-                 budget: int = BUDGET, **kwargs):
+                 budget: int = BUDGET, aliases_ref: str = "", **kwargs):
         from commands.card_history import GitIndex
         super().__init__(db, legacy=False, **kwargs)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
+        self.aliases_ref = aliases_ref           # no aliases given: aliases.pkl at this AutoCroissant ref, read if needed
         self.head = _git(checkout, "rev-parse", head).strip()
         self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
@@ -1105,6 +1126,13 @@ class GitBuild(CardBuild):
 
     def _fetch_tree(self, repository: str, etag: str):
         return _TreeReply(ls_tree(self.checkout, self.head))
+
+    def _aliases(self) -> dict:
+        """aliases.pkl from aliases_ref, read once, before the PSDs: never once Card Edits.json has aliases_moved, so a
+        build runs on after AutoCroissant deletes the file (step 10)."""
+        if self.aliases_ref:
+            self.aliases, self.aliases_ref = load_aliases(self.aliases_ref), ""
+        return self.aliases
 
     def _store(self, sha: str) -> str:
         """The local object store that has this blob ("" when none)."""
@@ -1442,7 +1470,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         budget: REST downloads at most
         run_url: The Actions run (manifest, commit message)
         aliases: alias -> PNG file name (aliases.pkl), for the duplicates' names (default: the seed folder's, else
-            AutoCroissant's at ALIASES_REF)
+            AutoCroissant's at ALIASES_REF, read only while Card Edits.json has no aliases_moved)
         dry_run: Build and report, write nothing
         restore: A data commit whose db/ becomes the current one again
         builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
@@ -1467,8 +1495,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         details = psd_details.load(path_join(folder, "psd_details.json"))
         if aliases is None and isfile(path_join(folder, "aliases.pkl")):
             aliases = load_aliases(path_join(folder, "aliases.pkl"))
-    if aliases is None and not restore:
-        aliases = load_aliases(ALIASES_REF)
     pending_before = (manifest_before.get("pending") or {}) if not seeding and not restore else {}
     carried = pending_before.get("full") or None              # a budgeted full re-parse going on
     if carried and carried.get("parser_version") != PARSER_VERSION:
@@ -1476,7 +1502,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     approved = full or bool(carried)
     db = StatsDatabase()
     db.stats, db.old_stats = stats, old
-    run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget, aliases=aliases)
+    run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget, aliases=aliases,
+                         aliases_ref=ALIASES_REF if aliases is None else "")
     index = run_build.index
     seeded = refine(db.stats, db.old_stats, index, bot_pickles()) if seeding else None
     restored_manifest: dict = {}
@@ -1504,6 +1531,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             close_archived(db.old_stats, list(gone) + list(backfilled), index)
         edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
         record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
+        run_build.duplicate_versions()
         db.drop_stale_archives()
         impossible = unknown_values(db.stats, db.old_stats)        # a replaced misparse's values: unknown in history
         if run_build.font_index is not None:

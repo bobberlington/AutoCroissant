@@ -19,8 +19,9 @@ from re import compile as re_compile
 from typing import Optional
 from urllib.parse import quote
 
-from global_config import SITE_URL, TIMEZONE
+from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_db import write_text
+from commands.card_edits import as_parsed
 from commands.card_history import TYPE_RENAMES, unknown
 from commands.card_models import CardInfo
 
@@ -38,7 +39,7 @@ USES = re_compile(r"\((\d+)U\)")                         # more is stronger
 KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore")
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
-              "unknown": "Other"}                        # site/assets/app.js KIND_LABEL
+              "unknown": "Other", "rulebook": "Rulebook page"}   # site/assets/app.js KIND_LABEL, and the rulebook's pages
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
             (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
             (("restore",), "Rollback"))                  # re-reads: one line
@@ -102,6 +103,19 @@ def field_changes(old: CardInfo, new: CardInfo) -> dict:
     if (a["subseries"] or a["series"]) == (b["subseries"] or b["series"]):
         skip |= {"series", "subseries"}
     return {key: [a[key], b[key]] for key in FIELDS if a[key] != b[key] and key not in skip}
+
+
+def split_changes(old: CardInfo, new: CardInfo, changes: dict) -> tuple:
+    """
+    A re-read card's changes as (the PSD's, Card Edits.json's or the authors file's): a field is the PSD's when its
+    parse changed (as_parsed: the edits undone) and no edit sets it now; the author never is (git and Card Authors.txt
+    give it).
+    """
+    psd = field_changes(as_parsed(old), as_parsed(new))
+    edited = {key for key in (getattr(new, "parsed_values", None) or {}) if key != "problems"}
+    mine = {key: value for key, value in changes.items()
+            if key in psd and key != "author" and EDIT_FIELD.get(key, key) not in edited}
+    return (mine, {key: value for key, value in changes.items() if key not in mine})
 
 
 def _tag_steps(old: list, new: list) -> tuple:
@@ -215,7 +229,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         after: stats after
         archived_before: archived cards before ({name: last version}, StatsDatabase.archived())
         archived_after: archived cards after
-        reparsed: names this build parsed from their PSD (a data change with the same blob is then a re-read)
+        reparsed: names this build parsed from their PSD (a data change with the same blob is then a re-read); of a
+            re-read card's changes only its parse's are the PSD's (split_changes), an edit beside them is its own event
         edits_by: card name -> its Card Edits.json entry's _-keys (edit_credit), or its _by
         index: card_history.GitIndex: the causing commit and its git author (a new blob's intro, the deletion)
         file_commits: {"edited": the newest commit of Card Edits.json, "authors": of Card Authors.txt} (their events' commit)
@@ -255,24 +270,22 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
             changes = field_changes(old, new)
             blobs = [getattr(old, "blob_sha", None), getattr(new, "blob_sha", None)]
             moved = old.path != new.path
-            if changes:
-                if name in reparsed:
-                    kind = "changed" if blobs[0] != blobs[1] else "moved" if moved else "reparse"   # a move: folder data
-                elif set(changes) == {"author"}:
-                    kind = "authors"
-                else:
-                    kind = "edited"
-                out.append(_event(kind, name, new, fields=changes,
-                                  edit_by=edit_credit(edits_by.get(name), changes) if kind == "edited" else None,
-                                  blob=blobs if blobs[0] != blobs[1] else None, from_path=old.path if moved else None,
-                                  **classify(changes), **(source(blobs[1], path=new.path) if kind in ("changed", "reparse")
-                                                          else source(path=new.path) if kind == "moved"
-                                                          else {"commit": file_commits[kind]} if file_commits.get(kind) else {})))
-            elif blobs[0] != blobs[1]:
+            psd, edits = split_changes(old, new, changes) if changes and name in reparsed else ({}, changes)
+            if psd:
+                kind = "changed" if blobs[0] != blobs[1] else "moved" if moved else "reparse"   # a move: folder data
+                out.append(_event(kind, name, new, fields=psd, blob=blobs if blobs[0] != blobs[1] else None,
+                                  from_path=old.path if moved else None, **classify(psd),
+                                  **(source(path=new.path) if kind == "moved" else source(blobs[1], path=new.path))))
+            elif blobs[0] != blobs[1]:                    # an edit in the same build is its own event (below)
                 out.append(_event("art", name, new, blob=blobs, from_path=old.path if moved else None,
                                   **source(blobs[1], path=new.path)))
             elif moved:
                 out.append(_event("moved", name, new, from_path=old.path, **source(path=new.path)))
+            if edits:
+                kind = "authors" if set(edits) == {"author"} else "edited"
+                out.append(_event(kind, name, new, fields=edits,
+                                  edit_by=edit_credit(edits_by.get(name), edits) if kind == "edited" else None,
+                                  **classify(edits), **({"commit": file_commits[kind]} if file_commits.get(kind) else {})))
     return out
 
 
@@ -399,10 +412,25 @@ def advance(db: str, seq: int, push: Optional[str] = None) -> None:
 # ========================
 # The posts (one per push)
 # ========================
-def card_link(name: str, site: str, ids: Optional[dict] = None) -> str:
-    """The card's share page (SITE/c/<id>/), else a search for it."""
+def site_ids(data) -> dict:
+    """The website's cards.json -> {card name: share id}, keyed by each card's `key` (the database's name; its `name`
+    is the shown title), else its name."""
+    cards = data.get("cards", data) if isinstance(data, dict) else data
+    return {c.get("key") or c.get("name"): c["id"] for c in cards or [] if isinstance(c, dict) and c.get("id")}
+
+
+def is_rulebook(event: dict) -> bool:
+    """Whether an event's card is a rulebook page (build_site's rule: its type, or a Rulebook folder)."""
+    return event.get("card_type") == "rulebook" or RULEBOOK_DIR in (event.get("path") or "").split("/")
+
+
+def card_link(name: str, site: str, ids: Optional[dict] = None, rulebook: bool = False) -> str:
+    """The card's share page (SITE/c/<id>/); a rulebook page (not in cards.json): the rulebook searched for it; else a
+    search for the card."""
     card_id = (ids or {}).get(name)
-    return f"{site}/c/{card_id}/" if card_id else f"{site}/#/cards?q={quote(name)}"
+    if card_id:
+        return f"{site}/c/{card_id}/"
+    return f"{site}/#/rules?q={quote(name)}" if rulebook else f"{site}/#/cards?q={quote(name)}"
 
 
 def _md(text: str) -> str:
@@ -442,7 +470,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     kind = event["kind"]
     if kind == "restore":
         return f"Card data restored from {_md((event.get('restored_from') or '?')[:8])}"
-    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids)})"
+    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids, is_rulebook(event))})"
     if kind == "new":
         stars = f", {event['stars']}\u2605" if event.get("stars") else ""
         by = f" by {_md(event['by'])}" if event.get("by") else ""
@@ -602,8 +630,7 @@ def main(argv: Optional[list] = None) -> int:
         if args.ids:
             with open(args.ids, encoding="utf-8") as fh:
                 data = loads(fh.read())
-            cards = data.get("cards", data) if isinstance(data, dict) else data
-            ids = {c.get("name"): c.get("id") for c in cards if isinstance(c, dict) and c.get("id")}
+            ids = site_ids(data)
         repository = args.repo
         if not repository and isfile(join(args.db, "manifest.json")):
             with open(join(args.db, "manifest.json"), encoding="utf-8") as fh:
@@ -636,6 +663,7 @@ __all__ = [
     'events',
     'field_changes',
     'fields_of',
+    'is_rulebook',
     'link_of',
     'main',
     'messages',
@@ -645,7 +673,9 @@ __all__ = [
     'read_events',
     'read_posted',
     'rewrite_events',
+    'site_ids',
     'size',
+    'split_changes',
     'tags_of',
     'version_changes',
 ]

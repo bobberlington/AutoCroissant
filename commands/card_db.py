@@ -12,7 +12,7 @@ from dataclasses import MISSING, fields
 from hashlib import sha256
 from json import dumps, loads
 from os import fsync, makedirs, remove, replace
-from os.path import exists, isdir, isfile, join
+from os.path import dirname, exists, isdir, isfile, join
 from pickle import Unpickler, UnpicklingError
 from sys import modules as sys_modules
 from threading import Lock
@@ -306,6 +306,42 @@ def _at_commit(git_dir: str, sha: str, name: str) -> Optional[str]:
     return done.stdout.decode("utf-8") if done.returncode == 0 else None
 
 
+def read_cards(source: str, git_dir: str = ".") -> tuple:
+    """
+    (stats, old_stats) of the card data in any of its forms, for the diagnostics: a db/ folder (or a folder holding
+    db/), a folder of pickles, a stats.json or stats.pkl (the old_stats file beside it), or a data commit (db/ at that
+    commit of git_dir: origin/data in a TTSCardMaker clone). old_stats is None when there is none to read.
+
+    Raises:
+        ValueError: no card data there
+    """
+    if isdir(source):
+        for folder in (source, join(source, "db")):
+            if isfile(join(folder, STATS_JSON)):
+                return read_cards(join(folder, STATS_JSON))
+        if isfile(join(source, "stats.pkl")):
+            return read_cards(join(source, "stats.pkl"))
+        raise ValueError(f"{source}: no {STATS_JSON}, db/{STATS_JSON} or stats.pkl")
+    if isfile(source):
+        is_json = source.endswith(".json")
+        beside = join(dirname(source), OLD_STATS_JSON if is_json else "old_stats.pkl")
+        if is_json:
+            with open(source, encoding="utf-8") as fh:
+                stats = parse_stats(fh.read(), source)
+            old = None
+            if isfile(beside):
+                with open(beside, encoding="utf-8") as fh:
+                    old = parse_old_stats(fh.read(), beside)
+            return (stats, old)
+        old = load_pickle(beside) if isfile(beside) else None
+        return (load_pickle(source), old if old is None or isinstance(old, defaultdict) else defaultdict(list, old))
+    stats_t = _at_commit(git_dir, source, STATS_JSON)
+    if stats_t is None:
+        raise ValueError(f"{source}: no such file or folder, nor a commit of {git_dir} with db/{STATS_JSON}")
+    old_t = _at_commit(git_dir, source, OLD_STATS_JSON)
+    return (parse_stats(stats_t), parse_old_stats(old_t) if old_t is not None else None)
+
+
 def export_pickles(source: str, out_folder: str, git_dir: str = ".") -> None:
     """
     db/ back to stats.pkl, old_stats.pkl and psd_details.json in out_folder (the older tooling's input; aliases.pkl
@@ -393,6 +429,7 @@ __all__ = [
     'old_stats_text',
     'parse_old_stats',
     'parse_stats',
+    'read_cards',
     'read_db',
     'read_pickles',
     'record',

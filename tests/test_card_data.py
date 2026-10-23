@@ -639,3 +639,97 @@ def test_duplicates_named_by_the_seed_aliases(cards, tmp_path):
     cards.aliases.write_bytes(pickle.dumps({"tiny doom": "mini_doomer2.png"}))
     assert _build(cards)[0] == cd.EXIT_OK                                        # no --aliases: AutoCroissant main's
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
+
+
+def test_a_duplicate_keeps_its_originals_version(cards):
+    """A duplicate's `version` is its original's even when the original was re-parsed this run (it was copied before
+    the original got it back): a full re-parse writes the stats.json an incremental build does, and the run after
+    it writes nothing."""
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    stats = _read(cards)[0]
+    assert stats["Mini Doomer2"].version == stats["Mini Doomer"].version and stats["Mini Doomer"].version["cause"] == "psd"
+    first = (cards.db / "stats.json").read_text(encoding="utf-8")
+
+    def times():
+        return {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
+    before = times()
+    assert _build(cards)[0] == cd.EXIT_OK and times() == before                  # nothing new: no write
+    assert _build(cards, "--full")[0] == cd.EXIT_OK
+    assert (cards.db / "stats.json").read_text(encoding="utf-8") == first         # re-parsed: the same stats.json
+    before = times()
+    assert _build(cards)[0] == cd.EXIT_OK and times() == before                  # and the run after writes nothing
+
+
+def test_an_edit_beside_a_new_blob_is_an_edit(cards):
+    """A Card Edits.json name lands in the same build as new art for its card (Metal General, 2026-10-22): the PSD's
+    own data is unchanged (its parse against parsed_values), so it posts and is recorded as an edit beside the art;
+    a real PSD change in the same build stays the PSD's."""
+    _build(cards, "--seed", str(cards.seed))
+    put(cards.repo, DOOMER, cards.psds[DOOMER] + b"\0")                         # new art: another blob, the same layers
+    commit(cards.repo, "bob", 2000)
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"name": "Tiny Doomer", "_by": "web"},
+                                                                  "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
+    edits = commit(cards.repo, "web", 2100)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old, _, _, events = _read(cards)
+    mine = [(e["kind"], e.get("fields"), e.get("edit_by"), e["commit"]) for e in events if e["card"] == "Mini Doomer" and e["seq"] > 2]
+    assert sorted(mine, key=str) == sorted([("art", None, None, git(cards.repo, "rev-parse", "HEAD~1").strip()),
+                                            ("edited", {"name": ["Mini Doomer", "Tiny Doomer"]}, "web", edits)], key=str)
+    doomer = stats["Mini Doomer"]
+    assert (doomer.display_name, doomer.version["cause"], doomer.version["from_commit"]) == ("Tiny Doomer", "edit", edits)
+    assert [v.display_name for v in old["Mini Doomer"]] == [None]
+
+    put(cards.repo, DOOMER, cards.psds[OTHER])                                  # the PSD's data changes too
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"name": "Wee Doomer", "_by": "web"}}}).encode())
+    commit(cards.repo, "bob", 3000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, _, _, _, events = _read(cards)
+    last = {e["kind"]: e for e in events if e["card"] == "Mini Doomer" and e["at"] == max(x["at"] for x in events)}
+    assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
+    assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
+
+
+def test_no_aliases_pkl_once_the_aliases_moved(cards, monkeypatch):
+    """Card Edits.json with aliases_moved: aliases.pkl is never read, so a build runs on after AutoCroissant deletes it
+    (step 10: its raw URL answers 404); a duplicate's name comes from its own entry."""
+    from requests.exceptions import HTTPError
+
+    def gone(ref, name, folder, required=True):
+        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
+    monkeypatch.setattr(cd, "_bot_file", gone)
+    monkeypatch.setattr(cd, "ALIASES_REF", "main")
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"aliases_moved": True, "cards": {
+        "Mini Doomer2": {"aliases": ["tiny doom"], "_by": "AutoCroissant"}, "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--full")[0] == cd.EXIT_OK                                 # no seed: once AutoCroissant main's
+    assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
+
+
+def test_aliases_pkl_missing_before_the_aliases_moved_stops_before_the_psds(cards, monkeypatch):
+    """No aliases_moved yet and aliases.pkl answers 404: the build stops once Card Edits.json is read, before any PSD."""
+    from requests.exceptions import HTTPError
+
+    def gone(ref, name, folder, required=True):
+        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
+    read = []
+    process = cd.CardBuild._process_files_from_response
+    monkeypatch.setattr(cd.CardBuild, "_process_files_from_response", lambda self, *a: read.append(1) or process(self, *a))
+    monkeypatch.setattr(cd, "_bot_file", gone)
+    monkeypatch.setattr(cd, "ALIASES_REF", "main")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "checked"}}}).encode())
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_ERROR
+    assert not read and not cards.db.joinpath("stats.json").exists()
+
+
+def test_live_card_edits_has_aliases_moved(clone):
+    """The real Card Edits.json has aliases_moved: a real build never reads aliases.pkl, so step 10 can delete it."""
+    from commands.card_edits import CardEdits
+    path = clone / cd.EDITS_PATH
+    if not path.is_file():
+        pytest.skip(f"no {cd.EDITS_PATH}")
+    assert CardEdits.parse(path.read_text(encoding="utf-8")).aliases_moved

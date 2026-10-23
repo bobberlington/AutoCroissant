@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
-"""Diff two stats.pkl snapshots, and their history. RUN THIS BEFORE EVERY PICKLE PUSH.
+"""Diff two card databases (stats and their history): pickles or the data build's db/ JSON.
+RUN THIS BEFORE EVERY PICKLE PUSH, and for the shadow's daily check of the data branch.
 
 The single most damaging failure class in this project is committing a
 corrupted stats.pkl (see autocroissant-failure-archaeology). This tool turns
 "the pickle looks fine" into numbers.
 
+Each side is any form the card data takes (commands.card_db.read_cards): a stats.pkl or stats.json (the old_stats
+file beside it is the history), a folder of pickles, a db/ folder (or a folder holding db/), or a data commit of
+--git's repo (default: here), such as origin/data in a TTSCardMaker clone. No config.py is needed.
+
 Usage (run from the repo root):
     # compare the last committed pickles against the working ones:
-    git show HEAD:stats.pkl > /tmp/stats_head.pkl && git show HEAD:old_stats.pkl > /tmp/old_stats_head.pkl
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl \
-        --history /tmp/old_stats_head.pkl old_stats.pkl
+    mkdir -p ~/Documents/Tools/wt/scratch/head && git show HEAD:stats.pkl > ~/Documents/Tools/wt/scratch/head/stats.pkl \
+        && git show HEAD:old_stats.pkl > ~/Documents/Tools/wt/scratch/head/old_stats.pkl
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py ~/Documents/Tools/wt/scratch/head/stats.pkl stats.pkl
 
-    # or any two snapshots (an old_stats.pkl beside each stats.pkl is read without --history):
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py <old.pkl> <new.pkl> [--verbose]
+    # the data branch's tip against the jetson's last PICKLE (the shadow's daily check):
+    git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin +data:refs/remotes/origin/data
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py stats.pkl origin/data \
+        --git ~/Desktop/TTSCardMaker
+
+    # any two (a db/ folder from a hand build, an Actions artifact...), history files named explicitly:
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py <old> <new> [--verbose] \
+        [--history <old old_stats.pkl|.json> <new old_stats.pkl|.json>]
 
 Exit code 0 = no changes; 1 = changes found (added/removed/modified cards, or
 history: versions added or dropped, starts moved, archive tags, blobs); 2 =
@@ -28,10 +39,12 @@ Red flags to look for in the output:
 import sys
 from collections import Counter
 from pathlib import Path
-from pickle import load
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
+from commands.card_db import load_pickle, parse_old_stats, read_cards  # noqa: E402
+from commands.card_history import data_of  # noqa: E402
+
 BOOKKEEPING = ("blob_sha", "parser_version")       # not in to_dict(); a version's start is read from `version`
 
 
@@ -42,9 +55,12 @@ def norm(entry):
     return dict(entry)
 
 
-def load_pickle(path):
-    with open(path, "rb") as f:
-        return load(f)
+def load_history(path):
+    """An old_stats file named by --history: old_stats.pkl, or old_stats.json."""
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8") as fh:
+            return parse_old_stats(fh.read(), path)
+    return load_pickle(path)
 
 
 def start(card):
@@ -60,29 +76,64 @@ def key(card):
     return (getattr(card, "timestamp", None), getattr(card, "blob_sha", None))
 
 
+def pair(a, b):
+    """
+    Two lists of one name's stored versions matched up: one version when the same timestamp and blob; else the same
+    blob (re-dated from git); else, where one side has no blob (given its commit's blob: the data build's seed pass,
+    which /update_stats never does), the same timestamp, or the same data in today's forms (given a blob and
+    re-dated).
+
+    Returns:
+        ([(a's version, b's version)], a's unmatched, b's unmatched)
+    """
+    def blob(card):
+        return getattr(card, "blob_sha", None)
+    rules = (lambda x, y: key(x) == key(y),
+             lambda x, y: bool(blob(x)) and blob(x) == blob(y),
+             lambda x, y: getattr(x, "timestamp", None) == getattr(y, "timestamp", None) and not (blob(x) and blob(y)),
+             lambda x, y: not (blob(x) and blob(y)) and same_data(x, y))
+    left, right, pairs = list(range(len(a))), list(range(len(b))), []
+    for rule in rules:
+        for i in list(left):
+            j = next((j for j in right if rule(a[i], b[j])), None)
+            if j is not None:
+                pairs.append((a[i], b[j]))
+                left.remove(i)
+                right.remove(j)
+    return (pairs, [a[i] for i in left], [b[j] for j in right])
+
+
+def same_data(a, b):
+    """Two versions hold the same data in today's forms (card_history.data_of: no timestamp, path or blob)."""
+    return not isinstance(a, dict) and not isinstance(b, dict) and data_of(a) == data_of(b)
+
+
+def data(card):
+    """A version's data as diffed (its timestamp aside: a re-dated version shows as a moved start)."""
+    out = norm(card)
+    out.pop("timestamp", None)
+    return out
+
+
 def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
     """Print the history section; returns whether anything changed."""
     def count(hist):
         return sum(len(v) for v in hist.values())
     print(f"\n-- history --\nold: {len(old_hist)} names {count(old_hist)} versions   "
           f"new: {len(new_hist)} names {count(new_hist)} versions")
-    added, dropped, starts, tags, data = Counter(), Counter(), [], [], []
+    added, dropped, starts, tags, other = Counter(), Counter(), [], [], []
     for name in sorted(set(old_hist) | set(new_hist)):
         a, b = list(old_hist.get(name) or []), list(new_hist.get(name) or [])
-        ka, kb = Counter(map(key, a)), Counter(map(key, b))
-        if kb - ka:
-            added[name] = sum((kb - ka).values())
-        if ka - kb:
-            dropped[name] = sum((ka - kb).values())
-        by_key = {key(v): v for v in a}
-        for v in b:
-            w = by_key.get(key(v))
-            if w is None:
-                continue
+        pairs, gone, new = pair(a, b)
+        if new:
+            added[name] = len(new)
+        if gone:
+            dropped[name] = len(gone)
+        for w, v in pairs:
             if start(w) != start(v):
-                starts.append((f"{name} (version {key(v)[0]})", start(w), start(v)))
-            if norm(w) != norm(v):
-                data.append(name)
+                starts.append((f"{name} (version {key(w)[0]})", start(w), start(v)))
+            if data(w) != data(v):
+                other.append(name)
         last_a, last_b = (getattr(a[len(a) - 1], "archived", None) if a else None,
                           getattr(b[len(b) - 1], "archived", None) if b else None)
         if last_a != last_b:
@@ -98,7 +149,7 @@ def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
     print(f"versions added: {sum(added.values())} ({len(added)} names)   "
           f"dropped: {sum(dropped.values())} ({len(dropped)} names)")
     print(f"starts moved: {len(starts)}   archive tags changed: {len(tags)}   "
-          f"kept versions with other data: {len(set(data))}   cards with another blob or parser: {len(blobs)}")
+          f"kept versions with other data: {len(set(other))}   cards with another blob or parser: {len(blobs)}")
     rows = [("+", n, c) for n, c in sorted(added.items())] + [("-", n, c) for n, c in sorted(dropped.items())]
     for sign, name, n in rows if verbose else rows[:40]:
         print(f"  {sign}{n} {name}")
@@ -106,17 +157,20 @@ def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
         print(f"  start {name}: {a} -> {b}")
     for name, a, b in tags:
         print(f"  tag {name}: {a} -> {b}")
-    for name in sorted(set(data)):
+    for name in sorted(set(other)):
         print(f"  data {name}")
     if verbose:
         for name, fields in blobs:
             print(f"  bookkeeping {name}: {fields}")
-    return bool(added or dropped or starts or tags or data or blobs)
+    return bool(added or dropped or starts or tags or other or blobs)
 
 
 def main() -> int:
     args = [a for a in sys.argv[1:] if a != "--verbose"]
-    history = None
+    history, git = None, "."
+    if "--git" in args:
+        i = args.index("--git")
+        git, args = (args[i + 1:i + 2] or ["."])[0], args[:i] + args[i + 2:]
     if "--history" in args:
         i = args.index("--history")
         history, args = args[i + 1:i + 3], args[:i] + args[i + 3:]
@@ -124,18 +178,15 @@ def main() -> int:
         print(__doc__)
         return 2
     verbose = "--verbose" in sys.argv
-    if history is None:
-        beside = [Path(p).with_name("old_stats.pkl") for p in args[:2]]
-        history = [str(p) for p in beside] if all(p.is_file() for p in beside) else None
     try:
-        old_raw, new_raw = load_pickle(args[0]), load_pickle(args[1])
+        (old_raw, old_hist), (new_raw, new_hist) = read_cards(args[0], git), read_cards(args[1], git)
         old = {name: norm(card) for name, card in old_raw.items()}
         new = {name: norm(card) for name, card in new_raw.items()}
-        hists = [load_pickle(p) for p in history] if history else None
+        if history:
+            old_hist, new_hist = load_history(history[0]), load_history(history[1])
+        hists = (old_hist, new_hist) if old_hist is not None and new_hist is not None else None
     except Exception as e:  # noqa: BLE001
-        print(f"ERROR loading pickles: {e}")
-        print("(unpickling CardInfo requires running from a checkout where "
-              "commands.psd_analyzer imports cleanly and exports it, with config.py present)")
+        print(f"ERROR loading the card data: {e}")
         return 2
 
     added = sorted(set(new) - set(old))
@@ -175,7 +226,7 @@ def main() -> int:
 
     changed_history = history_diff(old_raw, new_raw, *hists, verbose) if hists else False
     if not hists:
-        print("\n(history not compared: pass --history <old old_stats.pkl> <new old_stats.pkl>)")
+        print("\n(history not compared: pass --history <old old_stats file> <new old_stats file>)")
     return 1 if (added or removed or modified or changed_history) else 0
 
 

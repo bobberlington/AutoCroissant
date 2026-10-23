@@ -216,6 +216,19 @@ def test_same_data_from_a_new_blob_is_no_version(github, psds, monkeypatch):
     assert old["Mini Doomer"][0].version["from"] == TIME and stats["Mini Doomer"].version is None
 
 
+def test_a_duplicate_takes_its_originals_carried_start(github, psds, monkeypatch):
+    """A duplicate PNG's card is copied before its original's start is carried (same data, new blob): it gets the
+    original's `version` in the same run, not one run later."""
+    github.files["Auxiliary/Minions/Mini_Doomer2.png"] = b"second art"
+    _run()
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (TIME + 86400, None))
+    github.files[DOOMER] = psds[DOOMER] + b"\0"                       # another blob, the same layers
+    _run()
+    stats, _ = _saved()
+    assert stats["Mini Doomer"].version["from"] == TIME and stats["Mini Doomer2"].duplicate_of == "Mini Doomer"
+    assert stats["Mini Doomer2"].version == stats["Mini Doomer"].version
+
+
 def test_duplicate_versions_are_cleaned_once(github, capsys):
     """The duplicates archived before 2026-10-22 go at the next /update_stats, even on a 304: the first of each run stays,
     a run equal to the card goes into it (its start kept); one line says so, and the run after says nothing."""

@@ -122,6 +122,23 @@ def test_every_kind():
     assert by["Fresh"]["by"] == "Bob" and set(cl.KINDS) >= set(kinds.values())
 
 
+def test_a_reread_cards_edits_are_their_own_event():
+    """A re-read card's fields go to the PSD's event only when its parse changed (parsed_values put back) and no edit
+    sets them now; an edit (new, changed or removed) and the author are the edit's or the authors file's."""
+    before = {"Art": _card("Art"), "Both": _card("Both"), "Unedit": _card("Unedit", ability="Edited.",
+                                                                           parsed_values={"ability": "(1CD) Hit."}),
+              "Back": _card("Back", ability="Edited.", parsed_values={"ability": "(1CD) Hit."})}
+    after = {"Art": _card("Art", blob_sha="b2", display_name="Shown", parsed_values={"name": None, "problems": []}),
+             "Both": _card("Both", blob_sha="b2", stats=cm.CardStats(6, 2, 3, 4), display_name="Shown", author="Al",
+                           parsed_values={"name": None, "problems": []}),
+             "Unedit": _card("Unedit", blob_sha="b2", ability="New."),           # edit gone, the PSD changed too
+             "Back": _card("Back", blob_sha="b2")}                              # edit gone, the PSD as before
+    found = sorted((e["card"], e["kind"], sorted(e.get("fields") or {})) for e in
+                   cl.events(before, after, {}, {}, dict.fromkeys(after, 1), {n: "web" for n in after}))
+    assert found == [("Art", "art", []), ("Art", "edited", ["name"]), ("Back", "art", []), ("Back", "edited", ["ability", "tags"]),
+                     ("Both", "changed", ["hp"]), ("Both", "edited", ["author", "name"]), ("Unedit", "changed", ["ability"])]
+
+
 def test_bot_edits_never_read_as_website_edits():
     """A _by AutoCroissant entry, and fields the migration listed in an editor's _bot, are the bot's: "(by AutoCroissant)",
     never "on the website" (changes.js byWhom)."""
@@ -229,6 +246,27 @@ def test_payload_words_links_and_order():
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
     assert cl.payload([], "https://site") is None
+
+
+def test_links_by_the_sites_key_and_rulebook_pages_to_the_rulebook(tmp_path):
+    """cards.json's `name` is the shown title: ids go by `key` (the database's name), else name; a rulebook page (not
+    in cards.json) links the rulebook searched for it, never a card search."""
+    site = {"cards": [{"id": "metal-general", "name": "MEtal General", "key": "Metal General"},
+                      {"id": "kirby", "name": "Kirby"}]}
+    assert cl.site_ids(site) == {"Metal General": "metal-general", "Kirby": "kirby"}
+    db = str(tmp_path / "db")
+    cl.append_events(db, [dict(e, push=PUSH) for e in cl.number([
+        {"kind": "changed", "card": "Metal General", "title": "MEtal General", "card_type": "creature", "fields": {"hp": [1, 2]}},
+        {"kind": "changed", "card": "11 Abilities2", "card_type": "rulebook", "path": "Auxiliary/Rulebook/11_Abilities2.psd",
+         "fields": {"ability": ["a", "b"]}},
+        {"kind": "new", "card": "Page", "card_type": "rulebook", "stars": None}], 0, at=T)])
+    (tmp_path / "cards.json").write_text(json.dumps(site), encoding="utf-8")
+    out = tmp_path / "discord.json"
+    assert cl.main(["post", "--db", db, "--out", str(out), "--ids", str(tmp_path / "cards.json"), "--site", "https://site"]) == 0
+    text = "\n".join(e.get("description") or "" for e in json.loads(out.read_text(encoding="utf-8"))["messages"][0]["body"]["embeds"])
+    assert "[MEtal General](https://site/c/metal-general/): HP 1 → 2" in text
+    assert "[11 Abilities2](https://site/#/rules?q=11%20Abilities2): ability changed" in text
+    assert "[Page](https://site/#/rules?q=Page) (Rulebook page)" in text and "#/cards?q=" not in text
 
 
 def test_a_card_moved_into_mdw_posts_moved():

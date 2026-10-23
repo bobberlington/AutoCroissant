@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-"""Inspect the card database pickles (stats.pkl / old_stats.pkl) read-only.
+"""Inspect the card database read-only: the repo root's pickles (stats.pkl / old_stats.pkl), or with --db the data
+build's db/ JSON (or any form commands.card_db.read_cards reads).
 
 Usage (run from anywhere; repo root derived from this file's location):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py            # summary
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems # cards with recorded problems
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "Card Name"  # one card, full detail + history
 
-Requires config.py in the repo root (import chain). Never writes anything.
+    # the same on the data build's db/: a folder, or a data commit of --git's repo (origin/data in a TTSCardMaker clone):
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data \
+        --git ~/Desktop/TTSCardMaker "Card Name"
+
+No config.py needed (the pickles load through card_db's allow-list unpickler). Never writes anything.
 """
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
-import os
-os.chdir(REPO_ROOT)
 
-from commands.psd_analyzer import stats_db  # noqa: E402
+from commands.card_db import read_cards  # noqa: E402
+from commands.card_models import StatsDatabase  # noqa: E402
+
+stats_db = StatsDatabase()
 
 
 def show_card(name: str) -> int:
@@ -44,6 +50,8 @@ def show_card(name: str) -> int:
         if k == "timestamp":
             v = f"{v} ({datetime.fromtimestamp(v)})"
         print(f"{k:12s}: {v!r}")
+    if getattr(card, "version", None):
+        print(f"{'version':12s}: {card.version!r}")
 
     history = stats_db.old_stats.get(name, [])
     print(f"\nold versions: {len(history)}")
@@ -55,8 +63,8 @@ def show_card(name: str) -> int:
 
 def summary() -> int:
     s = stats_db.stats
-    print(f"stats.pkl     : {len(s)} cards")
-    print(f"old_stats.pkl : {len(stats_db.old_stats)} cards with history, "
+    print(f"stats     : {len(s)} cards")
+    print(f"old_stats : {len(stats_db.old_stats)} cards with history, "
           f"{sum(len(v) for v in stats_db.old_stats.values())} archived versions total")
     archived = stats_db.archived()
     print(f"archived cards (PSD deleted): {len(archived)}"
@@ -87,11 +95,28 @@ def problems() -> int:
     return 0
 
 
+def load(args: list) -> list:
+    """Fill stats_db from --db (default: the repo root's pickles) and --git; returns the other arguments."""
+    source, git = str(REPO_ROOT), "."
+    for flag in ("--db", "--git"):
+        if flag in args:
+            i = args.index(flag)
+            value, args = (args[i + 1:i + 2] or [""])[0], args[:i] + args[i + 2:]
+            source, git = (value, git) if flag == "--db" else (source, value)
+    stats, old = read_cards(source, git)
+    stats_db.stats, stats_db.old_stats = stats, old if old is not None else defaultdict(list)
+    return args
+
+
 if __name__ == "__main__":
-    stats_db.load()
-    if len(sys.argv) == 1:
+    try:
+        rest = load(sys.argv[1:])
+    except Exception as e:  # noqa: BLE001
+        print(f"ERROR loading the card data: {e}")
+        sys.exit(2)
+    if not rest:
         sys.exit(summary())
-    elif sys.argv[1] == "--problems":
+    elif rest[0] == "--problems":
         sys.exit(problems())
     else:
-        sys.exit(show_card(" ".join(sys.argv[1:])))
+        sys.exit(show_card(" ".join(rest)))
