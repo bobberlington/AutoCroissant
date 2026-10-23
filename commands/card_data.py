@@ -882,13 +882,16 @@ def clean_history(db: StatsDatabase, index=None, pickles=None) -> tuple:
     clone's index and the bot's PICKLE commits, the history they held recovered and the cards gone before archiving
     archived (card_history.recover); stored versions in today's forms (normalize) and their impossible values unknown
     (unknown_values); with the index, type misreads merged (misreads); duplicates dropped (dedupe); with the index, the
-    archive tags dated from their deleting commit, an exact rename's new name or MDW folder recorded (date_archive).
+    archive tags dated from their deleting commit, an exact rename's new name or MDW folder recorded (date_archive), and
+    carried starts given their commit (commits_of).
 
     Returns:
         (versions normalized, versions dropped, archived names whose tag git dated, renamed or moved, Recovered or
-        None, impossible values set to unknown, misreads merged): the lists of card_history's functions
+        None, impossible values set to unknown, misreads merged, starts given their commit): the lists of
+        card_history's functions
     """
-    from commands.card_history import Refined, date_archive, dedupe, misreads, normalize, recover, unknown_values
+    from commands.card_history import (Refined, commits_of, date_archive, dedupe, misreads, normalize, recover,
+                                       unknown_values)
     recovered = recover(db.stats, db.old_stats, index, pickles) if index is not None and pickles is not None else None
     normalized = normalize(db.stats, db.old_stats)
     unknowns = unknown_values(db.stats, db.old_stats)
@@ -900,13 +903,15 @@ def clean_history(db: StatsDatabase, index=None, pickles=None) -> tuple:
         date_archive(db.stats, db.old_stats, index, found, backfill=False)      # tagging stays the guarded prune's
         new = set(recovered.archived) if recovered is not None else set()
         dated = sorted((set(found.tags_dated) | {name for name, _ in found.renamed} | set(found.retired)) - new)
-    return (normalized, deduped, dated, recovered, unknowns, merged)
+    commits = commits_of(db.stats, db.old_stats, index) if index is not None else []
+    return (normalized, deduped, dated, recovered, unknowns, merged, commits)
 
 
 def history_line(normalized: list, deduped: list, dated: list, recovered=None, unknowns: tuple = (), merged: tuple = (),
-                 db: Optional[StatsDatabase] = None) -> Optional[str]:
+                 commits: tuple = (), db: Optional[StatsDatabase] = None) -> Optional[str]:
     """clean_history's one line, or None when it changed nothing."""
-    if not (normalized or deduped or dated or unknowns or merged or (recovered is not None and recovered.changed())):
+    if not (normalized or deduped or dated or unknowns or merged or commits
+            or (recovered is not None and recovered.changed())):
         return None
     parts = []
     if recovered is not None and recovered.changed():
@@ -931,6 +936,8 @@ def history_line(normalized: list, deduped: list, dated: list, recovered=None, u
         parts.append(f"{len(normalized)} brought to today's series and type names")
     if dated:
         parts.append(f"archive tag{'' if len(dated) == 1 else 's'} from git: {', '.join(dated)}")
+    if commits:
+        parts.append(f"{len(commits)} carried start{'' if len(commits) == 1 else 's'} given their commit")
     return "History: " + "; ".join(parts) + "."
 
 
@@ -1156,9 +1163,10 @@ class GitBuild(CardBuild):
         return None
 
     def _get_remote_timestamp(self, repo, path: str, name: str) -> tuple[float, Optional[str]]:
-        """The blob's intro (a move or the same bytes again is no new date); a new card's author: the first commit's at
-        the oldest path its exact renames came from (never the renamer's)."""
-        intro = self.index.blob_intro(self.shas.get(path))
+        """The blob's intro (a move or the same bytes again is no new date; a rename whose old name the database holds:
+        the rename, intro_of); a new card's author: the first commit's at the oldest path its exact renames came from
+        (never the renamer's)."""
+        intro = self.index.intro_of(self.shas.get(path), name, set(self.db.stats) | set(self.db.old_stats))
         at = intro.at if intro is not None else self.at
         if name not in self.db.stats or not self.db.stats[name].author:
             first = self.index.first.get(self.index.origin(path))
@@ -1432,7 +1440,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     """
     from commands import changelog, psd_details
     from commands.card_db import check_db, read_db, read_pickles, round_trip_problems, write_db
-    from commands.card_history import Refined, close_archived, date_archive, out_of_range, record_versions, refine, unknown_values
+    from commands.card_history import (Refined, allows_high, close_archived, date_archive, out_of_range, record_versions,
+                                       refine, unknown_values)
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
@@ -1528,8 +1537,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     bad = round_trip_problems(db.stats, db.old_stats)
     if bad:
         out.refused["G3"] = f"records change through a round trip: {', '.join(bad[:10])}"
-    high = {n for n, c in db.stats.items() if getattr(c, "allow_high_stats", False)}
-    wrong = sorted({n for n, versions in db.old_stats.items() for v in versions if out_of_range(v, n in high)})
+    wrong = sorted({n for n, versions in db.old_stats.items() for v in versions
+                    if out_of_range(v, allows_high(n, db.stats.get(n)))})
     if wrong:                                             # the range check on history (unknown_values leaves none)
         out.refused["G3"] = "; ".join(filter(None, [out.refused.get("G3"), f"history values out of range: {', '.join(wrong[:10])}"]))
 

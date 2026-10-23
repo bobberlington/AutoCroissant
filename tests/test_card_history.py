@@ -115,8 +115,9 @@ def test_parse_handles_odd_paths_and_merges():
 # ========================
 # Versions
 # ========================
-def _card(name="A", path="Items/A.psd", blob_sha=None, ability="Text.", timestamp=1.0, **kw):
-    return cm.CardInfo(name=name, card_type="item", path=path, ability=ability, blob_sha=blob_sha, timestamp=timestamp, **kw)
+def _card(name="A", path="Items/A.psd", blob_sha=None, ability="Text.", timestamp=1.0, card_type="item", **kw):
+    return cm.CardInfo(name=name, card_type=card_type, path=path, ability=ability, blob_sha=blob_sha, timestamp=timestamp,
+                       **kw)
 
 
 def test_start_of_causes(history):
@@ -874,6 +875,171 @@ def test_a_rename_chain_reaches_the_listed_card():
     report = ch.Refined()
     ch.date_archive({"V": _card("V")}, defaultdict(list, {"K": [king]}), index, report)
     assert king.archived["renamed_to"] == "V" and report.renamed == [("K", "V")]
+
+
+def _bot_repo(tmp_path, snapshots: list):
+    """The bot's repo: one PICKLE commit per (at, stats) of snapshots."""
+    bot = tmp_path / "bot"
+    bot.mkdir()
+    git(bot, "init", "-q", "-b", "main")
+    shas = []
+    for at, stats in snapshots:
+        cdb.dump_pickle(stats, str(bot / "stats.pkl"))
+        cdb.dump_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
+        shas.append(commit(bot, "bot", at, "PICKLE"))
+    return bot, shas
+
+
+def _cards_repo(tmp_path, steps: list):
+    """A card repo: one commit per (at, {path: bytes, or None to delete, or ("mv", new path)})."""
+    repo = tmp_path / "cards"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    shas = []
+    for at, files in steps:
+        for path, data in files.items():
+            if data is None:
+                git(repo, "rm", "-q", path)
+            elif isinstance(data, tuple):
+                (repo / data[1]).parent.mkdir(parents=True, exist_ok=True)
+                git(repo, "mv", path, data[1])
+            else:
+                write(repo, path, data)
+        shas.append(commit(repo, "a", at))
+    return ch.GitIndex.from_git(str(repo)), shas
+
+
+def test_a_name_at_two_paths_in_one_pickle_keeps_its_own(tmp_path):
+    """Auto Croissant: a 2025 PICKLE keyed by path held the minion Auxiliary/Minions/Auto.psd and the creature
+    Creatures/Other/2 Stars/Auto.psd, both named Auto; the creature's history takes only its own path's readings."""
+    minion, creature = "Auxiliary/Minions/Auto.psd", "Creatures/Other/2 Stars/Auto.psd"
+    index, c = _cards_repo(tmp_path, [(1000, {minion: b"m one", creature: b"c one"}), (2000, {creature: b"c two"})])
+    bot, _ = _bot_repo(tmp_path, [(1500, {minion: {"type": "minion", "ability": "Minion words.", "timestamp": 1400.0},
+                                          creature: {"type": "creature", "ability": "Creature words.", "timestamp": 1400.0}})])
+    card = cm.CardInfo(name="Auto", card_type="creature", path=creature, ability="New words.", blob_sha=blob(b"c two"),
+                       timestamp=2000.0)
+    stats, old = {"Auto": card}, defaultdict(list)
+    report = ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+    assert [(v.path, v.ability) for v in old["Auto"]] == [(creature, "Creature words.")] and report.clashed == 1
+    assert not ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot)))).changed()
+
+
+def test_readings_of_one_blob_in_two_folders_are_two_versions_dated_at_their_own_path(tmp_path):
+    """Air Totem: the same bytes as a minion (Auxiliary/Minions) and, moved, an item (Auxiliary/Items): two versions,
+    each its own card type, stars and path, the item from the move. Stone Spikes: a 2025 dict reading (an mtime) of
+    bytes first committed in another folder starts when they came to its own path (a reading never stands for a time
+    its file sat elsewhere)."""
+    minion, item, offense, counter = ("Auxiliary/Minions/T.psd", "Auxiliary/Items/T.psd", "Items/Offense/1 Stars/S.psd",
+                                      "Items/Counter/1 Stars/S.psd")
+    index, c = _cards_repo(tmp_path, [(1000, {minion: b"t one", offense: b"s one"}), (2000, {minion: ("mv", item)}),
+                                      (2100, {offense: ("mv", counter)}), (3000, {item: b"t two", counter: b"s two"})])
+    bot, _ = _bot_repo(tmp_path, [
+        (1500, {"T": _card("T", path=minion, ability="Words.", timestamp=1000.0, card_type="minion", stars=2)}),
+        (2500, {"T": _card("T", path=item, ability="Words.", timestamp=2000.0, card_type="aux item"),
+                counter: {"type": "item", "ability": "Spikes.", "timestamp": 2200.0}})])
+    stats = {"T": _card("T", path=item, ability="New.", blob_sha=blob(b"t two"), timestamp=3000.0, card_type="aux item"),
+             "S": _card("S", path=counter, ability="New spikes.", blob_sha=blob(b"s two"), timestamp=3000.0)}
+    old = defaultdict(list)
+    ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+    assert [(v.card_type, v.path, v.stars, ch.start(v)) for v in old["T"]] == [
+        ("minion", minion, 2, (1000.0, c[0])), ("aux item", item, None, (2000.0, c[1]))]
+    assert [(v.path, ch.start(v), v.blob_sha) for v in old["S"]] == [(counter, (2100.0, c[2]), blob(b"s one"))]
+
+
+def test_a_restored_version_pairs_its_start_with_that_commits_blob(tmp_path):
+    """Two readings printing the same (spacing aside) from two commits are one version: the newer parse's data, the
+    older start and that start's own blob (a pair git had)."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/A.psd": A1}), (2000, {"Items/A.psd": A2}), (3000, {"Items/A.psd": A3})])
+    bot, shas = _bot_repo(tmp_path, [(1500, {"A": _card(ability="Old words.", timestamp=1000.0)}),
+                                     (2500, {"A": _card(ability="Old  words.", timestamp=2000.0, parser_version=2)})])
+    stats, old = {"A": _card(ability="New.", blob_sha=blob(A3), timestamp=3000.0)}, defaultdict(list)
+    ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+    [version] = old["A"]
+    assert (version.ability, version.blob_sha, ch.start(version), version.version["restored_from"]) == (
+        "Old  words.", blob(A1), (1000.0, c[0]), shas[1])
+
+
+def test_a_renamed_card_starts_where_its_old_names_archive_ends(tmp_path):
+    """Blashemous Blade, renamed to Blasphemous Blade with the same bytes: the old name's archive holds the time
+    before, so the seed (and a build) date the new name from the rename, not its bytes' first commit."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/Old.psd": O1}), (2000, {"Items/Old.psd": ("mv", "Items/New.psd")})])
+    gone = _card("Old", path="Items/Old.psd", ability="Same.", blob_sha=blob(O1), timestamp=1000.0,
+                 archived={"at": 2000.0, "path": "Items/Old.psd", "blob": blob(O1), "commit": c[1], "renamed_to": "New"})
+    stats = {"New": _card("New", path="Items/New.psd", ability="Same.", blob_sha=blob(O1), timestamp=1000.0)}
+    old = defaultdict(list, {"Old": [gone]})
+    ch.refine(stats, old, index)
+    assert (stats["New"].timestamp, ch.start(stats["New"])) == (2000.0, (2000.0, c[1]))
+    assert ch.start_of(stats["New"], index, None)["from"] == 1000.0           # no other name: the bytes' first commit
+    assert index.intro_of(blob(O1), "New", {"Old", "New"}).sha == c[1] and index.intro_of(blob(O1), "Old", {"New"}).sha == c[0]
+
+
+def test_the_seed_after_the_bots_cleanup_reaches_the_same_starts(tmp_path):
+    """You are going DOWN you Sputnik!: a blob-less version the bot's cleanup folds into the card (its stored time, the
+    rename's commit) and the seed of the raw pickles (it dates that version by its bytes' first commit, under the old
+    name no card holds) give the card one start."""
+    from commands import card_data as cd
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/Old.psd": b"b one"}), (2000, {"Items/Old.psd": ("mv", "Items/B.psd")}),
+                                      (3000, {"Items/B.psd": b"b two"})])
+
+    def raw():
+        v0 = _card("B", path="Items/B.psd", ability="Same.", timestamp=2000.0)
+        return {"B": _card("B", path="Items/B.psd", ability="Same.", blob_sha=blob(b"b two"), timestamp=3000.0)}, \
+            defaultdict(list, {"B": [v0]})
+    stats, old = raw()
+    ch.refine(stats, old, index)
+    db = cm.StatsDatabase()
+    db.stats, db.old_stats = raw()
+    cleaned = cd.clean_history(db, index)
+    assert ch.start(db.stats["B"]) == (2000.0, c[1]) and cleaned[6] == ["B"]     # carried, given its commit
+    ch.refine(db.stats, db.old_stats, index)
+    assert ch.start(db.stats["B"]) == ch.start(stats["B"]) == (1000.0, c[0])
+
+
+def test_carried_starts_get_their_commit_in_the_bot(tmp_path):
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/A.psd": A1}), (2000, {"Items/A.psd": A2})])
+    card = _card(blob_sha=blob(A2), timestamp=2000.0)
+    card.version = ch.meta(None, 1000.0, "legacy")
+    elsewhere = _card(blob_sha=blob(A2), timestamp=2000.0)
+    elsewhere.version = ch.meta(None, 1500.0, "legacy")                         # no commit at that time: left alone
+    assert ch.commits_of({"A": card, "E": elsewhere}, defaultdict(list), index) == ["A"]
+    assert card.version["from_commit"] == c[0] and elsewhere.version["from_commit"] is None
+    assert ch.commits_of({"A": card}, defaultdict(list), index) == []
+
+
+def test_bot_pickles_reads_only_a_new_pickle_commit(lost, monkeypatch):
+    """Each snapshot is unpickled, folded in and dropped before the next; a later PICKLE commit (a /push) is the only
+    one read then, and the readings are those of reading all of them at once."""
+    ch._PICKLES.clear()
+    read = []
+    real = ch._snapshots
+    monkeypatch.setattr(ch, "_snapshots", lambda clone, commits: (read.append(len(commits)), real(clone, commits))[1])
+    first = ch.bot_pickles(str(lost.bot))
+    cdb.dump_pickle({"A": _card(ability="Newest.", timestamp=3000.0)}, str(lost.bot / "stats.pkl"))
+    commit(lost.bot, "bot", 4800, "PICKLE")
+    second = ch.bot_pickles(str(lost.bot))
+    assert read == [4, 1] and second is first and len(second.shas) == 5
+    whole = ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))
+    assert {n: sorted((r.card.path, r.card.timestamp, r.card.ability) for r in rs) for n, rs in second.readings.items()} == \
+        {n: sorted((r.card.path, r.card.timestamp, r.card.ability) for r in rs) for n, rs in whole.readings.items()}
+    ch._PICKLES.clear()
+
+
+def test_high_history_stats_need_an_allowance_and_are_listed():
+    """INT-4: a stat above 10 is unknown without an allowance (the card's allow_high_stats, the retired exclusion
+    list, or no current card to tell); with one it is kept up to two digits and listed for the owner."""
+    sonic = _card("Sonic", stats=cm.CardStats(7, 4, 4, 23), timestamp=1.0)
+    twins = _card("Twin Emperors", stats=cm.CardStats(3, 7, 12, 13), timestamp=2.0)
+    bill = _card("Bill", stats=cm.CardStats(16, 6, 6, 10), timestamp=3.0)
+    tamer = _card("Tamer", stats=cm.CardStats(7, 9, 10, 15), timestamp=4.0)
+    lazarus = _card("Tainted Lazarus", stats=cm.CardStats(110, 110, 110, 110), timestamp=5.0)
+    stats = {"Sonic": _card("Sonic", allow_high_stats=True), "Twin Emperors": _card("Twin Emperors"),
+             "Tamer": _card("Tamer"), "Tainted Lazarus": _card("Tainted Lazarus")}
+    old = defaultdict(list, {"Sonic": [sonic], "Twin Emperors": [twins], "Bill": [bill], "Tamer": [tamer],
+                             "Tainted Lazarus": [lazarus]})
+    assert sorted(n for n, _, _ in ch.unknown_values(stats, old)) == ["Tainted Lazarus", "Tamer"]
+    assert sonic.stats.speed == 23 and twins.stats.speed == 13 and bill.stats.hp == 16 and tamer.stats == cm.CardStats()
+    assert [(n, v) for n, _, v in ch.high_values(stats, old)] == [("Sonic", "7/4/4/23"), ("Twin Emperors", "3/7/12/13"),
+                                                                 ("Bill", "16/6/6/10")]
 
 
 # ========================

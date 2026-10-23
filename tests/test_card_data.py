@@ -337,6 +337,8 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
         "The Big Freezer"
     assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
+    big = stats["The Big Freezer"]                                      # dated from the rename: the archive holds before
+    assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0) and old["The Freezer"][0].version["to"] == 2000.0
 
 
 def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
