@@ -33,17 +33,18 @@ card and field, whether a bake works, why not, and what would fix it.
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
 dry with every gate on copies of the frozen corpus (`corpus-6e50c3ee`, 764 cards; fork `cards-20261023`; script and
-CSV in `~/Documents/Tools/wt/scratch/followups/stars-types/census-bake/`):
+CSV in `~/Documents/Tools/wt/scratch/followups/stars-types/census-bake/`; stars planned again with the parser, as the
+bake plans them, in `census-stars-parser/`: Pike Beam's type icon in its Stars group is no star):
 
 | Edit | Cards | Bake | Refused (why) |
 |---|---|---|---|
-| stars + 1 | 764 | **146** | 592 the `N Stars` folder sets them (creatures 297, items 182, status effects 64, fields 49: a move, ledger S9); 22 a star layout it can't follow (14 two-over-three, quincunx, diamond and other shapes; 3 several stars in one group; 2 no Stars group; 1 two Stars groups; 1 smart filters; 1 would touch the title); 4 a stale Txt2 story (`txt2_repair` first) |
+| stars + 1 | 764 | **147** | 592 the `N Stars` folder sets them or the card has none (creatures 297, items 182, status effects 64 (12 buffs: none), fields 49: a move, ledger S9); 21 a star layout it can't follow (13 two-over-three, quincunx, diamond and other shapes; 3 several stars in one group; 2 no Stars group; 1 two Stars groups; 1 smart filters; 1 would touch the title); 4 a stale Txt2 story (`txt2_repair` first) |
 | stars - 1 | 144 (2+ stars) | **132** | 6 layout, 6 stale Txt2 |
 | types add | 764 | **669** | 77 no type icon to line one up with; 4 off the canvas; 7 would touch the title or stars; 6 stale Txt2; 1 Sonic's stats read above 10 |
 | types remove | 687 (1+ icon) | **674** | 2 off the canvas; 1 a frame (Magnum Opus's field); 2 render past the 25% floor (Tainted Bethany, Dark Mind Eye); 1 changes pixels outside its box (Crowned Magolor); 6 stale Txt2; 1 Sonic |
 | types swap | 687 | 685 planned (not baked) | 1 frame, 1 off the canvas |
 
-Of the 172 cards whose stars the parser counts from the PSD, 146 bake a star more and a star fewer, 159 one of the
+Of the 172 cards whose stars the parser counts from the PSD, 147 bake a star more and a star fewer, 159 one of the
 two; 665 cards bake both a type added and one removed, 678 one of them. 21 bakes carry a pixel note. No card prints
 its type row as icon tokens ([fire] in header text: 0 on the corpus and on TTSCardMaker `96d61368`), so a token row is
 refused (`types: printed as icon tokens`). A bake took 9 s (median; 45 s at most on a loaded Mac), two or three
