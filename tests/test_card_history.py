@@ -115,7 +115,8 @@ def test_parse_handles_odd_paths_and_merges():
 def test_a_revert_dates_from_the_revert(tmp_path):
     """King Dedede (2025-04-04): bytes X, then Y, then X again (a revert): the card and a version read after the revert
     start at the revert, one read before it at X's intro. Holo Defense API: renamed after its revert (same bytes), it
-    still starts at the revert. The same bytes at a path that held no others keep their intro. A start dates itself."""
+    still starts at the revert. The same bytes at a path that held no others keep their intro, and so does an exact
+    rename onto a path that held others. A start dates itself."""
     repo = tmp_path / "cards"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -139,9 +140,15 @@ def test_a_revert_dates_from_the_revert(tmp_path):
     commit(repo, "dave", 4000)
     write(repo, "Items/C.psd", X)
     commit(repo, "erin", 5000)
+    write(repo, "Items/D.psd", b"other")
+    commit(repo, "fay", 6000)
+    git(repo, "rm", "-q", "Items/D.psd")
+    commit(repo, "fay", 6500)
+    git(repo, "mv", "Items/C.psd", "Items/D.psd")
+    commit(repo, "gus", 7000)
     index = ch.GitIndex.from_git(str(repo))
     assert since("Items/B.psd") == since("Items/B.psd", 4000.0) == since("Items/B.psd", 3000.0) == c3
-    assert since("Items/C.psd") == c1                                       # a copy: no other bytes at its path
+    assert since("Items/D.psd") == c1             # a copy (no other bytes at its path), renamed onto a used path
 
 
 # ========================
