@@ -1,10 +1,11 @@
 """
-card_standards (guard 2 of the push guards): the rules on real cards of the clone (read-only opens; the counts of
+card_standards (guard 2 of the push guards): the rules on real cards of the clone (as of 6e50c3ee, from its history; the counts of
 docs/Campaigns/PUSH_GUARDS.md section 6 per card), the owner's waivers, "(new)" against the old blob, the R4 new-card and
 regression cases, and the two 0-pixel fixes on copies: R11's rename (told until the owner adds it to AUTO_FIX; only the
 names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from conftest import at_rev, story_sync
 # ========================
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 CLOT_WHITE = "Auxiliary/Minions/Clot_White.psd"
+MEASURED = "6e50c3ee"                                        # the whole-tree run of PUSH_GUARDS.md 6 (CASES)
 STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title story out of sync (7b48db05 repaired it)
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
@@ -45,9 +47,8 @@ def context(clone):
 
 
 def _open(clone, rel):
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
-    return PSDImage.open(str(clone / rel))
+    """The card as measured (MEASURED), not the working tree: later standardization commits change the live files."""
+    return PSDImage.open(BytesIO(at_rev(clone, MEASURED, rel)))
 
 
 def _codes(issues, waived: bool) -> set:
@@ -107,10 +108,15 @@ def test_wording(clone, context):
     assert [i.line() for i in cs.check(_open(clone, rel), rel, context)] == ["timing tag (1GCD) not set in the stoogedings badge font"]
 
 
-def test_r7_stays_off_discord(clone, context):
+def test_r7_is_told_in_the_standards_post(clone, context, monkeypatch):
+    """Fonts are told in the standards channel too (owner, 2026-10-22); BabaUI stays waived (L13)."""
     rel = "Creatures/Other/5 Stars/Baba.psd"
     (font,) = [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"]
-    assert font.items == ("BabaUI",) and not font.discord and font.waived
+    assert font.items == ("BabaUI",) and font.discord and font.waived and font not in cs.reported([font])
+    monkeypatch.setattr(cs, "check_psd", lambda psd, fonts: {"BabaUI": ["Hp"], "ComicSansMS": ["Ability"]})
+    (font,) = [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"]
+    assert font.discord and not font.waived and cs.reported([font]) == [font]
+    assert font.line() == "fonts BabaUI and ComicSansMS not in MDW/Fonts"
 
 
 def test_without_the_chart_every_overlay_is_told(clone, context):

@@ -78,7 +78,7 @@ class Issue:
     fix: bool = False                           # AUTO_FIX and fixable here
     waived: str = ""                            # the waiver's reason
     new: bool = False                           # absent from the old blob
-    discord: bool = True                        # R7 stays out of the post while font-check.yml pings fonts
+    discord: bool = True                        # told in the standards post (R7 too: owner, 2026-10-22); False: comment only
 
     def line(self) -> str:
         return self.text + (" (new)" if self.new else "")
@@ -276,7 +276,7 @@ def rule_fonts(psd: PSDImage, fonts: FontIndex) -> Optional[Issue]:
     if not missing:
         return None
     names = tuple(sorted(missing))
-    issue = Issue("R7", f"font{'s' if len(names) > 1 else ''} {_list(names)} not in MDW/Fonts", names, discord=False)
+    issue = Issue("R7", f"font{'s' if len(names) > 1 else ''} {_list(names)} not in MDW/Fonts", names)
     if set(names) <= WAIVED["R7"]["fonts"]:
         issue.waived = WAIVED["R7"]["why"]
     return issue

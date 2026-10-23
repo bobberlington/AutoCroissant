@@ -1,14 +1,17 @@
 """
-Guard 1 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 5): a card PSD pushed without its PNG gets the PNG
-from Photoshop's own stored composite ("Maximize Compatibility"), converted the way the card was exported (the ICC
-vote), gated. The fork renders nothing that is written: it only referees a PSD Photoshop did not save. A refusal is
-data (an Export with outcome "refused" and the line card makers read).
+Guard 1 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 5): a card PSD pushed without its PNG gets the PNG the
+bake would make (owner, 2026-10-22). The fork renders the changed layers' box of the old and the new PSD
+(psd_edit.render_region, the card's ICC export mode by icc_vote) and the old PNG takes the new render's pixels where it
+differs from the old one (psd_edit.merge_png), gated as the bake is (the baseline's parity, shape, region). Photoshop's
+stored composite is never written: it is only a cross-check that can refuse (the old PNG outside the change, the drawn
+change against Photoshop's own image). A refusal is data (an Export with outcome "refused" and the line card makers read).
 
-    export(old_psd, new_psd, old_png, numbered, referee) -> Export   a PSD pushed without its PNG (gates G2-G8)
-    export_new(new_psd) -> Export                                     a new PSD with no PNG (5.5)
-    png_check(psd, png) -> dict                                       R10: a PNG against its PSD's composite
-    changed_layers(old, new) -> (box, n)                              the layer records that really changed
-    photoshop_saved(old, new) -> bool                                 a new xmpMM:InstanceID and a later xmp:MetadataDate
+    export(old_psd, new_psd, old_png, numbered) -> Export   a PSD pushed without its PNG (gates G2-G8); old None: a new
+                                                             PSD beside an existing PNG
+    export_new(new_psd) -> Export                            a new PSD with no PNG (5.5)
+    png_check(psd, png) -> dict                              R10: a PNG against its PSD's composite
+    changed_layers(old, new) -> (box, n)                     the layer records that really changed
+    photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
 
 No Discord, network or config.
 """
@@ -17,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from io import BytesIO
 from re import search
+from time import process_time
 from typing import Optional
 
 import numpy as np
@@ -35,18 +39,21 @@ from commands.psd_regions import fx_pad
 TOL = 2                                         # |diff| a pixel may show and still be unchanged (ICC rounding)
 VOLATILE = (b"shmd", b"SoLd", b"PlLd", b"TySh", b"lnsr")   # blocks Photoshop rewrites on every save (2.2)
 DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
-REFEREE_PAD = 4                                 # px around D's box for the referee's render
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
 OUTCOMES = ("re-exported", "current", "refused", "error")
-G2 = "PNG not made: the PSD was saved without Maximize Compatibility; save it with it on, or export the PNG"
-G5 = ("PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); "
-      "export it in Photoshop")
-G6 = ("PNG not made: the PSD was not saved by Photoshop and the bot could not check its stored image; "
-      "export it in Photoshop")
-G6_NEW = "PNG not made: the bot could not check the new PSD's stored image against its layers; export it in Photoshop"
-G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); open and save it "
-            "in Photoshop with Maximize Compatibility, or export the PNG")
-G7 = "PNG not made: the card changed size"
+EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
+G2 = ("PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with "
+      "it on, or " + EXPORT)
+G5 = "PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); " + EXPORT
+G5_IN = "PNG not made: the PSD and its old PNG already disagreed where you changed it ({bad:.1f}% of pixels); " + EXPORT
+G6_BASE = ("PNG not made: the bot cannot draw this part of the card as its old PNG shows it ({bad:.1f}% of pixels "
+           "differ); " + EXPORT)
+G6 = "PNG not made: the bot's drawing of your change does not match the PSD's own image ({bad:.1f}% of pixels); " + EXPORT
+G6_UNSEEN = "PNG not made: the PSD's own image changed where the bot sees no layer change; " + EXPORT
+G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in "
+            "Photoshop with Maximize Compatibility, or " + EXPORT)
+G6_NEW = "PNG not made: the bot's drawing of the new PSD does not match its own image ({bad:.1f}% of pixels); " + EXPORT
+G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
 
 
@@ -61,11 +68,11 @@ class Export:
     gate: str = ""                              # G2..G8 for a refusal
     image: Optional[Image.Image] = None         # the new PNG's pixels (re-exported)
     data: bytes = b""                           # the new PNG file
-    changed_px: int = 0                         # |D|: pixels the composite moved past TOL
-    box: Optional[tuple] = None                 # D's bbox (x0, y0, x1, y1)
+    changed_px: int = 0                         # |F|: pixels the fork's render moved past TOL
+    box: Optional[tuple] = None                 # F's bbox (x0, y0, x1, y1)
     icc: str = ""                               # "converted", "raw" or "as stored"
     vote: Optional[tuple] = None                # psd_edit.icc_vote over the old pair
-    writer: str = ""                            # "photoshop" or "tool"
+    writer: str = ""                            # "photoshop", "tool" (no new XMP stamp) or "new" (no old PSD)
     numbers: dict = field(default_factory=dict) # the gates' measures
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> (bytes, "") or (b"", refusal line)
 
@@ -272,124 +279,153 @@ def photoshop_saved(old: Optional[PSDImage], new: PSDImage) -> bool:
 
 
 # ========================
-# The referee
+# The render (the bake's: psd_edit.render_region, merge_png)
 # ========================
-def referee(psd: PSDImage, image: Image.Image, box: tuple, icc: bool) -> dict:
-    """The fork's render of psd over box against image's crop there (the parity measure)."""
-    render = psd_edit.render_region(psd, box, icc)
-    return _stats(_diff(render, image.crop(box)))
+def _box_mask(shape: tuple, box: Optional[tuple]) -> np.ndarray:
+    mask = np.zeros(shape, bool)
+    if box:
+        mask[box[1]:box[3], box[0]:box[2]] = True
+    return mask
+
+
+def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict) -> Image.Image:
+    """psd_edit.render_region, its CPU seconds added to numbers["render_s"]."""
+    start = process_time()
+    image = psd_edit.render_region(psd, box, icc)
+    numbers["render_s"] = round(numbers.get("render_s", 0.0) + process_time() - start, 2)
+    return image
+
+
+def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image], composed: Image.Image, icc: bool,
+                     old_png: Image.Image, truth: Image.Image) -> np.ndarray:
+    """D: where Photoshop's image moved past TOL (the composites in their own values when the profile stayed, else as
+    exported; the old PNG stands in for an old PSD without one)."""
+    if before is not None and before.size == composed.size and psd_edit.foreign_profile(old) == psd_edit.foreign_profile(new):
+        return _diff(composed, before) > TOL
+    if before is not None and before.size == composed.size:
+        return _diff(truth, like_mode(convert(old, before, icc), old_png.mode)) > TOL
+    return _diff(truth, old_png) > TOL
 
 
 # ========================
 # Public API Functions
 # ========================
-def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
-           run_referee: bool = True) -> Export:
+def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None) -> Export:
     """
-    Guard 1 on a PSD pushed without its PNG.
+    Guard 1 on a PSD pushed without its PNG: the bake's render of the changed layers' box (R), merged into the old PNG.
 
     Args:
         old: The PSD before the push (None: a new PSD beside an existing PNG)
         new: The pushed PSD
         old_png: The PNG in the tree (as opened)
         numbered: {path: opened PNG} of the numbered duplicates (A_Snack2.png)
-        run_referee: Run the fork as referee when Photoshop did not save the PSD (False refuses instead)
 
     Returns:
         Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD), or refused
-        (why, gate)
+        (why, gate). numbers: records, region, render_s (CPU seconds), composite_px (D), where (D outside R), png_vs_psd,
+        outside (G5), baseline and png_vs_old_psd (G5/G6), cross (G6), png_ahead
     """
     result = Export("current")
-    composed = composite(new)
-    if composed is None:
-        return Export("refused", G2, "G2")
-    if composed.size != old_png.size:
+    if old_png.size != (new.width, new.height) or old_png.mode not in ("RGB", "RGBA"):
         return Export("refused", G7, "G7")
-    before = composite(old) if old is not None else None
+    composed = composite(new)
+    if composed is None:                        # nothing to cross-check the render against
+        return Export("refused", G2, "G2")
+    if old is None:
+        return _beside(new, old_png, composed, result, numbered)
+    before = composite(old)
     # G4: how the old PNG was exported (raw or converted), from the old pair
-    voter = old if old is not None and before is not None else new     # a new PSD beside a PNG: that PNG's own export
-    result.vote = psd_edit.icc_vote(voter, old_png)
-    icc = psd_edit.export_icc(voter, old_png)
+    result.vote = psd_edit.icc_vote(old, old_png)
+    icc = psd_edit.export_icc(old, old_png)
     result.icc = icc_mode(new, icc)
-    out = like_mode(convert(new, composed, icc), old_png.mode)
-    # G3: did any pixel move? Composites in their own values when the profile stayed, else as exported
-    same_profile = old is not None and psd_edit.foreign_profile(old) == psd_edit.foreign_profile(new)
-    if before is not None and before.size == composed.size and same_profile:
-        moved = _diff(composed, before) > TOL
-    elif before is not None and before.size == composed.size:
-        moved = _diff(out, like_mode(convert(old, before, icc), old_png.mode)) > TOL
-    else:
-        moved = _diff(out, old_png) > TOL
-    result.changed_px = int(moved.sum())
-    result.box = _bbox(moved)
-    result.numbers["png_vs_psd"] = _stats(_diff(out, old_png))
-    if not result.changed_px:
-        return _stale_composite(result, old, new, old_png, out, icc) if run_referee else result
-    # the PNG already shows the pushed PSD (pushed before it): over D nearer the new composite than the old, and within
-    # the bar there and over the card. Nothing to make (no churn over the author's export)
-    if before is not None and before.size == composed.size:
-        was = like_mode(convert(old, before, icc), old_png.mode)
-        to_new, to_old = _stats(_diff(out, old_png)[moved]), _stats(_diff(was, old_png)[moved])
-        if _within(to_new) and to_new["mean"] < to_old["mean"] and _within(result.numbers["png_vs_psd"]):
+    result.writer = "photoshop" if photoshop_saved(old, new) else "tool"
+    truth = like_mode(convert(new, composed, icc), old_png.mode)     # Photoshop's image, as exported: cross-checks only
+    shape = (new.height, new.width)
+    composite_moved = _composite_moved(old, new, before, composed, icc, old_png, truth)
+    # G3: the changed layers' box, rendered for both PSDs; F is where the render moved
+    region, records = changed_layers(old, new)
+    region = region if region and region[2] > region[0] and region[3] > region[1] else None
+    inside, moved = _box_mask(shape, region), np.zeros(shape, bool)
+    if region:
+        base, render = _render(old, region, icc, result.numbers), _render(new, region, icc, result.numbers)
+        moved[region[1]:region[3], region[0]:region[2]] = _diff(render, base) > TOL
+    result.changed_px, result.box = int(moved.sum()), _bbox(moved)
+    result.numbers.update(records=records, region=list(region) if region else None, composite_px=int(composite_moved.sum()),
+                          where=int((composite_moved & ~inside).sum()), png_vs_psd=_stats(_diff(truth, old_png)))
+    if not moved.any() and not composite_moved.any():
+        return result
+    # the PNG already shows the pushed PSD (pushed before it): over F nearer the new render than the old, within the bar
+    # of the new render or of Photoshop's image there (a change the fork draws otherwise), and of Photoshop's image over
+    # the card. Nothing to make, nothing to tell
+    if moved.any():
+        crop = old_png.crop(region)
+        changed = moved[region[1]:region[3], region[0]:region[2]]
+        to_new, to_old = _stats(_diff(render, crop)[changed]), _stats(_diff(base, crop)[changed])
+        shown = _within(to_new) or _within(_stats(_diff(truth, old_png)[moved | composite_moved]))
+        if shown and to_new["mean"] < to_old["mean"] and _within(result.numbers["png_vs_psd"]):
             result.numbers["png_ahead"] = {"new": to_new, "old": to_old}
             return result
-    # G5: outside the change, the new PNG is the old one (else the old PNG was stale already)
-    inside = np.zeros(moved.shape, bool)
-    region, records = changed_layers(old, new) if old is not None else (None, 0)
-    if region:
-        inside[region[1]:region[3], region[0]:region[2]] = True
-    result.numbers.update(records=records, region=list(region) if region else None,
-                          where=int((moved & ~inside).sum()))
-    outside = _stats(_diff(out, old_png)[~(inside | moved)])
+    # G5: outside the change, the old PNG shows the pushed PSD (Photoshop's image: the merge keeps the old PNG there)
+    outside = _stats(_diff(truth, old_png)[~(inside | composite_moved)])
     result.numbers["outside"] = outside
     if outside["px"] and not _within(outside):
         return _refuse(result, G5.format(bad=outside["bad_pct"]), "G5")
-    # G6: Photoshop's composite, or the fork as referee over D's box (with its own baseline on the old pair)
-    if photoshop_saved(old, new):
-        result.writer = "photoshop"
-    else:
-        result.writer = "tool"
-        if not run_referee:
-            return _refuse(result, G6, "G6")
-        x0, y0, x1, y1 = result.box
-        box = (max(0, x0 - REFEREE_PAD), max(0, y0 - REFEREE_PAD), min(new.width, x1 + REFEREE_PAD),
-               min(new.height, y1 + REFEREE_PAD))
-        result.numbers["referee"] = referee(new, out, box, icc)
-        if old is not None:
-            result.numbers["baseline"] = referee(old, old_png, box, icc)
-        if not _within(result.numbers["referee"]) or not _within(result.numbers.get("baseline", result.numbers["referee"])):
-            return _refuse(result, G6 if old is not None else G6_NEW, "G6")
-    # G7: the PNG's shape
-    try:
-        psd_edit.gate_shape(old_png, out, new)
+    if not moved.any():                         # Photoshop's image moved where no layer the fork draws did
+        return _refuse(result, G6_UNSEEN, "G6")
+    # G6: the bake's parity gate (the fork draws the old PSD over R as the old PNG shows it), then its merge
+    result.numbers["baseline"] = _stats(_diff(base, crop))
+    if not _within(result.numbers["baseline"]):
+        if before is not None and before.size == composed.size:     # Photoshop's old image tells a stale PNG from the fork
+            was = _stats(_diff(like_mode(convert(old, before, icc), old_png.mode).crop(region), crop))
+            result.numbers["png_vs_old_psd"] = was
+            if not _within(was):
+                return _refuse(result, G5_IN.format(bad=was["bad_pct"]), "G5")
+        return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
+    merged, _ = psd_edit.merge_png(old_png, base, render, region)
+    try:                                        # G7: the bake's shape and region gates
+        psd_edit.gate_shape(old_png, merged, new)
+        psd_edit.gate_region(old_png, merged, region)
     except Refused:
         return _refuse(result, G7, "G7")
-    result.outcome, result.image, result.data = "re-exported", out, encode(out, old_png)
-    # G8: numbered duplicates take D's pixels when D stays clear of their toggled titles
+    # G6: where the render or Photoshop's image moved, the new PNG shows Photoshop's image
+    result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
+    if not _within(result.numbers["cross"]):
+        unseen = composite_moved & ~inside      # Photoshop's image moved outside every changed layer
+        why = (G6_UNSEEN if unseen.any() and not _within(_stats(_diff(merged, truth)[unseen])) else
+               G6 if result.writer == "photoshop" else G6_STALE)
+        return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    # G8: numbered duplicates take F's pixels when F stays clear of their toggled titles
     for path, image in sorted((numbered or {}).items()):
-        result.numbered[path] = delta_transfer(old_png, out, image, moved, path)
+        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
-def _stale_composite(result: Export, old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, out: Image.Image,
-                     icc: bool) -> Export:
+def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
     """
-    No pixel of the composite moved. A PSD Photoshop did not save may still have changed layers under a stale composite
-    (a script's save): the fork referees the changed layers' box, the new render against the composite, when its
-    baseline (the old PSD against the old PNG there) holds. Stale: refused; else current.
+    A new PSD beside an existing PNG (no old PSD, so no baseline): the whole card rendered, and the PNG takes the render
+    where it differs from it past TOL, when the PNG then shows Photoshop's image wherever either moved.
     """
-    if old is None or photoshop_saved(old, new):
+    result.vote = psd_edit.icc_vote(new, old_png)               # that PNG's own export
+    icc = psd_edit.export_icc(new, old_png)
+    result.icc, result.writer = icc_mode(new, icc), "new"
+    truth = like_mode(convert(new, composed, icc), old_png.mode)
+    box = (0, 0, new.width, new.height)
+    render = like_mode(_render(new, box, icc, result.numbers), old_png.mode)
+    moved, composite_moved = _diff(render, old_png) > TOL, _diff(truth, old_png) > TOL
+    result.changed_px, result.box = int(moved.sum()), _bbox(moved)
+    result.numbers.update(region=list(box), composite_px=int(composite_moved.sum()), png_vs_psd=_stats(_diff(truth, old_png)))
+    if not moved.any() and not composite_moved.any():
         return result
-    region, records = changed_layers(old, new)
-    if not region or region[2] <= region[0] or region[3] <= region[1]:
-        return result
-    result.writer = "tool"
-    result.numbers.update(records=records, region=list(region), baseline=referee(old, old_png, region, icc))
-    if not _within(result.numbers["baseline"]):
-        return result                           # the fork can't judge this box: the composite stands
-    result.numbers["referee"] = referee(new, out, region, icc)
-    if not _within(result.numbers["referee"]):
-        return _refuse(result, G6_STALE, "G6")
+    out = np.array(old_png)
+    out[moved] = np.asarray(render)[moved]
+    merged = Image.fromarray(out)
+    result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
+    if not _within(result.numbers["cross"]):
+        return _refuse(result, G6.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    for path, image in sorted((numbered or {}).items()):
+        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
@@ -419,10 +455,10 @@ def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image
     return encode(image, numbered), ""
 
 
-def export_new(new: PSDImage, run_referee: bool = True) -> Export:
+def export_new(new: PSDImage) -> Export:
     """
-    Guard 1 on a new PSD with no PNG (5.5): its composite converted (Export As' default), RGBA when it has
-    transparency, refereed over the whole card.
+    Guard 1 on a new PSD with no PNG (5.5): the fork renders the whole card, converted (Export As' default), RGBA when it
+    has transparency; written when it matches the PSD's own image within the bar.
 
     Returns:
         Export
@@ -431,16 +467,14 @@ def export_new(new: PSDImage, run_referee: bool = True) -> Export:
     if composed is None:
         return Export("refused", G2, "G2")
     result = Export("current", icc=icc_mode(new, True), writer="new")
-    out = convert(new, composed, True)
+    box = (0, 0, new.width, new.height)
+    out = _render(new, box, True, result.numbers)
     if out.mode == "RGBA" and int(np.asarray(out)[..., 3].min()) == 255:
         out = out.convert("RGB")
-    result.changed_px = out.width * out.height
-    result.box = (0, 0, out.width, out.height)
-    if not run_referee:
-        return _refuse(result, G6_NEW, "G6")
-    result.numbers["referee"] = referee(new, out, result.box, True)
-    if not _within(result.numbers["referee"]):
-        return _refuse(result, G6_NEW, "G6")
+    result.changed_px, result.box = out.width * out.height, box
+    result.numbers["cross"] = _stats(_diff(out, convert(new, composed, True)))
+    if not _within(result.numbers["cross"]):
+        return _refuse(result, G6_NEW.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", out, encode(out, None)
     return result
 
@@ -485,8 +519,17 @@ __all__ = [
     'delta_transfer',
     'dilate',
     'encode',
+    'EXPORT',
+    'G2',
+    'G5',
+    'G5_IN',
+    'G6',
+    'G6_BASE',
     'G6_NEW',
     'G6_STALE',
+    'G6_UNSEEN',
+    'G7',
+    'G8',
     'export',
     'export_new',
     'fingerprints',
@@ -495,6 +538,5 @@ __all__ = [
     'open_psd',
     'photoshop_saved',
     'png_check',
-    'referee',
     'xmp',
 ]

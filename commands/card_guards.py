@@ -1,7 +1,8 @@
 """
 The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml runs this on every push to main. Guard 1
-(png_export) gives a card PSD pushed without its PNG the PNG from Photoshop's stored composite; guard 2 (card_standards)
-checks the pushed PSDs against the card standards and fixes only the 0-pixel classes. One report per push: the job
+(png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
+merged into the old PNG; Photoshop's stored composite only cross-checks); guard 2 (card_standards) checks the pushed PSDs
+against the card standards (fonts included) and fixes only the 0-pixel classes. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window.
 
@@ -570,7 +571,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
-        if found.outcome == "refused" and found.gate == "G5" and job.psd_anchor:
+        if found.outcome == "refused" and found.gate in ("G5", "G6") and job.psd_anchor:
             anchored = png_export.export(png_export.open_psd(source.blob(job.psd_anchor)), new, old_png, numbered)
             if anchored.outcome != "refused":   # the PNG matched the PSD before the burst: its whole change is ours
                 found = anchored
@@ -584,7 +585,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
-                                  "line": f"re-exported from the PSD's composite ({found.changed_px:,} px changed)"})
+                                  "line": f"re-exported by the bot's render of the PSD ({found.changed_px:,} px changed)"})
             _crops(out, job.png, old_png, found.image, found.box)
             refused = []
             for path, (data, why) in sorted(found.numbered.items()):
@@ -600,7 +601,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
-                                  "line": "made from the PSD's composite (new card)"})
+                                  "line": "made by the bot's render of the PSD (new card)"})
     # R10: a pushed PNG against the PSD
     if job.case in ("pair", "png-only", "whole") and job.png_new:
         png = png_export.open_png(source.blob(job.png_new))
@@ -678,7 +679,7 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     if outcome == "current" and "png_ahead" in found.get("numbers", {}):
         return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
     if outcome == "current":
-        return "PNG still current (the push moved no pixel of the composite)"
+        return "PNG still current (the push moved no pixel of the card)"
     if outcome == "refused":
         return found["why"]
     would = " would be" if mode != "on" else ""
@@ -686,13 +687,16 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     if found.get("copied"):
         return f"PNG{would} copied to the PSD's new name{switch}"
     numbers = found.get("numbers", {})
-    parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}",
-             "saved by Photoshop" if found.get("writer") == "photoshop" else
-             f"refereed by the fork (bad {numbers.get('referee', {}).get('bad_pct', 0):.2f}%)"]
-    if "outside" in numbers:
-        parts.append(f"outside the change: mean {numbers['outside'].get('mean', 0):.2f}")
+    parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}"]
+    if "baseline" in numbers:
+        parts.append(f"the old PSD drawn against the old PNG: bad {numbers['baseline'].get('bad_pct', 0):.2f}%")
+    if "cross" in numbers:
+        parts.append(f"against the PSD's own image: bad {numbers['cross'].get('bad_pct', 0):.2f}%, "
+                     f"mean {numbers['cross'].get('mean', 0):.2f}")
+    if found.get("writer") in ("photoshop", "tool"):
+        parts.append("saved by Photoshop" if found["writer"] == "photoshop" else "not saved by Photoshop")
     verb = "made" if entry["case"] == "new" else "re-exported"
-    return f"PNG{would} {verb} from the PSD's composite ({'; '.join(parts)}){switch}"
+    return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}"
 
 
 ALREADY = "already on the branch (an earlier run of this push landed it)"
@@ -1134,8 +1138,8 @@ def main(args: Optional[list] = None) -> int:
     when the commit failed (its files are written either way), exit 2 for a plan not checked with --mode on that would
     commit to the repo (neither --dry-run nor --local)."""
     cli = ArgumentParser(prog="python -m commands.card_guards",
-                         description="The push guards: a forgotten PNG made from the PSD's stored composite, the card standards "
-                                     "checked (0-pixel fixes planned). check never writes to the card repo; land commits a plan once.")
+                         description="The push guards: a forgotten PNG drawn from the PSD by the fork (the bake's render), the card "
+                                     "standards checked (0-pixel fixes planned). check never writes to the card repo; land commits a plan once.")
     sub = cli.add_subparsers(dest="command", required=True)
     one = sub.add_parser("check", help="both guards on a push (or the whole tree)")
     one.add_argument("--clone", required=True, metavar="DIR", help="a clone of the card repo with the push's history (blobless is enough)")

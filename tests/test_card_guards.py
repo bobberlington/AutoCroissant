@@ -221,7 +221,7 @@ def test_check_end_to_end(cards, tmp_path):
                for l in lines), lines
     assert "Lonely.png does not match its PSD" in report and not any("Lonely" in l for l in lines)
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
-    assert "- PNG would be re-exported from the PSD's composite (441 px changed" in report and "with CARD_GUARDS=on" in report
+    assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
     assert "Alice pushed Snack with these issues: PNG not exported with the PSD: export it in Photoshop; Snack2.png" in payload["content"]
 
@@ -322,10 +322,29 @@ def test_report_mode_tells_the_fixable_issues():
     """Nothing is fixed in report mode, so the fixable issues are remaining issues there; in on mode the bot fixes them."""
     issues = [{"line": "the Name layer is named 'NAME'", "told": False, "discord": True, "fix": True, "waived": ""},
               {"line": "waived", "told": False, "discord": True, "fix": True, "waived": "owner"},
-              {"line": "R7 fonts", "told": True, "discord": False, "fix": False, "waived": ""}]
+              {"line": "comment only", "told": True, "discord": False, "fix": False, "waived": ""}]
     result = cg.Result(cg.Job("X/A.psd", "pair"), issues=issues)
     assert result.told("report") == ["the Name layer is named 'NAME'"]
     assert result.told("on") == [] and result.told("dry") == []
+
+
+def test_font_issues_are_told_in_the_standards_post(cards, tmp_path, monkeypatch):
+    """R7 (owner, 2026-10-22): a font MDW/Fonts lacks is told in the guard's one post, as any standard; font-check.yml
+    tells it in the same channel with its role ping."""
+    root, base, alice, bot = cards
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
+    monkeypatch.setattr(cg.standards, "check_psd", lambda psd, index: {"ComicSansMS": ["Ability"]})
+    out = tmp_path / "out"
+    data = cg.check(str(root), bot, base, "o/cards", mode="report", fonts_dir=str(fonts), out=str(out), workers=1,
+                    cards={"bread"})
+    (bread,) = data["cards"]
+    (font,) = [issue for issue in bread["issues"] if issue["code"] == "R7"]
+    assert font["discord"] and font["told"] and not font["waived"]
+    assert bread["told"][-1] == "font ComicSansMS not in MDW/Fonts"          # after R3 (the fixture has no Ability layer)
+    assert data["discord"]["content"].startswith("Alice pushed Bread with these issues: ")
+    assert "; font ComicSansMS not in MDW/Fonts. [" in data["discord"]["content"]
+    assert json.loads((out / "summary.json").read_text())["told"] == 1
 
 
 def test_check_fails_when_it_cannot_check(cards, tmp_path, capsys):
@@ -359,11 +378,11 @@ def test_discord_fits_and_says_nothing_without_issues():
 
 def test_message():
     landed = [{"login": "Zomoroko", "commit": "7cb4c867" + "0" * 32,
-               "writes": [{"path": "Items/X.png", "kind": "png", "line": "re-exported from the PSD's composite (12 px changed)"},
+               "writes": [{"path": "Items/X.png", "kind": "png", "line": "re-exported by the bot's render of the PSD (12 px changed)"},
                           {"path": "Items/Y.psd", "kind": "psd", "line": "Txt2 synced"}]}]
     text = cg.message(landed, "f" * 40)
     assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed (push {'f' * 8})"
-    assert "Items/X.png: re-exported from the PSD's composite (12 px changed) (Zomoroko, 7cb4c867)" in text
+    assert "Items/X.png: re-exported by the bot's render of the PSD (12 px changed) (Zomoroko, 7cb4c867)" in text
     assert text.rstrip().endswith(f"Guarded-push: {'f' * 40}") and "Edit-by" not in text
 
 
@@ -598,7 +617,8 @@ def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
     pushed in the window withdraws the line. In on mode the PNG lands instead: nothing told."""
     job = cg.Job("X/Snack.psd", "stale", "s0", "s1", "X/Snack.png", "p1", login="Alice", commit="a" * 40)
     export = {"outcome": "re-exported", "why": "", "gate": "", "changed_px": 1234, "box": [0, 0, 10, 10], "icc": "converted",
-              "writer": "photoshop", "vote": None, "numbers": {}, "numbered_refused": []}
+              "writer": "photoshop", "vote": None, "numbered_refused": [],
+              "numbers": {"baseline": {"bad_pct": 0.0}, "cross": {"bad_pct": 0.01, "mean": 0.3}}}
     result = cg.Result(job, export=export, writes=[{"path": "X/Snack.png", "file": "files/Snack.png", "sha": blob_sha(b"png"),
                                                     "kind": "png", "line": "re-exported"}])
     report = cg.plan([result], "o/r", "e" * 40, "f" * 40, "report")
@@ -608,11 +628,12 @@ def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
         "Alice pushed Snack with these issues: PNG not exported with the PSD: export it in Photoshop.")
     text = cg.markdown(report, [], [], [])
     assert "Report only (CARD_GUARDS=report): nothing is committed." in text
-    assert "- PNG would be re-exported from the PSD's composite (1,234 px changed in 10x10 at (0, 0); ICC converted; saved by " \
-           "Photoshop) with CARD_GUARDS=on" in text and "- PNG re-exported" not in text
+    assert ("- PNG would be re-exported by the bot's render of the PSD (1,234 px changed in 10x10 at (0, 0); ICC converted; "
+            "the old PSD drawn against the old PNG: bad 0.00%; against the PSD's own image: bad 0.01%, mean 0.30; saved by "
+            "Photoshop) with CARD_GUARDS=on") in text and "- PNG re-exported" not in text
     assert cg.summary(report, [])["told"] == 1
     on = cg.plan([result], "o/r", "e" * 40, "f" * 40, "on")
-    assert on["cards"][0]["told"] == [] and "- PNG re-exported from the PSD's composite (1,234 px" in cg.markdown(on, [], [], [])
+    assert on["cards"][0]["told"] == [] and "- PNG re-exported by the bot's render of the PSD (1,234 px" in cg.markdown(on, [], [], [])
     assert cg.plan([result], "o/r", "e" * 40, "f" * 40, "dry")["cards"][0]["told"] == []    # a dry run shows what on would do
     out = tmp_path / "plan"
     (out / "files").mkdir(parents=True)

@@ -1,9 +1,11 @@
 """
-png_export (guard 1 of the push guards): the PNG from the PSD's stored composite, converted as the card was exported,
-and its gates. Fixture PSDs (a pixel layer, made here) cover the gates; real commits from the card clone's object store
-(read with git cat-file, never written) pin the replay of docs/Campaigns/PUSH_GUARDS.md 2.2: Dirty Bed equals the
-author's export, Final Dark Mind Eye is within 4 levels, God Tamer's push moved no pixel, a bot bake is refereed by the
-fork, and a script save under a stale composite is refused.
+png_export (guard 1 of the push guards): the PNG the bake would make (the fork's render of the changed layers in the
+card's ICC export mode, merged into the old PNG), gated; Photoshop's stored composite only as a cross-check that can
+refuse. Fixture PSDs (a pixel layer, made here) cover the gates; real commits from the card clone's object store (read
+with git cat-file, never written) pin the fork-render replay of docs/Campaigns/PUSH_GUARDS.md 2.2 (2026-10-22, pin
+cards-20261022b): Dirty Bed and Final Dark Mind Eye within the bar of the author's export, God Tamer's push moved no
+pixel, a bot bake drawn, and the refusals: a script save under a stale composite, Restrained's old PNG already stale where
+the change is, Defcon Panda's drop shadow the fork draws differently, 20 Creature Types' image changed where no layer did.
 """
 import subprocess
 from importlib.util import find_spec
@@ -17,7 +19,7 @@ from psd_tools.api.layers import PixelLayer
 
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
-from conftest import fork_reason, text_engine
+from conftest import at_rev, fork_reason, text_engine
 
 # ========================
 # Configuration
@@ -30,10 +32,16 @@ SPRINGTRAP = ("532cbe005c7a93c98fdc0fd97f24325d83947f92", "d62bea1c719842de02d0d
               "65324a959f373b14892e54b6a86028176630bee7", "b224575a3d0a97a3dba11a0be778ff18fb5fddc1")  # the bake c6dc6d08
 GOD_TAMER = ("8ca3d785c7c2f28d7f1a7861579b5add3a80a67c", "6b99873e4e0293365181e534aa974f1a2a815bb2",
              "f72ba14a25fd31614c8e20e632d61cd0c612eb78")                                                # dc37f4ad: PNG not pushed
+RESTRAINED = ("68ff57d57b6238f8075e790aa4cc1a9fc6800a7d", "bab7f20bb143c50e13786ec212edd25ee35a0a96",
+              "709c9739ad353b96d5a05dd6906b8637fd65b20a")                                                # 5c8cb87b
+DEFCON_PANDA = ("9ea7b16710613bd532ceb56e09238bf99a86d5e6", "9e8da0ed097e6dd21cc1d061e38de6bdf739672f",
+                "a558861e09df8606038cf9b3218694a12076b8b8")                                              # 1b4f36a0
+CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3ba4150ffbe9cca3a5f2ced0",
+                  "e35deab6a8bdc6d760e73b7363998f6d20c17111")                                            # 100511d3
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
-# The referee renders the changed layers as the fork does: upstream psd-tools passes the bake's stale-looking pixels as
-# "current" and misses Mini Doomer's stale composite. Measured at the Action's pin cards-20261022 and at cards e0ea34f6.
-fork = pytest.mark.skipif(not text_engine(), reason="the G6 referee needs the fork's renderer: " + fork_reason())
+# The real cards are drawn as the bake draws them: upstream psd-tools renders type layers and effects otherwise. Measured
+# at the Action's pin cards-20261022b (90508839).
+fork = pytest.mark.skipif(not text_engine(), reason="guard 1 renders with the fork, as the bake does: " + fork_reason())
 gradients = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy), as the Action installs")
 
 
@@ -114,16 +122,26 @@ def test_g7_size_changed(tmp_path):
     assert (found.outcome, found.gate) == ("refused", "G7")
 
 
-def test_a_tool_save_is_refereed(tmp_path):
-    """No XMP: not Photoshop's. The fork renders the pixel layer as the composite shows it: re-exported."""
+def test_the_png_is_the_forks_render_merged_into_the_old_png(tmp_path, monkeypatch):
+    """The changed layer's box is rendered for both PSDs (psd_edit.render_region, the bake's) and the old PNG takes the
+    new render where it moved; the stored composite is never the source: a composite that disagrees by a few levels
+    leaves the PNG the render's, and the cross-check passes within the bar."""
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    drawn = []
+    draw = psd_edit.render_region
+    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True: drawn.append(box) or draw(psd, box, icc))
     found = pe.export(old, new, card())
     assert found.outcome == "re-exported" and found.writer == "tool" and found.gate == ""
-    assert found.changed_px == 21 * 21 and found.box == (10, 10, 31, 31)
-    assert found.numbers["referee"]["bad_pct"] == 0 and found.numbers["baseline"]["bad_pct"] == 0
+    assert drawn == [(10, 10, 31, 31)] * 2                              # the Square's record box, old then new
+    assert found.changed_px == 21 * 21 and found.box == (10, 10, 31, 31) and found.numbers["render_s"] >= 0
+    assert found.numbers["baseline"]["bad_pct"] == 0 and found.numbers["cross"]["bad_pct"] == 0
     assert np.asarray(pe.open_png(found.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
-    assert pe.export(old, new, card(), run_referee=False).gate == "G6"
+    real, off = pe.composite, card(colour=(0, 253, 0))                       # Photoshop's image 2 levels off the render
+    monkeypatch.setattr(pe, "composite", lambda psd: off if psd is new else real(psd))
+    shifted = pe.export(old, new, card())
+    assert shifted.outcome == "re-exported" and shifted.data == found.data        # the render, not the composite
+    assert shifted.numbers["cross"]["mean"] == 2
 
 
 @pytest.mark.parametrize("photoshop", [True, False])
@@ -158,7 +176,7 @@ def test_g5_the_old_png_was_stale_elsewhere(tmp_path):
 
 
 def test_g6_a_composite_that_lies(tmp_path):
-    """A tool wrote a composite the layers don't show (the referee's render disagrees): refused."""
+    """A tool wrote a composite the layers don't show: the render moved nothing where Photoshop's image did, refused."""
     old = fixture_psd(tmp_path, card(), "old")
     new = PSDImage.new("RGB", (60, 90))
     new.append(PixelLayer.frompil(card(), new, "Art"))          # the layers still show the blue square
@@ -167,7 +185,7 @@ def test_g6_a_composite_that_lies(tmp_path):
         pytest.skip("this psd-tools has no save(preview=)")
     new.save(str(path), preview=card(colour=(0, 255, 0)))
     found = pe.export(old, PSDImage.open(str(path)), card())
-    assert (found.outcome, found.gate) == ("refused", "G6")
+    assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_UNSEEN)
 
 
 def test_numbered_pngs_take_the_change_when_clear_of_their_titles(tmp_path):
@@ -186,11 +204,19 @@ def test_numbered_pngs_take_the_change_when_clear_of_their_titles(tmp_path):
     assert found.numbered["X3.png"] == (b"", "X3.png not updated: re-export it in Photoshop")
 
 
-def test_a_new_card_is_made_and_refereed(tmp_path):
+def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
     new = fixture_psd(tmp_path, card(), "new")
     found = pe.export_new(new)
     assert found.outcome == "re-exported" and found.writer == "new" and pe.open_png(found.data).mode == "RGB"
-    assert (pe.export_new(new, run_referee=False).gate, pe.export_new(new, run_referee=False).why) == ("G6", pe.G6_NEW)
+    assert found.numbers["cross"]["bad_pct"] == 0
+    monkeypatch.setattr(pe, "composite", lambda psd: card(colour=(255, 255, 0), box=(0, 0, 59, 60)))
+    refused = pe.export_new(new)                         # the render disagrees with the PSD's own image: no PNG
+    assert refused.gate == "G6" and refused.why.startswith("PNG not made: the bot's drawing of the new PSD")
+
+
+def test_every_refusal_says_export_it_in_photoshop():
+    for line in (pe.G2, pe.G5, pe.G5_IN, pe.G6, pe.G6_BASE, pe.G6_NEW, pe.G6_STALE, pe.G6_UNSEEN, pe.G7):
+        assert line.startswith("PNG not made: ") and line.endswith("export it in Photoshop"), line
 
 
 def test_png_check(tmp_path):
@@ -203,22 +229,33 @@ def test_png_check(tmp_path):
 # ========================
 # Real commits (the clone's object store, read-only)
 # ========================
-def test_dirty_bed_equals_the_authors_export(clone):
+def _near_the_authors_export(found, truth) -> np.ndarray:
+    diff = pe._diff(found.image, truth)
+    assert psd_edit._within_bar(psd_edit._measure(found.image, truth)) and (diff <= 2).mean() > 0.9995
+    return diff
+
+
+@fork
+def test_dirty_bed_is_drawn_within_the_bar_of_the_authors_export(clone):
     old, new, old_png, truth = pair(clone, DIRTY_BED)
     assert pe.photoshop_saved(old, new) and not pe.photoshop_saved(new, new)
     found = pe.export(old, new, old_png)
     assert found.outcome == "re-exported" and found.writer == "photoshop" and found.icc == "as stored"
-    assert found.changed_px == 8961
-    assert int(pe._diff(found.image, truth).max()) == 0
-    assert found.numbers["outside"]["bad_pct"] == 0
+    assert found.numbers["composite_px"] == 8961 and abs(found.changed_px - 8961) < 50 and found.numbers["where"] == 0
+    assert found.numbers["outside"]["bad_pct"] == 0 and psd_edit._within_bar(found.numbers["baseline"])
+    diff = _near_the_authors_export(found, truth)
+    x0, y0, x1, y1 = found.numbers["region"]
+    outside = np.ones(diff.shape, bool)
+    outside[y0:y1, x0:x1] = False
+    assert int(diff[outside].max()) == 0                 # outside the changed layers the PNG is the old one, untouched
 
 
-def test_final_dark_mind_eye_within_four_levels(clone):
+@fork
+def test_final_dark_mind_eye_within_the_bar(clone):
     old, new, old_png, truth = pair(clone, FINAL_EYE)
     found = pe.export(old, new, old_png)
     assert found.outcome == "re-exported" and found.icc == "converted"
-    diff = pe._diff(found.image, truth)
-    assert int(diff.max()) <= 4 and (diff <= 2).mean() > 0.9999
+    assert int(_near_the_authors_export(found, truth).max()) <= psd_edit.PARITY_THRESH
 
 
 @gradients
@@ -226,23 +263,24 @@ def test_god_tamer_moved_no_pixel(clone):
     old, new, old_png, _ = pair(clone, GOD_TAMER)
     assert pe.changed_layers(old, new)[1] > 0            # the records changed (stars grouped)
     found = pe.export(old, new, old_png)
-    assert found.outcome == "current" and found.changed_px == 0 and not found.data
+    assert found.outcome == "current" and found.changed_px == 0 and found.numbers["composite_px"] == 0 and not found.data
     assert psd_edit._within_bar(found.numbers["png_vs_psd"])
 
 
 @fork
-def test_a_bot_bake_is_refereed(clone):
+def test_a_bot_bake_is_drawn(clone):
     old, new, old_png, truth = pair(clone, SPRINGTRAP)
     assert not pe.photoshop_saved(old, new)              # the fork keeps the XMP
     found = pe.export(old, new, old_png)
     assert found.outcome == "re-exported" and found.writer == "tool"
-    assert psd_edit._within_bar(found.numbers["referee"]) and psd_edit._within_bar(found.numbers["baseline"])
-    assert int(pe._diff(found.image, truth).max()) <= 2
+    assert psd_edit._within_bar(found.numbers["baseline"]) and psd_edit._within_bar(found.numbers["cross"])
+    _near_the_authors_export(found, truth)
 
 
 @fork
 def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
-    """Mini Doomer's title hidden by the fork, saved without a new preview: the composite still shows it."""
+    """Mini Doomer's title hidden by the fork, saved without a new preview: the render drops the title, the composite
+    still shows it, so the cross-check refuses."""
     path = clone / (MINI_DOOMER + ".psd")
     if not path.exists():
         pytest.skip("no Mini Doomer")
@@ -255,9 +293,29 @@ def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_STALE)
 
 
+@fork
+def test_the_refusals_of_the_replay(clone):
+    """Three of the 9 refusals of the 34 replayed commits (PUSH_GUARDS.md 16, rulings): Restrained's old PNG did not
+    show its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG); Defcon Panda's
+    Ability drop shadow, which the fork draws with another edge (1.4% bad); 20 Creature Types' header, which Photoshop
+    redrew from a type layer whose stored raster did not change (the composite cross-check refuses what the render
+    cannot see)."""
+    for shas, gate, why in ((RESTRAINED, "G5", "PNG not made: the PSD and its old PNG already disagreed where you changed it"),
+                            (DEFCON_PANDA, "G6", "PNG not made: the bot cannot draw this part of the card as its old PNG"),
+                            (CREATURE_TYPES, "G6", pe.G6_UNSEEN)):
+        old, new, old_png, _ = pair(clone, shas)
+        found = pe.export(old, new, old_png)
+        assert (found.outcome, found.gate) == ("refused", gate) and found.why.startswith(why), (shas, found.why)
+        assert not found.data
+    # the author's PNG pushed first: Photoshop's image vouches for the change the fork draws otherwise, nothing to tell
+    old, new, _, _ = pair(clone, DEFCON_PANDA)
+    first = pe.export(old, new, pe.open_png(blob(clone, "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")))
+    assert first.outcome == "current" and "png_ahead" in first.numbers
+
+
 def test_r10_flags_the_lost_gradient_maps(clone):
+    """At 6e50c3ee (2.1), before the gradient maps were restored on the branch."""
     for rel, ok in (("Creatures/Kirby/5 Stars/Dark_Mind_Eye", False), ("Items/Active/2 Stars/Dirty_Bed", True)):
-        if not (clone / (rel + ".psd")).exists():
-            pytest.skip(f"no {rel}")
-        found = pe.png_check(PSDImage.open(str(clone / (rel + ".psd"))), pe.open_png((clone / (rel + ".png")).read_bytes()))
+        psd, png = at_rev(clone, "6e50c3ee", rel + ".psd"), at_rev(clone, "6e50c3ee", rel + ".png")
+        found = pe.png_check(pe.open_psd(psd), pe.open_png(png))
         assert found["ok"] is ok, (rel, found)

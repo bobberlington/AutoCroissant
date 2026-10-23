@@ -1,7 +1,7 @@
 # Push guards: stale PNGs and card standards, checked on every push (2026-10-22)
 
-**Status:** designed and BUILT 2026-10-22 (section 16), not landed: AutoCroissant `work/push-guards`, TTSCardMaker
-`work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
+**Status:** designed and BUILT 2026-10-22 (section 16), the owner's three rulings of 2026-10-22 ~23:00 built (section 17),
+not landed: AutoCroissant `work/push-guards`, TTSCardMaker `work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
 
@@ -15,10 +15,21 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
    the standards channel (secret `DISCORD_STANDARDS_WEBHOOK`), worded "<GitHub login> pushed <card> with these issues: ...",
    one line per card, **no role ping**. The stale-PNG guard's refusals go in the same post.
 
-**What the measurements changed in the design (section 2).**
-- **The PNG comes from Photoshop's own composite, not from a render.** Every card PSD stores the flattened image Photoshop
-  saved ("Maximize Compatibility"): 812 of 812 at origin/main. Converted the way the card was exported (work/r5-bot's ICC
-  vote), it equals the official PNG within 2 levels on 753 cards and within the parity bar on 810.
+**The owner's rulings (2026-10-22 ~23:00), built in section 17.**
+1. *The PNG is a fork render*, the same render the bake uses (`psd_edit.render_region` and `merge_png`, the card's ICC
+   export mode by `icc_vote`, the fork pinned at `cards-20261022b` as card-edits.yml), **not** Photoshop's stored composite.
+   Gated as designed (the old PNG outside the PSD's changed layers, the bake's gates). A refusal is told on Discord and in
+   the comment ("PNG not made: ...; export it in Photoshop"). The stored composite stays only as a cross-check that can
+   refuse, never as the PNG's source.
+2. *font-check.yml posts to the standards channel*: `DISCORD_STANDARDS_WEBHOOK` instead of `DISCORD_FONT_WEBHOOK`, its role
+   ping and wording kept (card-check.yml keeps `DISCORD_FONT_WEBHOOK`).
+3. *The guard tells font issues (R7)* in its standards-channel post too.
+
+**What the measurements changed in the design (section 2).** (The first two bullets argued for the composite as the PNG's
+source; ruling 1 overrules them: the PNG is the fork's render, section 17. They stand as measurements.)
+- **Photoshop's own composite.** Every card PSD stores the flattened image Photoshop saved ("Maximize Compatibility"): 812
+  of 812 at origin/main. Converted the way the card was exported (work/r5-bot's ICC vote), it equals the official PNG
+  within 2 levels on 753 cards and within the parity bar on 810. It is now the cross-check (5.2).
 - **Replay on 34 real commits, with the PNG withheld.** The guard's PNG equals the author's own export within 2 levels on 30
   of the 31 Photoshop-saved cards; 9 are pixel-identical, and the worst differs by 4 levels. The cards include colour badges,
   gradients and smart filters, which the fork cannot always render. So the fork is only a referee: its full render costs 5-14
@@ -44,7 +55,8 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 - No role ping.
 - No file renames or deletions (ledger L12).
 - Rulebook pages get PNG re-exports only, never a standards fix.
-- The parser notes stay card-check.yml's and the font pings stay font-check.yml's (section 6, R7).
+- The parser notes stay card-check.yml's. The font pings stay font-check.yml's (its role ping, now in the standards
+  channel); the guard tells R7 in its own post too (ruling 3, section 6).
 
 ## 2. What was measured (2026-10-22)
 
@@ -140,8 +152,8 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 ```
 
 - **Modules (AutoCroissant, Discord-free, no config.py).** Each is runnable as `python -m`, as card_check is.
-  - `commands/png_export.py`: guard 1. Composite-first export, the change detection, the gates, delta transfer for numbered
-    PNGs.
+  - `commands/png_export.py`: guard 1. The bake's render of the changed layers merged into the old PNG (ruling 1), the
+    change detection, the gates with the composite as a cross-check, delta transfer for numbered PNGs.
   - `commands/card_standards.py`: guard 2. The rules over an open PSD (`check`), the safe fixes (`fix`), the badge
     vocabulary and the waivers.
   - `commands/card_guards.py`: the driver. Push range, downloads, plan, the reports and the Discord payload, `land`, `--local`
@@ -153,11 +165,13 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   - `github_api.fetch_verified`;
   - `card_bake.Snapshot.png_for` / `duplicate_of` (PNG pairing, case-insensitive, numbered duplicates) and `recent_paths`;
   - `git_commit.commit_files`;
-  - `psd_edit`: `_measure`, `_within_bar`, `render_region`, `save_png`, `stale_stories`, `ability_layer`, `name_layer`,
-    `uses_icon_font`, plus `icc_vote` / `export_icc` / `foreign_profile` from work/r5-bot;
+  - `psd_edit`: `_measure`, `_within_bar`, `render_region`, `merge_png`, `gate_shape`, `gate_region`, `save_png`,
+    `stale_stories`, `ability_layer`, `name_layer`, `uses_icon_font`, plus `icc_vote` / `export_icc` / `foreign_profile` from
+    work/r5-bot;
   - `psd_regions`: `overlay_words`, `fx_pad`;
   - `txt2_repair.repair` / `verify`.
-- **Fork pin:** `cards-20261022b` (it carries `sync_story`), shared with card-edits.yml and card-sync.yml.
+- **Fork pin:** `cards-20261022b` (it carries `sync_story`), shared with card-edits.yml and card-sync.yml: guard 1's render
+  is the bake's.
 
 ## 4. Triggers and change detection
 
@@ -243,42 +257,47 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 
 ## 5. Guard 1: the stale-PNG re-export
 
-**5.1 The source is the composite.** Photoshop writes the flattened image into every PSD it saves (2.1: all 812).
-- The PNG is that composite converted as the card was exported:
-  - when work/r5-bot's `icc_vote` (old composite vs old PNG) votes raw, the raw values;
-  - otherwise the embedded profile's sRGB conversion (`post_process`);
-  - with no foreign profile, as stored.
+**5.1 The source is the bake's render** (ruling 1, 2026-10-22; until then the stored composite was written, section 16).
+- R, the changed layers' box: the layer records that differ between the old and the new PSD (Photoshop's volatile blocks
+  ignored, 2.2), each padded by its effects' reach (`fx_pad`).
+- The fork pinned at `cards-20261022b` renders R for the old and the new PSD (`psd_edit.render_region`, never the stored
+  preview) in the card's ICC export mode: work/r5-bot's `icc_vote` over the old PSD's composite and the old PNG (raw when it
+  votes raw, else converted by the embedded profile).
+- The old PNG takes the new render's pixels where it differs from the old render (`psd_edit.merge_png`, the bake's
+  delta merge); every other pixel stays as Photoshop exported it. F is where the render moved past 2 levels.
 - It is written in the old PNG's mode, with its colour chunks (`psd_edit.save_png`).
-- The fork renders nothing that is written. It is only the referee where the composite is not provably Photoshop's (G6).
-- Measured on 31 real Photoshop commits: the author's own export within 2 levels on 30 (2.2).
+- The fork draws a type layer from the raster Photoshop stored, so colour badges and Photoshop's text come out as
+  Photoshop drew them; the one-colour glyphs are only for text the fork sets itself (the bake's edits), not here.
+- **Photoshop's stored composite is never written.** It is a cross-check that can only refuse (G2, G5, G6), converted the
+  same way: D is where the old and new composites differ past 2 levels.
 
-**5.2 The gates, per card, in order** (a refusal is final for this push; the reasons are worded for card makers).
+**5.2 The gates, per card, in order** (a refusal is final for this push; the reasons are worded for card makers and every
+one ends "export it in Photoshop").
 
 | # | Gate | Passes when | Refusal (report line) |
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
-| G2 | composite | the new PSD has a stored composite of the PNG's canvas size, 8-bit RGB | "PNG not made: the PSD was saved without Maximize Compatibility; save it with it on, or export the PNG" |
-| G3 | visible change | the old and new composites differ by more than 2 levels somewhere (the set D) | no refusal: "PNG still current", nothing written (2.3) |
-| G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode (new card: converted, Photoshop's Export As default) | none |
-| G5 | outside the change | (a refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside D and the changed layers' boxes (records diffed with Photoshop's volatile blocks `shmd`, `SoLd`, `PlLd`, `TySh`, `lnsr` ignored, each box padded by `fx_pad`), the new PNG matches the old PNG within the parity bar (bad <= 0.5%, mean <= 2.0) | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel) |
-| G6 | writer / referee | Photoshop saved it (a new xmpMM:InstanceID and a later xmp:MetadataDate: all 31 replayed commits; the fork's saves keep both). Otherwise the fork's render of the new PSD over D's box matches the new PNG within the bar, and the fork's baseline (old PSD vs old PNG, same box) is within the bar too | "PNG not made: the PSD was not saved by Photoshop and the bot could not check its stored image; export it in Photoshop" |
-| G7 | shape | same size and mode as the old PNG (`gate_shape`) | "PNG not made: the card changed size" |
+| G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
+| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB (the cross-check needs it) | "PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with it on, or export it in Photoshop" |
+| G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
+| G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
+| G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
+| G6 | the bot's drawing | (a) the bake's parity gate: the fork's render of the old PSD over R matches the old PNG within the bar; (b) the cross-check: wherever the render or Photoshop's image moved (F and D), the new PNG matches the new composite within the bar; F empty while D is not: refused | (a) "PNG not made: the bot cannot draw this part of the card as its old PNG shows it (1.4% of pixels differ); export it in Photoshop"; (b) "PNG not made: the bot's drawing of your change does not match the PSD's own image (...)"; D outside every changed layer: "PNG not made: the PSD's own image changed where the bot sees no layer change; export it in Photoshop"; a tool save whose composite is stale: "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in Photoshop with Maximize Compatibility, or export it in Photoshop" |
 | G8 | numbered PNGs | per numbered file, the delta transfer's condition (5.4) | "A_Snack2.png not updated: re-export it in Photoshop" (the base PNG still lands) |
 | G9 | quiet | at land, no later push touched the PSD or PNG, and their blobs at the head are still the pushed ones | none: dropped as superseded, and the newer push's run decides |
 
-- The record diff of G5 also yields `where`: the share of D outside the changed layers' boxes. It is reported, not gating, on
-  Photoshop-saved PSDs.
-- In the replay it fired on 2 rule pages. There a type layer's only changed block was `TySh` and its stored raster stayed the
-  same, yet the composite moved (the page headers). So `TySh` is not purely volatile, and `where` cannot gate. For a
-  tool-written PSD it sends the card to the referee anyway.
+- `writer` ("photoshop" when the PSD has a new xmpMM:InstanceID and a later xmp:MetadataDate, else "tool") only words a G6
+  (b) refusal now; every PSD is rendered.
+- `where`, the share of D outside R, is reported. In the replay it is the rule pages whose type layer changed only its
+  `TySh` (its stored raster stayed, Photoshop's image moved): the render cannot see that change, so G6 refuses.
 
 **5.3 Outcomes.**
-- **re-exported:** in the bot commit, with D's pixel count and box in the comment.
+- **re-exported:** in the bot commit, with F's pixel count and box, the baseline and the cross-check in the comment.
 - **current:** no write; job summary only. Also when the PNG in the tree already shows the pushed PSD (review 6): the
-  author pushed the PNG first and the PSD minutes later in a push of its own. Over D the PNG is nearer the new composite
-  than the old, and within the bar there and over the card (`png_ahead`), so the bot does not re-export it over the
-  author's export (a near-identical churn commit for a Photoshop save, a false G6 refusal for a tool save).
-- **refused:** report line and Discord.
+  author pushed the PNG first and the PSD minutes later in a push of its own. Over F the PNG is nearer the new render than
+  the old, within the bar there, and within the bar of Photoshop's image over the card (`png_ahead`), so the bot does not
+  re-export over the author's export.
+- **refused:** report line and Discord ("PNG not made: ...; export it in Photoshop").
 - **superseded:** summary only.
 - **error:** the card's line on Discord ("the bot could not finish checking it (MemoryError); PNG not made: export it in
   Photoshop" when it needed a PNG), the error in the comment, the other cards go on, and the step "Fail on card errors"
@@ -293,9 +312,12 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   should.
 
 **5.5 A new PSD with no PNG.**
-- There is no old PNG, so G4 takes "converted" and G5 has nothing to compare.
-- G6 always runs the referee, over the whole card: 5-14 CPU-seconds; round 5b's corpus has 9 cards past 0.5% bad.
-- The mode is RGBA when the composite has transparency.
+- There is no old PNG or old PSD: the fork renders the whole card, converted (Photoshop's Export As default), RGBA when it
+  has transparency, and that render is the PNG.
+- G6 (b) is the whole card: the render matches the PSD's composite within the bar, else "PNG not made: the bot's drawing
+  of the new PSD does not match its own image (...); export it in Photoshop". No composite: G2.
+- A new PSD beside an existing PNG (no old PSD, so no baseline): the whole card rendered, the PNG takes the render where it
+  differs past 2 levels, then G6 (b) over F and D.
 - The PNG is written beside the PSD, with the PSD's stem in its case.
 
 **5.6 What the bake's gates become.**
@@ -305,14 +327,14 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 | `blob` | G1 |
 | `recent` | G9 (the same 30 min) |
 | `duplicate` | G8 (delta transfer instead of a flat refusal) |
-| `parity` (baseline) | G5, plus G6's referee baseline |
-| `shape` | G7 |
-| `region` | the `where` measure |
-| `idempotence` | the next run finds the PNG current (G3 on PNG vs composite) |
-| `size`, `bytes`, `reparse` | n/a (no PSD is written by guard 1) |
+| `parity` (baseline) | G6 (a), over R, the same render and bar |
+| `shape`, `region` | G7 (`gate_shape`, `gate_region` on the merge) |
+| `idempotence` | G6 (b): the merge against Photoshop's own image of the new PSD (the bake re-renders its saved PSD) |
+| `size`, `bytes`, `reparse`, `stories` | n/a (no PSD is written by guard 1) |
 
-**5.7 Size.** The guard's PNGs for the 31 replayed cards weigh 60.7 MB (PIL's default deflate), against 164.6 MB for the
-authors' Photoshop 2023 exports of the same pixels. A bot export adds about a third of what a Photoshop export does. Recompressing
+**5.7 Size.** The guard's PNGs for the 25 replayed cards it makes with the fork render weigh 52.5 MB (PIL's default
+deflate), against 121.3 MB for the authors' Photoshop exports of the same cards (the composite build: 60.7 against 164.6
+MB for 31). A bot export adds well under half of what a Photoshop export does. Recompressing
 PNGs that authors pushed was rejected: it would add a second blob for every push.
 
 ## 6. Guard 2: the standards
@@ -332,7 +354,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R4 | a visible `Text/Name` text layer holds the title (L6, `psd_edit.name_layer`) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 150: 84 titled by a card-named layer, 50 no `Text/Name`, 13 no `Text` group, 3 hidden | 0 (every existing deviation is waived; a new PSD, or a push that loses its `Text/Name`, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
-| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report | cards | 1: Baba (BabaUI) | 0 (deferred by the owner); comment only while font-check.yml pings fonts (section 15) |
+| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
 | R8 | Single-line composer on visible Ability and Name layers (L10) | report | cards | 0 | 0 |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
@@ -392,7 +414,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 ```
 Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)
 
-Items/Active/2 Stars/Dirty_Bed.png: re-exported from the PSD's composite (8,961 px changed; Zomoroko, 7cb4c867)
+Items/Active/2 Stars/Dirty_Bed.png: re-exported by the bot's render of the PSD (8,957 px changed) (Zomoroko, 7cb4c867)
 Auxiliary/Minions/Clot_White.psd: Txt2 story synced (Name)
 Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 ```
@@ -435,7 +457,7 @@ not land.**
   one does not start, the comment says so, the run fails, and the post ends "The bot's commit did not start the site
   build and the TTS save: the site catches up within 6 hours, the TTS save the next day." when it fits in 2,000
   characters (review 5); with nothing else to tell, the failure alert goes out instead.
-- **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`); R7 while font-check.yml pings;
+- **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`);
   "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
   review 3).
 - **The login:** the commits API's login of the commit's author; an author with no GitHub account: the login in a
@@ -492,14 +514,14 @@ not land.**
 |---|---|
 | Setup | blobless checkout of TTSCardMaker (1.1 MB, 2 s, as Card sync measured), sparse bot checkout (2 s), setup-python, the fork from the pip cache (~10 s; a cold build of the git pin ~60-90 s), MDW/Fonts from the cache keyed by its tree sha (215 MB, ~15 s; only the R7 rule needs it): about 40-60 s |
 | Per pushed PSD, check only | blob download 1.5-2 s (25-30 MB; font_check measured 1.4 s for 15 MB), open 0.6-1 s, the rules ~1 s, R10's composite compare 0.5 s: about 4 s |
-| Per stale card | plus the old PSD and old PNG (~2.5 s), two composites (0.3 s), the record diff (0.2 s), the PNG write (~1 s); the referee only for tool-written PSDs (2-6 s for a box, 10-30 s for a whole new card): about 6-10 s, up to 40 s for a new card |
-| Typical push (1-3 PSDs) | about 1-1.5 min; with writes or anything to tell, plus the 30 min sleep and ~20 s to land |
-| A batch push (50 PSDs, as the badge batch's) | about 4-6 min |
+| Per stale card | plus the old PSD and old PNG (~2.5 s), the fork's two renders of the changed layers' box (measured on the 34 replayed commits, section 17: 3.5 CPU-s median, 25 max on the Mac, so about 5-7 s median and 40-50 s for a whole-card box on the runner), the composites and record diff (0.5 s), the PNG write (~1 s): about 10-15 s, up to a minute; a new card renders the whole card once (10-30 s) |
+| Typical push (1-3 PSDs) | about 1-2 min; with writes or anything to tell, plus the 30 min sleep and ~20 s to land |
+| A batch push (50 PSDs, as the badge batch's) | about 4-6 min with their PNGs; 50 stale PSDs (the PNGs forgotten): about 10-25 min in 2 processes, inside Check's 90 |
 | Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the job's `timeout-minutes: 150` (Check 90, Land 60) |
 | The 28 GB repo | never checked out: trees only, then blobs by sha for the touched cards. The alternative is the partial clone's lazy fetch of exactly those blobs (`git sparse-checkout set --no-cone <paths>` after a blobless clone), which costs no REST calls, for when the API quota gets tight |
 | API (`GITHUB_TOKEN`, 1,000 requests an hour per repo, shared with card-check, font-check and card-sync) | per push: 1 commits read per commit, k blob reads (k = pushed PSDs + 2 per stale card), 1 comment (+1 edit), at land 2 activity/compare reads and n+3 writes for n files |
 | Price | free: TTSCardMaker is public (checked 2026-10-22, `visibility: public`), so standard runners cost nothing; the sleeping land step holds one runner for about 31 min on every push with anything to tell or write, report mode included. Were the repo made private, that is about 31 billed minutes a push (2,000 free a month) |
-| Storage | a re-export adds one PNG blob, about 1/3 of a Photoshop 2023 export (5.7). A fix adds a delta of a few KB. Nothing is written for the common "PNG still current" case (2.3) |
+| Storage | a re-export adds one PNG blob, under half a Photoshop export (5.7). A fix adds a delta of a few KB. Nothing is written for the common "PNG still current" case (2.3) |
 
 ## 10. Failure modes
 
@@ -520,7 +542,8 @@ not land.**
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
 | A PSD saved without Maximize Compatibility | G2 refusal for guard 1; guard 2 still runs | save with it on |
-| A PSD written by a script without updating the composite | G6 sends it to the referee, which refuses when the composite is stale | export in Photoshop |
+| A PSD written by a script without updating the composite | the render shows the new layers, the stale composite does not: G6 (b) refuses | export in Photoshop |
+| The fork draws a changed area otherwise than Photoshop (a layer effect such as a drop shadow's edge, an outer glow, a gradient overlay) | G6 (a) or (b) refuses: no PNG, "export it in Photoshop" (5 of the 34 replayed commits, section 17) | export in Photoshop; a fork fix lifts the class |
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
 | GitHub schedules late | n/a: push runs are not scheduled; only the Card sync fold depends on the cron | none |
 | A burst of pushes | each its own run, so no report is lost (4.4); landing commits serialize by retry | none |
@@ -634,8 +657,11 @@ jobs:
   It is our fork's change (no upstream PR).
 - **A fork `render_fingerprint()` per layer** that ignores Photoshop's volatile blocks: the "what really changed between two
   saves" primitive. The data build's history (skip identical versions), the bake's `recent` and this guard would share it.
-- **Composite-first everywhere.** The bake keeps Photoshop's pixels outside its region already. A website or Discord preview of
-  a pushed PSD could show its composite at once, before any PNG exists.
+- **Composite-first previews.** The bake keeps Photoshop's pixels outside its region already. A website or Discord preview of
+  a pushed PSD could show its composite at once, before any PNG exists (a preview only: guard 1's PNG is the fork's render,
+  ruling 1).
+- **Fork fixes that would lift guard 1's refusals** (section 17): the drop shadow's outer edge, the outer glow and the
+  gradient overlay on type layers drawn as Photoshop draws them.
 - **The PNG encoder:** the bot's PNGs are pixel-equal and about 1/3 the size of Photoshop 2023's (5.7). A standards rule could
   tell authors their export settings bloat the repo (report only).
 - **R10 run in reverse catches "PNG pushed, PSD forgotten".** Commit 07589cc7 re-exported Asteroid_Field.png without touching
@@ -644,11 +670,8 @@ jobs:
 ## 15. Open points
 
 **For the owner to confirm before `CARD_GUARDS=on`** (each goes beyond the literal brief; everything else follows it):
-1. **The PNG is Photoshop's stored composite, not "the same render the bake uses".** The composite in the PSD, converted as
-   the card was exported (`icc_vote`), is written; the fork only referees PSDs a tool wrote (G6). Why: 30 of 31 Photoshop
-   saves came within 2 levels of the author's own export (2.2) where the fork's render cannot draw colour badges,
-   gradients and smart filters, and reading the composite costs 0.3 s against 5-14 CPU-seconds. A yes, or "use the fork
-   render", is needed.
+1. **Decided (ruling 1, 2026-10-22): the PNG is the bake's fork render**, the composite only a cross-check that can
+   refuse (section 17). Was: the stored composite written, the fork only a referee.
 2. **The Discord post waits out the 30-minute quiet window, in report mode too.** font-check.yml, the model the owner named
    ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
    card pushed again to the later push, and tells the writes that did not land. Cost: a runner held about 31 minutes per
@@ -656,10 +679,10 @@ jobs:
 3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261022b` has `sync_story`. R11's exact-name rename is
    built and gated but told, not fixed, until the owner says yes (`card_standards.AUTO_FIX`; 0 cases in the tree).
    Report mode tells everything, the PNGs the bot would make included.
-4. **Two channels.** A push touching PSDs starts three Actions: font-check.yml and card-check.yml (the font channel, with
-   their role ping) and card-guards.yml (the standards channel, no ping). R7 (fonts) stays out of the guard's post so a
-   missing font is told once; the parser's notes stay card-check's by design. A card can still appear in both channels for
-   different findings.
+4. **Decided (rulings 2 and 3, 2026-10-22): fonts in the standards channel.** font-check.yml posts there
+   (`DISCORD_STANDARDS_WEBHOOK`, its role ping and wording kept) and the guard tells R7 in its own post too, so a missing
+   font is told twice in that channel: at once by font-check (with the role ping) and after the quiet window by the guard
+   (no ping). card-check.yml stays in the font channel (`DISCORD_FONT_WEBHOOK`); the parser's notes stay card-check's.
 5. **The login** in "<login> pushed <card>": the commit author's GitHub login; for an author with no GitHub account, the
    pusher's login (7.3).
 6. **The commit link.** The brief's line is "<GitHub login> pushed <card> with these issues: ..."; each line also ends with
@@ -667,21 +690,30 @@ jobs:
    [details](url)". Nobody is pinged and previews are off. Dropping the link is one change to `card_guards.LINE` (and the
    "more" line).
 
-- Whether font-check.yml's push run (role ping, font channel) should stop once the guard reports R7 in the standards channel.
-  Until then, R7 stays out of the post and only in the comment, so a missing font is told once.
+- **Questions on the rulings (2026-10-22, section 17)** for the owner:
+  1. A missing font is told twice in the standards channel (font-check at once with its role ping, the guard after the
+     window without): keep both, or should the guard leave R7 to font-check (or font-check stop posting on pushes)?
+  2. The fork render refuses 9 of the 34 replayed commits (25 made), where the composite made all 34: accept, or start fork
+     fixes for the drop shadow's edge, the outer glow and the gradient overlay first?
+  3. Photoshop's image is used beyond refusals in one place: a PNG pushed before its PSD counts as "current" when it
+     matches Photoshop's image where the fork draws the change otherwise (4 of 34; else "PNG not made" would be told for a
+     PNG already exported). Keep?
+  4. A PSD saved without Maximize Compatibility refuses (G2): nothing could cross-check the render. Keep, or render it
+     with the bake's gates alone?
+  5. "Parity vs the old PNG outside the PSD's changed layers" is built as the old PNG against Photoshop's image of the
+     pushed PSD there (the merge keeps the old PNG outside R). The alternative, a whole-card fork render compared with the
+     old PNG outside R, costs a full render (2.5, 5-14 CPU-s on the Mac) and refuses every card the fork draws otherwise
+     anywhere.
 - The Environment wait timer (4.5) instead of a sleeping runner: the owner's one-time setting. Until then a push with writes
   holds a runner up to about 31 min (free on a public repo).
 - Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
   ["R3"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
 - Choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
-  copying the changed pixels into them (G8); the PNG is Photoshop's stored composite in the PSD (converted as the card was
-  exported), **not the bake's fork render** the brief named (the fork is only the referee for tool-written PSDs: 30 of 31
-  Photoshop saves within 2 levels of the author's export, 2.2, 5); R10 now stays in the comment (`TELL_PNG_MISMATCH = True`
-  would post it: 0 flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).
-- The 57 cards within the bar but past 2 levels (2.1). They are re-exported only when pushed with a visible change, and then
-  their whole PNG becomes the composite. 28 are status effects, 18 of them at max 36 on under 0.5% of pixels: probably text
-  re-rasterized by a newer Photoshop. Check one in Photoshop before `on`.
+  copying the changed pixels into them (G8); R10 now stays in the comment (`TELL_PNG_MISMATCH = True` would post it: 0
+  flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).
+- The 57 cards within the bar but past 2 levels (2.1). With the fork render only the changed layers' box is replaced, so
+  their other pixels stay as exported; G6 (b) still compares the change with Photoshop's image.
 
 ## 16. Build (2026-10-22)
 
@@ -893,6 +925,71 @@ jobs:
 - Section 12's sketch has the real MODE line (an `all` dispatch is always dry).
 - Not this branch: `tests/test_metadata_edits.py::test_live_aliases_find_the_same_card_image_after_the_migration` fails on
   live data (KeyError 'grape juice.png'); the file is not in main...work/push-guards.
+
+## 17. The owner's rulings, built (2026-10-22 ~23:00)
+
+Nothing pushed, dispatched or posted; the Desktop clone was only read. AutoCroissant `work/push-guards` and TTSCardMaker
+`work/push-guards` (origin/main merged into both first). Evidence and scripts:
+`~/Documents/Tools/wt/scratch/guards-rulings/` (`replay34.py` / `replay34.jsonl`: the built code on the 34 commits;
+`proto.py`, `why.py` and `why/`: the per-card diagnosis with crops; `png_first4.py`).
+
+**Ruling 1: the PNG is a fork render** (5.1, 5.2, 5.5, 5.6).
+- `png_export.export` renders the changed layers' box R of the old and the new PSD with `psd_edit.render_region` (the fork
+  pin `cards-20261022b`, the card's `icc_vote` mode) and merges the new render into the old PNG with `psd_edit.merge_png`;
+  `gate_shape` and `gate_region` follow. The bake's parity gate is G6 (a). `export_new` writes the fork's whole-card render.
+- The stored composite never reaches a PNG. It refuses only: G2 (none to check against), G5 (the old PNG against
+  Photoshop's image of the new PSD outside R; inside R when the baseline fails and the old composite disagrees too), G6 (b)
+  (the new PNG against Photoshop's image wherever either moved), and it keeps a PNG pushed first "current" (5.3).
+- Every refusal line starts "PNG not made:" and ends "export it in Photoshop" (`png_export.EXPORT`); it is told on Discord
+  and in the comment as before. A G5 or G6 refusal is retried against the burst anchor.
+- The referee (`png_export.referee`, `run_referee`) is gone: every PSD is rendered.
+
+**Measured on the 34 replayed commits (2.2)** with the built code, the PNG withheld (`replay34.jsonl`; the Mac under load
+115-138 on 24 cores, numpy single-threaded, 2 processes as the Action's pool):
+
+| | Cards |
+|---|---|
+| PNG made (re-exported) | 25 of 34: 24 of the 31 Photoshop saves, 1 of the 3 bot bakes (Springtrap) |
+| Against the author's own export | all 25 within the parity bar; 99.957% to 100% of pixels within 2 levels; max 0-2 on 6, under 24 on 23, worst 68 (Dirty Bed, a few pixels) and 32 (Springtrap). The composite build: 30 of 31 within 2 levels, worst 4 |
+| Refused | 9 (below) |
+| The author's PNG pushed first (in the tree) | 34 of 34 current, nothing told (4 of them by Photoshop's image, the change being one the fork draws otherwise) |
+| Render CPU (both boxes) | median 3.5 s, max 25.2 s (Zero Two: a 2.6-megapixel box); the whole export median 5.7 s, 90th percentile 20.8 s, max 27.9 s; opening the PSDs 0.2-1.0 s |
+| On the runner (ubuntu-latest, 4 vCPU, assumed 1.5-2x slower a core) | about 9-11 s CPU a stale card median, 40-55 s for a whole-card box |
+| Bytes | 52.5 MB for the 25 PNGs, against 121.3 MB for the authors' exports |
+
+Why the 9 refuse (diagnosed with `why.py`, the crops in `why/`):
+
+| Card (commit) | Gate | Cause |
+|---|---|---|
+| Defcon Panda (1b4f36a0) | G6 (a), baseline 1.35% bad | the Ability layer's drop shadow: the fork draws its outer edge otherwise (a thin ring round every glyph) |
+| Clock (a90761aa) | G6 (b), 3.6% bad | the same drop-shadow edge on the Ability text, and the changed smart object |
+| The Radiance (bb44ec9e) | G6 (b), mean 3.84 | the title's outer glow drawn otherwise (14 records changed, the box is the whole card) |
+| Pandamonium (38c55bd3) | G6 (b), mean 3.15 | the Ability text's gradient overlay, up to 9 levels off on every glyph pixel |
+| Restrained (5c8cb87b) | G5, where changed (7.1% bad) | the old PNG was stale: the old PSD (its composite and the render) reads "(BOT) -1 Action", the old PNG "-1 Action" |
+| 20 Creature Types, 11 Abilities5 (100511d3) | G6, "changed where the bot sees no layer change" | a type layer whose only changed block was `TySh`: its stored raster stayed, Photoshop's image moved (2,612 and 3,487 px outside R) |
+| PoD09DDT (705e3d34), PoD10BFB (c9fc1bbd) | the same | bot bakes (never guarded): the bake patched the stored preview beyond the changed records' box |
+
+- **Not the one-colour badge glyphs.** The fork draws a type layer from the raster Photoshop stored, so badges come out in
+  Photoshop's colours: 15 of the 34 changed a type layer set in stoogedings, and every refusal among them has a cause
+  above. The colour-glyph fork matters for the bake's own text, not here.
+- So today about 1 in 4 forgotten PNGs would be "PNG not made: export it in Photoshop", where the composite build made
+  all 34. Fork fixes for the drop shadow's edge, the outer glow and the gradient overlay would lift 4 of the 9.
+
+**Ruling 2: font-check.yml posts to the standards channel.** Its Tell Discord step reads `DISCORD_STANDARDS_WEBHOOK`; the
+role ping and the wording are `font_check.discord_payload`'s, unchanged. card-check.yml keeps `DISCORD_FONT_WEBHOOK`.
+`test_font_check.test_workflow_shape` pins the secret (`FONT_CHECK_YML` points it at the branch's file until it lands).
+
+**Ruling 3: R7 is told in the guard's post.** `card_standards.rule_fonts` no longer marks R7 comment-only; BabaUI stays
+waived. A missing font is therefore told twice in the standards channel: by font-check at once (role ping) and by the
+guard after the quiet window (no ping).
+
+**Tests** (fork venv; `CARD_GUARDS_YML` and `FONT_CHECK_YML` at the TTSCardMaker branch's files):
+`test_the_png_is_the_forks_render_merged_into_the_old_png`, `test_a_new_card_is_rendered_and_cross_checked`,
+`test_every_refusal_says_export_it_in_photoshop`, `test_the_refusals_of_the_replay` (Restrained G5, Defcon Panda G6 (a),
+20 Creature Types G6, Defcon Panda's PNG pushed first current), `test_font_issues_are_told_in_the_standards_post`,
+`test_r7_is_told_in_the_standards_post`; the real-card tests re-pinned to the render's numbers. The standards tests and
+R10's read the cards at 6e50c3ee from the clone's history: the Desktop clone's later standardization commits changed
+Dirty Bed, Blindness and Dark Mind Eye.
 
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).

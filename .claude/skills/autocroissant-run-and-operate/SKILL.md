@@ -418,8 +418,9 @@ present. It reports and never rejects: a missing font is a message to a person, 
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
   `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
-  missing, posts to the Discord webhook in the repo secret `DISCORD_FONT_WEBHOOK` (the URL is in no file) and then comments on
-  the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
+  missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (moved from the font
+  channel's `DISCORD_FONT_WEBHOOK` by the owner on 2026-10-22, on TTSCardMaker `work/push-guards` until it lands; the URL is
+  in no file) and then comments on the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
   adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
   card PSD by blob (~813 downloads).
 - **By hand: `/fonts`** (anyone). Runs in a thread against the card repo's current tree through the API with the per-blob
@@ -448,7 +449,8 @@ network, a truncated tree) is one error line.
   it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
   requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
-  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font check's secret; unset: a warning) and comments on the commit. The
+  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font channel; the font check posts to the standards channel since
+  2026-10-22; unset: a warning) and comments on the commit. The
   message pings role 546427268751294475 once, then one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the
   website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
@@ -535,10 +537,14 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
 The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
-without its PNG gets the PNG from its stored composite (gated; nothing when the PNG already shows the PSD, pushed before
-it), the pushed PSDs are checked against the card standards (the owner's one easy fix, R9's Txt2 sync; R11's exact-name
-rename is built but told until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no ping)
-and at most one bot commit, both after a 30-minute quiet window.
+without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261022b` renders
+the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is never
+written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop"; nothing
+when the PNG already shows the PSD, pushed before it), the pushed PSDs are checked against the card standards, fonts (R7)
+included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told until the owner says yes,
+`card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no
+ping; font-check.yml posts there too, with its role ping) and at most one bot commit, both after a 30-minute quiet window.
+On the 34 replayed commits the render passes the gates on 25 and refuses 9 (PUSH_GUARDS.md section 17).
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
