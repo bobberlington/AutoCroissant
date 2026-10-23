@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, and a guild-admin table.
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, and a guild-admin table.
 ---
 
 # AutoCroissant: Run and Operate
@@ -530,6 +530,33 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
   docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
 
+### Card guards (added 2026-10-22; TTSCardMaker's card-guards.yml Action, BUILT on `work/push-guards`, not landed)
+
+The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
+failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
+without its PNG gets the PNG from its stored composite (gated), the pushed PSDs are checked against the card standards
+(0-pixel fixes only), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no ping)
+and at most one bot commit, both after a 30-minute quiet window.
+
+- **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret). Unset or `off`: push runs
+  are skipped. `report`: check, comment and post (after the window), never commit. `on`: also land the PNGs and fixes.
+  Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on` (owner's call; the
+  items to confirm first are at the top of PUSH_GUARDS.md section 15).
+- **Dispatch (Actions > Card guards > Run workflow):** `dry_run` defaults to true (job summary and the `card-guards`
+  artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
+  against its first parent; `cards` limits it; `all` audits every card PSD (about 40 minutes, always dry). `dry_run` off
+  comments, posts and lands at once on the blob check alone (no quiet window): use it on a push older than 30 minutes.
+- **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
+  --out <dir>` (any clone with the history; blobs it lacks come by API), then `land --plan <dir>/plan.json --dry-run`
+  or `--local <clone>` (commits there, pushes nothing). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
+- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the comment's told mark). After a run
+  that landed, the re-run finds its blobs on the branch ("already on the branch") and writes nothing.
+- **Failures:** a push run that fails (not checked, the commit failed unposted, a step broke or timed out) sends one
+  message to the standards channel with the run link, for the first failure of a streak only. A card the guards could not
+  finish is told in the post and turns the run red ("Fail on card errors"); re-check it with a dispatch (`sha`, `cards`).
+- **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
+  the files only bot commits changed.
+
 ### Discord archive and card matching (added 2026-10-22; CLI only, run by hand)
 
 commands/discord_archive.py (the miner) and commands/discord_match.py (the matcher) are both uncompiled and not in setup.py.
@@ -808,3 +835,4 @@ saving bullet names the per-PSD failure messages (an unreadable PSD, a failed co
 abort.
 2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.
 2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.
+2026-10-22 (card guards): section 7's Card guards subsection (the CARD_GUARDS switch, dispatches, re-runs, the failure alert); no cited line moved.

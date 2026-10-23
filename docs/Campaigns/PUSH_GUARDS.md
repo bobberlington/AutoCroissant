@@ -182,9 +182,9 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 | PSD added, no PNG in the tree | new-card export (5.5) | check, with the new-card rules (R4) |
 | PSD added with its PNG (the usual new card), or with its PNG deleted | none | check, with the new-card rules (R4); R10 |
 | PSD added, a PNG of that stem already in the tree and not in the push | stale candidate against that PNG | check |
-| PSD renamed (one blob deleted and added under another path, same sha), no PNG at the new path | copy the old PNG's bytes to the new path (no new blob); report the old PNG as left behind | none (same blob) |
+| PSD renamed (one blob deleted and added under another path, same sha), no PNG at the new path | copy the old PNG's bytes to the new path (no new blob); report the old PNG as left behind (comment only) | none (same blob) |
 | PSD renamed with changes (different sha) | a delete plus an add: new-card export; the old PNG is reported as left behind | check |
-| PSD deleted, PNG left | report "PNG without PSD" (never deleted) | none |
+| PSD deleted, PNG left | report "PNG without PSD" (never deleted; comment only, review 3) | none |
 | PNG modified or added, PSD untouched | none | R10 only: the pushed PNG against the PSD's composite ("push the PSD too?"; comment only) |
 | PNG deleted, PSD kept | report only (deliberate or not, it is the author's) | none |
 | Numbered PNGs (A_Snack2.png) of a stale PSD | delta transfer or refuse per file (5.4) | none |
@@ -215,6 +215,15 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 **4.5 The quiet window.**
 - `land` sleeps until 30 minutes after the push, then runs `card_bake.recent_paths` (2 API calls). A write that a later push
   touched is dropped: that push's run owns it.
+- Every write also rests on its blobs (G9), looked up in any letter case: a teammate's `foo.png` pushed in the window for a
+  new `Foo.psd` drops the bot's `Foo.png` and withdraws a refusal (review 3). A blob that is the bot's own write (a re-run
+  after a landing) still holds: the re-run writes nothing and the comment says "already on the branch".
+- **A dispatch with `dry_run` off** has no quiet window: the last 30 minutes' pushes would include the checked push
+  itself, so every write would be dropped as "a later push touched it" (review 3). It lands at once on the blob check
+  alone, which sees every change since the checked commit. Run it on a push older than 30 minutes.
+- **A card whose PSD changed again** is left to the later push's run, unless the last commit that changed it is a bot's
+  (bake, Card sync, another guard run): no run follows that one, so the push's lines are told anyway (`_bot_changed`, one
+  API read per such card).
 - **The Discord post waits too** (review 2, 2026-10-22), in report mode as well (`land --dry-run`). After the window, a PNG
   refusal is withdrawn when the author pushed that PNG meanwhile, a card whose PSD changed again is left to that push's own
   post, and a write that did not land without the author replacing it is told ("PNG not made: ...; export it in Photoshop",
@@ -264,7 +273,10 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 - **current:** no write; job summary only.
 - **refused:** report line and Discord.
 - **superseded:** summary only.
-- **error:** red run, summary, artifact.
+- **error:** the card's line on Discord ("the bot could not finish checking it (MemoryError); PNG not made: export it in
+  Photoshop" when it needed a PNG), the error in the comment, the other cards go on, and the step "Fail on card errors"
+  turns the run red (`summary.json` `card_errors`; review 3). Errors outside the cards (an unreadable font, the manifest)
+  are in the comment only.
 
 **5.4 Numbered PNGs (delta transfer).** A numbered PNG is the base export with other title layers shown (ledger L12).
 - The pixels where it differs from the old base PNG by more than 2 levels, dilated by 8 px, are the toggled area.
@@ -377,11 +389,15 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
   PSD keeps the credit.
 - No pickles, no `site/` files, no `TTS/`.
 
-**7.2 The commit comment** (on `after`, posted at check time, saying "The bot will fix"; after `land` it is rewritten from
+**7.2 The commit comment** (on `after`, posted at check time when `summary.json`'s `comment` count is not 0: a card with
+something told, a write, an error, or comment-only lines (R10, an R7 issue, "PNG left without its PSD", "deleted; the PSD
+stays"...), so a push whose only finding is a PNG that does not match its PSD gets its comment (review 3); saying "The bot
+will fix"; after `land` it is rewritten from
 `report-landed.md`: "Landed in `<sha>`" per landed card, "Fixed by the bot", for a card left out "Not landed (superseded:
 ...): nothing above was committed for this card", for a failed commit "Not landed: <why>. Nothing was committed.", and
-"After the quiet window: ..." notes. A broken Land step still rewrites it: "The bot could not finish this push". A re-run
-edits the same comment.)
+"After the quiet window: ..." notes, and on a re-run after a landing "already on the branch". A broken Land step still
+rewrites it: "The bot could not finish this push". A re-run edits the same comment. A failed comment call fails the run
+but never stops Land: its `if` asks only for Check's success.)
 - `## Card guards`, then per card:
   - its issues;
   - the guard-1 outcome with D's size, the gates' numbers and the ICC mode;
@@ -389,11 +405,18 @@ edits the same comment.)
 - Errors last.
 - A dry run writes the same text to the job summary only.
 
-**7.3 The Discord post: exactly one per push, and only when some card has a remaining issue, a refusal or a write that did
+**7.3 The Discord post: exactly one per push, and only when some card has a remaining issue, a refusal, an error or a write that did
 not land.**
-- **Sent:** after the quiet window (4.5), from `discord-final.json` (`land` settles it; check's `discord.json` only if Land
-  broke). Once sent, the comment carries the mark `<!-- card-guards: told on Discord -->`, so a re-run never posts again.
-- **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`); R7 while font-check.yml pings.
+- **Sent:** after the quiet window (4.5), from `discord-final.json` only (`land` settles it and never raises). Check's
+  `discord.json` is never posted: it would tell refusals since withdrawn and miss the writes that did not land. When Land
+  ran but settled nothing (killed, timed out), Tell Discord fails and the run-failed message goes out instead. Once sent,
+  the comment carries the mark `<!-- card-guards: told on Discord -->`, so a re-run never posts again.
+- **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`); R7 while font-check.yml pings;
+  "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
+  review 3).
+- **The login:** the commits API's login of the commit's author; an author with no GitHub account: the login in a
+  GitHub noreply email, else the pusher's login (`github.actor`, who pushed the card), never the git author name while the
+  API answers (review 3).
 - **Format:** one line per card, with the masked link to the commit that last changed it:
   `Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group; "Blazing" is an overlay text layer, not an Ability FX: layer. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
 - **Not in the post:** planned fixes and re-exports (they are not issues) and "PNG still current".
@@ -440,22 +463,24 @@ not land.**
 | Per stale card | plus the old PSD and old PNG (~2.5 s), two composites (0.3 s), the record diff (0.2 s), the PNG write (~1 s); the referee only for tool-written PSDs (2-6 s for a box, 10-30 s for a whole new card): about 6-10 s, up to 40 s for a new card |
 | Typical push (1-3 PSDs) | about 1-1.5 min; with writes or anything to tell, plus the 30 min sleep and ~20 s to land |
 | A batch push (50 PSDs, as the badge batch's) | about 4-6 min |
-| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the job's `timeout-minutes: 120` (Check 90, Land 60) |
+| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the job's `timeout-minutes: 150` (Check 90, Land 60) |
 | The 28 GB repo | never checked out: trees only, then blobs by sha for the touched cards. The alternative is the partial clone's lazy fetch of exactly those blobs (`git sparse-checkout set --no-cone <paths>` after a blobless clone), which costs no REST calls, for when the API quota gets tight |
 | API (`GITHUB_TOKEN`, 1,000 requests an hour per repo, shared with card-check, font-check and card-sync) | per push: 1 commits read per commit, k blob reads (k = pushed PSDs + 2 per stale card), 1 comment (+1 edit), at land 2 activity/compare reads and n+3 writes for n files |
-| Price | free (standard runners on a public repo); the sleeping land step holds one runner for at most 30 min |
+| Price | free: TTSCardMaker is public (checked 2026-10-22, `visibility: public`), so standard runners cost nothing; the sleeping land step holds one runner for about 31 min on every push with anything to tell or write, report mode included. Were the repo made private, that is about 31 billed minutes a push (2,000 free a month) |
 | Storage | a re-export adds one PNG blob, about 1/3 of a Photoshop 2023 export (5.7). A fix adds a delta of a few KB. Nothing is written for the common "PNG still current" case (2.3) |
 
 ## 10. Failure modes
 
 | Case | What happens | Recovery |
 |---|---|---|
-| An unreadable PSD, a failed download | an error line for that card; the others go on; exit 0 (check) | a dispatch with `sha` and `cards` |
+| An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red | a dispatch with `sha` and `cards` |
 | Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak (card-edits.yml's rule), no ping | re-run the job |
 | A gate refuses | report line, Discord, no write | the author exports in Photoshop, or fixes the PSD |
 | The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
-| The land step fails (API 5xx, a timeout) | red run, the plan in the artifact, nothing half-written (one commit or none); the comment says "Not landed: ..." and the post tells each PNG not made and fix not made | re-run the job; the idempotent re-check writes only what is still due |
+| The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
+| The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job |
+| The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
 | A PSD saved without Maximize Compatibility | G2 refusal for guard 1; guard 2 still runs | save with it on |
@@ -463,7 +488,8 @@ not land.**
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
 | GitHub schedules late | n/a: push runs are not scheduled; only the Card sync fold depends on the cron | none |
 | A burst of pushes | each its own run, so no report is lost (4.4); landing commits serialize by retry | none |
-| A run re-run by hand | edits its earlier comment; posts to Discord only if the first run had not (the comment's told mark) | none |
+| A run re-run by hand | edits its earlier comment; posts to Discord only if the first run had not (the comment's told mark); after a landing, the bot's own blobs count as held: "already on the branch", nothing written or told again | none |
+| A bot commit (bake, Card sync, another guard run) changes a card's PSD in the window | no run follows it, so the card's lines are still told; its PSD fix is told as not made | none |
 
 ## 11. Folding into Card sync (`DATA_BUILD_ACTION.md` §6)
 
@@ -508,7 +534,7 @@ jobs:
       github.actor != 'AutoCroissant' && github.actor != 'github-actions[bot]' &&
       (github.event_name == 'workflow_dispatch' || vars.CARD_GUARDS == 'report' || vars.CARD_GUARDS == 'on')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     env:   # github, inputs, vars... only: OUT ($RUNNER_TEMP/guards) is set in the first step
       MODE: ${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || (inputs.dry_run && 'dry' || 'on') }}   # off | report | on | dry
     steps:
@@ -525,12 +551,13 @@ jobs:
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", BEFORE: "${{ github.event.before }}", SHA: "${{ inputs.sha }}"}
         run: python -m commands.card_guards check --repo "$GITHUB_REPOSITORY" --after "${SHA:-$GITHUB_SHA}" ... --out "$RUNNER_TEMP/guards" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
-      - name: Land                                      # MODE report (--dry-run)/on, something to tell or write: sleep to the
+      - name: Land                                      # !cancelled(), Check passed, MODE report (--dry-run)/on, something to tell or write: sleep to the
                                                         # quiet mark, recent check, one commit, discord-final.json
       - name: Follow up                                 # always(): the comment rewritten; a commit: gh workflow run site.yml, tts-save.yml
-      - name: Tell Discord                              # always(), Check passed, not told before: discord-final.json; URL never printed
+      - name: Tell Discord                              # always(), Check passed, not told before: discord-final.json only; URL never printed
         env: {WEBHOOK: "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"}
         run: curl -sS -o /dev/null -f -H "Content-Type: application/json" --data @"$OUT/discord-final.json" "$WEBHOOK" || echo "::warning::..."
+      - name: Fail on card errors                       # summary.json card_errors > 0: red (the errors were told)
       - name: Tell Discord the run failed               # a failed push run whose post did not go out: once per failure streak
       - uses: actions/upload-artifact@v4                # always()
 ```
@@ -570,6 +597,25 @@ jobs:
   its PSD (the L16 stale export). The new PNG matches the composite (max 1 level), so R10 passes it.
 
 ## 15. Open points
+
+**For the owner to confirm before `CARD_GUARDS=on`** (each goes beyond the literal brief; everything else follows it):
+1. **The PNG is Photoshop's stored composite, not "the same render the bake uses".** The composite in the PSD, converted as
+   the card was exported (`icc_vote`), is written; the fork only referees PSDs a tool wrote (G6). Why: 30 of 31 Photoshop
+   saves came within 2 levels of the author's own export (2.2) where the fork's render cannot draw colour badges,
+   gradients and smart filters, and reading the composite costs 0.3 s against 5-14 CPU-seconds. A yes, or "use the fork
+   render", is needed.
+2. **The Discord post waits out the 30-minute quiet window, in report mode too.** font-check.yml, the model the owner named
+   ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
+   card pushed again to the later push, and tells the writes that did not land. Cost: a runner held about 31 minutes per
+   push with anything to tell, free while TTSCardMaker is public (it is). The alternative is the post at check time.
+3. **At rollout "fix the easy issues" fixes nothing** (6.3): R9 needs the fork tag with `sync_story`, R11 has 0 cases.
+   Report mode and early `on` tell everything.
+4. **Two channels.** A push touching PSDs starts three Actions: font-check.yml and card-check.yml (the font channel, with
+   their role ping) and card-guards.yml (the standards channel, no ping). R7 (fonts) stays out of the guard's post so a
+   missing font is told once; the parser's notes stay card-check's by design. A card can still appear in both channels for
+   different findings.
+5. **The login** in "<login> pushed <card>": the commit author's GitHub login; for an author with no GitHub account, the
+   pusher's login (7.3).
 
 - Whether font-check.yml's push run (role ping, font channel) should stop once the guard reports R7 in the standards channel.
   Until then, R7 stays out of the post and only in the comment, so a missing font is told once.
@@ -688,6 +734,29 @@ jobs:
 - Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made
   (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
 - R10 and "current, but outside the bar" stay in the comment (`TELL_PNG_MISMATCH`); report mode tells the fixable issues.
+
+**Review fixes, third pass (2026-10-22):**
+- `land` caught only `Transient` and `Refused`; a requests error (the commit POSTs, a GET past its 3 tries) escaped, no
+  landed.json or settled post was written, and Tell Discord fell back to check's early post (refusals not withdrawn, the
+  writes that never landed untold, the failure alert suppressed). It now catches every exception as the error, and Tell
+  Discord posts `discord-final.json` only (`test_land_never_raises_and_still_settles_the_post`,
+  `test_workflow_tells_only_the_settled_post`).
+- A failed comment call skipped Land (no status function: an implicit `success()`); Land now runs on `!cancelled()` and
+  Check's success.
+- A card's error is told on Discord and turns the run red ("Fail on card errors"; `test_a_card_error_is_told_and_counted`).
+- R10 alone (a PNG-only push not matching its PSD) never reached the comment: `summary.json` counts `comment` separately and
+  the Comment step gates on it (`test_a_png_mismatch_alone_still_gets_its_comment`).
+- A dispatch with `dry_run` off counted its own push as "a later push" and dropped every write; it now lands on the blob
+  check alone (`test_a_dispatch_does_not_count_its_own_push_as_a_later_one`).
+- A re-run after a landing rewrote the comment to "Not landed"; the bot's own blobs now count as held
+  (`test_a_rerun_after_a_landing_says_landed_not_superseded`).
+- A card's lines were dropped when a bot commit changed its PSD in the window; they now stand
+  (`test_a_bot_change_in_the_window_keeps_the_lines`, `test_bot_changed_in_a_clone`).
+- Head blobs are looked up in any letter case (`test_a_png_pushed_in_another_case_counts`).
+- "Left without its PSD" and "left at the PSD's old name" are comment only, like R10.
+- The login fallback is the pusher's GitHub login, not the git author name (`test_login_falls_back_to_a_github_login`).
+- Section 9's timeout is 150, as card-guards.yml has it; the owner's items to confirm are listed at the top of section 15;
+  the run-and-operate skill has a card-guards section.
 
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).
