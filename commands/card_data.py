@@ -10,6 +10,7 @@ changes (card_history), changelog events and the gates. Design:
 docs/Campaigns/DATA_BUILD_ACTION.md (sections 7 and 13).
 """
 from argparse import ArgumentParser
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ from tempfile import mkstemp
 from threading import local
 from typing import Callable, Optional
 
+from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
 from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH, EDITS_PATHS,
@@ -32,12 +34,16 @@ from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
+from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, get_with_retry, range_reads
 
 # ========================
 # Configuration
 # ========================
 UPDATE_RATE = 25
 DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
+AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs fetched and not yet parsed, at most (memory, temp files)
+RANGE_READS = True                                                # read a PSD by range requests at the tree's commit when
+                                                                  # psd-tools can (lazy open); else, and on any failure, whole
 LOOKUP_WORKERS = 2                                                # commit lookups ahead of parsing
 COMMITS_PAGE = 100                                                # commits per request: newest and first in one
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
@@ -87,6 +93,9 @@ class CardBuild:
         self.unlooked: list = []                 # PSDs whose commit lookup raised (legacy: a 5xx, a rate limit)
         self.repository = ""
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
+        self.sizes: dict = {}                    # repo path -> blob size, from the API's tree (the build's has none)
+        self.raw_ref = ""                        # the tree's commit for range reads ("": whole downloads this run)
+        self.ranged: list = []                   # bytes fetched per PSD parsed from range reads
         self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
         self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
@@ -254,6 +263,7 @@ class CardBuild:
         self.tree = resp.json()                         # parsed once; the helpers below read it
         self.etag = resp.headers.get("ETag") or ""
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
+        self.sizes = {item.get("path", ""): item.get("size") for item in self.tree.get("tree", []) if item.get("type") == "blob"}
         from commands import psd_details                # lazy: fontTools loads here, not at startup
         self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts; none on a 304
 
@@ -555,33 +565,47 @@ class CardBuild:
         num_updated = num_changed = num_moved = 0
         todo, num_old = self._todo(response, force_update)
 
+        self.raw_ref = self._raw_ref() if todo and RANGE_READS and range_reads() else ""
         pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
-        downloads = [pool.submit(self._download, path, sha) for path, _, sha in todo]
+        queue, ahead = iter(todo), deque()
+
+        def top_up() -> None:                           # keep AHEAD fetches going
+            while len(ahead) < AHEAD:
+                item = next(queue, None)
+                if item is None:
+                    return
+                ahead.append((item, pool.submit(self._fetch_psd, item[0], item[2])))
+
         lookups = self._lookup_ahead(todo)              # commit lookups overlap the downloads too
         try:
-            for (path, name, sha), download in zip(todo, downloads):
-                local_file = download.result()
-                if local_file is None:
-                    if self._held(path, name):                  # the build: past its download budget, read next run
-                        continue
-                    self.failed += 1
-                    self.failed_new += name not in self.db.stats or name in self.restored
-                    self.lost.append(path)
+            top_up()
+            while ahead:
+                (path, name, sha), fetched = ahead.popleft()
+                source = fetched.result()
+                top_up()
+                if source is None:
+                    self._not_fetched(path, name)
                     continue
                 try:
                     timestamp, author = self._get_remote_timestamp(self._repo(), path, name)
                 except Exception as e:                          # a 5xx or rate limit: no date, the card waits
-                    remove(local_file)
+                    self._release(source)
                     self._not_looked_up(path, name, e)
                     continue
                 try:
-                    card = self.parser.parse(local_file, path, self.db.stats.get(self.renamed_from.get(name, "")))
-                    self._gather_details(local_file, path, name, sha)
+                    card = self._parse(source, path, name, sha)
+                    if card is None:                            # range reads failed: the whole file decides
+                        self._release(source)
+                        source = self._download(path, sha)
+                        if source is None:
+                            self._not_fetched(path, name)
+                            continue
+                        card = self._parse(source, path, name, sha)
                 except Exception as e:                          # one bad PSD: its card keeps its data, the run goes on
                     self._unreadable(path, name, sha, e)
                     continue
                 finally:
-                    remove(local_file)
+                    self._release(source)
                 old = self.db.stats.get(name)
                 if old is None or getattr(old, "blob_sha", None) != sha:
                     self.new_blobs.setdefault(sha, name)
@@ -617,19 +641,96 @@ class CardBuild:
             self._lookups = {}
             if lookups is not None:
                 lookups.shutdown(wait=False, cancel_futures=True)
-            for download in downloads:
-                download.cancel()
+            for _, fetched in ahead:
+                fetched.cancel()
             pool.shutdown(wait=True)
-            for download in downloads:                          # temp files left by an error
-                if download.done() and not download.cancelled() and download.result() and isfile(download.result()):
-                    remove(download.result())
+            for _, fetched in ahead:                            # open PSDs and temp files left by an error
+                if fetched.done() and not fetched.cancelled() and fetched.exception() is None:
+                    self._release(fetched.result())
 
+        if self.ranged:
+            print(f"{len(self.ranged)} PSDs read by range requests at {self.raw_ref[:8]}: "
+                  f"{sum(self.ranged) / 1e6:.1f} MB fetched.")
         self.report(f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
         return (self._format_problems(problematic_cards), num_changed + num_moved)
 
     def _held(self, path: str, name: str) -> bool:
         """Whether a PSD without a file was held back on purpose (GitBuild's budget), not failed."""
         return False
+
+    def _raw_ref(self) -> str:
+        """The commit to range-read this run's PSDs at ("" for whole downloads)."""
+        return self._tree_commit()
+
+    def _tree_commit(self) -> str:
+        """The commit of the tree this run read (its branch's head when that still has this tree), for range reads; ""
+        when unknown (one API request)."""
+        if not (self.tree or {}).get("sha"):
+            return ""
+        try:
+            reply = get_with_retry(api_url(self.repository, f"branches/{CARD_BRANCH}"), headers=HEADERS)
+            commit = (reply.json().get("commit") or {}) if reply.status_code == 200 else {}
+        except (RequestException, ValueError) as e:
+            print(f"Range reads off this run: no branch head ({e})")
+            return ""
+        tree = ((commit.get("commit") or {}).get("tree") or {}).get("sha")
+        return (commit.get("sha") or "") if tree and tree == (self.tree or {}).get("sha") else ""
+
+    def _fetch_psd(self, path: str, sha: str):
+        """
+        The PSD to parse (in a download worker): a RemotePSD read by range requests at raw_ref, else the whole blob in a
+        temp file (_download); None when neither worked.
+        """
+        if self.raw_ref:
+            try:
+                return RemotePSD(self.repository, self.raw_ref, path, self.sizes.get(path))
+            except Exception as e:                              # the whole file decides
+                if isinstance(e, RangeError) and 400 <= e.status < 500:
+                    self.raw_ref = ""                           # e.g. a commit not on GitHub: whole downloads from now on
+                print(f"{path}: range reads failed ({e}); downloading it whole")
+        return self._download(path, sha)
+
+    @staticmethod
+    def _release(source) -> None:
+        """Close a RemotePSD or remove a temp file (again is fine)."""
+        if isinstance(source, RemotePSD):
+            source.close()
+        elif source and isfile(source):
+            remove(source)
+
+    def _parse(self, source, path: str, name: str, sha: str) -> Optional[CardInfo]:
+        """
+        The card and its details from one open of the PSD. None for a RemotePSD that raised or whose reads broke: the
+        caller reads the whole file instead, so a range read never changes a result.
+        """
+        existing = self.db.stats.get(self.renamed_from.get(name, ""))
+        if isinstance(source, RemotePSD):
+            try:
+                card = self.parser.parse(source.psd, path, existing)
+                details = self._details(source.psd, path, name)
+            except Exception as e:
+                print(f"{path}: range reads failed ({e}); downloading it whole")
+                return None
+            if source.failed:
+                print(f"{path}: a range read failed; downloading it whole")
+                return None
+            self.ranged.append(source.fetched)
+        else:
+            psd = PSDImage.open(source)
+            card = self.parser.parse(psd, path, existing)
+            details = self._details(psd, path, name)
+        if details is not None:
+            self.details[sha] = details
+            self.details_changed += 1
+        return card
+
+    def _not_fetched(self, path: str, name: str) -> None:
+        """A PSD without a file: held back (GitBuild) or failed (retried next run)."""
+        if self._held(path, name):                      # the build: past its download budget, read next run
+            return
+        self.failed += 1
+        self.failed_new += name not in self.db.stats or name in self.restored
+        self.lost.append(path)
 
     def _history(self, name: str, old: CardInfo, path: str, sha: str) -> None:
         """Legacy: the card before, when its PSD changed or moved, is history if its data did (_record_history, after the
@@ -746,14 +847,15 @@ class CardBuild:
         self.lost.append(path)
         self.unlooked.append(path)
 
-    def _gather_details(self, local_file: str, path: str, name: str, sha: str) -> None:
-        """The card's PSD facts for the website (psd_details.json); a failure is one console line, never a failed update."""
+    def _details(self, psd: PSDImage, path: str, name: str) -> Optional[dict]:
+        """The card's PSD facts for the website (psd_details.json); a failure is one console line (None), never a failed
+        update."""
         try:
             from commands import psd_details                # lazy: fontTools (through font_check) loads with the first parse
-            self.details[sha] = psd_details.gather(local_file, path, name, self.font_index, self.db.all_types)
-            self.details_changed += 1
+            return psd_details.gather(psd, path, name, self.font_index, self.db.all_types)
         except Exception as e:
             print(f"{path}: details not gathered ({e})")
+            return None
 
     def _send_failures(self) -> None:
         """The failed downloads, the failed commit lookups, then the PSDs that could not be read (by path)."""
@@ -989,6 +1091,7 @@ class GitBuild(CardBuild):
         self.head = _git(checkout, "rev-parse", head).strip()
         self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
+        self.pushed = self.head                  # a commit on GitHub with head's other PSDs: range reads there
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
         self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
@@ -1041,6 +1144,13 @@ class GitBuild(CardBuild):
             return False
         self._hold(path, name)
         return True
+
+    def _raw_ref(self) -> str:
+        return self.pushed
+
+    def _fetch_psd(self, path: str, sha: str):
+        """A blob the clone has is read there; others by range reads, else whole through REST (both within the budget)."""
+        return self._download(path, sha) if self._store(sha) else super()._fetch_psd(path, sha)
 
     def _blob(self, sha: str, stream: bool = False):
         reply = super()._blob(sha, stream)
@@ -1377,6 +1487,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     archived_before = _archived(before, before_old)
     details_before = len(details)
 
+    if baked:
+        run_build.pushed = _git(checkout, "rev-parse", f"{head}^").strip()   # B is local; its other PSDs are its parent's
     run_build.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
     run_build.again = set(pending_before.get("stale") or [])  # held by the last run's budget: read now
     run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}

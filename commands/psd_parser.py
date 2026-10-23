@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
 from psd_tools import PSDImage
 from re import compile as re_compile, fullmatch, sub
-from typing import Optional, Any
+from typing import Any, Optional, Union
 
 from global_config import RULEBOOK_DIR
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name
@@ -323,12 +323,12 @@ class PSDParser:
         self.icons = icons if icons is not None else IconVocabulary.build(all_types, [], None)
         self._gap_pattern = re_compile(r'\s{3,}')
 
-    def parse(self, file_path: str, relative_path: str = "", existing: Optional[CardInfo] = None) -> CardInfo:
+    def parse(self, file_path: Union[str, PSDImage], relative_path: str = "", existing: Optional[CardInfo] = None) -> CardInfo:
         """
         Parse a PSD file to extract card information.
 
         Args:
-            file_path: Full path to PSD file
+            file_path: Full path to PSD file, or the PSD already open (one open for the parse and psd_details)
             relative_path: Relative path in repository
             existing: The card whose author and series it keeps (default: the stored card of its name; a renamed PSD's
                 is its old name's)
@@ -372,7 +372,8 @@ class PSDParser:
             )
 
         # Parse PSD layers
-        self._extract_from_layers(PSDImage.open(file_path), card, relative_path)
+        psd = file_path if isinstance(file_path, PSDImage) else PSDImage.open(file_path)
+        self._extract_from_layers(psd, card, relative_path)
 
         return card
 
