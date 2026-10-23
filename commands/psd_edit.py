@@ -58,7 +58,8 @@ ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the P
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
-TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
+TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
+GLOWS = ("glow", "darkglow")  # token variants whose halo the fork draws as its glyf outline: a solid block, not a soft glow
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
@@ -1182,7 +1183,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also colour glyphs),
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also colour glyphs and glow tokens),
         overflow; ImportError when the fork edits TySh alone (no story_sync: Photoshop would show the story's old text)
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
@@ -1216,6 +1217,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         icons = icon_font(layer)
         if TOKEN.search(text) and icons is None:
             raise Refused("unsupported-card", "[type] tokens on a card with image icons")
+        glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
+        if glows:
+            raise Refused("font", f"{', '.join(glows)}: this psd-tools draws a glow halo as a solid block; edit in Photoshop")
         # a token the edit typed takes the run before it: set it in the icon font, as the old ones are
         tokens = [match.span() for match in TOKEN.finditer(text) if match.start() < end and match.end() > start]
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)

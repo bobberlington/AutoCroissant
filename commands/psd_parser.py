@@ -28,8 +28,8 @@ DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every
 # so the text itself says which icon sits where. Cards with image-layer icons keep using gap injection.
 ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
 TITLE_REGION_RATIO = 0.12                                         # text above this: the title (hidden = a duplicate's)
-ICON_VARIANTS = ("", "tint", "sticker", "no")
-ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
+ICON_VARIANTS = ("", "tint", "sticker", "no", "glow", "darkglow")   # all but no read as the plain icon
+ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|[-★]")   # 52: [thunderfury blessed blade of the starseeker:darkglow]
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
 EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
@@ -690,9 +690,9 @@ class PSDParser:
         """
         Rewrite the icon-font tokens in a layer's text as canonical tokens.
 
-        "[Fire:Sticker]" -> "[fire]", "[Defensive Minion]" -> "[defensive_minion]", "[fire:no]" stays "[fire:no]",
-        and an icon character from the Glyphs panel -> "[fire]". Unknown tokens are left as typed and reported,
-        because the font shows them as plain letters on the card.
+        "[Fire:Sticker]" and "[fire:glow]" -> "[fire]", "[Defensive Minion]" -> "[defensive_minion]", "[fire:no]" stays
+        "[fire:no]", and an icon character from the Glyphs panel -> "[fire]". Unknown tokens are left as typed and
+        reported, because the font shows them as plain letters on the card.
 
         Args:
             text: Raw layer text

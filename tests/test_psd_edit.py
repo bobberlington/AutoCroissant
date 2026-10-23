@@ -1218,6 +1218,20 @@ def test_icon_font_tokens_and_colour_glyphs(clone, chart):
 
 
 @text_edit
+def test_glow_tokens_refuse(clone, chart):
+    """The fork draws a :glow halo as its glyf outline, a solid block even under an overlay: refused before any change."""
+    psd = PSDImage.open(_card(clone, "Field/4 Stars/The_Hive.psd")[0])
+    layer = pe.ability_layer(psd)
+    old = layer.text
+    for token in ("[fire:glow]", "[Fire:DarkGlow]"):
+        with pytest.raises(pe.Refused, match="glow halo") as refused:
+            pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + f" Deal 1 {token} damage.", str(clone / pe.FONTS_DIR), chart)
+        assert refused.value.code == "font" and token in refused.value.why and layer.text == old
+    with pytest.raises(pe.Refused, match="colour glyphs"):      # :sticker and :tint keep the old rule
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Deal 1 [fire:sticker] damage.", str(clone / pe.FONTS_DIR), chart)
+
+
+@text_edit
 def test_story_style_drift_catches_a_tysh_only_fill(clone, tmp_path):
     """A fill written to TySh alone: Photoshop would show the story's colour. The bake refuses such a card."""
     path, png = _card(clone, MINI_DOOMER)
