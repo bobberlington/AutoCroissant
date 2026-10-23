@@ -236,11 +236,11 @@ def test_slash_surface_and_help():
     assert "- as_of: A date, YYYY-MM-DD" in entry and "archived cards too" in entry and "(default: the current card)" in entry
 
 
-def test_archived_text_says_where_a_retired_psd_went():
+def testarchived_text_says_where_a_retired_psd_went():
     """White Palace moved into MDW/The Morgue (moved_to): archived, not deleted."""
     tag = {"at": 1792658876.0, "commit": "b6330730235d", "moved_to": "MDW/The Morgue/White_Palace.psd"}
-    assert "(PSD moved to MDW/The Morgue in b633073)" in qc._archived_text(tag)
-    assert "(PSD deleted in b633073)" in qc._archived_text({**tag, "moved_to": None})
+    assert "(PSD moved to MDW/The Morgue in b633073)" in qc.archived_text(tag)
+    assert "(PSD deleted in b633073)" in qc.archived_text({**tag, "moved_to": None})
 
 
 def test_a_png_named_in_another_case_finds_its_card(db, monkeypatch):
@@ -248,7 +248,7 @@ def test_a_png_named_in_another_case_finds_its_card(db, monkeypatch):
     monkeypatch.setitem(qc.card_repo.git_files, "omori.png", "Creatures/Omori/5 Stars/Omori.png")
     omori = _card("omori", "Creatures/Omori/5 Stars/omori", _at(2026, 10, 21, 22, 57, 50), "Death counter.")
     monkeypatch.setitem(cm.stats_db.stats, "omori", omori)
-    assert qc._stats_card("omori.png") is omori and qc._as_of_match("omori") == ("omori.png", "omori")
+    assert qc._stats_card("omori.png") is omori and qc.history_match("omori") == ("omori.png", "omori")
     assert "**omori** as of 2026-10-22 " in _texts("omori", "2026-10-22")[0]   # once: no stored card data
 
 
@@ -257,8 +257,8 @@ def test_an_archived_name_wins_over_an_alias(db, monkeypatch):
     history; Z!!!!!'s own name still finds Z!!!!!."""
     monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
     monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
-    assert qc._as_of_match("ZOEY!!!!!") == (None, "ZOEY!!!!!")
-    assert qc._as_of_match("Z!!!!!") == ("z!!!!!.png", "Z!!!!!")
+    assert qc.history_match("ZOEY!!!!!") == (None, "ZOEY!!!!!")
+    assert qc.history_match("Z!!!!!") == ("z!!!!!.png", "Z!!!!!")
 
 
 # ========================
@@ -309,3 +309,28 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     old = _ask("Tainted Bethany", "2026-02-01")[0]
     assert old["links"][1] == ("Image (2026-01-30)", f"https://raw.githubusercontent.com/{qc.card_repo.repository}/"
                                                      f"{first}/{png}")
+
+
+# ========================
+# /view_old_metadata finds the same cards
+# ========================
+def _old(query, version=0):
+    import commands.psd_analyzer as pa
+    utils.dispatch_queue.clear()
+    pa.view_old_metadata(SimpleNamespace(), query, version)
+    return [kw["content"] for _, kw in utils.dispatch_queue]
+
+
+def test_view_old_metadata_reaches_archived_and_case_named_cards(db, monkeypatch):
+    """ZOEY!!!!! (archived, an alias of Z!!!!! claims its name) shows its own history and says it is archived; omori
+    (omori.psd, Omori.png) its own; a listed card as before."""
+    monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
+    monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
+    monkeypatch.setitem(qc.card_repo.git_files, "omori.png", "Creatures/Omori/5 Stars/Omori.png")
+    monkeypatch.setitem(cm.stats_db.stats, "omori", _card("omori", "Creatures/Omori/5 Stars/omori", 2.0, "Now."))
+    monkeypatch.setitem(cm.stats_db.old_stats, "omori", [_card("omori", "Creatures/Omori/5 Stars/omori", 1.0, "Then.")])
+    zoey = _old("ZOEY!!!!!")[0]
+    assert zoey.startswith("Old metadata for **ZOEY!!!!!** (most recent old version of 2), archived on 2026-06-18 "
+                           "(PSD deleted in 35adb38):") and "Zoey last." in zoey
+    assert _old("omori")[0].startswith("Old metadata for **omori** (most recent old version of 1):")
+    assert _old("Tainted Bethany", -1)[0].startswith("Old metadata for **Tainted Bethany** (oldest of 4):")

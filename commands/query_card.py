@@ -709,7 +709,7 @@ def _approx(card) -> str:
     return " (date approximate)" if known and not getattr(card, "blob_sha", None) else ""
 
 
-def _archived_text(tag: dict) -> str:
+def archived_text(tag: dict) -> str:
     """'archived on <date> (PSD deleted in <commit>)', or moved to MDW/...; 'by' for a backfill (deleted earlier)."""
     commit = tag.get("commit")
     gone = f"PSD moved to {tag['moved_to'].rsplit('/', 1)[0]}" if tag.get("moved_to") else "PSD deleted"
@@ -719,8 +719,9 @@ def _archived_text(tag: dict) -> str:
     return f"archived {'by' if tag.get('backfill') else 'on'} {_day(tag.get('at'))} ({deleted})"
 
 
-def _as_of_match(query: str) -> Optional[tuple]:
-    """(registry file name or None, card name) for query, archived cards included (their PNG may be gone)."""
+def history_match(query: str) -> Optional[tuple]:
+    """(registry file name or None, card name) for query, archived cards included (their PNG may be gone; their own
+    name before an alias or another card's PNG that claims it): /query as_of and /view_old_metadata."""
     from commands.psd_analyzer import card_name, stats_db
     try:
         archived = {card_repo._normalize_card_name(name): name for name in stats_db.archived()}
@@ -755,7 +756,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     if why:
         queue_message(interaction, why)
         return
-    found = _as_of_match(query)
+    found = history_match(query)
     if found is None:
         queue_message(interaction, "No card found!")
         return
@@ -785,7 +786,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     since = f"from {_day(_since(card))}{_approx(card)}"
     tag = None if current is not None else getattr(versions[len(versions) - 1], "archived", None)
     if tag and index + 1 == len(versions) and end > (tag.get("at") or 0):     # no at: archived after its last version
-        line = f"{head}{_archived_text(tag)}. Its last version ({which}), {since}:"
+        line = f"{head}{archived_text(tag)}. Its last version ({which}), {since}:"
     elif card is current:
         line = f"{head}the current card ({which}), {since}."
     else:
@@ -793,7 +794,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         if index + 1 < len(versions):
             until = f" until {_day(_since(versions[index + 1]))}"
         elif tag:
-            until = f" until it was {_archived_text(tag)}"
+            until = f" until it was {archived_text(tag)}"
         line = f"{head}{which}, {since}{until}."
     line = f"{line}\n{AS_OF_EDITS_NOTE}"
 
@@ -999,7 +1000,9 @@ def init_query() -> None:
 # Module Exports
 # ========================
 __all__ = [
+    'archived_text',
     'card_repo',
+    'history_match',
     'init_query',
     'query_ability',
     'query_ability_num_occur',
