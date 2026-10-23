@@ -473,12 +473,14 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
     dups: dict = {}
     for name, dup in stats.items():
         original = getattr(dup, "duplicate_of", None)
-        found = fullmatch(r"(.+?)(\d+)\.png", basename(pngs.get(name.lower(), "")), IGNORECASE)
-        if original in stats and not getattr(stats[original], "duplicate_of", None) and found:
-            dups[name] = (original, int(found.group(2)), found.group(0).lower())
+        png = basename(pngs.get(name.lower(), ""))
+        found = fullmatch(r"(.+?)(\d+)\.png", png, IGNORECASE)
+        if original in stats and not getattr(stats[original], "duplicate_of", None) and png:
+            dups[name] = (original, int(found.group(2)) if found else None, png.lower())   # None: a dup_of card's own PNG
     siblings: dict = {}
     for original, number, _ in dups.values():
-        siblings.setdefault(original, []).append(number)
+        if number is not None:
+            siblings.setdefault(original, []).append(number)
     for name, (original, number, png) in dups.items():  # a duplicate is its original's copy (card_data._sync_duplicates)
         if original not in changed and edits is None:
             continue
@@ -486,7 +488,8 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
         copy = deepcopy(src)
         copy.name, copy.duplicate_of, copy.parsed_values, copy.problems, copy.alt_names = name, original, None, [], None
         own = (current.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if current is not None else []
-        copy.display_name = CardBuild._duplicate_name(png, src, number, sorted(siblings[original]), legacy, own)
+        copy.display_name = (CardBuild._duplicate_name(png, src, number, sorted(siblings[original]), legacy, own)
+                             if number is not None else CardBuild._duplicate_name(png, src, 0, [], {}, own, own_name=True))
         if current is not None:
             current.apply(name, copy)
         stats[name] = copy

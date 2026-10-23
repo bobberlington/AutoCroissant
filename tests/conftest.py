@@ -18,6 +18,7 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+environ["AUTOCROISSANT_BOT_CLONE"] = str(REPO / "tests" / "no-bot-clone")   # never this checkout's PICKLE commits
 from global_config import ALIAS_PKL, DETAILS_JSON, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_PKL, STATS_PKL  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it
@@ -202,8 +203,9 @@ def pickles_untouched():
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    """No network, cwd in a temp dir so cwd-relative saves (pickles, json maps) land there, and no history clone for
-    /update_stats' cleanup unless a test gives one (the machine's own never counts)."""
+    """No network, cwd in a temp dir so cwd-relative saves (pickles, json maps) land there, and no history clone or bot
+    clone (its PICKLE commits) for /update_stats' cleanup and the seed unless a test gives one (the machine's own never
+    count)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -211,6 +213,7 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     if "commands.card_data" in sys.modules:
         monkeypatch.setattr(sys.modules["commands.card_data"], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
+        monkeypatch.setattr(sys.modules["commands.card_data"], "BOT_CLONE", str(tmp_path / "no-bot-clone"))
 
 
 @pytest.fixture(scope="session")

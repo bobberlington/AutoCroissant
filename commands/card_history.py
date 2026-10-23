@@ -5,18 +5,21 @@ path) and exact renames. On that index: the version rules (a version only when a
 and a cause from git; versions without a blob marked legacy), the seed pass over old_stats, and the archive tags'
 dates. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 7.4.
 
-CLI (copies only): python -m commands.card_history refine --git <full clone> --pickles <dir> --out <dir>
+CLI (copies only): python -m commands.card_history refine --git <full clone> --pickles <dir> --out <dir> [--bot-git <dir>]
 """
 from argparse import ArgumentParser
+from bisect import bisect_right
 from copy import deepcopy
 from dataclasses import dataclass, field
+from io import BytesIO
 from os import environ, makedirs
-from os.path import abspath, join, samefile, splitext
+from os.path import abspath, dirname, isdir, join, samefile, splitext
+from re import findall, sub
 from subprocess import run
 from typing import Optional
 
-from commands.card_db import dump_pickle, read_pickles, record
-from commands.card_models import CardInfo, CardType, card_name
+from commands.card_db import SeedUnpickler, card, dump_pickle, read_pickles, record
+from commands.card_models import CardInfo, CardStats, CardType, card_name
 
 # ========================
 # Configuration
@@ -32,6 +35,11 @@ TYPE_RENAMES = {"offense": "negation"}                # retired Types/ icon -> i
 UNKNOWN_IF = (("NO STARS FOUND", "stars"), ("MISSPELT TYPE", "types"), ("NO ABILITY LAYER", "ability"))
 SERIES = ("series", "subseries")
 RETIRED = ("MDW", "Markers")                          # no card folders (card_data.EXCLUDE_FOLDERS): a PSD there retired
+STAT_MAX, STAT_CAP, STARS_MAX = 10, 20, 7             # a stat above 10 needs allow_high_stats, above 20 none is real
+PNG_SLACK = 6 * 3600.0                                # a push's PNG export can follow its PSD by hours
+PICKLE_FILES = ("stats.pkl", "old_stats.pkl")         # the bot's committed database (PICKLE commits)
+PRINTED = ("card_type", "ability", "types", "stars", "stats")    # what a reading of the card prints
+BOT_CHECKOUT = abspath(join(dirname(abspath(__file__)), ".."))   # this AutoCroissant checkout (its PICKLE commits)
 
 
 @dataclass
@@ -57,6 +65,8 @@ class GitIndex:
     renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact rename
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
     at_path: dict = field(default_factory=dict)       # path -> [(Commit, blob)] that put a blob there, newest first
+    gone_at: dict = field(default_factory=dict)       # path -> Commits that deleted it, newest first
+    lower: dict = field(default_factory=dict)         # lower-cased path -> path (at_path or gone_at), filled on first use
 
     @classmethod
     def parse(cls, text: str) -> "GitIndex":
@@ -95,6 +105,7 @@ class GitIndex:
         self.first[path] = commit                         # newest first: the last one seen is the oldest
         if status == "D":
             self.deleted.setdefault(path, commit)
+            self.gone_at.setdefault(path, []).append(commit)
             gone[src] = path
         elif dst != NO_BLOB:
             self.intro[dst] = (commit, path)
@@ -132,6 +143,50 @@ class GitIndex:
         commit's time), else None (none, or several at that second)."""
         found = [(commit, blob) for commit, blob in self.at_path.get(path, []) if commit.at == at]
         return found[0] if len(found) == 1 else None
+
+    def blob_before(self, path: str, at: float) -> Optional[str]:
+        """The blob at path at time `at`: the newest commit (log order) at or before it that put one there or deleted
+        it (None then, or with none); a path in another letter case counts (a PNG named so)."""
+        if path not in self.at_path and path not in self.gone_at:
+            if not self.lower:
+                self.lower = {p.lower(): p for p in (*self.gone_at, *self.at_path)}
+            path = self.lower.get(path.lower(), path)
+        put = next(((c, b) for c, b in self.at_path.get(path, []) if c.at <= at), None)
+        cut = next((c for c in self.gone_at.get(path, []) if c.at <= at), None)
+        if put is None or (cut is not None and cut.order < put[0].order):
+            return None
+        return put[1]
+
+    def png_blob(self, psd_path: str, at: float) -> Optional[str]:
+        """The card's PNG blob `at` that time plus PNG_SLACK (an export pushed after its PSD counts)."""
+        return self.blob_before(splitext(psd_path)[0] + ".png", at + PNG_SLACK)
+
+    def renamed(self, path: str, stats) -> tuple:
+        """
+        Where an exact rename chain from path leads (the PSD's, else its PNG's: a rename that edited the PSD): (the
+        name of a card in stats (any container of names), None), or (None, the path in a folder of no cards: retired),
+        or (None, None).
+        """
+        for old in (path, splitext(path)[0] + ".png"):
+            seen = set()
+            while old in self.renames and old not in seen:
+                seen.add(old)
+                old = self.renames[old][0]
+                if card_name(old) in stats and not any(folder in RETIRED for folder in old.split("/")):
+                    return (card_name(old), None)
+                if any(folder in RETIRED for folder in old.split("/")):
+                    return (None, old if old.lower().endswith(".psd") else None)
+        return (None, None)
+
+    def origin(self, path: str) -> str:
+        """The oldest path an exact rename chain reached path from (path itself when none)."""
+        if not hasattr(self, "_back"):
+            self._back = {new: old for old, (new, _) in self.renames.items()}
+        seen = {path}
+        while path in self._back and self._back[path] not in seen:
+            path = self._back[path]
+            seen.add(path)
+        return path
 
     def png_commit(self, psd_path: str, before: Optional[Commit] = None, before_at: Optional[float] = None) -> Optional[str]:
         """The newest commit of the card's PNG older than `before` (else older than before_at; else the newest); a PNG
@@ -217,8 +272,14 @@ def carry(dropped: CardInfo, holder: CardInfo) -> None:
     website dates a version by this start too (TTSCardMaker site/build/analytics.py when).
     """
     at, commit = start(dropped)
+    if at is not None:
+        carry_to(holder, at, commit)
+
+
+def carry_to(holder: CardInfo, at: float, commit: Optional[str]) -> None:
+    """carry() from a start: holder's start moves to `at` (its commit `commit`) when that is earlier."""
     now = start(holder)[0]
-    if at is None or (now is not None and at >= now):
+    if now is not None and at >= now:
         return
     info = getattr(holder, "version", None)
     if info is None:
@@ -420,6 +481,490 @@ def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo]) -> d
     return meta(intro, intro.at, "psd")
 
 
+def out_of_range(card: CardInfo, allowed: bool = False) -> list:
+    """The values no card prints, as fields: a stat above STAT_CAP, or above STAT_MAX without allow_high_stats (the
+    card's or `allowed`: its current card's), stars outside 0..STARS_MAX."""
+    found = []
+    stats = getattr(card, "stats", None)
+    high = allowed or getattr(card, "allow_high_stats", False)
+    values = [getattr(stats, key, -1) for key in ("hp", "defense", "attack", "speed")] if stats is not None else []
+    if any(isinstance(v, int) and v > (STAT_CAP if high else STAT_MAX) for v in values):
+        found.append("stats")
+    stars = getattr(card, "stars", None)
+    if isinstance(stars, int) and not 0 <= stars <= STARS_MAX:
+        found.append("stars")
+    return found
+
+
+def unknown_values(stats: dict, old_stats: dict) -> list:
+    """
+    Stored versions' impossible values set to unknown (stats -1, stars None; out_of_range), in place, each noted in its
+    problems: they can't be checked (no PSD of theirs is read again). Part of the one-time cleanup.
+
+    Returns:
+        (name, timestamp, fields) of each version changed
+    """
+    changed = []
+    for name, versions in old_stats.items():
+        holder = stats.get(name)
+        for version in versions:
+            fields = out_of_range(version, bool(getattr(holder, "allow_high_stats", False)))
+            if not fields:
+                continue
+            was = []
+            if "stats" in fields:
+                s = version.stats
+                was.append(f"stats {s.hp}/{s.defense}/{s.attack}/{s.speed}")
+                version.stats = CardStats()
+            if "stars" in fields:
+                was.append(f"stars {version.stars}")
+                version.stars = None
+            version.problems = [*(getattr(version, "problems", None) or []), f"OUT OF RANGE: {', '.join(was)} (unknown)"]
+            changed.append((name, version.timestamp, fields))
+    return changed
+
+
+def _blob_of(card: CardInfo, index: GitIndex) -> Optional[str]:
+    """A version's PSD blob: its own, else the one commit's at its path with its time (blob_at)."""
+    own = getattr(card, "blob_sha", None)
+    if own:
+        return own
+    found = index.blob_at(card.path, card.timestamp)
+    return found[1] if found else None
+
+
+def _only_types(a: CardInfo, b: CardInfo) -> bool:
+    """Whether two versions differ in their types alone (same_data's rules for the rest)."""
+    try:
+        if data_of(a)["types"] == data_of(b)["types"]:
+            return False
+    except (TypeError, AttributeError):
+        return False
+    other = deepcopy(a)
+    other.types = list(getattr(b, "types", None) or [])
+    return same_data(other, b)
+
+
+def _same_png(index: GitIndex, a_path: str, a_at: Optional[float], b_path: str, b_at: Optional[float]) -> bool:
+    """Whether the card's PNG is the same blob at both starts, at least PNG_SLACK apart (no export between them)."""
+    if a_at is None or b_at is None or b_at - a_at < PNG_SLACK:
+        return False
+    png = index.png_blob(a_path, a_at)
+    return png is not None and png == index.png_blob(b_path, b_at)
+
+
+def misreads(stats: dict, old_stats: dict, index: GitIndex) -> list:
+    """
+    Type misreads, in place: consecutive versions whose PSD blobs differ while the card's PNG stayed the same (the
+    printed card did not change) and whose data differ in the type list alone are one version read twice: the older
+    goes into the newer, its earlier start carried (the 2026-02-08 commits changed 208 PSDs, 66 of them without a new
+    PNG). Repeated until none is left, so a second call changes nothing.
+
+    Returns:
+        (name, start, types before, types after) of each version merged
+    """
+    merged = []
+    for name in list(old_stats):
+        merged += _misread(name, old_stats[name], stats.get(name), index)
+        if not old_stats[name]:
+            del old_stats[name]
+    return merged
+
+
+def _misread(name: str, versions: list, holder: Optional[CardInfo], index: GitIndex) -> list:
+    """misreads() on one name's versions (changed in place) and its card."""
+    merged = []
+    while True:
+        chain = [*versions, holder] if holder is not None else list(versions)
+        found = None
+        for i in range(len(chain) - 1):
+            a, b = chain[i], chain[i + 1]
+            if getattr(a, "archived", None) or getattr(b, "archived", None):
+                continue
+            blobs = (_blob_of(a, index), _blob_of(b, index))
+            if None in blobs or blobs[0] == blobs[1] or not _only_types(a, b):
+                continue
+            if _same_png(index, a.path, start(a)[0], b.path, start(b)[0]):
+                found = (a, b)
+                break
+        if found is None:
+            return merged
+        a, b = found
+        merged.append((name, start(a)[0], list(getattr(a, "types", None) or []), list(getattr(b, "types", None) or [])))
+        carry(a, b)
+        del versions[next(i for i, v in enumerate(versions) if v is a)]
+
+
+# ========================
+# Recovery from the bot's PICKLE commits
+# ========================
+@dataclass
+class Snapshot:
+    """One commit of the bot's database: its sha, committer time and the pickles as they were."""
+    sha: str
+    at: float
+    stats: dict
+    old_stats: dict
+
+
+@dataclass
+class Reading:
+    """A card as one PICKLE held it, dated from git: its start and commit, its PSD blob, the fields it could not
+    know (an older parser's missing ones, impossible values, a failed parse)."""
+    card: CardInfo
+    snapshot: str
+    order: int                                    # the snapshot's place, oldest 0
+    at: float = 0.0
+    commit: Optional[str] = None
+    blob: Optional[str] = None
+    unknown: set = field(default_factory=set)
+
+
+@dataclass
+class Recovered:
+    """What recover changed."""
+    added: list = field(default_factory=list)     # (name, start, PICKLE sha) of each version restored
+    starts: list = field(default_factory=list)    # (name, earlier start) of each start moved earlier
+    archived: list = field(default_factory=list)  # names gone from both pickles, archived from their last reading
+    undated: int = 0                              # readings whose PSD blob git can't tell (skipped)
+
+    def changed(self) -> bool:
+        return bool(self.added or self.starts or self.archived)
+
+    def lines(self) -> list:
+        by = {}
+        for _, _, sha in self.added:
+            by[sha[:7]] = by.get(sha[:7], 0) + 1
+        cards = len({name for name, _, _ in self.added})
+        return [f"Versions recovered from the bot's PICKLE commits: {len(self.added)} on {cards} cards"
+                + (f" ({', '.join(f'{sha} {n}' for sha, n in sorted(by.items()))})" if by else ""),
+                f"Starts moved earlier by a PICKLE's reading: {len(self.starts)}",
+                f"Cards gone before archiving, archived: {len(self.archived)}"
+                + (f" ({', '.join(self.archived)})" if self.archived else ""),
+                f"Readings git can't date (skipped): {self.undated}"]
+
+
+_SNAPSHOTS: dict = {}                             # (clone, sha) -> Snapshot: the PICKLEs never change
+
+
+def bot_snapshots(clone: str) -> list:
+    """
+    The bot's committed database: a Snapshot for each commit of clone's HEAD history that changed stats.pkl or
+    old_stats.pkl, oldest first, without the ones a later commit reverted (cca0aaf); [] when clone is no full git clone
+    (the Action's sparse checkout, a git archive). Read once per process (git cat-file --batch, the allow-list
+    unpickler; a pickle it refuses is left out).
+    """
+    env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
+    if not clone or not isdir(clone):
+        return []
+    shallow = run(["git", "-C", clone, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True, env=env)
+    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        return []
+    log = run(["git", "-C", clone, "log", "HEAD", "--format=%H%x09%ct%x09%B%x00", "--", *PICKLE_FILES],
+              capture_output=True, env=env)
+    if log.returncode != 0:
+        return []
+    commits, reverted = [], set()
+    for chunk in log.stdout.decode("utf-8", "replace").split("\0"):
+        chunk = chunk.strip("\n")
+        if chunk:
+            sha, at, body = (chunk.split("\t", 2) + ["", ""])[:3]
+            reverted.update(findall(r"This reverts commit ([0-9a-f]{7,40})", body))
+            commits.append((sha, float(at or 0)))
+    commits = [(sha, at) for sha, at in reversed(commits) if not any(sha.startswith(r) for r in reverted)]
+    todo = [(sha, name) for sha, _ in commits if (clone, sha) not in _SNAPSHOTS for name in PICKLE_FILES]
+    blobs: dict = {}
+    if todo:
+        done = run(["git", "-C", clone, "cat-file", "--batch"], input="".join(f"{s}:{n}\n" for s, n in todo).encode(),
+                   capture_output=True, env=env)
+        data, pos = done.stdout, 0
+        for key in todo:
+            end = data.find(b"\n", pos)
+            if end < 0:
+                break
+            header, pos = data[pos:end].split(), end + 1
+            if len(header) == 3 and header[1] == b"blob":
+                size = int(header[2])
+                blobs[key], pos = data[pos:pos + size], pos + size + 1
+    out = []
+    for sha, at in commits:
+        if (clone, sha) not in _SNAPSHOTS:
+            try:
+                pickles = [SeedUnpickler(BytesIO(blobs[(sha, n)])).load() if (sha, n) in blobs else {} for n in PICKLE_FILES]
+            except Exception as e:                      # noqa: BLE001 - an unreadable PICKLE is one line, never a failed run
+                print(f"History: PICKLE {sha[:7]} not read ({e})")
+                continue
+            _SNAPSHOTS[(clone, sha)] = Snapshot(sha, at, *(p if isinstance(p, dict) else {} for p in pickles))
+        out.append(_SNAPSHOTS[(clone, sha)])
+    return out
+
+
+def _as_card(key: str, value) -> Optional[tuple]:
+    """A PICKLE's record as (a new CardInfo, the fields it lacks): a CardInfo through record (an older pickle's missing
+    fields defaulted), a 2025 dict (keyed by path in April 2025) converted."""
+    if isinstance(value, CardInfo):
+        try:
+            found = card(record(value))
+        except (TypeError, AttributeError, ValueError):
+            return None
+        found.name = key
+        return (found, {"stars"} if found.stars == 0 else set())
+    if not isinstance(value, dict):
+        return None
+    path = value.get("path") or (key if str(key).lower().endswith(".psd") else "")
+    if not path:
+        return None
+    lacks = {f for f, k in (("stars", "stars"), ("stats", "hp")) if k not in value}
+    if value.get("stars") == 0:
+        lacks.add("stars")                          # none found (no card prints 0 stars; NO STARS FOUND since)
+    stats = CardStats(*(value.get(k, -1) for k in ("hp", "def", "atk", "spd"))) if "stats" not in lacks else CardStats()
+    found = CardInfo(name=card_name(path), card_type=value.get("type") or "unknown", path=path,
+                     timestamp=float(value.get("timestamp") or 0.0), ability=value.get("ability"),
+                     stars=value.get("stars"), subtype=value.get("subtype"), series=value.get("series"),
+                     types=list(value.get("types") or []), stats=stats, problems=list(value.get("problem") or []),
+                     author=value.get("author"))
+    return (found, lacks)
+
+
+def _readings(snapshots: list) -> dict:
+    """{name: [Reading]} of every card record the PICKLEs held (current and history), one per (path, timestamp): the
+    newest PICKLE's (its parser read best). Left out: no real date (local mode), no card folder, duplicates, no data."""
+    found: dict = {}
+    for order, snap in enumerate(snapshots):
+        records = [(k, v) for k, v in snap.stats.items()]
+        records += [(k, v) for k, vs in snap.old_stats.items() for v in (vs if isinstance(vs, list) else [])]
+        for key, value in records:
+            got = _as_card(str(key), value)
+            if got is None:
+                continue
+            reading, lacks = got
+            path = reading.path or ""
+            if (reading.timestamp <= 0 or not path.lower().endswith(".psd") or getattr(reading, "duplicate_of", None)
+                    or any(folder in RETIRED for folder in path.split("/"))
+                    or (reading.card_type == CardType.UNKNOWN.value and not reading.ability)):
+                continue
+            reading.archived = reading.version = None
+            vars(reading).pop("created", None)
+            found.setdefault(reading.name, {})[(path, reading.timestamp)] = Reading(reading, snap.sha, order, unknown=lacks)
+    return {name: list(by.values()) for name, by in found.items()}
+
+
+def _locate(reading: Reading, index: GitIndex, snapshot_at: float) -> bool:
+    """A reading's blob and start from git: the commit at its path with its timestamp (the bot stored commit times
+    since 2025-05), else the one blob its path held from that time (a file's mtime in April 2025) to its PICKLE, dated
+    by the blob's intro. False when git can't tell."""
+    found = index.blob_at(reading.card.path, reading.card.timestamp)
+    if found is not None:
+        reading.at, reading.commit, reading.blob = reading.card.timestamp, found[0].sha, found[1]
+        return True
+    first = index.blob_before(reading.card.path, min(reading.card.timestamp, snapshot_at))
+    if first is None or first != index.blob_before(reading.card.path, snapshot_at):
+        return False
+    intro = index.blob_intro(first)
+    if intro is None:
+        return False
+    reading.at, reading.commit, reading.blob = intro.at, intro.sha, first
+    return True
+
+
+def _words(text: Optional[str]) -> list:
+    """An ability's printed words, in any case: icon tokens ([fire], [x:tint]) and everything but letters and digits
+    dropped (spacing, punctuation and capitals are format)."""
+    return findall(r"[^\W_]+", sub(r"\[[^\]]*\]", " ", text or "").lower())
+
+
+def _printed(card: CardInfo, lacks: set, allowed: bool) -> dict:
+    """What a reading prints (PRINTED), without the fields it could not know."""
+    stats = getattr(card, "stats", None)
+    out = {"card_type": card.card_type, "ability": _words(card.ability),
+           "types": sorted(TYPE_RENAMES.get(t, t) for t in getattr(card, "types", None) or []),
+           "stars": getattr(card, "stars", None),
+           "stats": tuple(getattr(stats, k, -1) for k in ("hp", "defense", "attack", "speed")) if stats is not None else None}
+    skip = set(lacks) | set(out_of_range(card, allowed)) | (unknown(card) - {"display_name"})
+    if card.ability is None:
+        skip.add("ability")
+    if out["stars"] is None:                        # none counted: no field a reading can disagree on
+        skip.add("stars")
+    if out["stats"] is None or all(v == -1 for v in out["stats"]):
+        skip.add("stats")
+    return {k: v for k, v in out.items() if k not in skip}
+
+
+def _same_printed(a: dict, b: dict) -> bool:
+    return all(a[k] == b[k] for k in a if k in b)
+
+
+def recover(stats: dict, old_stats: dict, index: GitIndex, snapshots: list) -> Recovered:
+    """
+    History the bot's own PICKLE commits held and old_stats lost (the 2026-02-07 cleanup dropped all but 208 names; the
+    2025 pickles held states no backfill read; 795fd23 replaced Spawn of the Forbidden One's June reading), in place.
+    Each name's readings (_readings) dated from git (_locate); one with the PSD blob of a stored version is a re-read:
+    its earlier start carried (never past the version before). The others, in time order between the stored versions:
+    a reading printing what the version before it prints is nothing new; a run of readings printing the same goes, as
+    one, into the version after it when that prints it too (its earlier start carried: a format or parser change) or
+    becomes a legacy version (the old parse's ability, types, stars, stats, card type; the next version's series,
+    title, author, note, hidden and creatures; restored_from the PICKLE). A type list alone that differs while the PNG
+    stayed is a misread (misreads), never a version. A name gone from both pickles gets its readings as versions, the
+    last archived from its deleting commit (renamed_to, moved_to by date_archive); no deleting commit, nothing.
+    One-time and idempotent: a second call finds every reading held.
+
+    Args:
+        stats, old_stats: The database (changed in place)
+        index: The card repo's GitIndex
+        snapshots: bot_snapshots()
+
+    Returns:
+        What changed
+    """
+    report = Recovered()
+    at_of = {snap.sha: snap.at for snap in snapshots}
+    for name, readings in _readings(snapshots).items():
+        holder = stats.get(name)
+        if holder is not None and getattr(holder, "duplicate_of", None):
+            continue
+        allowed = bool(getattr(holder, "allow_high_stats", False))
+        located: dict = {}
+        for reading in readings:
+            if not _locate(reading, index, at_of[reading.snapshot]):
+                report.undated += 1
+                continue
+            have = located.get(reading.blob)
+            if have is None:
+                located[reading.blob] = reading
+            else:                                   # one blob read twice: the newer parse, the earlier start
+                newer = reading if reading.order > have.order else have
+                newer.at, newer.commit = min((reading.at, reading.commit), (have.at, have.commit),
+                                             key=lambda pair: pair[0])
+                located[reading.blob] = newer
+        stored = list(old_stats.get(name) or [])
+        items = [*stored, holder] if holder is not None else stored
+        if not items:
+            _archive_gone(name, sorted(located.values(), key=lambda r: r.at), old_stats, stats, index, report)
+            continue
+        if getattr(items[len(items) - 1], "archived", None) is None and holder is None:
+            continue                                # an untagged gone name: prune's to tag first
+        blobs = [_blob_of(v, index) for v in items]
+        fresh = []
+        for reading in sorted(located.values(), key=lambda r: r.at):
+            if reading.blob in blobs:
+                k = blobs.index(reading.blob)
+                begin = start(items[k])[0]
+                if begin is not None and reading.at < begin and (k == 0 or (start(items[k - 1])[0] or 0) < reading.at):
+                    carry_to(items[k], reading.at, reading.commit)
+                    report.starts.append((name, reading.at))
+            else:
+                fresh.append(reading)
+        if fresh:
+            _merge(name, fresh, items, holder, old_stats, index, allowed, report)
+    return report
+
+
+def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_stats: dict, index: GitIndex,
+           allowed: bool, report: Recovered) -> None:
+    """recover's placing of one name's new readings among its stored versions (items: old_stats, then the card)."""
+    starts = [start(v)[0] or 0.0 for v in items]
+    if any(starts[i] > starts[i + 1] for i in range(len(starts) - 1)):
+        return                                      # stored out of order: nothing is placed between them
+    gaps: dict = {}
+    for reading in fresh:
+        k = bisect_right(starts, reading.at)
+        if k >= len(items) or (k and starts[k - 1] == reading.at):
+            continue                                # newer than the card, or a re-read of the version's commit
+        gaps.setdefault(k, []).append(reading)
+    placed: dict = {}                               # item index -> versions restored before it
+    for k, readings in sorted(gaps.items()):
+        runs = _runs_of(readings, index, allowed,
+                        (_printed(items[k - 1], set(), allowed), starts[k - 1], items[k - 1].path) if k else None)
+        after = items[k]
+        if runs and _alike(index, _form(runs[len(runs) - 1], allowed), (_printed(after, set(), allowed), starts[k], after.path)):
+            first = min(runs.pop(), key=lambda r: r.at)       # it prints what the version after it prints
+            carry_to(after, first.at, first.commit)
+            report.starts.append((name, first.at))
+        if runs:
+            placed[k] = [_restored(name, run_, after, report) for run_ in runs]
+    if not placed:
+        return
+    out = []
+    for k, item in enumerate(items):
+        out += placed.get(k, [])
+        if item is not holder:
+            out.append(item)
+    old_stats[name] = out
+
+
+def _form(run_: list, allowed: bool) -> tuple:
+    """A run's printed form for _alike: (printed, start, path) of its first reading."""
+    first = run_[0]
+    return (_printed(first.card, first.unknown, allowed), first.at, first.card.path)
+
+
+def _runs_of(readings: list, index: GitIndex, allowed: bool, before: Optional[tuple] = None) -> list:
+    """Readings in time order as runs printing the same (_alike); the ones printing what `before` (a form) prints go."""
+    runs: list = []
+    for reading in readings:
+        mine = (_printed(reading.card, reading.unknown, allowed), reading.at, reading.card.path)
+        prev = _form(runs[len(runs) - 1], allowed) if runs else before
+        if prev is not None and _alike(index, prev, mine):
+            if runs:
+                runs[len(runs) - 1].append(reading)
+            continue
+        runs.append([reading])
+    return runs
+
+
+def _alike(index: GitIndex, a: tuple, b: tuple) -> bool:
+    """Whether two printed forms (printed, start, path) are the same card: equal on what both know, or the type list
+    alone differs while the PNG stayed (a misread)."""
+    if _same_printed(a[0], b[0]):
+        return True
+    if {k for k in a[0] if k in b[0] and a[0][k] != b[0][k]} != {"types"}:
+        return False
+    first, second = sorted((a, b), key=lambda x: x[1])
+    return _same_png(index, first[2], first[1], second[2], second[1])
+
+
+def _restored(name: str, run_: list, after: Optional[CardInfo], report: Recovered) -> CardInfo:
+    """A run of readings as one legacy version: the reading that knew most (the newest of those), the run's earliest
+    start, the next version's non-PSD fields (the old pickles lack them or used another series scheme)."""
+    best = max(run_, key=lambda r: (-len(r.unknown), r.order))
+    first = min(run_, key=lambda r: r.at)
+    version = deepcopy(best.card)
+    version.name = name
+    for key in ("parsed_values", "duplicate_of", "alt_names", "archived"):
+        setattr(version, key, None)
+    if after is not None:
+        for key in ("series", "subseries", "display_name", "author", "note", "hidden", "creatures"):
+            setattr(version, key, deepcopy(getattr(after, key, None)))
+    if "stars" in best.unknown:
+        version.stars = None
+    if "stats" in best.unknown:
+        version.stats = CardStats()
+    version.blob_sha = best.blob
+    version.timestamp = first.at
+    version.version = {**meta(None, first.at, "legacy", legacy=not best.blob), "from_commit": first.commit,
+                       "restored_from": best.snapshot}
+    vars(version).pop("created", None)
+    report.added.append((name, first.at, best.snapshot))
+    return version
+
+
+def _archive_gone(name: str, located: list, old_stats: dict, stats: dict, index: GitIndex, report: Recovered) -> None:
+    """A name in neither pickle: its readings as versions (runs printing the same as one), the last tagged archived
+    with its deleting commit; nothing when git has no deletion of its last path (it may be listed under another name)."""
+    if not located:
+        return
+    path = located[len(located) - 1].card.path
+    gone = index.deleted.get(path)
+    if gone is None or index.newest.get(path) is not gone:
+        return
+    newest = max(located, key=lambda r: (r.at, r.order)).card
+    versions = [_restored(name, run_, newest, report) for run_ in _runs_of(located, index, False)]
+    last = versions[len(versions) - 1]
+    last.archived = {"at": gone.at, "path": last.path, "blob": last.blob_sha, "commit": gone.sha, "backfill": True}
+    old_stats[name] = versions
+    report.archived.append(name)
+
+
 # ========================
 # The seed pass
 # ========================
@@ -441,11 +986,15 @@ class Refined:
     tags_dated: list = field(default_factory=list)    # archive tags given git's date and commit
     renamed: list = field(default_factory=list)       # (old, new) exact renames recorded on tags
     retired: list = field(default_factory=list)       # names whose PSD moved into a folder of no cards (moved_to)
+    recovered: Optional["Recovered"] = None           # recover() from the bot's PICKLE commits, when it ran
+    unknown: list = field(default_factory=list)       # (name, timestamp, fields) of impossible values set to unknown
+    misread: list = field(default_factory=list)       # (name, start, types, types) of type misreads merged
 
     def changed(self) -> bool:
         return bool(self.dropped or self.normalized or self.versions_dated or self.cards_dated or self.duplicates_dated
                     or self.tagged or self.tags_dated or self.renamed or self.retired or self.blobs_found
-                    or self.commits_found)
+                    or self.commits_found or (self.recovered and self.recovered.changed()) or self.unknown
+                    or self.misread)
 
     def lines(self) -> list:
         def names(items):
@@ -460,7 +1009,11 @@ class Refined:
                 f"Archive tags added: {len(self.tagged)}{names(self.tagged)}",
                 f"Archive tags dated from git: {len(self.tags_dated)}{names(self.tags_dated)}",
                 f"Renames recorded: {len(self.renamed)}{names([f'{a} -> {b}' for a, b in self.renamed])}",
-                f"Moves into MDW recorded: {len(self.retired)}{names(self.retired)}"]
+                f"Moves into MDW recorded: {len(self.retired)}{names(self.retired)}",
+                f"Impossible values set to unknown: {len(self.unknown)}{names(sorted({n for n, _, _ in self.unknown}))}",
+                f"Type misreads merged (the PNG stayed): {len(self.misread)}{names([n for n, _, _, _ in self.misread])}",
+                *(self.recovered.lines() if self.recovered is not None else ["Recovery from the bot's PICKLE commits: "
+                                                                            "skipped (no clone of the bot's repo)"])]
 
 
 def date_cards(stats: dict, index: GitIndex, report: Refined) -> None:
@@ -482,14 +1035,17 @@ def date_cards(stats: dict, index: GitIndex, report: Refined) -> None:
 
 def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined, backfill: bool = True) -> None:
     """Names gone from stats: the last version tagged archived (backfill) if untagged (not with backfill False:
-    /update_stats leaves that to its guarded prune); every tag's at and commit from its path's deleting commit,
-    renamed_to from an exact rename whose new card is listed (else from its PNG's exact rename: a rename that also
-    edited the PSD), moved_to from an exact rename into a folder of no cards (MDW/The Morgue: retired, not deleted)."""
-    for name, versions in old_stats.items():
+    /update_stats leaves that to its guarded prune); every tag's at and commit from its path's deleting commit (an
+    archived duplicate's from its PNG's, or its original's when the PNG stayed), renamed_to from an exact rename chain
+    that ends at a listed card (else its PNG's: a rename that also edited the PSD), moved_to from one into a folder of
+    no cards (MDW/The Morgue: retired, not deleted)."""
+    for name, versions in sorted(old_stats.items(), key=lambda item: bool(getattr(
+            item[1][len(item[1]) - 1], "duplicate_of", None) if item[1] else False)):     # originals before their copies
         if not versions or name in stats:
             continue
         last = versions[len(versions) - 1]
-        if getattr(last, "duplicate_of", None):
+        original = getattr(last, "duplicate_of", None)
+        if original and not getattr(last, "archived", None):
             continue
         if not getattr(last, "archived", None):
             if not backfill:
@@ -499,20 +1055,22 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
             report.tagged.append(name)
         tag = last.archived
         gone = index.deleted.get(tag.get("path") or "")
+        if original and (gone is None or index.newest.get(tag.get("path") or "") is not gone):
+            mine = old_stats.get(original) or []                # its PNG is there: it left with its original's PSD
+            theirs = getattr(mine[len(mine) - 1], "archived", None) if mine and original not in stats else None
+            gone = index.by_sha.get((theirs or {}).get("commit") or "")
         if gone is not None and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
             tag["at"], tag["commit"] = gone.at, gone.sha
             report.tags_dated.append(name)
-        moved = index.renames.get(tag.get("path") or "")
-        art = index.renames.get(splitext(tag.get("path") or "")[0] + ".png") if moved is None else None
-        if moved and not tag.get("renamed_to") and card_name(moved[0]) in stats:
-            tag["renamed_to"] = card_name(moved[0])
-            report.renamed.append((name, tag["renamed_to"]))
-        elif moved and not tag.get("moved_to") and any(folder in RETIRED for folder in moved[0].split("/")):
-            tag["moved_to"] = moved[0]
+        if original or tag.get("renamed_to") or tag.get("moved_to"):
+            continue
+        new, retired = index.renamed(tag.get("path") or "", stats)
+        if new:
+            tag["renamed_to"] = new
+            report.renamed.append((name, new))
+        elif retired:
+            tag["moved_to"] = retired
             report.retired.append(name)
-        elif art and not tag.get("renamed_to") and card_name(art[0]) in stats:   # the PSD edited too, its art moved
-            tag["renamed_to"] = card_name(art[0])
-            report.renamed.append((name, tag["renamed_to"]))
 
 
 def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, report: Refined) -> None:
@@ -544,6 +1102,7 @@ def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, repo
     if current is not None:
         current.version = _dated(current, index, versions[len(versions) - 1] if versions else None, report)
 
+    report.misread += _misread(name, versions, current, index)
     kept, dropped = collapse(versions, current)
     report.dropped += [(name, version.timestamp) for version in dropped]
     report.legacy_kept += sum(1 for v in kept if v.version["legacy"] and not getattr(v, "blob_sha", None))
@@ -570,6 +1129,8 @@ def _dated(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], report
     if info is not None and info.get("cause") != "legacy":
         return info
     fresh = start_of(card, index, previous)
+    if info and info.get("restored_from"):
+        fresh["restored_from"] = info["restored_from"]
     if info and info.get("from") is not None and (fresh["from"] is None or info["from"] < fresh["from"]):
         fresh["from"], fresh["from_commit"] = info["from"], info.get("from_commit")
         found = index.blob_at(card.path, fresh["from"]) if fresh["from_commit"] is None else None
@@ -580,22 +1141,27 @@ def _dated(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], report
     return fresh
 
 
-def refine(stats: dict, old_stats: dict, index: GitIndex) -> Refined:
+def refine(stats: dict, old_stats: dict, index: GitIndex, snapshots: Optional[list] = None) -> Refined:
     """
-    The seed pass, in place: stored versions normalized, cards and versions dated from git, duplicate versions dropped
-    (collapse; never an archived one), blob-less versions marked legacy, archive tags added and dated, every version and
-    current card given its `version` record. Idempotent: a second pass changes nothing.
+    The seed pass, in place: history the bot's PICKLE commits held recovered (with snapshots), stored versions
+    normalized and their impossible values unknown, cards and versions dated from git, type misreads and duplicate
+    versions dropped (collapse; never an archived one), blob-less versions marked legacy, archive tags added and dated,
+    every version and current card given its `version` record. Idempotent: a second pass changes nothing.
 
     Args:
         stats: {name: CardInfo} (stats.pkl)
         old_stats: {name: [CardInfo]} (old_stats.pkl), oldest first
         index: The card repo's GitIndex
+        snapshots: bot_snapshots() of a clone of the bot's repo ([] or None: no recovery)
 
     Returns:
         The counts
     """
     report = Refined()
+    if snapshots:
+        report.recovered = recover(stats, old_stats, index, snapshots)
     report.normalized = normalize(stats, old_stats)
+    report.unknown = unknown_values(stats, old_stats)
     date_cards(stats, index, report)
     date_archive(stats, old_stats, index, report)
     names = list(old_stats)
@@ -716,10 +1282,12 @@ def main(argv: Optional[list] = None) -> int:
     cmd.add_argument("--head", default="HEAD", help="the commit whose history counts (default HEAD)")
     cmd.add_argument("--pickles", required=True, help="a folder holding stats.pkl and old_stats.pkl (read only)")
     cmd.add_argument("--out", help="a folder for the refined stats.pkl and old_stats.pkl (never --pickles)")
+    cmd.add_argument("--bot-git", default=environ.get("AUTOCROISSANT_BOT_CLONE") or BOT_CHECKOUT,
+                     help="a full clone of AutoCroissant, whose PICKLE commits recover lost history (default: this checkout)")
     args = parser.parse_args(argv)
     stats, old = read_pickles(args.pickles)
     before = sum(len(v) for v in old.values())
-    report = refine(stats, old, GitIndex.from_git(args.git, args.head))
+    report = refine(stats, old, GitIndex.from_git(args.git, args.head), bot_snapshots(args.bot_git))
     print(f"{len(stats)} cards, {before} versions before, {sum(len(v) for v in old.values())} after.")
     print("\n".join(report.lines()))
     if args.out:
@@ -737,6 +1305,7 @@ def main(argv: Optional[list] = None) -> int:
 # Module Exports
 # ========================
 __all__ = [
+    'BOT_CHECKOUT',
     'CAUSES',
     'DATA_FIELDS',
     'RETIRED',
@@ -744,8 +1313,13 @@ __all__ = [
     'UNKNOWN_IF',
     'Commit',
     'GitIndex',
+    'Reading',
+    'Recovered',
     'Refined',
+    'Snapshot',
+    'bot_snapshots',
     'carry',
+    'carry_to',
     'close',
     'close_archived',
     'collapse',
@@ -757,13 +1331,17 @@ __all__ = [
     'leaf',
     'main',
     'meta',
+    'misreads',
     'normalize',
+    'out_of_range',
     'record_versions',
+    'recover',
     'refine',
     'same_data',
     'start',
     'start_of',
     'unknown',
+    'unknown_values',
 ]
 
 

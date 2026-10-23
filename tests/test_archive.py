@@ -64,10 +64,15 @@ def test_prune_archives_behind_the_history():
     assert versions[1].archived["blob"] == "2" * 40 and set(db.archived()) == {"Gone"}
 
 
-def test_duplicates_are_not_archived():
+def test_duplicates_are_archived_at_their_png():
+    """An alt-art duplicate not seen (its PNG or original left) is a card under the archive rule: tagged at its PNG."""
     dup = _card("A Snack2", duplicate_of="A Snack")
     db = _db([_card("A Snack"), dup], seen=["A Snack"])
-    assert db.prune_clean_cards(AT) == ([], []) and "A Snack2" in db.stats and db.archived() == {}
+    assert db.prune_clean_cards(AT) == (["A Snack2"], []) and "A Snack2" not in db.stats
+    record = db.old_stats["A Snack2"][0]
+    assert record.duplicate_of == "A Snack" and record.archived == {"at": AT, "path": "Items/A_Snack2.png", "blob": None,
+                                                                    "commit": None}
+    assert set(db.archived()) == {"A Snack2"}
 
 
 def test_card_without_a_blob_is_tagged_with_none():

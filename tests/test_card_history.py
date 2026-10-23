@@ -612,6 +612,158 @@ def test_a_kill_after_the_carried_start_keeps_the_record(monkeypatch):
     assert ch.start(db.stats["A"]) == (100.0, None) and "A" not in db.old_stats
 
 # ========================
+# Recovery from the bot's PICKLE commits, misreads, impossible values
+# ========================
+A1, A2, A3, G1, O1 = b"a one", b"a two", b"a three", b"gone one", b"old one"
+
+
+@pytest.fixture
+def lost(tmp_path):
+    """A card repo: A edited at 1000, 2000, 3000; Gone and Old added at 4000; at 5000 Gone deleted and Old renamed to
+    New (same bytes). The bot's repo: PICKLEs at 1500 (an April-2025 dict keyed by path, an mtime), 2500 and 4500
+    (CardInfo), a bad one at 4600 that 4700 reverts. The database lost every version: A is listed with its 3000
+    reading (dated 3000, no record), New with Old's blob."""
+    cards = tmp_path / "cards"
+    cards.mkdir()
+    git(cards, "init", "-q", "-b", "main")
+    c = [None]
+    for at, data in ((1000, A1), (2000, A2), (3000, A3)):
+        write(cards, "Items/A.psd", data)
+        write(cards, "Items/A.png", b"png %d" % at)
+        c.append(commit(cards, "alice", at))
+    write(cards, "Items/Gone.psd", G1)
+    write(cards, "Items/Old.psd", O1)
+    c.append(commit(cards, "bob", 4000))
+    git(cards, "rm", "-q", "Items/Gone.psd")
+    git(cards, "mv", "Items/Old.psd", "Items/New.psd")
+    c.append(commit(cards, "carol", 5000))
+    bot = tmp_path / "bot"
+    bot.mkdir()
+    git(bot, "init", "-q", "-b", "main")
+
+    def pickles(at, stats, message="PICKLE"):
+        cdb.dump_pickle(stats, str(bot / "stats.pkl"))
+        cdb.dump_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
+        return commit(bot, "bot", at, message)
+    pickles(1500, {"Items/A.psd": {"type": "item", "ability": "Old words.", "types": [], "name": "A", "timestamp": 1400.25}})
+    pickles(2500, {"A": _card(ability="New words.", timestamp=2000.0)})
+    held = {"A": _card(ability="New  words.", timestamp=3000.0),
+            "Gone": _card("Gone", path="Items/Gone.psd", ability="Gone words.", timestamp=4000.0),
+            "Old": _card("Old", path="Items/Old.psd", ability="Old card.", timestamp=4000.0, author="maker")}
+    pickles(4500, held)
+    bad = pickles(4600, {**held, "A": _card(ability="Bad.", timestamp=3000.0)})
+    pickles(4700, held, f'Revert "PICKLE"\n\nThis reverts commit {bad}.')
+    stats = {"A": _card(ability="New words.", blob_sha=blob(A3), timestamp=3000.0),
+             "New": _card("New", path="Items/New.psd", ability="Old card.", blob_sha=blob(O1), timestamp=5000.0)}
+    return SimpleNamespace(cards=cards, bot=bot, c=c, stats=stats, old=defaultdict(list))
+
+
+def test_bot_snapshots_skip_reverted_and_non_clones(lost, tmp_path):
+    snaps = ch.bot_snapshots(str(lost.bot))
+    assert [s.at for s in snaps] == [1500.0, 2500.0, 4500.0, 4700.0]                    # 4600 reverted by 4700
+    assert "Items/A.psd" in snaps[0].stats and snaps[2].stats["Gone"].ability == "Gone words."
+    assert ch.bot_snapshots(str(tmp_path / "nothing")) == [] and ch.bot_snapshots("") == []
+    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{lost.bot}", str(tmp_path / "shallow")], check=True)
+    assert ch.bot_snapshots(str(tmp_path / "shallow")) == []                              # a shallow clone: no history
+
+
+def test_recover_restores_lost_versions_starts_and_gone_cards(lost):
+    """A's April reading (an mtime: dated by its blob's commit) becomes a legacy version; its 2000 reading prints what
+    the card prints (spaces aside): the card's start moves there; Gone is archived at its deletion, Old too, renamed to
+    New (date_archive), whose author stays maker's. Nothing changes the second time."""
+    index = ch.GitIndex.from_git(str(lost.cards))
+    snaps = ch.bot_snapshots(str(lost.bot))
+    stats, old = lost.stats, lost.old
+    report = ch.recover(stats, old, index, snaps)
+    first = old["A"][0]
+    assert [v.ability for v in old["A"]] == ["Old words."] and first.blob_sha == blob(A1)
+    assert (first.timestamp, first.version["from"], first.version["from_commit"]) == (1000.0, 1000.0, lost.c[1])
+    assert first.version["restored_from"] == snaps[0].sha and first.version["cause"] == "legacy"
+    assert (stats["A"].version["from"], stats["A"].version["from_commit"]) == (2000.0, lost.c[2])
+    gone = old["Gone"][0]
+    assert gone.archived == {"at": 5000.0, "path": "Items/Gone.psd", "blob": blob(G1), "commit": lost.c[5], "backfill": True}
+    assert sorted(report.archived) == ["Gone", "Old"] and report.starts == [("A", 2000.0)]
+    assert len(report.added) == 3 and not any(v.ability == "Bad." for vs in old.values() for v in vs)
+    found = ch.Refined()
+    ch.date_archive(stats, old, index, found, backfill=False)
+    assert old["Old"][0].archived["renamed_to"] == "New" and old["Old"][0].author == "maker"
+    again = ch.recover(stats, old, index, snaps)
+    assert not again.changed()
+    report = ch.refine(stats, old, index, snaps)                  # the seed pass after it: nothing more to recover
+    assert report.recovered is not None and not report.recovered.changed()
+    assert old["A"][0].version["restored_from"] == snaps[0].sha   # the seed keeps where it came from
+
+
+def test_seed_pass_recovers_from_the_bot_clone(lost, tmp_path, capsys):
+    folder, out = tmp_path / "pickles", tmp_path / "out"
+    folder.mkdir()
+    cdb.dump_pickle(lost.stats, str(folder / "stats.pkl"))
+    cdb.dump_pickle(lost.old, str(folder / "old_stats.pkl"))
+    assert ch.main(["refine", "--git", str(lost.cards), "--pickles", str(folder), "--out", str(out),
+                    "--bot-git", str(lost.bot)]) == 0
+    text = capsys.readouterr().out
+    assert "Versions recovered from the bot's PICKLE commits: 3 on 3 cards" in text
+    assert "Cards gone before archiving, archived: 2 (Gone, Old)" in text or "archived: 2 (Old, Gone)" in text
+    assert pickle.loads((out / "old_stats.pkl").read_bytes())["A"][0].ability == "Old words."
+
+
+def _misread_repo(tmp_path, png_changes: bool):
+    repo = tmp_path / "misread"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "Items/B.psd", b"b one")
+    write(repo, "Items/B.png", b"b png")
+    c1 = commit(repo, "a", 100000)
+    write(repo, "Items/B.psd", b"b two")
+    if png_changes:
+        write(repo, "Items/B.png", b"b png two")
+    c2 = commit(repo, "a", 200000)
+    return ch.GitIndex.from_git(str(repo)), c1, c2
+
+
+@pytest.mark.parametrize("png_changes", [False, True])
+def test_a_types_only_step_with_the_same_png_is_a_misread(tmp_path, png_changes):
+    """Wooden Spikes: the PSD changed, the PNG did not, only the type list differs: one version read twice, merged into
+    the newer with the earlier start. A new PNG makes it a real change."""
+    index, c1, c2 = _misread_repo(tmp_path, png_changes)
+    v0 = _card("B", path="Items/B.psd", blob_sha=blob(b"b one"), timestamp=100000.0)
+    card = _card("B", path="Items/B.psd", blob_sha=blob(b"b two"), timestamp=200000.0, types=["counter"])
+    stats, old = {"B": card}, defaultdict(list, {"B": [v0]})
+    merged = ch.misreads(stats, old, index)
+    if png_changes:
+        assert merged == [] and old["B"] == [v0]
+        return
+    assert merged == [("B", 100000.0, [], ["counter"])] and "B" not in old and ch.start(card)[0] == 100000.0
+    assert ch.misreads(stats, old, index) == []
+
+
+def test_impossible_values_become_unknown_once():
+    lazarus = _card("L", stats=cm.CardStats(110, 110, 110, 110), stars=3, timestamp=1.0)
+    spawn = _card("S", stars=10, timestamp=2.0)
+    cannon = _card("C", stats=cm.CardStats(9, 8, 12, 3), timestamp=3.0)
+    stats = {"C": _card("C", stats=cm.CardStats(9, 8, 12, 3), allow_high_stats=True)}
+    old = defaultdict(list, {"L": [lazarus], "S": [spawn], "C": [cannon]})
+    changed = ch.unknown_values(stats, old)
+    assert [(n, f) for n, _, f in changed] == [("L", ["stats"]), ("S", ["stars"])]
+    assert lazarus.stats == cm.CardStats() and spawn.stars is None and cannon.stats.attack == 12   # its card allows it
+    assert lazarus.problems == ["OUT OF RANGE: stats 110/110/110/110 (unknown)"]
+    assert ch.unknown_values(stats, old) == []
+    assert "Impossible values set to unknown: 0" in ch.Refined().lines()[10]
+
+
+def test_a_rename_chain_reaches_the_listed_card():
+    """Azamoth the Possessed King: renamed twice; the tag names the card listed now."""
+    index = _index_with({}, deletions={"Items/K.psd": ("d1", 4000.0)})
+    index.renames["Items/K.psd"] = ("Items/K2.psd", index.by_sha["d1"])
+    index.renames["Items/K2.psd"] = ("Items/V.psd", index.by_sha["d1"])
+    king = _card("K", path="Items/K.psd", archived={"at": None, "path": "Items/K.psd", "blob": None, "commit": None})
+    report = ch.Refined()
+    ch.date_archive({"V": _card("V")}, defaultdict(list, {"K": [king]}), index, report)
+    assert king.archived["renamed_to"] == "V" and report.renamed == [("K", "V")]
+    assert index.origin("Items/V.psd") == "Items/K.psd"
+
+
+# ========================
 # CLI
 # ========================
 def test_cli_refine_on_copies(history, tmp_path, capsys):
@@ -631,3 +783,4 @@ def test_cli_refine_on_copies(history, tmp_path, capsys):
     assert pickle.loads((out / "old_stats.pkl").read_bytes())["B"][0].archived["commit"] == history.c[5]
     assert ch.main(["refine", "--git", str(history.repo), "--pickles", str(folder), "--out", str(folder)]) == 1
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+

@@ -1,6 +1,7 @@
 """card_data: the Action's sparse copy (--help, the import closure), the gates G1-G6, the exit codes, and offline builds
 on a temporary git repo of golden PSDs (new, changed, moved, archived, an unreadable PSD, the budget, restore)."""
 import json
+from collections import defaultdict
 import os
 import pickle
 import re
@@ -335,6 +336,46 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     stats, old = _read(cards)[:2]
     assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
         "The Big Freezer"
+
+
+def test_a_rename_keeps_the_author_never_the_renamer(cards):
+    """The Freezer renamed by dave (same bytes), then a copy of its art renamed with an edited PSD: the new card is
+    the old one parsed again, its author alice's (the first commit at the oldest path), its series kept."""
+    _build(cards, "--seed", str(cards.seed))
+    git(cards.repo, "mv", FREEZER, "Field/1 Stars/The_Big_Freezer.psd")
+    commit(cards.repo, "dave", 2000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats = _read(cards)[0]
+    assert stats["The Big Freezer"].author == "alice" and "The Freezer" not in stats
+    put(cards.repo, "Field/1 Stars/The_Big_Freezer.png", b"art")
+    commit(cards.repo, "erin", 3000)
+    _build(cards)
+    git(cards.repo, "mv", "Field/1 Stars/The_Big_Freezer.png", "Field/1 Stars/The_Huge_Freezer.png")
+    git(cards.repo, "rm", "-q", "Field/1 Stars/The_Big_Freezer.psd")
+    put(cards.repo, "Field/1 Stars/The_Huge_Freezer.psd", cards.psds[FREEZER] + b"\0")
+    commit(cards.repo, "frank", 4000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old = _read(cards)[:2]
+    assert stats["The Huge Freezer"].author == "alice"
+    assert old["The Big Freezer"][len(old["The Big Freezer"]) - 1].archived["renamed_to"] == "The Huge Freezer"
+
+
+def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
+    """Tainted Lazarus' 110s: the seed pass sets them unknown and says so; a value out of range left in history (the
+    range check failing to run) refuses G3."""
+    old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
+                                                          stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0)]})
+    (cards.seed / "old_stats.pkl").write_bytes(pickle.dumps(old))
+    code, message = _build(cards, "--seed", str(cards.seed))
+    assert code == cd.EXIT_OK and "Impossible values set to unknown: 1 (Mini Doomer)" in message
+    assert _read(cards)[1]["Mini Doomer"][0].stats == cm.CardStats()
+    import commands.card_history as ch
+    monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
+    shutil.rmtree(cards.db)
+    cards.db.mkdir()
+    capsys.readouterr()
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_GATE
+    assert "history values out of range: Mini Doomer" in capsys.readouterr().out
 
 
 def test_dry_run_and_errors(cards, tmp_path):

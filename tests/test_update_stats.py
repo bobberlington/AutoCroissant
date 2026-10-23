@@ -1045,7 +1045,7 @@ def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, c
     _run()
     tag = _saved()[1]["ZOEY!!!!!"][0].archived
     assert (tag["at"], tag["commit"], tag["renamed_to"]) == (2000.0, renaming, "Z!!!!!")
-    line = "History: 0 duplicate versions removed (0 cards), archive tag from git: ZOEY!!!!!."
+    line = "History: 0 duplicate versions removed (0 cards); archive tag from git: ZOEY!!!!!."
     assert line in capsys.readouterr().out
     _run()
     assert "History:" not in capsys.readouterr().out and _saved()[1]["ZOEY!!!!!"][0].archived == tag
@@ -1221,3 +1221,47 @@ def test_website_files_live_in_site():
     """The authors and edits files are read from the card repo's site/ only (moved from MDW/ on 2026-10-20)."""
     assert (pa.AUTHORS_PATHS, pa.EDITS_PATHS) == (("site/Card Authors.txt",), ("site/Card Edits.json",))
     assert (pa.AUTHORS_PATH, pa.EDITS_PATH) == ("site/Card Authors.txt", "site/Card Edits.json")
+
+
+def test_alt_art_duplicates_are_archived_never_dropped(github, psds, capsys):
+    """A duplicate whose PNG leaves is archived like any card (its tag at its own PNG), listed, and back when the PNG
+    is; one whose original's PSD leaves goes with it, dated like it."""
+    dup = "Auxiliary/Minions/Mini_Doomer2.png"
+    github.files[dup] = b"alt art"
+    _run()
+    assert _saved()[0]["Mini Doomer2"].duplicate_of == "Mini Doomer"
+    del github.files[dup]
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    record = old["Mini Doomer2"][0]
+    assert "Mini Doomer2" not in stats and (record.duplicate_of, record.archived["path"]) == ("Mini Doomer", dup)
+    assert "Archived alt-art cards (their PNG or original left the card repo): Mini Doomer2 (same card as Mini Doomer)" \
+        in capsys.readouterr().out
+    github.files[dup] = b"alt art"
+    _run()
+    stats, old = _saved()
+    assert stats["Mini Doomer2"].archived is None and "Mini Doomer2" not in old             # back: the record goes
+    del github.files[DOOMER]
+    _run()
+    stats, old = _saved()
+    assert set(stats) == {"The Freezer"} and old["Mini Doomer2"][0].archived["at"] == old["Mini Doomer"][0].archived["at"]
+
+
+def test_a_rename_keeps_the_cards_author_and_series(github, psds, capsys):
+    """An exact rename (same bytes, new name): the new card is parsed as the old one, so the author and series curated
+    on it stay (never the renamer's); its name-keyed side-file entries are reported under the old name."""
+    _run()
+    stats, _ = _saved()
+    assert stats["Mini Doomer"].author == "Bob"
+    stats["Mini Doomer"].series = "Doom"
+    with open("stats.pkl", "wb") as f:
+        pickle.dump(stats, f)
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = github.files.pop(DOOMER)
+    capsys.readouterr()
+    _run()
+    stats, old = _saved()
+    assert (stats["Mega Doomer"].author, stats["Mega Doomer"].series) == ("Bob", "Doom")
+    assert old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
+    out = capsys.readouterr().out
+    assert "Name-keyed entries left under archived names" in out and "Mini Doomer (now Mega Doomer): Card Authors.txt" in out
