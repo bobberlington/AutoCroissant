@@ -1000,7 +1000,8 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
      site still reads AutoCroissant.
    - *Verify, daily, for 3 days or 10 card pushes, whichever is later:*
      - `diff_stats.py` between the `data` tip's stats.json and AutoCroissant main's stats.pkl, after the jetson's /push, shows
-       only the predicted refinements;
+       only the predicted refinements (the command and the refinements measured on a Mac rebuild: the diagnostics skill's
+       Workflow 4);
      - build_site run twice (with and without `CARD_DATA_DIR`) gives byte-identical `cards.json`, apart from the predicted dates:
        the re-dated cards and their duplicates, and the history entries of the deduped and re-dated versions;
      - the changelog's events, grouped by push, match the card pushes of those days;
