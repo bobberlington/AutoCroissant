@@ -53,6 +53,9 @@ MESSAGE_MAX = 6000                                       # characters per messag
 TAIL_MAX = 300                                           # kept for the closing line
 CHANGELOG_DIR = "changelog"                              # db/changelog/YYYY-MM.jsonl
 POSTED_JSON = "posted.json"                              # db/changelog/posted.json: {"seq", "push"} of the last post
+BOT = "AutoCroissant"                                    # the bot's _by (discord_edits.BOT): no website edit
+BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (discord_edits.BOT_FIELDS)
+EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 
 
 # ========================
@@ -163,6 +166,24 @@ def _event(kind: str, name: str, card: CardInfo, **extra) -> dict:
     return out
 
 
+def is_bot(by) -> bool:
+    """A _by of the bot, any case (changes.js isBot)."""
+    return isinstance(by, str) and by.lower() == BOT.lower()
+
+
+def edit_credit(meta, fields) -> Optional[str]:
+    """
+    Who an edited event's fields are credited to: its entry's _by, the bot for fields in its _bot (the migration's). A
+    mix: the _by. meta: the entry's _-keys, or its _by alone.
+    """
+    if not isinstance(meta, dict):
+        return meta
+    by = meta.get("_by")
+    bot = meta.get(BOT_FIELDS) if isinstance(meta.get(BOT_FIELDS), list) else []
+    credits = {BOT if EDIT_FIELD.get(f, f) in bot else by for f in fields}
+    return by if by in credits or len(credits) != 1 else credits.pop()
+
+
 def events(before: dict, after: dict, archived_before: dict, archived_after: dict, reparsed: Optional[dict] = None,
            edits_by: Optional[dict] = None, index=None, file_commits: Optional[dict] = None) -> list:
     """
@@ -174,7 +195,7 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         archived_before: archived cards before ({name: last version}, StatsDatabase.archived())
         archived_after: archived cards after
         reparsed: names this build parsed from their PSD (a data change with the same blob is then a re-read)
-        edits_by: card name -> the `_by` of its Card Edits.json entry
+        edits_by: card name -> its Card Edits.json entry's _-keys (edit_credit), or its _by
         index: card_history.GitIndex: the causing commit and its git author (a new blob's intro, the deletion)
         file_commits: {"edited": the newest commit of Card Edits.json, "authors": of Card Authors.txt} (their events' commit)
 
@@ -219,7 +240,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
                     kind = "authors"
                 else:
                     kind = "edited"
-                out.append(_event(kind, name, new, fields=changes, edit_by=edits_by.get(name) if kind == "edited" else None,
+                out.append(_event(kind, name, new, fields=changes,
+                                  edit_by=edit_credit(edits_by.get(name), changes) if kind == "edited" else None,
                                   blob=blobs if blobs[0] != blobs[1] else None, from_path=old.path if moved else None,
                                   **classify(changes), **(source(blobs[1], path=new.path) if kind in ("changed", "reparse")
                                                           else source(path=new.path) if kind == "moved"
@@ -407,7 +429,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
         verdict = f" ({event['verdict']})" if event.get("verdict") else ""
         by = event.get("edit_by") or ""
         where = (f" (by {_md(by.split(':', 1)[1])}, via Discord)" if by.startswith("discord:")
-                 else f" (by {_md(by)}, on the website)" if by else "")
+                 else f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else "")
         return f"{title}: {_changes(event.get('fields') or {})}{verdict}{where}"
     if kind == "renamed":
         return f"{_md(event['card'])} is now [{_md(event['renamed_to'])}]({card_link(event['renamed_to'], site, ids)})"
@@ -587,6 +609,7 @@ __all__ = [
     'assign_pushes',
     'card_link',
     'classify',
+    'edit_credit',
     'events',
     'field_changes',
     'fields_of',

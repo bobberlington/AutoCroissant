@@ -1211,11 +1211,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         return out
 
     edits_by = {}
-    if run_build.edits is not None:
-        edits_by = {n: run_build.edits.meta.get(CardAuthors.key(n), {}).get("_by") for n in db.stats}
+    if run_build.edits is not None:                      # each entry's _-keys: _by, and _bot's fields credited apart
+        edits_by = {n: run_build.edits.meta.get(CardAuthors.key(n), {}) for n in db.stats}
     file_commits = {"edited": edits.sha if edits else None, "authors": authors.sha if authors else None}
     new_events = changelog.events(before, db.stats, archived_before, db.archived(), run_build.reparsed,
-                                  {n: b for n, b in edits_by.items() if b}, index, file_commits)   # card changes only
+                                  {n: m for n, m in edits_by.items() if m.get("_by")}, index, file_commits)   # card changes only
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
     elif new_events:
