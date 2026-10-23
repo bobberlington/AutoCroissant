@@ -256,6 +256,27 @@ def test_a_long_change_list_is_cut_to_fit_the_line():
          "notes": [], "writes": []}]}, [], [], [])
 
 
+def test_changes_give_way_to_issues_on_discord():
+    """A long push: the cards lose their changes, the last card first, before any card's issues are left out."""
+    cards = [{"login": "Alice", "card": f"Card {n}", "told": ["an issue"], "commit": "7" * 40,
+              "changes": [f"layer {n} hidden; " * 8]} for n in range(16)]
+    content = cg.discord_payload({"after": "a" * 40, "cards": cards}, "o/cards")["content"]
+    lines = content.splitlines()
+    assert len(content) <= cg.DISCORD_LIMIT and len(lines) == 16 and "more card" not in content
+    assert lines[0].startswith("Alice pushed Card 0 (layer 0 hidden") and lines[15].startswith("Alice pushed Card 15 with")
+
+
+def test_changes_are_text_in_markdown():
+    """Card text and layer names neither format nor link (GitHub comment, Discord post)."""
+    entry = {"login": "Alice", "card": "Snack", "told": ["an issue"], "commit": "7" * 40, "psd": "Items/Snack.psd",
+             "changes": ["Ability text: '*2* ATK' -> '[fire](1CD) ~~x~~'", "Ability_FX_Fire hidden"], "export": {},
+             "r10": {}, "issues": [], "fixed": [], "fix_refused": [], "notes": [], "writes": []}
+    escaped = r"Ability text: '\*2\* ATK' -> '\[fire\](1CD) \~\~x\~\~'; Ability\_FX\_Fire hidden"
+    assert f"Alice pushed Snack ({escaped}) with" in cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "o/r")["content"]
+    assert f"- Changed: {escaped}" in cg.markdown({"mode": "on", "after": "a" * 40, "before": "b" * 40, "cards": [entry]},
+                                                  [], [], [])
+
+
 def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
     """A PSD added with its PNG (case pair, status A) is a new card: R4 is told, not waived, as for one pushed alone."""
     root, base, alice, bot = cards

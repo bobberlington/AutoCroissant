@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from json import dump, dumps, load, loads
 from os import cpu_count, environ, makedirs
 from os.path import basename, dirname, join, splitext
-from re import fullmatch
+from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from time import sleep as _sleep
@@ -63,6 +63,7 @@ MODES = ("dry", "report", "on")
 LINE = "{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"
 CHANGES_DISCORD = 120                           # characters of a card's changes in its Discord line (psd_diff)
 CHANGES_COMMENT = 600                           # and in the commit comment
+MARKDOWN = r"([\\`*_~|<\[\]])"                   # escaped in card text and layer names (GitHub and Discord markdown)
 DISCORD_LIMIT = 2000
 SUPPRESS_EMBEDS = 4                             # Discord message flag: no link previews
 URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
@@ -781,7 +782,7 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
     for entry in data["cards"]:
         out.append(f"**{entry['card']}** (`{entry['psd']}`, {entry['login']}, `{entry['commit'][:8]}`)")
         if entry.get("changes"):
-            out.append(f"- Changed: {psd_diff.line(entry['changes'], CHANGES_COMMENT)}")
+            out.append(f"- Changed: {_changes_line(entry, CHANGES_COMMENT)}")
         line = _guard1_line(entry, mode)
         if line:
             out.append(f"- {line}")
@@ -820,23 +821,31 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
     return "\n".join(out)
 
 
+def _changes_line(entry: dict, limit: int) -> str:
+    """The card's changes (psd_diff) as markdown text: card text and layer names never format or link."""
+    return psd_diff.line([sub(MARKDOWN, r"\\\1", phrase) for phrase in entry.get("changes", [])], limit)
+
+
 def _changed(entry: dict) -> str:
     """" (what changed)" after the card's name in its Discord line; "" for a new PSD or a re-save."""
-    text = psd_diff.line(entry.get("changes", []), CHANGES_DISCORD)
+    text = _changes_line(entry, CHANGES_DISCORD)
     return f" ({text})" if text else ""
 
 
 def discord_payload(data: dict, repository: str) -> dict:
     """
     The webhook body: one LINE per card with something to tell (a refusal or a remaining issue), with what changed in
-    its PSD, whole lines dropped from the end to fit DISCORD_LIMIT; {} when nothing. Nobody is pinged and links get no
-    preview.
+    its PSD; to fit DISCORD_LIMIT, cards lose their changes (the last card first) before whole lines go from the end; {}
+    when nothing. Nobody is pinged and links get no preview.
     """
     url = f"https://github.com/{repository}/commit/"
-    lines = [LINE.format(login=entry["login"], card=entry["card"], changes=_changed(entry),
-                         issues="; ".join(entry["told"]).rstrip("."), short=(entry["commit"] or data["after"])[:8],
-                         url=url + (entry["commit"] or data["after"])[:URL_SHA])
-             for entry in data["cards"] if entry["told"]]
+    told = [entry for entry in data["cards"] if entry["told"]]
+
+    def card_line(entry: dict, changes: bool = True) -> str:
+        return LINE.format(login=entry["login"], card=entry["card"], changes=_changed(entry) if changes else "",
+                           issues="; ".join(entry["told"]).rstrip("."), short=(entry["commit"] or data["after"])[:8],
+                           url=url + (entry["commit"] or data["after"])[:URL_SHA])
+    lines = [card_line(entry) for entry in told]
     if not lines:
         return {}
 
@@ -847,6 +856,11 @@ def discord_payload(data: dict, repository: str) -> dict:
 
     kept = len(lines)
     content = assemble(kept)
+    for i in range(len(lines) - 1, -1, -1):     # the issues are what the post is for
+        if len(content) <= DISCORD_LIMIT:
+            break
+        lines[i] = card_line(told[i], False)
+        content = assemble(kept)
     while len(content) > DISCORD_LIMIT and kept > 0:
         kept -= 1
         content = assemble(kept)
