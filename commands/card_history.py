@@ -575,8 +575,8 @@ def _same_png(index: GitIndex, a_path: str, a_at: Optional[float], b_path: str, 
 def misreads(stats: dict, old_stats: dict, index: GitIndex) -> list:
     """
     Type misreads, in place: consecutive versions whose PSD blobs differ while the card's PNG stayed the same (the
-    printed card did not change between their commits) and whose data differ in the type list alone are one version
-    read twice: the older goes into the newer, its earlier start carried (the 2026-02-08 commits changed 208 PSDs, 66
+    printed card did not change from the older one's reading to the newer one's start) and whose data differ in the type
+    list alone are one version read twice: the older goes into the newer, its earlier start carried (the 2026-02-08 commits changed 208 PSDs, 66
     of them without a new PNG). Repeated until none is left, so a second call changes nothing.
 
     Returns:
@@ -603,8 +603,8 @@ def _misread(name: str, versions: list, holder: Optional[CardInfo], index: GitIn
             blobs = (_blob_of(a, index), _blob_of(b, index))
             if None in blobs or blobs[0] == blobs[1] or not _only_types(a, b):
                 continue
-            if _same_png(index, a.path, a.timestamp, b.path, b.timestamp):      # each reading's own commit, not a
-                found = (a, b)                                                   # start carried from another
+            if _same_png(index, a.path, a.timestamp, b.path, start(b)[0]):     # a's own reading, b's data from its
+                found = (a, b)                                                   # start (a re-read carried it there)
                 break
         if found is None:
             return merged
@@ -928,7 +928,7 @@ def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_
         runs = _runs_of(readings, index, allowed,
                         (_printed(items[k - 1], set(), allowed), items[k - 1].timestamp, items[k - 1].path) if k else None)
         after = items[k]
-        held = (_printed(after, set(), allowed), after.timestamp, after.path)
+        held = (_printed(after, set(), allowed), starts[k], after.path)
         if runs and _alike(index, _form(runs[len(runs) - 1], allowed), held) and \
                 set(_form(runs[len(runs) - 1], allowed, best=True)[0]) <= set(held[0]):   # the version knows it all
             first = min(runs.pop(), key=lambda r: r.at)       # it prints what the version after it prints
