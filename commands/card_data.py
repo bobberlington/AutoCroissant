@@ -32,9 +32,9 @@ from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PAT
                            HISTORY_CLONE, ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name
-from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
+from commands.github_api import GIT_TOKEN, HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, fetch_tree, \
+    get_with_retry, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
-from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, get_with_retry, range_reads
 
 # ========================
 # Configuration
@@ -42,8 +42,8 @@ from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, get_wit
 UPDATE_RATE = 25
 DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs fetched and not yet parsed, at most (memory, temp files)
-RANGE_READS = True                                                # read a PSD by range requests at the tree's commit when
-                                                                  # psd-tools can (lazy open); else, and on any failure, whole
+RANGE_REFUSALS = 3                                                # PSDs refused range reads with a 4xx before the run stops
+                                                                  # trying them (github_api.RANGE_READS: the off switch)
 LOOKUP_WORKERS = 2                                                # commit lookups ahead of parsing
 COMMITS_PAGE = 100                                                # commits per request: newest and first in one
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
@@ -96,6 +96,7 @@ class CardBuild:
         self.sizes: dict = {}                    # repo path -> blob size, from the API's tree (the build's has none)
         self.raw_ref = ""                        # the tree's commit for range reads ("": whole downloads this run)
         self.ranged: list = []                   # bytes fetched per PSD parsed from range reads
+        self.refused: list = []                  # PSDs whose range read got a 4xx (RANGE_REFUSALS of them: whole from then)
         self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
         self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
@@ -565,7 +566,7 @@ class CardBuild:
         num_updated = num_changed = num_moved = 0
         todo, num_old = self._todo(response, force_update)
 
-        self.raw_ref = self._raw_ref() if todo and RANGE_READS and range_reads() else ""
+        self.raw_ref = self._raw_ref() if todo and range_reads() else ""
         pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
         queue, ahead = iter(todo), deque()
 
@@ -686,7 +687,9 @@ class CardBuild:
                 return RemotePSD(self.repository, self.raw_ref, path, self.sizes.get(path))
             except Exception as e:                              # the whole file decides
                 if isinstance(e, RangeError) and 400 <= e.status < 500:
-                    self.raw_ref = ""                           # e.g. a commit not on GitHub: whole downloads from now on
+                    self.refused.append(path)                   # one odd PSD (a 416 when empty) leaves them on
+                    if len(self.refused) >= RANGE_REFUSALS:
+                        self.raw_ref = ""                       # e.g. a commit not on GitHub: whole downloads from now on
                 print(f"{path}: range reads failed ({e}); downloading it whole")
         return self._download(path, sha)
 
@@ -701,7 +704,8 @@ class CardBuild:
     def _parse(self, source, path: str, name: str, sha: str) -> Optional[CardInfo]:
         """
         The card and its details from one open of the PSD. None for a RemotePSD that raised or whose reads broke: the
-        caller reads the whole file instead, so a range read never changes a result.
+        caller reads the whole file instead, so a failed range read never changes a result (a lazy open checks only the
+        payloads it reads).
         """
         existing = self.db.stats.get(self.renamed_from.get(name, ""))
         if isinstance(source, RemotePSD):
@@ -1092,6 +1096,7 @@ class GitBuild(CardBuild):
         self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
         self.pushed = self.head                  # a commit on GitHub with head's other PSDs: range reads there
+        self.pushed_blobs = None                 # path -> blob at pushed when that is not head (a bake's parent)
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
         self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
@@ -1146,11 +1151,20 @@ class GitBuild(CardBuild):
         return True
 
     def _raw_ref(self) -> str:
+        if self.pushed != self.head:
+            try:
+                self.pushed_blobs = {item["path"]: item["sha"] for item in ls_tree(self.checkout, self.pushed)["tree"]}
+            except CalledProcessError as e:
+                print(f"Range reads off this run: no tree at {self.pushed[:8]} ({e})")
+                return ""
         return self.pushed
 
     def _fetch_psd(self, path: str, sha: str):
-        """A blob the clone has is read there; others by range reads, else whole through REST (both within the budget)."""
-        return self._download(path, sha) if self._store(sha) else super()._fetch_psd(path, sha)
+        """A blob the clone has is read there; others by range reads at pushed when it has that blob at the path, else
+        whole through REST (both within the budget)."""
+        if self._store(sha) or (self.pushed_blobs is not None and self.pushed_blobs.get(path) != sha):
+            return self._download(path, sha)
+        return super()._fetch_psd(path, sha)
 
     def _blob(self, sha: str, stream: bool = False):
         reply = super()._blob(sha, stream)

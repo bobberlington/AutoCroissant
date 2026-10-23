@@ -24,6 +24,8 @@ HEADERS: dict = {"Authorization": f"token {GIT_TOKEN}"} if GIT_TOKEN else {}
 RAW_MEDIA = "application/vnd.github.raw"            # Accept: a blob's bytes instead of its JSON envelope
 RETRY_WAITS = (1, 2)                                # seconds between the 3 tries of get_with_retry
 CONTENT_RANGE = re_compile(r"bytes (\d+)-(\d+)/(\d+)")   # a 206 reply's Content-Range
+RANGE_READS = True                                  # read card PSDs by range requests when psd-tools can (the data build,
+                                                    # card_check --after); False: whole downloads
 
 # ========================
 # Global State
@@ -147,7 +149,10 @@ def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
 
 
 def range_reads() -> bool:
-    """Whether the installed psd-tools opens a PSD lazily over a RangeReader (the fork's feat/lazy-records)."""
+    """Whether range reads are on: RANGE_READS, and a psd-tools that opens a PSD lazily over a RangeReader (the fork's
+    feat/lazy-records)."""
+    if not RANGE_READS:
+        return False
     try:
         from psd_tools.range_reader import RangeReader  # noqa: F401
     except ImportError:
@@ -181,13 +186,15 @@ class RemotePSD:
 
     Raises:
         ImportError: psd-tools has no lazy reads (psd_tools.range_reader); RangeError: no range reply (a 404: the commit
-        is not on GitHub) or another size; RequestException, or what psd-tools raises on the records
+        is not on GitHub), another size, or a range other than asked; RequestException, or what psd-tools raises on the
+        records. A read that fails after the open sets failed (the caller may have caught it)
     """
     def __init__(self, repository: str, ref: str, path: str, size=None, timeout: int = 60):
         from psd_tools import PSDImage
         from psd_tools.range_reader import RangeReader
         self.url, self.timeout = raw_url(repository, ref, path), timeout
         self.failed = False                     # a fetch raised (the parse may have caught it): read the PSD whole
+        self.total = None                       # the file's size from the first reply
         self.reader = RangeReader(self._fetch)
         if size is not None and self.reader.size != size:
             raise RangeError(f"{self.reader.size} bytes at {ref[:8]}, the tree says {size}")
@@ -198,13 +205,20 @@ class RemotePSD:
         try:
             reply = get_with_retry(self.url, stream=True, timeout=self.timeout,
                                    headers={**HEADERS, "Range": f"bytes={start}-{stop - 1}"})
-            if reply.status_code != 206:
-                reply.close()                   # a 200 would be the whole file: never read it here
-                raise RangeError(f"HTTP {reply.status_code}, not a range", reply.status_code)
-            found = CONTENT_RANGE.fullmatch(reply.headers.get("Content-Range", ""))
-            if found is None or int(found.group(1)) != start:
-                raise RangeError(f"Content-Range {reply.headers.get('Content-Range')!r} for bytes {start}-{stop - 1}")
-            return reply.content, int(found.group(3))
+            with reply:                         # a 200 would be the whole file: never read it here
+                if reply.status_code != 206:
+                    raise RangeError(f"HTTP {reply.status_code}, not a range", reply.status_code)
+                found = CONTENT_RANGE.fullmatch(reply.headers.get("Content-Range", ""))
+                first, last, total = (int(n) for n in found.groups()) if found else (-1, -1, -1)
+                if first != start or last != min(stop, total) - 1:      # the reader's checks, here: failed is set
+                    raise RangeError(f"Content-Range {reply.headers.get('Content-Range')!r} for bytes {start}-{stop - 1}")
+                if self.total not in (None, total):
+                    raise RangeError(f"file size changed: {self.total} -> {total}")
+                data = reply.content
+            if len(data) != last - start + 1:
+                raise RangeError(f"{len(data)} bytes for bytes {start}-{last}")
+            self.total = total
+            return data, total
         except Exception:
             self.failed = True
             raise
@@ -224,6 +238,7 @@ class RemotePSD:
 __all__ = [
     'GIT_TOKEN',
     'HEADERS',
+    'RANGE_READS',
     'RangeError',
     'RemotePSD',
     'api_url',

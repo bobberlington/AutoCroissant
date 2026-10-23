@@ -406,7 +406,7 @@ def test_data_tip_moved_refuses(cards, tmp_path):
 
 def _rest_psds(cards, monkeypatch, parsed=None):
     """Every PSD blob off the local stores, so each is a budgeted REST download (served from the repo's git)."""
-    monkeypatch.setattr(cd, "RANGE_READS", False)
+    monkeypatch.setattr("commands.github_api.RANGE_READS", False)
     psds = {blob_sha_bytes(data) for data in cards.psds.values()}
     real = cd.GitBuild._store
     monkeypatch.setattr(cd.GitBuild, "_store", lambda self, sha: "" if sha in psds else real(self, sha))
