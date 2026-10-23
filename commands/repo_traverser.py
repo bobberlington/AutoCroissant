@@ -1,10 +1,12 @@
 """
 /update_stats: commands.card_data's build in legacy mode (the GitHub API, the root pickles and psd_details.json) under
-the bake lock, its messages sent to Discord, then the follow-ups (type emojis, image links, the card list).
+the bake lock, its messages sent to Discord, then the follow-ups (type emojis, image links, the card list). After the
+cutover (global_config.CARD_SYNC) it is commands.card_sync's: the Card sync Action's data synced, runs dispatched.
 """
 from discord import Interaction
 from typing import Optional
 
+import global_config                                              # CARD_SYNC, read at call time (the cutover switch)
 from commands.card_data import (
     COMMITS_PAGE,
     DOWNLOAD_WORKERS,
@@ -76,6 +78,9 @@ def update_stats(interaction: Optional[Interaction] = None,
     Returns:
         List of formatted problem messages
     """
+    if global_config.CARD_SYNC:                     # the cutover: the Card sync Action builds the data
+        from commands.card_sync import update
+        return update(interaction, output_problematic, force_update, verbose, cards)
     if verbose and bake_lock.locked():
         say(interaction, "Waiting for the running card update, bake or font check to finish...")
     with bake_lock:                                 # never beside a card bake (card_runner)

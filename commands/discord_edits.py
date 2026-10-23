@@ -46,6 +46,7 @@ from typing import Callable, Optional
 from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardDates, CardEdits, _collate, dump_edits
 from commands.card_models import CardType, card_name
 from commands.github_api import blob_sha
+import global_config                                    # CARD_SYNC, read at call time (the cutover switch)
 from global_config import AUTHORS_PATHS, CARD_REPO, CREATED_PATHS, EDITS_PATHS, LOCAL_DIR_LOC
 
 # ========================
@@ -430,7 +431,7 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     The committed files applied in memory, as the next build applies them: the authors file and Card Edits.json on these
     cards, then the duplicates copied again and renamed (card_data._sync_duplicates: an alias on a duplicate's PNG names
     it), then the query tables rebuilt and stats.pkl saved (so a restart before the next /update_stats keeps the edit;
-    the next build writes the same values).
+    the next build writes the same values). After the cutover nothing is saved: the next card sync's data holds it.
 
     Args:
         names: Card names (None: every card)
@@ -501,7 +502,8 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
         except Exception:                       # noqa: BLE001 - the tables catch up on the next /update_stats
             print(f"Query tables not rebuilt:\n{format_exc()}")
         try:
-            stats_db.save()
+            if not global_config.CARD_SYNC:     # the cutover: the pickles are frozen (Card sync builds the data)
+                stats_db.save()
         except Exception:                       # noqa: BLE001 - in memory still; the next /update_stats saves it
             print(f"stats.pkl not saved:\n{format_exc()}")
     return changed

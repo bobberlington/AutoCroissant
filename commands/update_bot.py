@@ -4,9 +4,13 @@ from os.path import isfile
 from pickle import loads
 from sys import argv, executable
 from commands.repo_history import batch_overrides
-from global_config import ALIAS_PKL, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
+import global_config                    # CARD_SYNC, read at call time (the cutover switch)
+from global_config import ALIAS_PKL, CARD_REPO, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
 
 NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
+PUSH_RETIRED = ("Nothing to push: the card data is built by the Card sync Action in the card repo every 30 minutes "
+                f"(<https://github.com/{CARD_REPO}/actions/workflows/card-sync.yml>), and /update_stats loads it. "
+                "The pickles here are frozen since the cutover.")
 
 
 # GitPython is imported in the functions: startup never loads it
@@ -72,6 +76,9 @@ def restart_bot():
 
 
 async def git_push(interaction: Interaction):
+    if global_config.CARD_SYNC:                         # the cutover: the bot writes no card data
+        await interaction.followup.send(PUSH_RETIRED)
+        return
     from git import GitCommandError
     try:
         git = _git()
@@ -129,7 +136,8 @@ async def git_pull(interaction: Interaction):
                     # Pull with merge strategy
                     git.pull('origin', 'main', '--no-edit', kill_after_timeout=NET_TIMEOUT)
                     await interaction.followup.send("Merge successful!")
-                    await _rescue_after_merge(interaction)
+                    if not global_config.CARD_SYNC:     # the cutover: the pickles are frozen
+                        await _rescue_after_merge(interaction)
                 except GitCommandError as merge_error:
                     if "CONFLICT" in str(merge_error) or repo.index.unmerged_blobs():
                         await interaction.followup.send("Merge conflict detected. Resolving automatically...")
@@ -137,9 +145,10 @@ async def git_pull(interaction: Interaction):
                         # Get list of conflicted files
                         conflicted = [item[0] for item in repo.index.unmerged_blobs().keys()]
 
+                        keep = [] if global_config.CARD_SYNC else [ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, DETAILS_JSON]
                         for file_path in conflicted:
-                            # Keep ours for pickle files, keep theirs for everything else
-                            if file_path in [ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, DETAILS_JSON]:
+                            # Keep ours for pickle files (until the cutover), keep theirs for everything else
+                            if file_path in keep:
                                 await interaction.followup.send(f"Keeping local version of {file_path}")
                                 git.checkout('--ours', file_path)
                             else:
@@ -150,9 +159,13 @@ async def git_pull(interaction: Interaction):
                             git.add(file_path)
 
                         # Complete the merge
-                        git.commit('-m', 'AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)')
+                        if global_config.CARD_SYNC:
+                            git.commit('-m', 'AUTO-RESOLVE: Merge conflict resolved (accepted remote)')
+                        else:
+                            git.commit('-m', 'AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)')
                         await interaction.followup.send("Merge conflict resolved automatically!")
-                        await _rescue_after_merge(interaction)
+                        if not global_config.CARD_SYNC:
+                            await _rescue_after_merge(interaction)
                     else:
                         raise
 
@@ -198,7 +211,7 @@ async def git_reset_hard(interaction: Interaction):
 
 async def update_bot(interaction: Interaction, force_reset: bool = False):
     """
-    Update the bot by pushing pickles and pulling latest code.
+    Update the bot by pushing pickles (until the cutover) and pulling latest code.
 
     Args:
         interaction: Discord interaction
@@ -209,8 +222,9 @@ async def update_bot(interaction: Interaction, force_reset: bool = False):
             await interaction.followup.send("Force reset mode: Local changes will be discarded!")
             await git_reset_hard(interaction)
         else:
-            await interaction.followup.send(f"Pushing {ALIAS_PKL}, {STATS_PKL}, {OLD_STATS_PKL} and {DETAILS_JSON}.")
-            await git_push(interaction)
+            if not global_config.CARD_SYNC:             # the cutover: no pickles to push
+                await interaction.followup.send(f"Pushing {ALIAS_PKL}, {STATS_PKL}, {OLD_STATS_PKL} and {DETAILS_JSON}.")
+                await git_push(interaction)
 
             await interaction.followup.send("Pulling latest changes from remote!")
             await git_pull(interaction)

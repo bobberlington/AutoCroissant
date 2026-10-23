@@ -52,6 +52,8 @@ font_names.json
 font_names.json.tmp
 # the fonts cache: MDW/Fonts' font files where there is no card repo checkout (commands/font_check.py refresh_cache)
 fonts_cache/
+# the bot's copy of the card data (the data branch's db/) after the cutover (commands/card_sync.py)
+card_data/
 
 # Music downloads
 music/

@@ -2,6 +2,7 @@ from asyncio import create_task
 from sys import exit
 from discord import ButtonStyle, Client, File, Intents, Interaction, Member, app_commands
 from discord.ui import Button, View
+import global_config                                    # CARD_SYNC: the cutover switch (texts at import, the gate at call time)
 from global_config import SITE_URL
 from discord.app_commands import Choice, CommandTree
 from discord.errors import HTTPException
@@ -189,7 +190,8 @@ async def slash_stop_bot(interaction: Interaction):
 
 
 git_pull = to_thread(git_pull)
-@tree.command(name="pull", description="Fetches and merges the latest code, keeps local pickles and details, reports status (admin only).")
+@tree.command(name="pull", description="Fetches and merges the latest code and reports status (admin only)." if global_config.CARD_SYNC else
+              "Fetches and merges the latest code, keeps local pickles and details, reports status (admin only).")
 async def slash_pull(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
@@ -199,7 +201,8 @@ async def slash_pull(interaction: Interaction):
 
 
 git_push = to_thread(git_push)
-@tree.command(name="push", description="Commits the pickles and PSD details, rebases onto new code, pushes, reports status (admin only).")
+@tree.command(name="push", description="Retired: the Card sync Action builds the card data; replies with its link (admin only)." if global_config.CARD_SYNC else
+              "Commits the pickles and PSD details, rebases onto new code, pushes, reports status (admin only).")
 async def slash_push(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
@@ -209,9 +212,11 @@ async def slash_push(interaction: Interaction):
 
 
 update_bot = to_thread(update_bot)
-@tree.command(name="update", description="Push the pickles and PSD details, pull latest code, and restart the bot (admin only).")
+@tree.command(name="update", description="Pull latest code and restart the bot (admin only)." if global_config.CARD_SYNC else
+              "Push the pickles and PSD details, pull latest code, and restart the bot (admin only).")
 @app_commands.describe(
-    force_reset="Skip the push and pull: hard reset to remote, losing local pickles (dangerous!). Default = False."
+    force_reset="Skip the pull: hard reset to remote, losing local changes (dangerous!). Default = False." if global_config.CARD_SYNC else
+                "Skip the push and pull: hard reset to remote, losing local pickles (dangerous!). Default = False."
 )
 async def slash_update(interaction: Interaction, force_reset: Optional[bool] = False):
     if lacks_admin(interaction):
@@ -290,7 +295,9 @@ async def slash_query_name(interaction: Interaction,
 @tree.command(name="website", description="Link to the card browser website.")
 async def slash_website(interaction: Interaction):
     await interaction.response.send_message(f"**Card browser:** {SITE_URL}/\nEvery card, the rulebook, a deck builder and stats. "
-                                            "Editors fix card data there; the bot picks it up on /update_stats.")
+                                            + ("Editors fix card data there; the next card sync applies it (every 30 minutes)."
+                                               if global_config.CARD_SYNC else
+                                               "Editors fix card data there; the bot picks it up on /update_stats."))
 
 
 def _check_repo_fonts(interaction: Interaction):
@@ -396,16 +403,22 @@ async def slash_frankenstein(
 #   STAT COMMANDS  #
 ####################
 update_stats = to_thread(update_stats)
-@tree.command(name="update_stats", description="Updates the card database from GitHub (re-parses changed PSDs).")
+@tree.command(name="update_stats", description="Loads the card data the Card sync Action built (it runs every 30 minutes)." if global_config.CARD_SYNC else
+              "Updates the card database from GitHub (re-parses changed PSDs).")
 @app_commands.describe(
     output_problematic_cards='Should we output cards with consistency errors? Default = True.',
-    force_update='Re-parse every card, even unchanged ones (downloads every PSD). Default = False.',
-    cards='Card names to re-parse anyway, comma separated (e.g. after a parser fix).',
+    force_update='Admin only: start a Card sync run re-parsing every card, then load it. Default = False.' if global_config.CARD_SYNC else
+                 'Re-parse every card, even unchanged ones (downloads every PSD). Default = False.',
+    cards='Admin only: start a Card sync run re-parsing these cards (comma separated), then load it.' if global_config.CARD_SYNC else
+          'Card names to re-parse anyway, comma separated (e.g. after a parser fix).',
 )
 async def slash_update_stats(interaction: Interaction,
                              output_problematic_cards: Optional[bool] = True,
                              force_update: Optional[bool] = False,
                              cards: Optional[str] = ""):
+    if global_config.CARD_SYNC and (force_update or (cards or "").strip()) and lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")   # a Card sync run costs API budget
+        return
     await interaction.response.defer()
     await update_stats(interaction, output_problematic_cards, force_update, cards=cards)
 

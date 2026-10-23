@@ -1,7 +1,9 @@
 """
 The card database as JSON (db/, the card data build's output): CardInfo <-> plain records, stats.json and
 old_stats.json one card per line written atomically, the manifest's sha256 per file, the one-time seed from the
-pickles through an allow-list unpickler, and export-pickles back. No Discord, network or psd-tools.
+pickles through an allow-list unpickler, and export-pickles back. No Discord or psd-tools.
+
+The bot's sync() (after the cutover) is the one network use, imported lazily.
 
 CLI: python -m commands.card_db from-pickles <pickle dir> <db dir> | export-pickles <db dir or data commit> <out dir>
      [--git <data checkout>] | check <db dir>
@@ -30,6 +32,8 @@ OLD_STATS_JSON = "old_stats.json"
 DETAILS_JSON = "psd_details.json"                  # psd_details' own format, copied as is
 MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
+SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
+SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alone (the sync's conditional request)
 PICKLE_MODULE = CardInfo.__module__                # "commands.psd_analyzer": the class path the pickles store
 EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields
 CARD_FIELDS = {f.name: f for f in fields(CardInfo)}
@@ -338,6 +342,111 @@ def export_pickles(source: str, out_folder: str, git_dir: str = ".") -> None:
 
 
 # ========================
+# The bot's copy (sync)
+# ========================
+def write_bytes(path: str, data: bytes) -> None:
+    """write_text's way (temp file, fsync, replace) for exact bytes."""
+    with _lock:
+        temp_path = path + ".tmp"
+        try:
+            with open(temp_path, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                fsync(fh.fileno())
+            replace(temp_path, path)
+        except BaseException:
+            try:
+                remove(temp_path)
+            except OSError:
+                pass
+            raise
+
+
+def _check_text(name: str, data: bytes) -> None:
+    """A downloaded data file parses as its kind; else ValueError (nothing is written then)."""
+    text = data.decode("utf-8")
+    if name in (STATS_JSON, OLD_STATS_JSON):
+        _cards_of(text, name)
+    elif not isinstance(loads(text).get("cards"), dict):
+        raise ValueError(f"{name}: not a details file")
+
+
+def read_json(path: str) -> dict:
+    """A JSON object file's data, or {} when it is missing or not one."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = loads(fh.read())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def sync(folder: str, repository: str, branch: str) -> dict:
+    """
+    A folder brought to a data branch's db/ (the bot's card_data/, design section 11): one conditional request for the
+    branch's commit (a 304 is free), then, on a new commit, its manifest and only the data files whose sha256 differ
+    from the folder's, raw at that commit (immutable, no lag). Each is checked against the manifest and parsed before
+    any is written; then each is replaced atomically, the manifest and SYNC_JSON (commit, ETag) last, so an interrupted
+    sync is finished by the next. Nothing is unpickled.
+
+    Args:
+        folder: The copy (created when missing)
+        repository: owner/name of the card repo
+        branch: The data branch
+
+    Returns:
+        {"commit", "changed": [file names written], "manifest"}: changed is [] when the folder was already there
+
+    Raises:
+        LookupError: the branch does not exist; requests' exceptions or ValueError: a failed or bad download (nothing
+        written)
+    """
+    from commands.github_api import HEADERS, api_url, get_with_retry      # lazy: the build needs no network here
+    from global_config import RAW_BASE
+    state = read_json(join(folder, SYNC_JSON))
+    whole = bool(state.get("commit")) and not check_db(folder)
+    headers = {**HEADERS, "Accept": SHA_MEDIA, **({"If-None-Match": state["etag"]} if whole and state.get("etag") else {})}
+    reply = get_with_retry(api_url(repository, f"commits/{branch}"), headers=headers)
+    if reply.status_code == 304:
+        return {"commit": state["commit"], "changed": [], "manifest": read_json(join(folder, MANIFEST_JSON))}
+    if reply.status_code in (404, 422):
+        raise LookupError(f"{repository} has no {branch} branch")
+    reply.raise_for_status()
+    commit, etag = reply.text.strip(), reply.headers.get("ETag", "")
+    if whole and commit == state.get("commit"):
+        write_text(join(folder, SYNC_JSON), dumps({"commit": commit, "etag": etag}) + "\n")
+        return {"commit": commit, "changed": [], "manifest": read_json(join(folder, MANIFEST_JSON))}
+
+    def raw(name: str) -> bytes:
+        got = get_with_retry(f"{RAW_BASE}{repository}/{commit}/db/{name}", timeout=60)
+        got.raise_for_status()
+        return got.content
+    manifest_data = raw(MANIFEST_JSON)
+    manifest = loads(manifest_data.decode("utf-8"))
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(files, dict):
+        raise ValueError(f"{MANIFEST_JSON} at {commit[:8]}: no file hashes")
+    wanted = {}
+    for name in DATA_FILES:
+        if not files.get(name):
+            raise ValueError(f"{MANIFEST_JSON} at {commit[:8]} lists no {name}")
+        path = join(folder, name)
+        if isfile(path) and file_sha256(path) == files[name]:
+            continue
+        data = raw(name)
+        if sha256(data).hexdigest() != files[name]:
+            raise ValueError(f"{name} at {commit[:8]}: sha256 differs from the manifest")
+        _check_text(name, data)
+        wanted[name] = data
+    makedirs(folder, exist_ok=True)
+    for name, data in wanted.items():
+        write_bytes(join(folder, name), data)
+    write_bytes(join(folder, MANIFEST_JSON), manifest_data)
+    write_text(join(folder, SYNC_JSON), dumps({"commit": commit, "etag": etag}) + "\n")
+    return {"commit": commit, "changed": sorted(wanted), "manifest": manifest}
+
+
+# ========================
 # CLI
 # ========================
 def main(argv: Optional[list] = None) -> int:
@@ -382,6 +491,7 @@ __all__ = [
     'OLD_STATS_JSON',
     'SCHEMA',
     'STATS_JSON',
+    'SYNC_JSON',
     'SeedUnpickler',
     'card',
     'check_db',
@@ -394,10 +504,13 @@ __all__ = [
     'parse_old_stats',
     'parse_stats',
     'read_db',
+    'read_json',
     'read_pickles',
     'record',
     'round_trip_problems',
     'stats_text',
+    'sync',
+    'write_bytes',
     'write_db',
     'write_text',
 ]

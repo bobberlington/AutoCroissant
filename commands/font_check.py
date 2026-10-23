@@ -44,6 +44,7 @@ from fontTools.ttLib import TTCollection, TTFont
 from psd_tools import PSDImage
 
 import commands.github_api as github_api
+import global_config                            # CARD_SYNC, read at call time (the cutover switch)
 from commands.github_api import api_url, blob_sha, fetch_tree, fetch_verified, get_with_retry, token_from_env
 from global_config import CARD_BRANCH, CARD_REPO, DETAILS_JSON, FONT_ALIASES, FONT_DIRS_ENV, FONTS_CACHE, LOCAL_DIR_LOC
 
@@ -322,9 +323,9 @@ def discord_payload(report: Report) -> dict:
     return {"content": content, "allowed_mentions": {"roles": [ROLE_ID]}}
 
 
-def discord_text(report: Report) -> str:
-    """The bot's /fonts reply: missing fonts -> cards (layers), the fonts folder count, the cache state."""
-    out = [f"MDW/Fonts: {report.fonts_files} files, {report.fonts_faces} faces. {report.checked} card PSDs read."]
+def discord_text(report: Report, head: Optional[str] = None) -> str:
+    """The bot's /fonts reply: missing fonts -> cards (layers), the fonts folder count (or head), the cache state."""
+    out = [head or f"MDW/Fonts: {report.fonts_files} files, {report.fonts_faces} faces. {report.checked} card PSDs read."]
     if report.remaining:
         out.append(f"Warming the cache: {report.remaining} card PSDs are not read yet (at most {BATCH} downloads per run); "
                    "run /fonts again for the rest. Partial results:")
@@ -341,6 +342,41 @@ def discord_text(report: Report) -> str:
         more = len(report.errors) - ERRORS_SHOWN
         out.append("Errors: " + "; ".join(report.errors[:ERRORS_SHOWN]) + (f"; and {more} more (in the console)" if more > 0 else ""))
     return "\n".join(out)
+
+
+def details_report(details: dict, cards: dict) -> Report:
+    """
+    /fonts after the cutover: each current card PSD's psd_details record, whose fonts the card data build marked
+    supplied or not against MDW/Fonts (psd_details.mark_supplied, the check _record makes). Nothing is downloaded.
+
+    Args:
+        details: {blob sha: record} (the card data's psd_details.json)
+        cards: {name: CardInfo} (the database; duplicates share their original's PSD)
+
+    Returns:
+        Report: a PSD without a record, or with fonts the build could not judge, is an error line
+    """
+    report = Report()
+    paths = {}
+    for card in cards.values():
+        path = getattr(card, "path", "") or ""
+        if not getattr(card, "duplicate_of", None) and is_card_psd(path):
+            paths[path] = getattr(card, "blob_sha", None)
+    for path in sorted(paths):
+        record = details.get(paths[path] or "")
+        fonts = record.get("fonts") if isinstance(record, dict) else None
+        if not isinstance(fonts, dict):
+            report.errors.append(f"{path}: no PSD details in the card data")
+            continue
+        report.checked += 1
+        entries = {font: entry for font, entry in fonts.items() if isinstance(entry, dict)}
+        if any(entry.get("supplied") is None for entry in entries.values()):
+            report.errors.append(f"{path}: fonts not judged (the build had no MDW/Fonts)")
+        missing = {font: [basename(layer) for layer in entry.get("layers", [])]
+                   for font, entry in entries.items() if entry.get("supplied") is False}
+        if missing:
+            report.cards.append(Card(path, NOBODY, missing))
+    return report
 
 
 # ========================
@@ -936,6 +972,10 @@ def check_repo_fonts(interaction) -> None:
     from commands.card_runner import bake_lock                # lazy: standalone use needs no Discord
     from commands.query_card import card_repo
     from commands.utils import queue_long_message
+    if global_config.CARD_SYNC:                 # the cutover: the card data's psd_details.json has every PSD's fonts
+        from commands.card_sync import fonts_text
+        queue_long_message(interaction, fonts_text())
+        return
     if not _lock.acquire(blocking=False):
         queue_long_message(interaction, "A font check is already running; wait for its reply.")
         return
@@ -1029,6 +1069,7 @@ __all__ = [
     'check_files',
     'check_psd',
     'check_repo_fonts',
+    'details_report',
     'dir_fonts',
     'discord_payload',
     'discord_text',
