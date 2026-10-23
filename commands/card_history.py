@@ -1208,7 +1208,8 @@ def _restored(name: str, run_: list, after: Optional[CardInfo], report: Recovere
 
 def _archive_gone(name: str, located: list, old_stats: dict, stats: dict, index: GitIndex, report: Recovered) -> None:
     """A name in neither pickle: its readings as versions (runs printing the same as one), the last tagged archived
-    with its deleting commit; nothing when git has no deletion of its last path (it may be listed under another name)."""
+    with its deleting commit and the bytes it deleted (Chestnut's 4155a8f, edited after its last reading b7d4546);
+    nothing when git has no deletion of its last path (it may be listed under another name)."""
     if not located:
         return
     path = located[len(located) - 1].card.path
@@ -1218,7 +1219,9 @@ def _archive_gone(name: str, located: list, old_stats: dict, stats: dict, index:
     newest = max(located, key=lambda r: (r.at, r.order)).card
     versions = [_restored(name, run_, newest, report) for run_ in _runs_of(located, index, allows_high(name, None))]
     last = versions[len(versions) - 1]
-    last.archived = {"at": gone.at, "path": last.path, "blob": last.blob_sha, "commit": gone.sha, "backfill": True}
+    deleted = next((b for c, b in index.at_path.get(path, []) if c.order > gone.order), None)   # the bytes git deleted
+    last.archived = {"at": gone.at, "path": last.path, "blob": deleted or last.blob_sha, "commit": gone.sha,
+                     "backfill": True}
     old_stats[name] = versions
     report.archived.append(name)
 

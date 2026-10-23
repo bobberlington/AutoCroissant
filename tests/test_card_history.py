@@ -1094,6 +1094,17 @@ def test_a_stat_the_reading_did_not_read_is_unknown_alone(tmp_path):
         assert (len(old["A"]), ch.start(card)[0]) == (versions, 1000.0 if not versions else 2000.0)
 
 
+def test_a_gone_card_edited_after_its_last_reading_is_archived_with_the_bytes_git_deleted(tmp_path):
+    """Chestnut: read at b7d4546, edited twice unread, then renamed (the PSD edited too): its record keeps what the
+    PICKLE read, its tag the bytes git deleted."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/G.psd": G1}), (2000, {"Items/G.psd": A1}), (3000, {"Items/G.psd": None})])
+    bot, _ = _bot_repo(tmp_path, [(1500, {"G": _card("G", path="Items/G.psd", ability="Gone.", timestamp=1000.0)})])
+    old = defaultdict(list)
+    ch.recover({}, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+    [gone] = old["G"]
+    assert (gone.blob_sha, gone.archived["blob"], gone.archived["commit"]) == (blob(G1), blob(A1), c[2])
+
+
 def test_a_restored_version_pairs_its_start_with_that_commits_blob(tmp_path):
     """Two readings printing the same (spacing aside) from two commits are one version: the newer parse's data, the
     older start and that start's own blob (a pair git had)."""
