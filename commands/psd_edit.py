@@ -70,6 +70,8 @@ INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a 
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
 BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
+SPLICE_UNIT = "glyph"       # a text edit redraws its changed glyphs ("line": their lines); Photoshop's raster stays elsewhere
+KEY_SLACK = 2               # px a key render may pass a spliced layer's bbox (Photoshop's ink beside the engine's)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
                          "overlay": {"flags"}}  # what an edit may change per record (overlay: a hidden hand-made word layer)
 STORY_KEYS = (("1", "1", "0", "0"), ("DocumentObjects", "TextObjects", "Model", "Text"))   # Txt2's stories and their
@@ -157,6 +159,7 @@ class Edit:
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted first (derived state: all of the text layer's)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
+    band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
 
 
 @dataclass
@@ -431,6 +434,12 @@ def story_sync() -> bool:
     """Does the fork's set_text also write the layer's Txt2 story (TypeLayer.sync_story): the text Photoshop reads."""
     from psd_tools.api.layers import TypeLayer
     return hasattr(TypeLayer, "sync_story")
+
+
+def splices() -> bool:
+    """Does the fork's rasterize keep Photoshop's raster of the unchanged lines (rasterize(keep=))."""
+    from psd_tools.api.layers import TypeLayer
+    return "keep" in signature(TypeLayer.rasterize).parameters
 
 
 def _txt2(psd: PSDImage):
@@ -908,9 +917,16 @@ def _key_ink(model, fills, layer, fonts, engine: tuple) -> np.ndarray:
     key = replace(model, runs=tuple(runs))
     rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(), GlyphCache(),
                            max_alloc_bytes=layer._psd._max_alloc_bytes)
-    if tuple(bbox) != tuple(layer.bbox):
+    x0, y0, x1, y1 = (int(v) for v in bbox)
+    lx0, ly0, lx1, ly1 = layer.bbox
+    if x0 < lx0 - KEY_SLACK or y0 < ly0 - KEY_SLACK or x1 > lx1 + KEY_SLACK or y1 > ly1 + KEY_SLACK:
         raise Refused("styled-word", f"the key render {tuple(bbox)} does not line up with the text layer {tuple(layer.bbox)}")
-    return rgba[..., 0] * rgba[..., 3] >= KEY_INK      # the key over black: its red channel at Photoshop's threshold level 1
+    ink = rgba[..., 0] * rgba[..., 3] >= KEY_INK      # the key over black: its red channel at Photoshop's threshold level 1
+    out = np.zeros((ly1 - ly0, lx1 - lx0), bool)     # on the layer's bbox (a splice keeps Photoshop's, not the key's)
+    cx0, cy0, cx1, cy1 = max(x0, lx0), max(y0, ly0), min(x1, lx1), min(y1, ly1)
+    if cx1 > cx0 and cy1 > cy0:
+        out[cy0 - ly0:cy1 - ly0, cx0 - lx0:cx1 - lx0] = ink[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+    return out
 
 
 def _word_mask(layer, start: int, end: int, fonts, engine: tuple) -> np.ndarray:
@@ -1259,7 +1275,8 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "") -> Edit:
     """
-    Replace the name or the ability text, keeping the runs, and rasterize it with the text engine.
+    Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
+    glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest.
 
     Args:
         psd: The open card (edited in place)
@@ -1332,6 +1349,14 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             styled = [span for span in spans if span[2].styled]
             if styled or old_fx or hide:
                 engine = _fx_engine()
+    fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
+    before = None
+    if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
+        from psd_tools.composite.text import capture
+        try:
+            before = capture(layer, fonts)
+        except MissingFontError as error:
+            raise Refused("font", str(error))
     layer.set_text(text, keep="runs")
     if body is not None and start < end:
         layer.set_span_style(start, end, fill=body)
@@ -1339,9 +1364,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer.set_span_style(span_start, span_end, fill=color.fill)
     for token_start, token_end in tokens:
         layer.set_span_style(token_start, token_end, Font=icons)
-    fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
     try:
-        report = layer.rasterize(fonts=fonts)
+        report = layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
     except MissingFontError as error:
         raise Refused("font", str(error))
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)
@@ -1352,6 +1376,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # an SVG colour glyph the fork draws in one colour
         raise Refused("font", f"{which}: colour glyphs (the icon font) would be drawn in one colour")
     bbox = tuple(layer.bbox)
+    spliced = getattr(report, "splice", None)
+    band = bbox if spliced is None or spliced.fallback else spliced.zone
     if clip(bbox, psd.width, psd.height) != bbox:
         raise Refused("overflow", f"{which} runs off the canvas")
     if any(_touches(layer, badge) for badge in badges):
@@ -1365,7 +1391,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     made = _regenerate_fx(psd, layer, text, styled, fonts, engine) if styled else []
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in made]
     region = union_box([_pad(box, pad, psd) for box, pad in reach])
-    return Edit(which, old_text, text, [layer], [_record_index(layer)], region, story=story,
+    return Edit(which, old_text, text, [layer], [_record_index(layer)], region, story=story, band=band,
                 hidden=[_record_index(overlay) for overlay in hide],
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
@@ -2163,6 +2189,7 @@ __all__ = [
     'parse_card',
     'read_name',
     'shown_name',
+    'splices',
     'render_pair',
     'render_region',
     'run_fills',

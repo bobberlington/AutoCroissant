@@ -60,6 +60,7 @@ MOSLING = "Auxiliary/Minions/Mosling.psd"                          # a faint wat
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"     # no Text group: its title is the top-level layer 'Afraid'
 JAWSUM = "Creatures/Omori/3 Stars/Mr_Jawsum.psd"                   # no Text group: its title 'Group 3/Group 2/Mr. Jawsum'
 SOUL_MASTER = "Creatures/Hollow Knight/4 Stars/Soul_Master.psd"    # its title 'Soul Master' sits beside the Text group
+FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -134,6 +135,9 @@ text_edit = pytest.mark.skipif(not (_text_engine() and _story_sync()),
 # round 4 (tag cards-20261022): rounded bytes and textured bevels
 round4 = pytest.mark.skipif(not (_text_engine() and rounds_bytes() and bevel_textures()),
                             reason="the fork lacks round 4's byte rounding or bevel textures")
+# a text edit redraws only what changed (the fork's rasterize(keep=))
+spliced = pytest.mark.skipif(not (_text_engine() and _story_sync() and pe.splices()),
+                             reason="the fork redraws a text layer whole (no rasterize(keep=))")
 before_textures = pytest.mark.skipif(not _text_engine() or bevel_textures(), reason="the fork draws bevel textures (round 4)")
 
 
@@ -161,7 +165,7 @@ def _card(clone, rel: str) -> tuple:
     return str(path), str(path)[:-4] + ".png"
 
 
-PLAIN_POD = "52352775^"     # PoD10BFB before the badges re-run's "Ability FX: (1GCD) | (2U) | (2CD)" layer
+PLAIN_POD = "71ddebec"      # PoD10BFB before the badges re-run's "Ability FX: (1GCD) | (2U) | (2CD)" layer
 
 
 def _plain(clone, tmp_path) -> tuple:
@@ -1200,7 +1204,8 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     """The proof against Effect Layers.jsx (Convert overlays on the 2026-10-20 trial copies): regenerating the FX layer for
     the unchanged text cuts the same word (IoU 0.953 / 0.994 with the JSX pixel cut, all of our ink on its ink or its 1 px
     edge ring: the fork's 4 x 4 samples draw Gasoline 0.08 px low, a quarter-pixel more on bottom edges), hides the overlay, passes the validator's coverage (1.0) and the bytes
-    and reopen gates. These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
+    and reopen gates. A splice keeps the word's Photoshop pixels and cuts them under the engine's key: the JSX's own cut
+    (IoU 1.0). These two cards keep image-icon gaps, so the token rule refuses their edits in the pipeline. The
     clone's versions before the JSX ran on them (OVERLAID)."""
     psd_path = _overlaid(clone, rel, tmp_path)
     psd = PSDImage.open(psd_path)
@@ -1215,14 +1220,16 @@ def test_fx_layers_match_the_jsx_output(clone, parser, chart, rel, floor, tmp_pa
     name, box, theirs = _jsx_ink(rel)
     ours = _ink(mine, reopened)
     assert name == mine.name and theirs.shape == ours.shape
-    assert (ours & theirs).sum() / (ours | theirs).sum() >= floor and _near(ours, theirs) >= 0.99
+    iou = (ours & theirs).sum() / (ours | theirs).sum()
+    assert (iou == 1.0) if pe.splices() else (iou >= floor and _near(ours, theirs) >= 0.99)
     assert abs(mine.bbox[0] - box[0]) <= 1 and abs(mine.bbox[1] - box[1]) <= 1 and mine.bbox[3] == box[3]
     assert pe.overlay_words(reopened) == [] and pe._enabled_effects(mine) == ["OuterGlow"]
     assert pe.PSDParser._pixel_coverage(mine, pe.ability_layer(reopened)) == 1.0
     old, new = pe.parse_card(parser, psd_path, rel), pe.parse_card(parser, saved, rel)
     assert new["validator"] == old["validator"] and not any(p.startswith("EFFECT LAYER") for p in new["validator"])
     records, flag_bytes, block_bytes = pe.gate_bytes(psd_path, saved, [edit])
-    assert [(name, fields) for _, name, fields in records] == [("Ability", ["blocks", "channels"]), ("Ability FX: Blazing", ["added"]),
+    ability = ["blocks"] if pe.splices() else ["blocks", "channels"]     # a splice keeps the unchanged text's raster
+    assert [(name, fields) for _, name, fields in records] == [("Ability", ability), ("Ability FX: Blazing", ["added"]),
                                                                ("Blazing", ["flags"])]
     assert flag_bytes == 1 and block_bytes == sum(len(b) for b in edit.fx[0][1].values()) == 5916
     pe.gate_reparse(parser, old, saved, rel, {}, reopened, [edit])
@@ -1287,6 +1294,58 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
     assert again.edits[0].dropped == ["Ability FX: Blazing", "Ability FX: Frozen"]
     assert pe.stale_stories(PSDImage.open(again.psd_path)) == []
     print("timings", {k: round(v, 2) for k, v in baked.timings.items()}, {k: round(v, 2) for k, v in again.timings.items()})
+
+
+def _raster(layer, box) -> np.ndarray:
+    """The layer's stored RGBA (8-bit values) placed on a canvas box."""
+    out = np.zeros((box[3] - box[1], box[2] - box[0], 4), np.int16)
+    x0, y0, x1, y1 = layer.bbox
+    rgba = np.concatenate([layer.numpy("color"), layer.numpy("shape")], axis=2)
+    out[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]] = np.rint(rgba * 255)
+    return out
+
+
+def _first_line_edit(layer) -> str:
+    """Frostmourne's ability, its first line "+1.5 ATK" made "+2.5 ATK" (as the website sends it)."""
+    assert layer.text.startswith("+1.5 ATK\r")
+    return ("+2.5" + layer.text[4:]).replace("\r", "\n")
+
+
+@spliced
+def test_ability_edit_keeps_photoshops_raster_on_unchanged_lines(clone, chart):
+    """A one-word edit redraws its own line or less: outside that band every pixel of the layer is Photoshop's raster."""
+    psd = PSDImage.open(_card(clone, FROSTMOURNE)[0])
+    layer = pe.ability_layer(psd)
+    old_box = tuple(layer.bbox)
+    box = (old_box[0] - 8, old_box[1] - 8, old_box[2] + 8, old_box[3] + 8)
+    old = _raster(layer, box)
+    edit = pe.set_text_layer(psd, "ability", _first_line_edit(layer), str(clone / pe.FONTS_DIR), chart)
+    assert pe.ability_layer(psd).text.startswith("+2.5 ATK\r")
+    x0, y0, x1, y1 = edit.band
+    assert y1 - y0 < (old_box[3] - old_box[1]) / 3                # the first line, not the layer
+    new = _raster(pe.ability_layer(psd), box)
+    band = np.zeros(old.shape[:2], bool)
+    band[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]] = True
+    assert np.array_equal(old[~band], new[~band])
+    assert (old[band] != new[band]).any()
+
+
+@spliced
+def test_spliced_ability_bake_changes_only_the_edited_line(clone, parser, chart, tmp_path):
+    """Through apply_jobs: every pixel the merge changed lies in the redrawn band grown by the effects' reach."""
+    psd_path, png_path = _card(clone, FROSTMOURNE)
+    text = _first_line_edit(pe.ability_layer(PSDImage.open(psd_path)))
+    _, baked = _bake(clone, parser, FROSTMOURNE, {"ability": text}, tmp_path, chart)
+    edit, = baked.edits
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    x0, y0, x1, y1 = pe._pad(edit.band, fx_pad(layer), layer._psd)
+    assert y1 - y0 < (edit.region[3] - edit.region[1]) / 2
+    before = np.asarray(Image.open(png_path).convert("RGBA"))
+    after = np.asarray(Image.open(baked.png_path).convert("RGBA"))
+    differs = (before != after).any(axis=2)
+    inside = np.zeros_like(differs)
+    inside[y0:y1, x0:x1] = True
+    assert differs.any() and not (differs & ~inside).any()
 
 
 @text_edit
