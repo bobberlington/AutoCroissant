@@ -10,6 +10,7 @@ from urllib.parse import unquote
 
 import pytest
 from psd_tools import PSDImage
+from requests.exceptions import ConnectionError as NoConnection
 
 import commands.card_check as cc
 import commands.card_data as cd
@@ -28,8 +29,8 @@ def ranged(github, monkeypatch):
     COMMIT. state.whole: paths answered 200 (whole); state.refused: path -> the 4xx its range requests get;
     state.broken: paths whose range reads from the main thread (the parse, after the open in a download worker) answer
     503 (state.parse_reads lists those reads), state.short: a 206 10 bytes short; state.head_tree: the branch head's
-    tree."""
-    state = SimpleNamespace(whole=set(), refused={}, broken=set(), short=set(), head_tree=TREE, parse_reads=[])
+    tree; state.down: every range request answers this status, or raises ConnectionError when it is 0."""
+    state = SimpleNamespace(whole=set(), refused={}, broken=set(), short=set(), head_tree=TREE, parse_reads=[], down=None)
     tree = github.tree
     monkeypatch.setattr(github, "tree", lambda: {**tree(), "sha": TREE})
     inner = github.get
@@ -47,6 +48,10 @@ def ranged(github, monkeypatch):
         github.calls.append(("range", path))
         if main:
             state.parse_reads.append(path)
+        if state.down is not None:
+            if not state.down:
+                raise NoConnection(f"{RAW_BASE} unreachable")
+            return Reply(state.down)
         data = github.files.get(path)
         if ref != COMMIT or data is None:
             return Reply(404)
@@ -151,6 +156,21 @@ def test_RANGE_REFUSALS_refused_psds_turn_range_reads_off(ranged, github, psds, 
     ranged.refused = {OTHER: 404, DOOMER: 404}                     # e.g. a commit not on GitHub
     _run()
     assert _ranges(github) == {OTHER, DOOMER} and {OTHER, DOOMER, FREEZER} <= set(github.blobs())
+    _goldens_hold()
+
+
+@needs_ranges
+@pytest.mark.parametrize("down", [503, 0])
+def test_raw_down_turns_range_reads_off_after_RANGE_REFUSALS(ranged, github, psds, monkeypatch, down):
+    """A 5xx or no connection on raw (the API still up) counts as a refusal: each PSD costs get_with_retry's 3 tries
+    only until RANGE_REFUSALS of them, then the run downloads whole."""
+    github.files[OTHER] = psds[OTHER]
+    monkeypatch.setattr(cd, "DOWNLOAD_WORKERS", 1)
+    monkeypatch.setattr(cd, "RANGE_REFUSALS", 2)
+    ranged.down = down
+    _run()
+    assert _ranges(github) == {OTHER, DOOMER} and {OTHER, DOOMER, FREEZER} <= set(github.blobs())
+    assert [c for c in github.calls if c == ("range", OTHER)] == [("range", OTHER)] * 3     # get_with_retry's tries
     _goldens_hold()
 
 

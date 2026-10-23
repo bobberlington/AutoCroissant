@@ -43,7 +43,7 @@ from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, P
 UPDATE_RATE = 25
 DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs fetched and not yet parsed, at most (memory, temp files)
-RANGE_REFUSALS = 3                                                # PSDs refused range reads with a 4xx before the run stops
+RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
                                                                   # trying them (github_api.RANGE_READS: the off switch)
 LOOKUP_WORKERS = 2                                                # commit lookups ahead of parsing
 COMMITS_PAGE = 100                                                # commits per request: newest and first in one
@@ -98,7 +98,7 @@ class CardBuild:
         self.sizes: dict = {}                    # repo path -> blob size, from the API's tree (the build's has none)
         self.raw_ref = ""                        # the tree's commit for range reads ("": whole downloads this run)
         self.ranged: list = []                   # bytes fetched per PSD parsed from range reads
-        self.refused: list = []                  # PSDs whose range read got a 4xx (RANGE_REFUSALS of them: whole from then)
+        self.refused: list = []                  # PSDs whose range read got a 4xx, 5xx or no connection (RANGE_REFUSALS)
         self.tree: Optional[dict] = None         # the tree, reused by card_repo.populate_files
         self.etag = ""                           # its ETag, so card_repo's next fetch can be a 304
         self.details: dict = {}                  # blob sha -> psd_details record (psd_details.json, saved beside the pickles)
@@ -722,10 +722,10 @@ class CardBuild:
             try:
                 return RemotePSD(self.repository, self.raw_ref, path, self.sizes.get(path))
             except Exception as e:                              # the whole file decides
-                if isinstance(e, RangeError) and 400 <= e.status < 500:
+                if isinstance(e, RequestException) or (isinstance(e, RangeError) and e.status >= 400):
                     self.refused.append(path)                   # one odd PSD (a 416 when empty) leaves them on
-                    if len(self.refused) >= RANGE_REFUSALS:
-                        self.raw_ref = ""                       # e.g. a commit not on GitHub: whole downloads from now on
+                    if len(self.refused) >= RANGE_REFUSALS:     # e.g. a commit not on GitHub, raw down (each PSD
+                        self.raw_ref = ""                       # tried 3 times): whole downloads from now on
                 print(f"{path}: range reads failed ({e}); downloading it whole")
         return self._download(path, sha)
 

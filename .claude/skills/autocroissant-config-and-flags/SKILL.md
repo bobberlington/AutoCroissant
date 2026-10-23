@@ -208,7 +208,7 @@ repo_traverser.py.
 | `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs `/update_stats` downloads ahead of parsing |
 | `AHEAD` (2026-10-23) | `8` | PSDs fetched and not yet parsed, at most (open PSDs, temp files) |
 | `RANGE_READS` (2026-10-23, github_api.py) | `True` | read a PSD by range requests at the tree's commit when psd-tools can (lazy open, fork feat/lazy-records), in the build and `card_check --after`; whole download otherwise and on any failure |
-| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx before the run downloads the rest whole (one odd PSD leaves range reads on) |
+| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on) |
 | `LOOKUP_WORKERS` (2026-10-20) | `2` | commit lookups `/update_stats` runs ahead of parsing (one PyGithub client per thread) |
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
