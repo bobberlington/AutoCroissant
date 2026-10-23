@@ -442,10 +442,12 @@ Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)
 
 Items/Active/2 Stars/Dirty_Bed.png: re-exported by the bot's render of the PSD (8,957 px changed) (Zomoroko, 7cb4c867)
 Auxiliary/Minions/Clot_White.psd: Txt2 story synced (Name)
+
 Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 ```
-- No `Edit-by` trailer. build_site leaves AutoCroissant's commits out of contributions (`BOT_AUTHOR`), so the author of the
-  PSD keeps the credit.
+- The trailers are their own paragraph (git parses them): one `Recompressed: <path>` per PNG only recompressed (§19),
+  then `Guarded-push`. No `Edit-by` trailer. build_site leaves AutoCroissant's commits out of contributions
+  (`BOT_AUTHOR`), so the author of the PSD keeps the credit.
 - No pickles, no `site/` files, no `TTS/`.
 
 **7.2 The commit comment** (on `after`, posted at check time when `summary.json`'s `comment` count is not 0: a card with
@@ -1147,3 +1149,55 @@ grossly wrong, and tell the miss in the report and the comment. Built on AutoCro
   (as before the ruling).
 - **Open, not this ruling's:** `test_a_faint_beside_mismatch_note_names_the_case` fails on `work/push-guards` at 0b101e9
   already (BESIDE_CUT 8 makes its 10-level PNG re-exported, not current).
+
+## 19. Lossless PNG recompression (owner, 2026-10-23)
+
+The owner (2026-10-23 ~10:00): recompress the card PNGs losslessly on push (in the guards' bot commit) and once over the
+existing ones (Photoshop's exports measured 4.8x too big, below). The thresholds (10%, 64 KiB) are ours; the owner set
+none. Built on AutoCroissant `work/png-optimize` and TTSCardMaker `work/png-optimize` (card-guards.yml installs
+`pyoxipng==9.1.1`; build_site skips recompressions in Image versions). The two land together: on a TTSCardMaker main
+without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_version` fail. Nothing pushed.
+
+- **oxipng** through `pyoxipng` (wheels for Python 3.9-3.13 on macOS and manylinux, so the Action's 3.12 takes a wheel;
+  3.14 builds it with cargo). `png_export.optimize`: level 2, colour type, bit depth and palette never reduced (the bake
+  and guard 1 read RGB and RGBA only; an opaque RGBA stays RGBA), no chunk stripped, 120 s at most per PNG. Pillow's
+  `optimize=True` saved less (78.1% against 79.3%) and dropped pHYs; level 4 adds 0.3% for 1.8x the time.
+- **Proof, per file, before any write** (`png_export.same_png`): IHDR byte for byte, the pixels PIL decodes in the file's
+  own mode, and every other chunk in order: iCCP by its profile (oxipng re-deflates it and names it "icc", a label no
+  reader uses), zTXt and compressed iTXt by their text, the rest byte for byte (pHYs, gAMA, cHRM, iTXt XMP, eXIf).
+  8-bit PNGs only (all card PNGs are).
+- **Measured** on the 30 latest card PNGs (Photoshop exports, zlib header 78 01: the deflate stored, IDAT as big as the
+  raw pixels): 257.2 MB -> 53.1 MB (79.3%, 4.8x), 30 of 30 the same image; 440 of the 830 card-folder PNGs at origin/main
+  96d61368 carry that header.
+- **The guards** (`card_guards`): every card PNG a push brought by a person (a pair's PNG, a PNG pushed alone, the
+  numbered PNGs, a numbered PNG pushed alone: case `numbered`, or in the `png-deleted` entry when the push deleted the
+  main PNG: one entry per PSD) is a write of kind `recompress` when it shrinks by more than `RECOMPRESS_MIN` (10%) and
+  `RECOMPRESS_BYTES` (64 KiB); it rests on that PNG alone (and only it rests on a pushed numbered PNG: the main PNG's
+  re-export never reads those), lands in the one bot commit ("Card guards: 2 PNGs recompressed (push ...)", one
+  `Recompressed: <path>` trailer each), is in the comment ("Fat.png recompressed losslessly (8.7 MB -> 1.8 MB, the same
+  pixels)") and never on Discord, nor when it did not land. A failure (a blob unreadable, oxipng raising anything) is a
+  comment note ("Fat.png not recompressed (...)"), never the card's error. The PNGs the bot writes (`png_export.encode`, a
+  renamed PNG's copy) are recompressed too. Bot commits stay unguarded, so nothing loops. Replay of the push
+  38c55bd3..07589cc7: 16 recompress writes (12 rulebook pages 6.2 MB -> 107-801 KB, 4 cards 8.6-11.6 MB -> 1.8-3.4 MB),
+  Discord unchanged. oxipng takes about 4 s a card PNG on the Mac (the Action unmeasured), inside Check.
+- **The batch** (`python -m commands.png_recompress --clone <checkout> [--apply] [--report <json>] [--message <file>]`,
+  nothing committed; `--message` writes the commit's text, one `Recompressed` trailer per PNG):
+  run on a sparse copy of origin/main 96d61368 (scratch `followups/png/tc-batch`): 820 card PNGs, 4.47 GB; 686
+  recompressed, 4.18 GB -> 1.14 GB (3.04 GB saved, 68% of all card PNGs); 134 kept (under 10% or 64 KiB, 23 MB
+  possible); 0 not the same. An independent check (PIL RGBA and raw arrays, mode, size and info of every rewritten file
+  against HEAD's blob) found 686 of 686 identical. 25 minutes on the Mac under load.
+- **Landing the batch**: `--apply --message <file>`, then `git -c user.name=AutoCroissant -c
+  user.email=autocroissant@gmail.com commit -a -F <file>` (the guards skip it). The trailers keep the website's Image
+  versions as they are (TTSCardMaker build_site, site/NOTES.md §18): without them each of the 686 cards would get an
+  AutoCroissant version identical to the one before, and a card with one version would start showing the block. The
+  TTS save re-pins the 686 links and the site rebuilds. card_history's type-misread merge compares PNG blobs across a
+  version's start, so a misread pair spanning the batch commit is no longer merged. The bake (`psd_edit.save_png`,
+  card-edits.yml) still writes PIL's deflate.
+- **Tests** (fail without the change): `test_recompress_keeps_the_image_and_its_chunks`, `test_same_png_tells_a_changed_pixel_or_chunk`,
+  `test_recompress_wants_its_saving`, `test_recompress_leaves_16_bit_and_runs_without_oxipng`,
+  `test_the_bots_own_pngs_are_recompressed`, `test_pushed_pngs_are_recompressed_in_the_bot_commit`,
+  `test_a_recompression_rests_on_its_png_and_is_never_told`, `test_message` (the trailers), `test_workflow_shape`
+  (pyoxipng), `test_the_batch_rewrites_the_heavy_card_pngs`, `test_the_batch_message_names_each_png_in_a_trailer`,
+  `test_a_pushed_numbered_png_holds_back_only_its_recompression`, `test_a_deleted_png_and_its_pushed_numbered_png_are_one_card`,
+  `test_a_failed_recompression_is_a_comment_note`, test_site_build's `test_a_recompression_is_no_new_image_version`;
+  the replay and Mini Doomer's R11 now expect their recompress writes.

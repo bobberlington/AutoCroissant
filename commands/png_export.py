@@ -17,14 +17,20 @@ draw those.
     png_check(psd, png) -> dict                              R10: a PNG against its PSD's composite
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
+    recompress(data, minimum, floor) -> bytes or None        the PNG losslessly smaller (oxipng, checked), or None
+    same_png(a, b) -> bool                                   the same image: header, pixels and every other chunk
+
+Every PNG the guards write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x too big).
 
 No Discord, network or config.
 """
 import hashlib
+import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from io import BytesIO
 from re import search
+from struct import unpack
 from time import process_time
 from typing import Optional
 
@@ -65,6 +71,11 @@ G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own 
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
 MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
+RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed when this much smaller (ours: the owner set none)
+RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
+OXIPNG_LEVEL = 2                                # oxipng's default preset (4.8x on Photoshop's exports; level 4 adds 1%)
+OXIPNG_TIMEOUT = 120                            # seconds per PNG: oxipng keeps its best so far
+SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 # ========================
@@ -254,13 +265,128 @@ def _bbox(mask: np.ndarray) -> Optional[tuple]:
 
 
 def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
-    """The PNG file: like's colour chunks kept (psd_edit.save_png); PIL's default deflate."""
+    """The PNG file: like's colour chunks kept (psd_edit.save_png), recompressed losslessly when that is smaller."""
     buf = BytesIO()
     if like is not None:
         psd_edit.save_png(image, buf, like)
     else:
         image.save(buf, "PNG")
-    return buf.getvalue()
+    return recompress(buf.getvalue()) or buf.getvalue()
+
+
+# ========================
+# Lossless recompression (owner, 2026-10-23)
+# ========================
+def _oxipng():
+    """pyoxipng, or None (imported here: the bot and the bake never need it)."""
+    try:
+        import oxipng
+    except ImportError:
+        return None
+    return oxipng
+
+
+def _chunks(data: bytes) -> list:
+    """[(type, payload)] of a PNG file but its image data (IDAT); raises ValueError when it is not one."""
+    if not data.startswith(SIGNATURE):
+        raise ValueError("not a PNG")
+    out, i = [], len(SIGNATURE)
+    while i + 8 <= len(data):
+        size, kind = unpack(">I4s", data[i:i + 8])
+        if i + 12 + size > len(data):
+            raise ValueError("truncated chunk")
+        if kind != b"IDAT":
+            out.append((kind, data[i + 8:i + 8 + size]))
+        i += 12 + size
+        if kind == b"IEND":
+            break
+    return out
+
+
+def _meaning(kind: bytes, payload: bytes):
+    """A chunk as read (oxipng re-deflates iCCP, zTXt and compressed iTXt): their decompressed content, else the bytes.
+    An ICC profile is its data: oxipng names every one "icc" (the name is a label no reader uses; PIL drops it)."""
+    if kind == b"iCCP":
+        _, _, rest = payload.partition(b"\0")
+        return rest[:1], zlib.decompress(rest[1:])
+    if kind == b"zTXt":
+        name, _, rest = payload.partition(b"\0")
+        return name, rest[:1], zlib.decompress(rest[1:])
+    if kind == b"iTXt":
+        name, _, rest = payload.partition(b"\0")
+        flag, method, rest = rest[:1], rest[1:2], rest[2:]
+        language, _, rest = rest.partition(b"\0")
+        translated, _, text = rest.partition(b"\0")
+        return name, flag, method, language, translated, zlib.decompress(text) if flag == b"\x01" else text
+    return payload
+
+
+def _pixels(data: bytes) -> tuple:
+    image = Image.open(BytesIO(data))
+    image.load()
+    return image.mode, image.size, np.asarray(image)
+
+
+def same_png(a: bytes, b: bytes) -> bool:
+    """
+    Whether two PNG files are the same image: the same header (size, bit depth, colour type, interlace), the same
+    pixels decoded in the file's own mode, and every other chunk (colour, text, Exif...) the same, in the same order
+    (iCCP, zTXt and compressed iTXt by their decompressed content, _meaning); only the image data's deflate may differ.
+    """
+    try:
+        if [(k, _meaning(k, p)) for k, p in _chunks(a)] != [(k, _meaning(k, p)) for k, p in _chunks(b)]:
+            return False
+        (mode_a, size_a, pixels_a), (mode_b, size_b, pixels_b) = _pixels(a), _pixels(b)
+    except (ValueError, OSError, SyntaxError, zlib.error):     # not a PNG PIL or zlib can read
+        return False
+    return mode_a == mode_b and size_a == size_b and np.array_equal(pixels_a, pixels_b)
+
+
+def optimize(data: bytes) -> Optional[bytes]:
+    """
+    oxipng's lossless recompression of an 8-bit PNG: the colour type and bit depth kept (the bake and guard 1 read RGB
+    and RGBA only), every chunk kept. Unchecked: recompress checks it.
+
+    Returns:
+        The new file (maybe not smaller); None without pyoxipng, for a PNG not 8-bit, or when oxipng fails in any way
+    """
+    oxipng = _oxipng()
+    if oxipng is None or not data.startswith(SIGNATURE) or data[12:16] != b"IHDR" or len(data) < 33 or data[24] != 8:
+        return None                             # 16-bit: PIL reads 8 bits of it, so same_png could not tell (cards: 8)
+    try:
+        return oxipng.optimize_from_memory(data, level=OXIPNG_LEVEL, bit_depth_reduction=False, color_type_reduction=False,
+                                           palette_reduction=False, grayscale_reduction=False,
+                                           strip=oxipng.StripChunks.none(), timeout=OXIPNG_TIMEOUT)
+    except Exception:                           # PngError, or anything else oxipng raises: no recompression
+        return None
+    except BaseException as error:              # a Rust panic: pyo3's PanicException is no Exception
+        if type(error).__name__ == "PanicException":
+            return None
+        raise
+
+
+def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:
+    """Whether a file of before bytes recompressed to after is worth writing: more than minimum of it saved, and floor."""
+    saved = before - after
+    return saved > 0 and saved > minimum * before and saved >= floor
+
+
+def recompress(data: bytes, minimum: float = 0.0, floor: int = 0) -> Optional[bytes]:
+    """
+    The PNG losslessly smaller (optimize), the result checked by same_png.
+
+    Args:
+        data: A PNG file
+        minimum: The fraction of its size it must shrink by, more than (RECOMPRESS_MIN for a pushed PNG)
+        floor: The bytes it must shrink by, at least (RECOMPRESS_BYTES)
+
+    Returns:
+        The smaller file; None when optimize gives none, it saves too little, or it is not the same image
+    """
+    out = optimize(data)
+    if out is None or not worth(len(data), len(out), minimum, floor) or not same_png(data, out):
+        return None
+    return out
 
 
 # ========================
@@ -656,14 +782,20 @@ __all__ = [
     'G7',
     'G8',
     'MISSED',
+    'RECOMPRESS_BYTES',
+    'RECOMPRESS_MIN',
     'export',
     'export_new',
     'miss_notes',
     'fingerprints',
+    'optimize',
     'like_mode',
     'open_png',
     'open_psd',
     'photoshop_saved',
     'png_check',
+    'recompress',
+    'same_png',
+    'worth',
     'xmp',
 ]
