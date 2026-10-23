@@ -219,6 +219,55 @@ def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_m
     assert refused.why.startswith("PNG not made: the bot's drawing of your change")
 
 
+def _rows_off(monkeypatch, rows: int, start: int = 3, levels: int = 30) -> None:
+    """The fork draws rows of every box 30 levels off from its row start (a drawing miss, the same on the old and new PSD)."""
+    draw = psd_edit.render_region
+
+    def off(psd, box, icc=True):
+        image = np.array(draw(psd, box, icc).convert("RGB")).astype(int)
+        image[start:start + rows] += levels
+        return Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
+    monkeypatch.setattr(psd_edit, "render_region", off)
+
+
+def test_a_drawing_miss_under_the_floor_is_written_and_told(tmp_path, monkeypatch):
+    """Owner (2026-10-23): the bot's drawing missing the bar (one row of the 21x21 box 30 levels off: 4.8% bad) no
+    longer refuses: the PNG is made and the miss is told per measure; past the floor (10 rows: 48%) it refuses as before."""
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    _rows_off(monkeypatch, 1)
+    found = pe.export(old, new, card())
+    assert found.outcome == "re-exported" and found.data and found.numbers["region"] == [10, 10, 31, 31]
+    assert pe.miss_notes(found) == [f"made with a pixel difference ({what}): bad 4.76%, mean 1.43, max 30"
+                                    for what in ("the old PSD drawn against the old PNG", "against the PSD's own image")]
+    _rows_off(monkeypatch, 10)
+    refused = pe.export(old, new, card())
+    assert (refused.outcome, refused.gate, refused.data, refused.misses) == ("refused", "G6", b"", {})
+    assert refused.why.startswith("PNG not made: the bot cannot draw this part of the card as its old PNG shows it (47.6%")
+
+
+def test_a_new_card_drawn_with_a_miss_is_made(tmp_path, monkeypatch):
+    """A new card's whole render a row off (1 of 90: 1.1% bad) is made, told; the beside case likewise."""
+    new = fixture_psd(tmp_path, card(), "new")
+    _rows_off(monkeypatch, 1, start=12)
+    found = pe.export_new(new)
+    assert found.outcome == "re-exported" and list(found.misses) == ["cross"]
+    assert pe.miss_notes(found) == ["made with a pixel difference (against the PSD's own image): bad 1.11%, mean 0.33, max 30"]
+    beside = pe.export(None, new, card(colour=(0, 255, 0)))       # D is the square; the row crosses it
+    assert beside.outcome == "re-exported" and list(beside.misses) == ["cross"]
+
+
+def test_g5_stays_a_refusal_under_the_floor(tmp_path):
+    """A stale old PNG is no drawing miss: Photoshop's own image disagrees with it, so no psd-tools fix makes the PNG
+    right; G5 refuses a small stale area too (10 x 10 px outside the change: 2% bad)."""
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    stale = card()
+    ImageDraw.Draw(stale).rectangle((40, 60, 49, 69), fill=(255, 255, 0))
+    found = pe.export(old, new, stale)
+    assert (found.outcome, found.gate) == ("refused", "G5") and 0.5 < found.numbers["outside"]["bad_pct"] < psd_edit.PARITY_FLOOR
+
+
 def test_g5_the_old_png_was_stale_elsewhere(tmp_path):
     """The old PNG disagrees with the old PSD outside the change: no PNG, the author exports it."""
     old = fixture_psd(tmp_path, card(), "old")
@@ -350,17 +399,20 @@ def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
 @fork
 def test_the_refusals_of_the_replay(clone):
     """Three of the 9 refusals of the 34 replayed commits (PUSH_GUARDS.md 16, rulings): Restrained's old PNG did not
-    show its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG); Defcon Panda's
-    Ability drop shadow, which the fork draws with another edge (1.4% bad); 20 Creature Types' header, which Photoshop
-    redrew from a type layer whose stored raster did not change (the composite cross-check refuses what the render
-    cannot see)."""
+    show its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG); 20 Creature
+    Types' header, which Photoshop redrew from a type layer whose stored raster did not change (the composite
+    cross-check refuses what the render cannot see). Defcon Panda's Ability drop shadow, which the fork draws with
+    another edge (1.4% bad), refused until the owner's ruling of 2026-10-23: made now, the miss told."""
     for shas, gate, why in ((RESTRAINED, "G5", "PNG not made: the PSD and its old PNG already disagreed where you changed it"),
-                            (DEFCON_PANDA, "G6", "PNG not made: the bot cannot draw this part of the card as its old PNG"),
                             (CREATURE_TYPES, "G6", pe.G6_UNSEEN)):
         old, new, old_png, _ = pair(clone, shas)
         found = pe.export(old, new, old_png)
         assert (found.outcome, found.gate) == ("refused", gate) and found.why.startswith(why), (shas, found.why)
         assert not found.data
+    old, new, old_png, _ = pair(clone, DEFCON_PANDA)
+    found = pe.export(old, new, old_png)
+    assert found.outcome == "re-exported" and found.data and "baseline" in found.misses
+    assert psd_edit.PARITY_BAD_MAX < found.misses["baseline"]["bad_pct"] <= psd_edit.PARITY_FLOOR
     # the author's PNG pushed first: Photoshop's image vouches for the change the fork draws otherwise, nothing to tell
     old, new, _, _ = pair(clone, DEFCON_PANDA)
     first = pe.export(old, new, pe.open_png(blob(clone, "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")))

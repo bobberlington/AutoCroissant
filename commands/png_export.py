@@ -5,6 +5,9 @@ bake would make (owner, 2026-10-22). The fork renders the changed layers' box of
 differs from the old one (psd_edit.merge_png), gated as the bake is (the baseline's parity, shape, region). Photoshop's
 stored composite is never written: it is only a cross-check that can refuse (the old PNG outside the change, the drawn
 change against Photoshop's own image). A refusal is data (an Export with outcome "refused" and the line card makers read).
+As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
+written and told (Export.misses). A stale old PNG (Photoshop's own image against it, G5) and a change the bot cannot see
+(G6_UNSEEN) still refuse: no psd-tools fix can draw those.
 
     export(old_psd, new_psd, old_png, numbered) -> Export   a PSD pushed without its PNG (gates G2-G8); old None: a new
                                                              PSD beside an existing PNG
@@ -57,6 +60,7 @@ G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it
 G6_NEW = "PNG not made: the bot's drawing of the new PSD does not match its own image ({bad:.1f}% of pixels); " + EXPORT
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
+MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
 
 
 # ========================
@@ -76,6 +80,7 @@ class Export:
     vote: Optional[tuple] = None                # psd_edit.icc_vote over the old pair
     writer: str = ""                            # "photoshop", "tool" (no new XMP stamp) or "new" (no old PSD)
     numbers: dict = field(default_factory=dict) # the gates' measures
+    misses: dict = field(default_factory=dict)  # "baseline" / "cross": a measure past the bar, under the floor (written, told)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> (bytes, "") or (b"", refusal line)
 
 
@@ -102,6 +107,16 @@ def _stats(diff: np.ndarray) -> dict:
 
 def _within(measured: dict) -> bool:
     return psd_edit._within_bar(measured)
+
+
+def _drawn(result: "Export", key: str) -> bool:
+    """The bot's drawing over numbers[key]: False past the floor (refuse); a miss of the bar under it is kept in misses."""
+    measured = result.numbers[key]
+    if psd_edit._past_floor(measured):
+        return False
+    if measured.get("px", 1) and not _within(measured):
+        result.misses[key] = measured
+    return True
 
 
 def composite(psd: PSDImage) -> Optional[Image.Image]:
@@ -383,7 +398,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
             result.numbers["png_vs_old_psd"] = was
             if not _within(was):
                 return _refuse(result, G5_IN.format(bad=was["bad_pct"]), "G5")
-        return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
+        if not _drawn(result, "baseline"):
+            return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
     merged, _ = psd_edit.merge_png(old_png, base, render, region)
     try:                                        # G7: the bake's shape and region gates
         psd_edit.gate_shape(old_png, merged, new)
@@ -394,9 +410,11 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
     if not _within(result.numbers["cross"]):
         unseen = composite_moved & ~inside      # Photoshop's image moved outside every changed layer
-        why = (G6_UNSEEN if unseen.any() and not _within(_stats(_diff(merged, truth)[unseen])) else
-               G6 if result.writer == "photoshop" else G6_STALE)
-        return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+        if unseen.any() and not _within(_stats(_diff(merged, truth)[unseen])):
+            return _refuse(result, G6_UNSEEN, "G6")
+        if not _drawn(result, "cross"):
+            why = G6 if result.writer == "photoshop" else G6_STALE
+            return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
     # G8: numbered duplicates take F's pixels when F stays clear of their toggled titles
     for path, image in sorted((numbered or {}).items()):
@@ -428,7 +446,7 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     out[moved] = np.asarray(render)[moved]
     merged = Image.fromarray(out)
     result.numbers["cross"] = _stats(_diff(merged, truth)[moved])
-    if not _within(result.numbers["cross"]):
+    if not _drawn(result, "cross"):
         return _refuse(result, G6.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
     for path, image in sorted((numbered or {}).items()):
@@ -444,7 +462,15 @@ def _no_composite(psd: PSDImage) -> Export:
 
 def _refuse(result: Export, why: str, gate: str) -> Export:
     result.outcome, result.why, result.gate, result.image, result.data = "refused", why, gate, None, b""
+    result.misses = {}
     return result
+
+
+def miss_notes(found: Export) -> list:
+    """The note per measure that missed the bar under the floor (as the bake's psd_edit.miss_notes): "made with a pixel
+    difference (the old PSD drawn against the old PNG): bad 1.35%, mean 1.00, max 79" (Defcon Panda)."""
+    return ["made with a pixel difference (%s): bad %.2f%%, mean %.2f, max %d" % (MISSED[key], m["bad_pct"], m["mean"], m["max"])
+            for key, m in found.misses.items()]
 
 
 def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image.Image, moved: np.ndarray,
@@ -486,7 +512,7 @@ def export_new(new: PSDImage) -> Export:
         out = out.convert("RGB")
     result.changed_px, result.box = out.width * out.height, box
     result.numbers["cross"] = _stats(_diff(out, convert(new, composed, True)))
-    if not _within(result.numbers["cross"]):
+    if not _drawn(result, "cross"):
         return _refuse(result, G6_NEW.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", out, encode(out, None)
     return result
@@ -544,8 +570,10 @@ __all__ = [
     'G6_UNSEEN',
     'G7',
     'G8',
+    'MISSED',
     'export',
     'export_new',
+    'miss_notes',
     'fingerprints',
     'like_mode',
     'open_png',
