@@ -546,7 +546,7 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
 The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
-without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261022b`
+without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261023`
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
