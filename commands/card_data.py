@@ -1132,6 +1132,7 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     db = build.db
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     build.details = psd_details.load()
+    index = None
     try:                                            # one-time (2026-10-23); a failure skips it with one line
         index = history_index()
         line = cleaned(db, index, bot_pickles(db) if index is not None else None)
@@ -1146,7 +1147,15 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     if gone or backfilled:
         build._archive_sources(gone, tuple(backfilled))
     report_archive(build, gone, backfilled)
-    if num_changed > 0 or gone or backfilled or build.changed or line or db.stale_archives():
+    again = None
+    if index is not None and (num_changed > 0 or gone or backfilled or build.changed):
+        try:                                        # again over what this run read, edited and archived (a carried
+            again = cleaned(db, index)              # start's commit, a misread an author fix shows), so the next run
+        except Exception as e:                      # noqa: BLE001 - finds nothing left to clean
+            build.report(f"History cleanup after the update skipped ({type(e).__name__}: {e}).")
+    if again:
+        build.report(again)
+    if num_changed > 0 or gone or backfilled or build.changed or line or again or db.stale_archives():
         db.save()
     if build.tree is not None:                      # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(build.details, build.font_index) if build.font_index is not None else 0

@@ -1131,6 +1131,36 @@ def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, c
     assert cd.clean_history(db, cd.history_index())[2] == [] and db.old_stats["Lost Card"][0].archived is None
 
 
+def test_a_start_carried_this_run_gets_its_commit_this_run(github, psds, tmp_path, monkeypatch, capsys):
+    """A card stored without a version record whose re-saved PSD parses the same carries its start (the old commit
+    time) this run; the cleanup runs again after the update, so that start gets its commit from the history clone in
+    the same run and the next /update_stats finds nothing to clean (after B2: "103 carried starts given their commit"
+    one run late, with a second write of the pickles)."""
+    import commands.card_data as cd
+    repo = tmp_path / "cards"
+    (repo / os.path.dirname(DOOMER)).mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / DOOMER).write_bytes(psds[DOOMER])
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Mini Doomer", at=int(TIME))
+    first = _git(repo, "rev-parse", "HEAD").strip()
+    _git(tmp_path, "clone", "-q", "--bare", str(repo), str(tmp_path / "history.git"))
+    monkeypatch.setattr(cd, "HISTORY_CLONE", str(tmp_path / "history.git"))
+    _run()
+    assert _saved()[0]["Mini Doomer"].version is None
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp", lambda self, repo, path, name: (TIME + 86400, None))
+    github.files[DOOMER] = psds[DOOMER] + b"\0"                       # another blob, the same layers
+    capsys.readouterr()
+    _run()
+    doomer = _saved()[0]["Mini Doomer"]
+    assert (doomer.version["from"], doomer.version["from_commit"], doomer.version["cause"]) == (TIME, first, "legacy")
+    assert "History: 0 duplicate versions removed (0 cards); 1 carried start given their commit." in capsys.readouterr().out
+    saved = [open(name, "rb").read() for name in ("stats.pkl", "old_stats.pkl")]
+    _run()
+    assert "History:" not in capsys.readouterr().out
+    assert [open(name, "rb").read() for name in ("stats.pkl", "old_stats.pkl")] == saved
+
+
 def test_a_failing_history_cleanup_skips_with_one_line(github, monkeypatch, capsys):
     """The one-time cleanup runs at every /update_stats: an unexpected error in it is one line, never a failed run."""
     import commands.card_data as cd
