@@ -64,6 +64,8 @@ NOBODY = "Someone"
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
+TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
+                                                # two rules: the commit comment only until the owner asks)
 _worker: dict = {}
 
 
@@ -128,16 +130,17 @@ class Result:
     def name(self) -> str:
         return card_name(self.job.psd)
 
-    def told(self) -> list:
-        """The lines the author is told on Discord."""
+    def told(self, mode: str = "on") -> list:
+        """The lines the author is told on Discord; in report mode the fixable issues too (nothing is fixed)."""
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         out += [f"{line} (the bot could not fix it: {why})" for line, why in self.fix_refused]
-        if self.r10.get("ok") is False:
+        if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
             out.append(self.r10["line"])
-        out += [issue["line"] for issue in self.issues if issue["told"] and issue["discord"]]
+        out += [issue["line"] for issue in self.issues
+                if issue["discord"] and (issue["told"] or (mode == "report" and issue["fix"] and not issue["waived"]))]
         out += [text for text, discord in self.notes if discord]
         return out
 
@@ -518,7 +521,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         stale = found.numbers.get("png_vs_psd", {})
         if found.outcome == "current" and stale.get("px") and not psd_edit._within_bar(stale):
             result.notes.append((f"{basename(job.png)} does not match the PSD ({stale['bad_pct']:.1f}% of pixels differ), "
-                                 "though this push moved no pixel: export it in Photoshop", True))
+                                 "though this push moved no pixel: export it in Photoshop", TELL_PNG_MISMATCH))
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
@@ -593,7 +596,7 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
         entry = {"card": result.name, "psd": result.job.psd, "case": result.job.case, "login": result.job.login,
                  "commit": result.job.commit, "export": result.export, "r10": result.r10, "issues": result.issues,
                  "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
-                 "told": result.told(), "error": result.error, "writes": result.writes}
+                 "told": result.told(mode), "error": result.error, "writes": result.writes}
         if result.writes:
             entry["expect"] = _expect(result.job)
         cards.append(entry)
@@ -922,6 +925,7 @@ __all__ = [
     'Result',
     'SPARSE_FILES',
     'Source',
+    'TELL_PNG_MISMATCH',
     'Writer',
     'added',
     'build_context',

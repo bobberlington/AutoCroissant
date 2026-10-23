@@ -197,7 +197,7 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["New_Card"]["export"]["outcome"] == "re-exported" and by["New_Card"]["writes"][0]["path"] == f"{FOLDER}/New_Card.png"
     assert by["New_Name"]["writes"][0]["sha"] == cg.Source(str(root)).tree(base)["Creatures/Other/3 Stars/Old_Name.png"][1]
     assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
-    assert by["Lonely"]["r10"]["ok"] is False and "push the PSD too?" in by["Lonely"]["told"][0]
+    assert by["Lonely"]["r10"]["ok"] is False and by["Lonely"]["told"] == []          # R10: the comment only (TELL_PNG_MISMATCH)
     assert by["Gone"]["told"] == ["Gone.png is left without its PSD"]
     assert by["New_Name"]["told"] == ["Old_Name.png is left at the PSD's old name"]
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
@@ -212,7 +212,7 @@ def test_check_end_to_end(cards, tmp_path):
     lines = payload["content"].splitlines()
     assert all(re.fullmatch(r"\S+ pushed .+ with these issues: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{12}\)", l)
                for l in lines), lines
-    assert any(l.startswith("Alice pushed Lonely with these issues: Lonely.png does not match its PSD") for l in lines)
+    assert "Lonely.png does not match its PSD" in report and not any("Lonely" in l for l in lines)
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
 
 
@@ -229,6 +229,23 @@ def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
         assert not r4["waived"] and r4["told"] and r4["line"] in by[name]["told"], by[name]
     assert cg.added(cg.Job("X.psd", "psd-only")) and not cg.added(cg.Job("X.psd", "pair", psd_old="s"))
     assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
+
+
+def test_png_mismatch_reaches_discord_only_when_switched_on(cards, tmp_path, monkeypatch):
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg, "TELL_PNG_MISMATCH", True)
+    data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(tmp_path / "out"), workers=1, cards={"lonely"})
+    assert "Lonely.png does not match its PSD" in data["discord"]["content"]
+
+
+def test_report_mode_tells_the_fixable_issues():
+    """Nothing is fixed in report mode, so the fixable issues are remaining issues there; in on mode the bot fixes them."""
+    issues = [{"line": "the Name layer is named 'NAME'", "told": False, "discord": True, "fix": True, "waived": ""},
+              {"line": "waived", "told": False, "discord": True, "fix": True, "waived": "owner"},
+              {"line": "R7 fonts", "told": True, "discord": False, "fix": False, "waived": ""}]
+    result = cg.Result(cg.Job("X/A.psd", "pair"), issues=issues)
+    assert result.told("report") == ["the Name layer is named 'NAME'"]
+    assert result.told("on") == [] and result.told("dry") == []
 
 
 def test_whole_tree(cards, tmp_path):
