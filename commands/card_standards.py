@@ -28,7 +28,7 @@ import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.font_check import FontIndex, _get, _value, check_psd
 from commands.psd_edit import Refused
-from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PSDParser
+from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
 from commands.psd_regions import overlay_words
 from global_config import RULEBOOK_DIR
 
@@ -63,6 +63,7 @@ WAIVED = {                                      # the owner's class waivers (sec
     "R2": {"cards": {"tainted lazarus"}, "why": "its header icon (2026-10-22)"},
     "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix"},
            "why": "several-Ability and multi-creature cards stay deviations (question 2, 2026-10-21)"},
+    "R3 excluded": {"why": "in the parser's ABILITY_EXCLUSIONS: prints no ability (2026-10-23)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
     "R7": {"fonts": {"BabaUI"}, "why": "BabaUI is deferred by the owner (L13)"},
@@ -381,6 +382,9 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         stem = basename(rel)
         card = stem[:len(stem) - 4]
         run("R3", rule_ability, psd)
+        ability = out[len(out) - 1]
+        if ability is not None and ability.code == "R3" and key in {CardAuthors.key(n) for n in CardValidator.ABILITY_EXCLUSIONS}:
+            ability.waived = WAIVED["R3 excluded"]["why"]
         run("R4", rule_name, psd, card)
         name = out[len(out) - 1]
         if name is not None and name.code == "R4" and not added:

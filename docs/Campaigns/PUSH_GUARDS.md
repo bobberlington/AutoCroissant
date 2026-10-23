@@ -375,7 +375,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at 96d61368 | 1: Shadow_Duelist, told on every push of it (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"; the owner may waive it). The 5 several-Ability cards are waived (Q2) |
+| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at 96d61368 | 0: Shadow_Duelist is waived (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"); the 5 several-Ability cards are waived (Q2) |
 | R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
@@ -397,6 +397,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 **6.2 Waivers.**
 - **Class waivers** are the owner's decisions, kept in code (`card_standards.WAIVED`), each with its date and ledger entry:
   - Q2: several-Ability and multi-creature cards (R3);
+  - cards in the parser's `ABILITY_EXCLUSIONS` (R3: Shadow_Duelist prints no ability; unattended, 2026-10-23);
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing);
@@ -772,9 +773,10 @@ jobs:
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
   ["R5"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
 - **R3 and R4's real issues, before `CARD_GUARDS=report`** (an unattended call on 2026-10-23, after the owner dropped their
-  template layout; section 6.1): keep them as reports? R3 tells Shadow_Duelist (a hidden Ability layer the card prints
-  nowhere, in the parser's `ABILITY_EXCLUSIONS`) on every push of it, and any new card with several visible Ability
-  layers; R4 tells only new cards and regressions. Dropping them is the R3/R4 block of `card_standards.check`.
+  template layout; section 6.1): keep them as reports? Shadow_Duelist (a hidden Ability layer the card prints nowhere)
+  is waived as one of the parser's `ABILITY_EXCLUSIONS`, so R3 tells only a card with several visible Ability layers or
+  a hidden one with unread words; R4 tells only new cards and regressions. Dropping them is the R3/R4 block of
+  `card_standards.check`.
 - Choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
   copying the changed pixels into them (G8); R10 now stays in the comment (`TELL_PNG_MISMATCH = True` would post it: 0
   flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).

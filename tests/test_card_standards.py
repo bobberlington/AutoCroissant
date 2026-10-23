@@ -27,7 +27,7 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
     ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),      # its Ability outside Text and title in Stat Txt: layout
     ("Auxiliary/Items/Lit_Bob-omb.psd", set(), {"R3"}),           # 2 visible Ability layers (Q2)
-    ("Auxiliary/Minions/Shadow_Duelist.psd", {"R3"}, set()),      # its Ability layer hidden, its words printed nowhere
+    ("Auxiliary/Minions/Shadow_Duelist.psd", set(), {"R3"}),      # its Ability layer hidden; waived: in ABILITY_EXCLUSIONS
     ("Auxiliary/Minions/Abyss_Watcher.psd", set(), set()),        # hidden and empty: no ability
     ("Auxiliary/Minions/Warrior_Dee.psd", set(), set()),
     ("Creatures/Kirby/5 Stars/Butterfly.psd", set(), set()),      # hidden, laid out again in visible pieces
