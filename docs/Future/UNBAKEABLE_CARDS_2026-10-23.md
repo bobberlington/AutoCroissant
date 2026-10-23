@@ -17,6 +17,19 @@ card and field, whether a bake works, why not, and what would fix it.
     c5c3f19..dc2bd69 since (03:35-03:38) and is still being built, so these numbers are preliminary.
 - Everything was checked with the bake's own code, dry: nothing was written to either repo (section 6).
 
+**Since (release check, 2026-10-23, fork `cards-20261023`, TTSCardMaker `0bc4c099` after the badges re-run):**
+
+- refused-layers also bakes a title named after the card outside Text (`7176d6f`): the 58 "no Text group" titles plus
+  Ms Mowz, Soul Master, Traitor Lord and The Radiance. Name after all pending changes: about **708 / 56** (not 646/118).
+- Section 4: Metal General, Star Dream, Zero Override, Masked Dedede and Dark matter are now redundant (the PSD already
+  prints the requested title): nothing to bake. Only PoD11ZOMG bakes ('Z.O.M.G' -> 'Z.O.M.G.', one glyph spliced).
+- Section 3: Frog's and Masked Dedede's Name boxes are within the bar on the release fork (no pixel note).
+- Doctor Zomboss bakes (2.11 lists it with the split titles): the edit goes into Text/Name, the only visible copy; its
+  'images/Name' under the art keeps the old title inside the PSD.
+- Ability bakes gave the edited words the layer's commonest colour (Pizza's '1' -> '2' went from yellow to cyan) and,
+  with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
+  each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
+
 How to read it: section 1 is the one-screen summary. Section 2 has one part per reason: a plain explanation, what would
 fix it, and the cards (alphabetical, with their folder). A card counts once per field, under the first reason the bake
 stops at today; the last column says what the pending changes do to it. A card can sit in several parts, one per field.
