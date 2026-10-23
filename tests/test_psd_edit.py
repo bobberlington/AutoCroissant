@@ -150,6 +150,9 @@ def _card(clone, rel: str) -> tuple:
     return str(path), str(path)[:-4] + ".png"
 
 
+PLAIN_POD = "52352775^"     # PoD10BFB before the badges re-run's "Ability FX: (1GCD) | (2U) | (2CD)" layer
+
+
 def _plain(clone, tmp_path) -> tuple:
     """Mini Doomer without its badge layer (PLAIN_DOOMER, the version ability edits were proven on): PSD and PNG paths."""
     out = tmp_path / "plain"
@@ -1263,8 +1266,9 @@ def test_ability_edit_keeps_a_forced_line_break(clone, chart, tmp_path):
 @text_edit
 def test_ability_edit_keeps_a_leading_empty_paragraph(clone, chart, tmp_path):
     """PoD10BFB's ability starts with an empty paragraph: an edit (the website's trimmed text) keeps it in TySh and the
-    story, so the text stays where it was."""
-    path = _card(clone, "Auxiliary/Minions/PoD10BFB.psd")[0]
+    story, so the text stays where it was. The card before its badge layer (PLAIN_POD), whose edit refuses."""
+    path = tmp_path / "PoD10BFB.psd"
+    path.write_bytes(at_rev(clone, PLAIN_POD, "Auxiliary/Minions/PoD10BFB.psd"))
     psd = PSDImage.open(path)
     layer = pe.ability_layer(psd)
     old = layer.text
