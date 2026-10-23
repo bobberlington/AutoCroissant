@@ -209,7 +209,7 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 8, "writes": 4, "errors": 0,
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "errors": 0,
                        "card_errors": 0} and summary["told"] >= 1
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
@@ -292,19 +292,14 @@ def test_a_drawing_miss_is_told_in_the_comment_and_the_commit(cards, tmp_path, m
     assert not [t for t in snack["told"] if "pixel difference" in t] and "pixel difference" not in json.dumps(data["discord"])
 
 
-def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
-    """A PSD added with its PNG (case pair, status A) is a new card: R4 is told, not waived, as for one pushed alone."""
+def test_a_new_psd_pushed_with_its_png_is_a_pair(cards, tmp_path):
+    """A PSD added with its PNG (status A) is case pair; one pushed alone is case new."""
     root, base, alice, bot = cards
     psd, png = (root / FOLDER / "Bread.psd").read_bytes(), (root / FOLDER / "Bread.png").read_bytes()
     push = _plumb(root, {f"{FOLDER}/Fresh.psd": psd, f"{FOLDER}/Fresh.png": png, f"{FOLDER}/Alone.psd": psd}, "two new cards")
     data = cg.check(str(root), push, bot, mode="report", out=str(tmp_path / "out"), workers=1)
     by = {c["card"]: c for c in data["cards"]}
     assert by["Fresh"]["case"] == "pair" and by["Alone"]["case"] == "new"
-    for name in ("Fresh", "Alone"):
-        (r4,) = [i for i in by[name]["issues"] if i["code"] == "R4"]
-        assert not r4["waived"] and r4["told"] and r4["line"] in by[name]["told"], by[name]
-    assert cg.added(cg.Job("X.psd", "psd-only")) and not cg.added(cg.Job("X.psd", "pair", psd_old="s"))
-    assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
 
 
 def test_a_new_psd_beside_its_pushed_png_tells_nothing(cards, tmp_path):
@@ -428,9 +423,9 @@ def test_font_issues_are_told_in_the_standards_post(cards, tmp_path, monkeypatch
     (bread,) = data["cards"]
     (font,) = [issue for issue in bread["issues"] if issue["code"] == "R7"]
     assert font["discord"] and font["told"] and not font["waived"]
-    assert bread["told"][-1] == "font ComicSansMS not in MDW/Fonts"          # after R3 (the fixture has no Ability layer)
-    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: ")
-    assert "; font ComicSansMS not in MDW/Fonts. [" in data["discord"]["content"]
+    assert bread["told"] == ["font ComicSansMS not in MDW/Fonts"]
+    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: "
+                                                 "font ComicSansMS not in MDW/Fonts. [")
     assert json.loads((out / "summary.json").read_text())["told"] == 1
 
 
@@ -451,14 +446,14 @@ def test_whole_tree(cards, tmp_path):
 
 
 def test_discord_fits_and_says_nothing_without_issues():
-    entry = {"login": "Zomoroko", "card": "Skullord", "told": ["the Ability layer is outside the Text group"], "commit": "7" * 40}
+    entry = {"login": "Zomoroko", "card": "Skullord", "told": ["timing tag (1GCD) not set in the stoogedings badge font"], "commit": "7" * 40}
     data = {"after": "a" * 40, "cards": [dict(entry, card=f"Card {i}") for i in range(80)]}
     payload = cg.discord_payload(data, "MichaelJSr/TTSCardMaker")
     assert len(payload["content"]) <= cg.DISCORD_LIMIT and payload["flags"] == 4
     last = payload["content"].splitlines()[-1]
     assert re.fullmatch(r"\.\.\. and \d+ more cards: \[details\]\(https://github\.com/MichaelJSr/TTSCardMaker/commit/a{40}\)", last)
     one = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "MichaelJSr/TTSCardMaker")["content"]
-    assert one == ("Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group. "
+    assert one == ("Zomoroko pushed Skullord with these issues: timing tag (1GCD) not set in the stoogedings badge font. "
                    "[77777777](https://github.com/MichaelJSr/TTSCardMaker/commit/" + "7" * 12 + ")")
     assert cg.discord_payload({"after": "a" * 40, "cards": [dict(entry, told=[])]}, "o/r") == {}
 
@@ -600,15 +595,15 @@ def test_the_post_waits_for_the_quiet_window(tmp_path, monkeypatch):
     to that push's check; the other lines stand (report mode: nothing committed, the same post)."""
     refused = "PNG not made: the PSD and its old PNG already disagreed outside your change (3.0% of pixels); export it in Photoshop"
     snack = _entry("Snack", export={"outcome": "refused", "why": refused, "gate": "G5"}, told=[refused])
-    bread = _entry("Bread", told=["the Ability layer is outside the Text group"])
-    kept = _entry("Kept", told=["the Ability layer is outside the Text group"])
+    bread = _entry("Bread", told=["timing tag (1GCD) not set in the stoogedings badge font"])
+    kept = _entry("Kept", told=["timing tag (1GCD) not set in the stoogedings badge font"])
     plan = _full_plan(tmp_path, [snack, bread, kept], mode="report")
     FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "pushed"), "X/Bread.psd": ("100644", "again"),
              "X/Bread.png": ("100644", "p1"), "X/Kept.psd": ("100644", "s1"), "X/Kept.png": ("100644", "p1")}).install(monkeypatch)
     now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
     waits = []
     report = cg.land(plan, quiet_from="2026-10-22T17:59:00Z", dry_run=True, sleep=waits.append, now=lambda: now)
-    assert waits and report["told"] == {"X/Snack.psd": [], "X/Bread.psd": [], "X/Kept.psd": ["the Ability layer is outside the Text group"]}
+    assert waits and report["told"] == {"X/Snack.psd": [], "X/Bread.psd": [], "X/Kept.psd": ["timing tag (1GCD) not set in the stoogedings badge font"]}
     post = cg.finish(plan, report)["content"]
     assert post.startswith("Alice pushed Kept with these issues:") and len(post.splitlines()) == 1
     comment = (Path(plan).parent / "report-landed.md").read_text()
@@ -683,7 +678,7 @@ def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatc
     tells nothing, and the comment keeps saying the writes are on the branch."""
     out = tmp_path / "plan"
     snack = _entry("Snack", fixed=["the Name layer is named 'NAME'"], export={"outcome": "re-exported", "changed_px": 5, "numbers": {}},
-                   told=["the Ability layer is outside the Text group"])
+                   told=["timing tag (1GCD) not set in the stoogedings badge font"])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
     plan = _full_plan(tmp_path, [snack])
@@ -692,7 +687,7 @@ def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatc
     report = cg.land(plan)
     assert report["sha"] == "" and report["error"] == "" and report["dropped"] == [] and not hub.commits
     assert sorted(report["already"]) == [["Snack", "X/Snack.png"], ["Snack", "X/Snack.psd"]]
-    assert report["told"] == {"X/Snack.psd": ["the Ability layer is outside the Text group"]}      # the PSD did not "change again"
+    assert report["told"] == {"X/Snack.psd": ["timing tag (1GCD) not set in the stoogedings badge font"]}      # the PSD did not "change again"
     comment = cg.landed_markdown(json.loads(Path(plan).read_text()), report)
     assert "Nothing new to land: 1 card already on the branch" in comment and "Fixed by the bot" in comment
     assert "Every write is already on the branch" in comment and "Not landed" not in comment and "Not fixed" not in comment
@@ -746,7 +741,7 @@ def test_a_rerun_that_cannot_read_the_branch_tells_no_write(tmp_path, monkeypatc
     says this run committed nothing. A first attempt that cannot read the head did commit nothing: it tells as before."""
     out = tmp_path / "plan"
     snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}},
-                   told=["the Ability layer is outside the Text group"])
+                   told=["timing tag (1GCD) not set in the stoogedings badge font"])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
     snack["fixed"] = ["the Name layer is named 'NAME'"]
@@ -763,9 +758,9 @@ def test_a_rerun_that_cannot_read_the_branch_tells_no_write(tmp_path, monkeypatc
         (out / name).unlink(missing_ok=True)
     assert cg.main(["land", "--plan", plan, "--rerun"]) == 1
     landed = json.loads((out / "landed.json").read_text())
-    assert landed["unread"] and landed["told"] == {"X/Snack.psd": ["the Ability layer is outside the Text group"]}
+    assert landed["unread"] and landed["told"] == {"X/Snack.psd": ["timing tag (1GCD) not set in the stoogedings badge font"]}
     post = json.loads((out / "discord-final.json").read_text())["content"]
-    assert "PNG not made" not in post and "could not fix" not in post and "outside the Text group" in post
+    assert "PNG not made" not in post and "could not fix" not in post and "badge font" in post
     comment = (out / "report-landed.md").read_text()
     assert "Not landed: API 502. Nothing was committed by this run; an earlier run may have landed it" in comment
     assert "- Not committed by this run: an earlier run may have landed it (the branch could not be read)" in comment
@@ -780,11 +775,11 @@ def test_a_bot_change_in_the_window_keeps_the_lines(tmp_path, monkeypatch):
     """A PSD a bot commit changed during the window (no run follows it): its lines are still told, and its fix that
     could not land is told too. A person's change leaves the card to that push's run."""
     out = tmp_path / "plan"
-    snack = _entry("Snack", told=["the Ability layer is outside the Text group"], fixed=["the Name layer is named 'NAME'"])
+    snack = _entry("Snack", told=["timing tag (1GCD) not set in the stoogedings badge font"], fixed=["the Name layer is named 'NAME'"])
     _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
     plan = _full_plan(tmp_path, [snack])
     FakeHub({"X/Snack.psd": ("100644", "baked"), "X/Snack.png": ("100644", "p1")}).install(monkeypatch)
-    for author, told in ((("AutoCroissant", gc.AUTHOR["email"]), ["the Ability layer is outside the Text group",
+    for author, told in ((("AutoCroissant", gc.AUTHOR["email"]), ["timing tag (1GCD) not set in the stoogedings badge font",
                                                                     "the Name layer is named 'NAME' (the bot could not fix it: "
                                                                     "X/Snack.psd changed on the branch)"]),
                          (("Bob", "bob@example.com"), [])):
@@ -991,12 +986,10 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     assert len(by) == 19
     assert {name for name, c in by.items() if c["export"].get("outcome") == "current"} == {"God Tamer", "Bubble", "12 Reactions2"}
     assert all(not c["writes"] for c in data["cards"])
-    assert data["discord"]["content"].startswith("MichaelJSr pushed God Tamer (added Star group; Group 2 renamed 'Stars'; "
-                                                 "Star/Delicate Flower moved into Star) with these issues: the Ability "
-                                                 "layer is outside the Text group. [dc37f4ad]")
+    assert by["God Tamer"]["changes"] == ["added Star group", "Group 2 renamed 'Stars'", "Star/Delicate Flower moved into Star"]
     assert by["Bubble"]["changes"] == ["added Stars group", "starfish14 moved into Stars"]
     assert by["12 Reactions2"]["changes"] == ["removed Item shop copy"]
-    assert len(data["discord"]["content"].splitlines()) == 1
+    assert data["discord"] == {}            # God Tamer's one issue was R3's layout, dropped by the owner (2026-10-23)
 
 
 # ========================

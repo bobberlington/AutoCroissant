@@ -26,6 +26,10 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
    ping and wording kept. Since 2026-10-23 card-check.yml posts there too, with no ping; `DISCORD_FONT_WEBHOOK` is deleted.
 3. *The guard tells font issues (R7)* in its standards-channel post too.
 
+**The owner's ruling (2026-10-23): R3 and R4 dropped.** The template layout (one visible Ability layer inside the Text
+group; the title in `Text/Name`) is the developers' freedom, and the bake handles those layouts. The two rules, their
+waivers and `card_guards.added()` (the new-card rules, R4's only use) are gone; every other rule stays.
+
 **What the measurements changed in the design (section 2).** (The first two bullets argued for the composite as the PNG's
 source; ruling 1 overrules them: the PNG is the fork's render, section 17. They stand as measurements.)
 - **Photoshop's own composite.** Every card PSD stores the flattened image Photoshop saved ("Maximize Compatibility"): 812
@@ -194,8 +198,8 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 |---|---|---|
 | PSD modified, PNG not | stale candidate (section 5; G5's burst anchor) | check |
 | PSD modified, PNG modified | none | check; R10 (PNG matches the composite; comment only) |
-| PSD added, no PNG in the tree | new-card export (5.5) | check, with the new-card rules (R4) |
-| PSD added with its PNG (the usual new card), or with its PNG deleted | none | check, with the new-card rules (R4); R10 |
+| PSD added, no PNG in the tree | new-card export (5.5) | check |
+| PSD added with its PNG (the usual new card), or with its PNG deleted | none | check; R10 |
 | PSD added, a PNG of that stem already in the tree and not in the push | stale candidate against that PNG | check |
 | PSD renamed (one blob deleted and added under another path, same sha), no PNG at the new path | copy the old PNG's bytes to the new path (no new blob); report the old PNG as left behind (comment only) | none (same blob) |
 | PSD renamed with changes (different sha) | a delete plus an add: new-card export; the old PNG is reported as left behind | check |
@@ -358,13 +362,13 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 - "At 6e50c3ee" counts every card that rule flags in the whole tree today; after waivers is what a push of that card would
   report.
 - Lists are in `rules_summary.json`.
+- R3 (one visible `Text/Ability` layer, L5) and R4 (`Text/Name` holds the title, L6) were dropped by the owner on
+  2026-10-23 (the developers' freedom; the bake handles those layouts). At 6e50c3ee they flagged 47 and 150 cards.
 
 | Rule | Standard (ledger) | Class | Scope | At 6e50c3ee | After waivers |
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | exactly one visible `Text/Ability` text layer (L5, `card_standards._template_ability`; the bake takes any group since refused-layers) | report (moving a layer under `Text` adds the group's effects) | 651 | 47: 35 outside `Text`, 7 hidden, 5 with several | 42 (5 several-Ability cards waived, Q2) |
-| R4 | a visible `Text/Name` text layer holds the title (L6, `card_standards._template_name`; the bake takes the parser's title) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 150: 84 titled by a card-named layer, 50 no `Text/Name`, 13 no `Text` group, 3 hidden | 0 (every existing deviation is waived; a new PSD, or a push that loses its `Text/Name`, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
@@ -384,13 +388,12 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 
 **6.2 Waivers.**
 - **Class waivers** are the owner's decisions, kept in code (`card_standards.WAIVED`), each with its date and ledger entry:
-  - Q2: several-Ability and multi-creature cards;
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
-  - "leave the Name layers" (R4 existing);
   - BabaUI.
+  (Q2, several-Ability and multi-creature cards, and "leave the Name layers" went with R3 and R4 on 2026-10-23.)
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
-  the rule's code (`STD R3`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
+  the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
 - An issue the push introduced (absent from the old blob) is marked "(new)".
 
@@ -480,7 +483,7 @@ not land.**
   author name (review 4).
 - **Format:** one line per card, with what changed inside its PSD (7.5, up to 120 characters, whole phrases) and the
   masked link to the commit that last changed it (beyond the brief's literal line: section 15, item 6):
-  `Zomoroko pushed Skullord (Ability text: '(1PT)' -> '(1CD)'; added Ability FX: Blazing) with these issues: the Ability layer is outside the Text group. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
+  `Zomoroko pushed Skullord (Ability text: '(1PT)' -> '(1CD)'; added Ability FX: Blazing) with these issues: timing tag (1GCD) not set in the stoogedings badge font. [7cb4c867](https://github.com/MichaelJSr/TTSCardMaker/commit/7cb4c867...)`
   A new PSD, a PNG alone or a PSD whose push changed nothing but Photoshop's re-save noise has no parenthesis.
 - **Not in the post:** planned fixes and re-exports in `on` (they are not issues; report mode tells them, as it makes
   nothing, 6.3) and "PNG still current".
@@ -758,7 +761,7 @@ jobs:
   holds a runner up to about 31 min (free on a public repo).
 - Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
-  ["R3"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
+  ["R5"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
 - Choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
   copying the changed pixels into them (G8); R10 now stays in the comment (`TELL_PNG_MISMATCH = True` would post it: 0
   flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).
@@ -858,8 +861,8 @@ jobs:
   its `SPARSE_FILES`; timeouts 120/90/60.
 
 **Review fixes, second pass (2026-10-22):**
-- A PSD added with its PNG (case pair, no old blob) got R4 waived as an existing card; `card_guards.added()` now gives every
-  added PSD the new-card rules (`test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules`, measured first with God_Tamer's
+- A PSD added with its PNG (case pair, no old blob) got R4 waived as an existing card; `card_guards.added()` gave every
+  added PSD the new-card rules (both removed with R4 on 2026-10-23) (`test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules`, measured first with God_Tamer's
   layers on a scratch repo).
 - `card_standards.fix` named its temporaries by card key in a shared folder: two cards of one key in different folders,
   fixed at once in the process pool, could swap bytes. Each call now works in its own `mkdtemp` folder

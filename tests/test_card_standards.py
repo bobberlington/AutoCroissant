@@ -1,7 +1,7 @@
 """
 card_standards (guard 2 of the push guards): the rules on real cards of the clone (as of 6e50c3ee, from its history; the counts of
-docs/Campaigns/PUSH_GUARDS.md section 6 per card), the owner's waivers, "(new)" against the old blob, the R4 new-card and
-regression cases, and the two 0-pixel fixes on copies: R11's rename (told until the owner adds it to AUTO_FIX; only the
+docs/Campaigns/PUSH_GUARDS.md section 6 per card, less R3 and R4, dropped 2026-10-23), the owner's waivers, "(new)" against
+the old blob, and the two 0-pixel fixes on copies: R11's rename (told until the owner adds it to AUTO_FIX; only the
 names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
@@ -25,13 +25,13 @@ MEASURED = "6e50c3ee"                                        # the whole-tree ru
 STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title story out of sync (7b48db05 repaired it)
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
-    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R3", "R5"}, {"R4"}),
-    ("Auxiliary/Items/Lit_Bob-omb.psd", set(), {"R3"}),
+    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),
+    ("Auxiliary/Items/Lit_Bob-omb.psd", set(), set()),            # several Ability layers: the template layout, no rule
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
     ("Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd", {"R2"}, set()),
     ("Items/Equip/2 Stars/Fire_Staff.psd", set(), {"R5"}),
-    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4", "R7"}),
-    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2", "R3", "R4"}),
+    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R7"}),
+    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2"}),
 )
 
 
@@ -103,7 +103,7 @@ def test_rules_on_real_cards(clone, context, rel, told, waived):
 def test_wording(clone, context):
     rel = "Creatures/Kirby/3 Stars/Skullord.psd"
     lines = [i.line() for i in cs.reported(cs.check(_open(clone, rel), rel, context))]
-    assert lines == ["the Ability layer is outside the Text group", '"Blazing" is an overlay text layer, not an Ability FX: layer']
+    assert lines == ['"Blazing" is an overlay text layer, not an Ability FX: layer']
     rel = "Items/Active/2 Stars/Dirty_Bed.psd"
     assert [i.line() for i in cs.check(_open(clone, rel), rel, context)] == ["timing tag (1GCD) not set in the stoogedings badge font"]
 
@@ -132,32 +132,17 @@ def test_new_marks_against_the_old_blob(clone, context):
     clean = _open(clone, "Creatures/Other/3 Stars/Niko.psd")      # meets every rule
     assert cs.reported(cs.check(clean, "Creatures/Other/3 Stars/Niko.psd", context)) == []
     marked = cs.check(psd, rel, context, old=clean)
-    assert {i.code for i in marked if i.new and not i.waived} == {"R3", "R4", "R5"}    # R4: Text/Name lost is a regression
+    assert {i.code for i in marked if i.new and not i.waived} == {"R5"}
     assert all(i.line().endswith(" (new)") for i in marked if i.new)
-
-
-def test_r4_new_cards_and_regressions(clone, context, tmp_path):
-    rel = "Auxiliary/Minions/God_Tamer.psd"
-    psd = _open(clone, rel)
-    assert "R4" in _codes(cs.check(psd, rel, context), True)
-    assert "R4" in _codes(cs.check(psd, rel, context, added=True), False)
-    # a push that loses Text/Name: Mini Doomer's title renamed
-    edited = _open(clone, MINI_DOOMER)
-    psd_edit.name_layer(edited).name = "Title"
-    out = tmp_path / "Mini_Doomer.psd"
-    psd_edit.save_psd(edited, str(out), update_preview=False)
-    issues = cs.check(PSDImage.open(str(out)), MINI_DOOMER, context, old=_open(clone, MINI_DOOMER))
-    (name,) = [i for i in issues if i.code == "R4"]
-    assert not name.waived and name.new
 
 
 def test_problems_ok_cards_are_waived_by_class_only(clone, context):
     """Pix, Tainted Lazarus and Twin Emperors (problems_ok in Card Edits.json, for parser problems) report nothing today,
-    each issue waived by an owner's class decision: problems_ok itself waives no standard."""
+    any issue waived by an owner's class decision: problems_ok itself waives no standard."""
     for rel in ("Creatures/Kirby/3 Stars/Pix.psd", "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd",
                 "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"):
         issues = cs.check(_open(clone, rel), rel, context)
-        assert issues and cs.reported(issues) == [], rel
+        assert cs.reported(issues) == [], rel
         assert {issue.waived for issue in issues} <= {cs.WAIVED[code]["why"] for code in cs.WAIVED}, rel
     assert "cards_ok" not in cs.Context.__dataclass_fields__
 
