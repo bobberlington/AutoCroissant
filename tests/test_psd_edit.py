@@ -173,6 +173,17 @@ def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False, 
 # ========================
 # Pure functions (any psd-tools)
 # ========================
+def test_text_blends_follow_the_fork():
+    """A fork whose composite takes no per-layer text keywords renders its default and the straight mix, unpinned."""
+    class Fork:
+        def composite(self, viewport=None, ignore_preview=False, apply_icc=True, text_gamma=1.45):
+            return None
+
+    assert pe.text_blends(Fork()) == ["preview", "straight"]
+    assert pe.text_kwargs(Fork(), "preview", (7,)) == {}
+    assert pe.edited_ids([]) == ()
+
+
 def test_parity_bar():
     """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24."""
     assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH) == (2.0, 0.5, 24)
@@ -1135,6 +1146,21 @@ def test_baseline_reads_a_kept_raster_off_the_preview(clone):
     _, measured = pe.baseline(psd, png, region, pe.export_icc(psd, png))
     assert measured["text"] == "preview"
     assert not pe._within_bar(pe._measure(pe.render_region(psd, region, pe.export_icc(psd, png), "gamma"), png.crop(region)))
+
+
+@text_engine
+def test_an_edited_layer_goes_on_in_the_gamma(clone):
+    """The Freezer's title, read straight off its preview, is pinned to the text gamma once edited: the preview still
+    shows the old text."""
+    psd_path, png_path = _card(clone, "Field/1 Stars/The_Freezer.psd")
+    psd, png = PSDImage.open(psd_path), Image.open(png_path).convert("RGBA")
+    layer = pe.name_layer(psd)
+    region = pe._pad(tuple(layer.bbox), fx_pad(layer), psd)
+    icc = pe.export_icc(psd, png)
+    pinned = np.asarray(pe.render_region(psd, region, icc, "preview", (layer.layer_id,)))
+    assert np.array_equal(pinned, np.asarray(pe.render_region(psd, region, icc, "gamma")))
+    assert not np.array_equal(pinned, np.asarray(pe.render_region(psd, region, icc, "preview")))
+    assert pe.text_kwargs(psd, "straight", (layer.layer_id,)) == {"text_gamma": None}
 
 
 @text_engine
