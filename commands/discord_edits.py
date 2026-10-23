@@ -5,7 +5,8 @@ commit per command; the commit never carries a pickle. It goes through card_bake
 the new head when main moved) and git_commit (the API with the bot's GIT_TOKEN, else the history clone pushed over SSH: the
 path /bake_cards and /update_tts_save commit by). Its subject starts "Discord:", it carries an Edit-by trailer, and each
 entry it changes gets _by ("discord:<username>") and _at (one holding PSD fields keeps its stamps when the edit sets
-none: their editor keeps the bake credit); a value the head already has is no change (no op, no restamp, no commit).
+none: their editor keeps the bake credit, and the fields the edit sets go in its _bot with their own credit in _credit);
+a value the head already has is no change (no op, no restamp, no commit).
 Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
 
 Fields: author -> a [cards] line in Card Authors.txt; ability, hp/def/atk/spd -> the "psd" kind (they persist and show
@@ -49,6 +50,7 @@ EDIT_BY = "Edit-by"                             # the trailer key (card_bake.EDI
 DISCORD = "discord:"                            # an editor's _by and Edit-by: "discord:<username>" (card_bake.DISCORD)
 BOT = "AutoCroissant"                           # the migration's _by (build_site.BOT_AUTHOR: counted for nobody)
 BOT_FIELDS = "_bot"                             # an entry's fields the migration set under another editor's _by (edit.js, build_site)
+CREDIT = "_credit"                              # {field: {"_by", "_at"}}: who set a _bot field from Discord (changelog, build_site)
 FIELDS = frozenset(ORDER)
 GROUP = re_compile(r"# --- credited to (.+) \((\d+)\) ---")     # authorsFile's group headers (fullmatch)
 RULEBOOK_GROUP = "# --- rulebook pages ---"
@@ -156,19 +158,39 @@ def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edits_file for a Discord edit. No op: the head's text as it is (never reformatted). An entry holding PSD fields
     keeps its _by and _at when its op sets none of them: the bake credits the entry's _by, and a discord: one gets no
-    Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor.
+    Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor. The fields the op
+    sets there are listed in its _bot (not that editor's) and credited in its _credit; a _credit field out of _bot goes.
     """
     ops = [op for op in ops if op.get("set") or op.get("unset")]
     if not ops:
         return text
     psd = lambda fields: any(CardEdits.KIND.get(f) == "psd" for f in fields)
-    keep = {CardAuthors.key(op["key"]) for op in ops if not psd(op.get("set") or {})}
+    touched = {CardAuthors.key(op["key"]) for op in ops}
+    sets: dict = {}
+    for op in ops:
+        sets.setdefault(CardAuthors.key(op["key"]), set()).update(op.get("set") or ())
     data = loads(edits_file(text, ops, at, by))
     before = _entries(text)
-    for key, fields in data["cards"].items():
-        old = before.get(CardAuthors.key(key))
-        if CardAuthors.key(key) in keep and psd(fields) and isinstance(old, dict) and old.get("_by"):
-            fields.update({k: old[k] for k in ("_by", "_at") if k in old})
+    for key, fields in list(data["cards"].items()):
+        k = CardAuthors.key(key)
+        if k not in touched:
+            continue
+        old = before.get(k)
+        bot = list(fields.get(BOT_FIELDS) or [])
+        was = fields.get(CREDIT) if isinstance(fields.get(CREDIT), dict) else {}
+        credit = {f: v for f, v in was.items() if f in bot}
+        stamps = {s: fields[s] for s in ("_by", "_at")}
+        if not psd(sets[k]) and psd(fields) and isinstance(old, dict) and old.get("_by"):
+            stamps = {s: old[s] for s in ("_by", "_at") if s in old}
+            if old["_by"] != by:                                # not the stamp's editor: per-field credit
+                mine = [f for f in ORDER if f in sets[k] and f in fields]
+                bot += [f for f in mine if f not in bot]
+                credit.update({f: {"_by": by, "_at": at} for f in mine})
+        if bot == (fields.get(BOT_FIELDS) or []) and credit == (fields.get(CREDIT) or {}):
+            fields.update(stamps)                               # its layout kept
+            continue
+        rest = {f: v for f, v in fields.items() if f not in ("_by", "_at", BOT_FIELDS, CREDIT)}
+        data["cards"][key] = {**rest, **({BOT_FIELDS: bot} if bot else {}), **({CREDIT: credit} if credit else {}), **stamps}
     return dump_edits(data)
 
 

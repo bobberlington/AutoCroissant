@@ -55,6 +55,7 @@ CHANGELOG_DIR = "changelog"                              # db/changelog/YYYY-MM.
 POSTED_JSON = "posted.json"                              # db/changelog/posted.json: {"seq", "push"} of the last post
 BOT = "AutoCroissant"                                    # the bot's _by (discord_edits.BOT): no website edit
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (discord_edits.BOT_FIELDS)
+CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (discord_edits.CREDIT)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 
 
@@ -173,14 +174,22 @@ def is_bot(by) -> bool:
 
 def edit_credit(meta, fields) -> Optional[str]:
     """
-    Who an edited event's fields are credited to: its entry's _by, the bot for fields in its _bot (the migration's). A
-    mix: the _by. meta: the entry's _-keys, or its _by alone.
+    Who an edited event's fields are credited to: its entry's _by; a field in its _bot, its _credit editor (a Discord
+    edit's), else the bot (the migration's). A mix: the _by. meta: the entry's _-keys, or its _by alone.
     """
     if not isinstance(meta, dict):
         return meta
     by = meta.get("_by")
     bot = meta.get(BOT_FIELDS) if isinstance(meta.get(BOT_FIELDS), list) else []
-    credits = {BOT if EDIT_FIELD.get(f, f) in bot else by for f in fields}
+    credit = meta.get(CREDIT) if isinstance(meta.get(CREDIT), dict) else {}
+
+    def of(field: str):
+        name = EDIT_FIELD.get(field, field)
+        if name not in bot:
+            return by
+        found = credit.get(name)
+        return found.get("_by") if isinstance(found, dict) and isinstance(found.get("_by"), str) else BOT
+    credits = {of(f) for f in fields}
     return by if by in credits or len(credits) != 1 else credits.pop()
 
 
