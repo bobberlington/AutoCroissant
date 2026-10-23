@@ -255,7 +255,7 @@ def test_a_rename_that_edited_the_psd_follows_its_art():
 def test_collapse_keeps_the_first_of_a_run_and_folds_the_last_into_the_card():
     """/update_stats' cleanup (no records): [A 100, A 200 (another blob), B 300, B 400] + current B 500: the first A stays
     with its date, both B versions go into the current card, which starts at 300 (a legacy record: no git here)."""
-    a1, a2 = _card(timestamp=100.0, blob_sha="b1"), _card(timestamp=200.0, blob_sha="b2", parser_version=2)
+    a1, a2 = _card(timestamp=100.0, blob_sha="b1", **V2), _card(timestamp=200.0, blob_sha="b2", **V2)
     b1, b2 = _card(ability="B.", timestamp=300.0), _card(ability="B.", timestamp=400.0, parsed_values={"name": "a"})
     current = _card(ability="B.", timestamp=500.0, blob_sha="b5")
     kept, dropped = ch.collapse([a1, a2, b1, b2], current)
@@ -406,6 +406,70 @@ def test_one_form_for_the_same_data():
     named = _card(display_name="A", **V2)
     assert ch.same_data(named, _card(**V2)) and ch.data_of(named)["display_name"] is None
     assert ch.same_data(_card(types=["offense"], **V2), _card(types=["negation"], **V2))
+
+
+NO_LAYER = ["NO ABILITY LAYER"]
+
+
+def test_a_reading_that_knew_less_never_stands_for_one_that_knew_more():
+    """A commit with a broken ability layer (U) knew less than X: U never absorbs X (as the card after it, a run's
+    member or an archived record), while the reading that knew more absorbs U. Two readings each blind to a field the
+    other knew never join."""
+    x = _card(ability="Text X.", timestamp=100.0, blob_sha="b1", **V2)
+    u = _card(ability=None, timestamp=200.0, blob_sha="b2", problems=NO_LAYER, **V2)
+    assert ch.knows(x, u) and not ch.knows(u, x) and ch.same_data(x, u)
+    assert ch.collapse([x], u) == ([x], []) and ch.start(u) == (200.0, None)                  # U holds nothing of X
+    y = _card(ability="Text Y.", timestamp=300.0, blob_sha="b3", **V2)
+    assert ch.collapse([x, u], y) == ([x], [u]) and ch.start(x) == (100.0, None)              # U goes into X
+    assert ch.collapse([deepcopy(u)], y)[0] == [] and ch.start(y) == (200.0, None)            # into the card after it
+    gone = _card(ability=None, timestamp=200.0, blob_sha="b2", problems=NO_LAYER,
+                 archived={"at": 250.0, "path": "Items/A.psd", "blob": "b2", "commit": None}, **V2)
+    x2 = _card(ability="Text X.", timestamp=100.0, blob_sha="b1", **V2)
+    assert ch.collapse([x2, gone], None) == ([x2, gone], [])
+    stars = _card(stars=0, timestamp=100.0, blob_sha="b1", problems=["NO STARS FOUND"], **V2)
+    ability = _card(ability=None, stars=3, timestamp=200.0, blob_sha="b2", problems=NO_LAYER, **V2)
+    assert not ch.same_data(stars, ability) and ch.collapse([stars, ability], y) == ([stars, ability], [])
+    early, read = _card(timestamp=100.0), _card(timestamp=200.0, blob_sha="b2", **V2)       # equal, early read no title
+    assert ch.collapse([early, read], y) == ([read], [early]) and ch.start(read) == (100.0, None)
+
+
+def test_legacy_history_keeps_the_card_a_broken_layer_replaced():
+    """Legacy /update_stats: X, then a commit without its ability layer (U), then Y: X stays a version, U goes into Y
+    (the reading that knew more), and the next cleanup changes nothing. History [X], card Y, then U: Y is kept."""
+    from commands.card_data import CardBuild
+    x = _card(ability="Old text X.", timestamp=1000.0, blob_sha="a" * 40, **V2)
+    u = _card(ability=None, timestamp=2000.0, blob_sha="b" * 40, problems=NO_LAYER, **V2)
+    y = _card(ability="New text Y.", timestamp=3000.0, blob_sha="c" * 40, **V2)
+    build = CardBuild.__new__(CardBuild)
+    build.db, build.legacy = _db({}), True
+    for old, new in ((x, u), (u, y)):
+        build.db.stats["A"], build.replaced = deepcopy(new), {"A": deepcopy(old)}
+        build._record_history()
+    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X."]
+    assert build.db.stats["A"].ability == "New text Y." and ch.start(build.db.stats["A"]) == (2000.0, None)
+    assert ch.dedupe(build.db.stats, build.db.old_stats) == []
+    build.db = _db({"A": deepcopy(u)}, {"A": [deepcopy(x)]})
+    build.replaced = {"A": deepcopy(y)}
+    build._record_history()
+    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X.", "New text Y."]
+    assert ch.dedupe(build.db.stats, build.db.old_stats) == [] and ch.start(build.db.stats["A"]) == (2000.0, None)
+
+
+def test_build_and_untag_keep_the_card_a_reading_that_knew_less_replaced():
+    """The data build: a new blob, or the same blob read again, without its ability layer keeps the card before as a
+    version. A stale archived record the listed card knew less than stays history (untagged)."""
+    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
+    for blob_sha in ("b2", "b1"):
+        old = _card(blob_sha="b1", timestamp=1000.0, **V2)
+        old.version = ch.start_of(old, index, None)
+        db = _db({"A": _card(ability=None, blob_sha=blob_sha, timestamp=2000.0, problems=NO_LAYER, **V2)})
+        assert ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index) == [("A", "psd" if blob_sha == "b2" else "reparse")]
+        assert [v.ability for v in db.old_stats["A"]] == ["Text."]
+        assert ch.dedupe(db.stats, db.old_stats) == []
+    record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"}, **V2)
+    db = _db({"A": _card(ability=None, path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0, problems=NO_LAYER,
+                         **V2)}, {"A": [record]})
+    assert db.drop_stale_archives() and db.old_stats["A"] == [record] and record.archived is None
 
 
 def _creature(name, series, subseries=None, ability="Old.", timestamp=100.0):
