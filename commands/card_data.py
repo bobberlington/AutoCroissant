@@ -940,6 +940,20 @@ def history_line(normalized: list, deduped: list, dated: list, recovered=None, u
     return "History: " + "; ".join(parts) + "."
 
 
+def cleaned(db: StatsDatabase, index=None, pickles=None) -> Optional[str]:
+    """clean_history's line, run on a copy of db's cards and history that goes into db only when it ran through and
+    changed something: an error in it leaves db as it was (a true skip, never half a cleanup saved)."""
+    trial = StatsDatabase()
+    trial.stats, trial.old_stats = deepcopy(db.stats), deepcopy(db.old_stats)
+    line = history_line(*clean_history(trial, index, pickles), db=trial)
+    if line:
+        db.stats.clear()
+        db.stats.update(trial.stats)
+        db.old_stats.clear()
+        db.old_stats.update(trial.old_stats)
+    return line
+
+
 def report_archive(build: CardBuild, gone: list, backfilled: list) -> None:
     """The archived (with any side-file lines still under their name; alt-art duplicates apart), backfilled and
     restored names, one message each."""
@@ -986,7 +1000,7 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     build.details = psd_details.load()
     try:                                            # one-time (2026-10-23); a failure skips it with one line
         index = history_index()
-        line = history_line(*clean_history(db, index, bot_pickles(db) if index is not None else None), db=db)
+        line = cleaned(db, index, bot_pickles(db) if index is not None else None)
     except Exception as e:                          # noqa: BLE001 - the cleanup never stops an update
         line = None
         build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
@@ -1809,6 +1823,7 @@ __all__ = [
     'build',
     'can_prune',
     'clean_history',
+    'cleaned',
     'gates',
     'history_index',
     'history_line',

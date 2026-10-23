@@ -1131,6 +1131,26 @@ def test_a_failing_history_cleanup_skips_with_one_line(github, monkeypatch, caps
     assert set(_saved()[0]) >= {"Mini Doomer", "The Freezer"}
 
 
+def test_a_failing_history_cleanup_saves_none_of_it(github, psds, monkeypatch, capsys):
+    """A cleanup step that raises after an earlier one changed history (here the impossible values): none of it is
+    saved, though the run saves its own changes."""
+    import commands.card_history as ch
+
+    def boom(*a, **kw):
+        raise RuntimeError("boom")
+    _run()
+    old_card = pa.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Older.",
+                           stats=pa.CardStats(110, 110, 110, 110), timestamp=TIME - 5)
+    _seed_old_stats(old_card)
+    monkeypatch.setattr(ch, "dedupe", boom)
+    github.files[DOOMER] = psds[OTHER]                          # a change: the run saves
+    capsys.readouterr()
+    _run()
+    assert "History cleanup skipped (RuntimeError: boom)." in capsys.readouterr().out
+    first = _saved()[1]["Mini Doomer"][0]
+    assert (first.ability, first.stats.hp, first.problems) == ("Older.", 110, [])
+
+
 def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     """Every stats.pkl reader skips an archived card: the query dataframes and DSL, /query's card lookup, titles,
     /list_orphans, /mass_replace, the exports and the problem reports. aliases.pkl keeps its aliases."""
