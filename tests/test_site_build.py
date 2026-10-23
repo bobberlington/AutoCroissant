@@ -1,7 +1,8 @@
 """
 The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline: the same site from the
 bot's pickles and from the card sync's db/ (CARD_DATA_DIR, load_card_data: the shadow's comparison in small), the current
-text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to. Loads
+text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, Pacific
+contribution months. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
@@ -26,6 +27,7 @@ REBASED = 20 * DAY                            # committer time after author time
 ALPHA = "Creatures/Other/2 Stars/Alpha"
 MELON = "Items/Heal/2 Stars/Watermelon"
 PALACE = "Field/4 Stars/White_Palace.psd"
+BOT_DATA = ("stats.pkl", "old_stats.pkl", "psd_details.json")    # what db/ replaces
 
 
 @pytest.fixture(scope="module")
@@ -130,7 +132,13 @@ def _build(bs, monkeypatch, repo, out, data_dir=""):
     monkeypatch.setattr(bs, "CARD_DATA_DIR", data_dir)
     monkeypatch.setattr(bs, "MIN_CARDS", 1)
     monkeypatch.setattr(bs, "_bot_raw", "local://")
-    monkeypatch.setattr(bs, "fetch", lambda url, tries=3, accept=None: (repo["pickles"] / url[len("local://"):]).read_bytes())
+
+    def fetch(url, tries=3, accept=None):
+        name = url[len("local://"):]
+        if data_dir and name in BOT_DATA:               # with CARD_DATA_DIR only db/ can give them
+            raise OSError(f"{name} fetched with CARD_DATA_DIR set")
+        return (repo["pickles"] / name).read_bytes()
+    monkeypatch.setattr(bs, "fetch", fetch)
     monkeypatch.setattr(sys, "argv", ["build_site.py"])
     bs.main()
     data = out / "dist" / "data"
@@ -213,3 +221,37 @@ def test_a_text_starts_with_the_versions_that_already_held_it(bs):
     assert bs.text_since(v(300, "A.", start=200), [v(100, "B.")], "A.") == 200         # the bot's carried start
     assert bs.text_since(v(300, "A.", start=500), [v(100, "B."), v(250, "A.")], "A.") == 250   # an edit after the PSD
     assert bs.text_since(v(300, "A."), None, "A.") == 300 and bs.text_since(bs.CardInfo(), [], "A.") is None
+
+
+def test_no_readable_stats_json_stops_the_build(bs, repo, tmp_path, monkeypatch):
+    """CARD_DATA_DIR without a readable stats.json: no site, never one from the pickles instead."""
+    stats = repo["db"] / "stats.json"
+    for text in (None, "not json", '{"schema": 1, "cards": []}', '{"schema": 2, "cards": {}}'):
+        stats.unlink(missing_ok=True)
+        if text is not None:
+            stats.write_text(text, encoding="utf-8")
+        with pytest.raises(SystemExit, match=r"can't load the card data \("):
+            _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
+
+
+def test_contribution_months_are_pacific(bs):
+    """A commit on the evening of Oct 31 in Pacific time (Nov 1 in UTC) counts in October, as the site dates it."""
+    if bs.analytics.ZONE_MISSING:
+        pytest.skip("no tz database")
+    ts = 1793502000                                # 2026-11-01 03:00 UTC, 2026-10-31 20:00 PDT
+    commits = [("a" * 40, ts, "Maker", "maker@example.com", "Alpha", [("M", "1" * 40, "2" * 40, f"{ALPHA}.psd")], [])]
+    people = bs.contributions([], {}, [], {}, commits)["people"]
+    assert [(p["key"], p["months"]) for p in people] == [("Maker", [["2026-10", 0, 0, 1]])]
+
+
+def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, monkeypatch):
+    """A duplicate whose Card Edits.json entry sets its ability gets the PSD's history against that text: its own
+    text is never listed as an older one, and the original keeps its History."""
+    edits = repo["root"] / "site" / "Card Edits.json"
+    edits.parent.mkdir()
+    edits.write_text(json.dumps({"cards": {"Watermelon2": {"ability": "Heal 1."}}}), encoding="utf-8")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards = _by_name(out["cards.json"]["cards"])
+    melon, dup = cards["Watermelon"], cards["Inconspicuous Watermelon"]
+    assert dup["ability"] == "Heal 1." and "hv" not in dup and dup["id"] not in out["history.json"]
+    assert out["history.json"][melon["id"]] == [{"ts": repo["t"][0], "ability": "Heal 1."}]
