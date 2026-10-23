@@ -471,8 +471,8 @@ class CardBuild:
             print(f"{changed} creation dates set from {CREATED_PATH} and first uploads.")
         missing = sorted(n for n, card in self.db.stats.items() if uploads[n] and CardAuthors.key(n) not in dates.cards)
         if missing:
-            print(f"{len(missing)} cards not in {CREATED_PATH}, dated by their first upload (python -m "
-                  f"commands.discord_edits created adds them): {', '.join(missing[:10])}")
+            print(f"{len(missing)} cards not in {CREATED_PATH}, dated by their first upload until it has them "
+                  f"(python -m commands.discord_edits created): {', '.join(missing[:10])}")
         return changed
 
     def _icons_from_local(self, local_path: str) -> IconVocabulary:
