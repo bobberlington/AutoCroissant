@@ -186,7 +186,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    and Bottom value - 10 (`psd_edit.set_stat`). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
-   `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`. Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
+   `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
+   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
    deleted and one is cut per styled status word in the new text (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat,
    named as `Effect Layers.jsx` names them): the JSX's key copy (the word's runs white, the rest black) laid out and rasterized
    again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1), the ability's own raster
