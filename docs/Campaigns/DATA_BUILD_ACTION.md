@@ -401,7 +401,8 @@ github_api reads it inside a try/except and takes the token from the environment
 6. **Parse and details,** with hook (c): an exception in `parse` or `_gather_details` for one PSD counts that card as failed
    (`pending.failed`), keeps its old data, and the run goes on.
 7. **Authors, edits, duplicates.** As today, except one input: `_duplicate_name` reads the duplicate's `Card Edits.json`
-   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main. Then every card's `created` from
+   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main, only when a duplicate needs a name and
+   `Card Edits.json` has no `aliases_moved` (2026-10-23), so deleting the file at step 10 breaks no build. Then every card's `created` from
    `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.discord_edits created` from
    the Discord archive), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
    upload is earlier and the entry isn't a hand one; a card the file misses (one added since the last `created` run)
@@ -484,7 +485,9 @@ github_api reads it inside a try/except and takes the token from the environment
   was parsed at. Both readers key history by
   name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
   version's own path.
-- **Duplicates** (`duplicate_of`) get no versions; they are copies of their original.
+- **Duplicates** (`duplicate_of`) get no versions; they are copies of their original. Their `version` is a copy of the
+  original's, made after the original's own is set (2026-10-23): before, a duplicate copied a re-parsed original's empty
+  record, so a full re-parse and an incremental build disagreed and the next run rewrote 6 duplicates with no input change.
 - **Seed pass** (once; idempotent afterwards, so a later run changes nothing):
   - drop the duplicates (`card_history.collapse`, never one tagged `archived`): of each run of consecutive versions with
     the same data the first stays; a run with the current card's data (or ending in the archived record) goes into that
@@ -616,9 +619,10 @@ github_api reads it inside a try/except and takes the token from the environment
   - `conftest.real_stats` keeps reading the root stats.pkl until step 10, then reads `db/stats.json` from the Mac clone's
     `origin/data`.
 - **Diagnostics:**
-  - `diff_stats.py` and `inspect_pickle.py` (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) also accept a
-    `.json` path, loaded through card_db, so the pre-push gate becomes a review of the data commit. The job summary already
-    holds the same diff.
+  - `diff_stats.py` and `inspect_pickle.py` (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) also read
+    a `db/` folder, a `stats.json` or a data commit (`--git`, e.g. `origin/data` in a TTSCardMaker clone) through
+    `card_db.read_cards`, with no config.py (built 2026-10-23; the diagnostics skill's Workflow 4 is the shadow's daily
+    check). So the pre-push gate becomes a review of the data commit. The job summary already holds the same diff.
   - `export-pickles` turns any `db/` back into pickles for the older tooling.
 
 ## 11. The bot afterwards
@@ -696,13 +700,13 @@ github_api reads it inside a try/except and takes the token from the environment
 |---|---|
 | `new` | a name not seen before |
 | `restored` | an archived name whose PSD is back |
-| `changed` | data fields changed and the blob changed |
+| `changed` | data fields changed and the blob changed: the PSD's own (its parse with `parsed_values` put back) |
 | `art` | the blob changed, the data didn't |
 | `reparse` | same blob, newer parser, data changed; summarised as one line |
 | `moved` | only the path changed |
 | `renamed` | archived A plus new B with the same blob |
 | `archived` | the PSD left the card repo |
-| `edited` | a `Card Edits.json` entry changed (`edit_by` from `_by`) |
+| `edited` | a `Card Edits.json` entry changed (`edit_by` from `_by`); also beside a re-read PSD's `art` or `changed` in the same build (2026-10-23: Metal General and Masked Dedede had posted as PSD changes) |
 | `authors` | only the author changed through Card Authors.txt |
 
 A duplicate's change is listed under its original.
@@ -723,8 +727,9 @@ A duplicate's change is listed under its original.
   - Restored.
   - Database edits: "Name: subseries → … (by …, on the website / via Discord)".
   - One line for parser re-reads.
-- **Links.** Each card links to `SITE_URL/c/<slug>/`; when the card has no slug yet (a new card the site has not built), the
-  link falls back to `#/cards?q=`.
+- **Links.** Each card links to `SITE_URL/c/<slug>/`, the slug found by the site's `key` (the database name; `name` is the
+  shown title); when the card has no slug yet (a new card the site has not built), the link falls back to `#/cards?q=`.
+  A rulebook page (not in `cards.json`) links the rulebook searched for it, `#/rules?q=` (2026-10-23).
 - **Limits.** Discord allows at most 10 embeds, 4,096 characters per description and 6,000 characters per message in all.
   Anything past that in one push becomes "N more on the website" (`#/changes/changelog`). At most 20 messages per run, about
   one a second (webhooks allow roughly 5 per 2 s); the rest wait for the next run, through the cursor.

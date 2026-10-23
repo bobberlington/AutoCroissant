@@ -1,6 +1,6 @@
 ---
 name: autocroissant-diagnostics-and-tooling
-description: "Load this skill whenever you need to MEASURE something in AutoCroissant instead of eyeballing it — trigger phrases include \"diagnose\", \"inspect pickle\", \"dump layers\", \"trace injection\", \"diff stats\", \"is the database healthy\", \"measure why ONE specific card parsed the way it did\", \"what changed between two runs\", \"run the pre-push pickle diff (diff_stats)\", \"measure\", \"verify the parse\", or any symptom like wrong [type] placement in ability text, missing stats, a card with the wrong type, or a suspicious stats.pkl before a commit. It documents the five read-only diagnostic scripts in .claude/skills/autocroissant-diagnostics-and-tooling/scripts/ (dump_psd_layers.py, parse_one.py, gap_trace.py, inspect_pickle.py, diff_stats.py): exact invocations, annotated golden outputs, failure modes, the pre-pickle-push diff gate, the single-card investigation pipeline, the DB health-check cadence, and the conventions for adding a new diagnostic script."
+description: "Load this skill whenever you need to MEASURE something in AutoCroissant instead of eyeballing it — trigger phrases include \"diagnose\", \"inspect pickle\", \"dump layers\", \"trace injection\", \"diff stats\", \"is the database healthy\", \"measure why ONE specific card parsed the way it did\", \"what changed between two runs\", \"run the pre-push pickle diff (diff_stats)\", \"measure\", \"verify the parse\", or any symptom like wrong [type] placement in ability text, missing stats, a card with the wrong type, or a suspicious stats.pkl before a commit. It documents the five read-only diagnostic scripts in .claude/skills/autocroissant-diagnostics-and-tooling/scripts/ (dump_psd_layers.py, parse_one.py, gap_trace.py, inspect_pickle.py, diff_stats.py; the last two read db/ JSON too): exact invocations, annotated golden outputs, failure modes, the pre-pickle-push diff gate and the shadow's daily check, the single-card investigation pipeline, the DB health-check cadence, and the conventions for adding a new diagnostic script."
 ---
 
 # AutoCroissant diagnostics and tooling
@@ -12,11 +12,18 @@ into numbers you can compare, diff, and re-run. All five are read-only: they nev
 never touch the network, never run the bot.
 
 All commands below assume cwd = repo root `/Users/michaelsrouji/Desktop/AutoCroissant`.
-Three of the five (`parse_one.py`, `gap_trace.py`, `inspect_pickle.py`) also work from anywhere —
-they derive the repo root from their own location and `chdir` there at import. `diff_stats.py`
-does NOT chdir: relative `.pkl` arguments resolve against your SHELL's cwd, so run the push gate
+Two of the five (`parse_one.py`, `gap_trace.py`) also work from anywhere —
+they derive the repo root from their own location and `chdir` there at import. `inspect_pickle.py`
+reads the repo root's pickles from anywhere without a chdir (2026-10-23). `diff_stats.py`
+does NOT chdir: relative arguments resolve against your SHELL's cwd, so run the push gate
 from the repo root (or pass absolute pickle paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
+
+**The data build's JSON (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read the card data in any of its
+forms through `commands.card_db.read_cards`: a `stats.pkl` or `stats.json` (the old_stats file beside it is the
+history), a folder of pickles, a `db/` folder (or a folder holding `db/`, such as an Actions artifact), or a data
+commit of `--git`'s repo (`origin/data` in a TTSCardMaker clone). Neither needs `config.py` any more: pickles load
+through card_db's allow-list unpickler, which knows only the card classes.
 
 **Noise lines**: scripts that load the DB print `Trying to open stats.pkl` / `Loaded existing stats...`
 progress lines. Since 2026-10-20 the `Git token found, API limited to 5000 requests/hour.` line is
@@ -41,7 +48,9 @@ before assuming a regression.
 | Why is a `[type]` injected in the wrong place / missing? | `gap_trace.py` | psd path |
 | What would /update_stats extract for one card? | `parse_one.py` (add `--with-db` to match a real run) | psd path |
 | Is this pickle safe to push? | `diff_stats.py` HEAD vs working (the push gate) | two pkl paths |
-| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two pkl paths |
+| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two pickles, db/ folders or data commits |
+| Does the data branch match the jetson's pickles? (the shadow's daily check) | `diff_stats.py stats.pkl origin/data --git ~/Desktop/TTSCardMaker` | Workflow 4 |
+| What does the data build hold for card X? | `inspect_pickle.py --db <db/ or data commit> [--git DIR] "Card Name"` | as above |
 | Did old_stats.pkl balloon? | `inspect_pickle.py` summary (archived-versions count) + `git diff --stat HEAD -- old_stats.pkl` | — |
 
 What these tools do NOT answer: whether a measured value is *acceptable*
@@ -59,8 +68,11 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   chdir — its relative pickle arguments resolve against the shell's cwd (from a non-repo cwd the
   documented push-gate invocation exits 2 with `ERROR loading pickles: ... 'stats.pkl'`).
   `dump_psd_layers.py` imports only `sys` + psd-tools: no repo-root logic, no `config.py` needed.
-- Every script except `dump_psd_layers.py` needs `config.py` present in the repo root (secret;
-  the bot module import chain reads it). Without it the import chain fails.
+  Since 2026-10-23 `inspect_pickle.py` no longer chdirs either (it reads through `card_db.read_cards`).
+- `parse_one.py` and `gap_trace.py` need `config.py` present in the repo root (secret;
+  the bot module import chain reads it). Without it the import chain fails. `diff_stats.py` and
+  `inspect_pickle.py` need none since 2026-10-23 (they import only `commands.card_db` and `card_models`), so
+  the Mac's plain `python3` runs them.
 - `parse_one.py` and `gap_trace.py` additionally need the TTSCardMaker clone at
   `~/Desktop/TTSCardMaker` (`LOCAL_DIR_LOC`, global_config.py:5) — both for the PSD itself and
   to populate the known-types list from the clone's `Types/` folder.
@@ -301,8 +313,8 @@ counts (mismatch)?
 
 ## 4. inspect_pickle.py — DB health and single-card lookup
 
-**Purpose**: read-only view of `stats.pkl` / `old_stats.pkl`: a health summary, the list of
-cards with recorded problems, or one card in full detail with its archived history.
+**Purpose**: read-only view of `stats.pkl` / `old_stats.pkl` (or, with `--db`, the data build's `db/` JSON): a
+health summary, the list of cards with recorded problems, or one card in full detail with its archived history.
 
 **Invocations**:
 
@@ -310,7 +322,15 @@ cards with recorded problems, or one card in full detail with its archived histo
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py              # summary
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems   # problem cards
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "the lich king"  # one card
+# the data build: a db/ folder, or a data commit of a TTSCardMaker clone (fetch it first, as in Workflow 4)
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db ~/Documents/Tools/wt/scratch/carddata/db
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker "Metal General"
 ```
+
+The summary's first two lines read `stats     : N cards` and `old_stats : N cards with history, N archived
+versions total` since 2026-10-23 (the file names left the labels). A card lookup also prints its `version` record
+(start, cause, legacy) when it has one. Measured 2026-10-23 on a Mac rebuild from seed 077337a9 at TTSCardMaker
+7b48db05: 818 cards, 355 names with 453 versions, 2 archived (1 backfilled).
 
 **Annotated summary output** (golden baseline, verified 2026-07-11):
 
@@ -368,15 +388,16 @@ Two caveats: (a) a legitimately NEW top-level folder in TTSCardMaker would false
 update the tuple in the script if the card repo grows one; (b) 0 here does not prove every path
 is *correct*, only that top folders look sane.
 
-**Failure modes**: needs `config.py`; loads the committed pickles from the repo root (always
-present in a checkout). Missing card name → `not found` + suggestions, exit 1.
+**Failure modes**: loads the committed pickles from the repo root (always present in a checkout) unless `--db`
+names other data; data it can't read (no such folder, file or commit) → `ERROR loading the card data: ...`, exit 2.
+Missing card name → `not found` + suggestions, exit 1.
 
 **Questions it answers**: Is the DB healthy? What is stored for card X and when did it last
 change? Which cards are flagged? Did old_stats balloon?
 
 ---
 
-## 5. diff_stats.py — the numbers between two stats.pkl snapshots
+## 5. diff_stats.py — the numbers between two snapshots (pickles or the data build's JSON)
 
 **Purpose**: diff two stats.pkl-format snapshots into added/removed/modified with per-field
 counts. THE gate before every pickle push — it turns "the pickle looks fine" into numbers.
@@ -388,6 +409,13 @@ section: names and versions on each side, versions added and dropped per name, s
 whose data changed, and cards with another blob or parser version. Without history it prints a note.
 Measured 2026-10-23 on the post-deploy rehearsal (main's cleanup vs work/history-fixes): `0 modified`,
 `versions added: 1 ... dropped: 25`, `starts moved: 18`, `archive tags changed: 2`.
+
+Both sides take any form of the card data (2026-10-23, `card_db.read_cards`): pickles, a `stats.json`, a `db/`
+folder, or a data commit of `--git DIR`'s repo. The history matches one name's versions up before counting: the same
+timestamp and blob; else the same blob (re-dated from git); else the same timestamp where one side has no blob (the
+seed pass gives a legacy version its commit's blob). So the data build's bookkeeping shows as `starts moved` and
+`kept versions with other data`, not as versions added and dropped; a kept version's data is compared without its
+timestamp.
 
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.
@@ -457,8 +485,8 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 | huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert; the 2026-10-22 15:41 run: +280) | the `-- history --` section's `versions added` (with `--history`, 2026-10-23) |
 
 **Failure modes**: fewer than two args → prints usage, exit 2; unreadable/missing/incompatible
-pickle → `ERROR loading pickles: ...` plus a reminder that unpickling CardInfo requires a
-checkout defining it with `config.py` present, exit 2.
+data (a pickle holding anything but the card classes, a folder without card data, an unknown commit) →
+`ERROR loading the card data: ...`, exit 2.
 
 **Questions it answers**: Is this pickle safe to push? What exactly did the last update change?
 Did a parser change touch cards it shouldn't have?
@@ -535,6 +563,49 @@ Run `inspect_pickle.py` (summary) then `inspect_pickle.py --problems`:
 Compare against the 2026-07-11 baseline: 813 cards, 218/223 old-stats, 1 problem card
 (20 Creature Types), 0 orphans, 0 suspicious paths, newest = Anubisath Guardian @ 2026-06-18.
 Card counts legitimately grow as cards are added; problems/orphans/suspicious-paths should not.
+
+### Workflow 4 — the shadow's daily check (data branch vs the jetson's pickles, 2026-10-23)
+
+During the shadow (DATA_BUILD_ACTION.md §14 step 7), once a day after the jetson's /push:
+
+```bash
+# from this repo's root, at AutoCroissant main with the jetson's last PICKLE
+git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin +data:refs/remotes/origin/data   # a single-branch clone: name the ref
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py stats.pkl origin/data \
+    --git ~/Desktop/TTSCardMaker
+echo $?
+```
+
+Expect exit 1 with only the predicted refinements. Measured 2026-10-23 with AutoCroissant's PICKLE 077337a9 against
+a Mac rebuild seeded from it at TTSCardMaker 7b48db05 (work/shadow-prep; the shadow's first data commit should look
+the same):
+
+```
+old: 818 cards   new: 818 cards
+added: 0   removed: 0   modified: 796
+  field change counts: {'created': 770, 'timestamp': 308, 'ability': 8, 'display_name': 6, 'problem': 3, 'stars': 2, 'types': 1}
+-- history --
+old: 364 names 475 versions   new: 355 names 453 versions
+versions added: 26 (26 names)   dropped: 48 (45 names)
+starts moved: 70   archive tags changed: 2   kept versions with other data: 51   cards with another blob or parser: 281
+```
+
+- `created` 770: the data build dates every card from `site/Card Creation Dates.json`; the jetson does too once it
+  runs the created-dates code, so this count falls to the cards it hasn't dated.
+- `timestamp` 308: 281 PSDs the seed's PICKLE had not read yet plus 27 cards re-dated to their blob's intro (31 re-dated
+  by the seed pass, some among the 281). Against a current jetson only the re-dated ones stay (about 30).
+- `ability`, `display_name`, `problem`, `stars`, `types`: PSD changes the jetson had not read when it pickled (plus
+  Shadow Duelist and 00 Table of Contents until both writers re-read them with the current parser).
+- History: dropped = the seed pass's duplicate versions (collapse); added = this build's new versions (changes,
+  edits); starts moved = re-dated versions and carried starts; other data = versions normalized (series filled or
+  moved under a parent, retired type names); archive tags = ZOEY!!!!! and White Palace dated from git.
+- Not shown, and also expected: `version` records (the data build gives every card one; `starts moved` shows
+  where it moved a start), `parsed_values` on about 600 cards (the series carried into Card Edits.json), the
+  duplicates' copies of their original's `version`.
+
+Anything else (a removed card, a mass `path` or `type` change, a field the jetson and the build read differently)
+stops the shadow until it is explained. `inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker "Name"` shows
+one card's record and versions on the data side.
 
 ---
 
@@ -685,3 +756,8 @@ If a script is added, this document must gain a routing row, a section, and a pr
 `scripts/optimization/` (byte-identical, described above); the reports and `bench/` went to `docs/Finished/optimization-pass-2026-10-20/`.
 
 2026-10-22 (data build): RepositoryTraverser's body moved to commands/card_data.py (`CardBuild`); the `*_from_local` helpers the scripts call are there, unchanged.
+
+2026-10-23 (work/shadow-prep): `diff_stats.py` and `inspect_pickle.py` read the data build's `db/` JSON and data
+commits (`card_db.read_cards`, `--git`), need no `config.py`, and diff_stats matches versions the seed pass dated;
+Workflow 4 (the shadow's daily check) and its numbers were measured on a Mac rebuild from seed 077337a9;
+`tests/test_diagnostics.py` runs both scripts on pickles, a db/ folder, a stats.json and a data commit.

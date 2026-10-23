@@ -17,7 +17,7 @@ Usage (run from the repo root):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py ~/Documents/Tools/wt/scratch/head/stats.pkl stats.pkl
 
     # the data branch's tip against the jetson's last PICKLE (the shadow's daily check):
-    git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin data
+    git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin +data:refs/remotes/origin/data
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py stats.pkl origin/data \
         --git ~/Desktop/TTSCardMaker
 
