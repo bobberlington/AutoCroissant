@@ -482,7 +482,7 @@ def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
         await main.on_ready()                                           # the repeat: no RuntimeError
         await asyncio.sleep(0)
     asyncio.run(ready_twice())
-    assert queued == ["init_reminder", "init_psd", "init_query", "refresh", "init_type_emojis"]
+    assert queued == ["sweep_temp_psds", "init_reminder", "init_psd", "init_query", "refresh", "init_type_emojis"]
     assert [loop.starts for loop in loops] == [1, 2, 1, 1]
     assert synced == [1, 2] and main.slash_registry
     assert "Reconnected: inits skipped, revived commands" in capsys.readouterr().out
