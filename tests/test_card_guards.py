@@ -137,8 +137,45 @@ def test_push_range_resolves_before(cards):
 def test_bot_writers():
     assert cg.Writer("x", "AutoCroissant", "a@b", "anything").bot
     assert cg.Writer("x", "Someone", gc.AUTHOR["email"], "anything").bot
-    assert all(cg.Writer("x", "Alice", "a@b", f"{s} 2 PNGs").bot for s in cg.BOT_SUBJECTS)
-    assert not cg.Writer("x", "Alice", "a@b", "Card editing by hand").bot
+    assert cg.Writer("x", "github-actions[bot]", cg.BOT_EMAILS[0], "anything").bot
+    for subject in ("Card guards: 1 PNG", "Card edits: 2 baked", "Card edit: Foo", "TTS save: 3 cards", "Card sync: x"):
+        assert not cg.Writer("x", "Alice", "a@b", subject).bot          # a person's commit named like a bot's is guarded
+
+
+def _plumb(root, files, message, author="Alice"):
+    """A commit of {path: bytes} on top of HEAD through the index (paths that differ only in case, on any disk)."""
+    for path, data in files.items():
+        blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=data, capture_output=True,
+                              check=True).stdout.decode().strip()
+        _git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}", author=author)
+    _git(root, "commit", "-q", "-m", message, author=author)
+    return _git(root, "rev-parse", "HEAD")
+
+
+def test_a_path_a_person_changed_is_guarded_after_a_bot_commit(cards):
+    root, base, alice, bot = cards
+    psd = (root / FOLDER / "Bread.psd").read_bytes()
+    human = _plumb(root, {f"{FOLDER}/Bot_Card.psd": psd + b"\0"}, "Card edits: by hand", author="Bob")
+    later = _plumb(root, {f"{FOLDER}/Bot_Card.psd": psd + b"\0\0"}, "Card edits: 1 baked", author="AutoCroissant")
+    source = cg.Source(str(root))
+    assert source.writers(alice, later)[f"{FOLDER}/Bot_Card.psd"].commit == human
+    jobs, skipped, _, _ = cg.plan_jobs(source, alice, later, "actor")
+    assert not skipped and [(Path(j.psd).name, j.login) for j in jobs] == [("Bot_Card.psd", "Bob")]
+    assert set(cg.plan_jobs(source, human, later, "actor")[1]) == {f"{FOLDER}/Bot_Card.psd"}   # the bot's alone: left out
+
+
+def test_png_pairs_with_the_psd_of_its_exact_case(cards):
+    root, base, alice, bot = cards
+    psd = (root / FOLDER / "Bread.psd").read_bytes()
+    two = _plumb(root, {f"{FOLDER}/Dark_matter.psd": psd, f"{FOLDER}/Dark_Matter.psd": psd}, "two cases")
+    png = (root / FOLDER / "Bread.png").read_bytes()
+    exact = _plumb(root, {f"{FOLDER}/Dark_Matter.png": png}, "the PNG")
+    source = cg.Source(str(root))
+    jobs, _, notes, _ = cg.plan_jobs(source, two, exact, "actor")
+    assert [(j.psd, j.case) for j in jobs] == [(f"{FOLDER}/Dark_Matter.psd", "png-only")] and notes == []
+    other = _plumb(root, {f"{FOLDER}/DARK_MATTER.png": png}, "neither case")
+    jobs, _, notes, _ = cg.plan_jobs(source, exact, other, "actor")
+    assert jobs == [] and notes == [f"`{FOLDER}/DARK_MATTER.png` matches 2 PSDs that differ only in letter case: not checked"]
 
 
 # ========================
@@ -289,10 +326,85 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
     assert again["cards"] == []                                                             # the bot's commit is never guarded
 
 
+def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
+    """A pair (PSD and PNG pushed together): the fix rests on the pushed PNG's blob, so it lands (it was dropped as
+    "superseded" when the plan expected no PNG)."""
+    root, base, alice, bot = cards
+    out = tmp_path / "out"
+    data = cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
+    plan = json.loads((out / "plan.json").read_text())
+    (bread,) = [c for c in plan["cards"] if c["case"] == "pair"]
+    tree = cg.Source(str(root)).tree(bot)
+    fixed = b"the fixed PSD"                                                # land only moves bytes
+    (out / "fixed.psd").write_bytes(fixed)
+    bread["writes"] = [{"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd", "line": "R11 fixed"}]
+    bread["expect"] = cg._expect(cg.Job(bread["psd"], "pair", "", tree[bread["psd"]][1], f"{FOLDER}/Bread.png",
+                                        png_new=tree[f"{FOLDER}/Bread.png"][1]))
+    assert bread["expect"][f"{FOLDER}/Bread.png"] == tree[f"{FOLDER}/Bread.png"][1]
+    plan["cards"] = [bread]
+    (out / "plan.json").write_text(json.dumps(plan))
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert report["landed"] == ["Bread"] and report["dropped"] == [] and report["sha"]
+    assert _git(root, "show", "--name-only", "--format=", report["sha"]).splitlines() == [f"{FOLDER}/Bread.psd"]
+
+
+def test_a_real_r11_fix_lands_for_a_pair(clone, tmp_path):
+    """Mini Doomer pushed with its Name layer typed "NAME" and its PNG re-saved: R11 renames it, land commits the PSD."""
+    from PIL import Image
+    from psd_tools import PSDImage
+    import commands.psd_edit as psd_edit
+    rel = "Auxiliary/Minions/Mini_Doomer"
+    if not (clone / f"{rel}.psd").exists():
+        pytest.skip("no Mini Doomer")
+    root = tmp_path / "cards"
+    (root / "Auxiliary/Minions").mkdir(parents=True)
+    _git(root, "init", "-q", "-b", "main")
+    shutil.copy(clone / f"{rel}.psd", root / f"{rel}.psd")
+    shutil.copy(clone / f"{rel}.png", root / f"{rel}.png")
+    base = _commit(root, "base")
+    edited = PSDImage.open(str(clone / f"{rel}.psd"))
+    psd_edit.name_layer(edited).name = "NAME"
+    psd_edit.save_psd(edited, str(root / f"{rel}.psd"), update_preview=False)
+    Image.open(clone / f"{rel}.png").save(root / f"{rel}.png", compress_level=1)   # same pixels, a new blob
+    push = _commit(root, "Mini Doomer", author="Alice")
+    out = tmp_path / "out"
+    data = cg.check(str(root), push, base, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    assert entry["case"] == "pair" and [w["kind"] for w in entry["writes"]] == ["psd"], entry
+    assert entry["expect"][f"{rel}.png"] == cg.Source(str(root)).tree(push)[f"{rel}.png"][1]
+    assert "The bot will fix: " in data["markdown"]
+    assert cg.main(["land", "--plan", str(out / "plan.json"), "--local", str(root)]) == 0
+    landed = json.loads((out / "landed.json").read_text())
+    assert landed["landed"] == ["Mini Doomer"] and landed["sha"] == _git(root, "rev-parse", "HEAD")
+    assert psd_edit.name_layer(PSDImage.open(str(root / f"{rel}.psd"))).name == "Name"
+    comment = (out / "report-landed.md").read_text()
+    assert f"Landed in `{landed['sha'][:8]}`: 1 card." in comment and "Fixed by the bot: " in comment
+
+
+def test_the_comment_after_land_names_the_cards_left_out():
+    entry = {"card": "A", "psd": "X/A.psd", "case": "pair", "login": "Alice", "commit": "a" * 40, "export": {}, "r10": {},
+             "issues": [], "fixed": ["R11 layer names corrected"], "fix_refused": [], "notes": [], "told": [], "error": "",
+             "writes": [{"path": "X/A.psd"}]}
+    data = {"mode": "on", "after": "f" * 40, "before": "e" * 40, "cards": [entry, dict(entry, card="B", psd="X/B.psd")],
+            "report": {"notes": [], "skipped": [], "errors": []}}
+    before = cg.markdown(data, [], [], [])
+    assert before.count("- The bot will fix: R11") == 2 and "Fixed by the bot" not in before
+    after = cg.landed_markdown(data, {"sha": "c" * 40, "landed": ["A"], "dropped": [["B", "superseded: X/B.psd changed on the branch"]]})
+    assert "Landed in `cccccccc`: 1 card. 1 card left out: changed again on the branch." in after
+    a, b = after.split("**B**")
+    assert "- Fixed by the bot: R11" in a and "- Landed in `cccccccc`" in a
+    assert "- Not fixed: R11" in b and "- Not landed (superseded: X/B.psd changed on the branch): nothing above was committed" in b
+    none = cg.landed_markdown(data, {"sha": "", "landed": [], "dropped": [["A", "x"], ["B", "y"]]})
+    assert "Nothing landed. 2 cards left out" in none and "Fixed by the bot" not in none
+
+
 # ========================
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================
 def test_replay_of_the_stale_png_push(clone, tmp_path):
+    from importlib.util import find_spec
+    if find_spec("scipy") is None:
+        pytest.skip("God Tamer's gradient fills need psd-tools[composite] (scipy), as the Action installs")
     source = cg.Source(str(clone))
     if not (source.commit("38c55bd3") and source.commit("07589cc7")):
         pytest.skip("the clone lacks the push")
@@ -331,6 +443,13 @@ def test_action_shaped_copy(tmp_path):
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
+
+
+def test_guard_modules_stay_uncompiled():
+    """Not in setup.py's INCLUDE_FILES: the Action runs them as pure Python (the change-control skill's step 5)."""
+    setup = (REPO / "setup.py").read_text(encoding="utf-8")
+    for module in ("card_guards", "png_export", "card_standards"):
+        assert f"commands/{module}.py" not in setup
 
 
 def _workflow(clone) -> Path:
@@ -379,3 +498,17 @@ def test_workflow_shape(clone):
     check = steps[names.index("Check")]
     for flag in ("--clone", "--repo", "--after", "--author", "--fonts", "--out", "--mode", "--before", "--cards", "--whole-tree"):
         assert flag in check["run"]
+    # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
+    assert not any("runner." in str(value) for value in job["env"].values())
+    assert 'OUT=$RUNNER_TEMP/guards' in steps[names.index("Start")]["run"]
+    follow = steps[names.index("Follow up")]
+    assert "report-landed.md" in follow["run"] and "steps.land.outputs.dropped" in follow["if"]
+
+
+def test_workflow_lints(clone):
+    """actionlint (when installed) accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
+    actionlint = shutil.which("actionlint")
+    if not actionlint:
+        pytest.skip("no actionlint on PATH")
+    done = subprocess.run([actionlint, "-shellcheck=", str(_workflow(clone))], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stdout + done.stderr

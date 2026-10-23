@@ -60,7 +60,6 @@ WAIVED = {                                      # the owner's class waivers (sec
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
     "R7": {"fonts": {"BabaUI"}, "why": "BabaUI is deferred by the owner (L13)"},
 }
-CARD_OK = "problems_ok"                         # Card Edits.json: the card's report-class standards issues are accepted too
 
 
 # ========================
@@ -91,7 +90,6 @@ class Context:
     types: frozenset = frozenset()              # Types/ stems, lowercased (card_check.Vocabulary.all_types)
     fonts: Optional[FontIndex] = None           # MDW/Fonts (R7 skipped without)
     chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
-    cards_ok: frozenset = frozenset()           # CardAuthors keys whose Card Edits.json entry has problems_ok
     story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
 
 
@@ -333,7 +331,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     Args:
         psd: The pushed PSD
         rel: Its repo path (the class: scope, waivers)
-        context: Types/, fonts, chart, per-card waivers
+        context: Types/, fonts, chart
         old: The PSD before the push (R4 regressions; "(new)" marks)
         added: A new card (R4 applies in full)
 
@@ -377,8 +375,6 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         waiver = WAIVED.get(issue.code, {})
         if not issue.waived and key in waiver.get("cards", ()):
             issue.waived = waiver["why"]
-        if not issue.waived and not issue.fix and key in context.cards_ok and issue.code not in ("R9", "R11"):
-            issue.waived = f"{CARD_OK} in site/Card Edits.json"
     if old is not None:
         mark_new(issues, check(old, rel, context))
     return issues

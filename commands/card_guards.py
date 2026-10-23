@@ -13,9 +13,9 @@ check reads trees from a local clone (the Action's blobless checkout with its hi
 from it or, when it lacks them, by sha through the API (verified). It writes nothing to the card repo, ever: a dry run
 and a replay are the same command. land re-reads the branch head, drops a card whose PSD or PNG moved or that a later
 push touched (card_bake.recent_paths), and makes one commit (git_commit.commit_files; --local: in a clone, nothing
-pushed). The guards' own commits and the bake's, the save's and Card sync's are skipped (BOT_SUBJECTS, the AutoCroissant
-author). No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); SPARSE_FILES is the
-import closure card-guards.yml checks out.
+pushed). The guards' own commits and the bake's, the save's and Card sync's are skipped (the AutoCroissant author or
+github-actions; a path a person also changed in the range is still guarded). No Discord or config imports (the token:
+config through github_api, else GITHUB_TOKEN); SPARSE_FILES is the import closure card-guards.yml checks out.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -35,13 +35,13 @@ import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import RECENT, Snapshot, fetch_verified, local_snapshot, recent_paths, snapshot_at
 from commands.card_check import vocabulary
-from commands.card_edits import CardAuthors, CardEdits
+from commands.card_edits import CardAuthors
 from commands.font_check import FontIndex, is_card_psd
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, local_commit, plural,
                                  ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refused
-from global_config import CARD_REPO, EDITS_PATHS, ICON_MANIFEST_PATH
+from global_config import CARD_REPO, ICON_MANIFEST_PATH
 
 # ========================
 # Configuration
@@ -52,7 +52,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
-BOT_SUBJECTS = ("Card guards", "Card edits", "Card edit:", "TTS save", "Card sync")   # bot commits: never guarded
+BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besides git_commit.AUTHOR: never guarded
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
 MODES = ("dry", "report", "on")
@@ -90,8 +90,8 @@ class Writer:
 
     @property
     def bot(self) -> bool:
-        return (self.email == AUTHOR["email"] or self.name == AUTHOR["name"]
-                or any(self.subject.startswith(prefix) for prefix in BOT_SUBJECTS))
+        """By author only: a person's commit named like a bot's ("Card edits: ...") is still guarded."""
+        return self.email in (AUTHOR["email"], *BOT_EMAILS) or self.name == AUTHOR["name"]
 
 
 @dataclass
@@ -230,10 +230,11 @@ class Source:
         return out
 
     def writers(self, before: str, after: str) -> dict:
-        """{path: Writer}: the last commit in before..after that changed it (oldest first, the last one wins)."""
+        """{path: Writer}: the last person's commit in before..after that changed it, else the last bot commit (a path is
+        left out as the bot's only when no person changed it in the range)."""
         span = after if before == EMPTY_TREE else f"{before}..{after}"
         raw = self.git("log", "--no-renames", "--reverse", "--format=%x1e%H%x1f%an%x1f%ae%x1f%s", "--name-only", "-z", span)
-        out = {}
+        out, people = {}, {}
         for chunk in raw.split("\x1e"):
             if not chunk.strip():
                 continue
@@ -243,7 +244,9 @@ class Source:
             for path in rest.lstrip("\n").split("\0"):
                 if path.strip():
                     out[path.strip("\n")] = writer
-        return out
+                    if not writer.bot:
+                        people[path.strip("\n")] = writer
+        return {**out, **people}
 
     def blob(self, sha: str) -> bytes:
         """A blob by sha, verified; raises Refused("blob")."""
@@ -357,9 +360,17 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             job.case, job.png = "new", splitext(change.path)[0] + ".png"
         jobs.append(job)
     pushed_psds = {c.path for c in psds}
-    psd_by_key = {_key(p): p for p in tree if is_card_psd(p)}
+    psd_by_key: dict = {}                       # stems matched in any case (L12), so one key can hold several PSDs
+    for p in tree:
+        if is_card_psd(p):
+            psd_by_key.setdefault(_key(p), []).append(p)
     for path, change in sorted(pngs.items()):
-        psd = psd_by_key.get(_key(path))
+        found = psd_by_key.get(_key(path), [])
+        exact = [p for p in found if splitext(p)[0] == splitext(path)[0]]
+        if len(exact or found) > 1:
+            notes.append(f"`{path}` matches {len(found)} PSDs that differ only in letter case: not checked")
+            continue
+        psd = (exact or found or [None])[0]
         if psd is None or psd in pushed_psds:
             if psd is None and change.status in "AM" and not snapshot.duplicate_of(CardAuthors.key(card_name(path))):
                 if not any(p for p in pushed_psds if _key(p) == _key(path)):
@@ -387,13 +398,13 @@ def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None) -> lis
 
 
 # ========================
-# Context: Types/, fonts, the status chart, the edits file
+# Context: Types/, fonts, the status chart
 # ========================
 def build_context(source: Source, tree: dict, fonts_dir: str = "", errors: Optional[list] = None) -> tuple:
     """
     (card_standards.Context, Vocabulary) from the tree at after.
 
-    The status chart and the edits file come by blob; a failed one is an error line and the rules run without it.
+    The manifest and the status chart come by blob; a failed one is an error line and the rules run without it.
     """
     errors = errors if errors is not None else []
     manifest = None
@@ -409,19 +420,11 @@ def build_context(source: Source, tree: dict, fonts_dir: str = "", errors: Optio
             chart = psd_edit.status_fills(png_export.open_psd(source.blob(tree[psd_edit.STATUS_CHART][1])))
         except Exception as error:              # R5 reports every overlay without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
-    ok = set()
-    path = next((p for p in EDITS_PATHS if p in tree), None)
-    if path:
-        try:
-            edits = CardEdits.parse(source.blob(tree[path][1]).decode("utf-8"))
-            ok = {key for key, fields in edits.cards.items() if fields.get("problems_ok")}
-        except Exception as error:              # no per-card waivers
-            errors.append(f"{path}: {error}")
     fonts = None
     if fonts_dir:
         fonts = FontIndex(fonts_dir)
         errors += [f"MDW/Fonts {e}" for e in fonts.errors]
-    context = standards.Context(frozenset(vocab.all_types), fonts, chart, frozenset(ok), psd_edit.story_sync())
+    context = standards.Context(frozenset(vocab.all_types), fonts, chart, psd_edit.story_sync())
     return context, vocab
 
 
@@ -569,10 +572,10 @@ def _pooled(item: tuple) -> Result:
 # Reports
 # ========================
 def _expect(job: Job) -> dict:
-    """The blobs a card's writes rest on at the head (G9)."""
+    """The blobs a card's writes rest on at the head (G9): the PNG as checked ("" for one the bot makes)."""
     expect = {job.psd: job.psd_new}
     if job.png:
-        expect[job.png] = job.png_old if job.case in ("stale", "beside") else ""
+        expect[job.png] = job.png_old if job.case in ("stale", "beside") else job.png_new
     for path, sha in job.numbered.items():
         expect[path] = sha
     return expect
@@ -621,11 +624,20 @@ def _guard1_line(entry: dict) -> str:
     return f"PNG {verb} from the PSD's composite ({'; '.join(parts)})"
 
 
-def markdown(data: dict, notes: list, skipped: dict, errors: list) -> str:
-    """The job summary and commit comment."""
+def _landed_head(landed: dict) -> str:
+    sha, left = landed.get("sha", ""), len(landed.get("dropped", []))
+    out = f"Landed in `{sha[:8]}`: {plural(len(landed.get('landed', [])), 'card')}." if sha else "Nothing landed."
+    return out + (f" {plural(left, 'card')} left out: changed again on the branch." if left else "")
+
+
+def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[dict] = None) -> str:
+    """The job summary and commit comment; with land's report (landed.json), the comment as edited after the landing."""
     mode = data["mode"]
     head = {"dry": "Dry run: nothing is posted or committed.", "report": "Report only (CARD_GUARDS=report): nothing is committed.",
             "on": "Writes land after the 30-minute quiet window, in one bot commit."}[mode]
+    if landed is not None:
+        head = _landed_head(landed)
+    dropped = dict(landed.get("dropped", [])) if landed else {}
     out = ["## Card guards", "", f"Push `{data['after'][:8]}` (against `{data['before'][:8]}`): "
                                  f"{plural(len(data['cards']), 'card')}. {head}"]
     for note in notes:
@@ -650,7 +662,8 @@ def markdown(data: dict, notes: list, skipped: dict, errors: list) -> str:
         if told:
             out.append("- Issues: " + "; ".join(told))
         if entry["fixed"]:
-            verb = "Fixed by the bot" if mode == "on" else "The bot would fix (CARD_GUARDS=on)"
+            verb = ("The bot would fix (CARD_GUARDS=on)" if mode != "on" else "The bot will fix" if landed is None else
+                    "Not fixed" if entry["card"] in dropped else "Fixed by the bot")
             out.append(f"- {verb}: " + "; ".join(entry["fixed"]))
         for line, why in entry["fix_refused"]:
             out.append(f"- Not fixed: {line} ({why})")
@@ -659,6 +672,9 @@ def markdown(data: dict, notes: list, skipped: dict, errors: list) -> str:
             out.append("- Waived (owner decisions): " + "; ".join(waived))
         for note in entry["notes"]:
             out.append(f"- {note}")
+        if landed is not None and entry["writes"]:
+            out.append(f"- Not landed ({dropped[entry['card']]}): nothing above was committed for this card"
+                       if entry["card"] in dropped else f"- Landed in `{landed['sha'][:8]}`")
         if not (line or told or entry["fixed"] or entry["fix_refused"] or entry["notes"] or entry["r10"]):
             out.append("- Meets the standards.")
         out.append("")
@@ -726,6 +742,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         results = [run_job(source, job, context, parser, out, mode) for job in jobs]
     data = plan(results, repository, base, head, mode)
     errors += [f"{r.job.psd}: {r.error}" for r in results if r.error]
+    data["report"] = {"notes": notes, "skipped": sorted(skipped), "errors": errors}   # landed_markdown re-renders from these
     data["markdown"] = markdown(data, notes, skipped, errors)
     data["discord"] = discord_payload(data, repository or CARD_REPO)
     with open(join(out, "report.md"), "w", encoding="utf-8") as fh:
@@ -749,6 +766,12 @@ def summary(data: dict, errors: list) -> dict:
 # ========================
 # land
 # ========================
+def landed_markdown(data: dict, landed: dict) -> str:
+    """The commit comment after land: what landed, and the cards left out (their PNG and fixes were not committed)."""
+    report = data.get("report", {})
+    return markdown(data, report.get("notes", []), report.get("skipped", []), report.get("errors", []), landed)
+
+
 def message(landed: list, after: str) -> str:
     """The bot commit's message: subject with the counts, one line per file, the Guarded-push trailer."""
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
@@ -867,6 +890,11 @@ def main(args: Optional[list] = None) -> int:
         return 1
     with open(join(dirname(options.plan), "landed.json"), "w", encoding="utf-8") as fh:
         dump(report, fh)
+    if not options.dry_run:                     # the comment's new body (card-guards.yml's Follow up)
+        with open(options.plan, encoding="utf-8") as fh:
+            text = landed_markdown(load(fh), report)
+        with open(join(dirname(options.plan), "report-landed.md"), "w", encoding="utf-8") as fh:
+            fh.write(text)
     for card in report["landed"]:
         print(f"{card}: {'landed in `' + report['sha'][:8] + '`' if report['sha'] else 'would land'}")
     for card, why in report["dropped"]:
@@ -882,7 +910,7 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
-    'BOT_SUBJECTS',
+    'BOT_EMAILS',
     'Change',
     'Job',
     'LINE',
@@ -894,6 +922,7 @@ __all__ = [
     'check',
     'discord_payload',
     'land',
+    'landed_markdown',
     'main',
     'markdown',
     'message',

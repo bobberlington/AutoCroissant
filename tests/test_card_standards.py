@@ -38,7 +38,7 @@ def context(clone):
     from commands.font_check import FontIndex
     chart = psd_edit.status_fills(PSDImage.open(str(clone / psd_edit.STATUS_CHART)))
     return cs.Context(frozenset(clone_vocabulary(str(clone)).all_types), FontIndex(str(clone / "MDW/Fonts")), chart,
-                      frozenset({"pix", "tainted lazarus", "twin emperors"}), psd_edit.story_sync())
+                      psd_edit.story_sync())
 
 
 def _open(clone, rel):
@@ -142,10 +142,15 @@ def test_r4_new_cards_and_regressions(clone, context, tmp_path):
     assert not name.waived and name.new
 
 
-def test_card_edits_problems_ok_waives_the_reports(clone, context):
-    rel = "Creatures/Kirby/3 Stars/Pix.psd"
-    issues = cs.check(_open(clone, rel), rel, context)
-    assert cs.reported(issues) == [] and issues
+def test_problems_ok_cards_are_waived_by_class_only(clone, context):
+    """Pix, Tainted Lazarus and Twin Emperors (problems_ok in Card Edits.json, for parser problems) report nothing today,
+    each issue waived by an owner's class decision: problems_ok itself waives no standard."""
+    for rel in ("Creatures/Kirby/3 Stars/Pix.psd", "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd",
+                "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"):
+        issues = cs.check(_open(clone, rel), rel, context)
+        assert issues and cs.reported(issues) == [], rel
+        assert {issue.waived for issue in issues} <= {cs.WAIVED[code]["why"] for code in cs.WAIVED}, rel
+    assert "cards_ok" not in cs.Context.__dataclass_fields__
 
 
 # ========================

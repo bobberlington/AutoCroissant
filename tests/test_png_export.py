@@ -6,6 +6,7 @@ author's export, Final Dark Mind Eye is within 4 levels, God Tamer's push moved 
 fork, and a script save under a stale composite is refused.
 """
 import subprocess
+from importlib.util import find_spec
 from inspect import signature
 
 import numpy as np
@@ -16,6 +17,7 @@ from psd_tools.api.layers import PixelLayer
 
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
+from conftest import fork_reason, text_engine
 
 # ========================
 # Configuration
@@ -29,6 +31,10 @@ SPRINGTRAP = ("532cbe005c7a93c98fdc0fd97f24325d83947f92", "d62bea1c719842de02d0d
 GOD_TAMER = ("8ca3d785c7c2f28d7f1a7861579b5add3a80a67c", "6b99873e4e0293365181e534aa974f1a2a815bb2",
              "f72ba14a25fd31614c8e20e632d61cd0c612eb78")                                                # dc37f4ad: PNG not pushed
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
+# The referee renders the changed layers as the fork does: upstream psd-tools passes the bake's stale-looking pixels as
+# "current" and misses Mini Doomer's stale composite. Measured at the Action's pin cards-20261022 and at cards e0ea34f6.
+fork = pytest.mark.skipif(not text_engine(), reason="the G6 referee needs the fork's renderer: " + fork_reason())
+gradients = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy), as the Action installs")
 
 
 # ========================
@@ -194,6 +200,7 @@ def test_final_dark_mind_eye_within_four_levels(clone):
     assert int(diff.max()) <= 4 and (diff <= 2).mean() > 0.9999
 
 
+@gradients
 def test_god_tamer_moved_no_pixel(clone):
     old, new, old_png, _ = pair(clone, GOD_TAMER)
     assert pe.changed_layers(old, new)[1] > 0            # the records changed (stars grouped)
@@ -202,6 +209,7 @@ def test_god_tamer_moved_no_pixel(clone):
     assert psd_edit._within_bar(found.numbers["png_vs_psd"])
 
 
+@fork
 def test_a_bot_bake_is_refereed(clone):
     old, new, old_png, truth = pair(clone, SPRINGTRAP)
     assert not pe.photoshop_saved(old, new)              # the fork keeps the XMP
@@ -211,6 +219,7 @@ def test_a_bot_bake_is_refereed(clone):
     assert int(pe._diff(found.image, truth).max()) <= 2
 
 
+@fork
 def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     """Mini Doomer's title hidden by the fork, saved without a new preview: the composite still shows it."""
     path = clone / (MINI_DOOMER + ".psd")
