@@ -12,6 +12,7 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
+import global_config                                     # CARD_SYNC, read at call time (the cutover switch)
 from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
@@ -323,8 +324,12 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
 # Initialization
 # ========================
 def init_psd() -> None:
-    """Initialize the stats database."""
-    stats_db.load()
+    """Initialize the stats database: the root pickles, or after the cutover the synced card data (card_sync)."""
+    if global_config.CARD_SYNC:
+        from commands.card_sync import startup
+        startup()
+    else:
+        stats_db.load()
     card_repo.prep_dataframes()
     print("Stats database initialized.")
 

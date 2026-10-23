@@ -116,7 +116,7 @@ Mechanics you must know:
 | 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:874-876, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:180-182). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
-| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
+| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21; after the cutover /update_stats parses nothing and takes no lock). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
 
 ## Data-flow diagrams
 
@@ -184,6 +184,28 @@ card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new da
 Downstream, outside this process: /push commits the pickles and psd_details.json; TTSCardMaker's website build reads
 them from this repo's main (ttscardmaker-companion §2).
 ```
+
+### (b2) `/update_stats` after the cutover (`CARD_SYNC` on; built 2026-10-22, off until the cutover commit)
+
+```
+/update_stats  (wrapper: with force_update or cards, admins only; then defers)
+      v
+WORKER THREAD: update_stats() (repo_traverser.py) -> global_config.CARD_SYNC? -> card_sync.update()   (uncompiled)
+      |  force_update / cards: POST actions/workflows/card-sync.yml/dispatches (ACTIONS_TOKEN), then GET the run every
+      |    15 s (state edited into the reply, queue_edit), 30 min at most; a cancelled run: dispatched once more or said
+      v
+card_sync.sync()  (one at a time: _sync_lock)
+      |  card_db.sync(card_data/): GET commits/data with If-None-Match (304: free, nothing else) -> new commit:
+      |    raw db/manifest.json, then only the files whose sha256 differ, checked and parsed before any is written,
+      |    each replaced atomically, manifest and sync.json last
+      |  new commit: card_db.read_db -> stats_db.stats / old_stats swapped whole (readers hold the old dict or the new)
+      v
+the reply (say), then queue_command(refresh_history), queue_command(_refresh_cards: populate_files, prep_dataframes,
+      then queue_command(sync_changed_emojis) over that tree)
+```
+
+Nothing parses and nothing is written but `card_data/` (gitignored): no bake_lock, no pickle, no /push. Startup
+(`init_psd` -> `card_sync.startup`) loads `card_data/` first and syncs once; the root pickles only when neither works.
 
 ### (c) A reminder firing (slash_registry + FakeInteraction), as of 2026-10-19
 
@@ -270,6 +292,11 @@ main.py  (registration + queue loops; imports every commands module)
  |                            changelog LAZILY: CardBuild (the traversal), update (legacy /update_stats), build (the Card sync
  |                            Action's db/ JSON)  [2026-10-22; NOT compiled; no discord, pandas, config or utils: card-sync.yml
  |                            checks out card_data.SPARSE_FILES alone]
+ |- commands.card_sync     -> card_db, github_api, psd_analyzer (stats_db, the facade's), utils, global_config, config (optional);
+ |                            query_card, type_emojis, repo_history, analytics, psd_details, font_check LAZILY: the bot after the
+ |                            cutover (sync, /update_stats, Card sync dispatches, /fonts from the data). Imported LAZILY by
+ |                            repo_traverser, psd_analyzer and font_check, only when global_config.CARD_SYNC is on
+ |                            [2026-10-22; NOT compiled]
  |- commands.repo_traverser -> card_data, card_edits, card_models, card_runner (bake_lock), utils, query_card, repo_history,
  |                            type_emojis (module level!; tts_save no longer, 2026-10-20): RepositoryTraverser (CardBuild with the
  |                            bot's aliases), update_stats, _tree_etags  [compiled; a thin Discord wrapper since 2026-10-22]
@@ -312,6 +339,11 @@ pickles need pre-refactor code); **Python-only access**, and outside this repo o
 pickle corruption the top-ranked costliest failure class — a corrupt commit replicates to the other
 machine *by design*. The survival discipline (diff before push, PICKLE commit convention) is owned by
 **autocroissant-change-control**.
+
+**Its successor, built and switched off (2026-10-22).** The Card sync Action in TTSCardMaker builds the card data as JSON
+on that repo's `data` branch (docs/Campaigns/DATA_BUILD_ACTION.md); the bot only reads it into `card_data/` and memory
+(data flow b2). One constant, `CARD_SYNC` in global_config.py, flipped in the cutover commit, moves the bot from this
+section's design to that one; until then the pickles above stay the database, and step 10 deletes them.
 
 ## Known-weak points, stated plainly
 
@@ -490,3 +522,8 @@ twice); tts_save's dependency line re-pointed (github_api now reached through gi
 `card_data.update`); repo_traverser.py is the Discord wrapper (bake lock, messages, follow-ups). The /update_stats data
 flow, the bake-lock and temp-file citations and the module map re-pointed; card_data's own entry (no discord, pandas,
 config or utils) added. The lazy-import cycle break is unchanged (repo_traverser still imports card_repo at module level).
+
+2026-10-22 (cutover, bot side): data flow (b2) for /update_stats with `CARD_SYNC` on, commands/card_sync.py in the module map,
+invariant 10's after-the-cutover note, and the successor paragraph under "Why pickles-in-git". main.py grew by 13 lines (an
+import, the switched texts, the option gate) and repo_traverser.py by 5, so their cited line numbers drift by up to that;
+re-find them by grep.
