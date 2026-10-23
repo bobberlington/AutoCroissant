@@ -324,6 +324,54 @@ def test_gate_refusal_exits_2_and_writes_nothing(cards, monkeypatch, capsys):
     assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK and "The Freezer" not in _read(cards)[0]
 
 
+def test_an_exact_rename_passes_g2(cards, monkeypatch):
+    """A renamed PSD (the same bytes under another name) archives the old name with renamed_to: no card is lost, so G2
+    lets it through at a ceiling of 0 (d64fc8d4 renamed 27 cards at once)."""
+    _build(cards, "--seed", str(cards.seed))
+    git(cards.repo, "mv", FREEZER, "Field/1 Stars/The_Big_Freezer.psd")
+    commit(cards.repo, "dave", 2000)
+    monkeypatch.setattr(cd, "ARCHIVE_MIN", 0)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old = _read(cards)[:2]
+    assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
+        "The Big Freezer"
+    assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
+
+
+def test_a_new_cards_date_and_author_come_from_its_first_path(tmp_path):
+    """The build's lookup for a card new under a renamed path whose parse carried no author: the first commit's author
+    at the path its exact rename came from (alice, not the renamer dave), and the date of the commit that put its bytes
+    back after a revert there (carol), not their first intro nor the rename."""
+    repo = tmp_path / "cards"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    for author, at, data in (("alice", 1000, b"one"), ("bob", 2000, b"two"), ("carol", 3000, b"one")):
+        put(repo, "Items/A.psd", data)
+        commit(repo, author, at)
+    git(repo, "mv", "Items/A.psd", "Items/B.psd")
+    commit(repo, "dave", 4000)
+    build = cd.GitBuild(cm.StatsDatabase(), str(repo))
+    build.shas = {"Items/B.psd": blob_sha_bytes(b"one")}
+    assert build._get_remote_timestamp(None, "Items/B.psd", "B") == (3000.0, "alice")
+
+
+def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
+    """The Freezer renamed while its PSD was edited (another blob), its PNG renamed unchanged: the new card is parsed
+    with the old one (its author, not the renamer's), and the archive names it."""
+    put(cards.repo, "Field/1 Stars/The_Freezer.png", b"freezer art")
+    commit(cards.repo, "alice", 1100)
+    _build(cards, "--seed", str(cards.seed))
+    big = "Field/1 Stars/The_Big_Freezer"
+    git(cards.repo, "mv", "Field/1 Stars/The_Freezer.png", f"{big}.png")
+    git(cards.repo, "rm", "-q", FREEZER)
+    put(cards.repo, f"{big}.psd", cards.psds[OTHER])
+    commit(cards.repo, "dave", 2000)
+    assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK
+    stats, old = _read(cards)[:2]
+    assert stats["The Big Freezer"].author == "alice"
+    assert old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == "The Big Freezer"
+
+
 def test_dry_run_and_errors(cards, tmp_path):
     assert _build(cards, "--seed", str(cards.seed), "--dry-run")[0] == cd.EXIT_OK and not any(cards.db.iterdir())
     assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ and no seed

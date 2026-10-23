@@ -77,10 +77,11 @@ def test_a_same_data_resave_keeps_the_websites_dates(an):
 
 def test_a_carried_start_still_folds_a_re_read(an):
     """Bob-ulk: a version read again at the same commit by a newer parser gives way to the newer reading. The cleanup drops
-    that reading's copy and the card holds its start; the site folds by that start (when), so the page doesn't change."""
+    the earlier reading (the same start: nothing to carry) and the newer one's copy, the card holding its start; the
+    site folds by that start (when), so the page doesn't change."""
     stats = {"A": _card("New.", 3, "b4", 400.0)}
     old = defaultdict(list, {"A": [_card(blob_sha="b1", timestamp=100.0), _card("New.", 3, "b1", 100.0)]})
     before = _site(an, *deepcopy((stats, old)))
     assert before[0] == [] and before[2] == 100.0
-    assert ch.dedupe(stats, old) == [("A", 100.0)] and ch.start(stats["A"]) == (100.0, None)
-    assert _site(an, stats, old) == before
+    assert ch.dedupe(stats, old) == [("A", 100.0), ("A", 100.0)] and "A" not in old
+    assert ch.start(stats["A"]) == (100.0, None) and _site(an, stats, old) == before

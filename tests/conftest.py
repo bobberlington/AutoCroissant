@@ -202,12 +202,16 @@ def pickles_untouched():
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    """No network, and cwd in a temp dir so cwd-relative saves (pickles, json maps) land there."""
+    """No network, cwd in a temp dir so cwd-relative saves (pickles, json maps) land there, and no history clone for
+    /update_stats' cleanup or /query as_of's images unless a test gives one (the machine's own never counts)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
     monkeypatch.chdir(tmp_path)
+    for module in ("commands.card_data", "commands.repo_history"):        # /query as_of's images too
+        if module in sys.modules:
+            monkeypatch.setattr(sys.modules[module], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
 
 
 @pytest.fixture(scope="session")

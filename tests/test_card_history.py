@@ -78,6 +78,8 @@ def test_index_from_one_log(history):
     assert index.intro[blob(X)][0].sha == c[1] and index.intro[blob(X)][1] == "Items/A.psd"      # B's same bytes: no new date
     assert index.blob_intro(blob(Y)).sha == c[2] and index.intro_at[(blob(Y), "Items/Heal/A.psd")].sha == c[3]
     assert index.deleted["Items/B.psd"].sha == c[5] and "Items/Heal/C.psd" not in index.deleted
+    assert index.origin("Items/Heal/C.psd") == "Items/A.psd" and index.origin("Items/Heal/C.psd", once=True) == \
+        "Items/Heal/A.psd" and index.first[index.origin("Items/Heal/C.psd")].author == "alice"   # not the renamers
     assert index.renames["Items/Heal/A.psd"] == ("Items/Heal/C.psd", index.by_sha[c[5]])
     assert index.renames["Items/A.psd"][0] == "Items/Heal/A.psd" and "Items/B.psd" not in index.renames
     assert [x.sha for x in index.pngs["Items/A.png"]] == [c[3], c[2], c[1]]
@@ -110,6 +112,45 @@ def test_parse_handles_odd_paths_and_merges():
     assert index.newest['Items/We\tird "x".psd'].author == "ann" and [c.author for c in index.commits] == ["ann", "bo b"]
 
 
+def test_a_revert_dates_from_the_revert(tmp_path):
+    """King Dedede (2025-04-04): bytes X, then Y, then X again (a revert): the card and a version read after the revert
+    start at the revert, one read before it at X's intro. Holo Defense API: renamed after its revert (same bytes), it
+    still starts at the revert. The same bytes at a path that held no others keep their intro, and so does an exact
+    rename onto a path that held others. A start dates itself."""
+    repo = tmp_path / "cards"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "Items/A.psd", X)
+    c1 = commit(repo, "alice", 1000)
+    write(repo, "Items/A.psd", Y)
+    c2 = commit(repo, "bob", 2000)
+    write(repo, "Items/A.psd", X)
+    c3 = commit(repo, "carol", 3000)
+    index = ch.GitIndex.from_git(str(repo))
+    since = lambda path, at=None: index.blob_since(blob(X), path, at).sha
+    assert (since("Items/A.psd"), since("Items/A.psd", 3500.0), since("Items/A.psd", 3000.0)) == (c3, c3, c3)
+    assert since("Items/A.psd", 1500.0) == since("Items/A.psd", 1000.0) == index.blob_intro(blob(X)).sha == c1
+    stats = {"A": _card(blob_sha=blob(X), timestamp=3000.0)}
+    old = defaultdict(list, {"A": [_card(ability="One.", blob_sha=blob(X), timestamp=1000.0),
+                                   _card(ability="Two.", blob_sha=blob(Y), timestamp=2000.0)]})
+    ch.refine(stats, old, index)
+    assert [(v.version["from"], v.version["to"]) for v in old["A"]] == [(1000.0, 2000.0), (2000.0, 3000.0)]
+    assert (stats["A"].timestamp, stats["A"].version["from"], stats["A"].version["from_commit"]) == (3000.0, 3000.0, c3)
+    git(repo, "mv", "Items/A.psd", "Items/B.psd")
+    commit(repo, "dave", 4000)
+    write(repo, "Items/C.psd", X)
+    commit(repo, "erin", 5000)
+    write(repo, "Items/D.psd", b"other")
+    commit(repo, "fay", 6000)
+    git(repo, "rm", "-q", "Items/D.psd")
+    commit(repo, "fay", 6500)
+    git(repo, "mv", "Items/C.psd", "Items/D.psd")
+    commit(repo, "gus", 7000)
+    index = ch.GitIndex.from_git(str(repo))
+    assert since("Items/B.psd") == since("Items/B.psd", 4000.0) == since("Items/B.psd", 3000.0) == c3
+    assert since("Items/D.psd") == c1             # a copy (no other bytes at its path), renamed onto a used path
+
+
 # ========================
 # Versions
 # ========================
@@ -128,6 +169,28 @@ def test_start_of_causes(history):
     assert (start["cause"], start["from"], start["from_commit"]) == ("moved", 3000.0, history.c[3])
     legacy = ch.start_of(_card(timestamp=42.0), index, None)
     assert (legacy["cause"], legacy["from"], legacy["legacy"], legacy["from_commit"]) == ("legacy", 42.0, True, None)
+
+
+def test_the_seed_dates_legacy_versions_from_their_commit(history):
+    """A blob-less version whose timestamp is its path's commit time gets that commit's blob, so git dates it (no
+    longer approximate); a carried start gets its commit; a PNG named in another case still pins."""
+    index = ch.GitIndex.from_git(str(history.repo))
+    c = history.c
+    early = _card(ability="Old.", timestamp=1000.0)                                 # Items/A.psd at c1, no blob kept
+    current = _card(blob_sha=blob(Y), timestamp=2000.0)
+    stats, old = {"A": current}, defaultdict(list, {"A": [early]})
+    report = ch.refine(stats, old, index)
+    assert early.blob_sha == blob(X) and (early.version["cause"], early.version["legacy"]) == ("psd", False)
+    assert (early.version["from"], early.version["from_commit"], early.version["to"]) == (1000.0, c[1], 2000.0)
+    assert (report.blobs_found, report.commits_found) == (1, 0)
+    carried = _card(blob_sha=blob(Y), timestamp=2000.0)
+    carried.version = ch.meta(None, 1000.0, "legacy")                               # a start /update_stats carried
+    stats, old = {"A": carried}, defaultdict(list)
+    report = ch.refine(stats, old, index)
+    assert (carried.version["from"], carried.version["from_commit"], report.commits_found) == (1000.0, c[1], 1)
+    assert not ch.refine(stats, old, index).changed()
+    assert index.png_commit("Items/a.psd") == index.png_commit("Items/A.psd") is not None
+    assert index.blob_at("Items/A.psd", 1500.0) is None
 
 
 def _index_with(intros: dict, deletions: dict = None, pngs: dict = None) -> ch.GitIndex:
@@ -198,10 +261,68 @@ def test_refine_keeps_archived_tags_and_dates_them():
     assert old["Gone"][len(old["Gone"]) - 1].version["to"] == 4000.0       # an archived version ends at its deletion
 
 
+def test_a_stale_index_never_dates_a_tag_back_to_an_older_deletion():
+    """Items/A.psd deleted at 150, added back at 200 and deleted again at 300 (tag from _archive_sources): a clone not
+    fetched since the second deletion knows only the first, which dates nothing, with or without the tag's commit."""
+    index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
+    for commit in ("new", None):
+        record = _card(timestamp=200.0, archived={"at": 300.0, "path": "Items/A.psd", "blob": None, "commit": commit})
+        report = ch.Refined()
+        ch.date_archive({}, defaultdict(list, {"A": [record]}), index, report, backfill=False)
+        assert (record.archived["at"], record.archived["commit"], report.tags_dated) == (300.0, commit, [])
+
+
+def test_a_stale_index_never_dates_a_restored_cards_tag():
+    """Read at 100, deleted at 150, restored with the same bytes (its timestamp stays 100) and deleted at 300: a clone
+    not fetched since knows only the 150 deletion (and a rename then), newer than the reading. The tag's commit is not
+    in it, so neither dates the tag nor names a rename."""
+    index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
+    index.renames["Items/A.psd"] = ("Items/B.psd", index.by_sha["old"])
+    record = _card(timestamp=100.0, blob_sha="b1", archived={"at": 300.0, "path": "Items/A.psd", "blob": "b1",
+                                                              "commit": "new"})
+    report = ch.Refined()
+    ch.date_archive({"B": _card("B", path="Items/B.psd")}, defaultdict(list, {"A": [record]}), index, report,
+                    backfill=False)
+    assert record.archived == {"at": 300.0, "path": "Items/A.psd", "blob": "b1", "commit": "new"}
+    assert not report.changed()
+
+
+def test_a_psd_moved_into_mdw_is_retired_not_deleted():
+    """White Palace: its PSD moved (same bytes) into MDW/The Morgue, a folder of no cards. Its tag takes the commit's
+    date (not the run's clock) and says where it went; a second pass changes nothing."""
+    path = "Field/4 Stars/White_Palace.psd"
+    index = _index_with({}, deletions={path: ("b633", 4000.0)})
+    index.renames[path] = ("MDW/The Morgue/White_Palace.psd", index.by_sha["b633"])
+    palace = _card("White Palace", path=path, blob_sha="a66e",
+                   archived={"at": 9000.0, "path": path, "blob": "a66e", "commit": "b633"})
+    old = defaultdict(list, {"White Palace": [palace]})
+    report = ch.Refined()
+    ch.date_archive({}, old, index, report)
+    assert palace.archived == {"at": 4000.0, "path": path, "blob": "a66e", "commit": "b633",
+                               "moved_to": "MDW/The Morgue/White_Palace.psd"}
+    assert (report.tags_dated, report.retired, report.renamed) == (["White Palace"], ["White Palace"], [])
+    again = ch.Refined()
+    ch.date_archive({}, old, index, again)
+    assert not again.changed()
+
+
+def test_a_rename_that_edited_the_psd_follows_its_art():
+    """Chestnut -> The Forbidden One: the PSD was renamed and edited (no exact PSD rename), its PNG renamed unchanged."""
+    path = "Creatures/Other/4 Stars/Chestnut.psd"
+    index = _index_with({}, deletions={path: ("6b23", 4000.0)})
+    index.renames["Creatures/Other/4 Stars/Chestnut.png"] = ("Creatures/Other/4 Stars/The_Forbidden_One.png",
+                                                              index.by_sha["6b23"])
+    chestnut = _card("Chestnut", path=path, archived={"at": None, "path": path, "blob": None, "commit": None})
+    report = ch.Refined()
+    ch.date_archive({"The Forbidden One": _card("The Forbidden One")}, defaultdict(list, {"Chestnut": [chestnut]}), index,
+                    report)
+    assert chestnut.archived["renamed_to"] == "The Forbidden One" and report.renamed == [("Chestnut", "The Forbidden One")]
+
+
 def test_collapse_keeps_the_first_of_a_run_and_folds_the_last_into_the_card():
     """/update_stats' cleanup (no records): [A 100, A 200 (another blob), B 300, B 400] + current B 500: the first A stays
     with its date, both B versions go into the current card, which starts at 300 (a legacy record: no git here)."""
-    a1, a2 = _card(timestamp=100.0, blob_sha="b1"), _card(timestamp=200.0, blob_sha="b2", parser_version=2)
+    a1, a2 = _card(timestamp=100.0, blob_sha="b1", **V2), _card(timestamp=200.0, blob_sha="b2", **V2)
     b1, b2 = _card(ability="B.", timestamp=300.0), _card(ability="B.", timestamp=400.0, parsed_values={"name": "a"})
     current = _card(ability="B.", timestamp=500.0, blob_sha="b5")
     kept, dropped = ch.collapse([a1, a2, b1, b2], current)
@@ -283,6 +404,245 @@ def test_duplicates_follow_their_original_and_get_no_version():
 
 
 # ========================
+# The cleanup's rules (2026-10-23: the dupes left after the first collapse)
+# ========================
+V2 = dict(parser_version=2)
+
+
+def test_a_title_before_parser_2_is_unknown():
+    """Mol D Truffy: a reading before parser 2 read no title (None); the card read later with its printed title is no
+    new version. Between two readings that knew it, the title is still data."""
+    early = _card(timestamp=100.0)
+    current = _card(timestamp=200.0, display_name="Mol D. Truffy", blob_sha="b2", **V2)
+    assert ch.same_data(early, current)
+    assert not ch.same_data(_card(display_name="X", **V2), _card(display_name="Y", **V2))
+    assert ch.collapse([early], current) == ([], [early]) and ch.start(current) == (100.0, None)
+
+
+def test_a_run_never_joins_two_known_titles():
+    """A title-less early reading matches either title, but X and Y never share a run: the step X -> Y stays."""
+    early = _card(timestamp=100.0)
+    x = _card(timestamp=200.0, display_name="X", blob_sha="b2", **V2)
+    y = _card(timestamp=300.0, display_name="Y", blob_sha="b3", **V2)
+    current = _card(ability="New.", timestamp=400.0, display_name="Y", blob_sha="b4", **V2)
+    kept, dropped = ch.collapse([early, x, y], current)
+    assert (kept, dropped) == ([x, y], [early]) and ch.start(x) == (100.0, None) and ch.start(y) == (300.0, None)
+
+
+def test_a_near_equal_run_keeps_the_reading_that_knew_most():
+    """Wokey D pronouns: [no title, titled] then a real change: the titled reading stays, with the earliest start."""
+    early = _card(timestamp=100.0)
+    titled = _card(timestamp=200.0, display_name="Wokey D. Pronouns", blob_sha="b2", **V2)
+    current = _card(ability="New.", timestamp=300.0, display_name="Wokey D. Pronouns", blob_sha="b3", **V2)
+    assert ch.collapse([early, titled], current) == ([titled], [early]) and ch.start(titled) == (100.0, None)
+    assert ch.collapse([titled], current) == ([titled], [])                                  # idempotent
+
+
+def test_a_run_holds_readings_that_each_knew_less_than_one_of_them():
+    """A title-less early reading, the full one, then a reading without its stars: the two that knew less differ in
+    what they missed (neither stands for the other), but the full reading knew all of both, so all three are one run
+    and it alone stays, from the earliest start. The card after it (other stars) agrees with the starless reading
+    too, but that reading belongs to the run: the card does not start at it."""
+    early = _card(timestamp=100.0, stars=1)
+    full = _card(timestamp=200.0, stars=1, display_name="T", blob_sha="b2", **V2)
+    starless = _card(timestamp=300.0, stars=0, display_name="T", blob_sha="b3", problems=["NO STARS FOUND"], **V2)
+    current = _card(timestamp=400.0, stars=2, display_name="T", blob_sha="b4", **V2)
+    assert not ch.same_data(early, starless) and ch.knows(full, early) and ch.knows(full, starless)
+    assert ch.knows(current, starless) and not ch.knows(current, full)
+    assert ch.collapse([early, full, starless], current) == ([full], [early, starless])
+    assert ch.start(full) == (100.0, None) and ch.start(current) == (400.0, None) and current.version is None
+
+
+def test_an_earlier_reading_of_the_same_commit_goes():
+    """Tainted Bethany, omori, How To Jump: one commit read before parser 2 (no blob) and again by parser 2 (its blob),
+    both kept at the same second. The earlier reading goes (nothing to carry), so the kept one has the blob and no
+    version is zero-length. Two blobs at one second are two versions."""
+    v0 = _card(timestamp=50.0)
+    plain = _card(ability="Same.", timestamp=100.0)
+    read = _card(ability="Same.", timestamp=100.0, blob_sha="b1", display_name="Shown", **V2)
+    current = _card(ability="New.", timestamp=300.0, blob_sha="b3", **V2)
+    assert ch.collapse([v0, plain, read], current) == ([v0, read], [plain]) and read.version is None
+    before = _card(ability="Old.", timestamp=100.0)
+    holder = _card(ability="Edited.", timestamp=100.0, blob_sha="b1", display_name="How to jump", **V2)
+    assert ch.collapse([before], holder) == ([], [before]) and holder.version is None
+    a, b = _card(timestamp=100.0, blob_sha="b1", **V2), _card(ability="B.", timestamp=100.0, blob_sha="b2", **V2)
+    assert ch.collapse([a, b], current) == ([a, b], [])
+
+
+def test_an_edit_older_than_the_card_it_changes_stays_a_version():
+    """Card Edits.json's newest commit older than the card's start (an edits commit merged after a PSD push): the
+    edit's version starts at the card's start (never before it), and the cleanup keeps the card before it (no re-read:
+    its cause is edit), from record_edits (legacy) and a build's record_versions (authors too)."""
+    old = _card(timestamp=1000.0, blob_sha="b1", **V2)
+    db = _db({"A": _card(ability="Edited.", timestamp=1000.0, blob_sha="b1", **V2)})
+    assert ch.record_edits(db, {"A": deepcopy(old)}, 900.0, "e1") == ["A"]
+    assert ch.start(db.stats["A"])[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == []
+    assert [v.ability for v in db.old_stats["A"]] == ["Text."] and db.stats["A"].ability == "Edited."
+    index = _index_with({"b1": ("c1", 1000.0)})
+    old.version = ch.start_of(old, index, None)
+    for after, cause in ((_card(ability="Edited.", blob_sha="b1", **V2), "edit"),
+                         (_card(blob_sha="b1", author="New", **V2), "authors")):
+        db = _db({"A": after})
+        assert ch.record_versions({"A": deepcopy(old)}, {}, db, {}, [], index, ch.Commit(0, "e1", 900.0, "web"),
+                                  ch.Commit(0, "a1", 900.0, "web")) == [("A", cause)]
+        assert ch.start(after)[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == [] and len(db.old_stats["A"]) == 1
+
+
+def test_a_field_its_parse_failed_on_is_unknown():
+    """Bubble and God Tamer (NO STARS FOUND), 20 Creature Types (MISSPELT TYPE): the later reading that found them is
+    the same card, which keeps the earlier start."""
+    bubble = _card(timestamp=100.0, stars=0, blob_sha="b1", problems=['NO STARS FOUND (put the star layers in a group '
+                                                                       'named "Stars")'], **V2)
+    current = _card(timestamp=300.0, stars=1, blob_sha="b3", **V2)
+    assert ch.collapse([bubble], current) == ([], [bubble]) and ch.start(current) == (100.0, None)
+    misspelt = _card(types=["ice"], problems=["MISSPELT TYPE: tornado"], **V2)
+    assert ch.same_data(misspelt, _card(types=["ice", "wind"], **V2))
+    assert not ch.same_data(_card(types=["ice"], **V2), _card(types=["ice", "wind"], **V2))
+
+
+def test_one_form_for_the_same_data():
+    """An empty ability is None or '' (Anubisath Guardian); a title equal to the name is no title (a Card Edits name
+    fix equal to the file name); a retired type icon is its name now (offense.png became Negation.png)."""
+    assert ch.same_data(_card(ability=None), _card(ability=""))
+    named = _card(display_name="A", **V2)
+    assert ch.same_data(named, _card(**V2)) and ch.data_of(named)["display_name"] is None
+    assert ch.same_data(_card(types=["offense"], **V2), _card(types=["negation"], **V2))
+
+
+NO_LAYER = ["NO ABILITY LAYER"]
+
+
+def test_a_reading_that_knew_less_never_stands_for_one_that_knew_more():
+    """A commit with a broken ability layer (U) knew less than X: U never absorbs X (as the card after it, a run's
+    member or an archived record), while the reading that knew more absorbs U. Two readings each blind to a field the
+    other knew never join."""
+    x = _card(ability="Text X.", timestamp=100.0, blob_sha="b1", **V2)
+    u = _card(ability=None, timestamp=200.0, blob_sha="b2", problems=NO_LAYER, **V2)
+    assert ch.knows(x, u) and not ch.knows(u, x) and ch.same_data(x, u)
+    assert ch.collapse([x], u) == ([x], []) and ch.start(u) == (200.0, None)                  # U holds nothing of X
+    y = _card(ability="Text Y.", timestamp=300.0, blob_sha="b3", **V2)
+    assert ch.collapse([x, u], y) == ([x], [u]) and ch.start(x) == (100.0, None)              # U goes into X
+    assert ch.collapse([deepcopy(u)], y)[0] == [] and ch.start(y) == (200.0, None)            # into the card after it
+    gone = _card(ability=None, timestamp=200.0, blob_sha="b2", problems=NO_LAYER,
+                 archived={"at": 250.0, "path": "Items/A.psd", "blob": "b2", "commit": None}, **V2)
+    x2 = _card(ability="Text X.", timestamp=100.0, blob_sha="b1", **V2)
+    assert ch.collapse([x2, gone], None) == ([x2, gone], [])
+    stars = _card(stars=0, timestamp=100.0, blob_sha="b1", problems=["NO STARS FOUND"], **V2)
+    ability = _card(ability=None, stars=3, timestamp=200.0, blob_sha="b2", problems=NO_LAYER, **V2)
+    assert not ch.same_data(stars, ability) and ch.collapse([stars, ability], y) == ([stars, ability], [])
+    early, read = _card(timestamp=100.0), _card(timestamp=200.0, blob_sha="b2", **V2)       # equal, early read no title
+    assert ch.collapse([early, read], y) == ([read], [early]) and ch.start(read) == (100.0, None)
+
+
+def test_legacy_history_keeps_the_card_a_broken_layer_replaced():
+    """Legacy /update_stats: X, then a commit without its ability layer (U), then Y: X stays a version, U goes into Y
+    (the reading that knew more), and the next cleanup changes nothing. History [X], card Y, then U: Y is kept."""
+    from commands.card_data import CardBuild
+    x = _card(ability="Old text X.", timestamp=1000.0, blob_sha="a" * 40, **V2)
+    u = _card(ability=None, timestamp=2000.0, blob_sha="b" * 40, problems=NO_LAYER, **V2)
+    y = _card(ability="New text Y.", timestamp=3000.0, blob_sha="c" * 40, **V2)
+    build = CardBuild.__new__(CardBuild)
+    build.db, build.legacy = _db({}), True
+    for old, new in ((x, u), (u, y)):
+        build.db.stats["A"], build.replaced = deepcopy(new), {"A": deepcopy(old)}
+        build._record_history()
+    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X."]
+    assert build.db.stats["A"].ability == "New text Y." and ch.start(build.db.stats["A"]) == (2000.0, None)
+    assert ch.dedupe(build.db.stats, build.db.old_stats) == []
+    build.db = _db({"A": deepcopy(u)}, {"A": [deepcopy(x)]})
+    build.replaced = {"A": deepcopy(y)}
+    build._record_history()
+    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X.", "New text Y."]
+    assert ch.dedupe(build.db.stats, build.db.old_stats) == [] and ch.start(build.db.stats["A"]) == (2000.0, None)
+
+
+def test_build_and_untag_keep_the_card_a_reading_that_knew_less_replaced():
+    """The data build: a new blob, or the same blob read again, without its ability layer keeps the card before as a
+    version. A stale archived record the listed card knew less than stays history (untagged)."""
+    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
+    for blob_sha in ("b2", "b1"):
+        old = _card(blob_sha="b1", timestamp=1000.0, **V2)
+        old.version = ch.start_of(old, index, None)
+        db = _db({"A": _card(ability=None, blob_sha=blob_sha, timestamp=2000.0, problems=NO_LAYER, **V2)})
+        assert ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index) == [("A", "psd" if blob_sha == "b2" else "reparse")]
+        assert [v.ability for v in db.old_stats["A"]] == ["Text."]
+        assert ch.dedupe(db.stats, db.old_stats) == []
+    record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"}, **V2)
+    db = _db({"A": _card(ability=None, path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0, problems=NO_LAYER,
+                         **V2)}, {"A": [record]})
+    assert db.drop_stale_archives() and db.old_stats["A"] == [record] and record.archived is None
+
+
+def _creature(name, series, subseries=None, ability="Old.", timestamp=100.0):
+    return cm.CardInfo(name=name, card_type="creature", path=f"Creatures/Mario/2 Stars/{name}.psd", ability=ability,
+                       series=series, subseries=subseries, timestamp=timestamp)
+
+
+def test_normalize_series_and_type_names():
+    """Spicy Spray: an item's series typed in after its old version had none is that version's too, so it folds into
+    the card. Beldam: the 2026-10-20 split moved its series under 'Mario', no change. A creature's series is its
+    folder's, never filled. The retired 'offense' icon is 'negation'. Idempotent."""
+    spray, metronome = _card("Spicy Spray", timestamp=100.0), _card("Metronome", types=["offense"], timestamp=100.0)
+    beldam, goomba = _creature("Beldam", "Paper Mario: The Thousand-Year Door"), _creature("Goomba", None)
+    stats = {"Spicy Spray": _card("Spicy Spray", timestamp=200.0, series="Pikmin 2", blob_sha="b2"),
+             "Metronome": _card("Metronome", types=["negation"], timestamp=300.0),
+             "Beldam": _creature("Beldam", "Mario", "Paper Mario: The Thousand-Year Door", "New.", 300.0),
+             "Goomba": _creature("Goomba", "Mario", None, "New.", 300.0)}
+    old = defaultdict(list, {"Spicy Spray": [spray], "Metronome": [metronome], "Beldam": [beldam], "Goomba": [goomba]})
+    assert sorted(n for n, _ in ch.normalize(stats, old)) == ["Beldam", "Metronome", "Spicy Spray"]
+    assert spray.series == "Pikmin 2" and metronome.types == ["negation"] and goomba.series is None
+    assert (beldam.series, beldam.subseries) == ("Mario", "Paper Mario: The Thousand-Year Door")
+    assert ch.normalize(stats, old) == []
+    assert sorted(ch.dedupe(stats, old)) == [("Metronome", 100.0), ("Spicy Spray", 100.0)]
+    assert list(old) == ["Beldam", "Goomba"] and ch.start(stats["Spicy Spray"]) == (100.0, None)
+
+
+def test_versions_keep_no_creation_date():
+    """The card's creation date stays on the card (and an archived record): normalize drops a version's copy, and
+    add_history and a build's history copy none."""
+    version = _card(timestamp=100.0)
+    gone = _card("Gone", timestamp=100.0, archived={"at": 150.0, "path": "Items/Gone.psd"})
+    version.created = gone.created = {"date": "2026-01-01", "from": "file"}
+    old = defaultdict(list, {"A": [version], "Gone": [gone]})
+    assert ch.normalize({"A": _card(ability="New.", timestamp=200.0)}, old) == [("A", 100.0)]
+    assert "created" not in vars(version) and gone.created
+    db = cm.StatsDatabase()
+    card = _card()
+    card.created = {"date": "2026-01-01", "from": "file"}
+    db.add_history("A", card)
+    assert "created" not in vars(db.old_stats["A"][0])
+    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
+    before = _card(blob_sha="b1")
+    before.created = {"date": "2026-01-01", "from": "file"}
+    db = _db({"A": _card(ability="Changed.", blob_sha="b2")})
+    ch.record_versions({"A": before}, {}, db, {"A": 1}, [], index)
+    assert "created" not in vars(db.old_stats["A"][0])
+
+
+def test_the_cleanup_on_a_post_deploy_chain():
+    """Bob-ulk's chain as the jetson holds it: v2 read before parser 2 and v3 read by parser 2 at one commit, the series
+    split, the title: the cleanup leaves [v0, v1] and the card, which starts at that commit; a second pass changes
+    nothing."""
+    path = "Creatures/Mario/2 Stars/Bob-ulk.psd"
+    ttyd = "Paper Mario: The Thousand-Year Door"
+
+    def bob(ability, at, **kw):
+        return cm.CardInfo(name="Bob-ulk", card_type="creature", path=path, ability=ability, timestamp=at, **kw)
+    v0, v1 = bob("Cannot attack.", 100.0, series=ttyd), bob("Cannot attack, defend.", 200.0, series=ttyd)
+    v2 = bob("Has no innate actions.", 300.0, series=ttyd)
+    v3 = bob("Has no innate actions.", 300.0, series="Mario", subseries=ttyd, display_name="Bob-Ulk", blob_sha="b3",
+             **V2)
+    current = bob("Has no innate actions.", 400.0, series="Mario", subseries=ttyd, display_name="Bob-Ulk",
+                  blob_sha="b4", **V2)
+    stats, old = {"Bob-ulk": current}, defaultdict(list, {"Bob-ulk": [v0, v1, v2, v3]})
+    ch.normalize(stats, old)
+    assert ch.dedupe(stats, old) == [("Bob-ulk", 300.0), ("Bob-ulk", 300.0)]
+    assert old["Bob-ulk"] == [v0, v1] and ch.start(current) == (300.0, None)
+    assert (v0.series, v0.subseries) == ("Mario", ttyd)
+    assert ch.normalize(stats, old) == [] and ch.dedupe(stats, old) == []
+
+
+# ========================
 # A build's versions
 # ========================
 def _db(stats, old=None):
@@ -342,6 +702,18 @@ def test_build_versions_never_end_before_they_start():
     ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index)
     previous, current = db.old_stats["A"][0].version, db.stats["A"].version
     assert previous["from"] <= previous["to"] == current["from"] == 3000.0 and current["cause"] == "psd"
+
+
+def test_build_reread_of_the_same_blob_is_no_version():
+    """A parser change read on the same PSD (same blob and path): the reading is replaced, its start kept, no
+    zero-length 'reparse' version (the changelog still lists the re-read)."""
+    index = _index_with({"b1": ("c1", 1000.0)})
+    old = _card(blob_sha="b1", timestamp=1000.0)
+    old.version = ch.start_of(old, index, None)
+    old.version["from"] = 500.0                                                     # a carried start
+    db = _db({"A": _card(ability="Read better.", blob_sha="b1", timestamp=1000.0, **V2)})
+    assert ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index) == [("A", "reparse")]
+    assert "A" not in db.old_stats and (db.stats["A"].version["from"], db.stats["A"].version["to"]) == (500.0, None)
 
 
 def test_restored_with_the_same_data_at_another_path_is_no_version():

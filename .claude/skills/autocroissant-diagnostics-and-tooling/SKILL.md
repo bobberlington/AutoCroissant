@@ -381,8 +381,13 @@ change? Which cards are flagged? Did old_stats balloon?
 **Purpose**: diff two stats.pkl-format snapshots into added/removed/modified with per-field
 counts. THE gate before every pickle push — it turns "the pickle looks fine" into numbers.
 Handles both modern CardInfo pickles and legacy plain-dict pickles (pre-366c8d9), so it can diff
-across the Oct-2025 schema change. It does NOT diff `old_stats.pkl` (dict-of-lists shape →
-load error, exit 2).
+across the Oct-2025 schema change. Since 2026-10-23 it also diffs history: `--history <old
+old_stats.pkl> <new old_stats.pkl>` (or an `old_stats.pkl` beside each stats.pkl) adds a `-- history --`
+section: names and versions on each side, versions added and dropped per name, starts moved (a
+`version` record's `from`, on stored versions and current cards), archive tags changed, kept versions
+whose data changed, and cards with another blob or parser version. Without history it prints a note.
+Measured 2026-10-23 on the post-deploy rehearsal (main's cleanup vs work/history-fixes): `0 modified`,
+`versions added: 1 ... dropped: 25`, `starts moved: 18`, `archive tags changed: 2`.
 
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.
@@ -449,10 +454,7 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 | mass `path` changes in field counts | a path regression (the removeprefix local-path bug's signature, fixed 2026-10-19) — STOP, do not push | autocroissant-failure-archaeology Entry 1 |
 | hundreds of modified cards whose only changed field is `timestamp` | pickles from a local-timestamp sweep (docs/BUGS_AND_IMPROVEMENTS.md B6; since 2026-10-20 only the archived traversal on branch `archive/local-update-stats` can produce them); old_stats.pkl will have grown by one archived copy per card — STOP, do not push | autocroissant-run-and-operate §7 |
 | mass `type` → unknown (check with `--verbose`) | classification broke | impossibility-cards-reference for what classify should do |
-| huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert) | NOT visible in this script's output — measure with `inspect_pickle.py` summary (223 archived versions is the 2026-07-11 baseline) and `git diff --stat HEAD -- old_stats.pkl` |
-
-Note on that last row: the docstring lists it among the red flags, but `diff_stats.py` reads
-only stats.pkl-shaped files — old_stats growth is checked with the two commands above.
+| huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert; the 2026-10-22 15:41 run: +280) | the `-- history --` section's `versions added` (with `--history`, 2026-10-23) |
 
 **Failure modes**: fewer than two args → prints usage, exit 2; unreadable/missing/incompatible
 pickle → `ERROR loading pickles: ...` plus a reminder that unpickling CardInfo requires a
@@ -468,8 +470,9 @@ Did a parser change touch cards it shouldn't have?
 ### Workflow 1 — pre-pickle-push gate (run EVERY time before pushing pickles, from the repo root)
 
 ```bash
-git show HEAD:stats.pkl > /tmp/stats_head.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl
+git show HEAD:stats.pkl > /tmp/stats_head.pkl && git show HEAD:old_stats.pkl > /tmp/old_stats_head.pkl && \
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl \
+    --history /tmp/old_stats_head.pkl old_stats.pkl
 echo $?
 ```
 

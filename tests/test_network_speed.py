@@ -138,7 +138,10 @@ def test_commit_lookup_prefetched_and_empty(monkeypatch):
     monkeypatch.setattr(tr, "_repo", lambda: repo)
     tr._lookups = {"Items/A.psd": SimpleNamespace(result=lambda: [Commit(5)])}
     assert tr._get_remote_timestamp(repo, "Items/A.psd", "A") == (5.0, "author5") and calls == []
-    assert tr._get_remote_timestamp(repo, "Items/B.psd", "B")[1] is None                  # no commits: the default
+    with pytest.raises(LookupError):                         # no commits: the card waits, no made-up date (year 1000
+        tr._get_remote_timestamp(repo, "Items/B.psd", "B")   # or the run's clock, kept for good) nor a missing author
+    with pytest.raises(LookupError):                         # no repository: the card waits
+        tr._get_remote_timestamp(None, "Items/B.psd", "B")
 
 
 # ========================
