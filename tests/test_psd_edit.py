@@ -46,6 +46,8 @@ NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
 GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay "Blazing" type layer over the ability (OuterGlow)
 FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay "Smoldering": unstyled on the chart, nothing to cut
+RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
+BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -455,8 +457,9 @@ def test_name_redundancy_uses_the_printed_title(clone, parser):
 def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     """Idea 13 on the one 10+ card. `atk dark` holds Top ("0".."9" plus the parser's "10" marker: visible at opacity 0, so the
     parser adds a full top row; hidden, it reads Bottom alone: 2) and Bottom ("0".."9", 2 visible with ColorOverlay + BevelEmboss).
-    12 -> 7 shows Top 7 + Bottom 0 and moves 2's effect onto 0; 12 -> 15 shows Bottom 5; 12 -> 10 Bottom 0; 20 refuses (no
-    Bottom marker); the parser reads each result; gate bytes sees one flag byte per digit plus the moved blocks; hp (one row) refuses 11."""
+    12 -> 7 shows Top 7 + Bottom 0 and moves 2's effect onto 0, the two trading fxrp; 12 -> 15 shows Bottom 5; 12 -> 10 Bottom 0;
+    20 refuses (no Bottom marker); the parser reads each result; gate bytes sees one flag byte per digit plus the moved blocks;
+    hp (one row) refuses 11."""
     path = _card(clone, CANNON)[0]
     psd = PSDImage.open(path)
     parsed = pe.parse_card(parser, path, CANNON)
@@ -480,11 +483,11 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
         assert [layer.name for layer in edit.layers] == names
         shown = str(shows[1][0])                                              # the Bottom digit now visible
         two, new_digit = pe._record_index(bottom.digits["2"]), pe._record_index(bottom.digits[shown])
-        assert edit.moves == [(two, new_digit, b"lfx2"), (two, new_digit, b"lrFX")]
+        assert edit.moves == [(two, new_digit, b"lfx2"), (two, new_digit, b"lrFX"), (two, new_digit, b"fxrp"), (new_digit, two, b"fxrp")]
         saved = str(tmp_path / f"cannon_{value}.psd")
         pe.save_psd(psd, saved, update_preview=False)
         records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
-        assert flag_bytes == len(names) and block_bytes == 6360 and sorted(name for _, name, _ in records) == sorted(names)
+        assert flag_bytes == len(names) and block_bytes == 6360 + 2 * 28 and sorted(name for _, name, _ in records) == sorted(names)
         assert {name: fields for _, name, fields in records} == {shown: STAT_RECORD, "2": STAT_RECORD, **({"7": ["flags"]} if value == 7 else {})}
         reopened = PSDImage.open(saved)
         reparsed = pe.gate_reparse(parser, parsed, saved, CANNON, {"atk": value}, reopened)
@@ -498,16 +501,17 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     with pytest.raises(pe.Refused, match="ledger L3") as refused:
         pe.set_stat(PSDImage.open(path), parsed, "hp", 11)
     assert refused.value.code == "stat>10"
-    # the replace path: hp 9 (styled) -> 2 (a block with nothing enabled): 2's block goes, 9's lands
+    # the replace path: hp 9 (styled) -> 2 (a block with nothing enabled): 2's block goes, 9's lands, the two trade fxrp
     psd = PSDImage.open(path)
     edit = pe.set_stat(psd, parsed, "hp", 2)
     row = pe.template_rows(psd, "hp")[0]
     two, nine = pe._record_index(row.digits["2"]), pe._record_index(row.digits["9"])
-    assert edit.moves == [(two, None, b"lfx2"), (two, None, b"lrFX"), (nine, two, b"lfx2"), (nine, two, b"lrFX")]
+    assert edit.moves == [(two, None, b"lfx2"), (two, None, b"lrFX"), (nine, two, b"lfx2"), (nine, two, b"lrFX"),
+                          (nine, two, b"fxrp"), (two, nine, b"fxrp")]
     saved = str(tmp_path / "cannon_hp2.psd")
     pe.save_psd(psd, saved, update_preview=False)
     records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
-    assert (flag_bytes, block_bytes) == (2, 6360) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
+    assert (flag_bytes, block_bytes) == (2, 6360 + 2 * 28) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
     assert sorted(pe._enabled_effects(pe.template_rows(PSDImage.open(saved), "hp")[0].digits["2"])) == ["BevelEmboss", "ColorOverlay"]
     # a raise from <= 10 adds STATS TOO HIGH on two rows: by design, not a new problem (review fix)
     seven = str(tmp_path / "cannon_7.psd")
@@ -553,12 +557,13 @@ def test_effect_rules_on_styled_rows(clone):
     assert pe._enabled_effects(row.digits["5"]) == ["GradientOverlay"] and pe.stat_value([row]) == 10
     edit = pe.set_stat(psd, {"card": {"hp": 10}}, "hp", 3)
     five, three = pe._record_index(row.digits["5"]), pe._record_index(row.digits["3"])
-    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX")] and [layer.name for layer in edit.layers] == ["3", "5"]
+    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX"), (five, three, b"fxrp"), (three, five, b"fxrp")]
+    assert [layer.name for layer in edit.layers] == ["3", "5"]
     assert row.visible == [3] and pe._enabled_effects(row.digits["3"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["5"]) == []
     green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
     edit = pe.set_stat(green, {"card": {"atk": 10}}, "atk", 4)
     row = pe.template_rows(green, "atk")[0]
-    assert [layer.name for layer in edit.layers] == ["4", "7"] and len(edit.moves) == 2
+    assert [layer.name for layer in edit.layers] == ["4", "7"] and [key for _, _, key in edit.moves] == [b"lfx2", b"lrFX", b"fxrp", b"fxrp"]
     assert pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["7"]) == []
     with pytest.raises(pe.Refused, match="6, 8, 9") as refused:
         pe.set_stat(PSDImage.open(_card(clone, AZAMOTH_KING)[0]), {"card": {"hp": 10}}, "hp", 3)
@@ -576,6 +581,32 @@ def test_layer_records_fingerprint(clone):
 # ========================
 # Stats (the fork: viewport renders)
 # ========================
+def test_export_icc_follows_the_png(clone):
+    """The harness's ICC vote over the stored preview: a raw export votes 1.0 (render unconverted), a converted one 0.0, a
+    card without a foreign profile has no vote (converted, as before)."""
+    for rel, icc in ((RED_BLOON, False), (BLOCK_HOPPER, False), (MINI_DOOMER, True), (METTATON, True)):
+        psd_path, png_path = _card(clone, rel)
+        psd, png = PSDImage.open(psd_path), Image.open(png_path)
+        vote, moved = pe.icc_vote(psd, png)
+        assert moved >= pe.ICC_MIN_PX and vote == (0.0 if icc else 1.0) and pe.export_icc(psd, png) is icc
+    plain = PSDImage.new("RGB", (4, 4))
+    assert pe.foreign_profile(plain) is None and pe.icc_vote(plain, Image.new("RGB", (4, 4))) is None
+    assert pe.export_icc(plain, Image.new("RGB", (4, 4)))
+
+
+@round4
+def test_raw_export_bakes_unconverted(clone, parser, tmp_path):
+    """PoD01Red_Bloon's PNG holds the PSD's own values: converted, its hp row is 12 levels off (mean 12.1, refused); rendered
+    raw it passes (mean 0.58, 0% bad on 2026-10-22) and bakes, the region re-rendered raw for idempotence."""
+    psd_path, png_path = _card(clone, RED_BLOON)
+    parsed, baked = _bake(clone, parser, RED_BLOON, {"hp": 2}, tmp_path)
+    assert baked.icc is False and baked.reparse["card"]["hp"] == 2
+    assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
+    with pytest.raises(pe.Refused, match="baseline bad") as refused:
+        pe.baseline(PSDImage.open(psd_path), Image.open(png_path), baked.edits[0].region)
+    assert refused.value.code == "parity" and float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > 10
+
+
 @text_engine
 def test_render_pair_is_render_region_and_its_raw_values(clone):
     """One unconverted render gives render_region()'s image byte for byte, and the preview's values beside it."""
@@ -639,14 +670,14 @@ def test_two_stats_gate_one_region_per_row(clone, parser, tmp_path):
 @text_engine
 def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
     """Idea 12 through every gate: hp 5 -> 8 hides the styled 5 and shows 8 with its GradientOverlay. 2 flag bytes plus the
-    lfx2 and lrFX blocks (5884 bytes) leaving record 5 for record 8, nothing else; the dark cells render within the bar
+    lfx2 and lrFX blocks (5884 bytes) leaving record 5 for record 8 and the two trading fxrp (2 x 28), nothing else; the dark cells render within the bar
     (mean 0.90, 0% bad, max 7 on 2026-10-21); the parser reads 8; a rerun finds nothing."""
     parsed, baked = _bake(clone, parser, METTATON, {"hp": 8}, tmp_path)
     assert parsed["card"]["hp"] == 5 and baked.reparse["card"]["hp"] == 8 and baked.reparse["validator"] == []
-    assert baked.flag_bytes == 2 and baked.block_bytes == 5884
+    assert baked.flag_bytes == 2 and baked.block_bytes == 5884 + 2 * 28
     assert [(name, fields) for _, name, fields in baked.records] == [("5", STAT_RECORD), ("8", STAT_RECORD)]
     five, eight = (index for index, _, _ in baked.records)
-    assert baked.edits[0].moves == [(five, eight, b"lfx2"), (five, eight, b"lrFX")]
+    assert baked.edits[0].moves == [(five, eight, b"lfx2"), (five, eight, b"lrFX"), (five, eight, b"fxrp"), (eight, five, b"fxrp")]
     assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX and baked.parity["hp"]["max"] <= 7
     assert clip(baked.region, 1200, 2400) == (763, 1199, 1174, 1285) and baked.changed_pixels > 0
     saved = PSDImage.open(baked.psd_path)
@@ -696,6 +727,24 @@ def test_cannon_rows_pass_parity(clone, parser, tmp_path):
     parsed, baked = _bake(clone, parser, CANNON, {"hp": 2}, tmp_path / "hp")
     assert baked.reparse["card"]["hp"] == 2 and baked.parity["hp"]["bad_pct"] == 0
     assert 1.0 < baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
+
+
+@round4
+def test_cannon_toggle_keeps_the_texture_anchor(clone):
+    """The bevel texture tiles from the styled digit's fxrp; the Cannon's digits sit 138-160 px apart, off its 64 px pattern.
+    hp 9 -> 8 trades fxrp with the effect, so cells 9-10, lit before and after, render as the PNG shows them (0% bad on
+    2026-10-22; 8.1% bad, max 128, with 8's own fxrp); 8 -> 9 gives both records their blocks back."""
+    psd_path, png_path = _card(clone, CANNON)
+    png = Image.open(png_path)
+    psd = PSDImage.open(psd_path)
+    row = pe.template_rows(psd, "hp")[0]
+    before = {name: {bytes(k): v.tobytes() for k, v in row.digits[name].tagged_blocks.items()} for name in ("8", "9")}
+    edit = pe.set_stat(psd, {"card": {"hp": 9}}, "hp", 8)
+    lit = (row.digits["9"].mask.bbox[0] + 3, *edit.region[1:])     # past the bevel on 9's old left edge (2 px)
+    measured = pe._measure(pe.render_region(psd, lit), png.crop(lit))
+    assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX
+    pe.set_stat(psd, {"card": {"hp": 8}}, "hp", 9)
+    assert {name: {bytes(k): v.tobytes() for k, v in row.digits[name].tagged_blocks.items()} for name in ("8", "9")} == before
 
 
 @before_textures
