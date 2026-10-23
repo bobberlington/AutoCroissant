@@ -940,6 +940,18 @@ def test_a_misread_after_a_rename_reads_the_png_at_its_own_path(tmp_path):
     assert [n for n, *_ in ch.misreads({"B": card}, defaultdict(list, {"B": [v0]}), index)] == ["B"]
 
 
+def test_a_misread_after_a_revert_reads_the_png_of_the_revert(tmp_path):
+    """A version read after its bytes came back (a revert) has the PNG exported then beside it, not the one of the
+    bytes' first commit there."""
+    index, _ = _cards_repo(tmp_path, [(100000, {"Items/B.psd": b"b one", "Items/B.png": b"png 1"}),
+                                      (200000, {"Items/B.psd": b"b mid", "Items/B.png": b"png 2"}),
+                                      (300000, {"Items/B.psd": b"b one", "Items/B.png": b"png 3"}),
+                                      (400000, {"Items/B.psd": b"b two"})])
+    v0 = _card("B", path="Items/B.psd", blob_sha=blob(b"b one"), timestamp=300000.0)
+    card = _card("B", path="Items/B.psd", blob_sha=blob(b"b two"), timestamp=400000.0, types=["counter"])
+    assert [n for n, *_ in ch.misreads({"B": card}, defaultdict(list, {"B": [v0]}), index)] == ["B"]
+
+
 def test_impossible_values_become_unknown_once():
     lazarus = _card("L", stats=cm.CardStats(110, 110, 110, 110), stars=3, timestamp=1.0)
     spawn = _card("S", stars=10, timestamp=2.0)
@@ -1032,6 +1044,27 @@ def test_readings_of_one_blob_in_two_folders_are_two_versions_dated_at_their_own
     assert [(v.card_type, v.path, v.stars, ch.start(v)) for v in old["T"]] == [
         ("minion", minion, 2, (1000.0, c[0])), ("aux item", item, None, (2000.0, c[1]))]
     assert [(v.path, ch.start(v), v.blob_sha) for v in old["S"]] == [(counter, (2100.0, c[2]), blob(b"s one"))]
+
+
+@pytest.mark.parametrize("case", ["dict", "both", "stored"])
+def test_a_reverted_blob_is_recovered_from_the_revert(tmp_path, case):
+    """King Dedede: bytes X at 1000, Y at 2000, X again at 3000 (2025-04-03's revert). A 2025 dict reading (an mtime
+    after the revert) starts at the revert, not X's first commit; so does a run that also holds a reading of X from
+    before Y (no start across other bytes); a stored version at the revert keeps its start against that older
+    reading."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/A.psd": A1}), (2000, {"Items/A.psd": A2}),
+                                      (3000, {"Items/A.psd": A1}), (5000, {"Items/A.psd": A3})])
+    early = (1500, {"A": _card(ability="Old words.", timestamp=1000.0)})
+    late = (4000, {"Items/A.psd": {"type": "item", "ability": "Old words.", "types": [], "timestamp": 3200.0}})
+    bot, _ = _bot_repo(tmp_path, {"dict": [late], "both": [early, late], "stored": [early]}[case])
+    stats, old = {"A": _card(ability="New.", blob_sha=blob(A3), timestamp=5000.0)}, defaultdict(list)
+    if case == "stored":
+        old["A"] = [_card(ability="Old words.", blob_sha=blob(A1), timestamp=3000.0)]
+        old["A"][0].version = ch.meta(index.by_sha[c[2]], 3000.0, "psd")
+    report = ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+    assert [(v.ability, ch.start(v)) for v in old["A"]] == [("Old words.", (3000.0, c[2]))]
+    assert report.starts == [] and index.arrival(blob(A1), "Items/A.psd", 3200.0).sha == c[2]
+    assert index.arrival(blob(A1), "Items/A.psd").sha == index.arrival(blob(A1), "Items/A.psd", 1500.0).sha == c[0]
 
 
 def test_a_restored_version_pairs_its_start_with_that_commits_blob(tmp_path):

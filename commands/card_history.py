@@ -181,12 +181,26 @@ class GitIndex:
         own = max(mine, key=lambda c: c.order) if mine else None
         return own if own is not None and own.order < since.order else since
 
-    def arrival(self, blob: Optional[str], path: str) -> Optional[Commit]:
-        """The oldest commit that put blob at path (a path in another letter case counts), else None."""
-        found = self.intro_at.get((blob, path)) if blob else None
-        if found is None and blob:
-            found = next((c for p, c in (self.paths_of.get(blob) or {}).items() if p.lower() == path.lower()), None)
-        return found
+    def arrival(self, blob: Optional[str], path: str, at: Optional[float] = None) -> Optional[Commit]:
+        """The commit that put blob at path (a path in another letter case counts), else None: the oldest; with `at`,
+        the one that began the stretch holding them then, since the path last held other bytes (a revert dates from
+        the revert, as blob_since), else the oldest."""
+        puts = self.at_path.get(self._path(path), []) if blob else []
+        mine = [i for i, (_, b) in enumerate(puts) if b == blob]
+        if not mine:
+            return None
+        i = next((i for i in mine if at is not None and puts[i][0].at <= at), mine[len(mine) - 1])
+        while i + 1 < len(puts) and puts[i + 1][1] == blob:
+            i += 1
+        return puts[i][0]
+
+    def _path(self, path: str) -> str:
+        """path as the index has it: itself, else the one in another letter case (a PNG named so)."""
+        if path in self.at_path or path in self.gone_at:
+            return path
+        if not self.lower:
+            self.lower = {p.lower(): p for p in (*self.gone_at, *self.at_path)}
+        return self.lower.get(path.lower(), path)
 
     def origin(self, path: str, once: bool = False) -> str:
         """The path an exact rename (or a chain of them; once: the newest only) brought path from, else path."""
@@ -204,13 +218,15 @@ class GitIndex:
         found = [(commit, blob) for commit, blob in self.at_path.get(path, []) if commit.at == at]
         return found[0] if len(found) == 1 else None
 
+    def held(self, path: str, blob: Optional[str], since: float, until: float) -> bool:
+        """Whether no commit put other bytes than blob at path after `since`, up to `until` (a start carried across
+        them would cross a revert's interlude)."""
+        return all(b == blob for c, b in self.at_path.get(self._path(path), []) if since < c.at <= until)
+
     def blob_before(self, path: str, at: float) -> Optional[str]:
         """The blob at path at time `at`: the newest commit (log order) at or before it that put one there or deleted
         it (None then, or with none); a path in another letter case counts (a PNG named so)."""
-        if path not in self.at_path and path not in self.gone_at:
-            if not self.lower:
-                self.lower = {p.lower(): p for p in (*self.gone_at, *self.at_path)}
-            path = self.lower.get(path.lower(), path)
+        path = self._path(path)
         put = next(((c, b) for c, b in self.at_path.get(path, []) if c.at <= at), None)
         cut = next((c for c in self.gone_at.get(path, []) if c.at <= at), None)
         if put is None or (cut is not None and cut.order < put[0].order):
@@ -624,8 +640,9 @@ def _blob_of(card: CardInfo, index: GitIndex) -> Optional[str]:
 
 
 def _read_at(path: str, blob: Optional[str], at: Optional[float], index: GitIndex) -> Optional[float]:
-    """When a reading's PSD bytes came to its own path (the PNG beside it is that path's), else its date."""
-    here = index.intro_at.get((blob, path)) if blob else None
+    """When a reading's PSD bytes came to its own path for the stretch holding them at `at` (the PNG beside it is that
+    path's; after a revert, the revert's), else its date."""
+    here = index.arrival(blob, path, at)
     return here.at if here is not None else at
 
 
@@ -934,16 +951,18 @@ def _fold(found: dict, snap: Snapshot, order: int) -> None:
 def _locate(reading: Reading, index: GitIndex, snapshot_at: float) -> bool:
     """A reading's blob and start from git: the commit at its path with its timestamp (the bot stored commit times
     since 2025-05), else the one blob its path held from that time (a file's mtime in April 2025) to its PICKLE, dated
-    by the commit that put it at that path (a reading never stands for a time its file sat at another path). False
-    when git can't tell."""
+    by the commit that put it at that path (a reading never stands for a time its file sat at another path), since
+    the path last held other bytes (a revert dates from the revert: King Dedede's 2025-04-03). False when git can't
+    tell."""
     found = index.blob_at(reading.card.path, reading.card.timestamp)
     if found is not None:
         reading.at, reading.commit, reading.blob = reading.card.timestamp, found[0].sha, found[1]
     else:
-        first = index.blob_before(reading.card.path, min(reading.card.timestamp, snapshot_at))
+        when = min(reading.card.timestamp, snapshot_at)
+        first = index.blob_before(reading.card.path, when)
         if first is None or first != index.blob_before(reading.card.path, snapshot_at):
             return False
-        intro = index.arrival(first, reading.card.path)
+        intro = index.arrival(first, reading.card.path, when)
         if intro is None:
             return False
         reading.at, reading.commit, reading.blob = intro.at, intro.sha, first
@@ -988,7 +1007,8 @@ def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> 
     History the bot's own PICKLE commits held and old_stats lost (the 2026-02-07 cleanup dropped all but 208 names; the
     2025 pickles held states no backfill read; 795fd23 replaced Spawn of the Forbidden One's June reading), in place.
     Each name's readings (_readings) dated from git (_locate); one with the PSD blob of a stored version is a re-read:
-    its earlier start carried (never past the version before). The others, in time order between the stored versions:
+    its earlier start carried (never past the version before, nor across other bytes at its path: a revert dates from
+    the revert). The others, in time order between the stored versions:
     a reading printing what the version before it prints is nothing new; a run of readings printing the same goes, as
     one, into the version after it when that prints it too (its earlier start carried: a format or parser change) or
     becomes a legacy version (the old parse's ability, types, stars, stats, card type; the next version's series,
@@ -1021,8 +1041,8 @@ def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> 
             if not _locate(reading, index, at_of[reading.snapshot]):
                 report.undated += 1
                 continue
-            key = (reading.blob, reading.card.path)     # the same bytes in another folder print another card type
-            have = located.get(key)
+            key = (reading.blob, reading.card.path, reading.read_at)   # the same bytes in another folder print
+            have = located.get(key)                                    # another card type; back after others: a revert
             if have is None:
                 located[key] = reading
             else:                                   # one blob read twice at one path: the newer parse, the earlier start
@@ -1041,7 +1061,8 @@ def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> 
             if (reading.blob, reading.card.path) in keys:
                 k = keys.index((reading.blob, reading.card.path))
                 begin = start(items[k])[0]
-                if begin is not None and reading.at < begin and (k == 0 or (start(items[k - 1])[0] or 0) < reading.at):
+                if begin is not None and reading.at < begin and (k == 0 or (start(items[k - 1])[0] or 0) < reading.at) \
+                        and index.held(reading.card.path, reading.blob, reading.at, begin):   # never across a revert
                     carry_to(items[k], reading.at, reading.commit)
                     report.starts.append((name, reading.at))
             else:
@@ -1099,7 +1120,7 @@ def _merge(name: str, fresh: list, items: list, holder: Optional[CardInfo], old_
         held = (_printed(after, set(), allowed), starts[k], after.path)
         if runs and _alike(index, _form(runs[len(runs) - 1], allowed), held) and \
                 set(_form(runs[len(runs) - 1], allowed, best=True)[0]) <= set(held[0]):   # the version knows it all
-            first = min(runs.pop(), key=lambda r: r.at)       # it prints what the version after it prints
+            first = _first(runs.pop())                        # it prints what the version after it prints
             carry_to(after, first.at, first.commit)
             report.starts.append((name, first.at))
         if runs:
@@ -1147,12 +1168,20 @@ def _alike(index: GitIndex, a: tuple, b: tuple) -> bool:
     return _same_png(index, first[2], first[1], second[2], second[1])
 
 
+def _first(run_: list) -> Reading:
+    """A run's earliest reading, never before a later stretch of bytes the run read at a path twice (other bytes came
+    and went between: a revert dates from the revert)."""
+    floor = max((r.read_at for r in run_ for o in run_ if (o.blob, o.card.path) == (r.blob, r.card.path)
+                 and (o.read_at or 0) < (r.read_at or 0)), default=None)
+    return min((r for r in run_ if floor is None or r.at >= floor), key=lambda r: r.at)
+
+
 def _restored(name: str, run_: list, after: Optional[CardInfo], report: Recovered) -> CardInfo:
     """A run of readings as one legacy version: the reading that knew most (the newest of those), the run's earliest
-    start with that reading's blob and commit (a pair git had), the next version's non-PSD fields (the old pickles
+    start (_first) with that reading's blob and commit (a pair git had), the next version's non-PSD fields (the old pickles
     lack them or used another series scheme)."""
     best = max(run_, key=lambda r: (-len(r.unknown), r.order))
-    first = min(run_, key=lambda r: r.at)
+    first = _first(run_)
     version = deepcopy(best.card)
     version.name = name
     for key in ("parsed_values", "duplicate_of", "alt_names", "archived"):
