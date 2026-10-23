@@ -577,28 +577,28 @@ echo $?
 ```
 
 Expect exit 1 with only the predicted refinements. Measured 2026-10-23 with AutoCroissant's PICKLE 077337a9 against
-a Mac rebuild seeded from it at TTSCardMaker 7b48db05 (work/shadow-prep; the shadow's first data commit should look
-the same):
+a Mac rebuild seeded from it at TTSCardMaker 7b48db05 (work/shadow-prep with work/history-fixes 1fc46c6; the shadow's
+first data commit should look the same):
 
 ```
 old: 818 cards   new: 818 cards
 added: 0   removed: 0   modified: 796
-  field change counts: {'created': 770, 'timestamp': 308, 'ability': 8, 'display_name': 6, 'problem': 3, 'stars': 2, 'types': 1}
+  field change counts: {'created': 770, 'timestamp': 305, 'ability': 8, 'display_name': 6, 'problem': 3, 'stars': 2, 'types': 1}
 -- history --
 old: 364 names 475 versions   new: 355 names 453 versions
 versions added: 14 (14 names)   dropped: 36 (33 names)
-starts moved: 82   archive tags changed: 2   kept versions with other data: 52   cards with another blob or parser: 281
+starts moved: 71   archive tags changed: 2   kept versions with other data: 52   cards with another blob or parser: 281
 ```
 
 - `created` 770: the data build dates every card from `site/Card Creation Dates.json`; the jetson does too once it
   runs the created-dates code, so this count falls to the cards it hasn't dated.
-- `timestamp` 308: 281 PSDs the seed's PICKLE had not read yet plus 27 cards re-dated to their blob's intro (31 re-dated
+- `timestamp` 305: 281 PSDs the seed's PICKLE had not read yet plus 24 cards re-dated to their blob's intro (28 re-dated
   by the seed pass, some among the 281). Against a current jetson only the re-dated ones stay (about 30).
 - `ability`, `display_name`, `problem`, `stars`, `types`: PSD changes the jetson had not read when it pickled (plus
   Shadow Duelist and 00 Table of Contents until both writers re-read them with the current parser).
 - History: dropped 36 = the seed pass's duplicate versions (the build log's `Duplicate versions dropped: 36`);
   added 14 = this build's new versions (the summary's 9 changed and 5 edited); starts moved = re-dated versions
-  (12 of them legacy versions the seed pass also gave a blob, such as Assault Panda 1743730939 -> 1742636015) and
+  (5 of them legacy versions the seed pass also gave a blob, such as Shell Shield 1739181026 -> 1699228331) and
   carried starts; other data = versions normalized (series filled or moved under a parent, retired type names);
   archive tags = ZOEY!!!!! and White Palace dated from git.
 - Not shown, and also expected: `version` records (the data build gives every card one; `starts moved` shows
