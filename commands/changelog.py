@@ -229,7 +229,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         after: stats after
         archived_before: archived cards before ({name: last version}, StatsDatabase.archived())
         archived_after: archived cards after
-        reparsed: names this build parsed from their PSD (a data change with the same blob is then a re-read)
+        reparsed: names this build parsed from their PSD (a data change with the same blob is then a re-read); of a
+            re-read card's changes only its parse's are the PSD's (split_changes), an edit beside them is its own event
         edits_by: card name -> its Card Edits.json entry's _-keys (edit_credit), or its _by
         index: card_history.GitIndex: the causing commit and its git author (a new blob's intro, the deletion)
         file_commits: {"edited": the newest commit of Card Edits.json, "authors": of Card Authors.txt} (their events' commit)
