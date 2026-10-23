@@ -277,6 +277,26 @@ def test_font_draws_every_glow(glow_build):
     assert len({tuple(w) for w in want.values()}) == 2 * len(bases) > 100   # 182 on 2026-10-23
 
 
+def test_glow_halo_reach(glow_build):
+    """Halos reach 0.3 em past each icon (owner 2026-10-23) and fill the token's advance."""
+    behind(glow_build)
+    ttlib = pytest.importorskip("fontTools.ttLib")
+    font = ttlib.TTFont(FONT)
+    order, em, hmtx = font.getGlyphOrder(), font["head"].unitsPerEm, font["hmtx"]
+    docs = {order[g]: doc for doc, g, _ in font["SVG "].docList}
+    box = lambda name: [float(v) for v in re.search(r'<image x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" '
+                                                    r'height="([-\d.]+)"', docs[name]).groups()]
+    pad = hmtx["glow_space"][0]
+    halos = [n for n in docs if n.endswith("glow_bg")]
+    assert len(halos) > 100
+    for name in halos:
+        icon = name.rsplit(".", 1)[0]
+        (hx, hy, hw, hh), (ix, iy, iw, ih) = box(name), box(icon)
+        reach = (pad + ix - hx, iy - hy, hx + hw - (pad + ix + iw), hy + hh - (iy + ih))
+        assert all(abs(r - 0.3 * em) <= 2 for r in reach), (name, reach)
+        assert hmtx[name][0] == pad and abs(hx) <= 2 and abs(hx + hw - (2 * pad + hmtx[icon][0])) <= 2, name
+
+
 def test_token_limit_fits_every_icon():
     """Every name and alias with the longest variant is one token to the parser, the bake, the emojis and the site
     ([thunderfury blessed blade of the starseeker:darkglow]: 52 characters)."""
@@ -325,5 +345,7 @@ def test_site_previews_flatten_variants(glow_build):
     finally:
         sys.path.remove(str(build))
     for v in ICON_VARIANTS:
-        text = site.share_text({"type": "item", "ability": f"Burn [fire{':' + v if v else ''}]"})
-        assert text.endswith("Burn non-Fire" if v == "no" else "Burn Fire"), v
+        for s in spellings(v):   # any letter case, as the font ([fire:DarkGlow])
+            text = site.share_text({"type": "item", "ability": f"Burn [fire{':' + s if s else ''}]"})
+            assert text.endswith("Burn non-Fire" if v == "no" else "Burn Fire"), s
+    assert site.share_text({"type": "item", "ability": "Burn [fire:ſticker]"}).endswith("[fire:ſticker]")   # ASCII case only

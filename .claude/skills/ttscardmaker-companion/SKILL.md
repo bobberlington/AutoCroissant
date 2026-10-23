@@ -25,7 +25,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,709,616 with `:glow` on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,966,396 with `:glow` (0.3 em halos) on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
@@ -58,7 +58,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:tint]` | One-color silhouette that takes the **text color** | `[fire]` |
 | `[fire:sticker]` | The color icon on an outline in the text color | `[fire]` |
 | `[fire:no]` | The icon with a red prohibition sign (`#e01b22`) over it | `[fire:no]` (means "non-fire") |
-| `[fire:glow]`, `[fire:darkglow]` (branch work/glow-tokens, §1.8) | The color icon on a soft white or black halo, 0.1 em wide | `[fire]` |
+| `[fire:glow]`, `[fire:darkglow]` (branch work/glow-tokens, §1.8) | The color icon on a soft white or black halo, 0.3 em wide | `[fire]` |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
 | `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
@@ -237,10 +237,10 @@ skips the glyph, but the entry stays.
 Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 
 1. One-time setup: `python3 -m venv MDW/Fonts/stoogedings-src/.venv && MDW/Fonts/stoogedings-src/.venv/bin/pip install -r MDW/Fonts/stoogedings-src/requirements.txt`
-2. Build (no arguments; it finds the repo from its own location; about 13 s):
+2. Build (no arguments; it finds the repo from its own location; about 13 s, with `:glow` about 32 s of CPU):
    `MDW/Fonts/stoogedings-src/.venv/bin/python MDW/Fonts/stoogedings-src/build_stoogedings.py`
    Expected output today: `built …/stoogedings.ttf: 5.7 MB, 91 icons, 1024 token spellings` (with `:glow`:
-   `7.2 MB, 91 icons, 1536 token spellings`).
+   `7.0 MB, 91 icons, 1536 token spellings`).
    Read any "token collision" or "missing file" lines.
 3. Rebuilds are **byte-identical** (`recalcTimestamp = False`, :514), so `git status` shows the font as changed only
    when something really changed. Verified 2026-10-19: a rebuild of a /tmp copy matched both the committed TTF and
@@ -289,7 +289,7 @@ build script's docstring:
 | GSUB single, ligature, multiple and chaining-contextual lookups all work in Photoshop under `liga` (CASE's multi-letter contexts: not checked yet, `case_badge_check.jsx`) | The whole design relies on liga. Leave ligatures on in the Character panel |
 | CoreText (Apple apps) draws plain outlines **above** SVG glyphs | In Preview, Pages and similar apps, `:sticker` shows only the outline. Photoshop is the target, so this is accepted |
 | CoreText ignores an SVG `<use>` that points at an `<image>` | Each color glyph embeds its PNG directly |
-| CoreText draws an SVG glyph past its `glyf` box (2026-10-23: a halo drawn whole with a smaller outline) | Only Photoshop's line-box clip (§4) limits the halo of §1.8 |
+| CoreText draws an SVG glyph whole, past the line box (2026-10-23, the 0.3 em halos: clipping to the line box changes 0 pixels) | Photoshop draws it whole too (glow test 2026-10-23), so nothing clips the halo of §1.8; its `glyf` (the whole halo) only serves non-SVG renderers |
 
 ### 1.6 Four consumers, four matching rules
 
@@ -301,7 +301,7 @@ same spellings; the website is still more lenient:
 | Font (GSUB) | Case-insensitive inside `[]`. Space, `_`, `-` or nothing interchangeable | Baked in at build | Strictest |
 | AutoCroissant parser, `IconVocabulary.spellings` / `lookup` (psd_parser.py) | Same as the font (2026-10-20): the name's or alias's words joined by one space, `_`, `-` or nothing; exact lowercase match; no spaces around `:variant`; the variants are `ICON_VARIANTS` (`glow`, `darkglow` on branch work/glow-tokens), all but `no` read as the plain icon | Read from the manifest at parse time | Anything the font would draw as letters (`[fragile.equip]`, `[ fire]`, `[fire: no]`) is an `UNKNOWN ICON TOKEN` problem. Before 2026-10-20 the parser also dropped `.`, `'` and extra spaces (more lenient than the font) |
 | AutoCroissant emojis, `type_emojis.emoji_name` | Lowercase. Drops `.`, `'` and `’`. Other non-alphanumerics → `_`. Max 32 characters, cut at a word boundary | **None**: it relies on the parser having already canonicalized the token in stats.pkl | `[x:no]` → `x_no` emoji, else 🚫 + emoji. `[X]`, `[Status]` and other unknown brackets stay as text |
-| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`; any other variant (`:glow` too) is the plain icon in text.js, and `share_text` (build_site.py) flattens `no|tint|sticker|glow|darkglow`. More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
+| Website, `norm()` in build_site.py:102 and text.js:4 | Lowercase. Drops whitespace, `_`, `-`, `.`, `'` and `’` (the parser's pre-2026-10-20 rule) | Read from the manifest at build time | `[x:no]` → icon wrapped in `.tok-no`; any other variant (`:glow` too) is the plain icon in text.js, and `share_text` (build_site.py) flattens `no|tint|sticker|glow|darkglow` in any ASCII case (2026-10-23). More lenient than parser and font on purpose (its docstring says so); harmless for display, since it only reads parser output |
 
 Emoji names differ from manifest keys in exactly two cases: `fragile equip` → `fragile_equip`, and
 `thunderfury_blessed_blade_of_the_starseeker` → `thunderfury_blessed_blade_of_the`. The 126 emojis are
@@ -337,43 +337,50 @@ size 120 px, linear contour, layer knocks out shadow. The icon is 91×93 px and 
 0.33 at 20 px, 0.20 at 40 px, 0.10 at 60 px and 0 by about 110 px. This emulation fits it with rmse 0.002: grow the
 matte by spread × size, blur with a Gaussian of sigma 0.42 × (1 − spread) × size, multiply by the opacity.
 
-**The size is cut (pending a Photoshop test of a bigger halo).** At token size that glow reaches 1.26 em. Photoshop clips SVG glyphs to the line
-box (§4): ascent 1077, descent 281 units, and an icon's bottom is at −180, so 0.1 em fits under it. The build uses
-`GLOW_SIZE` 100 units with the same spread, opacity and model: a tight soft rim, not the card's wide cloud. Larger
-sizes need taller font metrics (which move text) or an effect layer (§6).
-`~/Documents/Tools/wt/scratch/rulings/glow/glow_size_comparison.png` compares the card, 0.1, 0.3 and 1.26 em, and 1.26
-em clipped as Photoshop would. Whether Photoshop really clips a bigger halo is the open test:
-`~/Documents/Tools/wt/scratch/rulings-0300/PHOTOSHOP_GLOW_TEST.md` (0.3 em font, `glow_big_check.jsx`).
+**The size: 0.3 em (owner, 2026-10-23).** At token size the card's glow reaches 1.26 em. The first build cut it to
+0.1 em (`GLOW_SIZE` 100), on the belief that Photoshop clips SVG glyphs to the line box. The Photoshop glow test of
+2026-10-23 (`~/Documents/Tools/wt/scratch/rulings-0300/ps-results-1023/`: `glow_big_check`, `glow_1263_check`) drew
+0.3 em and 1.26 em halos whole, past the line box. The owner then chose 0.3 em: `GLOW_SIZE` 300 units, the same spread,
+opacity and model. The vertical metrics stay as they were.
+`~/Documents/Tools/wt/scratch/rulings/glow/glow_size_comparison.png` compares the card, 0.1, 0.3 and 1.26 em.
 
 **The glyphs.** Per icon: `icon_x.glow`, `icon_x.glow_bg`, `icon_x.darkglow`, `icon_x.darkglow_bg`, and one shared
-`glow_space`. A token draws [halo, advance `GLOW_SIZE` − `SIDE`][color icon][`glow_space`]. It is 120 units wider than
+`glow_space`. A token draws [halo, advance `GLOW_SIZE` − `SIDE`][color icon][`glow_space`]. It is 520 units wider than
 the plain icon, so the halo stays inside its own advance. Each halo is a PNG (`GLOW_UPP` 12 units per px, RGBA; owner 2026-10-23 chose 12 over 8 from an estimate; measured after: 8 cost 0.53 MB more and looked the same) in an OT-SVG
 `<image>`, one per icon and color. Its `glyf` is the whole halo's outline, so the non-SVG fallback is a blob, like
 `:sticker`'s.
 - **Nothing old changes.** The new glyphs come after the `.tk` glyphs and the two new lookups go last. Every old glyph
   id, glyf record, advance, SVG document, cmap entry and the eight old lookups stay byte-identical. The vertical
-  metrics are unchanged; `head` yMin/yMax grow to −278/920.
+  metrics are unchanged; `head` yMin/yMax grow to −478/1120 (layout does not use them: the first baseline follows
+  the `d` glyph).
 - **Extension lookups.** The packer makes the two new lookups Extension (type 7): GSUB grows from 62 to 88 KB. They are
   separate because TOKENS alone (41 KB, one subtable) would have grown to 65 KB, near the 64 KB subtable limit.
-- **Size:** 6,709,616 bytes (+973,412, +17%), build about 20 s. Byte-identical in ac-py314-fork and ac-py314-psd125.
+- **Size:** 6,966,396 bytes (+1,230,192, +21%), build about 32 s of CPU; wall time follows the machine's load (75-110 s
+  on a busy Mac, 2026-10-23).
 
-**Proof, 2026-10-23** (old font 38a19d81 vs new 8a0d9d46; scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py` in
-`~/Documents/Tools/wt/scratch/rulings/glow/scripts/`):
+**Proof, 2026-10-23** (old font 38a19d81 vs the 0.3 em font 3f6d3317, after the 0.1 em one 8a0d9d46 passed the same;
+scripts `proof_tables.py`, `proof_hb.py`, `proof_ct.py`, `halo_geometry.py` in
+`~/Documents/Tools/wt/scratch/followups/glow/scripts/`; the halo reach is `test_glow_halo_reach` in
+tests/test_badge_parity.py):
 - **HarfBuzz** (uharfbuzz 0.56.3), under default features, `liga` off and `rlig` off:
   - all 2560 glow spellings (every name and alias, 4 separators, 5 case mixes, both variants: 182 icon × variant
     pairs) shape to [halo, icon, `glow_space`], alone and in a sentence;
   - 1080 old tokens, 2530 badge spellings, 20,240 badge near misses, 8,654 glow near misses (`[x:glo]`, `[x: glow]`,
-    `[x:dark glow]`, `[x:glow:no]`…), 5,817 card text lines (stats.pkl, old_stats.pkl, Card Edits.json) and 599
+    `[x:dark glow]`, `[x:glow:no]`…), 6,129 card text lines (stats.pkl, old_stats.pkl, Card Edits.json, the
+    standardization runs' texts) and 599
     random mixes shape exactly as before;
   - 4,401 random mixes with a glow token shape as before outside the tokens, and as the triple inside.
 - **CoreText** (a Swift tool that loads the file, no install), `liga` on and off: the same sets, all pass.
 - **Renders:** CoreText draws the halo whole, and clipping to the line box changes 0 pixels. Samples on four
   backgrounds: `scratch/rulings/glow/samples/`; 8 vs 12 units per px side by side (max 13/255 per channel at 100 px,
   5/255 at 30 px): `scratch/rulings-0300/samples/`.
-- **Photoshop: not checked** (a batch owned it; the font is not installed). Install the font, restart Photoshop and run
-  `~/Documents/Tools/wt/scratch/rulings-0300/glow_check.jsx`: it samples the halo beside and under the icon and writes
-  `glow_check.log` and `.png` next to itself (its rules pass on a CoreText render). A FAIL under the icon only means
-  the line box clips it.
+- **Photoshop** draws the 0.3 em halo whole (installed 2026-10-23; `[darkmatter:glow]` at 100 px: 158 px wide, 112 px
+  up and 48 px down from the baseline).
+- **Strokes swallow it.** A layer or group Stroke outlines every bit of a halo's alpha, and 652 of 765 cards stroke
+  their `Text` group. On Nebulous_Precipice (7 px black stroke) `[darkmatter:glow]` became a black disc with a thin
+  white ring, nothing like the old icon layer's white glow, so the card was held (2026-10-23;
+  `~/std-work-1022/glow/`, `review/three_way.png`). `:glow` suits unstroked text; the std driver's token gate fails a
+  glow token in a stroked layer.
 - `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
   `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
@@ -723,7 +730,7 @@ MISSPELT TYPE: tornado, Tainted_Lazarus, Pix, Twin_Emperors SEVERAL CREATURES, C
 | **ExtendScript is ES3: future reserved words are errors** | `var short = ...` fails with "Error 9: Illegal use of reserved word 'short'" as a modal dialog that blocks every queued script (2026-10-20). `node --check` does NOT catch this. Never name things `short`, `int`, `long`, `char`, `byte`, `float`, `double`, `boolean`, `class`, `const`, `enum`, `export`, `extends`, `final`, `goto`, `implements`, `import`, `interface`, `native`, `package`, `private`, `protected`, `public`, `static`, `super`, `synchronized`, `throws`, `transient`, `volatile`. Also avoid a global `var name`: it is the application's read-only `name` (assignments are ignored, so every file came out as "Adobe Photoshop__…") |
 | Script prompts suppressed on the dev Mac (2026-10-20, the user's request) | `~/Library/Preferences/Adobe Photoshop 2023 Settings/PSUserConfig.txt` contains `WarnRunningScripts 0`, so `open -a … script.jsx` runs without the "Are you sure you want to run this script?" prompt. It applies after a restart |
 | Load a script's functions without running its UI | `var EFFECT_LAYERS_NO_UI = true; $.evalFile(new File(copy))`. `Effect Layers.jsx` only calls `main()` when that variable is undefined |
-| OT-SVG glyph support in Photoshop 2023 (probe 2026-10-20) | **Rendered:** `feGaussianBlur`, group `opacity`, linear/radial gradients, `clipPath`, embedded PNG. **Ignored:** `mask`. **Whole glyph dropped:** `feDropShadow`, and a filter chain with `feMorphology`/`feMerge`. Glyph drawing is **clipped to the line box** (font ascent/descent and the run's advance), so glows baked into glyphs get cut off |
+| OT-SVG glyph support in Photoshop 2023 (probe 2026-10-20) | **Rendered:** `feGaussianBlur`, group `opacity`, linear/radial gradients, `clipPath`, embedded PNG. **Ignored:** `mask`. **Whole glyph dropped:** `feDropShadow`, and a filter chain with `feMorphology`/`feMerge`. The probe found glyph drawing **clipped to the line box** (font ascent/descent and the run's advance); the 2026-10-23 glow test drew embedded-PNG halos of 0.3 and 1.26 em whole, past it (§1.8) |
 | Text-style limits found while hiding runs | `baselineShift` needs `impliedBaselineShift` set too, and is capped at about 6× the font size. `verticalScale` minimum is 1% (0 is ignored), and 1% still leaves hairlines on the baseline. The engine's `FillFlag`/`StrokeFlag` are **not** in the ActionManager `textStyle`: setting `fill`/`fillFlag` does nothing |
 | Selections | Subtracting a soft selection multiplies (`a·(1−b)`), so identical anti-aliased pixels leave about 25% residue. Harden it: store the selection in a channel, `Thrs` level 128 on that channel, reload. `Modify > Expand` is a max filter. Selections stop at the canvas edge: use **Layer via Copy** (`CpTL`) to take only selected on-canvas pixels (no clipboard) |
 | **Composite channels are stale inside a script** | `doc.selection.load(doc.channels[0])` (the red component) returned the card as it was before the script's layer changes, even after `app.refresh()`: 1.96M px selected for a 90k px layer. To read one layer's pixels as a mask, use **Apply Image** into an alpha channel: `AppI` with `With` = `Clcl` {`T   ` = ref(`Chnl` `Rd  `, `Lyr ` by name), `PrsT` false}, with the alpha channel as the only active channel |
@@ -816,7 +823,7 @@ Survey: 53 overlays on 40 cards (impossibility-cards-reference §4.2).
 **Rejected, measured in Photoshop 2023:**
 - **Effects baked into a font (an "effect twin" of the body font):**
   - 652 of 765 cards outline their text with Stroke and Drop Shadow on the `Text` group, so a baked-in glow gets a black outline.
-  - OT-SVG glyphs are clipped to the line box.
+  - OT-SVG glyphs are clipped to the line box (2026-10-20 probe; embedded-PNG halos are not, §1.8).
   - It would need one font per body font and effect, and 95 body fonts are in use.
 - **Ghost fonts** (metric-identical, invisible): the version with empty outlines shifted 17 px. The version with an empty SVG table lined up exactly, but needs every body font copied onto every machine.
 - **Text-style tricks:** baseline shift is capped, vertical scale bottoms out at 1% (which leaves hairlines), and the fill flag can't be scripted (§4).
