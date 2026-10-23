@@ -106,6 +106,37 @@ def test_a_png_only_card_with_dup_of_is_a_duplicate(no_aliases):
     assert tr.db.stats["Stubborn Queen"].display_name is None                  # its own name is its title
 
 
+@pytest.mark.parametrize("failure", ["5xx", "bad json"])
+def test_unread_card_edits_keep_the_dup_of_cards(no_aliases, monkeypatch, failure):
+    """Card Edits.json in the tree but not read (a 5xx: lost; malformed JSON): its dup_of entries can't be read, so
+    Stubborn Queen (PNG and original still there) stays a card, never archived; gone PNG: archived as before."""
+    from requests.exceptions import RequestException
+    from commands.card_edits import CardEdits
+    king = pa.CardInfo(name="Stubborn King", card_type="creature", path="Creatures/Other/2 Stars/Stubborn_King.psd",
+                       ability="Rule.")
+    paths = ["Creatures/Other/2 Stars/Stubborn_King.psd", "Creatures/Other/2 Stars/Stubborn_King.png",
+             "Creatures/Other/2 Stars/Stubborn_Queen.png", "site/Card Edits.json"]
+    tr = _traverser({"Stubborn King": king})
+    tr.edits = CardEdits.parse('{"cards": {"Stubborn Queen": {"dup_of": "Stubborn King"}}}')
+    tr.db.seen_cards.append("Stubborn King")
+    tr._sync_duplicates(Tree(paths))
+    assert "Stubborn Queen" in tr.db.stats
+
+    def unreadable(path):
+        if failure == "5xx":
+            raise RequestException("502")
+        return "{not json"
+    monkeypatch.setattr(tr, "_repo_text", unreadable)
+    for tree, kept in ((paths, True), (paths[:2] + paths[3:], False)):
+        tr.db.seen_cards.clear()
+        tr.db.seen_cards.append("Stubborn King")
+        tr.edits = tr._edits_from_response(Tree(tree), "o/r")
+        assert tr.edits is None and tr.edits_unread
+        tr._sync_duplicates(Tree(tree))
+        gone, _ = tr.db.prune_clean_cards(1.0)
+        assert (gone == []) is kept and ("Stubborn Queen" in tr.db.stats) is kept
+
+
 def test_duplicate_name_order(monkeypatch):
     """Hidden titles name the duplicates in number order; an /alias to the PNG wins (the build takes the aliases;
     RepositoryTraverser defaults to the bot's)."""

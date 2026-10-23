@@ -30,7 +30,7 @@ from global_config import (AUTHORS_PATH, AUTHORS_PATHS, BOT_CLONE, CARD_BRANCH, 
                            EDITS_PATHS, HISTORY_CLONE, ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR,
                            TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
-from commands.card_models import CardInfo, StatsDatabase, card_name
+from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 
@@ -78,6 +78,7 @@ class CardBuild:
         self._local = local()                    # a PyGithub client per thread: one client isn't thread-safe
         self._lookups: dict = {}                 # repo path -> Future of its commit page
         self.edits: Optional[CardEdits] = None
+        self.edits_unread = False                # Card Edits.json is in the tree but was not read (5xx, bad JSON)
         self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
         self.failed = 0                          # failed downloads and PSDs: the tree ETag is not kept, so the next run retries
         self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
@@ -363,11 +364,13 @@ class CardBuild:
         """The card repo's website fixes (the first of EDITS_PATHS in the tree), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
         path = next((p for p in EDITS_PATHS if p in paths), None)
+        self.edits_unread = False
         if path is None:
             return None
         try:
             return CardEdits.parse(self._repo_text(path))
         except (RequestException, ValueError) as e:
+            self.edits_unread = True
             if isinstance(e, RequestException):
                 self.failed += 1
                 self.lost.append(path)
@@ -379,10 +382,20 @@ class CardBuild:
         Duplicates: <Name>N.png next to <Name>.psd with no PSD of its own (A_Snack2.png "Breakfast"), and a card PNG
         with no PSD whose Card Edits.json entry has dup_of (Stubborn_Queen.png, build_site's rule). Each is recorded as a
         copy of the original's card with duplicate_of set. One that is no longer found stays out of seen_cards, so the
-        guarded prune archives it like any card. Returns how many entries changed.
+        guarded prune archives it like any card; with Card Edits.json unread, one whose PNG and original are still
+        there stays as it is (its dup_of can't be read). Returns how many entries changed.
         """
-        found = duplicate_pngs([item.get("path", "") for item in self._tree_items(response)], self.db.stats, self.edits)
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        found = duplicate_pngs(paths, self.db.stats, self.edits)
         before = {n: repr(c) for n, c in self.db.stats.items() if getattr(c, "duplicate_of", None)}
+        if self.edits_unread:
+            lower = {p.lower() for p in paths}
+            for name in before:
+                card = self.db.stats[name]
+                original = self.db.stats.get(card.duplicate_of)
+                if name not in found and original is not None and not getattr(original, "duplicate_of", None) \
+                        and duplicate_png(card).lower() in lower:
+                    self.db.seen_cards.append(name)     # kept, not archived for a file that failed to read
         siblings: dict = {}
         for name, (original, number, _) in found.items():
             if number is not None:
