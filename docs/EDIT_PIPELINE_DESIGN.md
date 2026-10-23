@@ -46,7 +46,9 @@ the workflow facts were re-checked.
   `PARSER_VERSION` 2), reads the printed title into `display_name` when it differs (`psd_parser._printed_title`: the visible
   `Text/Name` layer, else `Name` layers in the title region, else a layer named after the card, else the one layer in
   the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus, Sans; not on rule
-  pages); 157 of 813 cards, shown as printed, letter case included: the user's call of 2026-10-21; on 2026-10-23's 812
+  pages; any visible text layer there, in Text or not, so a card with no other title and one header label named after
+  its text would read that label: the old-vs-new census is the guard); 157 of 813 cards, shown as printed, letter case
+  included: the user's call of 2026-10-21; on 2026-10-23's 812
   PSDs 117 before the own-text rule, 119 with it); a Card Edits.json `name` still wins, with the title kept in
   `parsed_values`. 552 of 651 cards have a visible `Name` text layer, 153 name the layer
   after the card, 4 hide it (Sonic's title is a pixel layer), 5 are rasterized.
@@ -592,7 +594,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
    (`PARSER_VERSION` 2: 157 cards gain a `display_name`; 20 edits redundant now, 21 with Thunderfury; Sans and Papyrus have no
    readable `Name` layer; the next `/update_stats` re-parses every card once). 2026-10-23: their layers are named after their
    own text, which the parser now reads (Papyrus "The Great Papyrus", Sans "snas."; no version bump: re-parse the two with
-   `/update_stats cards:Papyrus, Sans`), so both edits are redundant.
+   `/update_stats cards:Papyrus, Sans` and, during the shadow, a card-sync dispatch with `cards`: BUGS_AND_IMPROVEMENTS
+   V6 has the order), so both edits are redundant.
 2. **Yes**: saved PSDs regenerate the flattened preview (`update_preview=True`). 2026-10-21 audit: the regeneration is 9.4 s of a
    23 s bake (a full-canvas composite); the merged PNG the driver already holds is that flattened image, so a fork
    `save(preview=<image>)` would keep the decision at no render cost (fork change, not done: the worktrees were in use).

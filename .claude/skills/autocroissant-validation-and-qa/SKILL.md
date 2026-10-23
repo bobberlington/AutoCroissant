@@ -384,8 +384,14 @@ quiet again. Version 2 (the printed title) is the first bump. The gate for such 
 the intended differences written down beforehand; on 2026-10-21 that was exactly 157 `display_name` additions and 2
 `STATS TOO HIGH` (Sonic spd 20, Royal Eradicator Main Cannon atk 12, both allowed by `allow_high_stats` in the edits
 file, so the live validation stays at the section 2 baselines). A change that reads a handful of cards differently needs
-no bump: re-parse those cards with `/update_stats cards:A, B` (2026-10-23: the title named after its own text changed
-only Papyrus and Sans, `/update_stats cards:Papyrus, Sans`).
+no bump: re-parse those cards with `/update_stats cards:A, B`. Before the cutover (`CARD_SYNC` off) that re-reads only
+the jetson's pickles; the shadow's data branch re-reads a card only when its blob changed or it is named in `--cards`
+(`card_data._todo`), so dispatch it too: `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f cards="A, B" -f
+dry_run=false` (with `MAIN_COMMIT` off it writes only `data`). Skipped, the shadow's daily check shows the cards'
+differences and the cutover loads the old read (then `/update_stats cards:A, B` once more after it). After the cutover
+the one `/update_stats cards:A, B` dispatches that run itself. 2026-10-23: the title named after its own text changed
+only Papyrus and Sans (`/update_stats cards:Papyrus, Sans` and the card-sync dispatch; the order with the bake is
+BUGS_AND_IMPROVEMENTS V6).
 
 **Step 5 — Promote via change-control.**
 
@@ -563,4 +569,5 @@ and the DB shape at a7c310e (818; 354/446) with the history recovery as the one 
 psd_parser.py and card_data.py citations re-pointed.
 
 2026-10-23 (title-own-text): row 1b's third measurement (812 PSDs, 2 intended `display_name` differences) and the
-no-bump case of the `PARSER_VERSION` rule (re-parse a handful with `/update_stats cards:`).
+no-bump case of the `PARSER_VERSION` rule (re-parse a handful with `/update_stats cards:`; during the shadow also a
+card-sync dispatch with `cards`, review of the same day).

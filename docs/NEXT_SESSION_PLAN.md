@@ -20,7 +20,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
   PoD11ZOMG's name, 6 redundant entries dropped, 2 refused) and a TTS save (108 links). The Desktop checkout is 1 ahead
   (af841c87, Energy_Ritual, a follow-up's local commit). card-edits.yml is live: dry run 39996528699 stuck queued (still
   queued at 11:39: cancel it), dry run 40003158811 and the live run 40003504861 (e1a491be) passed; the 30-minute schedule
-  takes over. e1a491be refused Papyrus and Sans (their title layer is named after the printed title).
+  takes over. e1a491be refused Papyrus and Sans (their title layer is named after the printed title): AC
+  `work/title-own-text` reads that layer (BUGS V6).
 - **Shadow started** (card-sync.yml schedule on, `MAIN_COMMIT`/`POSTS` off); at 11:39 no scheduled run yet, no `data` branch
   (GitHub's scheduler ran 3.4-5.6 h late for this repo on 2026-10-22, so a late first run is normal).
 - **Push guards** landed, off (`CARD_GUARDS` unset).
@@ -90,8 +91,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] **Test drift from B2** (Computer Virus, Fire Staff FX; old overlays pinned): AC `work/test-drift-b2` 3cd49da.
 - [ ] **Pandora author**: the owner ruled it stays MichaelJSr (archive ruling recorded). Do NOT land any TTSCardMaker
       `work/pandora-author`; delete it.
-- [ ] Check the live bake e1a491be: the 2 refusals (Papyrus, Sans: the title layer is named after the printed title;
-      decide whether the refused-layers bake should take it), the new PNG against the PSD.
+- [ ] Check the live bake e1a491be: the new PNG against the PSD. Its 2 refusals (Papyrus, Sans: the title layer is
+      named after the printed title) are AC `work/title-own-text` (owner: the bake takes such layouts): after it lands
+      and deploys, re-parse both on the jetson and the data branch, then dispatch a bake (BUGS V6 has the order).
 
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
 - [ ] Round 9 (4 branches: gradient scale proto, gradient stroke silhouette box, Photoshop-fixture one-carrier effects,
