@@ -363,7 +363,7 @@ commit of every build. The pin also pins the bake and the save, which come from 
 | `commands/card_bake.py` (changed) | Gains `--local`: all baked cards and the verdicts as one local commit, nothing pushed (§6.3, stage 1). The bot's `/bake_cards` keeps its one commit per run. |
 | `commands/tts_save.py` (changed) | Gains `--names <stats.json>`: names from a `db/` instead of the website's `cards.json`, with the same rule build_site uses for `cards.json` names |
 | `commands/repo_traverser.py` (changed) | Becomes the bot's /update_stats. Until step 8 it calls `card_data.build` with the GitHub-API source and writes the root pickles as today (legacy mode, for the jetson). From step 8 it is sync and dispatch (§11). |
-| `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. |
+| `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. `created` (2026-10-23) is a second such attribute: `site/Card Creation Dates.json`'s `{date, from[, provisional]}` (or the card's first upload, step 7), no data field (no version, no event). |
 | `requirements-card-data.txt` | The builder's pins: `psd-tools==1.25.0`, `fonttools`, `requests` |
 
 `SPARSE_FILES`: card_data.py, card_history.py, card_db.py, changelog.py, card_models.py, card_edits.py, psd_parser.py,
@@ -380,7 +380,7 @@ github_api reads it inside a try/except and takes the token from the environment
    traverser helper and `psd_details.font_index` work unchanged. It is never truncated and costs no API call.
    **Every blob is read by its sha:** from a local object store when it is there, else by REST.
    - Local means `git cat-file` under `GIT_NO_LAZY_FETCH=1`, so a missing blob is never downloaded by git.
-   - On the runner, the sparse checkout supplies the small files (`Card Edits.json`, `Card Authors.txt`, `stoogedings.json`),
+   - On the runner, the sparse checkout supplies the small files (`Card Edits.json`, `Card Authors.txt`, `Card Creation Dates.json`, `stoogedings.json`),
      and the bake supplies its own PSDs.
    - On the Mac, `--blobs` supplies every PSD as well.
 3. **The git index** (card_history). One `git log <head> --format='C%x09%H%x09%ct%x09%an' --raw --no-abbrev --no-renames --
@@ -401,7 +401,14 @@ github_api reads it inside a try/except and takes the token from the environment
 6. **Parse and details,** with hook (c): an exception in `parse` or `_gather_details` for one PSD counts that card as failed
    (`pending.failed`), keeps its old data, and the run goes on.
 7. **Authors, edits, duplicates.** As today, except one input: `_duplicate_name` reads the duplicate's `Card Edits.json`
-   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main.
+   aliases. Until step 5 it reads aliases.pkl from AutoCroissant main. Then every card's `created` from
+   `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.discord_edits created` from
+   the Discord archive), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
+   upload is earlier and the entry isn't a hand one; a card the file misses (one added since the last `created` run)
+   gets its first upload. The bot's first upload is the earliest version the database holds (`_first_upload`; the
+   website's is the PNG's first commit): equal for every card first uploaded since 2026-02 (11 of 11), and the file
+   covers the older ones, where the bot's history is cut short (770 of 770 cards dated as the website on 2026-10-23).
+   Rulebook pages stay undated. A missing or unreadable file leaves the dates as they are.
 8. **Archive** (merged on main, dfdf953): `prune_clean_cards(at)` runs only when `_can_prune` (no failed new-name PSD, at
    least one card). Each tag's `at` and `commit` come from the deleting commit in the index, not from the run's clock or a
    commits-API call. `renamed_to` comes from an exact rename, or from a new card with the same blob in this run.
@@ -499,7 +506,7 @@ github_api reads it inside a try/except and takes the token from the environment
  "main_commit": "<M, or null when the run made no main commit>",
  "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "psd_tools": "1.25.0", "python": "3.14"},
  "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
- "inputs": {"edits_blob": "…", "authors_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
+ "inputs": {"edits_blob": "…", "authors_blob": "…", "created_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
  "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0, "baked": 0},
  "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null, "repin": []},
  "problems": [{"card": "…", "path": "…", "notes": ["HP NOT FOUND"]}],

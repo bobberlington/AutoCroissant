@@ -624,6 +624,11 @@ excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 | `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10` |
 | `col==value` | string equality, case-insensitive | `series==kirby` |
 | `col~value` | string contains, case-insensitive | `type~creature`, `subseries~door` |
+| `created<op>date` | creation date at the precision given (YYYY, YYYY-MM or YYYY-MM-DD); undated cards never match | `created>=2025`, `created==2023-10` |
+
+Spaces around an operator are fine (`hp > 5`, `type == creature`, `created >= 2025`; 2026-10-23, as the website's
+search). `created` is the card's `site/Card Creation Dates.json` date, or its first upload when the file misses it or
+is later (`CardDates.created`, the website's rule); it is in `/export_cards` and `/update_metadata`'s view too.
 
 Numeric-queryable columns: hp, def, atk, spd, stars. String-queryable: type, subtype, series,
 subseries, author, path, ability, types (the list is stringified, so `types~undead` works). `prep_dataframes`
