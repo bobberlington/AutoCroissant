@@ -856,10 +856,37 @@ def test_recover_restores_lost_versions_starts_and_gone_cards(lost):
     ch.date_archive(stats, old, index, found, backfill=False)
     assert old["Old"][0].archived["renamed_to"] == "New" and old["Old"][0].author == "maker"
     again = ch.recover(stats, old, index, ch.Pickles.of(snaps))
-    assert not again.changed()
+    assert not again.changed() and again.done                     # one time only
+    assert not ch.recover(stats, old, index, ch.Pickles.of(snaps), once=False).changed()   # and idempotent
     report = ch.refine(stats, old, index, pickles)                # the seed pass after it: nothing more to recover
-    assert report.recovered is not None and not report.recovered.changed()
+    assert report.recovered is not None and not report.recovered.changed() and report.recovered.done
     assert old["A"][0].version["restored_from"] == snaps[0].sha   # the seed keeps where it came from
+
+
+def test_the_recovery_runs_once(lost):
+    """A restored version removed later on purpose stays removed; so does the whole recovery when its PICKLE is
+    reverted (pickles only): the reverted commit still says it ran. The bot reads no PICKLE once it ran."""
+    from commands import card_data as cd
+    index = ch.GitIndex.from_git(str(lost.cards))
+    stats, old = lost.stats, lost.old
+    clean = deepcopy((stats, old))
+    assert ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))).added
+    del old["A"]                                                  # folded on purpose (a later rule)
+    assert not ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))).changed() and "A" not in old
+    db = cm.StatsDatabase()
+    db.stats, db.old_stats = stats, old
+    assert cd.bot_pickles(db) is None                             # nothing read once it ran
+    cdb.dump_pickle(stats, str(lost.bot / "stats.pkl"))
+    cdb.dump_pickle(old, str(lost.bot / "old_stats.pkl"))
+    done = commit(lost.bot, "bot", 6000, "PICKLE")
+    git(lost.bot, "revert", "--no-edit", done, env={"GIT_COMMITTER_DATE": "@6100 +0000", "GIT_AUTHOR_DATE": "@6100 +0000"})
+    ch._PICKLES.clear()
+    pickles = ch.bot_pickles(str(lost.bot))
+    assert done not in pickles.shas and pickles.done
+    stats, old = clean
+    report = ch.recover(stats, old, index, pickles)
+    assert report.done and not report.changed() and not old
+    ch._PICKLES.clear()
 
 
 def test_seed_pass_recovers_from_the_bot_clone(lost, tmp_path, capsys):
@@ -1176,12 +1203,14 @@ def test_bot_pickles_reads_only_a_new_pickle_commit(lost, monkeypatch):
     ch._PICKLES.clear()
     read = []
     real = ch._snapshots
-    monkeypatch.setattr(ch, "_snapshots", lambda clone, commits: (read.append(len(commits)), real(clone, commits))[1])
+    monkeypatch.setattr(ch, "_snapshots", lambda clone, commits, peek=False: (
+        read.append(("peek" if peek else "read", len(commits))), real(clone, commits, peek))[1])
     first = ch.bot_pickles(str(lost.bot))
     cdb.dump_pickle({"A": _card(ability="Newest.", timestamp=3000.0)}, str(lost.bot / "stats.pkl"))
     commit(lost.bot, "bot", 4800, "PICKLE")
     second = ch.bot_pickles(str(lost.bot))
-    assert read == [4, 1] and second is first and len(second.shas) == 5
+    assert read == [("read", 4), ("peek", 1), ("read", 1), ("peek", 0)] and second is first and len(second.shas) == 5
+    assert not second.done and len(second.peeked) == 1                     # the reverted 4600 looked at once
     whole = ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))
     assert {n: sorted((r.card.path, r.card.timestamp, r.card.ability) for r in rs) for n, rs in second.readings.items()} == \
         {n: sorted((r.card.path, r.card.timestamp, r.card.ability) for r in rs) for n, rs in whole.readings.items()}

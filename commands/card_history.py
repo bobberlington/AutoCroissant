@@ -41,6 +41,7 @@ HIGH_STATS_LISTED = frozenset({"Royal Eradicator Main Cannon", "Pix", "Tainted L
 RANGE_PARSER = 2                                      # parser 2 (5835139): the validator's range check, allow_high_stats
 PNG_SLACK = 6 * 3600.0                                # a push's PNG export can follow its PSD by hours
 PICKLE_FILES = ("stats.pkl", "old_stats.pkl")         # the bot's committed database (PICKLE commits)
+RESTORED_MARK = b"restored_from"                      # in a PICKLE's bytes: it held a restored version (recover ran)
 PRINTED = ("card_type", "ability", "types", "stars", "stats")    # what a reading of the card prints
 STAT_KEYS = ("hp", "defense", "attack", "speed")      # _printed's stats, each known or not on its own
 PRINTS_NONE = ("",)                                   # _printed's ability when parser 2 found none printed
@@ -751,11 +752,13 @@ def commits_of(stats: dict, old_stats: dict, index: GitIndex) -> list:
 # ========================
 @dataclass
 class Snapshot:
-    """One commit of the bot's database: its sha, committer time and the pickles as they were."""
+    """One commit of the bot's database: its sha, committer time and the pickles as they were; marked: they held a
+    restored version (recover's, so it ran)."""
     sha: str
     at: float
     stats: dict
     old_stats: dict
+    marked: bool = False
 
 
 @dataclass
@@ -780,11 +783,15 @@ class Recovered:
     archived: list = field(default_factory=list)  # names gone from both pickles, archived from their last reading
     undated: int = 0                              # readings whose PSD blob git can't tell (skipped)
     clashed: int = 0                              # readings at another card's path of the same name (skipped)
+    done: bool = False                            # it ran before (recovered_before, Pickles.done): nothing read
 
     def changed(self) -> bool:
         return bool(self.added or self.starts or self.archived)
 
     def lines(self) -> list:
+        if self.done:
+            return ["Recovery from the bot's PICKLE commits: done before (a restored version in the database or a "
+                    "PICKLE), skipped"]
         by = {}
         for _, _, sha in self.added:
             by[sha[:7]] = by.get(sha[:7], 0) + 1
@@ -805,6 +812,8 @@ class Pickles:
     found: dict = field(default_factory=dict)     # name -> {(path, timestamp): Reading}
     at_of: dict = field(default_factory=dict)     # PICKLE sha -> committer time
     shas: tuple = ()                              # the PICKLE commits read (or refused), oldest first
+    done: bool = False                            # a PICKLE (a reverted one too) held a restored version: recover ran
+    peeked: frozenset = frozenset()               # the reverted PICKLE commits looked at for that
 
     @property
     def readings(self) -> dict:
@@ -816,6 +825,7 @@ class Pickles:
         _fold(self.found, snap, len(self.shas))
         self.at_of[snap.sha] = snap.at
         self.shas = (*self.shas, snap.sha)
+        self.done = self.done or snap.marked
 
     @classmethod
     def of(cls, snapshots) -> "Pickles":
@@ -831,16 +841,21 @@ _PICKLES: dict = {}                                   # clone -> Pickles of its 
 def _pickle_commits(clone: str) -> list:
     """(sha, committer time) of each commit of clone's HEAD history that changed stats.pkl or old_stats.pkl, oldest
     first, without the ones a later commit reverted (cca0aaf); [] when clone is no full git clone."""
+    return _pickle_log(clone)[0]
+
+
+def _pickle_log(clone: str) -> tuple:
+    """(_pickle_commits, the reverted ones), each [(sha, committer time)] oldest first; ([], []) without a full clone."""
     env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
     if not clone or not isdir(clone):
-        return []
+        return ([], [])
     shallow = run(["git", "-C", clone, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True, env=env)
     if shallow.returncode != 0 or shallow.stdout.strip() != "false":
-        return []
+        return ([], [])
     log = run(["git", "-C", clone, "log", "HEAD", "--format=%H%x09%ct%x09%B%x00", "--", *PICKLE_FILES],
               capture_output=True, env=env)
     if log.returncode != 0:
-        return []
+        return ([], [])
     commits, reverted = [], set()
     for chunk in log.stdout.decode("utf-8", "replace").split("\0"):
         chunk = chunk.strip("\n")
@@ -848,14 +863,15 @@ def _pickle_commits(clone: str) -> list:
             sha, at, body = (chunk.split("\t", 2) + ["", ""])[:3]
             reverted.update(findall(r"This reverts commit ([0-9a-f]{7,40})", body))
             commits.append((sha, float(at or 0)))
-    return [(sha, at) for sha, at in reversed(commits) if not any(sha.startswith(r) for r in reverted)]
+    gone = [(sha, at) for sha, at in reversed(commits) if any(sha.startswith(r) for r in reverted)]
+    return ([c for c in reversed(commits) if c not in gone], gone)
 
 
-def _snapshots(clone: str, commits: list):
+def _snapshots(clone: str, commits: list, peek: bool = False):
     """
     A Snapshot for each (sha, time) of commits, one at a time: one git cat-file --batch process, a blob read when its
     snapshot is due, the allow-list unpickler; a pickle it refuses is one line and left out (None yielded, so the
-    caller can count the commit read).
+    caller can count the commit read). Marked when the bytes hold RESTORED_MARK; peek: nothing unpickled (empty).
     """
     env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
     proc = Popen(["git", "-C", clone, "cat-file", "--batch"], stdin=PIPE, stdout=PIPE, env=env)
@@ -871,13 +887,17 @@ def _snapshots(clone: str, commits: list):
                     data = proc.stdout.read(int(header[2]))
                     proc.stdout.read(1)
                 pickles.append(data)
+            marked = any(data is not None and RESTORED_MARK in data for data in pickles)
+            if peek:
+                yield (sha, Snapshot(sha, at, {}, {}, marked))
+                continue
             try:
                 loaded = [SeedUnpickler(BytesIO(data)).load() if data is not None else {} for data in pickles]
             except Exception as e:                      # noqa: BLE001 - an unreadable PICKLE is one line, never a failed run
                 print(f"History: PICKLE {sha[:7]} not read ({e})")
                 yield (sha, None)
                 continue
-            yield (sha, Snapshot(sha, at, *(p if isinstance(p, dict) else {} for p in loaded)))
+            yield (sha, Snapshot(sha, at, *(p if isinstance(p, dict) else {} for p in loaded), marked))
     finally:
         proc.stdin.close()
         proc.stdout.close()
@@ -895,8 +915,9 @@ def bot_snapshots(clone: str) -> list:
 def bot_pickles(clone: str) -> Optional[Pickles]:
     """recover's input from clone's PICKLE commits, kept for the process: a new PICKLE commit (each /push) is the only
     one read then (the list grew at its end; else all again), each snapshot unpickled, folded in and dropped before the
-    next; None without a full clone."""
-    commits = _pickle_commits(clone)
+    next; a reverted one only looked at for RESTORED_MARK (a reverted recovery stays undone: done); None without a full
+    clone."""
+    commits, reverted = _pickle_log(clone)
     if not commits:
         return None
     key, shas = abspath(clone), tuple(sha for sha, _ in commits)
@@ -908,6 +929,9 @@ def bot_pickles(clone: str) -> Optional[Pickles]:
             have.add(snap)
         else:
             have.shas = (*have.shas, sha)
+    for sha, snap in _snapshots(clone, [c for c in reverted if c[0] not in have.peeked], peek=True):
+        have.done = have.done or snap.marked
+        have.peeked = have.peeked | {sha}
     _PICKLES.clear()
     _PICKLES[key] = have
     return have
@@ -1021,7 +1045,14 @@ def _same_printed(a: dict, b: dict) -> bool:
     return all(a[k] == b[k] or (k == "ability" and PRINTS_NONE in (a[k], b[k])) for k in a if k in b)
 
 
-def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> Recovered:
+def recovered_before(stats: dict, old_stats: dict) -> bool:
+    """Whether the database holds a restored version (recover ran: it is one time only, so a version removed later on
+    purpose, a fold or a revert of its PICKLE, stays removed)."""
+    every = [v for versions in old_stats.values() for v in versions] + list(stats.values())
+    return any((getattr(v, "version", None) or {}).get("restored_from") for v in every)
+
+
+def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles, once: bool = True) -> Recovered:
     """
     History the bot's own PICKLE commits held and old_stats lost (the 2026-02-07 cleanup dropped all but 208 names; the
     2025 pickles held states no backfill read; 795fd23 replaced Spawn of the Forbidden One's June reading), in place.
@@ -1034,17 +1065,22 @@ def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> 
     title, author, note, hidden and creatures; restored_from the PICKLE). A type list alone that differs while the PNG
     stayed is a misread (misreads), never a version. A name gone from both pickles gets its readings as versions, the
     last archived from its deleting commit (renamed_to, moved_to by date_archive); no deleting commit, nothing.
-    One-time and idempotent: a second call finds every reading held.
+    One time only (once): nothing when the database or a PICKLE commit (a reverted one too) held a restored version
+    (recovered_before, Pickles.done). Idempotent besides: a second call finds every reading held.
 
     Args:
         stats, old_stats: The database (changed in place)
         index: The card repo's GitIndex
         pickles: bot_pickles() (or Pickles.of(snapshots))
+        once: False: run though it ran before (tests of the rules)
 
     Returns:
         What changed
     """
     report = Recovered()
+    if once and (pickles.done or recovered_before(stats, old_stats)):
+        report.done = True
+        return report
     at_of = pickles.at_of
     for name, readings in pickles.readings.items():
         holder = stats.get(name)
@@ -1672,6 +1708,7 @@ __all__ = [
     'record_edits',
     'record_versions',
     'recover',
+    'recovered_before',
     'refine',
     'same_data',
     'start',

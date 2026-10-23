@@ -866,10 +866,12 @@ def history_index(clone: Optional[str] = None):
         return None
 
 
-def bot_pickles():
+def bot_pickles(db: Optional[StatsDatabase] = None):
     """recover's input from the bot's PICKLE commits (card_history.bot_pickles) in its own clone (BOT_CLONE, else this
-    checkout); None without a full clone."""
-    from commands.card_history import BOT_CHECKOUT, bot_pickles as pickles
+    checkout); None without a full clone, or once db holds a restored version (the recovery ran: none read)."""
+    from commands.card_history import BOT_CHECKOUT, bot_pickles as pickles, recovered_before
+    if db is not None and recovered_before(db.stats, db.old_stats):
+        return None
     return pickles(expanduser(BOT_CLONE) if BOT_CLONE else BOT_CHECKOUT)
 
 
@@ -984,7 +986,7 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     build.details = psd_details.load()
     try:                                            # one-time (2026-10-23); a failure skips it with one line
         index = history_index()
-        line = history_line(*clean_history(db, index, bot_pickles() if index is not None else None), db=db)
+        line = history_line(*clean_history(db, index, bot_pickles(db) if index is not None else None), db=db)
     except Exception as e:                          # noqa: BLE001 - the cleanup never stops an update
         line = None
         build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
