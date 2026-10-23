@@ -35,8 +35,8 @@ INCLUDE_FILES = [
 # Compiler directives for optimization
 COMPILER_DIRECTIVES = {
     'language_level': '3',           # Python 3
-    'boundscheck': False,            # Disable array bounds checking (faster)
-    'wraparound': False,             # Disable negative indexing (faster)
+    'boundscheck': True,             # a bad index raises, never crashes (owner, 2026-10-23)
+    'wraparound': True,              # negative indexes as in Python
     'initializedcheck': False,       # Disable uninitialized variable checks
     'cdivision': True,               # Use C division (faster but different for negatives)
     'embedsignature': True,          # Include function signatures in docstrings
