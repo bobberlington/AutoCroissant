@@ -2,6 +2,8 @@
 import pickle
 from types import SimpleNamespace
 
+import pytest
+
 import commands.card_edits as ce
 import commands.card_models as cm
 import commands.github_api as ga
@@ -48,6 +50,14 @@ def test_classify_shallow_paths_are_unknown():
     assert pp.CardClassifier.classify("Items/Heal/2 Stars/B.psd") == {"type": "item", "subtype": "heal", "stars": 2}
     assert pp.CardClassifier.classify("N.M.E/Star_Jar.psd") == {"type": "nme"}
     assert pp.CardClassifier.classify("Auxiliary/Minions/Mini_Doomer.psd")["type"] == "minion"
+
+
+@pytest.mark.parametrize("path", ["Field/ /X.psd", "Items/Weapons//X.psd", "Creatures/Doomers/ /X.psd",
+                                  "Auxiliary/Status/Debuffs/\t/X.psd"])
+def test_classify_blank_star_folder_raises(path):
+    with pytest.raises(ValueError, match="no star count"):      # compiled, ''.split()[0] read out of bounds
+        pp.CardClassifier.classify(path)
+    assert pp.CardClassifier.classify("Auxiliary/Status/Debuffs/1 Star/X.psd") == {"type": "debuff", "stars": 1}
 
 
 def test_card_name_and_card_key():
