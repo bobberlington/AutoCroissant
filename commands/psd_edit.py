@@ -66,6 +66,11 @@ OK_FONTS = ("exact", "system")                  # how a font may resolve; loose 
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 GLOWS = ("glow", "darkglow")  # token variants whose halo the fork draws as its glyf outline: a solid block, not a soft glow
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
+SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
+STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
+              "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
+              "BaselineDirection", "Tsume", "StyleRunAlignment", "Language", "NoBreak")   # edit_styles copies these
+TYPED = re_compile(r"\([^()\r\x03]*\)|\[[^\[\]\r\x03]*\]")   # a badge or token as typed: "(1CD)", "[fire]"
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
 BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
@@ -699,6 +704,150 @@ def body_fill(layer, chart: dict) -> Optional[tuple]:
     return max(weight, key=weight.get) if weight else None
 
 
+def _char_styles(layer) -> tuple:
+    """
+    Per str index of the layer's text: its fill (RGB 0..1 or None), whether it is set in the icon font, its run's
+    STYLE_KEYS as set_span_style takes them (Font by PostScript name; {} when unreadable) and its run's number.
+    """
+    text = layer.text
+    fills, icons, styles, runs = [None] * len(text), [False] * len(text), [{}] * len(text), [-1] * len(text)
+    for paragraph in layer.typesetting:
+        for run in paragraph.runs:
+            fill = run.style.fill_color
+            fill = tuple(float(v) for v in fill)[-3:] if fill else None
+            icon = run.style.font_name.lower().startswith(ICON_FONT_PREFIX)
+            for i in range(max(run.start, 0), min(run.end, len(text))):
+                fills[i], icons[i], runs[i] = fill, icon, (paragraph.start, run.start)
+    try:
+        fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
+        style = layer.engine_dict["StyleRun"]
+        i = unit = 0
+        for length, run in zip(style["RunLengthArray"], style["RunArray"]):
+            data = run["StyleSheet"]["StyleSheetData"]
+            keys = {key: deepcopy(data[key]) for key in STYLE_KEYS if key in data}
+            if "Font" in keys:
+                keys["Font"] = fonts[int(keys["Font"])]
+            unit += int(length)
+            while i < len(text) and unit > 0:
+                styles[i] = keys
+                unit -= 2 if ord(text[i]) > 0xFFFF else 1
+                i += 1
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        styles = [{}] * len(text)
+    return fills, icons, styles, runs
+
+
+def _stretches(indices: list) -> list:
+    """[(start, end)] of the runs of consecutive ints in a sorted list."""
+    out = []
+    for i in indices:
+        if out and out[len(out) - 1][1] == i:
+            out[len(out) - 1] = (out[len(out) - 1][0], i + 1)
+        else:
+            out.append((i, i + 1))
+    return out
+
+
+def edit_parts(old: str, new: str, start: int, end: int) -> list:
+    """
+    The edited span new[start:end] against the old text it replaces, in order: stretches of SAME_RUN or more characters
+    the edit keeps, and the changed parts between them (one side may be empty: an insertion or a deletion).
+
+    Args:
+        old: The layer's text
+        new: The text to set
+        start, end: The edited span of new (changed_range, maybe widened to whole words)
+
+    Returns:
+        [(old start, old end, new start, new end, kept)]
+    """
+    lo = min(start, len(old))                   # the span starts in the common prefix: the same index in old
+    hi = min(max(end + len(old) - len(new), lo), len(old))
+    out, a0, b0 = [], 0, 0
+    for a, b, size in SequenceMatcher(None, old[lo:hi], new[start:end], autojunk=False).get_matching_blocks():
+        if 0 < size < SAME_RUN:
+            continue
+        if a > a0 or b > b0:
+            out.append((lo + a0, lo + a, start + b0, start + b, False))
+        if size:
+            out.append((lo + a, lo + a + size, start + b, start + b + size, True))
+        a0, b0 = a + size, b + size
+    return out
+
+
+def splice_text(layer, text: str, parts: list) -> None:
+    """
+    set_text(keep="runs") one changed part at a time (edit_parts), last first: the engine restyles only what changed, so
+    an edit at both ends of an ability leaves the badges and colours between them alone (in one call, everything from
+    the first change to the last would take the first changed character's style).
+    """
+    current = layer.text
+    for a0, a1, b0, b1, kept in reversed(parts):
+        if not kept:
+            current = current[:a0] + text[b0:b1] + current[a1:]
+            layer.set_text(current, keep="runs")
+    layer.set_text(text, keep="runs")           # nothing left but a stale story to bring along
+
+
+def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
+    """
+    The style of each changed part (edit_parts) of an ability edit, from the old text: a part replacing text takes the
+    commonest fill of what it replaces outside status words and blanks (set in the icon font only if all of it is: a
+    badge edit); an insertion, or a part replacing only those, the nearest character before it in its line (\\r or
+    \\x03), else after, that is no status word, blank or badge and shares no run with a status word (Astr's "3" of its
+    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's. A kept status word's characters
+    take that too: the edit resets status words, set_text_layer giving the new text's their swatch after. Before
+    set_text.
+
+    Args:
+        layer: The text layer
+        parts: edit_parts()
+        chart: status_fills(), or None
+
+    Returns:
+        [(new start, new end, RGB 0..1 or None, the source's STYLE_KEYS or None when it is a badge character)]
+    """
+    old = layer.text
+    fills, icons, styles, runs = _char_styles(layer)
+    status = {i for s, e, _ in (status_spans(old, chart) if chart else []) for i in range(s, e)}
+    tied = {runs[i] for i in status}
+
+    def source(i: int, icon: bool = False) -> bool:
+        return fills[i] is not None and i not in status and old[i] not in " \t\r\x03" and (icon or not icons[i])
+
+    def commonest(found: list, at: int) -> int:
+        fill = Counter(fills[i] for i in found).most_common(1)[0][0]
+        same = [i for i in found if fills[i] == fill]
+        return next((i for i in reversed(same) if i < at), same[0])
+
+    def near(lo: int, hi: int) -> Optional[int]:
+        for breaks in ("\r\x03", "\r", ""):
+            top = max([old.rfind(c, 0, lo) for c in breaks] or [-1]) + 1
+            bottom = min([i for i in (old.find(c, hi) for c in breaks) if i >= 0] or [len(old)])
+            clean = [i for i in [*range(lo - 1, top - 1, -1), *range(hi, bottom)] if source(i) and runs[i] not in tied]
+            if clean and breaks == "\r\x03":
+                return clean[0]
+            found = [i for i in range(top, bottom) if source(i)]
+            if found:
+                return commonest(found, lo)
+        return None
+
+    out = []
+    for a0, a1, b0, b1, kept in parts:
+        if kept:
+            spans = [(b0 + k, b0 + k + 1, near(a0 + k, a0 + k + 1)) for k in range(a1 - a0) if a0 + k in status]
+        elif b1 > b0:
+            i = next((commonest(found, a0) for icon in (False, True)
+                      for found in [[i for i in range(a0, a1) if source(i, icon)]] if found), None)
+            spans = [(b0, b1, near(a0, a1) if i is None else i)]
+        else:
+            spans = []
+        for start, end, i in spans:
+            out.append((start, end, body_fill(layer, chart or {}) if i is None else fills[i],
+                        None if i is None or icons[i] else styles[i]))
+    return out
+
+
 def changed_range(old: str, new: str) -> tuple:
     """
     The str indices [start, end) of the new text that set_text(keep="runs") restyles: everything outside the
@@ -1291,17 +1440,19 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
         overflow; ImportError when the fork edits TySh alone (no story_sync: Photoshop would show the story's old text)
 
-    The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
-    word would inherit its color: the edited words are reset to the body fill, then every status word in the text
-    takes its swatch (the chart is the authority, an off-swatch word is normalized). A chart status's FX layers are
-    derived state (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status word in the new text
-    ("Blazing", "Frozen#2" for a repeat), the word's glyph pixels cut from the new raster under a copy of the chart
-    layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx places them. A hand-made
-    overlay word layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX
-    layer standing in for it; one naming anything else refuses (unsupported-card). Any other FX layer refuses too, before
-    anything changes (unsupported-card): a badge or token run's (queue A's gradient cards) or a word's the chart has no
-    style for; the edit would drop it and none of them can be made again exactly. styled-word now means only that
-    this psd-tools cannot cut glyph pixels or make a pixel layer.
+    The text is set one changed part at a time (splice_text), so what the edit keeps keeps its runs. The engine gives
+    inserted text the style of the run before it, so an edit after a colored status word or a badge would take its
+    color or icon font: an ability's changed parts take the fill of the text they replace (edit_styles; status words
+    give none), words set in the icon font outside a typed badge or token that text's whole style, then every status
+    word in the text takes its swatch (the chart is the authority, an off-swatch word is normalized). A chart status's
+    FX layers are derived state (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status
+    word in the new text ("Blazing", "Frozen#2" for a repeat), the word's glyph pixels cut from the new raster under a
+    copy of the chart layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx places
+    them. A hand-made overlay word layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart
+    status, the FX layer standing in for it; one naming anything else refuses (unsupported-card). Any other FX layer
+    refuses too, before anything changes (unsupported-card): a badge or token run's (queue A's gradient cards) or a
+    word's the chart has no style for; the edit would drop it and none of them can be made again exactly. styled-word
+    now means only that this psd-tools cannot cut glyph pixels or make a pixel layer.
     """
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
@@ -1313,7 +1464,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
-    spans, body, badges, styled, old_fx, hide, engine = [], None, [], [], [], [], None
+    spans, badges, styled, old_fx, hide, engine = [], [], [], [], [], None
     if which == "name":     # point text has no box: the title must stay on the canvas and off the badges it clears today
         stars, icons, _ = badge_layers(psd)
         badges = [badge for badge in stars + icons if not _touches(layer, badge)]
@@ -1343,12 +1494,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             stray = sorted({collapse(overlay.text) for overlay in overlays if overlay not in hide})
             if stray:
                 raise Refused("unsupported-card", f"overlay word layers the chart has no style for: {', '.join(stray)}")
-            body = body_fill(layer, chart)
             start, end = _word_bounds(text, start, end)
             spans = status_spans(text, chart)
             styled = [span for span in spans if span[2].styled]
             if styled or old_fx or hide:
                 engine = _fx_engine()
+    parts = edit_parts(old_text, text, start, end)
+    styles = edit_styles(layer, parts, chart) if which == "ability" else []
     fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
@@ -1357,9 +1509,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             before = capture(layer, fonts)
         except MissingFontError as error:
             raise Refused("font", str(error))
-    layer.set_text(text, keep="runs")
-    if body is not None and start < end:
-        layer.set_span_style(start, end, fill=body)
+    splice_text(layer, text, parts)
+    if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
+        now, typed = _char_styles(layer)[1], {i for m in TYPED.finditer(text) for i in range(*m.span())}
+        for part_start, part_end, fill, like in styles:
+            for a, b in _stretches([i for i in range(part_start, part_end) if like and now[i] and i not in typed]):
+                layer.set_span_style(a, b, **like)
+            layer.set_span_style(part_start, part_end, fill=fill)
     for span_start, span_end, color in spans:
         layer.set_span_style(span_start, span_end, fill=color.fill)
     for token_start, token_end in tokens:
@@ -2146,7 +2302,9 @@ __all__ = [
     'STORY_MIRROR',
     'STORY_STYLE_KEYS',
     'STAT_FIELDS',
+    'SAME_RUN',
     'STAT_MAX',
+    'STYLE_KEYS',
     'StatusColor',
     'TEXT_BLENDS',
     'TEXT_FIELDS',
@@ -2172,6 +2330,8 @@ __all__ = [
     'gate_shape',
     'gate_size',
     'gate_stories',
+    'edit_parts',
+    'edit_styles',
     'edited_ids',
     'icc_vote',
     'icon_font',
@@ -2189,6 +2349,7 @@ __all__ = [
     'parse_card',
     'read_name',
     'shown_name',
+    'splice_text',
     'splices',
     'render_pair',
     'render_region',

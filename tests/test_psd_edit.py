@@ -61,6 +61,8 @@ AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"     # no Text gro
 JAWSUM = "Creatures/Omori/3 Stars/Mr_Jawsum.psd"                   # no Text group: its title 'Group 3/Group 2/Mr. Jawsum'
 SOUL_MASTER = "Creatures/Hollow Knight/4 Stars/Soul_Master.psd"    # its title 'Soul Master' sits beside the Text group
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
+PIZZA = "Creatures/Other/3 Stars/Pizza.psd"                        # three lines in three colours, each after a badge
+COLOURED = "0bc4c099"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -1108,6 +1110,102 @@ def test_inserted_text_takes_the_body_fill(clone, chart, tmp_path):
     layer = pe.ability_layer(psd)
     assert _fills(layer)[-1][1] == white and layer.text.endswith("Poisoned for 2 turns.")
     assert pe.body_fill(layer, chart) == white
+
+
+def _runs(layer) -> list:
+    """(text, font, size, fill) per style run."""
+    return [(layer.text[r.start:r.end], r.style.font_name, round(r.style.font_size, 2),
+             tuple(round(v, 3) for v in r.style.fill_color[-3:])) for p in layer.typesetting for r in p.runs]
+
+
+def _at(clone, tmp_path, rev: str, rel: str) -> tuple:
+    """rel's PSD and PNG at rev, in tmp_path/at/."""
+    out = tmp_path / "at"
+    out.mkdir(exist_ok=True)
+    paths = []
+    for ext in (".psd", ".png"):
+        name = rel[:len(rel) - 4] + ext
+        (out / Path(name).name).write_bytes(at_rev(clone, rev, name))
+        paths.append(str(out / Path(name).name))
+    return tuple(paths)
+
+
+@text_edit
+def test_an_ability_edit_takes_the_colour_of_what_it_replaces(clone, chart, tmp_path):
+    """Pizza's three lines are yellow, cyan and green; body_fill (the commonest) is cyan. An edited word takes the fill
+    of the text it replaces, an insertion the line's (the 2026-10-23 check: '1' -> '2' on the yellow line went cyan)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_at(clone, tmp_path, COLOURED, PIZZA)[0])
+    layer = pe.ability_layer(psd)
+    yellow, cyan, green = (0.979, 0.945, 0.477), (0.053, 0.825, 0.894), (0.546, 0.829, 0.326)
+    assert pe.body_fill(layer, chart) == pytest.approx(cyan, abs=1e-3)
+    text = layer.text.replace("add 1 bar", "add 2 bar").replace("another type.", "another type. Yes.")
+    pe.set_text_layer(psd, "ability", text, fonts, chart)
+    runs = _runs(pe.ability_layer(psd))
+    assert [run[3] for run in runs] == [yellow, yellow, cyan, cyan, green, green]
+    assert "add 2 bar" in runs[1][0] and runs[5][0].endswith("another type. Yes.")
+
+
+@text_edit
+def test_an_edit_at_both_ends_keeps_the_badges_between(clone, chart, tmp_path):
+    """The text goes in one changed part at a time (splice_text), so a badge between two edits keeps its icon font,
+    size and colour (in one set_text, Pizza's (1CD) took the body font: its pill drawn as text). Words the engine sets in
+    a badge's or token's style (replacing a badge, typed right after a token) take the style of the text they replace;
+    a badge typed after a badge stays a badge."""
+    fonts = str(clone / pe.FONTS_DIR)
+    yellow, cyan = (0.979, 0.945, 0.477), (0.053, 0.825, 0.894)
+    icon = "stoogedings-Regular"
+    pizza = _at(clone, tmp_path, COLOURED, PIZZA)[0]
+    for edits, check in (
+            ([("add 1 bar", "add 2 bar"), ("one 2 star", "one 3 star")],
+             lambda runs: runs[2] == ("(1CD)", icon, 32.0, cyan) and runs[3][1:] == ("Domigorgon", 32.0, cyan)),
+            ([("(1GCD) Remove or add 1", "(2GCD) Remove or add 2")],
+             lambda runs: runs[0] == ("(2GCD)", icon, 18.66, yellow) and runs[1][1:] == ("Domigorgon", 32.0, yellow)),
+            ([("(1GCD) Remove", "Once per turn, remove")],
+             lambda runs: runs[0][0].startswith("Once per turn, remove")
+             and runs[0][1:] == ("Domigorgon", 32.0, yellow)),
+            ([("(1CD) Can", "(1CD)(2U) Can")],
+             lambda runs: runs[2] == ("(1CD)(2U)", icon, 32.0, cyan))):
+        psd = PSDImage.open(pizza)
+        text = pe.ability_layer(psd).text
+        for old, new in edits:
+            text = text.replace(old, new, 1)
+        pe.set_text_layer(psd, "ability", text, fonts, chart)
+        runs = _runs(pe.ability_layer(psd))
+        assert check(runs), (edits, runs)
+    psd = PSDImage.open(_at(clone, tmp_path, COLOURED, NAMED[0])[0])
+    text = pe.ability_layer(psd).text.replace("[undead].", "[undead], always.")
+    pe.set_text_layer(psd, "ability", text, fonts, chart)
+    runs = _runs(pe.ability_layer(psd))
+    assert [r[0] for r in runs if r[1] == icon] == ["(OFS)", "(1PG)(OYT)", "[undead]"]
+    assert [r[1] for r in runs if ", always" in r[0]] == ["FrizQuadrataStd"] or \
+        [r[1][:7] for r in runs if ", always" in r[0]] == ["FrizQua"]
+
+
+@text_edit
+def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp_path):
+    """Through apply_jobs and every gate: the saved PSD's TySh and Txt2 story agree run by run (story_style_drift) and
+    keep the badge between the edits."""
+    paths = _at(clone, tmp_path, COLOURED, PIZZA)
+    old = pe.parse_card(parser, paths[0], PIZZA)["card"]["ability"]
+    new = old.replace("add 1 bar", "add 2 bar", 1).replace("one 2 star", "one 3 star", 1)
+    _, baked = _bake(clone, parser, PIZZA, {"ability": new}, tmp_path, chart, paths=paths)
+    saved = PSDImage.open(baked.psd_path)
+    assert pe.story_style_drift(saved) == []
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(new)
+    badges = [r[0] for r in _runs(pe.ability_layer(saved)) if r[1] == "stoogedings-Regular"]
+    assert badges == ["(1GCD)", "(1CD)", "(1GCD)"]
+
+
+def test_edit_parts_split_an_edit_at_what_it_keeps():
+    old, new = "(1CD) Deal 1 damage.\r(2U) Heal 2.", "(1CD) Deal 3 damage.\r(2U) Heal 4 HP."
+    start, end = pe.changed_range(old, new)
+    parts = pe.edit_parts(old, new, start, min(end, len(new)))
+    assert [(old[a0:a1], new[b0:b1], kept) for a0, a1, b0, b1, kept in parts] == [
+        ("1", "3", False), (" damage.\r(2U) Heal ", " damage.\r(2U) Heal ", True), ("2", "4 HP", False)]
+    assert pe.edit_parts("Burn", "Burns", 0, 5) == [(0, 4, 0, 4, True), (4, 4, 4, 5, False)]     # a word widened
+    assert pe.edit_parts("a1b", "a2b", 1, 2) == [(1, 2, 1, 2, False)]
+    assert pe.edit_parts("ab", "ab", 2, 2) == [] and pe.edit_parts("abcd", "abd", 2, 2) == [(2, 3, 2, 2, False)]
 
 
 @text_edit
