@@ -512,6 +512,9 @@ class CardBuild:
                 self.reparsed[name] = (old, path, sha)
                 card.timestamp = timestamp
                 card.blob_sha = sha
+                if (self.legacy and old is not None and old.path == path and getattr(old, "blob_sha", None) == sha
+                        and getattr(old, "version", None)):
+                    card.version = old.version              # the same PSD read again (cards:, force): its start stays
                 if author and not card.author:
                     card.author = author
                 if self.edits:

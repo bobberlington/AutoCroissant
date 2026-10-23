@@ -629,6 +629,20 @@ def test_refresh_uses_aliases_pkl_when_card_edits_was_never_read(repo):
     assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("MichaelJSr", "A Snack")
 
 
+def test_refresh_waits_for_a_running_update(repo):
+    """A Discord edit's refresh never saves stats.pkl inside /update_stats or a bake: it waits for bake_lock."""
+    from threading import Thread
+    from commands.card_runner import bake_lock
+    done = []
+    with bake_lock:
+        worker = Thread(target=lambda: done.append(de.refresh(None, None, AUTHORS.replace("A Snack = MichaelJSr", "A Snack = Zomoroko"))))
+        worker.start()
+        worker.join(0.3)
+        assert worker.is_alive() and not done and repo.stats["A Snack"].author == "MichaelJSr"
+    worker.join(10)
+    assert not worker.is_alive() and "A Snack" in done[0] and repo.stats["A Snack"].author == "Zomoroko"
+
+
 def test_aliases_pkl_ignored_once_moved(monkeypatch):
     """The bot's registry and the duplicates' names read Card Edits.json alone once aliases_moved is set."""
     monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: TEXTS[sha])

@@ -269,6 +269,24 @@ def test_force_update_reparses_without_history(github):
     assert _saved()[1] == {}                                          # same blobs: nothing archived
 
 
+def test_same_blob_reparse_keeps_the_start(github, capsys):
+    """A carried start (the duplicate cleanup) survives cards: and force_update: the same PSD read again is no new
+    version, so as_of and the website keep the earlier date."""
+    _run()
+    stats, _ = _saved()
+    older = pickle.loads(pickle.dumps(stats["The Freezer"]))
+    older.timestamp, older.blob_sha = TIME - 100, "1" * 40
+    with open("old_stats.pkl", "wb") as f:
+        pickle.dump({"The Freezer": [older]}, f)
+    _run()
+    assert _saved()[0]["The Freezer"].version["from"] == TIME - 100
+    _run(cards="the_freezer")
+    assert _saved()[0]["The Freezer"].version["from"] == TIME - 100
+    _run(force_update=True)
+    stats, old = _saved()
+    assert stats["The Freezer"].version["from"] == TIME - 100 and old == {}
+
+
 def test_older_parser_version_reparsed_once(github):
     """Every parse is stamped PARSER_VERSION; a card stamped by an older parser (or none: old pickles) is read again
     once, with the full tree, and without history (same blob)."""

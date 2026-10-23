@@ -139,7 +139,13 @@ def data_of(card: CardInfo) -> dict:
 
 
 def same_data(a: CardInfo, b: CardInfo) -> bool:
-    return data_of(a) == data_of(b)
+    """Whether two versions hold the same data; a value record() can't read counts as different (a version is kept,
+    as before 2026-10-22), so the cleanup at each /update_stats never fails on it."""
+    try:
+        return data_of(a) == data_of(b)
+    except (TypeError, AttributeError) as error:
+        print(f"History: {getattr(a, 'name', '?')} compared as changed ({error})")
+        return False
 
 
 def start(card: CardInfo) -> tuple:
