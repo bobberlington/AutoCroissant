@@ -35,6 +35,11 @@ EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must 
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
 
 
+def name_key(text: str) -> str:
+    """A name's letters and digits, case folded: what a layer named after the card shares with the file stem."""
+    return "".join(c for c in text.casefold() if c.isalnum())
+
+
 def title_text(text: Optional[str]) -> str:
     """A title as printed: no byte-order mark, control characters and runs of whitespace as one space, ends trimmed."""
     return sub(r"[\s\x00-\x1f]+", " ", (text or "").replace("\ufeff", "")).strip()
@@ -437,10 +442,11 @@ class PSDParser:
         The title as the card prints it, when it differs from the file name.
 
         The title is the visible Text/Name layer (several in the title region: joined in reading order), else the
-        visible Name text layers in the title region, else a visible layer under Text named after the card. A Name
-        layer holding part of the name beside layers holding the rest (Royal Eradicator Main Cannon: "Main Cannon",
-        "Royal", "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or rasterized titles
-        read as nothing.
+        visible Name text layers in the title region, else a visible layer under Text named after the card, else one
+        named after the card elsewhere in the title region (a status effect's top-level title). A Name layer holding
+        part of the name beside layers holding the rest (Royal Eradicator Main Cannon: "Main Cannon", "Royal",
+        "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or rasterized titles read as
+        nothing.
 
         Args:
             psd: The open card
@@ -468,7 +474,8 @@ class PSDParser:
     def title_layers(psd: PSDImage, text_layers: list, name: str) -> list:
         """
         The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
-        layers under Text named after the card; of several, those in the title region.
+        layers under Text named after the card, else those elsewhere in the title region (a status effect's top-level
+        title); of several, those in the title region. Named after the card: letters and digits alike ('Mr. Jawsum').
 
         Args:
             psd: The open card
@@ -481,12 +488,15 @@ class PSDParser:
         top = psd.height * TITLE_REGION_RATIO
         text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
         under_text = [layer for layer in text_group if layer.is_visible() and layer.kind == "type"] if text_group is not None else []
-        key = " ".join(name.lower().split())
+        key = name_key(name)
         found = [layer for layer in under_text if layer.name.strip() == "Name"]
         if not found:
             found = [layer for layer in text_layers if layer.name.strip() == "Name" and layer.is_visible() and layer.bbox[1] < top]
-        if not found:
-            found = [layer for layer in under_text if " ".join(layer.name.lower().split()) == key]
+        if not found and key:
+            found = [layer for layer in under_text if name_key(layer.name) == key]
+        if not found and key:
+            found = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible() and layer.bbox[1] < top
+                     and name_key(layer.name) == key]
         if len(found) > 1:
             found = [layer for layer in found if layer.bbox[1] < top]
         return found

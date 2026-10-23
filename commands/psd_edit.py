@@ -372,7 +372,8 @@ def _no_title(psd: PSDImage) -> str:
 def name_layer(psd: PSDImage, card: str = ""):
     """
     The card's title layer: the one visible text layer the parser reads the printed title from (PSDParser.title_layers:
-    Text/Name, else a Name layer in the title region, else a layer under Text named after the card).
+    Text/Name, else a Name layer in the title region, else a layer under Text named after the card, else one elsewhere
+    in the title region: a status effect's top-level title).
 
     Args:
         psd: The open card

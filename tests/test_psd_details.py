@@ -21,6 +21,7 @@ LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn h
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
+AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "tree")
 
@@ -104,9 +105,10 @@ def test_text_layers_and_template(records):
 
 
 def test_template_names_the_title_layer_the_parser_reads(clone):
-    """A root Name (Computer Virus) or a title named after the card (Wham Bam Bone) is the developer's choice, no
-    deviation (the bake takes it, ledger L6); only a card whose title the parser cannot read lists one (ABBI)."""
-    for rel, layer in ((VIRUS, "Name"), (BONE, "Text/Wham Bam Bone"), (ABBI, None)):
+    """A root Name (Computer Virus) or a title named after the card (Wham Bam Bone; Afraid's at the top level) is the
+    developer's choice, no deviation (the bake takes it, ledger L6); only a card whose title the parser cannot read lists
+    one (ABBI)."""
+    for rel, layer in ((VIRUS, "Name"), (BONE, "Text/Wham Bam Bone"), (AFRAID, "Afraid"), (ABBI, None)):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
         template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
