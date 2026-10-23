@@ -191,10 +191,11 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 - **GitHub itself:** a commit pushed with `GITHUB_TOKEN` triggers no workflow, so the guard's own commits and the bake's, the
   save's and Card sync's never start a run.
 - **The job's `if`** also skips `github.actor` AutoCroissant and `github-actions[bot]`.
-- **Inside a range**, a file whose last writer is a commit authored `AutoCroissant` (`git_commit.AUTHOR`) is left out. This
-  covers the jetson's `/bake_cards` fallback and the Discord writers, which push with a personal token and so do trigger
-  workflows; bakes carry their PNGs anyway. Commits whose subject starts with `Card guards`, `Card edits`, `Card edit:`,
-  `TTS save` or `Card sync` are left out too.
+- **Inside a range**, a file that only commits authored `AutoCroissant` (`git_commit.AUTHOR`) or `github-actions[bot]`
+  changed is left out. This covers the jetson's `/bake_cards` fallback and the Discord writers, which push with a personal
+  token and so do trigger workflows; bakes carry their PNGs anyway. A file a person also changed in the range is guarded
+  (the person's commit is its writer). By author only (review fix, 2026-10-22): a person's commit whose subject starts
+  `Card edits` or `TTS save` (the owner's workflow commits are named so) is guarded like any other.
 - **Idempotence** is the last line: `land` re-derives everything at the head. A PNG already current, or a story already in
   sync, writes nothing, so a re-run is harmless.
 
@@ -326,8 +327,9 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing);
   - BabaUI.
-- **Per-card waivers** go in `site/Card Edits.json` `problems_ok` with the rule's code (`STD R3`). card-check already honours
-  that field, so a website admin can silence a deliberate deviation without a code change.
+- **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
+  the rule's code (`STD R3`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
+  standard.
 - An issue the push introduced (absent from the old blob) is marked "(new)".
 
 **6.3 The fixes and their gates.**
@@ -363,8 +365,9 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
   PSD keeps the credit.
 - No pickles, no `site/` files, no `TTS/`.
 
-**7.2 The commit comment** (on `after`, posted at check time; once the commit lands, the comment is edited to add "landed in
-`<sha>`").
+**7.2 The commit comment** (on `after`, posted at check time, saying "The bot will fix"; after `land` it is rewritten from
+`report-landed.md`: "Landed in `<sha>`" per landed card, "Fixed by the bot", and for a card left out "Not landed (superseded:
+...): nothing above was committed for this card").
 - `## Card guards`, then per card:
   - its issues;
   - the guard-1 outcome with D's size, the gates' numbers and the ICC mode;
@@ -419,7 +422,7 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 | Per stale card | plus the old PSD and old PNG (~2.5 s), two composites (0.3 s), the record diff (0.2 s), the PNG write (~1 s); the referee only for tool-written PSDs (2-6 s for a box, 10-30 s for a whole new card): about 6-10 s, up to 40 s for a new card |
 | Typical push (1-3 PSDs) | about 1-1.5 min; with writes, plus the 30 min sleep and ~20 s to land |
 | A batch push (50 PSDs, as the badge batch's) | about 4-6 min |
-| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); `timeout-minutes: 75` |
+| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the job's `timeout-minutes: 120` (Check 90, Land 60) |
 | The 28 GB repo | never checked out: trees only, then blobs by sha for the touched cards. The alternative is the partial clone's lazy fetch of exactly those blobs (`git sparse-checkout set --no-cone <paths>` after a blobless clone), which costs no REST calls, for when the API quota gets tight |
 | API (`GITHUB_TOKEN`, 1,000 requests an hour per repo, shared with card-check, font-check and card-sync) | per push: 1 commits read per commit, k blob reads (k = pushed PSDs + 2 per stale card), 1 comment (+1 edit), at land 2 activity/compare reads and n+3 writes for n files |
 | Price | free (standard runners on a public repo); the sleeping land step holds one runner for at most 30 min |
@@ -441,6 +444,7 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
 | GitHub schedules late | n/a: push runs are not scheduled; only the Card sync fold depends on the cron | none |
 | A burst of pushes | each its own run, so no report is lost (4.4); landing commits serialize by retry | none |
+| A run re-run by hand | posts to Discord and comments again (no per-push guard: a re-run is deliberate) | none |
 
 ## 11. Folding into Card sync (`DATA_BUILD_ACTION.md` §6)
 
@@ -483,8 +487,8 @@ jobs:
       github.actor != 'AutoCroissant' && github.actor != 'github-actions[bot]' &&
       (github.event_name == 'workflow_dispatch' || vars.CARD_GUARDS == 'report' || vars.CARD_GUARDS == 'on')
     runs-on: ubuntu-latest
-    timeout-minutes: 75
-    env:
+    timeout-minutes: 120
+    env:   # github, inputs, vars... only: OUT ($RUNNER_TEMP/guards) is set in the first step
       MODE: ${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || (inputs.dry_run && 'dry' || 'on') }}   # off | report | on | dry
     steps:
       - uses: actions/checkout@v7                       # trees only: the diff, the pairing, no blobs
@@ -546,7 +550,15 @@ jobs:
 
 - Whether font-check.yml's push run (role ping, font channel) should stop once the guard reports R7 in the standards channel.
   Until then, R7 stays out of the post and only in the comment, so a missing font is told once.
-- The Environment wait timer (4.5) instead of a sleeping runner: the owner's one-time setting.
+- The Environment wait timer (4.5) instead of a sleeping runner: the owner's one-time setting. Until then a push with writes
+  holds a runner up to about 31 min (free on a public repo).
+- Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
+  Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
+  ["R3"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
+- Three choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
+  copying the changed pixels into them (G8); R10 tells the author on Discord when a pushed PNG disagrees with its PSD; and the
+  PNG is Photoshop's stored composite in the PSD (converted as the card was exported), not the fork's render (the fork is the
+  referee for tool-written PSDs). Measurements: 2.2, 5.
 - The 57 cards within the bar but past 2 levels (2.1). They are re-exported only when pushed with a visible change, and then
   their whole PNG becomes the composite. 28 are status effects, 18 of them at max 36 on under 0.5% of pixels: probably text
   re-rasterized by a newer Photoshop. Check one in Photoshop before `on`.
@@ -556,7 +568,7 @@ jobs:
 **What exists** (nothing pushed, dispatched or posted; the Desktop clone was only read):
 - AutoCroissant `work/push-guards`: `commands/png_export.py` (guard 1), `commands/card_standards.py` (guard 2),
   `commands/card_guards.py` (the driver: `check`, `land`, `--whole-tree`, `--local`), tests `test_png_export.py` (17),
-  `test_card_standards.py` (23), `test_card_guards.py` (14). work/r5-bot is merged in for `icc_vote` (one conflict:
+  `test_card_standards.py` (23), `test_card_guards.py` (21 after the review). work/r5-bot is merged in for `icc_vote` (one conflict:
   `PARITY_MEAN_MAX` stays 2.0, the owner's value, with r5-bot's ICC constants added).
 - TTSCardMaker `work/push-guards`: `.github/workflows/card-guards.yml` (section 12's sketch made whole). Its shape is pinned by
   `test_card_guards.test_workflow_shape` (set `CARD_GUARDS_YML` to the file until it is on the clone's main).
@@ -599,9 +611,9 @@ jobs:
   - `sha=100511d3`: 12 Reactions2 current; 12 rule pages' PNGs match (R10); nothing told.
 
 **Changes from the design, found while building:**
-1. Per-card waivers: `site/Card Edits.json` `problems_ok: true` (a bool in `CardEdits.TYPES`, so "STD R3" codes would be
-   dropped as invalid). It waives the report-only rules R1-R8; R10 is still told and R9/R11 still fixed. Today: Pix,
-   Tainted Lazarus, Twin Emperors.
+1. Per-card waivers: none. The build first read `problems_ok: true` as a blanket waiver of R1-R8; the owner approved that flag
+   for parser problems only, so the review removed it (it changed nothing today: the three cards' issues are all
+   class-waived, `test_problems_ok_cards_are_waived_by_class_only`). Open point in 15.
 2. The Q2 class waiver includes Pix (a multi-creature card): R3 after waivers is 41, not 42.
 3. R11's reparse gate refuses a rename that changes the bot's reading. The parser misses an `ability ` layer (trailing space),
    so renaming it changes the card's data: it stays a report. The bot never changes data on its own.
@@ -617,7 +629,24 @@ jobs:
 11. The commit comment goes up only when a card has something told, a write or an error (`summary.json`); the job summary
     always has the report.
 12. The fork pin is `cards-20261022`, card-edits.yml's. It has no `sync_story`, so in the Action R9 reports until both pins move
-    to the release's tag (step 2); `story_sync()` decides.
+    to the release's tag (step 2); `story_sync()` decides. R11 has 0 cases in the tree, so at rollout "fix the easy issues"
+    fixes nothing until the pin moves. Measured at the pin (0302b08b, review 2026-10-22): the 34 replayed commits give the
+    same outcome, writer, changed pixels and truth max as at e0ea34f6 (34 of 34); the 3 bot bakes pass the referee (PoD09DDT
+    and PoD10BFB max 0, Springtrap max 32 on 0.002%); test_png_export 17 of 17. Evidence:
+    `~/Documents/Tools/wt/scratch/guards-fix/replay_at_pin.jsonl`.
+
+**Review fixes (2026-10-22):**
+- card-guards.yml set `OUT: ${{ runner.temp }}/guards` in the job's `env`, where `runner` is not allowed: GitHub rejects the
+  whole file, so every push touching a PSD or PNG would show a failed run even with `CARD_GUARDS` unset. OUT is set in the
+  Start step; `actionlint` passes (`test_workflow_lints`).
+- A pair (PSD and PNG pushed together) planned its fixes against "no PNG", so `land` always dropped them as superseded.
+  `_expect` now takes the pushed PNG's blob (`test_a_psd_fix_lands_beside_its_pushed_png`, and a real R11 fix of Mini Doomer
+  landed end to end, `test_a_real_r11_fix_lands_for_a_pair`).
+- The comment said "Fixed by the bot" before landing and was never corrected for cards left out; see 7.2.
+- Bot commits by author only, a person's change in the range wins (4.3); a pushed PNG pairs with the PSD of its exact case
+  first, and one that matches PSDs differing only in case is noted and not checked.
+- The two png_export tests that need the fork's renderer skip without it; the change-control skill names card-guards.yml and
+  its `SPARSE_FILES`; timeouts 120/90/60.
 
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).
