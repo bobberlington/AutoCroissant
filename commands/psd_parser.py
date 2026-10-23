@@ -29,7 +29,7 @@ DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every
 ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
 TITLE_REGION_RATIO = 0.12                                         # text above this: the title (hidden = a duplicate's)
 ICON_VARIANTS = ("", "tint", "sticker", "no", "glow", "darkglow")   # all but no read as the plain icon
-ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,48}\]|[-★]")
+ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|[-★]")   # 52: [thunderfury blessed blade of the starseeker:darkglow]
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
 EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)

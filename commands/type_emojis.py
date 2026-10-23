@@ -25,7 +25,7 @@ MAX_NAME_LEN = 32                                       # Discord emoji names: 2
 ICON_FOLDERS = (TYPES_DIR, STARS_DIR)
 NO_SUFFIX = "_no"                                       # crossed-out copy of every Types/ icon: [fire:no] -> :fire_no:
 NO_RED = (224, 27, 34, 255)                             # same red as the stoogedings font's :no sign
-TOKEN_PATTERN = compile(r"\[([^\[\]\n]{1,48})\]")       # [fire], [Fragile Equip], [fire:tint]; [X] and [Status] stay text
+TOKEN_PATTERN = compile(r"\[([^\[\]\n]{1,52})\]")       # [fire], [Fragile Equip], [fire:tint]; [X] and [Status] stay text
 
 # Emoji name -> "<:name:id>" for every application emoji the bot owns. Filled by sync_type_emojis.
 type_emojis: dict[str, str] = {}

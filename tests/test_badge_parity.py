@@ -277,6 +277,24 @@ def test_font_draws_every_glow(glow_build):
     assert len({tuple(w) for w in want.values()}) == 2 * len(bases) > 100   # 182 on 2026-10-23
 
 
+def test_token_limit_fits_every_icon():
+    """Every name and alias with the longest variant is one token to the parser, the bake, the emojis and the site
+    ([thunderfury blessed blade of the starseeker:darkglow]: 52 characters)."""
+    from commands.psd_edit import TOKEN
+    from commands.psd_parser import ICON_SCAN_PATTERN, ICON_VARIANTS
+    from commands.type_emojis import TOKEN_PATTERN
+    if not MANIFEST.is_file():
+        pytest.skip(f"no manifest in {CLONE}")
+    icons = json.loads(MANIFEST.read_text())["icons"]
+    longest = max((n for key, icon in icons.items() for n in [key] + icon.get("aliases", [])), key=len)
+    token = f"[{longest}:{max(ICON_VARIANTS, key=len)}]"
+    assert len(token) - 2 >= 52
+    for pattern in (ICON_SCAN_PATTERN, TOKEN, TOKEN_PATTERN):
+        assert pattern.fullmatch(token), pattern.pattern
+    site = int(re.search(r"const PIECE = .*?\{1,(\d+)\}", TEXT_JS.read_text()).group(1))
+    assert site >= len(token) - 2
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 def test_site_reads_variants_as_the_plain_icon(tmp_path):
     from commands.psd_parser import ICON_VARIANTS

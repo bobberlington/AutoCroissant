@@ -371,8 +371,12 @@ the plain icon, so the halo stays inside its own advance. Each halo is a PNG (8 
   `~/Documents/Tools/wt/scratch/rulings/glow/glow_check.jsx`: it samples the halo beside and under the icon and writes
   `glow_check.log` and `.png` next to itself (its rules pass on a CoreText render). A FAIL under the icon only means
   the line box clips it.
-- `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets. That is past the
-  parser's 48 (`ICON_SCAN_PATTERN`), as `:sticker` (51) already is, so it reads as text. Use the `thunderfury` alias.
+- `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
+  `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since
+  2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
+- **Bakes refuse glow tokens.** The psd-tools fork draws an OT-SVG glyph as its `glyf` outline: the halo's is the whole
+  halo (traced at alpha 0.5/255), a solid block under an overlay. `psd_edit.set_text` refuses ("font") a text with
+  `:glow` or `:darkglow`; edit those cards in Photoshop.
 
 ## 2. The card-browser website
 
