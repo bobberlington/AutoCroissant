@@ -182,7 +182,7 @@ EDITS = {
     "Beldam": {"series": "Mario", "_by": "web", "_at": AT},                 # no PSD field: not looked at
     "Mini Doomer": {"hp": 5, "note": "checked", "_by": "web", "_at": AT},   # hp 5 is on the card: redundant, dropped
     "Nobody": {"hp": 3, "_by": "web", "_at": AT},                           # no PSD
-    "The Freezer": {"stars": 2, "_by": "web", "_at": AT},                   # stars: not yet
+    "The Freezer": {"stars": 2, "_by": "web", "_at": AT},                   # a field card: its "1 Stars" folder sets them
     "A Snack": {"hp": 1, "_by": "web", "_at": AT},                          # numbered PNGs share its PSD
     "A Snack2": {"ability": "Breakfast.", "_by": "web", "_at": AT},         # a numbered PNG itself
 }
@@ -319,7 +319,8 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert data["cards"]["Beldam"] == EDITS["Beldam"]
     freezer = data["cards"]["The Freezer"]["_psd"]
     assert freezer["state"] == "refused" and freezer["for"] == {"stars": 2} and freezer["psd"] == _sha(github.files_at(before)[FREEZER])[:8]
-    assert freezer["reason"] == "unsupported-card: stars: not yet" and freezer["at"].endswith("Z")
+    assert freezer["reason"] == "unsupported-card: stars: the '1 Stars' folder sets them (moving the card is ledger S9)"
+    assert freezer["at"].endswith("Z")
     assert data["cards"]["Nobody"]["_psd"]["reason"] == "unsupported-card: no PSD in the card repo" and data["cards"]["Nobody"]["_psd"]["psd"] == ""
     assert data["cards"]["A Snack"]["_psd"]["reason"] == "duplicate: numbered PNGs share the PSD: A_Snack2.png"
     assert data["cards"]["A Snack2"]["_psd"]["reason"] == "duplicate: a numbered PNG exported from `Items/Heal/2 Stars/A_Snack.psd`"
@@ -883,6 +884,89 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()                                 # the field is gone: nothing to look at
     assert commits == [] and "0 with PSD fields" in text
+
+
+icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake needs the fork's layer copy API")
+
+
+@icons
+def test_stars_and_types_bake(github, clone):
+    """Stars and types bake like the other fields (owner, 2026-10-23): a third star, a Fire icon made from Types/ (the
+    one Types/ PNG the run fetches), the entry gone."""
+    files = github.files_at(github.head)
+    files["Types/fire.png"] = (clone / "Types" / "fire.png").read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"stars": 3, "types": ["wind", "light", "defensive_minion", "fire"],
+                                                       "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    text, commits = cb.run()
+    assert github.commits[commits[0]]["message"] == ("Card edits: 1 baked\n\n- Mini Doomer: stars 2 -> 3, types wind, "
+                                                     "defensive_minion, light -> wind, light, defensive_minion, fire\n\nEdit-by: web")
+    assert "Mini Doomer" not in _edits_at(github)["cards"]
+    assert "stars: rows of two; types: 1 made from Types/" in text
+    by_sha = {_sha(data): path for path, data in files.items()}
+    fetched = [by_sha.get(route.split("/")[2]) for _, route in github.calls if route.startswith("git/blobs/")]
+    assert [path for path in fetched if path and path.startswith("Types/")] == ["Types/fire.png"], fetched
+
+
+@fork
+def test_a_refused_stars_edit_leaves_the_hp_bake(github):
+    """A stars edit the bake refuses no longer refuses the card: hp bakes, the stars stay in the file with a refused
+    verdict on the PSD the commit leaves (final: not pending), and the commit line says why."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "stars": 0, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    text, commits = cb.run()
+    why = "unsupported-card: stars: a card shows at least one"
+    assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
+    after = github.files_at(github.head)
+    entry = json.loads(after[cb.EDITS_PATHS[0]].decode("utf-8"))["cards"]["Mini Doomer"]
+    verdict = entry.pop("_psd")
+    assert entry == {"stars": 0, "_by": "web", "_at": AT}
+    assert (verdict["state"], verdict["for"], verdict["psd"], verdict["reason"]) == ("refused", {"stars": 0}, _sha(after[DOOMER])[:8], why)
+    assert f"stars not baked: {why}" in text.split("## Baked (1)", 1)[1]
+    assert cb.pending() == []                                   # the verdict is final on the new PSD
+
+
+@icons
+def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
+    """A refusal from the stars edit's own gates (here gate_outside) drops only it: apply runs again without it."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "stars": 3, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+
+    def outside(before, psd, edit):
+        raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
+    monkeypatch.setattr(pe, "gate_outside", outside)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    text, commits = cb.run()
+    why = "region: stars: the card changes 9 pixels outside the edited box"
+    assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
+    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+    assert verdict["for"] == {"stars": 3} and verdict["reason"] == why
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"stars": 3, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    text, commits = cb.run()                                    # alone, the same refusal is the card's
+    assert "## Refused (1)" in text and why in text
+
+
+@icons
+def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch):
+    """Stars refused, then the card's last field (types, then hp) too: the card's verdict names both, the stars once."""
+    def outside(before, psd, edit):
+        raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
+    monkeypatch.setattr(pe, "gate_outside", outside)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
+    stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
+    for fields, last in (({"stars": 3, "types": ["wind", "light"]}, types), ({"stars": 3, "hp": 8}, "unsupported-card: hp: no stat row")):
+        files = github.files_at(github.head)
+        files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {**fields, "_by": "web", "_at": AT}})
+        github.commit(files, "web", "Website edit: Mini Doomer")
+        text, commits = cb.run()
+        verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+        assert (verdict["state"], verdict["for"], verdict["reason"]) == ("refused", fields, f"{last}; {stars}")
+        assert "## Refused (1)" in text and text.count(stars) == 1
 
 
 @fork_text

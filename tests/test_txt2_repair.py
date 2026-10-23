@@ -1,8 +1,8 @@
 """
 txt2_repair: a stale Txt2 story (a pre-fix bake's PSD, made here: the title set in TySh alone) is rewritten to its
 layer's text and nothing else changes, byte for byte outside the Txt2 block; an in-sync PSD and --check write nothing.
-Reads the card clone and needs the fork's story sync (fix/txt2-sync); skips without either. The five titles baked on
-2026-10-22 are repaired into tmp while the clone still holds them stale.
+Reads the card clone and needs the fork's story sync (fix/txt2-sync); skips without either. The six titles baked on
+2026-10-22 are repaired into tmp from their bake commits (main holds them in sync since 7b48db05 and 5a9e0fcf).
 """
 import hashlib
 import struct
@@ -13,14 +13,20 @@ from psd_tools import PSDImage
 
 import commands.psd_edit as pe
 import commands.txt2_repair as tr
-from conftest import fork_reason, story_sync, text_engine
+from conftest import at_rev, fork_reason, story_sync, text_engine
 from test_psd_edit import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 # ========================
 # Configuration
 # ========================
-BAKED = ("Auxiliary/Minions/Clot_White.psd", "Auxiliary/Minions/PoD08MOAB.psd", "Auxiliary/Minions/PoD09DDT.psd",
-         "Auxiliary/Minions/PoD10BFB.psd", "Auxiliary/Minions/PoD12BAD.psd")     # 2026-10-22's bakes: Name stale
+BAKED = (                                       # 2026-10-22's bakes: Name stale at the bake commit
+    ("Auxiliary/Minions/Clot_White.psd", "d81631039734ba3c90683a68ced5de20f65304a3"),
+    ("Auxiliary/Minions/PoD08MOAB.psd", "2d8cce88b9e936b37b5b4b41131fe439811f6ac3"),
+    ("Auxiliary/Minions/PoD09DDT.psd", "705e3d3470412f3c063365755a847740ba78b740"),
+    ("Auxiliary/Minions/PoD10BFB.psd", "c9fc1bbd94c060560addff6d7065eeed0955f264"),
+    ("Auxiliary/Minions/PoD12BAD.psd", "01d8000592e1d07551e466558f2b5ee36343c233"),
+    ("Auxiliary/Minions/Springtrap.psd", "c6dc6d08d5cfbbffe5b51f67a0b4ac9be913ca8f"),
+)
 pytestmark = pytest.mark.skipif(not (text_engine() and story_sync()), reason="needs the fork's Txt2 story sync: " + fork_reason())
 
 
@@ -87,15 +93,11 @@ def test_verify_refuses_any_other_change(clone, tmp_path):
         tr.verify(stale, str(other), {index})
 
 
-@pytest.mark.parametrize("rel", BAKED)
-def test_baked_titles_of_2026_10_22(clone, rel, tmp_path):
-    path = clone / rel
-    if not path.exists():
-        pytest.skip(f"{rel} not in the clone")
-    stale = pe.stale_stories(PSDImage.open(str(path)))
-    if not stale:
-        pytest.skip(f"{rel} is in sync (repaired)")
-    out = tmp_path / path.name
+@pytest.mark.parametrize("rel, rev", BAKED)
+def test_baked_titles_of_2026_10_22(clone, rel, rev, tmp_path):
+    path = tmp_path / f"stale_{Path(rel).name}"
+    path.write_bytes(at_rev(clone, rev, rel))
+    out = tmp_path / Path(rel).name
     result = tr.repair(str(path), str(out))
     assert [name for name, _, _ in result.stale] == ["Name"] and len(result.stories) == 1
     assert pe.stale_stories(PSDImage.open(str(out))) == [] and _outside_txt2(out) == _outside_txt2(path)

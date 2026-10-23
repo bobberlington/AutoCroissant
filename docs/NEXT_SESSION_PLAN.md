@@ -115,7 +115,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       have let the schedule take them too), dropped the three names as redundant (the 10-23 Standardize title case
       prints them) and baked Z.O.M.G.; its `baked` verdict is current (psd 9b87525a) and stays beside series/aliases.
       A dry run at 5c88f230: 2 cards with PSD fields (Papyrus, Sans), verdicts unchanged, nothing pending. No code bug.
-- [ ] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? `txt2_repair.py --check`; repair if so.
+- [x] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? No: in sync since 5a9e0fcf; 0 of 904
+      PSDs stale at 6a54b4f6 (2026-10-23).
 - [x] Green Mage: stat rows below the canvas (an error, not a verdict). work/bake-verdicts: `set_stat` refuses a bar
       wholly off the canvas (`unsupported-card: hp: the bar 'Hp Dark' lies outside the card ...`), a final verdict; the
       only such PSD of 812 on origin/main. Its printed ATK is 6, the bot reads 10 (BUGS D8: owner).

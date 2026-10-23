@@ -48,7 +48,8 @@ source; ruling 1 overrules them: the PNG is the fork's render, section 17. They 
   Bubble, 12_Reactions2), and 69 of the 115 PSDs still at a stale blob match their PNG (2.4). The guard compares the old and
   new composites before writing anything.
 - **The fix-it bucket is small today.** At origin/main the only safe automatic fix that applies is the Txt2 story sync (6
-  cards, all already scheduled for repair). Every other open issue changes pixels, so it is reported (section 6).
+  cards at `6e50c3ee`, all synced since: 0 at `6a54b4f6`, R9 in section 6). Every other open issue changes pixels, so it is
+  reported (section 6).
 
 ## 1. Goal and non-goals
 
@@ -384,6 +385,9 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
 | R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename is built and gated, 0 pixels; `card_standards.AUTO_FIX` adds it once the owner says yes, review 6) | 651 cards | 0 | 0 |
+
+Since 2026-10-23, R9 flags 0 cards: the 6 were synced by `7b48db05` (Clot White, Springtrap) and B2's `5a9e0fcf` (the
+four PoD minions); `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stale.
 
 **Not rules (decided).**
 - 28 star groups named `stars` or `3 stars` are compliant: the parser reads any case, and a rename is churn.

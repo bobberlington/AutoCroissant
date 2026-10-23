@@ -1,11 +1,12 @@
 """
 Edits to a card PSD for the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md sections 3, 5, 6, 7 and 10): classify a card's
 website edits against a fresh offline parse, toggle a stat digit, set the name or ability text through the fork's
-text engine with status words colored from the chart and the styled ones' FX layers cut from the new raster, render
-only the changed region, delta-merge it onto the official PNG and gate the result. Pure functions over an open
-PSDImage; a refusal is a Refused exception carrying one of CODES, which the per-card driver turns into data. No
-Discord, network or config; the text extra (psd_tools.composite.text) is imported only where text is rendered, so the
-module loads under stock psd-tools.
+text engine with status words colored from the chart and the styled ones' FX layers cut from the new raster, show,
+hide, move or copy star layers and type icons for a stars or types edit (a refusal of those is per field, never the
+card's), render only the changed region, delta-merge it onto the official PNG and gate the result. Pure functions
+over an open PSDImage; a refusal is a Refused exception carrying one of CODES, which the per-card driver turns into
+data. No Discord, network or config; the text extra (psd_tools.composite.text) is imported only where text is
+rendered, so the module loads under stock psd-tools.
 """
 from collections import Counter
 from copy import deepcopy
@@ -28,8 +29,8 @@ from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, IconVocabulary,
-                                 PSDParser, title_text)
+from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TYPE_REGION_RATIO, CardValidator,
+                                 IconVocabulary, PSDParser, stars_from_psd, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import FONT_ALIASES
 
@@ -42,7 +43,7 @@ CODES = ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity",
          "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error")
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
-NOT_YET = ("stars", "types")                    # PSD-kind, refused in round 1 (section 3)
+ICON_FIELDS = ("stars", "types")                # printed as icons; refused per field, never for the card (owner, 2026-10-23)
 KIND = CardEdits.KIND
 STAT_MAX = 10                                   # one bar row shows 0-10; Top + Bottom rows show 11-20 (idea 13)
 DIGITS = tuple(str(n) for n in range(10))
@@ -78,7 +79,8 @@ KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, sel
 SPLICE_UNIT = "glyph"       # a text edit redraws its changed glyphs ("line": their lines); Photoshop's raster stays elsewhere
 KEY_SLACK = 2               # px a key render may pass a spliced layer's bbox (Photoshop's ink beside the engine's)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
-                         "overlay": {"flags"}}  # what an edit may change per record (overlay: a hidden hand-made word layer)
+                         "overlay": {"flags"}, "toggle": {"flags"}}  # what an edit may change per record (overlay: a hidden
+#   hand-made word layer; toggle: a star or type icon shown or hidden)
 STORY_KEYS = (("1", "1", "0", "0"), ("DocumentObjects", "TextObjects", "Model", "Text"))   # Txt2's stories and their
 #   text: Photoshop CC numbers the keys, older versions name them
 STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run's features, the FontSet, a paint's values
@@ -90,6 +92,15 @@ STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run'
 STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoLeading": 4, "Leading": 5,
                 "HorizontalScale": 6, "VerticalScale": 7, "Tracking": 8, "BaselineShift": 9, "FillColor": 53,
                 "StrokeColor": 54}   # TySh StyleSheetData keys a story run holds too, with Photoshop CC's feature number
+STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
+LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
+LAYOUT_TOL_MIN = 6          # px, at least
+ICON_FRAME = 0.1            # a type layer over more of the canvas is a frame (Magnum Opus's field), not an icon
+ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
+CARD_WIDTH = 1200
+PLACED = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2, Tag.PLACED_LAYER1, Tag.PLACED_LAYER2)
+MOVE_BLOCKS = {bytes(key) for key in (*PLACED, Tag.REFERENCE_POINT)}    # a moved layer's record: its transform, anchor
+COPY_BLOCKS = MOVE_BLOCKS | {bytes(Tag.LAYER_ID), bytes(Tag.UNICODE_LAYER_NAME)}   # a copy's: those, its id and name
 
 
 # ========================
@@ -97,21 +108,26 @@ STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoL
 # ========================
 @dataclass
 class Refusal:
-    """One refusal: a code from CODES and why."""
+    """One refusal: a code from CODES and why; field: the stars or types edit it is about (the card's others still bake)."""
     code: str
     why: str
+    field: Optional[str] = None
 
 
 class Refused(Exception):
-    """A refusal raised inside a card's steps; the driver turns it into a Refusal (one bad card never blocks another)."""
-    def __init__(self, code: str, why: str):
+    """
+    A refusal raised inside a card's steps; the driver turns it into a Refusal (one bad card never blocks another).
+    field: the stars or types edit it is about; the driver bakes the card's other fields without it.
+    """
+    def __init__(self, code: str, why: str, field: Optional[str] = None):
         super().__init__(f"{code}: {why}")
         self.code = code
         self.why = why
+        self.field = field
 
     @property
     def refusal(self) -> Refusal:
-        return Refusal(self.code, self.why)
+        return Refusal(self.code, self.why, self.field)
 
 
 @dataclass
@@ -151,6 +167,21 @@ class TemplateRow:
 
 
 @dataclass
+class IconPlan:
+    """A stars or types edit worked out on an open card (plan_stars, plan_types): what shows, hides, moves and comes."""
+    field: str
+    old: object
+    new: object
+    how: str = ""                                # the layout followed: "folder '3 stars'", "rows of two", "a line"...
+    show: list = field(default_factory=list)     # layers shown
+    hide: list = field(default_factory=list)     # layers hidden
+    moves: list = field(default_factory=list)    # (layer, dx, dy): moved (a group with everything in it)
+    copies: list = field(default_factory=list)   # (source, dx, dy, name): a star copied above itself, then moved
+    icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
+    done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
+
+
+@dataclass
 class Edit:
     """One applied field."""
     field: str
@@ -165,6 +196,11 @@ class Edit:
     dropped: list = field(default_factory=list)  # names of the FX layers deleted first (derived state: all of the text layer's)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
+    icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
+    toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
+    shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
+    copied: list = field(default_factory=list)   # (record index, old record index, dx, dy): a record of a star it copied
+    made: list = field(default_factory=list)     # (record index, {block key: bytes}): a type icon it made from Types/
 
 
 @dataclass
@@ -185,6 +221,7 @@ class Baked:
     fx: list = field(default_factory=list)      # names of the FX layers regenerated
     icc: bool = True        # export_icc(): rendered converted by the embedded profile (False: the PNG was exported raw)
     rerender: dict = field(default_factory=dict)    # field -> gate_idempotence()'s measurement of its region
+    icons: dict = field(default_factory=dict)       # stars / types -> the layout their edit followed (IconPlan.how)
 
 
 # ========================
@@ -952,15 +989,18 @@ def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
         return False
 
 
-def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Classification:
+def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
-    A stat above 10 is a job only on a two-row card (idea 13), above 20 never.
+    A stat above 10 is a job only on a two-row card (idea 13), above 20 never. Stars and types are jobs when the card's
+    layout is one plan_stars / plan_types knows; their refusals carry the field (the card's other fields still bake).
 
     Args:
         parsed: parse_card() of the card's PSD
         edits: The card's fields from CardEdits.parse (no _keys)
-        psd: The open PSD, needed to find the title layer for a name edit (name_layer) and the rows for a stat above 10
+        psd: The open PSD, needed to find the title layer for a name edit (name_layer), the rows for a stat above 10
+            and the stars and type icons (not changed)
+        parser: offline_parser(): its icon vocabulary reads a types edit (types compare in any order and spelling)
 
     Returns:
         Classification
@@ -970,8 +1010,22 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None) -> Class
     for name, value in edits.items():
         if KIND.get(name, "database") != "psd" or value is None:
             out.other.append(name)
-        elif name in NOT_YET:
-            out.refusals.append(Refusal("unsupported-card", f"{name}: not yet"))
+        elif name in ICON_FIELDS:
+            if card.get(name) == value or (name == "types" and same_types(parser, card.get("types"), value)):
+                out.redundant.append(name)
+            elif psd is None:
+                out.refusals.append(Refusal("unsupported-card", f"{name}: no PSD to place them on", name))
+            else:
+                try:
+                    if name == "stars":
+                        plan_stars(psd, parsed, value, parser)
+                    else:
+                        plan_types(psd, parsed, value, parser)
+                    out.jobs[name] = value
+                except Refused as refused:
+                    out.refusals.append(refused.refusal)
+                except Exception as error:      # noqa: BLE001 - a layout the planner trips on is that field's alone
+                    out.refusals.append(Refusal("error", f"{name}: {type(error).__name__}: {error}", name))
         elif name in STAT_FIELDS:
             if not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} {value!r}: not a stat")     # CardEdits.valid never lets one through
@@ -1561,6 +1615,927 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
 
 
 # ========================
+# Stars and types (the icon fields, owner 2026-10-23)
+# ========================
+def _tol(size: float) -> float:
+    return max(LAYOUT_TOL_MIN, LAYOUT_TOL * size)
+
+
+def _centre(box) -> tuple:
+    return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def _moved_box(box, dx: int, dy: int) -> tuple:
+    return box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy
+
+
+def _clusters(boxes: list) -> list:
+    """Index lists of the stars among core boxes, joined as PSDParser._count_clusters joins them."""
+    parent = list(range(len(boxes)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            if PSDParser._center_inside(boxes[i], boxes[j]) or PSDParser._center_inside(boxes[j], boxes[i]):
+                parent[root(i)] = root(j)
+    out: dict = {}
+    for i in range(len(boxes)):
+        out.setdefault(root(i), []).append(i)
+    return list(out.values())
+
+
+def _drawn(layer) -> list:
+    """The layer, or a group's leaves with pixels that show when the group does (their own flags and their groups')."""
+    if not layer.is_group():
+        return [layer] if layer.has_pixels() else []
+    return [leaf for child in layer if child.visible for leaf in _drawn(child)]
+
+
+def _core(layer) -> Optional[tuple]:
+    """The union of the core boxes the parser clusters stars by (PSDParser._core_box), None when nothing draws."""
+    return union_box([PSDParser._core_box(leaf) for leaf in _drawn(layer)])
+
+
+def _star_count(group, show: dict, boxes: dict, counts: dict) -> int:
+    """
+    What PSDParser._stars_in counts in a group once layers are shown or hidden and copies added.
+
+    Args:
+        group: A group in a Stars group
+        show: id(layer) -> visible, overriding its flag
+        boxes: id(group) -> core boxes counted among its loose layers (a loose star's copy)
+        counts: id(group) -> stars added there (a star group's copy)
+    """
+    count, loose = counts.get(id(group), 0), list(boxes.get(id(group), ()))
+    for layer in group:
+        if not show.get(id(layer), layer.visible):
+            continue
+        if layer.is_group():
+            count += _star_count(layer, show, boxes, counts)
+        elif layer.has_pixels():
+            loose.append(PSDParser._core_box(layer))
+    return count + len(_clusters(loose))
+
+
+def _stars_total(psd: PSDImage, show=None, boxes=None, counts=None) -> int:
+    """The parser's count over the card's Stars groups (PSDParser._count_stars), with _star_count's changes."""
+    return sum(_star_count(group, show or {}, boxes or {}, counts or {}) for group in PSDParser._star_groups(psd))
+
+
+@dataclass
+class _Unit:
+    """One star of a layout: a group counting one, or the loose layers drawing one; or an icon of the type row."""
+    layers: list            # panel order, bottom to top
+    core: tuple             # canvas box of its core
+    count: int = 1
+
+    @property
+    def box(self) -> tuple:
+        """Its layers' bboxes' union (a star's glow and frame included)."""
+        return union_box([tuple(layer.bbox) for layer in self.layers])
+
+    @property
+    def centre(self) -> tuple:
+        return _centre(self.core)
+
+    @property
+    def size(self) -> tuple:
+        return self.core[2] - self.core[0], self.core[3] - self.core[1]
+
+
+def _star_units(container, types=()) -> tuple:
+    """
+    (shown, hidden) stars directly in a group: its child groups that count stars, and its loose layers' clusters; a
+    layer named after a type icon (types: Types/ names) is left out (the parser reads it as a type too: Pike Beam).
+    """
+    shown, hidden, loose = [], [], {True: [], False: []}
+    for layer in container:
+        if layer.name.strip().lower() in types:
+            continue
+        if layer.is_group():
+            count = _star_count(layer, {}, {}, {})
+            core = _core(layer)
+            if count and core:
+                (shown if layer.visible else hidden).append(_Unit([layer], core, count))
+        elif layer.has_pixels() and layer.bbox[2] > layer.bbox[0]:
+            loose[layer.visible].append(layer)
+    for on, layers in loose.items():
+        boxes = [PSDParser._core_box(layer) for layer in layers]
+        for members in _clusters(boxes):
+            (shown if on else hidden).append(_Unit([layers[i] for i in members], union_box([boxes[i] for i in members])))
+    return shown, hidden
+
+
+def _rows(units: list, size: float, right_first: bool) -> list:
+    """Units in rows by centre height (within half a unit), top to bottom; each row right to left or left to right."""
+    rows: list = []
+    for unit in sorted(units, key=lambda u: u.centre[1]):
+        if rows and abs(unit.centre[1] - rows[len(rows) - 1][0].centre[1]) <= size / 2:
+            rows[len(rows) - 1].append(unit)
+        else:
+            rows.append([unit])
+    return [sorted(row, key=lambda u: -u.centre[0] if right_first else u.centre[0]) for row in rows]
+
+
+def _reading(units: list, size: float, right_first: bool) -> list:
+    return [unit for row in _rows(units, size, right_first) for unit in row]
+
+
+def _median_size(units: list) -> tuple:
+    widths, heights = sorted(u.size[0] for u in units), sorted(u.size[1] for u in units)
+    return widths[len(widths) // 2], heights[len(heights) // 2]
+
+
+def _pyramid(units: list, size: tuple) -> Optional[tuple]:
+    """
+    (right x, left x, top y, row step, odd row on top) when the stars are rows of two, an odd one centred under them
+    (the templates' 1-5 star layouts: Status_Effect_Template's '3 star', Dull Knife, Felhunter, Love) or over them (The
+    Claw); None otherwise. A lone star is the right of a pair: the second goes to its left, a star's width over, the
+    next row a star's height down (the templates' '2 star'; the cards' single stars sit where their pairs' right ones do).
+    """
+    if len(units) == 1:
+        (x, y), box = units[0].centre, units[0].box
+        return x, x - (box[2] - box[0]), y, box[3] - box[1], False
+    rows = _rows(units, size[1], True)
+    last = len(rows) - 1
+    top_odd = last > 0 and len(rows[0]) == 1 and len(rows[last]) == 2
+    full = rows[1:] if top_odd else rows[:last] if len(rows[last]) == 1 else rows
+    if not full or any(len(row) != 2 for row in full):
+        return None
+    tol = _tol(max(size))
+    if any(abs(row[0].centre[1] - row[1].centre[1]) > tol for row in full):
+        return None
+    right = sum(row[0].centre[0] for row in full) / len(full)
+    left = sum(row[1].centre[0] for row in full) / len(full)
+    if any(abs(row[0].centre[0] - right) > tol or abs(row[1].centre[0] - left) > tol for row in full):
+        return None
+    ys = [sum(u.centre[1] for u in row) / len(row) for row in rows]
+    step = (ys[last] - ys[0]) / last if last else size[1]
+    if any(abs(y - (ys[0] + i * step)) > tol for i, y in enumerate(ys)) or step < size[1] / 2:
+        return None
+    odd = rows[0] if top_odd else rows[last] if len(full) < len(rows) else None
+    if odd and abs(odd[0].centre[0] - (right + left) / 2) > tol:
+        return None
+    return right, left, ys[0], step, top_odd
+
+
+def _pyramid_spots(model: tuple, count: int) -> list:
+    """The centres of `count` stars in rows of two (_pyramid), reading order; an odd one centred where the model has it."""
+    right, left, top, step, top_odd = model
+    middle = (right + left) / 2
+    if count == 1:                              # a lone star stays where a pair's right one is (or the top one)
+        return [(middle, top)] if top_odd else [(right, top)]
+    rows = [2] * (count // 2)
+    if count % 2:
+        rows = [1] + rows if top_odd else rows + [1]
+    out = []
+    for row, stars in enumerate(rows):
+        y = top + row * step
+        out += [(right, y), (left, y)] if stars == 2 else [(middle, y)]
+    return out
+
+
+def _line(units: list, size: tuple, right_first: bool) -> Optional[tuple]:
+    """(first centre, step) when the units in reading order are evenly spaced in a row or a column; else None."""
+    order = _reading(units, size[1], right_first)
+    if len(order) < 2:
+        return None
+    first, last = order[0].centre, order[len(order) - 1].centre
+    step = ((last[0] - first[0]) / (len(order) - 1), (last[1] - first[1]) / (len(order) - 1))
+    tol = _tol(max(size))
+    if max(abs(step[0]), abs(step[1])) < max(size) / 2 or min(abs(step[0]), abs(step[1])) > tol:
+        return None
+    for i, unit in enumerate(order):
+        if abs(unit.centre[0] - first[0] - i * step[0]) > tol or abs(unit.centre[1] - first[1] - i * step[1]) > tol:
+            return None
+    return first, step
+
+
+def _place(units: list, spots: list, size: tuple) -> tuple:
+    """
+    Units onto spots: one already on a spot (within the tolerance) stays, the others move to the free spots in order.
+
+    Returns:
+        ([(unit, dx, dy)] moves, free spots left over)
+    """
+    tol, free, moves, taken = _tol(max(size)), list(spots), [], []
+    for unit in units:
+        spot = next((s for s in free if abs(s[0] - unit.centre[0]) <= tol and abs(s[1] - unit.centre[1]) <= tol), None)
+        if spot is None:
+            taken.append(unit)
+        else:
+            free.remove(spot)
+    for unit in taken:
+        if not free:
+            break
+        spot = free.pop(0)
+        moves.append((unit, round(spot[0] - unit.centre[0]), round(spot[1] - unit.centre[1])))
+    return moves, free
+
+
+def _ink(layer) -> Optional[tuple]:
+    """(bbox, solid alpha) of a drawn layer; None when it has no pixels to read."""
+    alpha = _alpha(layer)
+    if alpha is None or not alpha.size:
+        return None
+    return tuple(layer.bbox), alpha > INK_ALPHA
+
+
+def _inks_touch(a: tuple, b: tuple) -> bool:
+    (ax0, ay0, _, _), ink_a = a
+    (bx0, by0, _, _), ink_b = b
+    x0, y0 = max(ax0, bx0), max(ay0, by0)
+    x1, y1 = min(ax0 + ink_a.shape[1], bx0 + ink_b.shape[1]), min(ay0 + ink_a.shape[0], by0 + ink_b.shape[0])
+    if x1 <= x0 or y1 <= y0:
+        return False
+    return bool(np.any(ink_a[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] & ink_b[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0]))
+
+
+def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[str]:
+    """
+    Why a star or icon cannot go where its inks are ((bbox, alpha) on the canvas): its core off the canvas, or its ink on
+    the ink of another layer that shows (others: the visible text layers, and the stars or icons it must clear); None.
+    """
+    slack = _tol(max(core[2] - core[0], core[3] - core[1]))     # the cards' own icons pass the edge a little
+    if core[0] < -slack or core[1] < -slack or core[2] > psd.width + slack or core[3] > psd.height + slack:
+        return "runs off the canvas"
+    for other in others:
+        theirs = _ink(other)
+        if theirs is not None and any(_inks_touch(mine, theirs) for mine in inks):
+            return f"would touch {other.name!r}"
+    return None
+
+
+def _moved_inks(unit: _Unit, dx: int, dy: int) -> list:
+    out = []
+    for layer in unit.layers:
+        for leaf in _drawn(layer):
+            ink = _ink(leaf)
+            if ink is not None:
+                out.append((_moved_box(ink[0], dx, dy), ink[1]))
+    return out
+
+
+def _texts(psd: PSDImage) -> list:
+    return [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()]
+
+
+def _copy_name(unit: _Unit, container, taken: set) -> str:
+    """Photoshop's name for a copy of the unit's top layer: "<name> copy", "<name> copy 2"... (taken: names given already)."""
+    base = sub(r"\s+copy(\s+\d+)?$", "", unit.layers[len(unit.layers) - 1].name)
+    names = {layer.name for layer in container.descendants()} | taken
+    name, n = f"{base} copy", 2
+    while name in names:
+        name, n = f"{base} copy {n}", n + 1
+    taken.add(name)
+    return name
+
+
+def _shiftable(layer) -> Optional[str]:
+    """Why a layer (a group: everything in it) cannot be moved; None when it can."""
+    for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
+        if leaf.is_group():
+            continue
+        if leaf.kind in ("type", "shape") or leaf.has_vector_mask() or Tag.VECTOR_ORIGINATION_DATA in leaf.tagged_blocks:
+            return f"{leaf.name!r} is {'text' if leaf.kind == 'type' else 'a vector shape'}"
+        placed = next((leaf.tagged_blocks.get_data(key) for key in PLACED[:2] if key in leaf.tagged_blocks), None)
+        if placed is not None and b"filterFX" in placed.data:
+            return f"{leaf.name!r} has smart filters"
+    return None
+
+
+def _shift(layer, dx: int, dy: int) -> None:
+    """Move a layer (a group: every layer in it) on the canvas: pixels, masks, a smart object's transform, fxrp."""
+    if not (dx or dy):
+        return
+    for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
+        if not leaf.is_group() and leaf.width and leaf.height:
+            leaf.left, leaf.top = leaf.left + dx, leaf.top + dy      # the fork carries fxrp along
+        if leaf.has_mask() and leaf.mask.width and leaf.mask.height:
+            leaf.mask.offset = (leaf.mask.left + dx, leaf.mask.top + dy)
+        for key in PLACED[:2]:
+            data = leaf.tagged_blocks.get_data(key) if key in leaf.tagged_blocks else None
+            for name in (b"Trnf", b"nonAffineTransform"):
+                for i, value in enumerate(data.data.get(name, ()) if data is not None else ()):
+                    value.value = float(value.value) + (dx if i % 2 == 0 else dy)
+        for key in PLACED[2:]:
+            data = leaf.tagged_blocks.get_data(key) if key in leaf.tagged_blocks else None
+            if data is not None:
+                data.transform = tuple(float(v) + (dx if i % 2 == 0 else dy) for i, v in enumerate(data.transform))
+        leaf._psd.mark_updated()
+
+
+def _clip_chain(layer) -> list:
+    """The layers clipped to this one (directly above it, clipping set): its Curves or Levels, which go where it goes."""
+    parent, out = layer.parent, []
+    index = parent.index(layer) + 1
+    while index < len(parent) and parent[index].clipping:
+        out.append(parent[index])
+        index += 1
+    return out
+
+
+def _with_chains(layers: list) -> list:
+    """The layers, each followed by its clip chain (panel order)."""
+    return [one for layer in layers for one in [layer, *_clip_chain(layer)]]
+
+
+def _copy_index(unit: _Unit, container) -> int:
+    """Where a copy of the unit goes: above its top layer and the layers clipped to it (none move to the copy)."""
+    top = max(unit.layers, key=container.index)
+    return container.index(top) + 1 + len(_clip_chain(top))
+
+
+def _zigzag(units: list, size: tuple) -> Optional[tuple]:
+    """
+    (first centre, second centre, step) when the stars, top to bottom, alternate between two evenly spaced columns
+    (the bloons' and Dark Esau's: right, left, right...); None otherwise.
+    """
+    order = sorted(units, key=lambda unit: (unit.centre[1], -unit.centre[0]))
+    if len(order) < 3:
+        return None
+    c = [unit.centre for unit in order]
+    step, tol = (c[2][0] - c[0][0], c[2][1] - c[0][1]), _tol(max(size))
+    along = 1 if abs(step[1]) >= abs(step[0]) else 0      # the columns run down (or the rows across)
+    across = abs(c[1][1 - along] - c[0][1 - along])
+    if abs(step[1 - along]) > tol or abs(step[along]) < max(size) / 2 or across < max(size) / 2:
+        return None
+    if not 0.25 <= (c[1][along] - c[0][along]) / step[along] <= 0.75:    # the second sits between the first and third
+        return None
+    for i, centre in enumerate(c):
+        base = c[i % 2]
+        if abs(centre[0] - base[0] - i // 2 * step[0]) > tol or abs(centre[1] - base[1] - i // 2 * step[1]) > tol:
+            return None
+    return c[0], c[1], step
+
+
+def _known_layout(units: list, size: tuple) -> bool:
+    """Whether stars sit in a layout _star_layouts knows (one star, rows of two, a row or column, a zigzag)."""
+    return len(units) == 1 or any(found(units, size) is not None for found in (_pyramid, _zigzag)) \
+        or _line(units, size, True) is not None
+
+
+def _star_layouts(order: list, size: tuple, count: int) -> list:
+    """
+    The layouts the stars could grow to `count` in, as (name, spots in reading order), tried in turn: rows of two (the
+    templates'), a row or column carried on, a zigzag carried on; a lone star also as a column (its pair would run into
+    the title).
+    """
+    out = []
+    model = _pyramid(order, size)
+    if model:
+        out.append(("rows of two", _pyramid_spots(model, count)))
+    line = _line(order, size, True)
+    if line:
+        (x, y), (dx, dy) = line
+        out.append(("a line", [(x + i * dx, y + i * dy) for i in range(count)]))
+    zigzag = _zigzag(order, size)
+    if zigzag:
+        first, second, (dx, dy) = zigzag
+        out.append(("a zigzag", [((first, second)[i % 2][0] + i // 2 * dx, (first, second)[i % 2][1] + i // 2 * dy)
+                                 for i in range(count)]))
+    if len(order) == 1:
+        (x, y), box = order[0].centre, order[0].box
+        out.append(("a column", [(x, y + i * (box[3] - box[1])) for i in range(count)]))
+    return out
+
+
+def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
+    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, or _blocked."""
+    for unit, dx, dy in moves:
+        why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
+        if why:
+            return f"{why}: it cannot move"
+        if any(layer.clipping for layer in unit.layers):
+            return f"{unit.layers[0].name!r} is clipped to the layer under it"
+        blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), clear)
+        if blocked:
+            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}"
+    return None
+
+
+def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None) -> IconPlan:
+    """
+    How to show `value` stars on a card whose stars the parser counts from its PSD (minions, aux items and creatures,
+    N.M.E.; elsewhere the "N Stars" folder sets them). In the one Stars group that draws them:
+
+    - a count's own folder ("3 stars" beside "5 stars", the templates' 1-5 layouts): it shows, the others hide;
+    - else, in the group holding the stars one by one: fewer hide the last in reading order (rows top to bottom, each
+      right to left; the first when only that leaves a layout); more show the card's own hidden stars first, then copy
+      the last star layer at the layout's spacing (_star_layouts, the first that stays clear): rows of two with an odd
+      one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
+      the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column. A new or moved
+      star must stay on the canvas, off the text and type icons, and add exactly one to what the parser counts.
+
+    Args:
+        psd: The open card (not changed)
+        parsed: parse_card() of it
+        value: The stars to show, 1 or more
+        parser: offline_parser(): a layer in the Stars group named after a type icon is no star to hide or copy
+
+    Returns:
+        IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
+    """
+    def refuse(why: str):
+        raise Refused("unsupported-card", f"stars: {why}", "stars")
+    info, old = parsed.get("info"), parsed["card"].get("stars")
+    rel = info.path if info is not None else parsed["card"].get("path", "")
+    if not stars_from_psd(rel):
+        folder = rel.split("/")[len(rel.split("/")) - 2] if "/" in rel else ""
+        if fullmatch(STAR_FOLDER, folder, IGNORECASE):
+            refuse(f"the {folder!r} folder sets them (moving the card is ledger S9)")
+        refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
+    if value < 1:
+        refuse("a card shows at least one")
+    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
+    if len(groups) != 1:
+        refuse(f"{len(groups)} Stars groups draw them" if groups else 'no group named "Stars" draws them')
+    total = _stars_total(psd)
+    if total != old:
+        refuse(f"the parser counts {old}, the Stars group draws {total} (stars in the header text)")
+    plan, container = IconPlan("stars", old, value), groups[0]
+    while True:
+        folders: dict = {}
+        for child in container:
+            found = fullmatch(STAR_FOLDER, child.name, IGNORECASE) if child.is_group() else None
+            if found:
+                folders.setdefault(int(found.group(1)), []).append(child)
+        if folders:
+            shown = [f for group in folders.values() for f in group if f.visible]
+            target = folders.get(value - total + sum(_star_count(f, {}, {}, {}) for f in shown))
+            if target:
+                show = {id(f): f is target[0] for group in folders.values() for f in group}
+                drawn = _stars_total(psd, show)
+                if drawn == value:
+                    plan.show = [] if target[0].visible else [target[0]]
+                    plan.hide = [f for f in shown if f is not target[0]]
+                    plan.how = f"folder {target[0].name!r}"
+                    return plan
+                if len(shown) != 1:
+                    refuse(f"the folder {target[0].name!r} would make {drawn}")
+            elif len(shown) != 1:
+                refuse(f"no folder for {value} in {container.name!r}")
+            container = shown[0]                # the shown folder's stars, one by one (a '3 stars' drawing 4)
+            continue
+        shown, hidden = _star_units(container, parser.all_types if parser is not None else ())
+        if len(shown) == 1 and shown[0].count > 1 and not hidden:
+            container = shown[0].layers[0]
+            continue
+        break
+    if not shown:
+        refuse(f"no star shows in {container.name!r}")
+    many = next((unit for unit in shown if unit.count != 1), None)
+    if many is not None:
+        refuse(f"{many.layers[0].name!r} draws {many.count} in one group")
+    count = len(shown) + value - total
+    if count < 1:
+        refuse(f"{container.name!r} draws {len(shown)}: the other {total - len(shown)} are elsewhere")
+    size = _median_size(shown)
+    clear = _texts(psd) + badge_layers(psd)[1]          # a star stays off the text and the type icons
+    show: dict = {}
+    if count < len(shown):                  # fewer: hide the last in reading order (or the first, when that leaves a
+        order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
+        drop = len(shown) - count
+        hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
+                     if _known_layout(kept, size)), order[count:])
+        plan.hide = [layer for unit in hide for layer in unit.layers]
+        plan.how = f"{len(hide)} hidden"
+        show.update({id(layer): False for layer in plan.hide})
+        model = _pyramid(order, size)
+        kept = [unit for unit in order if unit not in hide]
+        moves = _place(kept, _pyramid_spots(model, count), size)[0] if model and not _known_layout(kept, size) else []
+        if moves and _stars_blocked(psd, moves, clear) is None:
+            plan.moves, plan.how = moves, "rows of two"
+    else:                                   # more: the card's own hidden stars, then the layout's spacing
+        for unit in _reading(hidden, size[1], True):
+            if len(shown) == count:
+                break
+            trial = {**show, **{id(layer): True for layer in unit.layers}}
+            if _stars_total(psd, trial) == _stars_total(psd, show) + 1 and _stars_blocked(psd, [(unit, 0, 0)], clear) is None:
+                show, shown = trial, shown + [unit]
+                plan.show += unit.layers
+        plan.how = "hidden stars shown" if plan.show else ""
+        if len(shown) < count:
+            order = _reading(shown, size[1], True)
+            source = max(order, key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
+            first = None
+            for how, spots in _star_layouts(order, size, count):
+                moves, free = _place(order, spots, size)
+                copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
+                why = _stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
+                if why is None:
+                    plan.moves, plan.copies, plan.how = moves, copies, how
+                    break
+                first = first or why
+            else:
+                refuse(first or f"{len(order)} stars laid out as no row, column or rows of two")
+    boxes: dict = {}
+    counts: dict = {}
+    for unit, dx, dy in plan.moves:
+        if unit.layers[0].is_group():
+            continue
+        show.update({id(layer): False for layer in unit.layers})
+        boxes.setdefault(id(container), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy) for layer in unit.layers)
+    for unit, dx, dy, _ in plan.copies:
+        if unit.layers[0].is_group():
+            counts[id(container)] = counts.get(id(container), 0) + 1
+        else:
+            boxes.setdefault(id(container), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy) for layer in unit.layers)
+    drawn = _stars_total(psd, show, boxes, counts)
+    if drawn != value:
+        refuse(f"the new layout would count {drawn}")
+    plan.moves = [(layer, dx, dy) for unit, dx, dy in plan.moves for layer in _with_chains(unit.layers)]
+    taken: set = set()
+    plan.copies = [(unit, dx, dy, _copy_name(unit, container, taken)) for unit, dx, dy, _ in plan.copies]
+    return plan
+
+
+def canonical_type(parser: Optional[PSDParser], name: str) -> str:
+    """A type's vocabulary name ("Fragile Equip", "fragile_equip" -> one spelling); lowercase without a vocabulary."""
+    hit = parser.icons.lookup(str(name)) if parser is not None else None
+    return hit[0] if hit else str(name).lower()
+
+
+def same_types(parser: Optional[PSDParser], a, b) -> bool:
+    """Whether two type lists name the same icons, in any order."""
+    return Counter(canonical_type(parser, t) for t in a or []) == Counter(canonical_type(parser, t) for t in b or [])
+
+
+def type_row(psd: PSDImage, parser: PSDParser) -> tuple:
+    """
+    The header type icons the parser reads: (image layers [(canonical name, layer)], icon-font text layers).
+
+    An image layer counts as PSDParser._process_layer counts it: named after a Types/ icon, visible, with pixels, its
+    top above the midline, and not under a stat row's group.
+    """
+    mid = int(psd.height * TYPE_REGION_RATIO)
+    images, tokens = [], []
+    for layer in psd.descendants():
+        if EFFECT_LAYER_TAG in layer.name and not layer.is_group():
+            continue
+        if _is_text_layer(layer):
+            if (layer.name.strip().lower() != "ability" and layer.is_visible() and layer.bbox[1] < mid
+                    and PSDParser._icon_font_spans(layer, layer.engine_dict["Editor"]["Text"].value)):
+                tokens.append(layer)
+        elif (not parser._is_stat_layer(layer) and layer.name.lower() in parser.all_types and layer.is_visible()
+              and layer.has_pixels() and layer.bbox[1] < mid):
+            images.append((canonical_type(parser, layer.name), layer))
+    return images, tokens
+
+
+def _icon_reason(psd: PSDImage, layer) -> Optional[str]:
+    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None."""
+    if layer.is_group():
+        return "a group"
+    if layer.kind not in ("pixel", "smartobject"):
+        return f"a {layer.kind} layer"
+    x0, y0, x1, y1 = layer.bbox
+    if (x1 - x0) * (y1 - y0) > ICON_FRAME * psd.width * psd.height:
+        return "a frame round the card"
+    return None
+
+
+def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
+    """
+    Boxes for `extra` icons past the row's last: the row carried on at its spacing (under a lone icon: Item_Template's
+    column), else, when those boxes would touch the text or stars, a second row under the first icon (a row running
+    into the title) or a lone icon's right; the first whose boxes stay clear, else the row carried on.
+    """
+    first, last = slots[0].core, slots[len(slots) - 1].core
+    gap = round(ICON_GAP * psd.width / CARD_WIDTH)
+    if len(slots) > 1:
+        (x0, y0), (x1, y1) = slots[len(slots) - 2].centre, slots[len(slots) - 1].centre
+        step = (round(x1 - x0), round(y1 - y0))
+    else:
+        step = (0, last[3] - last[1] + gap)
+    options = [[_moved_box(last, step[0] * k, step[1] * k) for k in range(1, extra + 1)]]
+    if len(slots) > 1 and abs(step[0]) > abs(step[1]):
+        down = max(unit.core[3] for unit in slots) - first[1] + gap
+        options.append([_moved_box(first, step[0] * k, down) for k in range(extra)])
+    elif len(slots) == 1:
+        options.append([_moved_box(last, (last[2] - last[0] + gap) * k, 0) for k in range(1, extra + 1)])
+    for boxes in options:
+        if all(_blocked(psd, [((box[0], box[1], box[2], box[3]), np.ones((box[3] - box[1], box[2] - box[0]), bool))],
+                        box, clear) is None for box in boxes):
+            return boxes
+    return options[0]
+
+
+def _fits(core: tuple, spot: tuple) -> bool:
+    """Whether a hidden icon's core is the spot's size (its longer side within LAYOUT_TOL twice over)."""
+    mine, theirs = max(core[2] - core[0], core[3] - core[1]), max(spot[2] - spot[0], spot[3] - spot[1])
+    return abs(mine - theirs) <= 2 * LAYOUT_TOL * theirs
+
+
+def _in_stars(layer) -> bool:
+    return any("stars" in owner.name.lower() for owner in [layer, *layer_parents(layer)])
+
+
+def layer_parents(layer) -> list:
+    """The layer's groups, innermost first."""
+    out, parent = [], layer.parent
+    while parent is not None and not isinstance(parent, PSDImage):
+        out.append(parent)
+        parent = parent.parent
+    return out
+
+
+def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser]) -> IconPlan:
+    """
+    How to show the type icons `value` in the card's header row (Types/ icons as image layers, the parser's rule):
+    the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
+    end moves into the first free spot, centre on centre; a new icon takes the next free spot, from the card's own
+    hidden layer of that type (the templates keep one per type) or made from its Types/ PNG, fitted to the spot and
+    styled like the icon it replaces (else the row's last). Spots past the last icon carry the row on at its spacing,
+    or go under a lone icon (Item_Template's column), or wrap clear of the title (_icon_spots). Refused per field: a
+    token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up with, a
+    type with no Types/ icon, a layer that cannot move, or an icon that would run off the canvas or onto the text or
+    stars.
+
+    Args:
+        psd: The open card (not changed)
+        parsed: parse_card() of it
+        value: The type names to show (any spelling the icon vocabulary knows)
+        parser: offline_parser() (its Types/ names and vocabulary)
+
+    Returns:
+        IconPlan (icons: Types/ stems to make at a box, styled after a reference layer)
+    """
+    def refuse(why: str):
+        raise Refused("unsupported-card", f"types: {why}", "types")
+    if parser is None:
+        refuse("no icon vocabulary")
+    want = []
+    for name in value:
+        hit = parser.icons.lookup(str(name))
+        if hit is None or hit[1] != "type":
+            refuse(f"{name!r} is no type icon")
+        want.append(hit[0])
+    images, tokens = type_row(psd, parser)
+    if tokens:
+        refuse(f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop")
+    plan = IconPlan("types", [name for name, _ in images], value)
+    reasons = [_icon_reason(psd, layer) for _, layer in images]
+    left = Counter(want)
+    for (name, layer), reason in zip(images, reasons):
+        if reason and not left[name]:
+            refuse(f"{layer.name!r} is {reason}, not an icon to take off")
+        left[name] -= 1 if reason else 0
+    row = [(name, layer) for (name, layer), reason in zip(images, reasons) if not reason]
+    icons = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in row]
+    names = {id(unit): name for unit, (name, _) in zip(icons, row)}
+    size = _median_size(icons) if icons else (0, 0)
+    slots = _reading(icons, size[1], False)
+    kept, removed = [], []
+    for unit in slots:
+        if left[names[id(unit)]]:
+            left[names[id(unit)]] -= 1
+            kept.append(unit)
+        else:
+            removed.append(unit)
+    added = []
+    for name in want:
+        if left[name] > 0:
+            added.append(name)
+            left[name] -= 1
+    count = len(kept) + len(added)
+    spots = [unit.core for unit in slots[:count]]
+    if count > len(slots):
+        if not slots:
+            refuse("no type icon on the card to line a new one up with")
+        spots += _icon_spots(psd, slots, count - len(slots), _texts(psd) + badge_layers(psd)[0])
+    holder = {i: unit for i, unit in enumerate(slots[:count]) if unit in kept}
+    free = [i for i in range(count) if i not in holder]
+    for unit in [unit for unit in kept if slots.index(unit) >= count]:
+        i = free.pop(0)
+        (cx, cy), (sx, sy) = unit.centre, _centre(spots[i])
+        plan.moves.append((unit.layers[0], round(sx - cx), round(sy - cy)))
+        holder[i] = unit
+    plan.hide = [layer for unit in removed for layer in unit.layers]
+    stars = badge_layers(psd)[0]
+    texts = _texts(psd)
+    library = [layer for layer in psd.descendants() if not layer.is_group() and not layer.visible
+               and layer.kind in ("pixel", "smartobject") and layer.name.lower() in parser.all_types and layer.has_pixels()
+               and all(parent.visible for parent in layer_parents(layer)) and not _in_stars(layer)]
+    for name, i in zip(added, free):
+        spot = spots[i]
+        replaced = slots[i] if i < len(slots) and slots[i] in removed else None
+        reference = (replaced or (kept[len(kept) - 1] if kept else slots[len(slots) - 1])).layers[0]
+        own = next((layer for layer in library if canonical_type(parser, layer.name) == name and not _shiftable(layer)
+                    and _fits(_core(layer) or tuple(layer.bbox), spot)), None)
+        if own is not None:
+            library.remove(own)
+            core = _core(own) or tuple(own.bbox)
+            (cx, cy), (sx, sy) = _centre(core), _centre(spot)
+            plan.show.append(own)
+            plan.moves.append((own, round(sx - cx), round(sy - cy)))
+            continue
+        stem = next((t for t in parser.all_types if canonical_type(parser, t) == name), None)
+        if stem is None:
+            refuse(f"no Types/ icon for {name!r}")
+        plan.icons.append((stem, spot, reference))
+    for layer, dx, dy in plan.moves:
+        why = _shiftable(layer)
+        if why:
+            refuse(f"{why}: it cannot move")
+        unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
+        others = [other for other in texts + stars if other is not layer]
+        blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
+        if blocked:
+            refuse(f"{layer.name!r} at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}")
+    for _, spot, _ in plan.icons:
+        slack = _tol(max(spot[2] - spot[0], spot[3] - spot[1]))
+        if spot[0] < -slack or spot[1] < -slack or spot[2] > psd.width + slack or spot[3] > psd.height + slack:
+            refuse(f"a new icon at {tuple(int(v) for v in spot)} runs off the canvas")
+    moved = len(plan.moves)
+    plan.moves = [(one, dx, dy) for layer, dx, dy in plan.moves for one in _with_chains([layer])]
+    plan.how = ", ".join(part for part in (f"{len(plan.hide)} hidden" if plan.hide else "",
+                                           f"{moved} moved" if moved else "",
+                                           f"{len(plan.icons)} made from Types/" if plan.icons else "") if part)
+    return plan
+
+
+def icon_engine() -> bool:
+    """Does this psd-tools copy, move and make layers (the fork's duplicate, copy_effects_from, fromarray)."""
+    from psd_tools.api.layers import Layer, PixelLayer
+    return all(hasattr(Layer, name) for name in ("duplicate", "copy_effects_from")) and hasattr(PixelLayer, "fromarray")
+
+
+def _icon_png(types_dir: str, stem: str) -> str:
+    """The Types/ PNG of a stem (any case)."""
+    from os import listdir
+    for name in listdir(types_dir):
+        if name.lower() == f"{stem}.png".lower():
+            return join(types_dir, name)
+    raise Refused("unsupported-card", f"types: no {stem}.png in Types/", "types")
+
+
+def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
+    """
+    A pixel layer of the Types/ icon fitted into the box (its opaque part, aspect kept, centred), the reference's
+    effects, blending and opacity copied, directly above the reference.
+    """
+    from psd_tools.api.layers import PixelLayer
+    path = _icon_png(types_dir, stem)
+    image = Image.open(path).convert("RGBA")
+    solid = image.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
+    if solid is None:
+        raise Refused("unsupported-card", f"types: {basename(path)} draws nothing", "types")
+    image = image.crop(solid)
+    scale = min((box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height)
+    width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
+    image = image.convert("RGBa").resize((width, height), Image.LANCZOS).convert("RGBA")
+    cx, cy = _centre(box)
+    name = basename(path)[:len(basename(path)) - 4]
+    layer = PixelLayer.fromarray(np.asarray(image), psd, name=name, top=round(cy - height / 2), left=round(cx - width / 2))
+    layer.name = name
+    layer.copy_effects_from(reference)
+    layer.blend_mode, layer.opacity = reference.blend_mode, reference.opacity
+    _issue_id(psd, layer)
+    chain = _clip_chain(reference)
+    parent = reference.parent
+    layer.move_to(parent, index=parent.index(reference) + 1 + len(chain))
+    return layer
+
+
+def _copy_chain(reference, layer, done: list) -> list:
+    """The reference icon's clip chain (its Curves...) copied onto a new icon, moved as far as the icon is from it."""
+    (rx, ry), (lx, ly) = _centre(_core(reference) or tuple(reference.bbox)), _centre(_core(layer) or tuple(layer.bbox))
+    dx, dy = round(lx - rx), round(ly - ry)
+    parent, out = layer.parent, []
+    for k, clipped in enumerate(_clip_chain(reference)):
+        copy = clipped.duplicate(parent, index=parent.index(layer) + 1 + k)
+        _shift(copy, dx, dy)
+        done.append(("copy", clipped, copy, dx, dy))
+        out.append(copy)
+    return out
+
+
+def _extent(layer) -> tuple:
+    """The layer's bbox; a group's, its drawn leaves' (psd-tools gives a hidden group none)."""
+    if not layer.is_group():
+        return tuple(layer.bbox)
+    return union_box([tuple(leaf.bbox) for leaf in _drawn(layer)]) or (0, 0, 0, 0)
+
+
+def _reach(layer) -> int:
+    """fx_pad of the layer, or of the furthest-reaching layer in a group (a star's glow inside its group)."""
+    return max(fx_pad(leaf) for leaf in [layer, *(layer.descendants() if layer.is_group() else ())])
+
+
+def _subtree_records(layer) -> list:
+    """The layer's records in file order: a group's divider, its layers', its own."""
+    if not layer.is_group():
+        return [layer._record]
+    out = [layer._bounding_record] if layer._bounding_record is not None else []
+    for child in layer:
+        out += _subtree_records(child)
+    return out + [layer._record]
+
+
+def record_map(psd: PSDImage) -> dict:
+    """id(layer record) -> its index in the file (what layer_records() reads back)."""
+    records = psd._record.layer_and_mask_information.layer_info.layer_records
+    return {id(record): i for i, record in enumerate(records)}
+
+
+def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) -> Edit:
+    """
+    Apply a plan_stars() or plan_types() plan to the open card (the same file it was planned on): hide, show, move,
+    copy and make layers. Record indices come later (index_icons), once every edit is in.
+
+    Returns:
+        Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
+        (field set) for a type icon that lands on the text or stars
+    """
+    boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
+    boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
+    for unit, dx, dy, name in plan.copies:     # copies first: from where the star is now, with its clipped layers
+        parent = unit.layers[0].parent
+        index = _copy_index(unit, parent)
+        top = max(unit.layers, key=parent.index)
+        for k, layer in enumerate(_with_chains(sorted(unit.layers, key=parent.index))):
+            copy = layer.duplicate(parent, index=index + k, name=name if layer is top else None)
+            _shift(copy, dx, dy)
+            plan.done.append(("copy", layer, copy, dx, dy))
+            boxes.append((_extent(copy), copy))
+    for layer in plan.hide:
+        layer.visible = False
+    for layer in plan.show:
+        layer.visible = True
+    for layer, dx, dy in plan.moves:
+        _shift(layer, dx, dy)
+        boxes.append((_extent(layer), layer))
+    stars, texts = badge_layers(psd)[0], _texts(psd)
+    for stem, box, reference in plan.icons:
+        if types_dir is None:
+            raise Refused("unsupported-card", "types: no Types/ icons to make one from", "types")
+        layer = _make_icon(psd, types_dir, stem, box, reference)
+        others = [other for other in texts + stars if other is not layer]
+        blocked = _blocked(psd, [_ink(layer)], _core(layer) or tuple(layer.bbox), others)
+        if blocked:
+            raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
+        blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
+        plan.done.append(("made", layer, blocks))
+        boxes.append((tuple(layer.bbox), layer))
+        _copy_chain(reference, layer, plan.done)
+    region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
+    layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
+                                                                             for done in plan.done]
+    return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan)
+
+
+def index_icons(edit: Edit, before: dict, after: dict) -> None:
+    """
+    Fill an icon edit's record indices once every edit is applied: before = record_map() of the card as opened (the
+    records keep their identity through the edits), after = record_map() now (what the saved file holds).
+    """
+    plan = edit.icons
+    edit.toggled = sorted(after[id(layer._record)] for layer in plan.hide + plan.show)
+    edit.shifted = [(after[id(record)], before[id(record)], dx, dy) for layer, dx, dy in plan.moves
+                    for record in _subtree_records(layer)]
+    edit.copied = [(after[id(new)], before[id(old)], dx, dy) for done in plan.done if done[0] == "copy"
+                   for old, new, dx, dy in [(o, n, done[3], done[4]) for o, n in zip(_subtree_records(done[1]),
+                                                                                     _subtree_records(done[2]))]]
+    edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
+
+
+def render_all(psd: PSDImage) -> np.ndarray:
+    """The whole card rendered from its layers (no ICC, no preview), uint8 RGBA: gate_outside's before and after."""
+    return np.asarray(psd.composite(viewport=(0, 0, psd.width, psd.height), ignore_preview=True,
+                                    apply_icc=False).convert("RGBA"))
+
+
+def gate_outside(before: np.ndarray, psd: PSDImage, edit: Edit) -> np.ndarray:
+    """
+    A stars or types edit changes the card's render only inside its region: the whole card rendered after it differs
+    from the render before it nowhere else (a star's clipped Curves left on another layer, an adjustment in a copied
+    pass-through group would). Run after each such edit, before the text and stat edits.
+
+    Args:
+        before: render_all() of the card before the edit
+        psd: The card with the edit applied
+        edit: The edit
+
+    Returns:
+        render_all() now (the next edit's before); raises Refused("region", field: the edit's) for any pixel outside
+    """
+    after = render_all(psd)
+    diff = (before != after).any(axis=2)
+    if edit.region:
+        x0, y0, x1, y1 = edit.region
+        diff[y0:y1, x0:x1] = False
+    outside = int(diff.sum())
+    if outside:
+        raise Refused("region", f"{edit.field}: the card changes {outside} pixels outside the edited box", edit.field)
+    return after
+
+
+# ========================
 # Render and merge (section 6)
 # ========================
 def changed_region(edits: list, psd: PSDImage) -> tuple:
@@ -1883,14 +2858,69 @@ def layer_records(path: str) -> list:
     out = []
     for record in psd._record.layer_and_mask_information.layer_info.layer_records:
         blocks = record.tagged_blocks or {}
+        mask = record.mask_data
         out.append({"name": blocks.get_data(Tag.UNICODE_LAYER_NAME, record.name) if blocks else record.name,
                     "flags": record.flags.tobytes(),
                     "rect": (record.top, record.left, record.bottom, record.right),
                     "channels": tuple((int(info.id), info.length) for info in record.channel_info),
-                    "mask": record.mask_data.tobytes() if record.mask_data is not None else b"",
+                    "mask": mask.tobytes() if mask is not None else b"",
                     "blend": (record.blend_mode, record.opacity, record.clipping),
-                    "blocks": tuple((bytes(key), block.tobytes()) for key, block in (record.tagged_blocks or {}).items())})
+                    "blocks": tuple((bytes(key), block.tobytes()) for key, block in (record.tagged_blocks or {}).items()),
+                    **(_mask_parts(mask) if mask is not None else {})})
     return out
+
+
+MASK_RECT = ("top", "left", "bottom", "right", "real_top", "real_left", "real_bottom", "real_right")
+
+
+def _mask_parts(mask) -> dict:
+    """A mask's rectangles ("mask_box": MASK_RECT) and its bytes with them zeroed ("mask_norm", what a move keeps)."""
+    box = tuple(getattr(mask, name, None) for name in MASK_RECT)
+    norm = deepcopy(mask)
+    for name, value in zip(MASK_RECT, box):
+        if value is not None:
+            setattr(norm, name, 0)
+    return {"mask_box": box, "mask_norm": norm.tobytes()}
+
+
+def _moved_rect(rect: tuple, dx: int, dy: int) -> tuple:
+    """A record's (top, left, bottom, right) moved; an empty one stays (a group's, an adjustment's)."""
+    top, left, bottom, right = rect
+    return rect if bottom <= top or right <= left else (top + dy, left + dx, bottom + dy, right + dx)
+
+
+def _moved_mask(box, dx: int, dy: int):
+    """A mask_box (MASK_RECT) moved: each of its two rectangles that is there and not empty."""
+    if box is None:
+        return None
+    out: list = []
+    for i in (0, 4):
+        part = box[i:i + 4]
+        out += list(part) if part[0] is None else list(_moved_rect(part, dx, dy))
+    return tuple(out)
+
+
+def _record_moved(a: dict, b: dict, dx: int, dy: int, keys: set, flags: bool = False, renamed: bool = False) -> Optional[str]:
+    """
+    Why record b is not record a moved by (dx, dy) (a layer _shift moved, or a copy of it); None when it is: the rect
+    and mask moved, the channels, blending and other blocks the same, only `keys` blocks changed; flags: one flag
+    byte may differ (the layer was shown or hidden too); renamed: the name may differ (a copy's).
+    """
+    if b["rect"] != _moved_rect(a["rect"], dx, dy):
+        return f"rect {a['rect']} -> {b['rect']}"
+    if a["channels"] != b["channels"] or a["blend"] != b["blend"]:
+        return "channels or blending"
+    if not renamed and a["name"] != b["name"]:
+        return "name"
+    if a.get("mask_norm") != b.get("mask_norm") or _moved_mask(a.get("mask_box"), dx, dy) != b.get("mask_box"):
+        return "mask"
+    differing = sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
+    if differing > (1 if flags else 0):
+        return f"{differing} flag bytes"
+    before, after = dict(a["blocks"]), dict(b["blocks"])
+    changed = sorted(key.decode("latin-1") for key in set(before) | set(after)
+                     if before.get(key) != after.get(key) and key not in keys)
+    return f"blocks {', '.join(changed)}" if changed else None
 
 
 def _pixel_record(record: dict) -> bool:
@@ -1905,12 +2935,16 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
     kind of edit touches (a toggle: exactly one flag byte per toggled digit, plus the effect blocks its Edit declares
     moved, the same bytes leaving one digit's record and landing on another's, or leaving only when cleared; a text
     edit: rect, channels, EngineData; its FX layers: exactly the declared records gone and come, the new ones pixel
-    records carrying the chart's effect blocks byte for byte; a hidden overlay word layer: one flag byte). Records
-    are paired in file order once the FX records declared removed and added are taken out.
+    records carrying the chart's effect blocks byte for byte; a hidden overlay word layer: one flag byte; a star or
+    type icon shown or hidden: one flag byte; one moved: its rect and mask moved by the declared offset, only its
+    transform and anchor blocks changed (_record_moved); a star's copy: the source's record moved, a new id and name;
+    a type icon from Types/: a pixel record carrying the reference icon's effect blocks). Records are paired in file
+    order once the FX records declared removed and added and the copies and icons declared added are taken out. A
+    refusal over a stars or types edit's record carries its field.
 
     Returns:
         ([(index, name, changed fields)] in file order ("removed" at the old index, "added" at the new one), differing
-        flag bytes, effect block bytes that landed on a digit or an FX layer)
+        flag bytes, effect block bytes that landed on a digit, an FX layer or a type icon)
     """
     old, new = layer_records(old_path), layer_records(new_path)
     dropped = Counter(name for edit in edits for name in edit.dropped)
@@ -1922,6 +2956,13 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
             allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind])
         for index in edit.hidden:
             allowed[index] = ("overlay", ALLOWED_RECORD_FIELDS["overlay"])
+    toggles = {index for edit in edits for index in edit.toggled}
+    allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
+    moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
+    inserted = {index: ("copy", source, dx, dy) for edit in edits for index, source, dx, dy in edit.copied}
+    inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
+    owner = {index: edit.field for edit in edits
+             for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
     changed, flag_bytes, block_bytes, old_of = [], 0, 0, {}
     i = j = 0
     while i < len(old) or j < len(new):
@@ -1931,6 +2972,21 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
             dropped[a["name"]] -= 1
             changed.append((i, a["name"], ["removed"]))
             i += 1
+            continue
+        if b is not None and j in inserted:     # a star's copy, or a type icon made from Types/
+            spec = inserted.pop(j)
+            if spec[0] == "made":
+                blocks = dict(b["blocks"])
+                if not _pixel_record(b) or any(blocks.get(key) != data for key, data in spec[1].items()):
+                    raise Refused("bytes", f"type icon {b['name']!r} is not the declared pixel layer", owner.get(j))
+                block_bytes += sum(len(data) for data in spec[1].values())
+            else:
+                why = _record_moved(old[spec[1]], b, spec[2], spec[3], COPY_BLOCKS, renamed=True)
+                if why:
+                    raise Refused("bytes", f"layer {j} {b['name']!r} is no copy of {old[spec[1]]['name']!r} moved: {why}",
+                                  owner.get(j))
+            changed.append((j, b["name"], ["added"]))
+            j += 1
             continue
         if b is not None and b["name"] in added:
             blocks = dict(b["blocks"])
@@ -1943,25 +2999,33 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
         if a is None or b is None:
             raise Refused("bytes", f"layer count {len(old)} -> {len(new)}")
         old_of[j] = i
-        fields = sorted(key for key in a if a[key] != b[key])
-        if fields:
+        fields = sorted(key for key in a if a.get(key) != b.get(key))
+        if j in moved:                          # a star or type icon moved: its rect, mask, transform and anchor
+            source, dx, dy = moved[j]
+            why = f"paired with old layer {i}" if source != i else _record_moved(a, b, dx, dy, MOVE_BLOCKS, j in toggles)
+            if why:
+                raise Refused("bytes", f"moved layer {j} {a['name']!r}: {why}", owner.get(j))
+            flag_bytes += sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
+            if fields:
+                changed.append((j, a["name"], fields))
+        elif fields:
             kind, ok = allowed.get(j, ("", set()))
             if not set(fields) <= ok:
                 raise Refused("bytes", f"layer {j} {a['name']!r} changed {', '.join(fields)}")
             if "flags" in fields:
                 differing = sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
-                if kind in ("stat", "overlay") and differing != 1:
-                    raise Refused("bytes", f"{kind} {a['name']!r} changed {differing} flag bytes")
+                if kind in ("stat", "overlay", "toggle") and differing != 1:
+                    raise Refused("bytes", f"{kind} {a['name']!r} changed {differing} flag bytes", owner.get(j))
                 flag_bytes += differing
             changed.append((j, a["name"], fields))
         i += 1
         j += 1
-    if any(dropped.values()) or added:
-        raise Refused("bytes", "an FX layer declared removed or added is not")
+    if any(dropped.values()) or added or inserted:
+        raise Refused("bytes", "an FX layer, star copy or type icon declared removed or added is not")
     hidden = {index for edit in edits for index in edit.hidden}
     toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
-    if (toggled | hidden) - {index for index, _, fields in changed if fields != ["removed"]}:
-        raise Refused("bytes", "a toggled digit or hidden overlay did not change")
+    if (toggled | hidden | toggles) - {index for index, _, fields in changed if fields != ["removed"]}:
+        raise Refused("bytes", "a toggled digit, hidden overlay or shown or hidden star or icon did not change")
     # effect blocks on the toggled digits: exactly the declared moves, byte for byte
     moves = [move for edit in edits if edit.field in STAT_FIELDS for move in edit.moves]
     blocks_of = lambda records, index: dict(records[index]["blocks"])
@@ -2040,7 +3104,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
 
 def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs: dict, psd: PSDImage, edits=()) -> dict:
     """
-    Re-parse the new PSD: the old parse with exactly the edited fields replaced, no new problems (a stat above 10
+    Re-parse the new PSD: the old parse with exactly the edited fields replaced (the stars read back as the edit, the
+    types as its icons in any order: a miss names the field), no new problems (a stat above 10
     reads STATS TOO HIGH by design when it sits on Top and Bottom rows; no EFFECT LAYER problem: the validator's
     coverage check is the FX layers' gate), one digit per edited row, the title read back for a name edit, and an
     ability edit's FX layers back as declared: visible, styled, directly above the ability's top-level group (_top), no
@@ -2080,8 +3145,10 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     new = parse_card(parser, new_path, rel)
     expected, got = dict(parsed["card"]), dict(new["card"])
     for name, value in jobs.items():
-        if name in STAT_FIELDS:
+        if name in STAT_FIELDS or name == "stars":
             expected[name] = value
+        elif name == "types":                   # in any order: the parser lists them in layer order
+            expected[name] = got.get(name) if same_types(parser, got.get(name), value) else value
         elif name == "ability":
             expected["ability"], got["ability"] = normalize_ability(value), normalize_ability(got.get("ability"))
         elif name == "name":                    # the new title is read back below
@@ -2091,7 +3158,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     got.pop("problem", None)
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
     if different:
-        raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(different))
+        raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(
+            f"{key} {got.get(key)!r} (not {expected.get(key)!r})" if key in ICON_FIELDS else key for key in different),
+            different[0] if set(different) <= set(ICON_FIELDS) else None)
     if new["alt_names"] != parsed["alt_names"]:
         raise Refused("reparse", "hidden titles changed")
     # STATS TOO HIGH is by design on two-row cards (a raise from <= 10 adds it), a problem anywhere else
@@ -2111,7 +3180,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
 
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
-                     icc: bool = True, texts: Optional[dict] = None) -> dict:
+                     icc: bool = True, texts: Optional[dict] = None, parser: Optional[PSDParser] = None) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it is not broken against the merged PNG
     (PARITY_FLOOR; a miss of the bar is told: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -2124,13 +3193,15 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         edits: The applied Edits
         icc: render_region()'s
         texts: {field: render_region() text}; "preview" for a field not in it
+        parser: offline_parser(), to read a types edit back (classify)
 
     Returns:
         {field: region measurement}
     """
-    again = classify(new_parsed, jobs, psd)
-    if again.jobs:
-        raise Refused("idempotence", "still to bake: " + ", ".join(sorted(again.jobs)))
+    again = classify(new_parsed, jobs, psd, parser)
+    left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
+    if left:
+        raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(ICON_FIELDS) else None)
     out = {}
     edited = edited_ids(edits)
     for edit in edits:
@@ -2138,7 +3209,8 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         measured = _measure(render_region(psd, edit.region, icc, text, edited), merged.crop(edit.region))
         if _past_floor(measured):
             raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f: past the %g%% floor"
-                          % (edit.field, measured["bad_pct"], measured["mean"], PARITY_FLOOR))
+                          % (edit.field, measured["bad_pct"], measured["mean"], PARITY_FLOOR),
+                          edit.field if edit.field in ICON_FIELDS else None)
         out[edit.field] = measured
     return out
 
@@ -2194,7 +3266,8 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # Per-card driver (section 5 steps 3-9)
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
-               fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True) -> Baked:
+               fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
+               types_dir: Optional[str] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -2209,9 +3282,11 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         fonts_dir: MDW/Fonts
         chart: status_fills() for ability edits
         update_preview: save_psd(); the preview is the old one with the merge's pixels when the fork can store it
+        types_dir: The card repo's Types/ folder (its PNGs), for a types edit that makes an icon
 
     Returns:
-        Baked; raises Refused (any other exception is the driver's "error")
+        Baked; raises Refused (any other exception is the driver's "error"); a refusal of a stars or types edit's own
+        gates carries its field, so the driver can bake the other fields without it
     """
     timings = {}
     start = perf_counter()
@@ -2228,14 +3303,32 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     if drift:                                   # Photoshop shows the story's styles, not the layer's
         raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
 
-    edits = []                                  # text first: an ability's FX records shift the digits' record indices
-    for name, value in sorted(jobs.items(), key=lambda job: job[0] in STAT_FIELDS):
-        if name in STAT_FIELDS:
+    # stars and types first (a title edit then clears the new stars), text next: an ability's FX records shift the digits'
+    # record indices; the icon edits' indices are read once all are in (index_icons)
+    before, edits, shown = record_map(new), [], None
+    for name, value in sorted(jobs.items(), key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS)):
+        if name in ICON_FIELDS:
+            try:
+                plan = plan_stars(new, parsed, value, parser) if name == "stars" else plan_types(new, parsed, value, parser)
+                edit = set_icons(new, plan, types_dir)
+                start = perf_counter()
+                shown = gate_outside(render_all(old) if shown is None else shown, new, edit)   # nothing else changes
+                timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
+            except Refused:
+                raise
+            except Exception as error:          # a layout the code trips on: that field's alone
+                raise Refused("error", f"{name}: {type(error).__name__}: {error}", name) from error
+            edits.append(edit)
+        elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
+    after = record_map(new)
+    for edit in edits:
+        if edit.icons is not None:
+            index_icons(edit, before, after)
     edits = [edit for edit in edits if edit.layers]
     region = changed_region(edits, new)
 
@@ -2247,7 +3340,11 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     timings["baseline"] = timings["render"] = 0.0
     for edit in edits:
         start = perf_counter()
-        base, parity[edit.field] = baseline(old, png, edit.region, icc)
+        try:
+            base, parity[edit.field] = baseline(old, png, edit.region, icc)
+        except Refused as refused:
+            refused.field = edit.field if edit.field in ICON_FIELDS else None
+            raise
         text = parity[edit.field]["text"]
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
@@ -2260,7 +3357,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         own = own_pixels(replaced, edit.region, [other.region for other in edits if other is not edit and other.region])
         if not own.any() and not _within_bar(parity[edit.field]):     # a blank render: the PNG would keep the old one
             raise Refused("parity", "%s: the render shows no change, baseline bad %.2f%% mean %.2f max %d"
-                          % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]))
+                          % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]),
+                          edit.field if edit.field in ICON_FIELDS else None)
         if preview is not None:
             patches.append((replaced, raw, edit.region))
         changed_pixels += int(replaced.sum())
@@ -2283,10 +3381,12 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
-    rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc, {field: m["text"] for field, m in parity.items()})
+    rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc, {field: m["text"] for field, m in parity.items()},
+                                parser)
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
-                 block_bytes, [name for edit in edits for name, _ in edit.fx], icc, rerender)
+                 block_bytes, [name for edit in edits for name, _ in edit.fx], icc, rerender,
+                 {edit.field: edit.icons.how for edit in edits if edit.icons is not None})
 
 
 # ========================
@@ -2298,8 +3398,9 @@ __all__ = [
     'Classification',
     'Edit',
     'FONTS_DIR',
+    'ICON_FIELDS',
+    'IconPlan',
     'KIND',
-    'NOT_YET',
     'OK_FONTS',
     'Refusal',
     'Refused',
@@ -2320,6 +3421,7 @@ __all__ = [
     'artifacts',
     'baseline',
     'body_fill',
+    'canonical_type',
     'changed_range',
     'changed_region',
     'classify',
@@ -2331,6 +3433,7 @@ __all__ = [
     'fx_name',
     'gate_bytes',
     'gate_idempotence',
+    'gate_outside',
     'gate_region',
     'gate_reparse',
     'gate_shape',
@@ -2340,7 +3443,9 @@ __all__ = [
     'edit_styles',
     'edited_ids',
     'icc_vote',
+    'icon_engine',
     'icon_font',
+    'index_icons',
     'keep_breaks',
     'keep_ends',
     'kept_fx',
@@ -2353,7 +3458,11 @@ __all__ = [
     'offline_parser',
     'own_pixels',
     'parse_card',
+    'plan_stars',
+    'plan_types',
     'read_name',
+    'record_map',
+    'render_all',
     'shown_name',
     'splice_text',
     'splices',
@@ -2361,7 +3470,9 @@ __all__ = [
     'render_region',
     'run_fills',
     'save_png',
+    'same_types',
     'save_psd',
+    'set_icons',
     'set_stat',
     'stale_stories',
     'stat_value',
@@ -2378,5 +3489,6 @@ __all__ = [
     'story_sync',
     'template_row',
     'template_rows',
+    'type_row',
     'uses_icon_font',
 ]
