@@ -39,7 +39,7 @@ exactly one writer. Grafted onto it:
 migration landed with AutoCroissant main 8861696 (2026-10-22 20:50) and TTSCardMaker c0b6f2d7; the bot's cutover side
 (work/cutover-bot, step 8's code with `CARD_SYNC = False`) merged as 7b99438 and deployed with main 2ada357 on 2026-10-23
 10:36. **Step 7 started:** TTSCardMaker main 96d61368 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT`
-and `POSTS` off). At 11:18 no scheduled run had fired and the card repo had no `data` branch, so the first scheduled run
+and `POSTS` off). At 11:39 no scheduled run had fired (GitHub's scheduler ran 3.4-5.6 h late for this repo on 2026-10-22) and the card repo had no `data` branch, so the first scheduled run
 creates it from AutoCroissant's latest PICKLE: check it is one pushed after the history-recovery run (step 7's
 precondition) and re-seed if not. The shadow runs to 2026-10-26 10:36 or 10 card pushes, whichever is later; then step 8
 (the owner swaps the reminders; `ACTIONS_TOKEN` is in the jetson's config.py since 2026-10-22). The open list is

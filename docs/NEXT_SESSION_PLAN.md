@@ -18,9 +18,11 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
   Round 8 integrated (r8/integration 7011f518: bad px 270,512 -> 187,299, -30.8%), not pushed or tagged; round 9 building.
 - **TTSCardMaker** origin/main f603db7c: release 96d61368, then the first live bake on the new tag (e1a491be, 11:29:
   PoD11ZOMG's name, 6 redundant entries dropped, 2 refused) and a TTS save (108 links). The Desktop checkout is 1 ahead
-  (af841c87, Energy_Ritual, a follow-up's local commit). card-edits.yml is live; its dry run 39996528699 sat queued
-  behind other dispatches.
-- **Shadow started** (card-sync.yml schedule on, `MAIN_COMMIT`/`POSTS` off); at 11:18 no scheduled run yet, no `data` branch.
+  (af841c87, Energy_Ritual, a follow-up's local commit). card-edits.yml is live: dry run 39996528699 stuck queued (still
+  queued at 11:39: cancel it), dry run 40003158811 and the live run 40003504861 (e1a491be) passed; the 30-minute schedule
+  takes over. e1a491be refused Papyrus and Sans (their title layer is named after the printed title).
+- **Shadow started** (card-sync.yml schedule on, `MAIN_COMMIT`/`POSTS` off); at 11:39 no scheduled run yet, no `data` branch
+  (GitHub's scheduler ran 3.4-5.6 h late for this repo on 2026-10-22, so a late first run is normal).
 - **Push guards** landed, off (`CARD_GUARDS` unset).
 
 ## Checklist (in order)
@@ -71,19 +73,25 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] Then `CARD_GUARDS=on`. Before it, the owner items in PUSH_GUARDS.md §15 (below) and the Environment wait timer.
 
 ### 5. Follow-up workflows still running at the end (wf_4f5da896-004 and others; check their branches)
-- [ ] **Glow halos / Nebulous Precipice**: AC `work/fu-glow-halo` (c061bd0, test at 0.3 em), TTSCardMaker glow font
-      (rebuild the `:glow`/`:darkglow` variants at 0.3 em, owner), then Nebulous_Precipice gets `[darkmatter:glow]`.
+- [ ] **Glow halos / Nebulous Precipice**: AC `work/fu-glow-halo` (7d7c079: test at 0.3 em, companion §1.8 and the §4
+      renderer row after the Photoshop test) and TTSCardMaker `work/glow-tokens` (c1a602ad: font at 0.3 em, fc5bd15c);
+      land both together, then Nebulous_Precipice gets `[darkmatter:glow]`. Until TTSCardMaker's lands,
+      `test_token_limit_fits_every_icon` fails against the live clone (site `text.js` reads 48 characters, not 52).
+- [ ] **Effect Layers.jsx overlay colour** (the Photoshop pass's overlayColor port, Mr_Krabs' ruling): TTSCardMaker
+      `work/l7-effect-layers` cdfef5fb, not pushed and not in release 2: review, push.
 - [ ] **Energy_Ritual** (candidate A, +3.333 pt on line 4): local TTSCardMaker af841c87, unpushed: pre-push check, push.
 - [ ] **PNG recompression** (lossless on push in the guard's bot commit, plus one batch pass over existing PNGs): AC and
-      TTSCardMaker `work/png-optimize` (nothing committed yet). Note e1a491be's PNG went 8.7 MB -> 1.7 MB.
+      TTSCardMaker `work/png-optimize` (at 11:39 only TTSCardMaker 6345d293, pyoxipng in card-guards.yml). Note e1a491be's
+      PNG went 8.7 MB -> 1.7 MB.
 - [ ] **Stars/types bake** (the bake learns star layers in the Stars group and the type icon/token swap, same gates):
       AC `work/stars-types-bake` (nothing yet). Today a pending website stars/types edit blocks the whole card.
 - [ ] **Guards' real-issue checks** (restore R3/R4's non-layout checks as reports: no or several visible Ability
-      layers, a hidden or rasterized Name): AC `work/guards-real-issues` (nothing yet).
+      layers, a hidden or rasterized Name): AC `work/guards-real-issues` (00e1d08, with docs).
 - [ ] **Test drift from B2** (Computer Virus, Fire Staff FX; old overlays pinned): AC `work/test-drift-b2` 3cd49da.
 - [ ] **Pandora author**: the owner ruled it stays MichaelJSr (archive ruling recorded). Do NOT land any TTSCardMaker
       `work/pandora-author`; delete it.
-- [ ] Check the live bake e1a491be: the 2 refusals, the new PNG against the PSD.
+- [ ] Check the live bake e1a491be: the 2 refusals (Papyrus, Sans: the title layer is named after the printed title;
+      decide whether the refused-layers bake should take it), the new PNG against the PSD.
 
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
 - [ ] Round 9 (4 branches: gradient scale proto, gradient stroke silhouette box, Photoshop-fixture one-carrier effects,
@@ -91,7 +99,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] Release when worth it: push r8/r9 into `cards`, tag `cards-2026102x`, re-pin card-edits.yml, card-sync.yml and
       card-guards.yml, reinstall the jetson venv (gcc for `_distance`, `pip check`) and `~/.venvs/ac-py314-fork`; goldens.
       One AutoCroissant test failed against the live clone at r8 (`test_overlay_word_layer_without_a_chart_style_refuses`,
-      from TTSCardMaker 49cf3b28): update it with the release.
+      from TTSCardMaker 49cf3b28): update it with the release. The fork's `psd_tools.__version__` still says 1.25.0 while
+      its changelog heads 1.26.0 (unreleased): mind it when naming the tag. The harness corpus is the frozen copy
+      `~/Documents/Tools/psd-research/corpus-6e50c3ee` (21 GB); keep it until the rounds end.
 - [ ] Remaining classes: ~34% stale exports (class H: re-export in Photoshop), ~9.5% effect noise, Satin
       (Royal_Eradicator's Name), Oryx's inner shadow, soft outer-glow kernel per size. Fork leftovers to re-check:
       `BrightnessContrast.automatic` reads `auto` (corpus `Auto`); Star_Cannon's name box; type-layer gradients
@@ -117,7 +127,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 
 ### 8. Website, TTS and Discord follow-ups
 - [ ] Fetch the 10 oversize Discord files (ruled 2026-10-22 ~23:20); re-run the matcher if they move a date.
-- [ ] The five cards to open in Photoshop (`~/Documents/Tools/psd-research/std-batch2/b1_final/LANDED.md`).
+- [ ] The cards to open in Photoshop: five in `~/Documents/Tools/psd-research/std-batch2/b1_final/LANDED.md` (batch 1)
+      and five in `std-batch2/LANDED_B2.md` (02_Abbreviations, 22_Negation, Palace_of_Shadow, Jack-In-The-Box_Zombie,
+      Dark_Mind_Eye).
 - [ ] Website NOTES §7-12 items still "not done"; Task 2b's TTS "Table" tab stays reverted.
 - [ ] Rebuild lost environments when needed: `tts-checks-venv` (lupa), `tc-parity` (use `wt/tc-full.git`),
       `/tmp/fontexplore` (BUGS §1.6 points there).
@@ -128,15 +140,25 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] Merged `work/*` branches in AutoCroissant and TTSCardMaker; TTSCardMaker backups `std/batch-landed-unreviewed`,
       `std/landed-243`, `std/queueA-landed`, `backup/b2-pre-exclude`; psd-tools `wip/*` refs and merged round branches.
 - [ ] The 23 GB rescue folder `~/Documents/Tools/session-rescue-2026-10-22/` (B2 has landed; keep the notes and
-      bundles until the branches are pushed or deleted); in `discord-archive`: `*.pid`, `match/before-*`, `verify/`.
+      bundles until the branches are pushed or deleted); in `discord-archive`: `*.pid`, `match/before-*`, `verify/`;
+      the 21 GB frozen corpus `psd-research/corpus-6e50c3ee` once the psd-tools rounds end.
 - [ ] The Mac's local TTSCardMaker checkout: shallow; `git pull --ff-only` after the Energy_Ritual push.
 
 ### 10. Docs and memory
-- [ ] Memory: `next-session-plan` (point here; RESUME_2026-10-22.md moved to docs/Finished/session-2026-10-23/),
-      `jetson-server` (2ada357 deployed 10:36, fork `cards-20261023`), `ttscardmaker-integration` (stale since 10-22).
+- [x] Memory `next-session-plan` (points here) and `jetson-server` (2ada357, fork `cards-20261023`), 2026-10-23 11:40.
+- [ ] Memory still stale: `ttscardmaker-integration` (since 10-21: font-check webhook, card-sync shadow, password
+      sign-in, `.mailmap`, created dates), `website-and-pipeline-ideas` (parity bar, the L2/L5/L6 standardization items
+      the owner turned down), `psd-edits-hold` (batch rules of 10-21), `commit-to-main` (work branches in flight),
+      `owner-decisions-2026-10-22-evening` (card-edits.yml is live again).
+- [ ] ttscardmaker-companion §0's Card guards row still says "not landed" (it landed off in 96d61368): fix it with or
+      after `work/guards-real-issues`, which edits the same row.
 - [ ] Skills still carrying 2026-07-11 line numbers outside today's drift fixes (impossibility-cards-reference's
       psd_parser.py citations, failure-archaeology); re-run `scripts/optimization/refs6.py` / `provcheck.py`.
 - [ ] DATA_BUILD_ACTION.md §6.1, §6.3 and §14 as built (`_bot` described); update as steps 7-10 happen.
+
+Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCardMaker `DISCORD_CHANGELOG_WEBHOOK`,
+`DISCORD_STANDARDS_WEBHOOK`; `DISCORD_FONT_WEBHOOK` deleted 2026-10-23; `CARD_GUARDS`; card-sync's `MAIN_COMMIT`/`POSTS`;
+the jetson's `ACTIONS_TOKEN`).
 
 ## Waiting on the owner (report these; do not ask unless told)
 
@@ -151,7 +173,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
   history starts at its bytes' first commit at any path; the 4 renamer credits (Abyss Watchers and Pontiff Sulyvahn:
   hdckighfkvhvgmk; Firebomb and Maxim Tomato: MichaelJSr); the dangling side-file lines (White Palace in Card Authors.txt;
   Gust of Trees and Stubborn Queen in Card Creation Dates.json), printed by every run as "match no card".
-- **To tell him:** the `_bot` field (schema addition); ability bakes refused on the gradient badge cards (BUG 2); 4 cards
+- **To tell him:** BUGS D4's owner notes (a card back after a deletion gap keeps its first start); the `_bot` field (schema addition); ability bakes refused on the gradient badge cards (BUG 2); 4 cards
   keep their hidden-layer text (they print it as visible layers); the Website edits cap of 100; per-field credit on 14
   entries; Computer Virus left flagged.
 - **Older items:** BabaUI font (Baba.psd); Photoshop-authored fixtures (a bevel texture, a smart object with a painted

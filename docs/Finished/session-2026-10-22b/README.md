@@ -58,7 +58,7 @@ Discord-only series move into Card Edits.json. EarthboundZero cards badged with 
 negated."), re-laid and badged. psd-tools rounds until the gains dry up (< ~2% of the remaining bad pixels). Points stay
 plain text (point badges reversed at ~10:00). Badges in any letter case. A badge colour legend on 02_Abbreviations and the
 website, one line per colour, badges only. History: skip identical versions and clean the stored duplicates. Only printed
-Ability text counts. Title case: only clear typos, Title Case with small words lower, partial caps and the 25 ALL CAPS
+Ability text counts. Leave the 45 Name layers' names (fix Dark matter's text, not its layer name). Title case: only clear typos, Title Case with small words lower, partial caps and the 25 ALL CAPS
 kept, with the next Photoshop pass. Repo size: cut churn (one rewrite per card per pass), no history rewrite. Discord:
 best guesses accepted where they cannot move a date; the website uses Discord creation dates; no Discord aliases;
 authors reviewed by the owner. Shadow as designed (3 days or 10 pushes); the owner tells bobberlington. Computer Virus
@@ -84,6 +84,13 @@ unattended, no questions.
   std-batch2/` and `~/std-work-1022/`; fsck clean; bundles of unpushed branches in
   `~/Documents/Tools/session-rescue-2026-10-22/bundles/`.
 - **card-edits.yml disabled at ~16:50:** main's bake had neither the Txt2 gate nor the colour-glyph refusal.
+
+- **An agent pushed to AutoCroissant main unasked** (cb8fe54, the matcher without alias proposals, ~12:40): benign
+  (2 files, code only), kept. Pushes stay with the orchestrator.
+- **Orphans from the 05:51 limit** (05:56, killed at the user's request): 31 psd-tools harness workers in
+  `/private/tmp/r5grad` (~10 GB) and three stale preview servers (:8001, :8811, :8812).
+- **Schedules looked broken but were late:** GitHub's scheduler ran 3.4-5.6 h late for TTSCardMaker (site.yml,
+  tts-save.yml, card-edits.yml) that day; card-edits' first scheduled run came at ~12:15.
 
 ## Lessons
 

@@ -87,7 +87,8 @@ days -> on, 30-minute wait kept, R3/R4 dropped (developers' freedom: the bot cop
 template passes). Auxiliary/Creatures read printed stars and count as creature type. Discord: best guesses firm, prefer
 the earlier date, fetch the 10 oversize files, 33 misreads = none, A8 = Pandora, A310/A146/A217 = none. Authors: first
 Discord poster wins unless credited by hand; Pandora stays MichaelJSr; "Michael" merged into MichaelJSr via .mailmap.
-Website password sign-in on any device, signed in forever per device; deck passphrases encrypted with the device key.
+Redo the 8 narrow-margin cards and Koops with R0, a column pass on Cloud_Soiree (both in the B2 follow-up), no font-side
+hardening, the L7 effect layers on the 40 overlay cards next (done in the Photoshop pass). Website password sign-in on any device, signed in forever per device; deck passphrases encrypted with the device key.
 Bounds checks and negative indexes on in Cython. Bakes and the stale-PNG guard no longer refuse on the pixel check (only
 past 25% of a box or a wrong read-back); misses are noted and fixed in psd-tools. Approved: refused-layer bakes,
 line-splice text bakes, semantic PSD diff in push posts, records-only range reads. Not chosen: printed-text audit,
@@ -113,6 +114,8 @@ losslessly on push plus one batch pass; 11_Abilities2 stays. Then: work unattend
   list), and kept paused because 9 split-title cards would have baked wrongly until refused-layers; re-enabled at 10:36.
 - **Reviews cut short:** the guards' final pass ended clean=false (fixed in an owner-rulings round), the history fix's
   last round and soft parity's last fix round were not re-reviewed (covered by the release checks).
+- **card-edits dispatch stuck** (11:3x): dry run 39996528699 sat queued with no job; re-dispatched (40003158811), then
+  the live run 40003504861. The stuck one was still queued at 11:39.
 - **Card sync dry-run defects** (changelog links by name, duplicates' version churn, edits misread as PSD changes,
   `load_aliases('main')`, no JSON input for diff_stats/inspect_pickle, `load_card_data()`): fixed on work/shadow-prep,
   merged in release 2.
@@ -121,7 +124,9 @@ losslessly on push plus one batch pass; 11_Abilities2 stays. Then: work unattend
 
 The first `/update_stats` on 2ada357 (the recovery) and its `/push`; the shadow's seed check and 3 days of daily checks,
 then the cutover; card guards' rollout; the follow-up workflows still running (glow halo test, Energy_Ritual, PNG
-recompression, stars/types bake, guards real-issue checks, test drift from B2, Pandora author); fork round 8+; the
+recompression, stars/types bake, guards real-issue checks, test drift from B2, Pandora author); two TTSCardMaker
+branches that missed release 2 (`work/glow-tokens`, the 0.3 em font, and `work/l7-effect-layers`, the Effect
+Layers.jsx overlay colour); fork round 8+; the
 re-parses the owner runs (`cards:Shadow Duelist`, the padding five, the seven printed-star cards); cleanup of worktrees,
 branches and the rescue folder; memory upkeep (`jetson-server`, `ttscardmaker-integration`, `next-session-plan`).
 
