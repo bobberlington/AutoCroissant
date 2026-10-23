@@ -7,6 +7,7 @@ build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips wi
 """
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -22,6 +23,7 @@ import commands.card_models as cm
 from conftest import CLONE
 
 BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
+EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -255,3 +257,32 @@ def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, m
     melon, dup = cards["Watermelon"], cards["Inconspicuous Watermelon"]
     assert dup["ability"] == "Heal 1." and "hv" not in dup and dup["id"] not in out["history.json"]
     assert out["history.json"][melon["id"]] == [{"ts": repo["t"][0], "ability": "Heal 1."}]
+
+
+def test_a_types_edit_that_only_reorders_waits_for_no_bake(bs):
+    """'PSD pending' on types as the bake's psd_edit.same_types sees it: any order and spelling (TTSCardMaker
+    work/types-any-order; the website's toggles list them sorted)."""
+    def pending(types):
+        entry = {"key": "Mini_Doomer", "types": ["wind", "defensive_minion", "light"]}
+        bs.apply_edits(entry, {bs.card_key("Mini Doomer"): ({"types": types}, {})})
+        return entry.get("pending")
+    assert pending(["defensive_minion", "light", "wind"]) is None
+    assert pending(["Light", "Defensive Minion", "wind"]) is None
+    assert pending(["light", "wind"]) == pending(["light", "wind", "wind"]) == ["types"]
+
+
+def test_the_editor_writes_no_types_edit_that_only_reorders(tmp_path):
+    """edit.js mergeField (readForm the same): its toggles list the types sorted, so a card's own types in another
+    order are no edit, and back to the PSD's set unsets an edit."""
+    if not EDIT_JS.is_file() or shutil.which("node") is None:
+        pytest.skip("edit.js or node missing")
+    script = tmp_path / "merge.mjs"
+    script.write_text(f"const {{ mergeField }} = await import({json.dumps(EDIT_JS.as_uri())});\n"
+                      "const psd = ['wind', 'defensive_minion', 'light'], sorted = [...psd].sort(), op = { set: {}, unset: [] };\n"
+                      "const cases = [[{ pub: psd, psd, edited: false }, sorted], [{ pub: psd, psd, edited: false }, ['light', 'wind']],\n"
+                      "  [{ pub: ['fire'], psd, edited: true }, sorted]];\n"
+                      "process.stdout.write(JSON.stringify(cases.map(([base, v]) => mergeField(op, base, 'types', v))));\n",
+                      encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert [(o["set"], o["unset"]) for o in json.loads(done.stdout)] == [({}, []), ({"types": ["light", "wind"]}, []), ({}, ["types"])]
