@@ -577,7 +577,7 @@ echo $?
 ```
 
 Expect exit 1 with only the predicted refinements. Measured 2026-10-23 with AutoCroissant's PICKLE 077337a9 against
-a Mac rebuild seeded from it at TTSCardMaker 7b48db05 (work/shadow-prep with work/history-fixes 1fc46c6; the shadow's
+a Mac rebuild seeded from it at TTSCardMaker 7b48db05 (work/shadow-prep with work/history-fixes 93e3458; the shadow's
 first data commit should look the same):
 
 ```
