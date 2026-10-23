@@ -122,6 +122,23 @@ def test_every_kind():
     assert by["Fresh"]["by"] == "Bob" and set(cl.KINDS) >= set(kinds.values())
 
 
+def test_a_reread_cards_edits_are_their_own_event():
+    """A re-read card's fields go to the PSD's event only when its parse changed (parsed_values put back) and no edit
+    sets them now; an edit (new, changed or removed) and the author are the edit's or the authors file's."""
+    before = {"Art": _card("Art"), "Both": _card("Both"), "Unedit": _card("Unedit", ability="Edited.",
+                                                                           parsed_values={"ability": "(1CD) Hit."}),
+              "Back": _card("Back", ability="Edited.", parsed_values={"ability": "(1CD) Hit."})}
+    after = {"Art": _card("Art", blob_sha="b2", display_name="Shown", parsed_values={"name": None, "problems": []}),
+             "Both": _card("Both", blob_sha="b2", stats=cm.CardStats(6, 2, 3, 4), display_name="Shown", author="Al",
+                           parsed_values={"name": None, "problems": []}),
+             "Unedit": _card("Unedit", blob_sha="b2", ability="New."),           # edit gone, the PSD changed too
+             "Back": _card("Back", blob_sha="b2")}                              # edit gone, the PSD as before
+    found = sorted((e["card"], e["kind"], sorted(e.get("fields") or {})) for e in
+                   cl.events(before, after, {}, {}, dict.fromkeys(after, 1), {n: "web" for n in after}))
+    assert found == [("Art", "art", []), ("Art", "edited", ["name"]), ("Back", "art", []), ("Back", "edited", ["ability", "tags"]),
+                     ("Both", "changed", ["hp"]), ("Both", "edited", ["author", "name"]), ("Unedit", "changed", ["ability"])]
+
+
 def test_bot_edits_never_read_as_website_edits():
     """A _by AutoCroissant entry, and fields the migration listed in an editor's _bot, are the bot's: "(by AutoCroissant)",
     never "on the website" (changes.js byWhom)."""

@@ -21,6 +21,7 @@ from urllib.parse import quote
 
 from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_db import write_text
+from commands.card_edits import as_parsed
 from commands.card_history import TYPE_RENAMES, unknown
 from commands.card_models import CardInfo
 
@@ -102,6 +103,19 @@ def field_changes(old: CardInfo, new: CardInfo) -> dict:
     if (a["subseries"] or a["series"]) == (b["subseries"] or b["series"]):
         skip |= {"series", "subseries"}
     return {key: [a[key], b[key]] for key in FIELDS if a[key] != b[key] and key not in skip}
+
+
+def split_changes(old: CardInfo, new: CardInfo, changes: dict) -> tuple:
+    """
+    A re-read card's changes as (the PSD's, Card Edits.json's or the authors file's): a field is the PSD's when its
+    parse changed (as_parsed: the edits undone) and no edit sets it now; the author never is (git and Card Authors.txt
+    give it).
+    """
+    psd = field_changes(as_parsed(old), as_parsed(new))
+    edited = {key for key in (getattr(new, "parsed_values", None) or {}) if key != "problems"}
+    mine = {key: value for key, value in changes.items()
+            if key in psd and key != "author" and EDIT_FIELD.get(key, key) not in edited}
+    return (mine, {key: value for key, value in changes.items() if key not in mine})
 
 
 def _tag_steps(old: list, new: list) -> tuple:
@@ -255,24 +269,22 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
             changes = field_changes(old, new)
             blobs = [getattr(old, "blob_sha", None), getattr(new, "blob_sha", None)]
             moved = old.path != new.path
-            if changes:
-                if name in reparsed:
-                    kind = "changed" if blobs[0] != blobs[1] else "moved" if moved else "reparse"   # a move: folder data
-                elif set(changes) == {"author"}:
-                    kind = "authors"
-                else:
-                    kind = "edited"
-                out.append(_event(kind, name, new, fields=changes,
-                                  edit_by=edit_credit(edits_by.get(name), changes) if kind == "edited" else None,
-                                  blob=blobs if blobs[0] != blobs[1] else None, from_path=old.path if moved else None,
-                                  **classify(changes), **(source(blobs[1], path=new.path) if kind in ("changed", "reparse")
-                                                          else source(path=new.path) if kind == "moved"
-                                                          else {"commit": file_commits[kind]} if file_commits.get(kind) else {})))
-            elif blobs[0] != blobs[1]:
+            psd, edits = split_changes(old, new, changes) if changes and name in reparsed else ({}, changes)
+            if psd:
+                kind = "changed" if blobs[0] != blobs[1] else "moved" if moved else "reparse"   # a move: folder data
+                out.append(_event(kind, name, new, fields=psd, blob=blobs if blobs[0] != blobs[1] else None,
+                                  from_path=old.path if moved else None, **classify(psd),
+                                  **(source(path=new.path) if kind == "moved" else source(blobs[1], path=new.path))))
+            elif blobs[0] != blobs[1]:                    # an edit in the same build is its own event (below)
                 out.append(_event("art", name, new, blob=blobs, from_path=old.path if moved else None,
                                   **source(blobs[1], path=new.path)))
             elif moved:
                 out.append(_event("moved", name, new, from_path=old.path, **source(path=new.path)))
+            if edits:
+                kind = "authors" if set(edits) == {"author"} else "edited"
+                out.append(_event(kind, name, new, fields=edits,
+                                  edit_by=edit_credit(edits_by.get(name), edits) if kind == "edited" else None,
+                                  **classify(edits), **({"commit": file_commits[kind]} if file_commits.get(kind) else {})))
     return out
 
 
@@ -662,6 +674,7 @@ __all__ = [
     'rewrite_events',
     'site_ids',
     'size',
+    'split_changes',
     'tags_of',
     'version_changes',
 ]

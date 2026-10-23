@@ -600,3 +600,32 @@ def test_a_duplicate_keeps_its_originals_version(cards):
     assert (cards.db / "stats.json").read_text(encoding="utf-8") == first         # re-parsed: the same stats.json
     before = times()
     assert _build(cards)[0] == cd.EXIT_OK and times() == before                  # and the run after writes nothing
+
+
+def test_an_edit_beside_a_new_blob_is_an_edit(cards):
+    """A Card Edits.json name lands in the same build as new art for its card (Metal General, 2026-10-22): the PSD's
+    own data is unchanged (its parse against parsed_values), so it posts and is recorded as an edit beside the art;
+    a real PSD change in the same build stays the PSD's."""
+    _build(cards, "--seed", str(cards.seed))
+    put(cards.repo, DOOMER, cards.psds[DOOMER] + b"\0")                         # new art: another blob, the same layers
+    commit(cards.repo, "bob", 2000)
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"name": "Tiny Doomer", "_by": "web"},
+                                                                  "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
+    edits = commit(cards.repo, "web", 2100)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old, _, _, events = _read(cards)
+    mine = [(e["kind"], e.get("fields"), e.get("edit_by"), e["commit"]) for e in events if e["card"] == "Mini Doomer" and e["seq"] > 2]
+    assert sorted(mine, key=str) == sorted([("art", None, None, git(cards.repo, "rev-parse", "HEAD~1").strip()),
+                                            ("edited", {"name": ["Mini Doomer", "Tiny Doomer"]}, "web", edits)], key=str)
+    doomer = stats["Mini Doomer"]
+    assert (doomer.display_name, doomer.version["cause"], doomer.version["from_commit"]) == ("Tiny Doomer", "edit", edits)
+    assert [v.display_name for v in old["Mini Doomer"]] == [None]
+
+    put(cards.repo, DOOMER, cards.psds[OTHER])                                  # the PSD's data changes too
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"name": "Wee Doomer", "_by": "web"}}}).encode())
+    commit(cards.repo, "bob", 3000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, _, _, _, events = _read(cards)
+    last = {e["kind"]: e for e in events if e["card"] == "Mini Doomer" and e["at"] == max(x["at"] for x in events)}
+    assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
+    assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"

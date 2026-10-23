@@ -16,6 +16,7 @@ from subprocess import run
 from typing import Optional
 
 from commands.card_db import dump_pickle, read_pickles, record
+from commands.card_edits import as_parsed
 from commands.card_models import CardInfo, CardType, card_name
 
 # ========================
@@ -176,21 +177,27 @@ def leaf(data: dict) -> Optional[str]:
     return data["subseries"] or data["series"]
 
 
-def same_data(a: CardInfo, b: CardInfo) -> bool:
+def same_data(a: CardInfo, b: CardInfo, ignore: tuple = ()) -> bool:
     """
-    Whether two versions hold the same data (data_of); a field either reading could not know (unknown) and a series
-    moved under a parent (the same leaf) are no difference. A value record() can't read counts as different (a
-    version is kept, as before 2026-10-22), so the cleanup at each /update_stats never fails on it.
+    Whether two versions hold the same data (data_of; not the fields in ignore); a field either reading could not
+    know (unknown) and a series moved under a parent (the same leaf) are no difference. A value record() can't read
+    counts as different (a version is kept, as before 2026-10-22), so the cleanup at each /update_stats never fails on it.
     """
     try:
         x, y = data_of(a), data_of(b)
     except (TypeError, AttributeError) as error:
         print(f"History: {getattr(a, 'name', '?')} compared as changed ({error})")
         return False
-    skip = unknown(a) | unknown(b)
+    skip = unknown(a) | unknown(b) | set(ignore)
     if leaf(x) == leaf(y):
         skip.update(SERIES)
     return all(x[key] == y[key] for key in DATA_FIELDS if key not in skip)
+
+
+def psd_changed(old: CardInfo, new: CardInfo) -> bool:
+    """Whether a re-read PSD changed a card's data: its parse against the one before (as_parsed: Card Edits.json's
+    edits undone), the author left out (git and Card Authors.txt give it, never the PSD)."""
+    return not same_data(as_parsed(old), as_parsed(new), ignore=("author",))
 
 
 def _exact(a: CardInfo, b: CardInfo) -> bool:
@@ -617,8 +624,9 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     A build's versions, after its parse, edits, authors and archive: a card whose data changed has its card before
     appended to its history (at its own path), closed where the new version starts (never before that version's own
     start: a held PSD change or a re-read after an edit); an art-only change or a move keeps the version going; a
-    re-read of the same PSD (same blob and path: a parser change) replaces its reading, its start kept; a card
-    restored with the same data drops its archived record. Duplicates get none.
+    re-read of the same PSD (same blob and path: a parser change) replaces its reading, its start kept; a re-read PSD
+    whose own data did not change (psd_changed) is an edit or authors version, the edit landing in the same build; a
+    card restored with the same data drops its archived record. Duplicates get none.
 
     Args:
         before: stats at the build's start (a deep copy)
@@ -661,14 +669,15 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
                     if not versions:
                         del db.old_stats[name]
             continue
-        if name in reparsed and name not in restored and old.path == card.path and \
+        psd = name in reparsed and psd_changed(old, card)     # else an edit in the same build as an art change
+        if psd and name not in restored and old.path == card.path and \
                 getattr(old, "blob_sha", None) and getattr(old, "blob_sha", None) == getattr(card, "blob_sha", None):
             info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None)   # the same PSD read again:
             info["to"], info["to_commit"], info["png_commit"] = None, None, None            # the reading is replaced
             card.version = info
             made.append((name, "reparse"))
             continue
-        if name in reparsed:
+        if psd:
             start = start_of(card, index, old)
         else:
             only_author = {k for k, v in data_of(old).items() if v != data_of(card)[k]} == {"author"}
@@ -758,6 +767,7 @@ __all__ = [
     'main',
     'meta',
     'normalize',
+    'psd_changed',
     'record_versions',
     'refine',
     'same_data',
