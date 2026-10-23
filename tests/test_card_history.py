@@ -244,6 +244,16 @@ def test_dedupe_cleans_every_name_once():
     assert ch.dedupe(stats, old) == []
 
 
+def test_dedupe_keeps_a_name_record_cant_read(capsys):
+    """A value that isn't JSON data (record() raises) leaves its name's versions alone; the others are still cleaned."""
+    stats = {"A": _card(timestamp=300.0), "B": _card("B", timestamp=300.0)}
+    odd = _card("B", timestamp=200.0, parsed_values={"series": {"x"}})            # a set: not JSON data
+    old = defaultdict(list, {"A": [_card(timestamp=100.0)], "B": [_card("B", timestamp=100.0), odd]})
+    assert ch.dedupe(stats, old) == [("A", 100.0)]
+    assert old["B"][1] is odd and len(old["B"]) == 2 and stats["B"].version is None
+    assert "B compared as changed" in capsys.readouterr().out
+
+
 def test_the_seed_after_the_cleanup_is_the_seed_alone():
     """The same history either way: the seed pass on pickles with duplicates, or /update_stats' cleanup first and then the
     seed (its legacy record dated from git, the earlier start kept; only that start's commit is unknown)."""
