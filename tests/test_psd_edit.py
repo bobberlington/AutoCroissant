@@ -50,6 +50,7 @@ FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # an overlay 
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
+POD10BFB = ("Auxiliary/Minions/PoD10BFB.psd", "52352775a6b94d4f63c5694ba1c73b4b4397bf69^")   # before its badge FX layer
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -1270,8 +1271,10 @@ def test_ability_edit_keeps_a_forced_line_break(clone, chart, tmp_path):
 def test_ability_edit_keeps_a_leading_empty_paragraph(clone, chart, tmp_path):
     """PoD10BFB's ability starts with an empty paragraph: an edit (the website's trimmed text) keeps it in TySh and the
     story, so the text stays where it was."""
-    path = _card(clone, "Auxiliary/Minions/PoD10BFB.psd")[0]
-    psd = PSDImage.open(path)
+    rel, rev = POD10BFB
+    path = tmp_path / Path(rel).name
+    path.write_bytes(at_rev(clone, rev, rel))
+    psd = PSDImage.open(str(path))
     layer = pe.ability_layer(psd)
     old = layer.text
     assert old.startswith("\r(1GCD)")
