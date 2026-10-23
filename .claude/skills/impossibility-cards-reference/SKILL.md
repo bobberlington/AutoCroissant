@@ -275,18 +275,20 @@ Algorithm:
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
    gaps pass through unchanged. Types are consumed strictly in sorted (reading) order.
 4. LEFTOVER types (more icons than gaps) are appended to the LAST line as ` [t1] [t2] ...`
-   (psd_parser.py:940-943). More gaps than icons: extra gaps stay as-is as literal spaces.
+   (psd_parser.py:1045, 2026-10-23). More gaps than icons: extra gaps stay as-is as literal spaces.
 5. Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
 
-**Worked example — The Lich King** (reproduced 2026-07-11 via
-`python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/"Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"`):
-PSD 1200x2400, card_mid_y=1200. Above midline: icons
-`ice`, `undead` → `card.types`. One ability text layer at (x=23, y=1773) whose last line is
-`"Minions inherit<GAP:7>."` (a 7-space gap). One below-midline icon: `undead` at (x=734, y=2239).
-Prune threshold = max(2239//3=746, 1200) = 1200 → kept. 1 gap vs 1 type → match. Final line:
-`"Minions inherit [undead]."` The Freezer (golden) shows the multi-gap case — three icons injected
+**Worked example — Nebulous Precipice** (measured 2026-10-23 at TTSCardMaker 96d61368 via
+`~/.venvs/ac-py314-fork/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/"Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"`):
+PSD 1200x1800, card_mid_y=900. Above midline: icon `field` → `card.types`. One ability text layer at (x=26, y=1229)
+whose first line is `"Friendly<GAP:5>gain +0.5 DEF and +1 SPD."` (a 5-space gap). One below-midline icon:
+`darkmatter` at (x=269, y=1207). Prune threshold = max(1207//3=402, 900) = 900 → kept. 1 gap vs 1 type → match.
+Final line: `"Friendly [darkmatter] gain +0.5 DEF and +1 SPD."` (Due to become a `[darkmatter:glow]` token, owner
+2026-10-23.) The 2026-07-11 example was The Lich King, whose "Minions inherit<GAP:7>." took a visible `undead` icon at
+(734, 2239); since TTSCardMaker 1c24dd48 (2026-10-22) its text holds the `[undead]` token and that icon layer is
+hidden, so it reads the same final line with no gap and no icon (§4.1). The Freezer (golden) shows the multi-gap case — three icons injected
 across two lines, producing exactly:
 `"For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1PGT) Choose a friendly creature to turn into a [ice] and lower its speed by 1."`
 (Since 2026-10-21 the PSD reads `(1GCD)` there: the team's cooldown update, impossibility-simulator-rules §3.)
@@ -771,3 +773,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-21 (D3, idea 14): §4.2 WORDS NOT IN TEXT also covers a `#n` past the last match (orphaned effect layers) and records the corpus and trial-copy counts; §5 says why Shadow Duelist stays excluded; psd_parser.py citations re-pointed (+1 to +3 inside the effect check, +18 after it); the §5 table rows, stale before, re-pointed to the validator (:1008-1050) and MISSPELT TYPE to :566-567.
 
 2026-10-22 (data build): the traversal's citations (EXCLUDE_FOLDERS, the type list, the commit lookup, the history rule, `_update_old_stats_paths`) re-pointed to the uncompiled commands/card_data.py; `_update_old_stats_paths` noted as legacy-mode only. The db/ JSON schemas (`version`, the manifest, the changelog events) are in docs/Campaigns/DATA_BUILD_ACTION.md section 8 until the cutover.
+
+2026-10-23 (docs drift): §4's worked injection example moved to Nebulous Precipice; The Lich King noted as a font-token card since TTSCardMaker 1c24dd48.

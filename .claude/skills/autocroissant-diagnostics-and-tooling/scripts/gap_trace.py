@@ -13,8 +13,9 @@ Requires config.py in the repo root. Read-only; nothing is saved.
 
 MAINTENANCE NOTE: the extraction loop below deliberately re-drives the REAL
 PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes,
-_inject_type_names) instead of copying their logic, but the orchestration
-mirrors PSDParser._extract_from_layers. If _extract_from_layers changes shape
+_process_abilities, which injects the types) instead of copying their logic, but the orchestration
+mirrors PSDParser._extract_from_layers (effect layers set aside, hidden rule text skipped, hidden Ability
+layers read last). If _extract_from_layers changes shape
 in commands/psd_parser.py (re-exported by commands.psd_analyzer), update this script to match (one-line check:
 compare against that method's body).
 """
@@ -29,7 +30,7 @@ os.chdir(REPO_ROOT)
 
 from psd_tools import PSDImage  # noqa: E402
 
-from global_config import LOCAL_DIR_LOC  # noqa: E402
+from global_config import LOCAL_DIR_LOC, RULEBOOK_DIR  # noqa: E402
 
 
 def visualize_gaps(text: str, gap_pattern) -> str:
@@ -61,6 +62,7 @@ def main() -> int:
         CardInfo,
         CardType,
     )
+    from commands.psd_parser import EFFECT_LAYER_TAG, stars_from_psd
 
     db = StatsDatabase()
     traverser = RepositoryTraverser(db)
@@ -80,13 +82,12 @@ def main() -> int:
     stat_trackers = StatTrackers()
     type_bboxes: list = []
     abilities: list = []
-    is_rulepage = "Rulebook" in relative_path
-    get_stars_from_psd = any(
-        folder in relative_path
-        for folder in ["Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E"]
-    )
+    is_rulepage = RULEBOOK_DIR in relative_path
+    get_stars_from_psd = stars_from_psd(relative_path)
     texts, hidden = [], []
     for layer in psd.descendants():
+        if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
+            continue        # an effect layer: a pixel copy of a text layer's words, nothing to parse
         if is_rulepage and layer.kind == "type" and not layer.is_visible():
             continue        # rule pages skip hidden text
         if layer.kind == "type":

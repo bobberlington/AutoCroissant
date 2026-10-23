@@ -19,6 +19,12 @@ does NOT chdir: relative arguments resolve against your SHELL's cwd, so run the 
 from the repo root (or pass absolute pickle paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
 
+**Which Python (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` run on the Mac's plain `python3` (Homebrew
+3.14.8). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
+("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork,
+tag `cards-20261023` = ecc4b773, with `range_reader`, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
+1.25.0). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
+
 **The data build's JSON (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read the card data in any of its
 forms through `commands.card_db.read_cards`: a `stats.pkl` or `stats.json` (the old_stats file beside it is the
 history), a folder of pickles, a `db/` folder (or a folder holding `db/`, such as an Actions artifact), or a data
@@ -32,7 +38,7 @@ filters below are harmless leftovers. `dump_psd_layers.py` imports no
 bot code and prints no noise. WARNING: do not pipe `diff_stats.py` through grep when you need
 its exit code — the pipeline exit is grep's, not the script's (see the push gate below).
 
-Golden outputs quoted below are snapshots of 2026-07-11 — the canonical current expected values
+Golden outputs quoted below are dated snapshots (2026-07-11, some re-measured 2026-10-23) — the canonical current expected values
 live in **autocroissant-validation-and-qa §3**; if a golden output stops matching, check there
 before assuming a regression.
 
@@ -61,14 +67,14 @@ What these tools do NOT answer: whether a measured value is *acceptable*
 ## Shared mechanics (read once)
 
 - Scripts live in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`. Repo-root
-  handling differs per script (verified 2026-07-11): `parse_one.py`, `gap_trace.py`, and
-  `inspect_pickle.py` each compute `REPO_ROOT = Path(__file__).resolve().parents[4]`, insert it
-  on `sys.path`, and `os.chdir(REPO_ROOT)` at import (pickle paths in `global_config.py` are
-  repo-relative). `diff_stats.py` computes REPO_ROOT and inserts it on `sys.path` but does NOT
-  chdir — its relative pickle arguments resolve against the shell's cwd (from a non-repo cwd the
-  documented push-gate invocation exits 2 with `ERROR loading pickles: ... 'stats.pkl'`).
+  handling differs per script (re-verified 2026-10-23): `parse_one.py` and `gap_trace.py` compute
+  `REPO_ROOT = Path(__file__).resolve().parents[4]`, insert it on `sys.path`, and `os.chdir(REPO_ROOT)`
+  at import (pickle paths in `global_config.py` are repo-relative). `inspect_pickle.py` and `diff_stats.py`
+  only put REPO_ROOT on `sys.path` and import `commands.card_db` (and card_models / card_history); neither chdirs.
+  inspect_pickle reads the repo root's pickles by default; diff_stats's relative arguments resolve against the
+  shell's cwd (from a non-repo cwd the documented push-gate invocation exits 2 with `ERROR loading the card data:
+  stats.pkl: no such file or folder, nor a commit of . with db/stats.json`).
   `dump_psd_layers.py` imports only `sys` + psd-tools: no repo-root logic, no `config.py` needed.
-  Since 2026-10-23 `inspect_pickle.py` no longer chdirs either (it reads through `card_db.read_cards`).
 - `parse_one.py` and `gap_trace.py` need `config.py` present in the repo root (secret;
   the bot module import chain reads it). Without it the import chain fails. `diff_stats.py` and
   `inspect_pickle.py` need none since 2026-10-23 (they import only `commands.card_db` and `card_models`), so
@@ -81,10 +87,10 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   pass absolute or `~/` PSD paths — to every script. Verified 2026-07-11:
   `parse_one.py Auxiliary/Minions/Mini_Doomer.psd` →
   `ERROR: file not found: /Users/michaelsrouji/Desktop/AutoCroissant/Auxiliary/...`.
-- Stale-`.so` trap: `parse_one.py`, `gap_trace.py`, `inspect_pickle.py` import
-  `commands/psd_analyzer.py`. If a compiled Cython `.so` exists it shadows the `.py`, so your
-  parser edits silently won't be what these tools exercise. None exist as of 2026-07-11; if in
-  doubt run `python3 setup.py clean` (see autocroissant-build-and-env).
+- Stale-`.so` trap: `parse_one.py` and `gap_trace.py` import `commands/psd_analyzer.py`. If a compiled
+  Cython `.so` exists it shadows the `.py`, so your parser edits silently won't be what these tools exercise
+  (`inspect_pickle.py` and `diff_stats.py` import only uncompiled card_db/card_history and card_models). None
+  exist on the Mac as of 2026-10-23; if in doubt run `python3 setup.py clean` (see autocroissant-build-and-env).
 
 ---
 
@@ -99,11 +105,11 @@ any PSD anywhere.
 **Invocation** (from repo root):
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py \
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py \
   "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" --text
 ```
 
-**Annotated output** (The Lich King, verified 2026-07-11; excerpted):
+**Annotated output** (The Lich King, re-measured 2026-10-23 at TTSCardMaker 96d61368; excerpted):
 
 ```
 PSD: /Users/michaelsrouji/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd
@@ -119,11 +125,11 @@ Stats Bars                                group       True False (360, 1200, 117
       5                                   exposure    True False (0, 0, 0, 0)   <- the ONE visible
       6                                   exposure    False False (0, 0, 0, 0)     digit => spd=5
 ...
-  Ability                                 type        True True (23, 1773, 1176, 2285)
-     TEXT: "'(OFS) Equip Frostmourne.\\r...These minions die at the end of their turn.\\rMinions inherit       .\\r'"
+  Ability                                 type        True True (23, 1767, 1176, 2293)
+     TEXT: "'(OFS) Equip Frostmourne.\\r...These minions die at the end of their turn.\\rMinions inherit [undead].\\r'"
 ...
-Undead                                    smartobject True True (734, 2239, 808, 2299) <- BELOW mid-y:
-                                                                     inline-injection candidate
+Undead                                    smartobject False True (734, 2239, 808, 2299) <- hidden since the
+                                                                     2026-10-22 batch: the font token prints it
 ```
 
 **Interpretation guide**:
@@ -138,9 +144,11 @@ Undead                                    smartobject True True (734, 2239, 808,
 | `TEXT:` (with `--text`) | Raw engine text before cleanup. Line breaks are `\r` (the parser converts to `\n`). Runs of 3+ literal spaces are the injection gaps — count them here to predict gap_trace's `<GAP:n>` markers. |
 
 Note the two "Undead" layers above: the pixel layer inside `Types` at y=21 (above midline →
-goes to the card's `types` list) and the smartobject at y=2239 (below midline → candidate for
-inline `[undead]` injection). Same name, two different roles, distinguished purely by position.
-That distinction is the heart of most mis-parse investigations.
+goes to the card's `types` list) and the smartobject at y=2239 (below midline). Until the standardization batch
+(TTSCardMaker 1c24dd48, 2026-10-22) that smartobject was visible and filled the 7-space gap of
+"Minions inherit       ." as an inline `[undead]`; since then the text holds the stoogedings token `[undead]` and
+the icon layer is hidden, so the card no longer exercises gap injection. Same name, two different roles,
+distinguished purely by position: the heart of most mis-parse investigations on cards that still use icon layers.
 
 **Failure modes**: file not found → prints usage/traceback; PSD outside the clone is fine
 (this tool is location-agnostic). No exit-code contract beyond 0/1-on-missing-args.
@@ -160,7 +168,7 @@ full extracted `CardInfo` and validator problems for a single card.
 root and will fail, see Shared mechanics):
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py \
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py \
   ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd
 ```
 
@@ -219,7 +227,7 @@ validator problems: NONE
 "Preserve author and series" block in `parse()` — grep below). Default (fresh) parses against an
 empty DB: no preservation, so Mini Doomer fresh shows neither field, while
 `--with-db` adds `series: Kirby` and `author: Chestnut` and prints
-`(loaded stats.pkl: 813 cards -- author/series preservation active)`.
+`(loaded stats.pkl: 818 cards -- author/series preservation active)` (813 on 2026-07-11).
 Rule of thumb: use **fresh** to test pure extraction; use **`--with-db`** when comparing
 field-for-field against the stored entry (otherwise author/series will look like regressions).
 
@@ -240,37 +248,38 @@ gap-vs-type count, and the final injected text. It re-drives the REAL `PSDParser
 (`_process_layer`, `_sort_by_position`, `_prune_type_bboxes`, `_process_abilities`) — only the
 orchestration mirrors `PSDParser._extract_from_layers`.
 
-**Invocation**:
+**Invocation** (a card that still injects from an icon layer; The Lich King uses a font token since 2026-10-22):
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py \
-  "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py \
+  "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
 ```
 
-**Annotated output** (The Lich King, verified 2026-07-11; abbreviated):
+**Annotated output** (Nebulous Precipice, measured 2026-10-23 at TTSCardMaker 96d61368 with `~/.venvs/ac-py314-fork`):
 
 ```
-PSD 1200x2400; TYPE_REGION_RATIO=0.5 -> card_mid_y=1200   <- the real imported constant
+PSD 1200x1800; TYPE_REGION_RATIO=0.5 -> card_mid_y=900   <- the real imported constant
+relative path: Field/3 Stars/Nebulous_Precipice.psd
 
-[1] creature-types collected ABOVE midline: ['ice', 'undead']
+[1] creature-types collected ABOVE midline: ['field']
         ^- these go to card.types; they are NOT injection candidates
 
 [2] ability text layers found: 1
-    at (x=23, y=1773): "'(OFS) Equip Frostmourne.\n...Minions inherit       .\n'"
+    at (x=26, y=1229): "'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'"
         ^- raw text + bbox of each text layer, pre-cleanup
 
 [3] joined ability text with gaps marked (3+ spaces = injection slots):
+Friendly<GAP:5>gain +0.5 DEF and +1 SPD.
 ...
-Minions inherit<GAP:7>.
-        ^- every run of 3+ spaces becomes <GAP:n>. n=7 here: seven literal spaces.
+        ^- every run of 3+ spaces becomes <GAP:n>. n=5 here: five literal spaces.
            No <GAP> where you expect one => the text layer lacks 3+ spaces there.
 
 [4] type icons BELOW midline (candidate inline types): 1
-    undead          at (x=734, y=2239)
-    prune threshold = max(last_y//3=746, card_mid_y=1200)
-    kept after prune: ['undead']   dropped: []
+    darkmatter      at (x=269, y=1207)
+    prune threshold = max(last_y//3=402, card_mid_y=900)
+    kept after prune: ['darkmatter']   dropped: []
         ^- icons with y above the threshold are dropped as "too high to be inline".
-           threshold = max(last-icon-y // 3, card_mid_y); here max(746,1200)=1200.
+           threshold = max(last-icon-y // 3, card_mid_y); here max(402,900)=900.
 
 [5] gap count = 1 vs kept types = 1   (match)
         ^- MISMATCH here is the classic wrong-injection signature: more types than
@@ -279,10 +288,15 @@ Minions inherit<GAP:7>.
 
 [6] FINAL ability text after injection + punctuation cleanup:
 ========================================
+Friendly [darkmatter] gain +0.5 DEF and +1 SPD.
 ...
-Minions inherit [undead].
 ========================================
 ```
+
+Nebulous Precipice is due to become a `[darkmatter:glow]` token once the glow font lands (owner, 2026-10-23); then
+pick another icon-layer card (`psd_details.json`'s `icons` field `images` or `mixed`). The Lich King today is the
+token case: `[2]` one layer at y=1767 reading "Minions inherit [undead].", `[3]` no GAP, `[4]` 0 icons, kept []
+dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
 
 **Interpretation guide, section by section**:
 
@@ -297,9 +311,11 @@ Minions inherit [undead].
 | [6] | Byte-exact final text — compare against the stored entry (`inspect_pickle.py "Name"`). |
 
 **MAINTENANCE NOTE** (from the script's docstring — keep it true): the extraction loop mirrors
-`PSDParser._extract_from_layers` (commands/psd_analyzer.py:398 as of 2026-07-11). If that method
-changes shape, update gap_trace to match; the one-line check is to compare against that method's
-body.
+`PSDParser._extract_from_layers` (commands/psd_parser.py:404 as of 2026-10-23): effect layers
+(`EFFECT_LAYER_TAG`, " FX: ") set aside, hidden rule-page text skipped, hidden Ability layers read last, with
+`RULEBOOK_DIR` and `stars_from_psd()` (the mirror gained the effect-layer skip and those two on 2026-10-23; before,
+it fed "Ability FX: ..." pixel layers to `_process_layer` and hardcoded the folders). If that method changes shape,
+update gap_trace to match; the one-line check is to compare against that method's body.
 
 **Failure modes**: needs `config.py` and the clone at `~/Desktop/TTSCardMaker`; same
 relative-path caveat as parse_one (no explicit warning branch here — a PSD outside the clone
@@ -332,7 +348,28 @@ versions total` since 2026-10-23 (the file names left the labels). A card lookup
 (start, cause, legacy) when it has one. Measured 2026-10-23 on a Mac rebuild from seed 077337a9 at TTSCardMaker
 7b48db05: 818 cards, 355 names with 453 versions, 2 archived (1 backfilled).
 
-**Annotated summary output** (golden baseline, verified 2026-07-11):
+**Today's baseline** (PICKLE a7c310e, the 2026-10-23 05:00 run; `python3` from the repo root):
+
+```
+stats     : 818 cards
+old_stats : 354 cards with history, 446 archived versions total
+archived cards (PSD deleted): 2 (1 backfilled)
+card_type distribution: creature 297, item 188, minion 91, debuff 52, field 49, aux item 48, rulebook 48, nme 26, buff 12, creatures 7
+cards with recorded parse problems: 0
+cards without author (orphans)    : 0
+rulebook entries                  : 48
+newest timestamp: Clot White @ 2026-10-22 20:56:26
+entries with suspicious (non repo-relative) paths: 0
+```
+
+818 = 812 PSDs plus 6 alt-art duplicate rows (A Snack2/3, All Purpose Medical Kit2, Regeneration Potion2,
+Watermelon2, NME Stock2). Item 188 and field 49 since 2026-07-11: new items, and White Palace moved to MDW/The
+Morgue. 0 problem cards: 20_Creature_Types has a `wind` layer since TTSCardMaker 100511d3. **Expected next:** the
+first /update_stats after the 2026-10-23 10:36 deploy recovers history from the bot's PICKLE commits (old_stats
+446 versions / 354 names -> about 1,155 / 670; autocroissant-run-and-operate §7).
+
+**Annotated summary output** (the 2026-07-11 snapshot, kept for its annotations; the labels then read `stats.pkl` /
+`old_stats.pkl` and there was no archived-cards line):
 
 ```
 stats.pkl     : 813 cards
@@ -361,9 +398,8 @@ entries with suspicious (non repo-relative) paths: 0
                     ^- MUST be 0. See heuristic note below.
 ```
 
-`--problems` (verified 2026-07-11) lists exactly one card:
-`20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']` —
-the known baseline. Anything beyond this line is new.
+`--problems` prints nothing on 2026-10-23 (0 stored problem cards): anything it lists is new. On 2026-07-11 it
+listed exactly one card, `20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']`.
 
 **Card lookup** (`"the lich king"`): resolution order is exact name → case-insensitive match →
 substring candidates printed as `did you mean: ...` (up to 10) with exit 1. Verified: lowercase
@@ -420,29 +456,31 @@ with other data`, not as versions added and dropped; a kept version's data is co
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.
 
-**Run it from the repo root (or pass absolute paths).** Unlike the other pickle-reading scripts,
-diff_stats.py does not chdir — a relative argument like `stats.pkl` resolves against your shell's
-cwd, and from anywhere else the gate exits 2 with `ERROR loading pickles: ... 'stats.pkl'`
-(verified 2026-07-11).
+**Run it from the repo root (or pass absolute paths).** diff_stats.py does not chdir — a relative argument like
+`stats.pkl` resolves against your shell's cwd, and from anywhere else the gate exits 2 with
+`ERROR loading the card data: stats.pkl: no such file or folder, nor a commit of . with db/stats.json`
+(re-measured from /tmp on 2026-10-23).
 
 **Invocation A — the pre-push gate** (HEAD vs working copy):
 
 ```bash
-git show HEAD:stats.pkl > /tmp/stats_head.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl
+H=~/Documents/Tools/wt/scratch/head; mkdir -p $H     # persistent (reboots wipe /tmp), as diff_stats.py's docstring
+git show HEAD:stats.pkl > $H/stats.pkl && git show HEAD:old_stats.pkl > $H/old_stats.pkl && \
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py $H/stats.pkl stats.pkl \
+    --history $H/old_stats.pkl old_stats.pkl
 echo $?
 ```
 
-Golden output on a clean tree (verified 2026-07-11):
+Golden output on a clean tree (818 cards on 2026-10-23; 813 on 2026-07-11, before the history section):
 
 ```
-old: 813 cards   new: 813 cards
+old: 818 cards   new: 818 cards
 added: 0   removed: 0   modified: 0
 ```
 exit 0 — the working pickle is identical to HEAD; there is no data change to push.
 
-**Invocation B — what changed between two runs/snapshots** (any two pickles; here the two most
-recent PICKLE commits, verified 2026-07-11):
+**Invocation B — what changed between two runs/snapshots** (any two pickles; the 2026-07-11 example below is
+the two PICKLE commits newest then, 8753489 -> 284d13c; the newest on 2026-10-23 are a7c310e, 077337a and 3888392):
 
 ```bash
 git show 8753489:stats.pkl > /tmp/stats_old.pkl && git show HEAD:stats.pkl > /tmp/stats_new.pkl && \
@@ -482,7 +520,7 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 | mass `path` changes in field counts | a path regression (the removeprefix local-path bug's signature, fixed 2026-10-19) — STOP, do not push | autocroissant-failure-archaeology Entry 1 |
 | hundreds of modified cards whose only changed field is `timestamp` | pickles from a local-timestamp sweep (docs/BUGS_AND_IMPROVEMENTS.md B6; since 2026-10-20 only the archived traversal on branch `archive/local-update-stats` can produce them); old_stats.pkl will have grown by one archived copy per card — STOP, do not push | autocroissant-run-and-operate §7 |
 | mass `type` → unknown (check with `--verbose`) | classification broke | impossibility-cards-reference for what classify should do |
-| huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert; the 2026-10-22 15:41 run: +280) | the `-- history --` section's `versions added` (with `--history`, 2026-10-23) |
+| huge growth in archived old_stats versions | duplicate-archiving regression (cca0aaf → eb9aa84 revert; the 2026-10-22 15:41 run: +280) — UNLESS the run printed `History: N versions recovered from the bot's PICKLE commits ...`: the one-time recovery (2026-10-23) is expected. Compare with the rehearsal instead of stopping: "698 versions recovered (553 cards), 171 starts moved earlier; 64 cards gone before archiving archived; 42 type misreads merged; 12 impossible values set to unknown; 32 brought to today's series ...; 299 carried starts given their commit", old_stats 446 versions / 354 names -> about 1,155 / 670, plus about 219-236 re-parsed B2 PSDs; a second History line "103 carried starts given their commit" is known noise | the `-- history --` section's `versions added` (with `--history`, 2026-10-23); SESSION3_NOTES 07:5x and 10:3x |
 
 **Failure modes**: fewer than two args → prints usage, exit 2; unreadable/missing/incompatible
 data (a pickle holding anything but the card classes, a folder without card data, an unknown commit) →
@@ -498,9 +536,10 @@ Did a parser change touch cards it shouldn't have?
 ### Workflow 1 — pre-pickle-push gate (run EVERY time before pushing pickles, from the repo root)
 
 ```bash
-git show HEAD:stats.pkl > /tmp/stats_head.pkl && git show HEAD:old_stats.pkl > /tmp/old_stats_head.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl \
-    --history /tmp/old_stats_head.pkl old_stats.pkl
+H=~/Documents/Tools/wt/scratch/head; mkdir -p $H
+git show HEAD:stats.pkl > $H/stats.pkl && git show HEAD:old_stats.pkl > $H/old_stats.pkl && \
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py $H/stats.pkl stats.pkl \
+    --history $H/old_stats.pkl old_stats.pkl
 echo $?
 ```
 
@@ -513,7 +552,9 @@ echo $?
      Legit updates look like a handful of `ability`/`timestamp`/`types` changes on cards you
      know changed. Use `--verbose` on anything surprising.
 3. Check old_stats separately: `git diff --stat HEAD -- old_stats.pkl` plus the archived-versions
-   count in `inspect_pickle.py` summary (baseline 223 as of 2026-07-11).
+   count in `inspect_pickle.py` summary (446 at a7c310e, 2026-10-23; 223 on 2026-07-11). The one expected jump is
+   the first run after the 2026-10-23 deploy: its `History: 698 versions recovered ...` line explains about +700
+   versions (to about 1,155); compare against the red-flag row's rehearsal numbers instead of stopping.
 4. exit 2 → the gate did not run; fix the load error before doing anything else.
 5. The commit/push itself (PICKLE convention, who may push) is owned by
    autocroissant-change-control — this gate is a precondition, not a substitute.
@@ -529,20 +570,18 @@ autocroissant-run-and-operate §7).
 Run in this order; each step tells you whether to continue:
 
 ```bash
+P=~/.venvs/ac-py314-fork/bin/python; C="$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
 # 0. What is stored now, and its history? (optional but cheap)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "The Lich King"
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "Nebulous Precipice"
 
 # 1. What is physically in the file? (layer names, visibility, bbox vs midline, raw text)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py \
-  "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" --text
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py "$C" --text
 
 # 2. How did injection decide? (gaps vs icons vs prune vs counts)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py \
-  "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py "$C"
 
 # 3. Full parse + validator verdict (add --with-db to compare against stored fields)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py \
-  "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" --with-db
+$P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py "$C" --with-db
 ```
 
 Decision points: if step 1 shows the layer is missing/hidden/misnamed/on the wrong side of the
@@ -560,9 +599,10 @@ Run `inspect_pickle.py` (summary) then `inspect_pickle.py --problems`:
 - before nominating pickles for a push (alongside Workflow 1),
 - whenever a query result looks wrong.
 
-Compare against the 2026-07-11 baseline: 813 cards, 218/223 old-stats, 1 problem card
-(20 Creature Types), 0 orphans, 0 suspicious paths, newest = Anubisath Guardian @ 2026-06-18.
-Card counts legitimately grow as cards are added; problems/orphans/suspicious-paths should not.
+Compare against the 2026-10-23 baseline (a7c310e): 818 cards, 354 names / 446 versions in old_stats, 2 archived
+cards, 0 problem cards, 0 orphans, 0 suspicious paths, newest = Clot White @ 2026-10-22 20:56:26 (2026-07-11: 813
+cards, 218/223, 1 problem card, newest Anubisath Guardian @ 2026-06-18). Card counts legitimately grow as cards are
+added, and old_stats grows once with the history recovery (above); problems/orphans/suspicious-paths should not.
 
 ### Workflow 4 — the shadow's daily check (data branch vs the jetson's pickles, 2026-10-23)
 
@@ -617,7 +657,8 @@ Conventions (match the existing five — read one before writing):
 
 1. `#!/usr/bin/env python3` and a module docstring that states usage, what it prints, and the
    read-only guarantee. Scripts print `__doc__` on missing args.
-2. If it imports bot code or the pickles (the pattern parse_one/gap_trace/inspect_pickle follow):
+2. If it imports bot code that reads repo-relative paths (the pattern parse_one/gap_trace follow; a script that only
+   reads the card data should import `commands.card_db.read_cards` with no chdir, like inspect_pickle and diff_stats):
    ```python
    REPO_ROOT = Path(__file__).resolve().parents[4]   # scripts/ is 4 levels below repo root
    sys.path.insert(0, str(REPO_ROOT))
@@ -625,7 +666,8 @@ Conventions (match the existing five — read one before writing):
    ```
    (no token line: `print_token_status` runs only in main.py since 2026-10-20).
 3. READ-ONLY, always: never call `save()`, `update_stats()`, anything network-mutating, and never
-   write a pickle. If a script needs scratch output, write to `/tmp` or a scratchpad, never the repo.
+   write a pickle. If a script needs scratch output, write to `~/Documents/Tools/wt/scratch/` (reboots wipe /tmp) or a
+   scratchpad, never the repo.
 4. Prefer re-driving REAL parser methods over copying their logic; where orchestration must be
    mirrored, add a MAINTENANCE NOTE naming the mirrored function (see gap_trace.py's docstring).
 5. `def main() -> int` + `sys.exit(main())`; document exit codes if callers branch on them.
@@ -715,38 +757,43 @@ S=.claude/skills/autocroissant-diagnostics-and-tooling/scripts
 ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/
 # expect: diff_stats.py dump_psd_layers.py gap_trace.py inspect_pickle.py parse_one.py (plus optimization/, 2026-10-20)
 
-# golden: DB summary (813 cards, 223 archived, 1 problem, 0 orphans, 0 suspicious)
-python3 $S/inspect_pickle.py | grep -v "Git token"
+P=~/.venvs/ac-py314-fork/bin/python                 # psd-tools + pandas; plain python3 runs inspect_pickle and diff_stats
+# golden: DB summary (2026-10-23 at a7c310e: 818 cards, 354/446 old_stats, 2 archived, 0 problems, 0 orphans, 0 suspicious)
+python3 $S/inspect_pickle.py
 
 # golden: Mini Doomer (minion, stars 2, ['wind','defensive_minion','light'], 5/2/5/5, problems NONE)
-python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd | grep -v "Git token"
+$P $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd
 
 # golden: The Freezer ability text matches stats.pkl character-for-character
-python3 $S/parse_one.py ~/Desktop/TTSCardMaker/"Field/1 Stars/The_Freezer.psd" | grep -v "Git token"
+$P $S/parse_one.py ~/Desktop/TTSCardMaker/"Field/1 Stars/The_Freezer.psd"
 
-# golden: Lich King trace (<GAP:7>, undead @ x=734,y=2239, prune max(746,1200)=1200, match, "Minions inherit [undead].")
-python3 $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" | grep -v "Git token"
+# golden: Nebulous Precipice trace (<GAP:5>, darkmatter @ x=269,y=1207, prune max(402,900)=900, 1 vs 1 match,
+#   "Friendly [darkmatter] gain +0.5 DEF and +1 SPD.")
+$P $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
+# token case: The Lich King (no GAP, 0 icons, 0 vs 0 match, "Minions inherit [undead].")
+$P $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"
 
 # golden: clean-tree gate is 0/0/0 with exit 0
-git show HEAD:stats.pkl > /tmp/stats_head.pkl && python3 $S/diff_stats.py /tmp/stats_head.pkl stats.pkl; echo $?
+H=~/Documents/Tools/wt/scratch/head; mkdir -p $H; git show HEAD:stats.pkl > $H/stats.pkl && python3 $S/diff_stats.py $H/stats.pkl stats.pkl; echo $?
 
 # exit codes: no-args is 2; two differing snapshots is 1
 python3 $S/diff_stats.py >/dev/null 2>&1; echo $?
 
 # dump header (1200 x 2400, mid-y 1200)
-python3 $S/dump_psd_layers.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" | head -2
+$P $S/dump_psd_layers.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" | head -2
 ```
 
 Cited code locations (line numbers drift; re-find with these):
 
 ```bash
 grep -n "TYPE_REGION_RATIO = " commands/psd_parser.py               # 0.5 (psd_parser.py since the 2026-10-20 split)
-grep -n "_extract_from_layers" commands/psd_parser.py               # gap_trace's mirrored method
+grep -n "_extract_from_layers" commands/psd_parser.py               # gap_trace's mirrored method (404)
+grep -n "EFFECT_LAYER_TAG\|stars_from_psd\|RULEBOOK_DIR" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py   # the mirror's skip and folders
 grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
 grep -n "Preserve author and series" commands/psd_parser.py         # parse_one --with-db semantics
 git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # the 2026-10-19 local-path fix; local mode archived 2026-10-20
 grep -n "_icons_from_local" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-10-20)
-grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/TTSCardMaker" (line 4)
+grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/TTSCardMaker" (line 5)
 grep -n "def to_dict" commands/card_models.py                      # field-omission behavior in output
 ```
 
@@ -764,3 +811,12 @@ commits (`card_db.read_cards`, `--git`), need no `config.py`, and diff_stats mat
 (also a legacy version given a blob and re-dated, by its data);
 Workflow 4 (the shadow's daily check) and its numbers were measured on a Mac rebuild from seed 077337a9;
 `tests/test_diagnostics.py` runs both scripts on pickles, a db/ folder, a stats.json and a data commit.
+
+2026-10-23 (docs drift): which interpreter each script needs (`$P` = the fork venv for the three PSD readers); only
+parse_one and gap_trace chdir (inspect_pickle and diff_stats import card_db, no chdir, no psd_analyzer); diff_stats's
+load error quoted as it reads now; the Lich King examples re-measured (token `[undead]`, the Undead icon hidden since
+TTSCardMaker 1c24dd48) and the gap walk-through moved to Nebulous Precipice; gap_trace.py's mirror gained the
+effect-layer skip, `RULEBOOK_DIR` and `stars_from_psd()` (outputs unchanged on Nebulous Precipice, The Lich King,
+Gasoline, Miracle Matter, Dark Daroach and PoD02Black Bloon), its docstring names `_process_abilities`; a dated
+2026-10-23 baseline (818 / 354 / 446 / 2 archived / 0 problems / Clot White); the one-time recovery growth in the red-flag
+row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/` like the script's docstring.

@@ -5,13 +5,14 @@ description: Load this when you need to understand or safely modify HOW AutoCroi
 
 # AutoCroissant Architecture Contract
 
-## New here? The 16-skill map in 11 lines
+## New here? The 17-skill map
 
 - Run / stop / deploy / machine handoff / run update_stats → autocroissant-run-and-operate
 - Something is broken RIGHT NOW → autocroissant-debugging-playbook
 - Install / env / Cython build → autocroissant-build-and-env ; every config axis → autocroissant-config-and-flags
 - BEFORE any commit, push, or pickle touch → autocroissant-change-control ; is it safe/finished → autocroissant-validation-and-qa
 - What cards/PSDs/queries mean → impossibility-cards-reference ; measuring tools → autocroissant-diagnostics-and-tooling
+- How the game is played (timing tags, damage, status effects) → impossibility-simulator-rules
 - Improving the parser → autocroissant-psd-extraction-campaign ; proving things → autocroissant-analysis-toolkit
 - "Has this been tried?" / why is this code weird → autocroissant-failure-archaeology
 - AI/diffusion: removed from main 2026-10-20; code and its skill are on branch `archive/ai-generation` ; future ideas → autocroissant-research-frontier
@@ -20,7 +21,8 @@ description: Load this when you need to understand or safely modify HOW AutoCroi
 - THIS skill: how the system works + the invariants. Read "The execution model" before writing code.
 
 Facts and line numbers verified 2026-07-11 (HEAD `284d13c`); re-verified 2026-10-20 against
-`main` HEAD `9fb3093`, and again after that day's optimization pass (module split, robustness fixes).
+`main` HEAD `9fb3093`, after that day's optimization pass (module split, robustness fixes), and again on 2026-10-23
+at `2ada357`.
 Line numbers drift; every load-bearing one has a re-find grep in "Provenance and maintenance" at the end.
 
 This skill is the contract: the design decisions that everything else leans on, why they were made,
@@ -36,34 +38,34 @@ plain **sync** function in `commands/*.py`, pushed off the loop into a worker th
 `asyncio.to_thread`. Worker threads are forbidden from touching Discord directly; instead they append
 their output to three module-level deques in `commands/utils.py` (`command_queue`, `dispatch_queue`,
 `edit_queue`, utils.py:25-27). Three `@tasks.loop(seconds=0.1)` coroutines in `main.py`
-(`process_command_queue` main.py:881, `process_dispatch_queue` main.py:894, `process_edit_queue`
-main.py:906) drain those deques ten times a second **on the event loop** (once a second until
+(`process_command_queue` main.py:932, `process_dispatch_queue` main.py:945, `process_edit_queue`
+main.py:957) drain those deques ten times a second **on the event loop** (once a second until
 2026-10-21) and perform the actual Discord I/O, with a built-in fallback chain; a fourth loop,
-`process_reminders` (main.py:875), keeps the reminder heartbeat at 1 s. That is the whole model: loop owns
+`process_reminders` (main.py:926-928), keeps the reminder heartbeat at 1 s. That is the whole model: loop owns
 Discord, threads own work, deques are the only bridge.
 
 ## The queue trio (this skill owns this detail)
 
 | Queue (utils.py:25-27) | Entry shape | Filled by | Drained by | What draining does |
 |---|---|---|---|---|
-| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:880-889) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
-| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:893-901) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
-| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:905-912; `_edit` 833-849) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
+| `command_queue` | `((args, kwargs), func)` | `queue_command(func, *a, **kw)` (utils.py:58) | `process_command_queue` (main.py:932-941) | `create_task(run_command(...))` per entry — each func runs in a worker thread of asyncio's default pool (threads are reused: 2 alive at idle, measured 2026-10-20), or in a given threadpool (see below) |
+| `dispatch_queue` | `(interaction, send_kwargs)` | `queue_message` (utils.py:41), `queue_file` (utils.py:47), `queue_any` (utils.py:36) | `process_dispatch_queue` (main.py:945-954; `_dispatch` 885-899, which also turns a `links` kwarg into link buttons) | Sends via fallback chain: `interaction.response.send_message` → `interaction.followup.send` → `client.get_channel(channel_id).send` |
+| `edit_queue` | `(interaction, edit_kwargs)` | `queue_edit` (utils.py:53) | `process_edit_queue` (main.py:957-964; `_edit` 902-923) | `interaction.edit_original_response`, falling back to a fresh `channel.send` |
 
 Mechanics you must know:
 
 - **`to_thread(func)`** (utils.py:80-89) wraps a sync function so awaiting it runs it in a thread via
   `asyncio.to_thread`. Critical subtlety: if `func` is already a coroutine function it is returned
-  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:784-792) execute
+  **unchanged** (utils.py:82-84). This passthrough is what lets `run_command` (main.py:836-844) execute
   both sync workers and the async slash callbacks stored in `slash_registry` with one code path.
 - **`to_threadpool(func, executor)`** (utils.py:92-101) is the bounded variant. `run_command` routes to
-  it when the queued kwargs contain `executor` (main.py:787-788) — so **`executor` is a reserved kwarg
+  it when the queued kwargs contain `executor` (main.py:839-840) — so **`executor` is a reserved kwarg
   name** for anything sent through `queue_command`; a worker function with its own `executor` parameter
   would have it silently popped. Sole current user: music downloads, capped at a 2-worker
   `ThreadPoolExecutor` (music_player.py:35, used at music_player.py:264 and 277) so a playlist can't
   spawn unbounded yt-dlp threads.
 - **Queued commands run concurrently** (one `create_task` + thread per entry), so two long workers that must not overlap
-  need their own lock: `card_runner.bake_lock` (2026-10-21) is held by `update_stats` for its whole run (repo_traverser.py:79-82)
+  need their own lock: `card_runner.bake_lock` (2026-10-21) is held by `update_stats` for its whole run (repo_traverser.py:84-87)
   and by the card bake around `card_bake.run`; the one that finds it held says so and blocks only its own thread. Nothing
   queues a bake on its own: the `notice_edits` hook at the end of `update_stats` was removed 2026-10-21 (the user: the Action is
   the one live runner, `/bake_cards` the fallback by hand).
@@ -89,19 +91,23 @@ Mechanics you must know:
 2. **Centralized fallbacks survive interaction-token expiry.** Discord interaction tokens die after
    15 minutes. Long jobs (full `/update_stats` sweep, playlist download) outlive them.
    The dispatch loop's chain — `response.send_message` if not yet responded, else `followup.send`, and
-   on `HTTPException`/`AttributeError` a raw `channel.send` (main.py:818-830) — means a late result
+   on `HTTPException`/`AttributeError` a raw `channel.send` (`_fallback_send`, main.py:870-882) — means a late result
    degrades to a plain channel message instead of vanishing. Every send written as `queue_*` gets this
    for free; every send written by hand does not.
 3. **Serialization + self-throttling.** One drain point (every 0.1 s since 2026-10-21, 1 s before)
    batches sends; discord.py's own rate-limit handling covers the rest without explicit rate-limit code.
    Cost: up to ~100 ms latency per hop, and a reply that traverses two queue hops (see the reminder
    diagram) up to ~200 ms. That is the accepted trade at hobby scale.
-4. **Deferred init without blocking login.** `on_ready` (main.py:107-128) queues `init_reminder`,
-   `init_psd`, `init_query`, `refresh_history`, `init_type_emojis(client)` as commands (main.py:118-122)
-   instead of running them — pickle loads and the GitHub tree fetch happen in worker threads after the
-   bot is already up. `init_type_emojis` is async: it runs on the loop and threads its own downloads.
-   main.py also calls `bind_reminder_client(client)` at import time (main.py:216) so the scheduler can
-   tell when a reminder's channel is gone.
+4. **Deferred init without blocking login.** `on_ready` (main.py:115-144) queues six commands
+   (main.py:134-139) instead of running them: `sweep_temp_psds` first (2026-10-22, c0fc117: deletes the mkstemp
+   `tmp*.psd` files older than 1 h that a cut-off run left, under `card_runner.bake_lock`), then `init_reminder`,
+   `init_psd`, `init_query`, `refresh_history`, `init_type_emojis(client)`. Pickle loads and the GitHub tree fetch
+   happen in worker threads after the bot is already up. `init_type_emojis` is async: it runs on the loop and threads
+   its own downloads. The inits run **once** (the `_started` flag, 778c2ce, 2026-10-21): discord.py calls `on_ready`
+   again after a failed RESUME, and that repeat only syncs any guild not synced yet, restarts the loops whose task
+   failed and prints `Reconnected: inits skipped, revived <loops>` (main.py:125-128). Loops stopped on purpose (by
+   `/update`) stay stopped. main.py also calls `bind_reminder_client(client)` at import time (main.py:236) so the
+   scheduler can tell when a reminder's channel is gone.
 
 ## Invariants — violate this and X happens
 
@@ -109,14 +115,14 @@ Mechanics you must know:
 |---|---|---|
 | 1 | **No awaits inside queued sync functions.** Workers are plain `def`; there is no event loop in their thread. | `await` in a `def` is a SyntaxError — so the tempting "fix" is making the worker `async def`. Do that and `to_thread` passes it through unchanged (utils.py:82-84): your "worker" now runs ON the event loop, and its blocking calls (PSD parse, yt-dlp, GitPython) freeze the entire bot — heartbeats, all three queue loops, everything — until it finishes. |
 | 2 | **All Discord output from worker code goes through `queue_message`/`queue_file`/`queue_edit`/`queue_any`/`queue_command`** (utils.py:36-60). | Direct calls from a thread produce never-awaited coroutines (message silently lost) or thread-unsafe loop access. You also forfeit the fallback chain: your send dies permanently at the 15-minute token expiry instead of degrading to `channel.send`, and reminders (which run your command with a FakeInteraction) break because FakeInteraction only implements the queue-facing surface. |
-| 3 | **The three queue loops must be running for ANYTHING to send.** Started in `on_ready` (main.py:125-127); deliberately STOPPED by `/restart_bot` (main.py:170-173), `/stop_bot` (main.py:183-186), `/update` (main.py:221-224) so no queued output races process replacement. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (update_bot.py:19, 47, 136), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
-| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (50 occurrences as of 2026-10-21; e.g. main.py:263, 374). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:111-112), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
-| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:228, re-exported by psd_analyzer), `card_repo` (query_card.py:796), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
+| 3 | **The three queue loops must be running for ANYTHING to send.** Started once in `on_ready` through `_start()` (main.py:141-142; `_loops()`/`_start()` at main.py:967-979); a repeat `on_ready` (reconnect) restarts only the loops whose task failed. Deliberately STOPPED by `/restart_bot` (main.py:170-173), `/stop_bot` (main.py:183-186), `/update` (main.py:225-228) so no queued output races process replacement; a reconnect does not revive those. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (`git_push` update_bot.py:78, `git_pull` :113, `update_bot` :212), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
+| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (50 occurrences as of 2026-10-23; e.g. main.py:283, 405). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:130-131), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
+| 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:409, re-exported by psd_analyzer), `card_repo` (query_card.py:999), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); every card module reaches utils: psd_analyzer → repo_traverser → query_card → type_emojis → utils (since the 2026-10-20 split). | Any tool that unpickles `stats.pkl` must have this repo on `sys.path` AND a config.py present — `CardInfo`/`CardStats` are dataclasses defined in `commands.card_models` with `__module__` pinned to `commands.psd_analyzer` (the facade re-exports them), so unpickling imports the facade and the chain reaches `config`. This is why the diagnostics scripts run from the repo root; code outside this repo must stub the classes, as TTSCardMaker's website build does (`_Unpickler` in site/build/build_site.py). config.py is SECRET — never print or read its values. |
-| 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:874-876, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
+| 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:926-928, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:180-182). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
-| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21; after the cutover /update_stats parses nothing and takes no lock). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the jetson today). |
+| 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21; after the cutover /update_stats parses nothing and takes no lock). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the Mac's stock venv, the Actions that install stock psd-tools); the jetson has had the fork since 2026-10-22. |
 
 ## Data-flow diagrams
 
@@ -126,8 +132,8 @@ Mechanics you must know:
 Discord user runs /query
       |
       v  (event loop, discord.py)
-tree dispatch -> async wrapper slash_query_name (main.py:268-270)
-      |   await query_name(...)        # query_name was rebound: to_thread(query_name), main.py:263
+tree dispatch -> async wrapper slash_query_name (main.py:289-292)
+      |   await query_name(...)        # query_name was rebound: to_thread(query_name), main.py:283
       v
 asyncio.to_thread -> WORKER THREAD runs sync query_name()
       |   does the work; never awaits; never sends
@@ -136,7 +142,7 @@ asyncio.to_thread -> WORKER THREAD runs sync query_name()
 dispatch_queue (deque, utils.py:25)
       |
       v  (next 0.1 s tick, back on the event loop)
-process_dispatch_queue (main.py:894)
+process_dispatch_queue (main.py:945)
       |- interaction.response.send_message(**kw)     if response not yet done
       |- interaction.followup.send(**kw)             if already responded/deferred
       '- client.get_channel(channel_id).send(**kw)   on HTTPException/AttributeError
@@ -148,15 +154,19 @@ Discord
 ### (b) `/update_stats` pipeline (PSDs -> parser -> pickles -> dataframes)
 
 ```
-/update_stats  (wrapper defers, main.py:385)
+/update_stats  (wrapper defers, main.py:422)
       v
-WORKER THREAD: update_stats() (repo_traverser.py:59; the traversal is card_data.update, card_data.py:658, since 2026-10-22)
+WORKER THREAD: update_stats() (repo_traverser.py:61; the traversal is card_data.update, card_data.py:1117, since 2026-10-22)
+      |  one-time history cleanup/recovery first (card_data.cleaned, 2026-10-23): HISTORY_CLONE (a full clone)
+      |    + the bot's PICKLE commits (BOT_CLONE, else this checkout); recover, normalize, unknown_values, misreads,
+      |    dedupe, date_archive, commits_of on a COPY; one "History: ..." line, or "History cleanup skipped (...)":
+      |    an error never fails the run. The recovery runs once (recovered_before)
       |  GitHub trees API with If-None-Match: 304 -> "Nothing changed in the card repo since the
-      |    last update." and the run ends (ETag cache in memory only; card_data.py:247-252)
+      |    last update." and the run ends (ETag cache in memory only; card_data.py:267-272)
       |  build the icon vocabulary: Types/ + Types/Stars/ names + the stoogedings manifest
       |    (MDW/Fonts/stoogedings-src/stoogedings.json; impossibility-cards-reference §4.1)
       |  pick PSDs (GitHub only; local mode archived 2026-10-20, weak point 5): new, moved, blob sha
-      |    != card.blob_sha (_psd_changed, card_data.py:217-229; commits-since fallback for
+      |    != card.blob_sha (_psd_changed, card_data.py:237-249; commits-since fallback for
       |    cards without blob_sha), named in cards:, or force_update
       |  DOWNLOAD_WORKERS=4 fetch up to AHEAD=8 PSDs ahead of parsing: with a lazy psd-tools, range
       |    requests at the tree's commit (RemotePSD, ~2.5% of the bytes); else, or on any failure, the
@@ -167,26 +177,30 @@ per picked PSD: one commit lookup (_get_remote_timestamp); one PSDImage open for
   or parse that raises fails that card only (it keeps its last version; no ETag kept, so the next run retries);
   old CardInfo -> old_stats only if its blob changed or it moved and its data did (after edits); CardValidator
       v
-stats_db singleton (card_models.py:228) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
-      |  (save only when something changed: num_changed, archives, build.changed; card_data.py:682)
+      |  then the history cleanup once more over what the run read (a second History line when it finds something)
+      v
+stats_db singleton (card_models.py:409) --save()--> stats.pkl / old_stats.pkl   (the DATABASE)
+      |  (save only when something changed: num_changed, archives, build.changed, a History line, stale archive
+      |   tags; card_data.py:1158)
       |  psd_details.json: pruned to the tree's blobs and saved when a record was gathered or pruned
       |    (loaded at the start of the run; a 304 touches neither file)
       v
 changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a TTS save run when images, the
       |   rules, Card Edits.json or the save changed; TTSCardMaker's tts-save.yml Action does that now)
-queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
-      |                                            (repo_traverser.py:111-117)
+queue_command(refresh_history); queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
+      |                                            (repo_traverser.py:115-122)
       |   (no bake is queued here: the edits-file notice was removed 2026-10-21; /bake_cards is by hand, the Action the live runner)
       v  (subsequent command-queue ticks, pool threads)
 card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new data
       |
       '--- progress and problem reports stream back throughout via queue_edit / queue_message
 
-Downstream, outside this process: /push commits the pickles and psd_details.json; TTSCardMaker's website build reads
+Downstream, outside this process: /push commits the pickles and psd_details.json (a PICKLE commit); /pull may add one
+more after a merge that dropped a card from both pickles (the rescue, 2026-10-22); TTSCardMaker's website build reads
 them from this repo's main (ttscardmaker-companion §2).
 ```
 
-### (b2) `/update_stats` after the cutover (`CARD_SYNC` on; built 2026-10-22, off until the cutover commit)
+### (b2) `/update_stats` after the cutover (`CARD_SYNC` on; merged and deployed off 2026-10-23, flips at the cutover)
 
 ```
 /update_stats  (wrapper: with force_update or cards, admins only; then defers)
@@ -268,7 +282,9 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.music_player  -> utils, config
  |- commands.github_api    -> global_config, config (optional): GIT_TOKEN, fetch_tree/fetch_blob, get_with_retry
  |                            [2026-10-20; NOT compiled; the one home for GitHub access]
- |- commands.query_card    -> utils, global_config, github_api, type_emojis (module level, 2026-10-19), repo_history
+ |- commands.query_card    -> utils, global_config, github_api, type_emojis (module level, 2026-10-19), repo_history,
+ |                            card_models (save_pickle, stats_db), card_edits (ALIASES_MOVED), card_history (start);
+ |                            psd_analyzer LAZILY (the facade-only names)
  |- commands.type_emojis   -> utils, global_config, github_api, repo_history; query_card.card_repo LAZILY inside _list_type_icons
  |                            [2026-10-19; NOT in setup.py INCLUDE_FILES, so never compiled]
  |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links; NOT compiled]
@@ -303,19 +319,28 @@ main.py  (registration + queue loops; imports every commands module)
  |                            bot's aliases), update_stats, _tree_etags  [compiled; a thin Discord wrapper since 2026-10-22]
  |- commands.psd_analyzer  -> the four above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
  |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
+ |- commands.discord_edits -> card_edits, card_models, github_api, global_config; card_bake, card_runner, card_data,
+ |                            card_history, psd_analyzer, query_card, utils LAZILY: /update_metadata, /mass_replace, /alias
+ |                            write Card Edits.json (main.py:23)  [2026-10-22; NOT compiled]
  |- commands.frankenstein  -> utils, query_card (card_repo)
- '- commands.update_bot    -> global_config ONLY  (no utils: bypasses queues on purpose, invariant 3)
+ '- commands.update_bot    -> global_config, repo_history (batch_overrides); card_models LAZILY (the /pull rescue);
+                              GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
+
+Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them): card_check,
+card_guards, card_standards, png_export, psd_diff, txt2_repair, discord_archive, discord_match. card_db, card_history and
+changelog are in it, reached from card_data, card_sync, query_card and discord_edits (the data build's modules).
 
 (not in main) branch archive/local-update-stats: archive/local_update_stats.py  (2026-10-20; NOT compiled)
      -> commands.psd_analyzer, commands.query_card, global_config   [the archived local /update_stats mode]
 ```
 
 **The deliberate lazy-import cycle breaks (two of them).** `repo_traverser` (and the facade `psd_analyzer`) import
-`card_repo` from `query_card` at module level because they use the repo object throughout. `query_card` needs
-`psd_analyzer.get_stats_as_dict`, `stats_db`, `card_name` and `CardEdits` only when dataframes are rebuilt or a card
-is looked up, so `prep_dataframes`, `_stats_card` and `_populate_edit_names` import them **inside the function**, and
-always from the facade, never from `card_models` directly (a stale compiled psd_analyzer .so would otherwise leave two
-`stats_db` objects). The same shape repeats since 2026-10-19: `query_card` imports `render_type_tokens` from
+`card_repo` from `query_card` at module level because they use the repo object throughout. `query_card` takes
+`stats_db` and `save_pickle` from `card_models` at module level (query_card.py:20, since 5835139, 2026-10-21):
+card_models imports nothing of the facade, so that is no cycle, and every deploy rebuilds every `.so`, so the old
+"two `stats_db` objects" risk of a stale compiled facade is gone. The names only the facade holds
+(`get_stats_as_dict`, `CardEdits` through it, `_format_metadata`) it imports **inside the function**
+(query_card.py:442, 511, 599, 607, 734, 763: `_populate_edit_names`, `prep_dataframes`, the card lookups). The same shape repeats since 2026-10-19: `query_card` imports `render_type_tokens` from
 `type_emojis` at module level, and `type_emojis` needs `card_repo` only when listing icons, so `_list_type_icons`
 imports it inside the function. Hoist either import to module level and you get a circular-import crash at startup
 (psd_analyzer → repo_traverser → query_card → psd_analyzer before it finished executing). The lazy side is the one
@@ -341,10 +366,12 @@ pickle corruption the top-ranked costliest failure class — a corrupt commit re
 machine *by design*. The survival discipline (diff before push, PICKLE commit convention) is owned by
 **autocroissant-change-control**.
 
-**Its successor, built and switched off (2026-10-22).** The Card sync Action in TTSCardMaker builds the card data as JSON
-on that repo's `data` branch (docs/Campaigns/DATA_BUILD_ACTION.md); the bot only reads it into `card_data/` and memory
-(data flow b2). One constant, `CARD_SYNC` in global_config.py, flipped in the cutover commit, moves the bot from this
-section's design to that one; until then the pickles above stay the database, and step 10 deletes them.
+**Its successor: merged and deployed off 2026-10-23; the Card sync shadow schedule is on (TTSCardMaker 96d61368);
+CARD_SYNC flips at the cutover.** The Card sync Action in TTSCardMaker builds the card data as JSON on that repo's `data`
+branch (docs/Campaigns/DATA_BUILD_ACTION.md); the bot only reads it into `card_data/` and memory (data flow b2). The bot
+side (work/cutover-bot, 7b99438) is on main with `CARD_SYNC = False`. One constant, `CARD_SYNC` in global_config.py,
+flipped in the cutover commit, moves the bot from this section's design to that one; until then the pickles above stay
+the database, and step 10 deletes them.
 
 ## Known-weak points, stated plainly
 
@@ -361,13 +388,14 @@ optimization pass.
    music_player.py:32). `random.shuffle` does indexed swaps and deque middle-indexing is O(n), so the
    shuffle is O(n²)-ish. Correct, and fine at hobby-scale queue lengths; would hurt at tens of
    thousands of entries. Not worth fixing until it is.
-3. **The dispatch fallback drops `ephemeral`** (main.py:820, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
+3. **The dispatch fallback drops `ephemeral`** (main.py:872, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
    before `channel.send`). A reply the user expected to be private — e.g. `/list_reminders`
    `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
 4. **(Fixed 2026-10-19) Remote traversal used to leak temp files.** Each downloaded temp file is now
-   removed in a `finally` right after parsing (card_data.py:481-488; :478 when its commit lookup fails), and files left by an error at the end (:524-526). Kept here as a pointer:
-   archaeology Entry 10.2.
+   removed right after parsing (`_release`, card_data.py:733-738, called from the `finally` blocks at :644-645 and
+   :677-686; `_download` removes its own on a failed write, :176-186). Since 2026-10-22 startup also sweeps the ones a
+   cut-off run left (`sweep_temp_psds`, invariant table WHY #4). Kept here as a pointer: archaeology Entry 10.2.
 5. **(Retired 2026-10-20) Local mode's change signal did not match the stored data.** The local-mode PATH
    bug (removeprefix, 2025-12-02 → 2026-10-19) was fixed with `relpath` (story:
    **autocroissant-failure-archaeology** Entry 1). What remained: with `use_local_timestamp:True` (the
@@ -382,13 +410,14 @@ optimization pass.
    see the section above for the full accounting. The mitigation gates live in
    **autocroissant-change-control**.
 7. **`/pull` blocks the event loop.** `git_pull` is `async def` running blocking GitPython network
-   calls directly on the loop (update_bot.py:50; `to_thread` passes coroutine functions through,
+   calls directly on the loop (update_bot.py:113; `to_thread` passes coroutine functions through,
    utils.py:82-84). For `/update` and `/restart_bot` that's fine — the queues are stopped and the
-   process is about to be replaced — but `/pull` (main.py:176-183) does NOT stop the queues, so all
+   process is about to be replaced — but `/pull` (main.py:190-198) does NOT stop the queues, so all
    sends and heartbeats stall for the duration of the fetch/merge. Deliberate simplicity; know it's
    why the bot "freezes" briefly during a pull. Since 2026-10-20 each git network call has
-   `kill_after_timeout=NET_TIMEOUT` (120 s, update_bot.py:9), so a stalled fetch or push ends; an SSH
-   host-key prompt is still not suppressed (network-robustness audit item 4).
+   `kill_after_timeout=NET_TIMEOUT` (120 s, update_bot.py:10), so a stalled fetch or push ends; since 2026-10-21
+   git runs non-interactively (`_git()`/`_repo()` set `repo_history.batch_overrides`: GIT_TERMINAL_PROMPT=0, ssh
+   BatchMode), so a host-key or credential prompt fails instead of hanging.
 8. **(Fixed 2026-10-20) The dispatch and edit loops used to die for good** (was B5). Each drained item now
    runs in its own `try` that logs one line (`Dispatch: dropped a message for channel N: ...`); the
    fallback (`_fallback_send`) rewinds files, and skips a channel `client.get_channel` can't find (logged);
@@ -409,11 +438,11 @@ optimization pass.
    (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2). What remains:
    the dispatch loop awaits sends one after another, so a long list still queues behind one slow send.
 11. **Pickle saves are atomic and locked, but not transactional across pickles.** Since 2026-10-21
-   `StatsDatabase.save` (card_models.py:162-165) and `save_aliases` (query_card.py:399-401) go through
-   `save_pickle` (card_models.py:20-34: temp file beside the target, flush + fsync, `os.replace`) under one
+   `StatsDatabase.save` (card_models.py:170) and `save_aliases` (query_card.py:436) go through
+   `save_pickle` (card_models.py:22-37: temp file beside the target, flush + fsync, `os.replace`) under one
    `threading.Lock` per pickle, like reminder.pkl; a kill mid-write leaves the old file whole. Still true:
-   stats.pkl and old_stats.pkl are saved one after the other, so a kill between them leaves a stats.pkl
-   newer than its old_stats.pkl, and a `/push` during a save commits whichever complete file is there
+   the two pickles are saved one after the other (old_stats.pkl first since 2026-10-21, ae1d2c5, so a kill between them never
+   leaves a card unlisted and untagged), and a `/push` during a save commits whichever complete file is there
    (archaeology 10.29).
 
 ## Where do I put new code (quick answers)
@@ -464,38 +493,39 @@ optimization pass.
 
 ## Provenance and maintenance
 
-Line numbers were verified 2026-07-11 at HEAD `284d13c`, re-verified 2026-10-20 at HEAD `9fb3093` and re-mapped after that
-day's optimization pass (psd_analyzer split, `refs6.py`)
-(expected values below are the 2026-10-20 readings). They WILL drift.
+Line numbers were verified 2026-07-11 at HEAD `284d13c`, re-verified 2026-10-20 at HEAD `9fb3093`, re-mapped after that
+day's optimization pass (psd_analyzer split, `refs6.py`) and re-verified 2026-10-23 at `2ada357`
+(expected values below are the 2026-10-23 readings). They WILL drift.
 Re-find before citing:
 
 | Fact | Re-verify with (cwd = repo root) |
 |---|---|
-| Three 0.1 s drains + the 1 s reminder loop | `grep -n -e "tasks.loop" -e "async def process_" main.py` (847-848 reminders at 1 s; 853-854 / 866-867 / 878-879 at 0.1 s) |
-| check_reminder queued by its own 1 s loop | `grep -n "queue_command(check_reminder)" main.py` (849, inside `process_reminders`) |
-| Loops started in on_ready / stopped in restart/stop/update | `grep -n "process_.*\.st" main.py` (123-126 / 153-156 / 166-169 / 204-207) |
-| Five queued inits incl. refresh_history and type emojis; reminder client binding | `grep -n "queue_command(init\|queue_command(refresh_history\|bind_reminder_client(client)" main.py` (117-121, 215) |
+| Three 0.1 s drains + the 1 s reminder loop | `grep -n -e "tasks.loop" -e "async def process_" main.py` (926-927 reminders at 1 s; 932-933 / 945-946 / 957-958 at 0.1 s) |
+| check_reminder queued by its own 1 s loop | `grep -n "queue_command(check_reminder)" main.py` (928, inside `process_reminders`) |
+| Loops started once in on_ready (revived on a reconnect) / stopped in restart/stop/update | `grep -n "_start(loop)\|def _loops" main.py` (126 revive, 142 start, 967); `grep -n "process_.*\.stop" main.py` (170-173 / 183-186 / 225-228) |
+| Six queued inits (sweep_temp_psds first); run once; reminder client binding | `grep -n "queue_command(sweep_temp_psds\|queue_command(init\|queue_command(refresh_history\|bind_reminder_client(client)\|_started = True" main.py` (134-139, 143, 236) |
 | The three deques | `grep -n "= deque()" commands/utils.py` (25-27) |
 | queue_* helpers | `grep -n "^def queue_" commands/utils.py` (36/41/47/53/58/63) |
 | to_thread coroutine passthrough | `grep -n -e "def to_thread" -e "iscoroutinefunction" commands/utils.py` (80, passthrough 82-84) |
-| run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (757); `grep -rn "executor=executor" commands/music_player.py` |
-| Registration rebind count | `grep -c "= to_thread(" main.py` (50 on 2026-10-21) |
+| run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (836); `grep -rn "executor=executor" commands/music_player.py` |
+| Registration rebind count | `grep -c "= to_thread(" main.py` (50 on 2026-10-23) |
 | update_stats and the card bake share one Lock; the bake is lazy about the fork | `grep -n "bake_lock" commands/repo_traverser.py commands/card_runner.py`; `grep -c "notice_edits" commands/repo_traverser.py commands/card_runner.py` (0 and 0); `grep -n "^import commands.card_bake\|^from commands.card_bake" commands/card_runner.py` (empty: imported inside `bake_cards`) |
-| slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (111) |
+| slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (131) |
 | Reminder resolve/bind/queue | `grep -n "slash_registry.get\|queue_command(_run_reminder_command" commands/analytics.py` |
 | Reminders fire as creator; single-flight | `grep -n "_ReminderUser(\|_check_lock\|^LEGACY_RUNS_AS_BOT" commands/analytics.py` |
 | FakeInteraction + default bot user id | `grep -n "def make_fake_interaction\|1011264680683110433" commands/utils.py` (124, 138) |
 | lacks_admin polarity | `grep -n -A2 "def lacks_admin" commands/utils.py` (returns `not in ADMINS`) |
 | Unique handler names (was duplicate defs) | `grep -n -e "async def slash_set_re" -e "async def slash_delete_" main.py` (4 distinct names) |
 | Deque shuffle | `grep -n "shuffle(music_queue)" commands/music_player.py` (338) |
-| Ephemeral dropped in fallback; get_channel None guarded | `grep -n 'pop("ephemeral"\|def _fallback_send\|not found")' main.py` |
-| Temp files removed after parse (weak point 4 fixed) | `grep -n "mkstemp(\|remove(local_file)" commands/card_data.py` |
+| Ephemeral dropped in fallback; get_channel None guarded | `grep -n 'pop("ephemeral"\|def _fallback_send\|not found")' main.py` (872, 870, 879) |
+| Temp files removed after parse (weak point 4 fixed); startup sweep | `grep -n "mkstemp(\|remove(" commands/card_data.py` (176, 186, 738); `grep -n "def sweep_temp_psds\|^TEMP_" commands/card_runner.py` (27-28, 103) |
 | Local mode archived 2026-10-20 (weak point 5) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44) |
-| Module-level cycles + lazy breaks | `grep -n "from commands.query_card import card_repo" commands/repo_traverser.py commands/psd_analyzer.py commands/type_emojis.py` (module level in the first two; inside a function in type_emojis); `grep -n "from commands.psd_analyzer import" commands/query_card.py` (all inside functions) |
-| Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (227); `grep -n "card_repo = CardRepository()" commands/query_card.py` (796); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
+| Module-level cycles + lazy breaks | `grep -n "from commands.query_card import card_repo" commands/repo_traverser.py commands/psd_analyzer.py commands/type_emojis.py` (module level in the first two; inside a function in type_emojis); `grep -n "from commands.psd_analyzer import" commands/query_card.py` (all inside functions: 442, 511, 599, 607, 734, 763); `grep -n "^from commands" commands/query_card.py` (18-24: card_edits, card_history, card_models, github_api, repo_history, type_emojis, utils) |
+| Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (409); `grep -n "card_repo = CardRepository()" commands/query_card.py` (999); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
 | config import chain | `grep -ln "^import config" commands/*.py` (music_player, utils); `grep -n "import config" commands/github_api.py` (try/except) |
 | type_emojis uncompiled | `grep -c "type_emojis" setup.py` (0) |
-| update_bot bypasses queues | `grep -n "followup.send" commands/update_bot.py`; `grep -n "from commands" commands/update_bot.py` (empty) |
+| update_bot bypasses queues | `grep -n "followup.send" commands/update_bot.py`; `grep -n "from commands" commands/update_bot.py` (6: repo_history at module level; 38: card_models inside `_rescue_merged_cards`); `grep -n "from git" commands/update_bot.py` (19, 27: inside `_git`/`_repo`) |
+| History step before the traversal (data flow b) | `grep -n "line = cleaned\|history_index()\|again = cleaned\|db.save()" commands/card_data.py` (1137-1138, 1153, 1159) |
 
 Maintenance rule: if any grep above stops matching, the architecture moved — update this contract in
 the same change, and check whether the corresponding invariant row still holds before assuming it does.
@@ -528,3 +558,11 @@ config or utils) added. The lazy-import cycle break is unchanged (repo_traverser
 invariant 10's after-the-cutover note, and the successor paragraph under "Why pickles-in-git". main.py grew by 13 lines (an
 import, the switched texts, the option gate) and repo_traverser.py by 5, so their cited line numbers drift by up to that;
 re-find them by grep.
+
+2026-10-23 (docs drift): 17-skill map (impossibility-simulator-rules added); WHY #4 and invariant 3 name sweep_temp_psds,
+the run-once inits and the reconnect revive (`_loops()`/`_start()`); invariant 10 says the jetson has the fork; the lazy-import
+section says query_card takes stats_db from card_models at module level; module map: query_card, discord_edits, update_bot
+(repo_history; card_models and GitPython lazily) and the CLI/Action-only modules; data flow (b) starts with the history
+cleanup/recovery; (b2) and the successor paragraph: merged and deployed off, shadow schedule on; weak point 7: git never
+prompts; every main.py, card_models.py, query_card.py, card_data.py and update_bot.py citation re-pointed at 2ada357
+(main.py had drifted by about 50 lines, not 13).

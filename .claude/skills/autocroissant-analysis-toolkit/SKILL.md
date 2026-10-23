@@ -1,11 +1,13 @@
 ---
 name: autocroissant-analysis-toolkit
-description: "First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: \"root cause\" a mis-parsed card or wrong [type] injection; \"prove\" / \"which code path produced this data\" / forensic attribution of pickle contents; \"bisect\" / \"when did X change\" / \"which commit introduced\" (git log -S, git show time-travel); \"measure before running\" an API budget for /update_stats vs GitHub rate limits; \"why is the bot slow to reply\" queue-timing reasoning; \"pickle forensics\" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any \"analysis method\" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on The Lich King, the path-style experiment that root-caused the removeprefix bug, the \"am forehead\" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed), the ≤0.2 s queue-latency derivation, and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison."
+description: "First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: \"root cause\" a mis-parsed card or wrong [type] injection; \"prove\" / \"which code path produced this data\" / forensic attribution of pickle contents; \"bisect\" / \"when did X change\" / \"which commit introduced\" (git log -S, git show time-travel); \"measure before running\" an API budget for /update_stats vs GitHub rate limits; \"why is the bot slow to reply\" queue-timing reasoning; \"pickle forensics\" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any \"analysis method\" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on Nebulous Precipice (The Lich King as the font-token case since 2026-10-22), the path-style experiment that root-caused the removeprefix bug, the \"am forehead\" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed; range reads on vs off), the ≤0.2 s queue-latency derivation, and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison."
 ---
 
 # AutoCroissant analysis toolkit
 
-Date-stamped 2026-07-11. All commands assume cwd = repo root `/Users/michaelsrouji/Desktop/AutoCroissant`.
+Date-stamped 2026-07-11; Recipe 1's worked example, Recipe 4's table and the line numbers re-measured 2026-10-23 (main
+2ada357). All commands assume cwd = repo root `/Users/michaelsrouji/Desktop/AutoCroissant`. The PSD-reading scripts need
+psd-tools and pandas: run them with `~/.venvs/ac-py314-fork/bin/python` (the Mac's plain `python3` lacks both).
 
 This skill is the project's method book: how to turn "this looks wrong" into a mechanism you can
 defend. The house evidence bar (owned by autocroissant-research-methodology): **one mechanism must
@@ -76,7 +78,7 @@ need to know WHICH stage of the parse diverged — not just that it did.
    `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/Desktop/TTSCardMaker/"<path>.psd"`.
    It prints six numbered stages — [1] types collected above the midline, [2] raw ability text
    layers with bboxes, [3] joined text with `<GAP:n>` markers (gap regex `\s{3,}`,
-   psd_parser.py:324), [4] below-midline icons, sort order, and the prune decision
+   psd_parser.py:348), [4] below-midline icons, sort order, and the prune decision
    (`max(last_y//3, card_mid_y)`), [5] gap count vs kept types, [6] final injected text.
 3. **Localize the divergent stage**: compare each stage against what the card art shows. The first
    stage whose numbers disagree with the card is where the mechanism lives.
@@ -88,46 +90,51 @@ need to know WHICH stage of the parse diverged — not just that it did.
    — it runs the actual `PSDParser` + `CardValidator` end to end, no Discord, nothing saved. The
    output should match your predicted values field for field.
 
-**Worked example — The Lich King as a healthy trace** (all outputs real, 2026-07-11):
+**Worked example — Nebulous Precipice as a healthy trace** (all outputs real, 2026-10-23, TTSCardMaker 96d61368,
+`~/.venvs/ac-py314-fork`):
 
-`dump_psd_layers.py` on `~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"`
-shows, among ~80 layers: size `1200 x 2400` (midline 1200); a `Types` group top-left with `Ice`
-(bbox y 158–308) and `Undead` (y 21–135) — both above the midline; a text layer `Ability` (kind
-`type`) at bbox (23, 1773, 1176, 2285); `Darks` digit groups where the visible digits are Hp `7`,
-Def `6`, ATK `7`, SPD `5`; and a lone `Undead` smartobject at (734, 2239, 808, 2299) — below the
-midline.
+`dump_psd_layers.py` on `~/Desktop/TTSCardMaker/"Field/3 Stars/Nebulous_Precipice.psd"` shows size `1200 x 1800`
+(midline 900), the field's own type icon above the midline, one `Ability` text layer at (26, 1229) and a `darkmatter`
+icon layer at (269, 1207) — below the midline, sitting in the gap after "Friendly".
 
 `gap_trace.py` then prints exactly:
 
 ```
-PSD 1200x2400; TYPE_REGION_RATIO=0.5 -> card_mid_y=1200
-[1] creature-types collected ABOVE midline: ['ice', 'undead']
+PSD 1200x1800; TYPE_REGION_RATIO=0.5 -> card_mid_y=900
+[1] creature-types collected ABOVE midline: ['field']
 [2] ability text layers found: 1
-    at (x=23, y=1773): "'(OFS) Equip Frostmourne.\n...Minions inherit       .\n'"
-[3] ... Minions inherit<GAP:7>.
+    at (x=26, y=1229): "'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'"
+[3] Friendly<GAP:5>gain +0.5 DEF and +1 SPD. ...
 [4] type icons BELOW midline (candidate inline types): 1
-    undead          at (x=734, y=2239)
-    prune threshold = max(last_y//3=746, card_mid_y=1200)
-    kept after prune: ['undead']   dropped: []
+    darkmatter      at (x=269, y=1207)
+    prune threshold = max(last_y//3=402, card_mid_y=900)
+    kept after prune: ['darkmatter']   dropped: []
 [5] gap count = 1 vs kept types = 1   (match)
-[6] FINAL ability text ... Minions inherit [undead].
+[6] FINAL ability text ... Friendly [darkmatter] gain +0.5 DEF and +1 SPD.
 ```
 
-`parse_one.py` confirms: `type creature, stars 5, series world of warcraft, types ['ice','undead'],
-hp 7 def 6 atk 7 spd 5`, ability ending `Minions inherit [undead].`, `validator problems: NONE` —
-every number predicted by the trace. (These golden values are a snapshot of 2026-07-11 — canonical
-current expected values live in autocroissant-validation-and-qa §3; if the trace stops matching,
-check there before assuming a regression.) (On 2026-07-11 it also printed `known types (36)`
-including a leaked `.ds_store` entry; since the 2026-10-19 dotfile fix it prints 35.)
+`parse_one.py` confirms the injected text and `validator problems: NONE` — every number predicted by the trace.
+(Canonical current expected values live in autocroissant-validation-and-qa §3; if the trace stops matching, check
+there before assuming a regression.) Nebulous Precipice is due to get a `[darkmatter:glow]` font token once the glow
+font lands (owner, 2026-10-23); then pick another card whose `psd_details.json` `icons` field says `images` or `mixed`.
+
+**The token case — The Lich King** (the 2026-07-11 golden trace, re-run 2026-10-23). On 2026-07-11 its `Ability` layer at
+(23, 1773, 1176, 2285) read "Minions inherit       ." and a visible `Undead` smartobject at (734, 2239) filled that
+`<GAP:7>` (prune `max(746, 1200)`, 1 vs 1). Since the standardization batch (TTSCardMaker 1c24dd48, 2026-10-22) the layer
+sits at (23, 1767, 1176, 2293) and reads "Minions inherit [undead]." as a stoogedings token, and the smartobject is
+hidden: `[1]` ['ice', 'undead'], `[2]` one layer at y=1767, `[3]` no GAP, `[4]` 0 icons (kept [] dropped []),
+`[5]` 0 vs 0 (match), `[6]` the same final text. It shows a token-typed card, not gap injection. (No certified golden
+fills a gap from an icon layer any more; Tainted Lazarus, 16_The_Field and 20_Creature_Types exercise the leftover
+append, Twin Emperors and 00_Table_of_Contents have unfilled gaps.)
 
 **Failure signatures** — how each classic failure looks in the same trace:
 
 | Signature | What you see | Mechanism it points to |
 |---|---|---|
-| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:414) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:995) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
+| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:449) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:1104) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
 | Icon above midline | The icon appears in `[1]`, not `[4]`; the gap in `[3]` stays unfilled | Icon y < 1200 → it's classified as a creature type, never an injection candidate. TYPE_REGION_RATIO=0.5 is deliberate — do NOT "fix" by injecting top-half icons (fenced off in autocroissant-psd-extraction-campaign) |
-| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:939-943) — the classic "types stuck at the end of the ability" symptom |
-| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:841) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
+| Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:1045, "Append remaining types") — the classic "types stuck at the end of the ability" symptom |
+| Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:947) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
 
 **Conclusive result:** you can name the stage ([1]–[6]), state the mechanism in one sentence, it
 predicts the exact stored (wrong) text AND the healthy cards' correctness, and parse_one reproduces
@@ -145,7 +152,7 @@ changes what you do next (e.g. "is the live bug already in our data?").
 **Steps**
 
 1. **Enumerate the candidate code paths.** Read the actual dispatch point (here:
-   `update_stats`, repo_traverser.py:486 as of 2026-10-20 (:59, its traversal in card_data.py, since 2026-10-22); until that day it branched on `use_local_repo`,
+   `update_stats`, repo_traverser.py:486 as of 2026-10-20 (:61, its traversal in card_data.py, since 2026-10-22); until that day it branched on `use_local_repo`,
    and since then the local code path lives on branch `archive/local-update-stats`, outside main).
 2. **For each path, derive an observable fingerprint it MUST leave** in the artifact. Prefer
    fingerprints that differ per path and cannot be produced accidentally by the other path.
@@ -283,8 +290,11 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
 - `git show 4e03190` — message: **"am forehead"** (same day, 17:43, twenty minutes later). Looks
   like a junk commit. The diff is the actual fix: every `return ..., num_updated` becomes
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
-  content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is `num_changed`: `if num_changed > 0:` gates the prune
-  and `if num_changed > 0 or gone or backfilled or build.changed ...:` the save, in `card_data.update`, commands/card_data.py since 2026-10-22.)
+  content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is
+  `num_changed`; in `card_data.update`, commands/card_data.py since 2026-10-22, the prune is gated by `can_prune(build)`
+  (card_data.py:968: whole tree seen, no 304, not truncated, no failed new-name PSD; called at :1146) and the save
+  (:1158) by `num_changed > 0 or gone or backfilled or build.changed or line or again or db.stale_archives()`.
+  `_process_files_from_response` still returns `num_changed + num_moved`, :692.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
 - Bonus name-lie inside the same loop (renamed 2026-10-20): until then `num_new` ALSO counted re-parsed existing
@@ -317,33 +327,39 @@ autocroissant-run-and-operate.)
    find ~/Desktop/TTSCardMaker -name '*.psd' | grep -vcE '/(Markers|MDW)/'# 813 (processed — equals stats.pkl entry count)
    ```
 
-2. **Read the loop and tag every network call** (`commands/repo_traverser.py`, verified 2026-10-20 after the split; the loop is in `commands/card_data.py` since 2026-10-22, unchanged):
-   - `traverse_remote` — one tree GET (`fetch_tree`, :164), sent with If-None-Match
-     unless `force_update` or `cards:` is set. A 304 ends the run (:165). The ETag
-     (`_tree_etags`, :42) and the small-file cache (`_file_cache`, :43) live in memory only, so the
-     first sweep after a restart always gets a 200.
-   - Small files (icon manifest, authors, edits; `_repo_text`, :118-126) — one git/blobs request
-     each, only when its blob sha changed or the bot restarted: **up to 3**.
+2. **Read the loop and tag every network call** (`commands/card_data.py` since 2026-10-22, re-pointed 2026-10-23 at 2ada357):
+   - `traverse_remote` — one tree GET (`self._fetch_tree`, :269), sent with If-None-Match
+     unless `force_update` or `cards:` is set. A 304 ends the run (:270). The ETag
+     (`_tree_etags`) and the small-file cache (`_file_cache`) are module dicts in repo_traverser.py:31-32, in
+     memory only, so the first sweep after a restart always gets a 200.
+   - Small files (icon manifest, authors, edits, Card Creation Dates.json; `_repo_text`, :154) — one git/blobs
+     request each, only when its blob sha changed or the bot restarted: **up to 4**, plus `.mailmap` once a run
+     when a new card needs an author (2026-10-23).
    - Changed cards are found by comparing tree blob shas with `card.blob_sha` (`_psd_changed`,
-     :74) — **no request per unchanged card**. The PyGithub repo is lazy (`_repo()`, :100-107): 0 requests.
-   - Per CHANGED card: the PSD blob from api.github.com git/blobs (`_download`, :128) + one commit page
-     (`_commit_page`, :109-112; per_page=100, run in a 2-thread pool beside the downloads) that holds the
-     newest commit and, for a new or authorless card, the first: **2 requests**. A file with 100+ commits
-     adds one (`.reversed[0]`, :427). Before 2026-10-20 it was 3 requests plus (commits − 1) for a new card.
-   - Legacy cards with no `blob_sha` (one-time): `_committed_since_update` (:88-98) costs 1
+     :237) — **no request per unchanged card**. The PyGithub repo is lazy (`_repo()`, :136): 0 requests.
+   - Per CHANGED card: one commit page (`_commit_page`, :145-148; per_page=100, run in a 2-thread pool beside the
+     reads) that holds the newest commit and, for a new or authorless card, the first; a file with 100+ commits adds
+     one (`.reversed[0]`, :222). The PSD itself, **since 2026-10-23 with range reads on** (`RANGE_READS`,
+     github_api.py:27, and a psd-tools with `range_reader`: the jetson and `~/.venvs/ac-py314-fork`): HTTP range
+     requests to raw.githubusercontent at the tree's commit, which are **not REST API requests**; a run with changed
+     cards adds one `branches/<CARD_BRANCH>` request to find that commit (`_tree_commit`, :702). With range reads off,
+     or as the fallback (3 refusals turn them off for the run), the whole blob from api.github.com git/blobs
+     (`_download`, :164): **2 REST requests per card**. Before 2026-10-20 it was 3 requests plus (commits − 1) for a
+     new card.
+   - Legacy cards with no `blob_sha` (one-time): `_committed_since_update` (:124) costs 1
      `get_repo` + the `get_commits(since=)` pages + 1 request per commit for `.files`.
    - Before 2026-10-20 (blob shas) every sweep called `get_commits(path=)` for every PSD: ≈815 requests even
      when nothing changed.
 
 3. **Do the arithmetic against the limits.** The code prints its own reminder
-   (github_api.py:26-29, `print_token_status`): 60 req/hr anonymous, 5000 req/hr with a token.
+   (github_api.py:39-42, `print_token_status`): 60 req/hr anonymous, 5000 req/hr with a token.
 
-   | Sweep | Requests | Verdict |
-   |---|---|---|
-   | Nothing changed | 1 (a 304; free with a token) | Trivial |
-   | First after a restart, nothing changed | 1 + 3 = 4 | Trivial |
-   | k changed cards | 1 + ≤3 + 2k (+1 per new/authorless card with 100+ commits) | Anonymous: about 28 cards per hour; with a token, no practical limit |
-   | `force_update` | ≈ 2 × 813 + 5 ≈ 1,630 (≈ 2,450 before 2026-10-20) | About a third of the hourly budget with a token; impossible without one |
+   | Sweep | REST requests, range reads on (2026-10-23) | Range reads off | Verdict |
+   |---|---|---|---|
+   | Nothing changed | 1 (a 304; free with a token) | 1 | Trivial |
+   | First after a restart, nothing changed | 1 + ≤4 = 5 | 5 | Trivial |
+   | k changed cards | 1 + ≤4 + 1 + k (+1 per new/authorless card with 100+ commits; +1 `.mailmap` with a new card) | 1 + ≤4 + 2k | Anonymous: about 50 (on) or 28 (off) cards per hour; with a token, no practical limit |
+   | `force_update` | ≈ 813 + ~6 ≈ 820 | ≈ 2 × 813 + 5 ≈ 1,630 (≈ 2,450 before 2026-10-20) | About a sixth (on) or a third (off) of the hourly budget with a token; impossible without one |
 
 **Conclusive result:** a predicted request count derived from the loop, checked against the input
 count, BEFORE anything runs — and the prediction is falsifiable (if a sweep rate-limits earlier
@@ -358,7 +374,7 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:779-912; queue helpers commands/utils.py:25-60): three module-level
+**The mechanism** (verify at main.py:831-979; the deques commands/utils.py:25-27, queue helpers :36-63): three module-level
 deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=0.1)`
 coroutine (1 s until 2026-10-21). Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
 one-tick-per-item delay. Worker code never awaits Discord; it appends via
@@ -369,12 +385,12 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Path | Hops | Queue-added latency |
 |---|---|---|
 | Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 0.1 s (avg ~50 ms) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready inits main.py:118-122, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready's queued commands main.py:134-139 incl. sweep_temp_psds and refresh_history, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
 
-Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:874-876 as of
-2026-10-21), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked
+Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:926-928 as of
+2026-10-23), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked
 every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:893-901 as of 2026-10-21), so one slow Discord HTTP call
+loop awaits each send SEQUENTIALLY inside the tick (main.py:945-954 as of 2026-10-23; the drains are :932/:945/:957), so one slow Discord HTTP call
 delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
 
 **Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
@@ -395,7 +411,7 @@ autocroissant-debugging-playbook), never queue scheduling.** Don't investigate t
 **Conclusive result:** you state the expected latency for the exact path the command took (≤0.1 s or
 ≤0.2 s of queue overhead), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:779-912.
+main.py:831-979.
 
 ---
 
@@ -405,22 +421,26 @@ main.py:779-912.
 whether a snapshot is damaged — answered with standalone reads, never by running the bot.
 
 **Mechanics.** `stats.pkl` values are `CardInfo` dataclass instances pickled as
-`commands.psd_analyzer.CardInfo` (defined in `commands/card_models.py` since 2026-10-20, `__module__` pinned), so unpickling needs (a) the repo root on `sys.path` and (b) `config.py`
-present (the import chain reads it; since 2026-10-20 it prints nothing, so the grep is a harmless leftover).
-Load pattern used throughout:
+`commands.psd_analyzer.CardInfo` (defined in `commands/card_models.py` since 2026-10-20, `__module__` pinned). Since
+2026-10-22 the forensics pattern is `commands.card_db.load_pickle` (its `SeedUnpickler` allow-list, card_db.py:275-284):
+it loads stats.pkl / old_stats.pkl / aliases.pkl with neither config.py nor psd-tools, on the Mac's plain `python3`.
+The raw `pickle.load` path still imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools, config.py) and
+the older one-liners below use it. Load pattern:
 
 ```bash
 python3 -c "
 import sys; sys.path.insert(0, '.')
-from pickle import load
-db = load(open('stats.pkl','rb'))
-print(len(db))" 2>&1 | grep -v "Git token"
+from commands.card_db import load_pickle
+db = load_pickle('stats.pkl'); old = load_pickle('old_stats.pkl')
+print(len(db), len(old), sum(len(v) for v in old.values()))"
+# 818 354 446     (PICKLE a7c310e, 2026-10-23)
 ```
 
 Aggregate with one-liners (Counter over `c.path.split('/')[0]`, max over `c.timestamp`, filter on
-`c.problems` — e.g. today the ONLY *stored/pickled* problem card is `('20 Creature Types',
-['MISSPELT TYPE: tornado'])`; full validation computes 5 — surface distinction in
-autocroissant-validation-and-qa §2). For the packaged summary use `inspect_pickle.py`; for two-snapshot diffs use
+`c.problems` — e.g. on 2026-10-23 no card has a *stored/pickled* problem (0; on 2026-07-11 it was `('20 Creature
+Types', ['MISSPELT TYPE: tornado'])`), and full validation (`CardValidator.validate` over stats.pkl) computes 1:
+Computer Virus, `HP/DEF/ATK/SPD NOT FOUND` (5 on 2026-07-11, before the three WoW minions joined ABILITY_EXCLUSIONS in
+e4e0a58 and tornado became wind) — surface distinction in autocroissant-validation-and-qa §2). For the packaged summary use `inspect_pickle.py`; for two-snapshot diffs use
 `diff_stats.py` (both documented with golden outputs in autocroissant-diagnostics-and-tooling).
 
 **Compare snapshots across git history** — pickles are committed, so `git show <hash>:<file>` is a
@@ -435,8 +455,9 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.
 
 **The motivating case — old_stats.pkl's size history** (bytes measured 2026-07-11 with
 `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)`; the four anchor commits only — the full
-annotated trace, from the 66-byte first archive through today's 82,881, is owned by
-**autocroissant-failure-archaeology** Entry 3):
+annotated trace, from the 66-byte first archive through 82,881 on 2026-07-11, is owned by
+**autocroissant-failure-archaeology** Entry 3; at PICKLE a7c310e, 2026-10-23, old_stats.pkl is 193,937 B, 446 versions,
+and about 1,155 versions are expected after the next run's history recovery):
 
 | Commit | Date | Bytes | Note |
 |---|---|---|---|
@@ -449,7 +470,10 @@ annotated trace, from the 66-byte first archive through today's 82,881, is owned
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
 (`_history`, card_data.py), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing; since 2026-10-22 only
-when its data changed too (`_record_history`, `card_history.same_data`).
+when its data changed too (`_record_history`, `card_history.same_data`). Since 2026-10-23 an applied Card Edits or
+Discord edit that changes data also keeps a version (`card_history.record_edits`, cause `edit`), and every
+/update_stats runs `card_data.clean_history` (dedupe, normalize, recover from the bot's PICKLE commits, misreads,
+unknown values, archive tags dated from git): the history rules are impossibility-cards-reference §6.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -504,22 +528,23 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Fact | Re-verify with |
 |---|---|
 | Scripts exist / arg handling (full paths needed) | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/` ; `grep -n 'expanduser().resolve()' .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py` |
-| Lich King golden trace ([1]-[6] numbers) | rerun the `gap_trace.py` command in Recipe 1 |
-| Gap regex `\s{3,}` :686; punctuation cleanup :1146; leftover-append :1244-1248; NO ABILITY LAYER :772 (2026-10-20) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER' commands/psd_parser.py` |
+| Nebulous Precipice golden trace ([1]-[6] numbers); The Lich King's token case | rerun the `gap_trace.py` command in Recipe 1 (with `~/.venvs/ac-py314-fork/bin/python`) |
+| Gap regex `\s{3,}` :348; punctuation cleanup :947; leftover-append :1045; NO ABILITY LAYER :449; ABILITY TEXT NOT FOUND :1104 (2026-10-23) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER\|ABILITY TEXT NOT FOUND' commands/psd_parser.py` |
 | removeprefix no-op line — FIXED 2026-10-19 | `grep -c 'relpath\|removeprefix' commands/psd_analyzer.py` (0; local mode archived 2026-10-20); story in autocroissant-failure-archaeology Entry 1 |
 | stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_pickle.py` |
 | Timestamp clustering (103 distinct; 769 shared; max cluster 64 @ 2026-02-08 04:11:26Z) | the Counter one-liner in Recipe 2 (drifts with every sweep — recompute, don't reuse) |
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
-| `num_changed` gates at HEAD | `grep -n 'if num_changed > 0\|def can_prune' commands/card_data.py` (the prune gate, then the save gate) |
+| `num_changed` gates at HEAD | `grep -n 'can_prune(build)\|def can_prune\|db.save()' commands/card_data.py` (968, 1146, 1159) |
+| Range reads and the branch-head request | `grep -n '^RANGE_READS' commands/github_api.py` (27); `grep -n 'def _tree_commit\|def _fetch_psd' commands/card_data.py` (702, 716) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/card_data.py; grep -n 'requests/hour' commands/github_api.py` (card_data.py since 2026-10-22, github_api.py since the 2026-10-20 split) |
-| Queue loops drain the whole deque each 0.1 s tick; reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (:847-880 on 2026-10-21: 847 at 1 s, 853/866/878 at 0.1 s) |
+| Queue loops drain the whole deque each 0.1 s tick; reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (926 at 1 s; 932/945/957 at 0.1 s on 2026-10-23) |
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
-| Problem card list (today: 20 Creature Types / tornado) | the `c.problems` one-liner in Recipe 6 |
+| Problem card list (2026-10-23: none stored; full validation 1, Computer Virus) | the `c.problems` one-liner in Recipe 6; `CardValidator.validate` over `load_pickle('stats.pkl')` with the fork venv |
 
 Line numbers drift with every edit to the card modules (`psd_parser.py`, `card_data.py`, `repo_traverser.py`, `card_models.py`, `psd_analyzer.py`) and `main.py` — trust the greps
 above over the numbers in this file. If `PSDParser._extract_from_layers` changes shape, gap_trace's
@@ -541,3 +566,10 @@ update this file.
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-22 (data build): the traversal loop, its network calls and the save gates moved to the uncompiled commands/card_data.py (legacy mode for /update_stats); the recipe citations and greps re-pointed there. The API arithmetic is unchanged; a failed commit lookup now fails only its card.
+
+2026-10-23 (docs drift): Recipe 1's worked example re-run on Nebulous Precipice (The Lich King became a font-token card
+in TTSCardMaker 1c24dd48: its numbers kept as the token case); psd_parser.py citations re-pointed; Recipe 3's gates
+(`can_prune`, the save gate with the History lines and stale archives); Recipe 4 gains range reads (REST cost about one
+commit page per changed card; force_update about 820) and four small files plus .mailmap, with card_data.py and
+github_api.py lines re-pointed; Recipe 5's main.py lines; Recipe 6 loads through `card_db.load_pickle`, problem
+baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, and points to the history rules.

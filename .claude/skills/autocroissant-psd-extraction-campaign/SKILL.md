@@ -9,18 +9,20 @@ This is the executable campaign for the project's hardest live problem (owner-st
 extracting ability text, type icons, and stats from the ~904 card PSDs in `~/Desktop/TTSCardMaker`.
 
 **The goal ("perfect extraction")**: 100% correct ability/type/stat extraction, with **zero
-per-card exclusion lists**. Today the parser is good but propped up by 18 hardcoded card names
+per-card exclusion lists**. Today the parser is good but propped up by 21 hardcoded card names
 (`ABILITY_EXCLUSIONS`; the 5 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21, replaced by the website's per-card
 `allow_high_stats`). The traversal bug that made local-mode
 `/update_stats` dangerous was fixed on 2026-10-19 (Phase 0). The campaign removes the remaining
-props without breaking the 813 cards that parse correctly today.
+props without breaking the ~812 PSDs that parse correctly today (818 cards with the alt-art rows, 2026-10-23).
 
 **New lever since 2026-10-19: the stoogedings icon font.** A card whose inline icons are typed as
 `[fire]` tokens in the font needs no gap guessing at all; the parser reads the tokens directly
-(impossibility-cards-reference §4.1). No card uses it yet (0 of 813); about 45 PSDs (81 smart-object
-icon layers) are the migration backlog. Migrating a card is card-content work in TTSCardMaker
-(prototype and caveats: ttscardmaker-companion §5), but it is the most direct route to perfect
-inline types for those cards, and Options 2-3 below then matter only for unmigrated cards.
+(impossibility-cards-reference §4.1). Adoption, measured from `psd_details.json` at the 2026-10-23 05:00 run (813 PSD
+records, before batch B2's ~219 re-parses): 275 PSDs have text in stoogedings; the records' `icons` field reads
+`tokens` 45, `mixed` 230, `images` 470, `none` 68. The standardization batches did the migration (242 cards pushed
+2026-10-22, queue A, batch B2 0bc4c099 on 2026-10-23). `icons` is the measure from now on: the 470 `images` cards (and
+the image half of the `mixed` ones) still rely on gap injection, so Options 2-3 below matter for them. Migrating a
+card is card-content work in TTSCardMaker (ttscardmaker-companion §5).
 
 **Success is MEASURED, never judged by eye.** Every phase ends at a gate with an expected number.
 If your run shows a different number, take the branch — do not rationalize and continue.
@@ -40,12 +42,12 @@ Glossary (used throughout):
 
 | Term | Meaning |
 |---|---|
-| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:324 as of 2026-10-20) where a type icon visually sits |
-| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:536; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
+| gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:348 as of 2026-10-23) where a type icon visually sits |
+| icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:627; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
-| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:23,375). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
-| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:901) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:939-943) |
+| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:24, 411). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
+| injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:1007) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:1045) |
 | sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
@@ -58,25 +60,35 @@ This table IS the campaign's progress record.
 | Date | stats.pkl cards | Stored problem cards | Re-validation problems | ABILITY_EXCLUSIONS | STAT_EXCLUSIONS | Empty-string abilities | Residual-gap cards | Goldens byte-equal |
 |---|---|---|---|---|---|---|---|---|
 | 2026-07-11 | 813 | 1 | 5 | 18 | 5 | 20 | 10 | 3/3 |
+| 2026-10-23 | 818 | 0 | 1 | 21 | — | 20 | 10 | 3/3 |
 | (target) | tracks TTSCardMaker | true content errors only | == stored problems | 0 | 0 | tracked, explained | legit layouts only | N/N, N growing |
 
-Metric definitions (all verified 2026-07-11):
+The 2026-10-23 row: measured at PICKLE a7c310e with `~/.venvs/ac-py314-fork` (Gates 1c-1e). ABILITY_EXCLUSIONS went
+18 -> 21 on 2026-10-21 (e4e0a58, 14:46, "Three blank-ability minions excluded; tornado is wind": Anubisath Guardian,
+Qiraji Soldier, Silithid): registered debt, the exclusion treadmill this campaign exists to stop. The stat list is
+gone (`allow_high_stats` in Card Edits.json since 2026-10-21). Goldens are 3/3 all-True with or without the icon
+vocabulary. Inventory: 818 cards (812 PSDs plus 6 alt-art duplicate rows), item 188, field 49, newest Clot White.
 
-- **Stored problem cards**: entries in stats.pkl whose `problem` field is non-empty. Today exactly 1:
-  `20 Creature Types` (`MISSPELT TYPE: tornado`) — a content flag in the source PSD, not a parser bug.
+Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
+
+- **Stored problem cards**: entries in stats.pkl whose `problem` field is non-empty. Today 0 (20_Creature_Types has a
+  `wind` layer since TTSCardMaker 100511d3); on 2026-07-11 exactly 1, `20 Creature Types` (`MISSPELT TYPE: tornado`),
+  a content flag in the source PSD, not a parser bug.
 - **Re-validation problems**: cards that fail `CardValidator.validate` when run over today's stored
-  data. Today 5 — the stored count undercounts because the pickle stores only parse-time problems
+  data. Today 1 (Computer Virus, all four stats NOT FOUND; the owner leaves it); 5 on 2026-07-11 — the stored count undercounts because the pickle stores only parse-time problems
   (`NO ABILITY LAYER`, `MISSPELT TYPE`); validator-computed problems (`ABILITY TEXT NOT FOUND`,
   `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`) are reported to Discord during a sweep but never
-  stored. The 5: `20 Creature Types`, `Computer Virus` (all four stats NOT FOUND),
-  `Anubisath Guardian`, `Qiraji Soldier`, `Silithid` (ABILITY TEXT NOT FOUND — blank minions not in
-  the exclusion list).
+  stored. The 2026-07-11 five: `20 Creature Types`, `Computer Virus` (all four stats NOT FOUND),
+  `Anubisath Guardian`, `Qiraji Soldier`, `Silithid` (ABILITY TEXT NOT FOUND — blank minions then not in
+  the exclusion list; added to it on 2026-10-21).
 - **Empty-string abilities**: cards with `ability == ""` (an Ability text layer exists but is blank).
-  Today 20 = 17 of the 18 ABILITY_EXCLUSIONS + the 3 WoW minions above. The 18th exclusion,
-  `Shadow Duelist`, had text from its hidden Ability layer; since 2026-10-22 a hidden Ability layer counts only when
-  its words are printed (`PSDParser._relaid`), so it parses to "" and the exclusion is live (it prints no ability).
+  Today 20 = every ABILITY_EXCLUSIONS name except `Shadow Duelist` (the 3 WoW minions included). Shadow Duelist had
+  text from its hidden Ability layer; since 2026-10-22 a hidden Ability layer counts only when its words are printed
+  (`PSDParser._relaid`), so it parses to "" and the exclusion is live, but its stored text waits for
+  `/update_stats cards:Shadow Duelist` (it prints no ability).
 - **Residual-gap cards**: cards whose STORED ability still contains a 3+ space run (a gap that
-  received no icon). Today 10: 4 rulebook table pages (legit layout) + `Michael's Blessing`,
+  received no icon). Today 10 (unchanged until the `cards:` re-parse of the padding fix): 00 Table of Contents,
+  04 Table3, 06 Reading Cards, 08 Global Turn (rulebook pages) + `Michael's Blessing`,
   `Miracle Matter`, `Pile Of Swords`, `Twin Emperors`, `Warcraftian Druid`, `Warcraftian Hunter`.
   These 6 are the standing Phase 2 suspect list. 2026-10-23 (fixes-1023): a line's leading gap no type fills is
   dropped as padding, so after a re-parse Twin Emperors and Warcraftian Druid have none; Michael's Blessing,
@@ -173,10 +185,12 @@ Record results as a new scoreboard row.
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 ```
 
-**EXPECTED (2026-07-11):** 813 cards; old_stats 218 names / 223 archived versions; distribution
-creature 297, item 182, minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12,
-creatures 7; `cards with recorded parse problems: 1`; 0 orphans; newest `Anubisath Guardian @
-2026-06-18`; `entries with suspicious (non repo-relative) paths: 0`.
+**EXPECTED (2026-10-23, PICKLE a7c310e):** 818 cards; old_stats 354 names / 446 archived versions, 2 archived cards
+(1 backfilled); distribution creature 297, item 188, minion 91, debuff 52, field 49, aux item 48, rulebook 48, nme 26,
+buff 12, creatures 7; `cards with recorded parse problems: 0`; 0 orphans; newest `Clot White @ 2026-10-22 20:56:26`;
+`entries with suspicious (non repo-relative) paths: 0`. (2026-07-11: 813; 218 / 223; item 182, field 50; 1 problem;
+newest Anubisath Guardian @ 2026-06-18.) The first run after the 2026-10-23 deploy grows old_stats to about 1,155
+versions / 670 names once (the history recovery: autocroissant-run-and-operate §7).
 
 - Higher card count / newer newest-timestamp → TTSCardMaker gained cards and a sweep ran; fine,
   update the scoreboard.
@@ -184,7 +198,7 @@ creatures 7; `cards with recorded parse problems: 1`; 0 orphans; newest `Anubisa
   traversal on branch `archive/local-update-stats` walks the clone). STOP the campaign; this is now a
   data-recovery incident: autocroissant-debugging-playbook ("stats look wrong") +
   autocroissant-change-control (pickle discipline). Do not proceed on corrupted baseline.
-- Problem count > 1 → run Gate 1b and classify each new entry before continuing.
+- Problem count > 0 → run Gate 1b and classify each new entry before continuing.
 
 ### Gate 1b — Stored problems
 
@@ -192,7 +206,7 @@ creatures 7; `cards with recorded parse problems: 1`; 0 orphans; newest `Anubisa
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 ```
 
-**EXPECTED (2026-07-11):** exactly one line:
+**EXPECTED (2026-10-23):** no lines (0 stored problems). On 2026-07-11 exactly one:
 `20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']`
 
 ### Gate 1c — Exclusion-list sizes (the numbers this campaign exists to drive to zero)
@@ -201,9 +215,10 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pic
 awk '/ABILITY_EXCLUSIONS: set/{f=1;next} f&&/}/{exit} f&&/",/{n++} END{print "ABILITY_EXCLUSIONS:", n}' commands/psd_parser.py
 ```
 
-**EXPECTED (2026-10-21):** 18 (the stat list no longer exists). (Cross-check that imports agree with source:
-`python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS))"`
-→ `18 5`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
+**EXPECTED (2026-10-23):** `ABILITY_EXCLUSIONS: 21` (18 until e4e0a58 on 2026-10-21; the stat list no longer exists).
+(Cross-check that imports agree with source, with the fork venv:
+`~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS))"`
+→ `21`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
 autocroissant-build-and-env, run `python3 setup.py clean`.)
 
 ### Gate 1d — Golden parses, byte-checked against stats.pkl
@@ -232,7 +247,7 @@ for name, rel in goldens:
 EOF
 ```
 
-**EXPECTED (2026-10-22):** three lines, every flag `True`. (A stats.pkl older than PICKLE 3888392 still holds The
+**EXPECTED (2026-10-23, re-run at a7c310e):** three lines, every flag `True`. (A stats.pkl older than PICKLE 3888392 still holds The
 Freezer's `(1PGT)` and prints its `ability_byte_equal=False`: pull the pickles first.) Pinned golden values (snapshot of
 2026-07-11 from `parse_one.py`, re-runnable — see Provenance; canonical current expected values
 live in autocroissant-validation-and-qa §3 — if these stop matching, check there before assuming
@@ -244,7 +259,8 @@ a regression):
   character-for-character:
   `For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n(1GCD) Choose a friendly creature to turn into a [ice] and lower its speed by 1.`
   (`(1PGT)` before the 2026-10-21 cooldown update, impossibility-simulator-rules §3; stats.pkl reads `(1GCD)` from PICKLE 3888392.)
-- **The Lich King** → ability's last line `Minions inherit [undead].` (full trace in Phase 2).
+- **The Lich King** → ability's last line `Minions inherit [undead].` (a font token since TTSCardMaker 1c24dd48,
+  2026-10-22; full trace in Phase 2).
 
 Any `False` → the parser in your working tree no longer reproduces the database. Either you changed
 parsing code (intended? then this is your regression signal) or a stale `.so` shadows the source
@@ -269,9 +285,10 @@ print(f'empty-string abilities: {len(empty)}'); print('  ', empty)
 EOF
 ```
 
-**EXPECTED (2026-07-11):** `re-validation problems: 5` (the 5 named in the scoreboard section);
-`residual-gap cards: 10` (4 `Auxiliary/Rulebook` pages + the 6 suspects); `empty-string abilities:
-20` (17 exclusion-list names + Anubisath Guardian, Qiraji Soldier, Silithid).
+**EXPECTED (2026-10-23):** `re-validation problems: 1` (Computer Virus); `residual-gap cards: 10` (00 Table of
+Contents, 04 Table3, 06 Reading Cards, 08 Global Turn, Michael's Blessing, Miracle Matter, Pile Of Swords, Twin
+Emperors, Warcraftian Druid, Warcraftian Hunter); `empty-string abilities: 20` (the exclusion names but Shadow
+Duelist). (2026-07-11: 5; 10; 20 = 17 exclusion-list names + Anubisath Guardian, Qiraji Soldier, Silithid.)
 
 - New names in re-validation → new problem cards arrived from TTSCardMaker; add them to the
   Phase 3 option-4 target table and classify with the burn-down recipe.
@@ -307,20 +324,24 @@ It re-drives the real `PSDParser` methods and prints 6 numbered steps. What each
 | [3] joined text with `<GAP:n>` markers | every 3+ space run the injector will target | a gap that is really table formatting; a missing gap where an icon sits (author used ≤2 spaces) |
 | [4] below-midline icons, sorted + prune decision | injection candidates, row grouping (40px), `max(last_y//3, card_mid_y)` threshold | a legitimate icon in `dropped:` (prune too aggressive); row grouping merging two visual rows |
 | [5] gap count vs kept types | the ordinal balance | MISMATCH → leftovers appended to last line, or gaps left unfilled |
-| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:841 on 2026-10-20) having eaten a legitimate gap before punctuation |
+| [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:947 on 2026-10-23) having eaten a legitimate gap before punctuation |
 
-### Worked example — The Lich King (verified 2026-07-11)
+### Worked example — Nebulous Precipice (measured 2026-10-23, TTSCardMaker 96d61368)
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" 2>&1 | grep -v "Git token"
+~/.venvs/ac-py314-fork/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
 ```
 
-**EXPECTED:** PSD 1200x2400, card_mid_y=1200. [1] tags `['ice', 'undead']` (note: `undead` appears
-BOTH as a tag above the midline and as an inline icon below — this is why the midline exists).
-[2] one text layer at (x=23, y=1773). [3] one gap: `Minions inherit<GAP:7>.` [4] one icon:
-`undead` at (x=734, y=2239); prune threshold `max(2239//3=746, 1200)=1200`, kept `['undead']`,
-dropped `[]`. [5] `gap count = 1 vs kept types = 1 (match)`. [6] final last line
-`Minions inherit [undead].` — the punctuation cleanup collapsed the space before `.`.
+**EXPECTED:** PSD 1200x1800, card_mid_y=900. [1] tags `['field']`. [2] one text layer at (x=26, y=1229).
+[3] one gap: `Friendly<GAP:5>gain +0.5 DEF and +1 SPD.` [4] one icon: `darkmatter` at (x=269, y=1207); prune
+threshold `max(1207//3=402, 900)=900`, kept `['darkmatter']`, dropped `[]`. [5] `gap count = 1 vs kept types = 1
+(match)`. [6] first line `Friendly [darkmatter] gain +0.5 DEF and +1 SPD.` Due to become a `[darkmatter:glow]` token
+once the glow font lands (owner); then use another `images` card.
+
+**The Lich King, the 2026-07-11 example:** then `[3] Minions inherit<GAP:7>.` filled by a visible `undead` icon at
+(734, 2239) (prune `max(746, 1200)`, 1 vs 1, `undead` both a tag above the midline and an inline icon below: why the
+midline exists). Since TTSCardMaker 1c24dd48 (2026-10-22) its text holds the `[undead]` token and the icon layer is
+hidden: no GAP, 0 icons, 0 vs 0 (match), the same final text. It now tests the token path, not injection.
 
 ### Counterexample — Warcraftian Hunter (why gap-counting alone cannot be a validator)
 
@@ -379,7 +400,7 @@ autocroissant-validation-and-qa):
   GIT_TOKEN's 5000/hr): `diff_stats.py` reports `0/0/0`, exit 0, and old_stats is unchanged —
   local traversal becomes bit-identical to remote traversal on an unchanged clone. Precondition:
   clone at the same commit as upstream main.
-- Both tiers: the sweep's problem report lists exactly today's 5 re-validation cards.
+- Both tiers: the sweep's problem report lists exactly today's re-validation cards (1 on 2026-10-23: Computer Virus; 5 on 2026-07-11).
 - Measured 2026-10-19 (Tier A, forced): `path`/`type`/`types`/`stats` unchanged on all 813, 0 location
   changes; plus 59 ability and 2 star rows from upstream PSD edits (Phase 0). Until D5's refresh lands,
   expect those 61 rows on top of the timestamp-only prediction. Tier B has not been run.
@@ -411,8 +432,8 @@ check. It thrashed because the equality is false for legitimate layouts:
   were missed or icons misrouted. The threshold must be tuned by a corpus census, not intuition.
 - C2 (gaps side): fire only when kept_types > 0 AND at least one gap on an icon-bearing card
   remains unfilled after injection — and measure this BEFORE the punctuation cleanup at
-  psd_parser.py:841 (2026-10-20), which eats a gap that sits directly before punctuation (Lich King's gap
-  would vanish from the final text).
+  psd_parser.py:947 (2026-10-23), which eats a gap that sits directly before punctuation (the 2026-07-11 Lich King's
+  gap would have vanished from the final text).
 - C3 (guard): kept_types == 0 → never fire (exempts Warcraftian Hunter and the 4 rulebook tables).
 
 **Predicted numbers, stated before running:** an instrumented sandbox census over all 904 PSDs
@@ -433,18 +454,19 @@ using its (x, y), then fill that line's gaps left-to-right. Localizes any mistak
 y-positions must be estimated: `line_height = (y2 - y1) / num_lines`,
 `line_index = clamp(floor((icon_center_y - y1) / line_height), 0, num_lines - 1)`.
 
-Worked numbers (The Lich King, verified 2026-07-11 via dump_psd_layers): Ability layer bbox
-(23, 1773, 1176, 2285) → height 512px over 5 lines → 102.4 px/line. Undead icon bbox
-(734, 2239, 808, 2299) → center_y=2269 → (2269-1773)/102.4 = 4.84 → line index 4 = last line
-`Minions inherit .` — correct.
+Worked numbers (Nebulous Precipice, measured 2026-10-23 via dump_psd_layers): Ability layer bbox
+(26, 1229, 1188, 1734) → height 505 px over 3 lines → 168.3 px/line. darkmatter icon bbox
+(269, 1207, 360, 1300) → center_y=1253.5 → (1253.5-1229)/168.3 = 0.15 → line index 0 = `Friendly     gain ...`
+— correct. (The 2026-07-11 Lich King: Ability (23, 1773, 1176, 2285), 102.4 px/line, Undead icon center 2269 → line 4,
+`Minions inherit .` — correct then; that icon is hidden since 2026-10-22.)
 
 **Labeled hard sub-problems (do not hand-wave these):** (a) `num_lines` from `'\n'` in extracted
 text vs RENDERED lines differs when text soft-wraps — the estimate breaks on wrapped paragraphs;
 (b) mixed font sizes/leading break constant line_height; (c) mapping icon x to a character column
 inside a line needs font metrics psd-tools does not provide — per-line ordinal filling (line's
 icons sorted by x fill the line's gaps in order) is the tractable compromise; (d) last-line icons
-can center below the layer bbox (clamp needed — Lich King's icon bottom, 2299, already exceeds
-layer y2=2285).
+can center outside the layer bbox (clamp needed — the 2026-07-11 Lich King's icon bottom, 2299, exceeded layer
+y2=2285; Nebulous Precipice's icon top, 1207, sits above layer y1=1229).
 
 **Predicted numbers, stated before running:** a sandbox sweep with bbox-anchored injection
 produces stored abilities byte-identical to today for every card EXCEPT ones independently
@@ -481,18 +503,18 @@ cannot currently say "blank on purpose" without a hardcoded name.
 |---|---|---|
 | Shadow Duelist | In ABILITY_EXCLUSIONS with text from its hidden Ability layer (`Heals the creature this is summoned on by 2 HP...`); the PNG prints no ability | Done 2026-10-22: only printed text counts (hidden Ability layers only when relaid, `_relaid`), so it parses to "" and the entry stays (live). Method A: 812 PSDs, 1 difference (this card) |
 | Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Re-certify individually, or take the structural candidate below |
-| Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid), NOT in the list → they fire `ABILITY TEXT NOT FOUND` in every force-sweep report | The exclusion treadmill live: adding 3 names is the anti-goal. Take the structural candidate |
+| Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid); NOT in the list until 2026-10-21, so they fired `ABILITY TEXT NOT FOUND` in every force-sweep report | Added to ABILITY_EXCLUSIONS in e4e0a58 (2026-10-21): the exclusion treadmill live, 3 names of registered debt (18 → 21). The structural candidate below removes them with the rest |
 | Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fires 4 NOT FOUND problems per force sweep | Unclassified — run the recipe (step 3 on its `Darks`/`Bars` groups) before theorizing |
 | The 5 EXCESSIVE_STAT_EXCLUSIONS (DONE 2026-10-21) | Cards whose summed stat digits exceed 10 | The list is gone: a stat above 10 is STATS TOO HIGH unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20, Royal Eradicator Main Cannon atk 12: data, not code); the canonical encoding above 10 is a top row 10 plus a bottom row N-10 |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
-`ability == ""` with `ability is None` (`not card.ability`, psd_parser.py:993 as of 2026-10-20). The parser
+`ability == ""` with `ability is None` (`not card.ability`, in `CardValidator.validate`, psd_parser.py:1101-1104 as of 2026-10-23). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
 `None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
-card; only `None` (or absence of the layer) is a problem. **Predicted effect:**
-ABILITY_EXCLUSIONS 18 → 0 (17 blank + 1 stale), the 3 WoW minions stop firing, re-validation
-problems 5 → 2 (`20 Creature Types`, `Computer Virus`), empty-string abilities stays 20 and becomes
-the watched metric. **Stated risk:** a card whose ability text is accidentally deleted (layer kept,
+card; only `None` (or absence of the layer) is a problem. **Predicted effect (2026-10-23):**
+ABILITY_EXCLUSIONS 21 → 0 (20 blank + Shadow Duelist, blank after its re-parse), re-validation problems stay 1
+(`Computer Virus`), empty-string abilities stays 20 (21 after Shadow Duelist's re-parse) and becomes the watched
+metric. (On 2026-07-11 the prediction was 18 → 0 and re-validation 5 → 2.) **Stated risk:** a card whose ability text is accidentally deleted (layer kept,
 text emptied) goes silent. Mitigation is measurement, not a name list: the scoreboard tracks the
 empty-ability count, and diff_stats flags any card whose ability transitions non-empty → empty at
 sweep time — a reviewer gate in Phase 4. Route through change-control like everything else.
@@ -511,7 +533,7 @@ those gates, as of 2026-07-11:
    N grows.
 2. **Sandbox sweep gate (remote mode, force_update=True, unchanged upstream):** diff_stats pre vs
    post → `0/0/0`; old_stats unchanged (since 2026-10-20 history is appended only when a PSD's blob
-   changed or the card moved); problem REPORT = exactly the current re-validation set (5 today; fewer only if your
+   changed or the card moved); problem REPORT = exactly the current re-validation set (1 on 2026-10-23; fewer only if your
    change predicted the specific disappearances).
 3. **Sandbox sweep gate (local traversal from branch `archive/local-update-stats`, copied into the sandbox; the option 1 fix is in since 2026-10-19):** Tier A/B numbers as
    predicted in option 1, after subtracting rows that the unchanged (HEAD) parser also produces
@@ -592,9 +614,9 @@ documented in autocroissant-failure-archaeology).
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`
   and for the cleanup line `grep -n "ability_text = sub" commands/psd_parser.py`
-- Exclusion sizes 18 + 5: the two awk commands in Gate 1c.
-- Scoreboard 813 cards / 1 stored problem / distribution / newest card: Gate 1a command.
-- Scoreboard 5 re-validation / 10 residual-gap / 20 empty: Gate 1e command.
+- Exclusion size 21 (2026-10-23; 18 + 5 on 2026-07-11): the one awk command in Gate 1c.
+- Scoreboard 818 cards / 0 stored problems / distribution / newest card: Gate 1a command.
+- Scoreboard 1 re-validation / 10 residual-gap / 20 empty: Gate 1e command (fork venv).
 - Goldens 3/3 byte-equal: Gate 1d command. Per-card golden output:
   `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py <psd>` on each
   of the three golden paths.
@@ -628,3 +650,10 @@ documented in autocroissant-failure-archaeology).
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-22 (data build): `_psd_changed`, `_populate_types_from_local` and the force_update default's greps re-pointed to commands/card_data.py (the traverser's code moved there, uncompiled).
+
+2026-10-23 (docs drift): ABILITY_EXCLUSIONS is 21 (e4e0a58 added the three WoW minions: a scoreboard row notes it as
+registered debt), Gate 1c prints 21 and the cross-check `21`; a 2026-10-23 scoreboard row (818 | 0 | 1 | 21 | — | 20 |
+10 | 3/3) with the Gate 1a/1b/1e expectations; the Option 4 row and the structural candidate's prediction (21 → 0;
+re-validation stays 1); font adoption from `psd_details.json` (275 stoogedings PSDs; icons tokens 45 / mixed 230 /
+images 470 / none 68); the Phase 2 worked example and Option 3's numbers moved to Nebulous Precipice (The Lich King
+is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-pointed.

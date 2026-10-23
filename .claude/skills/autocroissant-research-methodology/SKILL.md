@@ -115,8 +115,9 @@ What this looks like here, concretely:
 
 - **Golden-card expectations recorded before re-parses.** The certified expected values (Mini
   Doomer: minion, 2 stars, hp5/def2/atk5/spd5, ability ends "(BOT) Die."; The Freezer: ability
-  byte-identical to its stats.pkl entry; The Lich King: 1 gap vs 1 type → "Minions inherit
-  [undead].") exist precisely so a parser experiment starts from a written prediction. (Values
+  byte-identical to its stats.pkl entry; The Lich King: "Minions inherit [undead]." — read from a font token
+  since 2026-10-22, 1 gap vs 1 icon before; the gap path's example is now Nebulous Precipice, 1 gap vs 1 type →
+  "Friendly [darkmatter] gain ...") exist precisely so a parser experiment starts from a written prediction. (Values
   here are snapshots of 2026-07-11 — the canonical current expected values, full inventory, and
   certification live in autocroissant-validation-and-qa §3; if one stops matching, check there
   before assuming a regression.) Scripts: autocroissant-diagnostics-and-tooling.
@@ -190,10 +191,10 @@ safe/read-only and run from the repo root; `$S` = `.claude/skills/autocroissant-
 |---|---|---|---|
 | 1 | Mini Doomer (golden) | Multi-type injection + minion stats/stars | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd` |
 | 2 | The Freezer (golden) | Types at line START and multi-line gaps — the exact class 0490195 (2026-01-24, "types at beginning/end of ability not being injected") existed for; ability must stay byte-identical | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/"Field/1 Stars/The_Freezer.psd"` |
-| 3 | The Lich King (golden) | Single small gap + bbox prune threshold | `python3 $S/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"` |
-| 4 | The 21 exclusion-list cards (ABILITY_EXCLUSIONS, psd_parser.py:950-972; the 5 EXCESSIVE_STAT_EXCLUSIONS went on 2026-10-21, replaced by `allow_high_stats` in Card Edits.json) | Each is a documented rule-breaker; "cleaner" mechanisms reliably re-break one | Sandbox sweep; problem output must not grow (procedure: validation-and-qa) |
-| 5 | One rulebook page | Rulebook takes ANY text layer as ability (no layer named "ability"); also "20 Creature Types" (MISSPELT TYPE: tornado) must remain the ONLY *pickled* (parse-time) problem — the full-validation baseline is 5, per autocroissant-validation-and-qa §2's two-surface distinction | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` — expect type rulebook, ability starting "TABLE OF CONTENTS" |
-| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:257) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, card_data.py:42), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
+| 3 | The Lich King (golden) and Nebulous Precipice | Lich King: above-midline types beside an inline font token (since 2026-10-22); Nebulous Precipice: single small gap + bbox prune threshold (an icon layer) | `$P $S/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"` and `... "Field/3 Stars/Nebulous_Precipice.psd"` (`$P` = `~/.venvs/ac-py314-fork/bin/python`) |
+| 4 | The 21 exclusion-list cards (ABILITY_EXCLUSIONS, psd_parser.py:1056-1078; the 5 EXCESSIVE_STAT_EXCLUSIONS went on 2026-10-21, replaced by `allow_high_stats` in Card Edits.json) | Each is a documented rule-breaker; "cleaner" mechanisms reliably re-break one | Sandbox sweep; problem output must not grow (procedure: validation-and-qa) |
+| 5 | One rulebook page | Rulebook takes ANY text layer as ability (no layer named "ability"); and no *pickled* (parse-time) problem may appear (0 on 2026-10-23; "20 Creature Types" MISSPELT TYPE: tornado until its layer became wind) — the full-validation baseline is 1 (Computer Virus), per autocroissant-validation-and-qa §2's two-surface distinction | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/00_Table_of_Contents.psd` — expect type rulebook, ability starting "TABLE OF CONTENTS" |
+| 6 | One MDW card | MDW ability must stay `None` (psd_parser.py:273) — refutes any change that invents ability text (c7b3191's bug class). MDW is skipped by sweeps (EXCLUDE_FOLDERS, card_data.py:50), so only parse_one exercises it | `python3 $S/parse_one.py ~/Desktop/TTSCardMaker/MDW/cardback.psd` — expect type MDW, ability `<none>` (its NO ABILITY LAYER note is expected for a cardback) |
 
 If a proposed mechanism survives all six rows AND a sandbox sweep whose diff_stats output
 matches a written prediction (section 2), it has met the bar. Promotion itself (commit/push)
@@ -351,3 +352,5 @@ Maintenance rules:
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-22 (data build): the save-gate, counter and EXCLUDE_FOLDERS citations re-pointed to commands/card_data.py (the traverser's code moved there).
+
+2026-10-23 (docs drift): the Lich King expectation reads as the font-token case and Nebulous Precipice joins counter-case 3 for the gap path; ABILITY_EXCLUSIONS lines re-pointed; problem baselines 0 pickled / 1 full.

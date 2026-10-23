@@ -35,7 +35,17 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
-**Status 2026-10-22 (as built).**
+**Status 2026-10-23.** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
+migration landed with AutoCroissant main 8861696 (2026-10-22 20:50) and TTSCardMaker c0b6f2d7; the bot's cutover side
+(work/cutover-bot, step 8's code with `CARD_SYNC = False`) merged as 7b99438 and deployed with main 2ada357 on 2026-10-23
+10:36. **Step 7 started:** TTSCardMaker main 96d61368 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT`
+and `POSTS` off). At 11:18 no scheduled run had fired and the card repo had no `data` branch, so the first scheduled run
+creates it from AutoCroissant's latest PICKLE: check it is one pushed after the history-recovery run (step 7's
+precondition) and re-seed if not. The shadow runs to 2026-10-26 10:36 or 10 card pushes, whichever is later; then step 8
+(the owner swaps the reminders; `ACTIONS_TOKEN` is in the jetson's config.py since 2026-10-22). The open list is
+`docs/NEXT_SESSION_PLAN.md`.
+
+**Status 2026-10-22 (as built; superseded by the note above).**
 - **Steps 1-4 done and gated.** The builder is AutoCroissant work/data-build (ff47ad6). It passed both parity gates: legacy
   mode writes byte-identical pickles, and a full re-parse on the Mac shows 0 data-field differences.
 - **Steps 5, 6 and 9 built and reviewed, not landed.** AutoCroissant work/discord-writers (on work/data-build): /update_metadata,
@@ -274,7 +284,7 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    `cache-dependency-path: bot/requirements-card-data.txt`. Two virtual environments until one pin serves both:
    - the builder's: `pip install -r bot/requirements-card-data.txt`, which pins `psd-tools==1.25.0` (the jetson's and the
      goldens' version) plus fonttools and requests;
-   - the bake's: Python 3.12 with the psd-tools fork tag card-edits.yml installs today (`cards-20261022`), set up only when the
+   - the bake's: Python 3.12 with the psd-tools fork tag card-edits.yml installs (`cards-20261023` since 2026-10-23; `cards-20261022` when written), set up only when the
      run bakes. The builder moves to the fork with the goldens when the fork tag is installed on the jetson, and the second
      environment goes. Each environment's import closure is proven with `--help` before any stage.
 5. **Fonts:** the cache key is `card-fonts-$(git rev-parse HEAD:MDW/Fonts)`, the key card-edits.yml uses today, so the

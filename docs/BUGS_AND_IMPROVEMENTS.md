@@ -1,6 +1,6 @@
 # AutoCroissant — Known Bugs and Future Improvements
 
-Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20 and 2026-10-21. Detail, evidence and procedures
+Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21 and 2026-10-23. Detail, evidence and procedures
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
@@ -41,6 +41,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   TTSCardMaker a3451c8; the first whole-repo dispatch, run 39690899334, succeeded, job summary only; the font check's webhook secret). Owner: autocroissant-run-and-operate §7.
 - 2026-10-22: B8, a deleted PSD stays listed: every full run archives it in old_stats.pkl (tagged `archived`, restorable;
   never deleted, the owner's call) (10.31).
+- 2026-10-22/23: D2 (20_Creature_Types' `tornado` layer renamed `wind`, TTSCardMaker 100511d3; 0 pickled problem cards at
+  a7c310e); B9's blob half (0166948, 2026-10-21: a failed download or PSD drops the tree ETag, so the next run retries);
+  stale `tmp*.psd` left by a cut-off run are deleted at startup (`card_runner.sweep_temp_psds`, c0fc117).
 
 ---
 
@@ -50,17 +53,17 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 | # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
 |---|-----|-------|--------|---------------------------|--------------|
-| B9 | **A GitHub 5xx during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats`; a blob 5xx skips the card ("download failed") but the tree ETag is still recorded, so the next runs get a 304 and the card keeps its old parse until the card repo changes again. Pinned by `test_tree_5xx_raises_and_saves_nothing` and `test_blob_5xx_skips_the_card`. | `commands/card_data.py` `traverse_remote` (moved from repo_traverser.py 2026-10-22) | A card silently stays stale | Don't record the ETag when a blob failed; retry with backoff (with B7) | `autocroissant-architecture-contract` |
+| B9 | **A GitHub 5xx on the tree during /update_stats.** A tree 5xx raises `HTTPError` out of `update_stats` and saves nothing (pinned by `test_tree_5xx_raises_and_saves_nothing`). The blob half is fixed (0166948, 2026-10-21): a failed download or PSD sets `failed`, the run says "Could not download/read N ... the next /update_stats tries again" and drops the tree ETag (card_data.py:302-304; `test_blob_5xx_skips_the_card`). | `commands/card_data.py` `traverse_remote` (moved from repo_traverser.py 2026-10-22) | A run fails on a GitHub outage; the next one is normal | Retry the tree with backoff (with B7) | `autocroissant-debugging-playbook` §1 |
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
 
 | # | Issue | Evidence | Suggested action | Detail owner |
 |---|-------|----------|------------------|--------------|
 | D1 | **4 latent problem cards invisible in the pickled count.** stats.pkl stores only parse-time problems (count: 1); full re-validation reports 5: Computer Virus (all stats missing), Anubisath Guardian, Qiraji Soldier, Silithid (blank ability layers, June 2026 WoW batch). 2026-10-21: one card now: the user put Anubisath Guardian, Qiraji Soldier and Silithid into `ABILITY_EXCLUSIONS` (e4e0a58, 21 names); Computer Virus (a creature with no stat rows) remains. | Re-validation sweep, `autocroissant-validation-and-qa` baselines | Fix the four PSDs in TTSCardMaker (card content, not bot code) or certify as intentional | `autocroissant-validation-and-qa` §baselines |
-| D2 | **"20 Creature Types" rulebook page has a `tornado` misspelling** (layer name in `MISSPELT_CARD_TYPES`; the user, 2026-10-21: it is supposed to be `wind`). The single pickled problem card; waits for the PSD hold. | `inspect_pickle.py --problems` | Fix the PSD layer name in TTSCardMaker | `impossibility-cards-reference` §validation |
 | D3 | **Shadow Duelist** in `ABILITY_EXCLUSIONS` with ability text from a hidden layer. Closed 2026-10-22: hidden Ability layers count only when their words are printed (`_relaid`), so it parses to "" and the entry is live (it prints no ability). | Campaign burn-down census | Done; reaches stats.pkl with `/update_stats cards:Shadow Duelist` | `autocroissant-psd-extraction-campaign` Phase 3.4 |
 | D4 | **A second, never-reverted old_stats balloon** (`637698b`, 2025-11-25): ~26 unchanged cards breadth-archived in one sweep still pollute old_stats.pkl history. | Byte trace in archaeology; snapshot forensics | 2026-10-22: the first `/update_stats` after the deploy removes the duplicates itself (`card_history.dedupe`, since 2026-10-23 inside `card_data.clean_history`; 475 -> 460 versions on cb8fe54's pickles, starts carried in `version`). Check that PICKLE with `diff_stats.py --history` (2026-10-23: it diffs old_stats.pkl too: versions dropped or added, starts moved, archive tags). The website dates versions by that record only after TTSCardMaker work/version-dates (`analytics.when`): land it before the deploy (NEXT_SESSION_PLAN checklist 1). Owner notes: a card back after a deletion gap with the same data keeps its first start (as restore() does), so as_of and the site's over-time count it alive through the gap; a run folded into the current card can leave a later archived record before it (no row shows; nothing new) | `autocroissant-failure-archaeology` Entry 3 |
-| D6 | **No card uses the stoogedings font yet (0 of 813 PSDs).** About 45 PSDs (81 smart-object icon layers below the midline) still use image-layer icons, so they still depend on gap injection. Counting any layer kind gives 61 PSDs / 148 layers, some of them decoration rather than inline icons. | TTSCardMaker migration audit (2026-10-19) | Migrate them in TTSCardMaker (card content). The JSX prototype and its overlay-layer caveat are in the companion skill | `ttscardmaker-companion` |
+| D6 | **Icon-font adoption (re-measured 2026-10-23).** `psd_details.json` at the 05:00 run (813 PSD records, before batch B2's ~219 re-parses): 275 PSDs have text in stoogedings; the `icons` field reads tokens 45, mixed 230, images 470, none 68. The 470 `images` cards (and the image half of `mixed`) still depend on gap injection. (2026-10-19: 0 of 813.) | `psd_details.json` `icons` per record | Keep migrating in TTSCardMaker as cards are touched (the standardization batches: 242 cards on 2026-10-22, queue A, B2 0bc4c099 on 2026-10-23); `icons` is the measure | `autocroissant-psd-extraction-campaign` |
+| D7 | **BUG 2: an ability bake would delete an `Ability FX: ...` badge layer** (the gradient cards' style-less badge/token layer, queue A). The bake refuses those cards ("edit in Photoshop"; 18 badge layers, 19-20 cards with Miracle Matter and Monkey D Goofy). Owner (2026-10-22 ~23:20): the bake rebuilds the FX layers once colour glyphs land; colour glyphs landed 2026-10-23 (r6/r7), the rebuild is approved, not started. | docs/Future/UNBAKEABLE_CARDS_2026-10-23.md §2.15 | Rebuild the Ability FX layers from the new text's word boxes (text geometry + colour glyphs) | `autocroissant-run-and-operate` §7 Card bake |
 
 ### 1.3 OPEN — docs and cosmetics
 
@@ -181,11 +184,11 @@ One pass over every module, measured before and after, with no behavior change u
   accepts only `baked`/`refused`. 13 new tests (SSH fallback, 409, verdict skipped when the edit changed, Royal
   Eradicator's two-row atk, the `font` refusal on every fork run, import allowlist, workflow shapes).
 
-Not done in this pass (later; audits on `docs/Finished/optimization-pass-2026-10-20/`):
-- A repeat `on_ready` after a failed RESUME raises in `start()` and re-runs the inits;
-  `GIT_TERMINAL_PROMPT=0` / SSH BatchMode for the git calls; a failed blob still records the tree ETag (B9)
+Left over from that pass, all done since (audits on `docs/Finished/optimization-pass-2026-10-20/`):
+- Done since (2026-10-21, 778c2ce/b6ddf41/171c84b/0166948): a repeat `on_ready` runs no init and revives only failed loops;
+  `GIT_TERMINAL_PROMPT=0` / SSH BatchMode for the git calls; a failed blob no longer records the tree ETag (B9's blob half)
   (network-robustness.md items 8, 4, 5).
-- Lazy GitPython in update_bot; a `requests.Session` per download thread (network-speed-results.md).
+- Done 2026-10-21: lazy GitPython in update_bot; a `requests.Session` per download thread (github_api `_local`).
 - Done 2026-10-22: `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and
   `/delete_all_music` are admin only (tests/test_admin_gates.py; docs.md §1.6).
 

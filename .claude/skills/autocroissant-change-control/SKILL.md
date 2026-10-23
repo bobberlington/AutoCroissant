@@ -9,18 +9,20 @@ How changes get classified, gated, and shipped in this repo. AutoCroissant is a
 personal Discord bot with **no CI, no README** and only an offline pytest suite (`tests/`) — the rules below are the
 real safety system, and every one of them exists because something broke.
 Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits); re-verified 2026-10-20
-(HEAD 9fb3093, 207 commits), and after that day's optimization pass (working tree on 167f30a).
+(HEAD 9fb3093, 207 commits), after that day's optimization pass (working tree on 167f30a), and on 2026-10-23
+(main 2ada357, 635 commits: counts, line numbers, the deploy rules and the history recovery).
 
 **Jargon, defined once:**
 
-- **The pickles**: `stats.pkl` (card database, 813 cards), `old_stats.pkl` (archived
+- **The pickles**: `stats.pkl` (card database, ~818 entries on 2026-10-23: 770 cards incl. alt-art duplicates, 48 rulebook pages), `old_stats.pkl` (archived
   old card versions), `aliases.pkl` (name shortcuts). They ARE the database and they
   are **committed to git**. Constants `STATS_PKL` / `OLD_STATS_PKL` / `ALIAS_PKL` in
   `global_config.py:6-10`. Since 2026-10-21 `psd_details.json` (`DETAILS_JSON`, global_config.py:11; the
   website's per-card PSD facts, commands/psd_details.py) is treated like a pickle: committed, pushed in the
   PICKLE commit, kept local on a /pull conflict.
 - **PICKLE commit**: a commit containing only pickle files, message literally
-  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:28`).
+  `PICKLE`, produced by the bot itself via `/push` (`commands/update_bot.py:91`), or by `/pull` after a merge
+  that dropped a card from both pickles (the rescue, `_rescue_merged_cards`, update_bot.py:33-57, 2026-10-22).
 - **Dev machine**: where a human edits code and runs `git push`.
 - **Running host**: whichever machine currently runs the bot. Production is the Jetson
   (systemd `autocroissant.service`, Python 3.14 venv `~/venvs/autocroissant` since 2026-10-20); the owner's Mac at other times. It
@@ -34,8 +36,8 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 74 s, 356 tests on 2026-10-21; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the 813-card old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:22): the next `/update_stats` re-parses every card once (~813 downloads; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
-| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by `/update_stats` (`stats_db.save()`, `StatsDatabase` in card_models.py; every save is atomic under its pickle's lock since 2026-10-21, `card_models.save_pickle`). Since branch work/discord-writers (2026-10-22) `/update_metadata`, `/mass_replace` and `/alias` each make one commit to TTSCardMaker's `site/Card Edits.json` / `site/Card Authors.txt` (commands/discord_edits.py through `card_bake.land`; never a pickle in it), apply it in memory and save stats.pkl so a restart keeps it (the next `/update_stats` builds the same values); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
+| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: `git pull`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`. Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild. **Two deploy rules (2026-10-22/23 incidents):** never deploy between 05:00 and 05:40, when the 05:00 `/update_stats` (reminder d2664752) and the 05:30 `/push` (054b5933) run; and push main and deploy the jetson in one sitting, or the 05:30 `/push` merges the new `.py` files next to stale `.so` files and the next restart fails at import. A psd-tools fork tag change also means reinstalling the fork in the jetson venv (autocroissant-build-and-env §4) and re-pinning card-edits.yml, card-sync.yml and card-guards.yml in TTSCardMaker | The offline suite passes before every push: `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (1346 tests collected on 2026-10-23, several minutes; the fork-only tests run under `~/.venvs/ac-py314-fork`; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:23): the next `/update_stats` re-parses every card once (~812 PSDs; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
+| (b) Data (pickles) | stats.pkl, old_stats.pkl, aliases.pkl | Mutated ONLY by `/update_stats` (`stats_db.save()`, `StatsDatabase` in card_models.py; every save is atomic under its pickle's lock since 2026-10-21, `card_models.save_pickle`). Since 2026-10-22 (the Discord writers, on main) `/update_metadata`, `/mass_replace` and `/alias` each make one commit to TTSCardMaker's `site/Card Edits.json` / `site/Card Authors.txt` (commands/discord_edits.py through `card_bake.land`; never a pickle in it), apply it in memory and save stats.pkl so a restart keeps it (the next `/update_stats` builds the same values); committed ONLY by `/push` or `/update` as a `PICKLE` commit | **diff_stats.py review before every pickle push** (see below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker and push THERE; this repo only re-parses via `/update_stats` (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the pickle gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
@@ -44,7 +46,7 @@ and code changes in the same commit** — rationale in the next section.
 
 ## The self-update machinery (what /push, /pull, /update actually do)
 
-All in `commands/update_bot.py` (registered in `main.py:176-210`). **The canonical
+All in `commands/update_bot.py` (registered in `main.py:189-230`). **The canonical
 step-by-step anatomy — every message each command prints, the failure table, the
 rebase fallback, and the restart mechanics — lives in autocroissant-run-and-operate
 §5.** What change control needs you to know:
@@ -53,15 +55,17 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
   (`aliases.pkl stats.pkl old_stats.pkl psd_details.json`), message literally `PICKLE`, then
   `pull --rebase --autostash` onto new code (since 2026-10-20) and pushes, including a leftover
   unpushed PICKLE commit; "already up to date" only when nothing is ahead of origin.
-- **/pull** → `git_pull()` (update_bot.py:50-118): fetch + merge, never a reset (its description
+- **/pull** → `git_pull()` (update_bot.py:113-190): fetch + merge, never a reset (its description
   said "hard reset" until 2026-10-20; archaeology 10.20). On merge **CONFLICT** it auto-resolves per
   file — **pickles → `checkout --ours` (running host's data wins); everything else →
   `checkout --theirs` (remote dev-machine code wins)** — committed as an
-  `AUTO-RESOLVE: ...` merge commit.
-- **/update** → `update_bot()` (update_bot.py:139-164): stops the three send/edit
-  queue loops first (main.py:206-208), then `/push` + `/pull` + restart. With
-  `force_reset:True` it instead runs `git reset --hard origin/main`
-  (update_bot.py:121-136) and restarts.
+  `AUTO-RESOLVE: ...` merge commit. After any merge (clean or auto-resolved), when the file-by-file pickle merge
+  dropped a card from both pickles, `_rescue_merged_cards` (update_bot.py:33-57, 9ae19f9, 2026-10-22) puts it back into
+  old_stats, says `Kept in old_stats (the merge dropped them): ...` and commits a PICKLE. With `CARD_SYNC` on there is no
+  rescue and conflicts take the remote side.
+- **/update** → `update_bot()` (update_bot.py:212-240): stops the four loops first (main.py:225-228), then
+  `/push` + `/pull` + restart. With `force_reset:True` it instead runs `git reset --hard origin/main`
+  (`git_reset_hard`, update_bot.py:193-208) and restarts.
 
 ### What the merge strategy implies
 
@@ -81,7 +85,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
    ONLY when the reverted commit touches pickles alone, and only with the diff_stats.py
    gate re-run on the result before any push. Step-by-step recovery procedure:
    autocroissant-debugging-playbook §1.
-3. **`force_reset:True` is dangerous** — main.py:199 literally labels it
+3. **`force_reset:True` is dangerous** — main.py:218-219 literally labels it
    `(dangerous!)`. It skips the pickle push entirely and hard-resets to
    `origin/main`, discarding ALL local state: uncommitted code edits AND every
    pickle change since the last successful /push (e.g. an afternoon of
@@ -112,7 +116,13 @@ deleted, mass path changes, type counts shifting, hundreds of cards whose only c
 `timestamp` (the signature of a sweep that used local mtimes, docs/BUGS_AND_IMPROVEMENTS.md B6: only possible from
 the archived traversal on branch `archive/local-update-stats` since local mode was archived on 2026-10-20), and old_stats.pkl
 growing more than about 10% in one run (diff_stats.py's `-- history --` section, since 2026-10-23: versions added
-and dropped per name, starts moved, archive tags). A version is archived only when its PSD blob changed or the
+and dropped per name, starts moved, archive tags). **The one expected exception:** growth explained by a
+`History: N versions recovered from the bot's PICKLE commits ...` line. The first `/update_stats` after the 2026-10-23
+10:36 deploy (2ada357) does that recovery once; the rehearsal predicts "History: 698 versions recovered from the bot's
+PICKLE commits (553 cards), 171 starts moved earlier; 64 cards gone before archiving archived ..." and old_stats growing
+from 446 to about 1,155 versions (354 to 670 names), on top of about 219-236 re-parsed PSDs (the batch-B2 cards). Read it
+with `diff_stats.py --history`; to undo it, revert that one PICKLE commit (pickle-only). The recovery needs the bot's
+full clone (BOT_CLONE, else its own checkout) and HISTORY_CLONE, and skips quietly without them. A version is archived only when its PSD blob changed or the
 card moved AND its data changed (2026-10-22: the same data from a new blob is no version, `card_history.same_data`),
 so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all, and a re-saved PSD neither. Interpretation guide and the other
 four scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance
@@ -137,7 +147,8 @@ left by a hard kill is gitignored and safe to delete. Story: autocroissant-failu
 
 Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-20 (53db8ee
 added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`/`*.dll` patterns;
-05c643e dropped the `models/` lines with the AI code; repo_history.json and type_emojis.json lines added 2026-10-20 shifted the rest by 6):
+05c643e dropped the `models/` lines with the AI code; repo_history.json and type_emojis.json lines added 2026-10-20 shifted the rest by 6)
+and 2026-10-23 (the font and card-data lines shifted the rest again):
 
 | Path | .gitignore line | Why |
 |---|---|---|
@@ -145,11 +156,14 @@ added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`
 | `.ssh/` | 37 | Credentials, same reasoning |
 | `reminder.pkl` | 39 | Volatile per-host scheduling state (see above) |
 | `*.pkl.tmp` | 41 (`reminder.pkl.tmp` since 2026-10-19; widened 2026-10-21) | Transient file of an atomic pickle save (reminder.pkl; stats, old_stats and aliases since 2026-10-21). Normally renamed away within milliseconds; a hard kill can leave one behind — delete it |
-| `repo_history.json`, `.tmp` | 43-44 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
-| `type_emojis.json`, `.tmp` | 46-47 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
-| `.claude/settings.local.json` | 54 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
-| `music/` | 50 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
-| `*.log`, `logs/`, `*.csv`, `*.txt` | 69-72 | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
+| `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
+| `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
+| `font_names.json`, `.tmp` | 51-52 (2026-10-21) | The `/fonts` cache: blob sha -> the fonts a card PSD asks for or a font file supplies (commands/font_check.py) |
+| `fonts_cache/` | 54 (2026-10-21) | A copy of the card repo's MDW/Fonts, refreshed by tree sha, where there is no checkout: the bake, psd_details and `/fonts` read it |
+| `card_data/` | 56 (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`) after the cutover (commands/card_sync.py) |
+| `.claude/settings.local.json` | 63 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
+| `music/` | 59 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
+| `*.log`, `logs/`, `*.csv`, `*.txt` | 78-81 (`requirements-dev.txt` and `requirements-card-data.txt` re-included at 82-83) | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
 | `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 7, 14-15, 19-22, 28 | Cython build artifacts; see autocroissant-build-and-env for the stale-.so trap |
 
 **Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` is
@@ -160,7 +174,7 @@ deliberate change-control decision: either force-add it or (better) amend
 
 ## Checklist: add a new slash command
 
-Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10-20).
+Worked example to imitate: the `/update_stats` block at main.py:405-424 (2026-10-23; its admin gate applies only with `CARD_SYNC` on).
 
 1. **Write the worker function** in the right `commands/*.py` module (query logic in
    query_card.py, parsing in psd_parser.py, the /update_stats command in repo_traverser.py (its traversal is
@@ -189,21 +203,22 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    wrapper — that is the convention every block follows; see "looks safe but isn't"
    for why you must not delete or fold it.
    Admin-only commands start with the `if lacks_admin(interaction): ... return`
-   block (copy it from /push, main.py:189-191). The newest example of a whole admin
-   command block is `/bake_cards` (main.py:399-412, added 2026-10-21; its worker is the
-   uncompiled commands/card_runner.py), before it `/sync_emojis` (main.py:713-726, 2026-10-19).
+   block (copy it from /push, main.py:207-209). The newest example of a whole admin
+   command block is `/bake_cards` (main.py:436-451, added 2026-10-21; its worker is the
+   uncompiled commands/card_runner.py), before it `/sync_emojis` (main.py:765-778, 2026-10-19).
 3. **Add `@app_commands.describe`** for every parameter. Description wording and
    style: **autocroissant-docs-and-style**. Note Discord quirks that already shaped
    signatures here: big integers (guild/user IDs) are passed as `str` because Discord
    ints cap around 15 digits.
 4. **Add a help entry** in `commands/help.py`: pick the right dict
-   (`general_commands`:6, `text_commands`:29, `card_commands`:42,
-   `stats_commands`:79, `music_commands`:112), key format
+   (`general_commands`:7, `text_commands`:30, `card_commands`:43,
+   `stats_commands`:86, `music_commands`:121), key format
    `"/my_command <required> [optional]:"`, value = description string.
-   `print_help` (help.py:136) dispatches on the category word.
+   `print_help` (help.py:180) dispatches on the category word. A sixth dict, `card_sync_commands` (help.py:146),
+   holds the cutover's overrides by key: a help entry whose text changes with `CARD_SYNC` needs its override there.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the Discord writers' `discord_edits`, and the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff` (2026-10-22: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the Discord writers' `discord_edits`, the Discord archive's `discord_archive` and `discord_match`, the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, and `txt2_repair` (2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
    sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: its list is
    `card_check.SPARSE_FILES`; card-guards.yml: its list is `card_guards.SPARSE_FILES`, 17 files including `psd_edit`,
@@ -212,19 +227,18 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; five of the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py,
    test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
-   tts-save.yml's has none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
-   (setup.py:39) applies: **no negative indexing anywhere in the file** — use
-   `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
-   that is already declared (declare it once; the management.py incident,
-   autocroissant-failure-archaeology Entry 10.5). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
+   tts-save.yml's has none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
+   are on since 2026-10-23 (setup.py:38-39), but still write `x[len(x)-1]` there (rule 1); the Cython 3.3 rules still
+   apply: it rejects re-annotating a variable that is already declared (declare it once; the management.py incident,
+   autocroissant-failure-archaeology Entry 10.5), and type hints coerce (see "looks safe but isn't"). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
    registration (that is why update_bot.py and utils.py sit in EXCLUDE_FILES,
    setup.py:9-18).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
-   `on_ready` (main.py:107-128) records every command in `slash_registry` (which is
+   `on_ready` (main.py:115-144) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
-   (`sync_guild_commands`, main.py:99-103). If the command does not appear after
-   restart, run `/sync_global` (main.py:705). Client-side, Discord may need a
+   (`sync_guild_commands`, main.py:102-110). If the command does not appear after
+   restart, run `/sync_global` (main.py:757). Client-side, Discord may need a
    reload before new commands show up.
 7. **Verify** by invoking the command in Discord; do not run `python3 main.py`
    casually to test — starting the bot connects it to the live guilds
@@ -275,16 +289,17 @@ ignored — read the story before you decide the rule doesn't apply to you.
   first *invoked*, not at startup — so it survives a smoke test and dies in
   production. Keep rebind-then-decorator, one block per command.
 - **Adding a new `.txt`/`.csv`/`.log` file and assuming git tracks it.** The
-  gitignore globs (lines 69-72 as of 2026-10-20) silently exclude it (see the trap note above).
+  gitignore globs (lines 78-81 as of 2026-10-23) silently exclude it (see the trap note above).
 - **Adding torch/diffusers or other AI deps to `requirements.txt`.** That breaks
   non-negotiable #4 (AI lives only on `archive/ai-generation`).
 - **Hand-committing pickles from a dev machine**, or `git add -A` after a run that
   touched them. Your data loses to `--ours` on the running host, and you have broken
   the PICKLE-only revert property (see merge-strategy implications).
-- **Importing card classes or `stats_db` from `commands.card_models` (or the other split modules) in
-  query_card or new code.** Import them from the `commands.psd_analyzer` facade until every host has rebuilt:
-  a stale monolithic psd_analyzer `.so` next to the new `.py` files would otherwise give two `stats_db`
-  objects (autocroissant-architecture-contract, lazy-import cycle breaks).
+- **Importing card classes from the split modules in code outside the card modules.** Code outside the card modules
+  (commands/card_*.py, psd_parser, psd_analyzer, query_card) imports card classes from the `commands.psd_analyzer`
+  facade. The old reason (a stale monolithic psd_analyzer `.so` giving two `stats_db` objects) is gone: every deploy
+  rebuilds every `.so`, and query_card itself takes `stats_db` from card_models since 2026-10-21
+  (autocroissant-architecture-contract, lazy-import cycle breaks).
 - **Letting a test or script write the live pickles.** `tests/conftest.py`'s `pickles_untouched` fixture
   hashes stats.pkl, old_stats.pkl, aliases.pkl and reminder.pkl around the run and fails it on any change;
   keep new tests behind it (sandbox copies only).
@@ -296,7 +311,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
   keeps the old entry, so old tokens keep parsing while the card shows letters. Add an alias
   instead (ttscardmaker-companion §1.7).
 - **Turning a pixel miss back into a refusal** in the bake (`psd_edit.baseline`, `gate_idempotence`) or the push guards'
-  PNG export (`png_export`, G6; branch work/push-guards). Since 2026-10-23 (owner: "let's not refuse bakes for failing
+  PNG export (`png_export`, G6; landed 2026-10-23, off until the TTSCardMaker repo variable CARD_GUARDS is set). Since 2026-10-23 (owner: "let's not refuse bakes for failing
   the pixel check anymore. rather, we should improve psd-tools and fix these as we come across them") a box past the
   parity bar is baked or written and its miss told (report, commit note or comment); only `psd_edit.PARITY_FLOOR` (more
   than 25% of the box's pixels past 24; a card the guards draw whole, new or beside its PNG, per text and stat box, not
@@ -340,19 +355,21 @@ and update this file.
 | Gitignore coverage (config.py, .ssh, reminder.pkl, music, txt/csv/log) | `git check-ignore -v config.py reminder.pkl music/x a.txt a.csv a.log` |
 | Tracked pickles + grandfathered requirements.txt | `git ls-files '*.pkl' '*.txt'` |
 | Incident hashes and their diffs | `git show --stat cca0aaf eb9aa84 366c8d9 f7c915c` ; `git show dd800bc` ; `git show 3bbaa2b 4bcee6b` |
-| Cython include/exclude lists and wraparound=False | `grep -n "wraparound\|INCLUDE_FILES\|EXCLUDE_FILES" setup.py` |
+| Cython include/exclude lists; boundscheck and wraparound on (2026-10-23) | `grep -n "wraparound\|boundscheck\|INCLUDE_FILES\|EXCLUDE_FILES" setup.py` (9, 21, 38-39) |
 | to_thread passes coroutines through; queue_* helpers | `grep -n "def to_thread\|def queue_" commands/utils.py` |
 | /update_stats is remote-only; local mode archived (since 2026-10-20) | `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | Rule 6 history: local-path fix lives on in the archive branch | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `git grep -c "removeprefix(" archive/local-update-stats -- archive/local_update_stats.py` (no output: the word only appears in the header's history note) |
 | Stored reminders drop retired options | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py` |
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
-| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (6, 29, 42, 79, 112; 136) |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (417 passed, 24 fork-only skips on 2026-10-21 with tests/test_card_check.py) |
+| Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` (7, 30, 43, 86, 121, 146 card_sync_commands; 180) |
+| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (1346 collected on 2026-10-23; the release gates of 2026-10-22/23 read 882 passed / 61 skipped and 1161 passed / 2 failed before the TTSCardMaker push) |
+| Deploy window and the one-sitting rule | memory `jetson-server`; reminders d2664752 (05:00 /update_stats) and 054b5933 (05:30 /push) on the jetson (`/list_reminders`) |
+| The /pull rescue | `grep -n "_rescue_merged_cards\|Kept in old_stats\|commit('-m', 'PICKLE')" commands/update_bot.py` (33, 56, 68, 91) |
 | Pickle filename constants | `grep -n "PKL" global_config.py` |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
-| Atomic locked saves (B10) | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock\|save_pickle(" commands/query_card.py`; `git check-ignore -v stats.pkl.tmp` (.gitignore:41 `*.pkl.tmp`) |
+| Atomic locked saves (B10) | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (22, 18, 19); `grep -n "^_alias_lock\|save_pickle(" commands/query_card.py`; `git check-ignore -v stats.pkl.tmp` (.gitignore:41 `*.pkl.tmp`) |
 
 2026-10-21: atomic locked pickle saves (B10) added to class (b) and the pickle discipline; `*.pkl.tmp` row; line numbers re-pointed.
 
@@ -370,3 +387,11 @@ and update this file.
 `card_data.SPARSE_FILES` (card-sync.yml, planned) beside the Actions' sparse lists.
 
 2026-10-22 (card-sync.yml landed): step 5 no longer calls card-sync.yml planned (on TTSCardMaker main, dispatch only) and counts its sparse-list test, test_card_data.py, among the five.
+
+2026-10-23 (docs drift): ~818 entries; the class (a) gate counts 1346 tests and names the two deploy rules (never
+05:00-05:40; push and deploy in one sitting) and the fork-tag step; the pickle gate's one expected exception (the
+one-time history recovery, undone by reverting its PICKLE); the /pull rescue in the PICKLE definition and the /pull
+bullet; the never-commit table re-pointed with font_names.json, fonts_cache/ and card_data/; step 4 names
+`card_sync_commands`; step 5 says bounds checks and wraparound are on and lists card_sync, discord_archive,
+discord_match and txt2_repair; the facade-import bullet narrowed; the push guards landed (off until CARD_GUARDS); every
+main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-pointed at 2ada357.

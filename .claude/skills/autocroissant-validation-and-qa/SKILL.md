@@ -46,10 +46,10 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 |---|---|---|---|---|
 | 1 | **Byte-identical golden-card parses** | `parse_one.py` / `gap_trace.py` output diff before vs after; ability text byte-compared to the stats.pkl entry | Golden inventory table in section 3 | The parser produces exactly the same output on cards known to exercise the hard paths. Byte-level: even one changed space in ability text is a real change (whitespace is load-bearing — the gaps are the type-injection signal; see the 2026-02-08 saga, 1c26747 through 3bbaa2b/4bcee6b) |
 | 1b | **Old-vs-new parser equality over EVERY PSD** (added 2026-10-19) | section 4.1 method A: import the git-HEAD `psd_analyzer` and the working-tree one side by side, parse all card PSDs with both, compare every field | 2026-10-19: 813 PSDs, **0 differences** (the icon-font change); 2026-10-21: 813 PSDs, **159 differences, every one intended** (157 `display_name` from the printed title, `STATS TOO HIGH` on Sonic and Royal Eradicator Main Cannon) | The parser change is behavior-neutral on today's corpus, with no pickles, no network, no API budget. Stronger than a sweep diff for "did my code change anything", because it isolates the code from upstream PSD edits |
-| 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (about 13 s; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-21: **352 passed**, 18 fork-only skips (310 earlier that day, 238 on 2026-10-20, 163 before that day's optimization pass) | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`, `card_data.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
-| 2 | **diff_stats deltas on a full sweep** | sandbox sweep, then `diff_stats.py before.pkl after.pkl` | HEAD vs working today: `813/813, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
-| 3 | **Validator problem-card count** (must not increase) | pickled surface: `inspect_pickle.py --problems`; full surface: re-validation one-liner (section 2) | pickled: **exactly 1** ("20 Creature Types" — `MISSPELT TYPE: tornado`); full validation: **exactly 5** (the 1 above + 4 computed-only, listed in section 2) | Extraction quality did not regress anywhere the validator can see |
-| 4 | **Exclusion-list size** | count `CardValidator.ABILITY_EXCLUSIONS` (`EXCESSIVE_STAT_EXCLUSIONS` was deleted on 2026-10-21: a stat above 10 is `STATS TOO HIGH` unless the card's Card Edits.json entry sets `allow_high_stats`, as Sonic's and Royal Eradicator Main Cannon's do) | **18** ABILITY_EXCLUSIONS (psd_parser.py:950 on 2026-10-21), no stat list | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
+| 1c | **Offline pytest suite** (added 2026-10-20) | `/Users/michaelsrouji/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (several minutes on 2026-10-23; the fork-only tests run under `~/.venvs/ac-py314-fork`; no network, no config.py needed, never writes the pickles: `conftest.py` hashes them around the run) | 2026-10-23: **1346 collected** (the landing gates read 882 passed / 61 skipped on 2026-10-22 and 1161 passed / 2 failed before the TTSCardMaker push on 2026-10-23); 352 passed on 2026-10-21, 238 on 2026-10-20 | 38 parser goldens in `tests/goldens/` (the 3 certified ones included; a golden whose PSD changed upstream skips; re-pin with `tests/make_goldens.py` only after an accepted parser change), plus CardEdits, duplicates, the creature split, update_stats on a fake GitHub, repo_history, type emojis, the TTS save, reminder times and message splitting all still behave as today; since the optimization pass also the dispatch/edit loops and help coverage (`test_robustness.py`), the facade and pickle contract of the psd_analyzer split (`test_split_contract.py`) and the search/commit-lookup/ETag speedups against brute force (`test_network_speed.py`). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 38 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `repo_traverser.py`, `card_data.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
+| 2 | **diff_stats deltas on a full sweep** | sandbox sweep, then `diff_stats.py before.pkl after.pkl --history before_old.pkl after_old.pkl` | HEAD vs working on 2026-10-23: `818/818, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
+| 3 | **Validator problem-card count** (must not increase) | pickled surface: `inspect_pickle.py --problems`; full surface: re-validation one-liner (section 2) | 2026-10-23: pickled **0**; full validation **exactly 1** (Computer Virus, listed in section 2). 2026-07-11: 1 and 5 | Extraction quality did not regress anywhere the validator can see |
+| 4 | **Exclusion-list size** | count `CardValidator.ABILITY_EXCLUSIONS` (`EXCESSIVE_STAT_EXCLUSIONS` was deleted on 2026-10-21: a stat above 10 is `STATS TOO HIGH` unless the card's Card Edits.json entry sets `allow_high_stats`, as Sonic's and Royal Eradicator Main Cannon's do) | **21** ABILITY_EXCLUSIONS (psd_parser.py:1056 on 2026-10-23; 18 until e4e0a58 added the three WoW minions on 2026-10-21), no stat list | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
 | 5 | **Eyeballing Discord output** | run a command, look at the message | none | Weakest. Catches only gross breakage; never sufficient alone. Acceptable as a final smoke check AFTER 1–4 pass, never as a substitute |
 
 If evidence levels conflict, the stronger level wins. A change that "looks great" in
@@ -86,7 +86,7 @@ kinds are appended to it (line numbers as of 2026-10-19):
 `inspect_pickle.py --problems` counts exactly this channel.
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never pickled.**
-`CardValidator.validate(card)` (psd_parser.py:975-1011 on 2026-10-21) builds a fresh local list from
+`CardValidator.validate(card)` (psd_parser.py:1081-1117 on 2026-10-23) builds a fresh local list from
 computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1014) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
@@ -99,23 +99,23 @@ cards to the sweep's output, so a validator change shows there first (autocroiss
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
-`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1005-1008).
+`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1111-1114).
 And `validate()` only runs during a sweep when `output_problematic=True`
-(card_data.py:509-510). Consequence: a sweep run with `output_problematic=False`
-would leave `NO ABILITY LAYER` in the pickled problems of the 18 excluded cards,
-inflating the Channel-A count by up to 18 with zero real regression. **Always sweep with
+(card_data.py:669-670). Consequence: a sweep run with `output_problematic=False`
+would leave `NO ABILITY LAYER` in the pickled problems of the 21 excluded cards,
+inflating the Channel-A count by up to 21 with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
 
-Certified baselines (both measured 2026-07-11):
+Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values in brackets):
 
-- **Channel A (pickled): exactly 1 problem card.** (The PSD was fixed upstream on 2026-10-22, TTSCardMaker 100511d3:
-  its `tornado` layer is now `wind`; the next sweep drops this to 0 and adds `wind` to the page's types.)
+- **Channel A (pickled): 0 problem cards** [1: 20 Creature Types, `MISSPELT TYPE: tornado`; the PSD was fixed upstream
+  on 2026-10-22, TTSCardMaker 100511d3: its `tornado` layer is now `wind`].
   ```bash
   python3 $SCRIPTS/inspect_pickle.py --problems
-  # 20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']
+  # (prints nothing)
   ```
-- **Full validation (A+B over the whole DB): exactly 5 problem cards.** Read-only; no
-  sweep needed; safe to run anytime:
+- **Full validation (A+B over the whole DB): exactly 1 problem card** [5]. Read-only; no
+  sweep needed; safe to run anytime (psd-tools and pandas: `~/.venvs/ac-py314-fork/bin/python`):
   ```bash
   python3 -c "
   import sys; sys.path.insert(0, '.')
@@ -126,12 +126,10 @@ Certified baselines (both measured 2026-07-11):
   for n, p in sorted(bad.items()): print(' ', n, p)
   "
   ```
-  Output today: `20 Creature Types` (MISSPELT TYPE: tornado), `Computer Virus`
-  (HP/DEF/ATK/SPD NOT FOUND), and `Anubisath Guardian`, `Qiraji Soldier`, `Silithid`
-  (ABILITY TEXT NOT FOUND — all three are 2026-06 World of Warcraft additions whose
-  pickled `ability` is the empty string: an ability layer exists, so `NO ABILITY LAYER`
-  did not fire, but the extracted text is empty). These 4 computed-only cases are
-  known-open extraction issues, NOT noise — a fix that clears them is measurable progress.
+  Output on 2026-10-23: `Computer Virus` (HP/DEF/ATK/SPD NOT FOUND; the owner leaves it). On 2026-07-11 it also
+  listed `20 Creature Types` (MISSPELT TYPE: tornado) and `Anubisath Guardian`, `Qiraji Soldier`, `Silithid`
+  (ABILITY TEXT NOT FOUND — 2026-06 World of Warcraft additions whose pickled `ability` is the empty string); those
+  three joined ABILITY_EXCLUSIONS in e4e0a58 (2026-10-21), registered debt rather than a fix.
 
 **The acceptance gate is: neither count may increase.** A decrease is progress and must be
 explained (which card, which fix), then the baselines in this file get updated.
@@ -319,11 +317,11 @@ diff old_stats.pkl — it only handles stats-shaped pickles).
 
 ```bash
 cd /tmp/ac_sandbox
-python3 $S/inspect_pickle.py --problems      # Channel A: baseline exactly 1 (20 Creature Types / MISSPELT TYPE: tornado)
-# Channel A+B: run the full-validation one-liner from section 2 — baseline exactly 5
+python3 $S/inspect_pickle.py --problems      # Channel A: baseline 0 (2026-10-23; 1 on 2026-07-11)
+# Channel A+B: run the full-validation one-liner from section 2 — baseline exactly 1 (Computer Virus)
 ```
 
-Gate: pickled count ≤ 1 and full-validation count ≤ 5 (2026-07-11 baselines), and any
+Gate: pickled count ≤ 0 and full-validation count ≤ 1 (2026-10-23 baselines), and any
 DECREASE is attributed to your change on purpose. An increase = regression, full stop —
 either your change broke extraction on some card, or it surfaced a real pre-existing
 problem; in the second case the finding is valuable but the change still doesn't promote
@@ -455,11 +453,13 @@ Any ONE of the following, with no accepted explanation, means the change is reje
 
 - any golden-card byte-diff (`parse_one`/`gap_trace` before-vs-after; timestamp/author
   excluded per section 3);
-- any NEW problem card on either surface (pickled Channel A count > 1, or full-validation
-  count > 5, vs the 2026-07-11 baselines);
+- any NEW problem card on either surface (pickled Channel A count > 0, or full-validation
+  count > 1, vs the 2026-10-23 baselines);
 - any unexplained `diff_stats` row after a sweep (added, removed, or modified), or
-  unexplained `old_stats` version growth beyond 218 names / 223 versions;
-- any exclusion-list growth (ABILITY_EXCLUSIONS > 18; no stat list exists since 2026-10-21).
+  unexplained `old_stats` version growth beyond 354 names / 446 versions (a7c310e). The one explained exception: the
+  first run after the 2026-10-23 deploy recovers history from the bot's PICKLE commits (its `History: N versions
+  recovered ...` line; about 1,155 versions / 670 names expected; autocroissant-change-control, pickle gate);
+- any exclusion-list growth (ABILITY_EXCLUSIONS > 21; no stat list exists since 2026-10-21).
 
 The corresponding improvements (goldens fixed toward intended values, problem counts
 down, exclusion lists shorter) are how progress is measured — update the baselines in
@@ -495,19 +495,19 @@ re-verification below disagrees with this file, the repo wins; update this file
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
 | `update_stats` signature & line (59 since 2026-10-22; force_update=False; cards=""; no local options since 2026-10-20) (2026-10-20) | `grep -n -A4 "def update_stats" commands/repo_traverser.py` |
-| Exclusion-list size (18; no stat list) | `python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (18 False) |
-| Exclusion-list definition & line (950) (2026-10-21) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
+| Exclusion-list size (21; no stat list) | `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (21 False) |
+| Exclusion-list definition & line (1056) (2026-10-23) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
 | `PARSER_VERSION` (2) and its stamp, re-parse and ETag bypass (psd_parser.py:22, :352; card_data.py:220, :247) (2026-10-21) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |
 | validate() mutation of card.problems (947-949) (2026-10-20) | `grep -n "NO ABILITY LAYER" commands/psd_parser.py` |
-| validate() gated on output_problematic (card_data.py:509 since 2026-10-22; the archive has its own) (2026-10-20) | `grep -n "if output_problematic" commands/card_data.py` |
+| validate() gated on output_problematic (card_data.py:669 on 2026-10-23; the archive has its own) | `grep -n "if output_problematic" commands/card_data.py` |
 | Pickled problems key in to_dict (113) (2026-10-20) | `grep -n '"problem"' commands/card_models.py` |
 | Local-path fix present (method B precondition) (2026-10-20: moved to branch `archive/local-update-stats`) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115) |
 | Pickle paths cwd-relative | `grep -n "STATS_PKL" global_config.py` |
-| Channel-A baseline (exactly 1) | `python3 $SCRIPTS/inspect_pickle.py --problems` |
-| Full-validation baseline (exactly 5) | one-liner in section 2 |
-| DB shape (813 cards; 218/223 old_stats; newest entry) | `python3 $SCRIPTS/inspect_pickle.py` |
+| Channel-A baseline (0 on 2026-10-23) | `python3 $SCRIPTS/inspect_pickle.py --problems` |
+| Full-validation baseline (exactly 1) | one-liner in section 2 |
+| DB shape (818 cards; 354/446 old_stats; 2 archived; newest Clot White @ 2026-10-22, at a7c310e) | `python3 $SCRIPTS/inspect_pickle.py` |
 | Golden expected values | the three `parse_one.py` + one `gap_trace.py` commands in section 3 |
 | Freezer byte-equality vs stats.pkl | compare `parse_one` ability block to `python3 $SCRIPTS/inspect_pickle.py "The Freezer"` |
 | HEAD-vs-working diff clean (0/0/0) | `git show HEAD:stats.pkl > /tmp/stats_head.pkl && python3 $SCRIPTS/diff_stats.py /tmp/stats_head.pkl stats.pkl` |
@@ -554,3 +554,8 @@ bumped: re-parse those five with `/update_stats cards:...`. Miracle Matter's ico
 they never become types: a card fix, not a parser one. The trade-off: the 4-space gaps before its "Fire:", "Earth:" and
 "Ice:" were the only sign of those icons, and they go too, so the website and /query no longer show an icon was there
 (its blank icon-row lines stay; no validator checks gaps). Naming the layers, or stoogedings tokens, brings them back.
+
+2026-10-23 (docs drift): ABILITY_EXCLUSIONS 21 everywhere (row 4, the validate() side effect, the regression list,
+provenance); problem baselines 0 pickled / 1 full validation (Computer Virus); the suite row counts 1346 tests; row 2
+and the DB shape at a7c310e (818; 354/446) with the history recovery as the one explained old_stats growth;
+psd_parser.py and card_data.py citations re-pointed.

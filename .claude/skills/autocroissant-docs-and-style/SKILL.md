@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the five command dictionaries in commands/help.py (user-facing /help), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 52 registered commands as of 2026-10-21; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the command dictionaries in commands/help.py (user-facing /help; five categories plus the cutover's overrides), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 52 registered commands as of 2026-10-21; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
 ---
 
 # AutoCroissant docs and style
@@ -26,7 +26,7 @@ is **recorded, not fixed**. Fixing it is a real change: route it through
 
 | Doc | Where | Audience | Renders as |
 |---|---|---|---|
-| Help dictionaries | `commands/help.py` (five dicts) | Discord users running `/help` | Code-fenced message, split at 1950 chars |
+| Help dictionaries | `commands/help.py` (five category dicts + `card_sync_commands`) | Discord users running `/help` | Code-fenced message, split at 1950 chars |
 | Describe strings | `main.py` `@app_commands.describe(...)` on each command | Discord users typing a command | Grey hint text under each parameter in the Discord UI |
 | Skill library | `.claude/skills/*/SKILL.md` | Engineers and models working on the repo | Loaded on demand by trigger match |
 
@@ -39,15 +39,19 @@ they exist; these three surfaces are the ones with a maintenance contract.
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
-### 2.1 The five dicts
+### 2.1 The five dicts (and the cutover's overrides)
+
+Line numbers re-verified 2026-10-23 (help.py 207 lines). A sixth dict, `card_sync_commands` (help.py:146), holds the
+entries that change when `global_config.CARD_SYNC` is on, by key; `_with_card_sync` swaps them in at `/help` time. A help
+entry whose text changes with the cutover needs its override there.
 
 | Dict | help.py line | Entries (2026-10-21) | /help category |
 |---|---|---|---|
-| `general_commands` | 6 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
-| `text_commands` | 29 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
-| `card_commands` | 42 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 79 | 10 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts`, `/bake_cards` 2026-10-21) | `stats` |
-| `music_commands` | 112 | 17 | `music` |
+| `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
+| `text_commands` | 30 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
+| `card_commands` | 43 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
+| `stats_commands` | 86 | 10 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts`, `/bake_cards` 2026-10-21) | `stats` |
+| `music_commands` | 121 | 17 | `music` |
 
 Total: 53 keys, 52 real commands documented (all of them, 2026-10-21). The `"Query Syntax:"` key
 (help.py:52) is a sanctioned pseudo-entry — a non-command key used to document
@@ -228,10 +232,10 @@ enforces this; match the neighbors.
 
 Since 2026-10-23 setup.py builds with `boundscheck=True` and `wraparound=True` (owner): a bad or negative index behaves as in plain Python instead of crashing; the `x[len(x)-1]` idiom stays (don't churn it). The history below explains why the idiom exists.
 
-Never write `x[-1]` (or any negative index) in the 11 modules setup.py
+Don't write `x[-1]` (or any negative index) in the 11 modules setup.py
 compiles: analytics, card_edits, card_models, frankenstein, help, management, music_player,
-psd_analyzer, psd_parser, query_card, repo_traverser (setup.py:21-33). They build with `wraparound=False`,
-where negative indexing is undefined behavior, and a past `bboxes[-1]` was
+psd_analyzer, psd_parser, query_card, repo_traverser (setup.py:21-33). Until 2026-10-23 they built with
+`wraparound=False`, where negative indexing was undefined behavior, and a past `bboxes[-1]` was
 mechanically purged for exactly this reason (commit dd800bc; the mechanical
 purge's semantic slip became the removeprefix local-path bug, fixed 2026-10-19). Current
 census (2026-10-20): 21 `x[len(x) - 1]` occurrences, **zero** negative indexes in
@@ -508,3 +512,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-21 (S7): `/bake_cards` added to stats_commands (help.py 162 lines, 53 keys / 52 commands; `tests/test_card_runner.py` asserts the help entry and describe strings state the same defaults and the admin marker); section 4 names the 100-character cap; help.py and main.py line numbers re-pointed.
 
 2026-10-21 (details): help.py's /pull, /push and /update entries and main.py's three describe strings (:177, :187, :197) name psd_details.json / the PSD details beside the pickles (same line count; the pull describe is 97 characters, under the 100 cap); no new command (52). repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
+
+2026-10-23 (docs drift): help.py's dict lines re-pointed and the sixth dict `card_sync_commands` (the cutover's overrides) named; §5.4 says `wraparound=False` was the build until 2026-10-23 (both bounds checks and wraparound on since 9919a14).
