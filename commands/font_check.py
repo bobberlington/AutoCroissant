@@ -1,7 +1,7 @@
 """
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
 the card repo does not supply. TTSCardMaker's font-check.yml Action runs it on every push to main (job summary, commit
-comment, a Discord message in the standards channel, no ping); the bot's /fonts runs it over the whole repo.
+comment, a Discord message in the standards channel pinging the card makers' role); the bot's /fonts runs it over the whole repo.
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
@@ -53,6 +53,7 @@ from global_config import CARD_BRANCH, CARD_REPO, DETAILS_JSON, FONT_ALIASES, FO
 FONTS_DIR = "MDW/Fonts"                     # the card repo's fonts folder; top level only (stoogedings-src/ is the icon font's source)
 FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".otc")
 EXCLUDE_FOLDERS = ("MDW", "Markers")        # repo_traverser.EXCLUDE_FOLDERS: PSDs there are not cards
+ROLE_ID = "546427268751294475"              # the card makers' role the Discord message pings
 BITE = "{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."   # the user's wording
 DISCORD_LIMIT = 2000                        # characters per Discord message
 NOBODY = "Someone"                          # the author when no login is known
@@ -301,8 +302,8 @@ def markdown(report: Report) -> str:
 
 def discord_payload(report: Report) -> dict:
     """
-    The webhook body (standards channel): one BITE line per (author, font) with the cards and layers indented below it;
-    {} when nothing is missing. Nobody is pinged (owner, 2026-10-23).
+    The webhook body: the role mention once, then one BITE line per (author, font) with the cards and layers indented
+    below it; {} when nothing is missing. Only the role may be pinged.
     """
     pairs: dict = {}
     for card in report.cards:
@@ -310,7 +311,7 @@ def discord_payload(report: Report) -> dict:
             pairs.setdefault((card.author, font), []).append(f"    {_card_name(card.path)} ({', '.join(layers)})")
     if not pairs:
         return {}
-    lines = []
+    lines = [f"<@&{ROLE_ID}>"]
     for (author, font), cards in sorted(pairs.items()):
         lines.append(BITE.format(name=author, font=font))
         lines += cards
@@ -318,7 +319,7 @@ def discord_payload(report: Report) -> dict:
     if len(content) > DISCORD_LIMIT:
         tail = "\n... (the rest is in the commit comment)"
         content = content[:DISCORD_LIMIT - len(tail)].rsplit("\n", 1)[0] + tail
-    return {"content": content, "allowed_mentions": {"parse": []}}
+    return {"content": content, "allowed_mentions": {"roles": [ROLE_ID]}}
 
 
 def discord_text(report: Report) -> str:
@@ -1021,6 +1022,7 @@ __all__ = [
     'MANIFEST',
     'POOL_CHUNK',
     'POOL_MIN',
+    'ROLE_ID',
     'Report',
     'check_blobs',
     'check_checkout',
