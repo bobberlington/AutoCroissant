@@ -393,6 +393,24 @@ def test_gate_bytes_pairs_fx_records(monkeypatch):
         pe.gate_bytes("old", "new", [edit])
 
 
+def test_gate_bytes_keeps_a_rebuilt_fx_records_style(monkeypatch):
+    """Owner q6: an FX layer cut again keeps its own style. Its record may change rect and channels (and its unicode name
+    when renamed); an effect block, its blending or opacity changed refuses, whatever the chart says."""
+    frozen = "Ability FX: Frozen"
+    own = [(b"lfx2", b"own-glow"), (b"luni", b"Frozen")]
+    files = {"old": [_record("Ability"), _record(frozen, blocks=own)],
+             "new": [_record("Ability"), _record(frozen, blocks=own, rect=(0, 5, 1, 6), channels=((-1, 9), (0, 9), (1, 9), (2, 9)))]}
+    monkeypatch.setattr(pe, "layer_records", lambda path: [dict(r) for r in files[path]])
+    edit = pe.Edit("ability", "a", "b", [], [0], None, rebuilt=[(1, frozen, frozen)])
+    assert pe.gate_bytes("old", "new", [edit]) == ([(1, frozen, ["channels", "rect"])], 0, 0)
+    files["new"][1] = _record(frozen, blocks=[(b"lfx2", b"chart-glow"), (b"luni", b"Frozen")])
+    with pytest.raises(pe.Refused, match="is not the declared rebuild: blocks lfx2"):
+        pe.gate_bytes("old", "new", [edit])
+    files["new"][1] = {**_record(frozen, blocks=own), "blend": (0, 200, 0)}
+    with pytest.raises(pe.Refused, match="changed blend"):
+        pe.gate_bytes("old", "new", [edit])
+
+
 def test_classify_table():
     parsed = {"card": {"type": "minion", "hp": 5, "def": 2, "atk": 5, "spd": 5, "ability": "Die.\n(BOT) Live."}}
     out = pe.classify(parsed, {"hp": 8, "def": 2, "atk": 11, "spd": None, "stars": 3, "types": ["fire"],
@@ -1085,8 +1103,8 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
 
 
 def test_kept_fx_lists_the_fx_layers_without_a_chart_style(chart):
-    """BUG 2: an ability edit makes every FX layer again but one the chart has no style for: badge or token runs keep
-    their own (none), a styled chart status takes the chart's, another word needs a chart status's style on its layer
+    """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6), but one the chart has no
+    style for: badge or token runs (none), a styled chart status, another word needs a chart status's style on its layer
     (Monkey D Goofy's "1#1" under Become Back Money's gradient); Smoldering's stroke, +2/4/6 ATK's, refuse (owner
     2026-10-21), and so does any FX layer that is no pixel layer (Photoshop would draw a type layer from its text)."""
     base = SimpleNamespace(name="Ability")
@@ -1172,7 +1190,7 @@ def test_noop_ability_bake_keeps_the_badge_layer(clone, parser, chart, tmp_path)
     assert pe._kept(plans[0], plans[0].ranges, None, kept) and not pe._kept(plans[0], plans[0].ranges, tuple(layer.bbox), kept)
     rebuilt, dropped, covered, notes = pe._rebuild_fx(psd, layer, layer.text, plans, tuple(layer.bbox), kept, fonts,
                                                       pe._fx_engine())
-    assert [(fx, name, style) for fx, name, style in rebuilt] == [(old, "Ability FX: (BOT)", {})] and dropped == notes == []
+    assert rebuilt == [(old, "Ability FX: (BOT)")] and dropped == notes == []
     assert covered == [(layer.text.index("(BOT)"), layer.text.index("(BOT)") + 5)]
     assert tuple(old.bbox) == box and np.array_equal(_raster(old, box), before)
 
@@ -1191,13 +1209,63 @@ def test_ability_bake_moves_the_badge_layer_with_its_badge(clone, parser, chart,
     (_, ability, fields), (_, name, fx_fields) = baked.records
     assert ability == "Ability" and {"blocks", "channels"} <= set(fields) <= set(TEXT_RECORD)
     assert (name, fx_fields) == ("Ability FX: (BOT)", ["channels", "rect"])
-    assert baked.fx == edit.fx_names == ["Ability FX: (BOT)"] and edit.rebuilt[0][1:] == ("Ability FX: (BOT)", "Ability FX: (BOT)", {})
+    assert baked.fx == edit.fx_names == ["Ability FX: (BOT)"] and edit.rebuilt[0][1:] == ("Ability FX: (BOT)", "Ability FX: (BOT)")
     saved = PSDImage.open(baked.psd_path)
     layer = pe.ability_layer(saved)
     fx, = pe.fx_layers(saved, layer)
     assert fx.bbox[0] < before.bbox[0] and fx.bbox[1] == before.bbox[1] and fx.layer_id == before.layer_id
     assert saved.index(fx) == old.index(before) and pe.PSDParser._pixel_coverage(fx, layer) == 1.0
     assert baked.reparse["validator"] == [] and baked.region[0] <= fx.bbox[0] and baked.region[2] >= before.bbox[2]
+
+
+SNOW_BUNNY = "Items/Heal/2 Stars/Snow_Bunny.psd"   # L7: 'Ability FX: Frozen' keeps its old overlay's style, not the chart's
+FROZEN = "Ability FX: Frozen"
+
+
+def _style(path: str, name: str) -> tuple:
+    """An FX record's style bytes: blending, opacity, clipping, flags and every tagged block (lfx2, lrFX, iOpa...)."""
+    record, = [r for r in pe.layer_records(path) if r["name"] == name]
+    return record["blend"], record["flags"], record["blocks"]
+
+
+@text_edit
+def test_noop_ability_bake_keeps_an_l7_fx_layers_own_style(clone, parser, chart, tmp_path):
+    """Owner q6 (unattended call 2026-10-23): an ability bake keeps each FX layer's own style. Snow Bunny's 'Ability FX:
+    Frozen' draws its old overlay's style, not the chart's Frozen (L7): a no-op bake keeps its record whole, tells no
+    restyle, and leaves the PNG pixel for pixel (restyled to the chart, 21,447 px went past 24)."""
+    psd = PSDImage.open(_card(clone, SNOW_BUNNY)[0])
+    fx, = pe.fx_layers(psd, pe.ability_layer(psd))
+    assert fx.name == FROZEN and pe._style_key(fx.tagged_blocks) != pe._style_key(chart["frozen"].blocks)
+    psd_path, png_path, baked = _noop(clone, parser, chart, SNOW_BUNNY, tmp_path)
+    edit, = baked.edits
+    assert edit.fx_names == [FROZEN] and edit.notes == [] and baked.block_bytes == 0
+    assert _style(baked.psd_path, FROZEN) == _style(psd_path, FROZEN) and _same_png(png_path, baked.png_path)
+
+
+@text_edit
+def test_rebuilt_fx_layer_keeps_its_own_style(clone, parser, chart, tmp_path):
+    """Owner q6: an FX layer cut again keeps its own style; only a new one takes the chart's. Snow Bunny's "at least "
+    deleted moves its Frozen: the layer is cut again at its new place (rect and channels), its style bytes kept, and
+    gate_bytes refuses the chart's style put on it (no effect block may change on a rebuilt record)."""
+    psd_path = _card(clone, SNOW_BUNNY)[0]
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, SNOW_BUNNY)["card"]["ability"]).replace("at least ", "")
+    parsed, baked = _bake(clone, parser, SNOW_BUNNY, {"ability": text}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.notes == [] and _style(baked.psd_path, FROZEN) == _style(psd_path, FROZEN) and baked.block_bytes == 0
+    assert dict((name, fields) for _, name, fields in baked.records)[FROZEN] == ["channels", "rect"]
+    assert [record[1:] for record in edit.rebuilt] == [(FROZEN, FROZEN)]
+    saved = PSDImage.open(baked.psd_path)
+    fx, = pe.fx_layers(saved, pe.ability_layer(saved))
+    for key in pe.EFFECT_BLOCKS:
+        if key in fx.tagged_blocks:
+            del fx.tagged_blocks[key]
+    for key, block in chart["frozen"].blocks.items():
+        fx.tagged_blocks[key] = deepcopy(block)
+    restyled = tmp_path / "restyled.psd"
+    saved.save(str(restyled))
+    with pytest.raises(pe.Refused, match="Frozen' is not the declared rebuild: blocks lfx2") as refused:
+        pe.gate_bytes(psd_path, str(restyled), baked.edits)
+    assert refused.value.code == "bytes"
 
 
 @text_edit
@@ -1528,7 +1596,7 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     edit = pe.set_text_layer(psd, "ability", "Inflict Blazing. Blazing again.", fonts, chart)
     again, = pe.fx_layers(psd, pe.ability_layer(psd))
     assert again is one and again.name == "Ability FX: Blazing" and (edit.fx, edit.dropped) == ([], [])
-    assert [name for _, _, name, _ in edit.rebuilt] == edit.fx_names == ["Ability FX: Blazing"] and psd.index(one) == psd.index(text) + 1
+    assert [name for _, _, name in edit.rebuilt] == edit.fx_names == ["Ability FX: Blazing"] and psd.index(one) == psd.index(text) + 1
     assert int((one.numpy("shape") > 0.5).sum()) > 1.8 * ink[1] and pe.PSDParser._pixel_coverage(one, pe.ability_layer(psd)) == 1.0
     edit = pe.set_text_layer(psd, "ability", "Inflict Poison.", fonts, chart)
     assert pe.fx_layers(psd, pe.ability_layer(psd)) == [] and edit.fx == [] and edit.dropped == ["Ability FX: Blazing"]

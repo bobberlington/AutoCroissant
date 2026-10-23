@@ -895,7 +895,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
         if card.baked.fx:
             line += f"; FX layers: {', '.join(card.baked.fx)}"
-        for note in getattr(card.baked, "fx_notes", []):    # an FX layer deleted, renamed or restyled (BUG 2)
+        for note in getattr(card.baked, "fx_notes", []):    # an FX layer deleted, renamed or cut again (BUG 2)
             line += f"; {note}"
         icons = [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
         if icons:

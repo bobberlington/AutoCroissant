@@ -711,7 +711,7 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
 
 
 def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
-    """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted, renamed or restyled."""
+    """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted or renamed."""
     ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
     baked = SimpleNamespace(edits=[SimpleNamespace(field="ability", old="a")], parity={"ability": ok}, rerender={"ability": ok},
                             flag_bytes=0, changed_pixels=9, fx=["Ability FX: (2U) | (2CD)"],
