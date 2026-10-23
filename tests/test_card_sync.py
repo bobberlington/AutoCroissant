@@ -320,6 +320,20 @@ def test_startup_loads_the_local_copy_then_syncs(github, tmp_path, monkeypatch):
     assert set(cm.stats_db.stats) == {"A"} and loads == [] and _queued() == []
 
 
+def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypatch):
+    """A sync cut off after stats.json: startup loads that copy with no commit, so the next sync reloads, even one at
+    the commit the copy names (the branch back at it)."""
+    github.publish({"A": _card("A", ability="Old.")}, defaultdict(list), tmp_path)
+    first = github.tip
+    cdb.sync("card_data", REPO, "data")
+    github.publish({"A": _card("A", ability="New.")}, defaultdict(list), tmp_path)
+    (tmp_path / "card_data" / cdb.STATS_JSON).write_bytes(github.commits[github.tip][cdb.STATS_JSON])
+    github.tip = first
+    assert cs.load_local("card_data") and cm.stats_db.stats["A"].ability == "New." and cs._loaded["commit"] is None
+    cs.sync(ME)
+    assert cm.stats_db.stats["A"].ability == "Old." and cs._loaded["commit"] == first and cdb.check_db("card_data") == []
+
+
 def test_startup_without_data_falls_back_to_the_pickles(github, monkeypatch):
     loads = []
     monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))

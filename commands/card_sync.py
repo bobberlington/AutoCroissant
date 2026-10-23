@@ -192,7 +192,10 @@ def _swap(stats: dict, old_stats, commit: Optional[str]) -> None:
 
 
 def load_local(folder: str = CARD_DATA_DIR) -> bool:
-    """stats_db from the local copy (no network). False when it holds no readable card data."""
+    """
+    stats_db from the local copy (no network). False when it holds no readable card data. A copy that doesn't match
+    its manifest (a sync cut off midway) is loaded with no commit, so the next sync reloads it whole.
+    """
     if not isfile(join(folder, card_db.STATS_JSON)):
         return False
     try:
@@ -200,7 +203,10 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
     except (OSError, ValueError, TypeError) as e:
         print(f"{folder}: not loaded ({e}); the sync fetches it again")
         return False
-    _swap(stats, old, card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))
+    problems = card_db.check_db(folder)
+    if problems:
+        print(f"{folder}: a sync was cut off ({'; '.join(problems)}); loaded until the next sync completes it")
+    _swap(stats, old, None if problems else card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))
     print(f"Card data loaded from {folder}: {len(stats)} cards")
     return True
 
