@@ -1342,3 +1342,20 @@ def test_alt_art_duplicates_are_archived_never_dropped(github, psds, capsys):
     stats, old = _saved()
     assert set(stats) == {"The Freezer"} and old["Mini Doomer2"][0].archived["at"] == old["Mini Doomer"][0].archived["at"]
 
+
+
+def test_an_alt_art_png_renamed_to_a_new_card_is_no_rename(github, psds, monkeypatch):
+    """An alt-art duplicate whose PNG the commit page shows renamed to a card new this run: archived with that commit,
+    never renamed_to (a copy's card is its original's)."""
+    dup, png = "Auxiliary/Minions/Mini_Doomer2.png", "Auxiliary/Minions/Mega_Doomer.png"
+    github.files[dup] = b"alt art"
+    _run()
+    pages = {dup: [_Commit("e" * 40, [_File(png, "renamed", dup)])]}
+    monkeypatch.setattr(pa.RepositoryTraverser, "_commit_page", lambda self, path: pages.get(path))
+    del github.files[dup]
+    github.files[png] = b"alt art"
+    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = psds[OTHER]       # a card new this run
+    _run()
+    stats, old = _saved()
+    tag = old["Mini Doomer2"][0].archived
+    assert "Mega Doomer" in stats and tag["commit"] == "e" * 40 and "renamed_to" not in tag
