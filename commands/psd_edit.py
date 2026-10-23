@@ -472,10 +472,10 @@ def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
     return found[0]
 
 
-def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
-    """The printed title, whitespace collapsed; None when name_layer refuses."""
+def read_name(psd: PSDImage, card: str = "", own_text: bool = True) -> Optional[str]:
+    """The printed title, whitespace collapsed; None when name_layer refuses (own_text: as name_layer's)."""
     try:
-        return collapse(name_layer(psd, card).text)
+        return collapse(name_layer(psd, card, own_text).text)
     except Refused:
         return None
 
@@ -1512,7 +1512,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                   card: str = "") -> Edit:
+                   card: str = "", own_text: bool = True) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -1527,6 +1527,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
         card: The card's name (file stem), for name_layer
+        own_text: name_layer's (False on a rule page: _own_text)
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
@@ -1549,7 +1550,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    layer = name_layer(psd, card) if which == "name" else ability_layer(psd)
+    layer = name_layer(psd, card, own_text) if which == "name" else ability_layer(psd)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     own = which == "name" and own_text_title(layer, card)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
@@ -3213,8 +3214,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         raise Refused("reparse", "new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    if "name" in jobs and read_name(psd, _card_name(parsed)) != collapse(jobs["name"]):
-        raise Refused("reparse", f"the title reads {read_name(psd, _card_name(parsed))!r}")
+    title = read_name(psd, _card_name(parsed), _own_text(parsed)) if "name" in jobs else None
+    if "name" in jobs and title != collapse(jobs["name"]):
+        raise Refused("reparse", f"the title reads {title!r}")
     return new
 
 
@@ -3361,7 +3363,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed)))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     after = record_map(new)

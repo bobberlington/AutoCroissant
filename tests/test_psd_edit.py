@@ -655,6 +655,12 @@ def test_a_title_named_after_its_own_text(clone, parser):
     assert parsed["card"].get("display_name") is None and pe.name_layer(psd).name == "THE GLOBAL TURN"
     assert [r.why for r in pe.classify(parsed, {"name": "The Global Turn"}, psd).refusals] == [
         "title layer named 'THE GLOBAL TURN', not Name or the card's name"]
+    assert pe.read_name(psd) == "THE GLOBAL TURN" and pe.read_name(psd, own_text=False) is None
+    with pytest.raises(pe.Refused, match="the title reads None"):              # the reparse gate reads it as classify
+        pe.gate_reparse(parser, parsed, psd_path, GLOBAL_TURN, {"name": "THE GLOBAL TURN"}, psd)
+    if pe.story_sync():                                                         # and so does the bake
+        with pytest.raises(pe.Refused, match="not Name or the card's name"):
+            pe.set_text_layer(psd, "name", "The Global Turn", "", own_text=False)
 
 
 def test_own_text_is_the_last_rule():
@@ -1730,8 +1736,8 @@ def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, 
     new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
     real = pe.set_text_layer
 
-    def stretched(psd, which, text, fonts_dir, chart=None, card=""):
-        edit = real(psd, which, text, fonts_dir, chart, card)
+    def stretched(psd, which, text, fonts_dir, chart=None, card="", own_text=True):
+        edit = real(psd, which, text, fonts_dir, chart, card, own_text)
         if which == "ability":
             edit.region = pe.union_box([edit.region, pe.name_layer(psd, card).bbox])
         return edit
