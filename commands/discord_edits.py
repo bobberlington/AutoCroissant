@@ -159,7 +159,8 @@ def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
     edits_file for a Discord edit. No op: the head's text as it is (never reformatted). An entry holding PSD fields
     keeps its _by and _at when its op sets none of them: the bake credits the entry's _by, and a discord: one gets no
     Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor. The fields the op
-    sets there are listed in its _bot (not that editor's) and credited in its _credit; a _credit field out of _bot goes.
+    sets there are listed in its _bot (not that editor's) and credited in its _credit; a _credit field out of _bot goes,
+    and an entry left with only its _credit goes (edits_file keeps it).
     """
     ops = [op for op in ops if op.get("set") or op.get("unset")]
     if not ops:
@@ -176,6 +177,10 @@ def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
         if k not in touched:
             continue
         old = before.get(k)
+        rest = {f: v for f, v in fields.items() if f not in ("_by", "_at", BOT_FIELDS, CREDIT)}
+        if not rest:                                            # only its _credit left: goes
+            del data["cards"][key]
+            continue
         bot = list(fields.get(BOT_FIELDS) or [])
         was = fields.get(CREDIT) if isinstance(fields.get(CREDIT), dict) else {}
         credit = {f: v for f, v in was.items() if f in bot}
@@ -189,7 +194,6 @@ def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
         if bot == (fields.get(BOT_FIELDS) or []) and credit == (fields.get(CREDIT) or {}):
             fields.update(stamps)                               # its layout kept
             continue
-        rest = {f: v for f, v in fields.items() if f not in ("_by", "_at", BOT_FIELDS, CREDIT)}
         data["cards"][key] = {**rest, **({BOT_FIELDS: bot} if bot else {}), **({CREDIT: credit} if credit else {}), **stamps}
     return dump_edits(data)
 

@@ -570,6 +570,23 @@ def test_discord_fields_in_an_editors_entry_are_credited_apart():
     assert gone["cards"]["Goombella"] == {"ability": "Hit.", "_by": "web", "_at": AT}
 
 
+def test_an_entry_left_with_only_its_credit_goes():
+    """An entry whose last field goes leaves no stamps behind, its _credit included (edits_file, as edit.js, keeps a
+    _credit-only entry: edit.js doesn't know _credit)."""
+    held = {"hp": 6, "aliases": ["X"], "_bot": ["aliases"], "_credit": {"aliases": {"_by": "discord:a", "_at": AT}},
+            "_by": "web", "_at": AT}
+    text = dump_edits({"about": ABOUT, "cards": {"G": held, "H": {"hp": 1, "_by": "web", "_at": AT}}})
+    unset = lambda t, *names: json.loads(de._stamped(t, [{"key": "G", "set": {}, "unset": list(names)}], "T2", "discord:b"))
+    assert "G" not in unset(text, "hp", "aliases")["cards"]
+    web = de.edits_file(text, [{"key": "G", "set": {}, "unset": ["hp"]}], "T1", "web")     # the website drops the PSD field
+    assert json.loads(web)["cards"]["G"] == {"aliases": ["X"], "_bot": ["aliases"], "_credit": held["_credit"], "_by": "web",
+                                             "_at": "T1"}
+    after = unset(web, "aliases")                                                # then /alias drops the last alias
+    assert "G" not in after["cards"] and after["cards"]["H"] == {"hp": 1, "_by": "web", "_at": AT}
+    psd = dump_edits({"about": ABOUT, "cards": {"G": {"hp": 6, "_psd": {"refused": "x"}, "_by": "web", "_at": AT}}})
+    assert unset(psd, "hp")["cards"]["G"] == {"_psd": {"refused": "x"}, "_by": "discord:b", "_at": "T2"}    # as edit.js
+
+
 def test_alias_refuses_aliases_pkl_until_the_migration(repo, monkeypatch):
     monkeypatch.setattr(repo.registry, "git_file_alias", {"breakfast": "a_snack2.png"})
     head = repo.github.head
