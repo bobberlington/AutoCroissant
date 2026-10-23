@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from json import dump, loads
 from os import cpu_count, remove, walk
 from os.path import abspath, basename, dirname, isdir, isfile, join, relpath, splitext
+from sys import stderr
 from tempfile import mkstemp
 from typing import Optional
 
@@ -32,7 +33,7 @@ from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase, card_name
 from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, ROLE_ID, is_card_psd, \
     pushed_files, tree_blobs
-from commands.github_api import blob_text, fetch_verified, token_from_env
+from commands.github_api import RemotePSD, blob_text, fetch_verified, range_reads, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
 from global_config import EDITS_PATHS, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
@@ -140,19 +141,19 @@ def repo_context(repository: str, blobs: dict, errors: list) -> tuple:
 # ========================
 # One card
 # ========================
-def parse_card(parser: PSDParser, psd: str, rel: str):
-    """The parser's CardInfo for a PSD file at its repo path (the seam the tests fake)."""
+def parse_card(parser: PSDParser, psd, rel: str):
+    """The parser's CardInfo for a PSD file (or the PSD open) at its repo path (the seam the tests fake)."""
     return parser.parse(psd, rel)
 
 
-def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd: str, rel: str) -> list:
+def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> list:
     """
     One card's notes, as /update_stats prints them: parse, apply the card's website edits, validate.
 
     Args:
         parser: PSDParser with the repo's vocabulary
         edits: The repo's site/Card Edits.json, or None
-        psd: The PSD file
+        psd: The PSD file, or the PSD open (a PSDImage)
         rel: Its repo path (classifies the card; names it)
 
     Returns:
@@ -338,22 +339,31 @@ def check_checkout(root: str) -> Report:
     return report
 
 
-def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits]) -> Report:
+def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], ref: str = "") -> Report:
     """
-    PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser).
+    PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser). With ref (the
+    pushed commit) and a psd-tools that reads lazily, a PSD is read by range requests at ref instead: only what the
+    parser reads is fetched; one that fails that way is read whole.
 
     Args:
         repository: owner/name
         psds: {path: (blob sha, author)}
         parser: PSDParser with the tree's vocabulary
         edits: The tree's edits file, or None
+        ref: The commit the PSDs are at ("": whole blobs)
 
     Returns:
         Report
     """
     report = Report()
+    ranges = bool(ref) and range_reads()
     for path in sorted(psds):
         sha, author = psds[path]
+        if ranges:
+            notes = _ranged_notes(repository, ref, path, parser, edits)
+            if notes is not None:
+                _record(report, path, author, notes)
+                continue
         try:
             data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
         except Exception as e:                  # a failed download is an error line
@@ -367,6 +377,21 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
         finally:
             remove(temp)
     return report
+
+
+def _ranged_notes(repository: str, ref: str, path: str, parser: PSDParser, edits: Optional[CardEdits]) -> Optional[list]:
+    """One PSD's notes from range reads at ref; None when they failed or the PSD raised (the whole blob decides)."""
+    remote = None
+    try:
+        remote = RemotePSD(repository, ref, path)
+        notes = card_notes(parser, edits, remote.psd, path)
+        return None if remote.failed else notes
+    except Exception as e:
+        print(f"{path}: range reads failed ({e}); reading it whole", file=stderr)     # stdout is the report
+        return None
+    finally:
+        if remote is not None:
+            remote.close()
 
 
 # ========================
@@ -397,7 +422,7 @@ def main(args: Optional[list] = None) -> int:
                 psds, notes = {p: (s, options.author) for p, s in blobs.items() if is_card_psd(p)}, []
             else:
                 psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author)
-            report = check_blobs(options.repo, psds, parser, edits)
+            report = check_blobs(options.repo, psds, parser, edits, options.after)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, notes = Report(), [f"GitHub API: {e}"]
         report.errors = errors + report.errors + notes

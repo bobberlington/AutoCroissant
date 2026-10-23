@@ -1,18 +1,20 @@
 """GitHub access for the card repo: the token, auth headers, a Session per thread, tree and blob fetches (sha-verified),
-and the retry policy."""
+range reads of a PSD at a commit (RemotePSD), and the retry policy."""
 from hashlib import sha1
 from http.cookiejar import DefaultCookiePolicy
 from os import environ
+from re import compile as re_compile
 from requests import Session
 from requests.exceptions import RequestException
 from threading import local
 from time import sleep
+from urllib.parse import quote
 
 try:
     import config
 except ImportError:                                 # standalone use (python -m commands.tts_save) without config.py
     config = None
-from global_config import API_BASE, CARD_BRANCH
+from global_config import API_BASE, CARD_BRANCH, RAW_BASE
 
 # ========================
 # Configuration
@@ -21,6 +23,9 @@ GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 HEADERS: dict = {"Authorization": f"token {GIT_TOKEN}"} if GIT_TOKEN else {}
 RAW_MEDIA = "application/vnd.github.raw"            # Accept: a blob's bytes instead of its JSON envelope
 RETRY_WAITS = (1, 2)                                # seconds between the 3 tries of get_with_retry
+CONTENT_RANGE = re_compile(r"bytes (\d+)-(\d+)/(\d+)")   # a 206 reply's Content-Range
+RANGE_READS = True                                  # read card PSDs by range requests when psd-tools can (the data build,
+                                                    # card_check --after); False: whole downloads
 
 # ========================
 # Global State
@@ -143,12 +148,99 @@ def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
     return reply.text
 
 
+def range_reads() -> bool:
+    """Whether range reads are on: RANGE_READS, and a psd-tools that opens a PSD lazily over a RangeReader (the fork's
+    feat/lazy-records)."""
+    if not RANGE_READS:
+        return False
+    try:
+        from psd_tools.range_reader import RangeReader  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def raw_url(repository: str, ref: str, path: str) -> str:
+    """raw.githubusercontent's URL of a file at a commit (a commit sha never lags behind, a branch name can)."""
+    return f"{RAW_BASE}{repository}/{ref}/{quote(path)}"
+
+
+class RangeError(OSError):
+    """A range request answered with something else than its range (status is the HTTP code, 0 for a bad reply)."""
+    def __init__(self, message: str, status: int = 0):
+        super().__init__(message)
+        self.status = status
+
+
+class RemotePSD:
+    """
+    A card PSD at a commit, opened by HTTP range requests to raw.githubusercontent: psd-tools' lazy open fetches the
+    header, resources and layer records (about 1% of a card), and a layer's pixels only when the parse reads them
+    (stars, effect layers). Raw requests are not REST API requests.
+
+    Args:
+        repository: owner/name
+        ref: A commit sha
+        path: The file's repo path
+        size: Its size from the tree, checked when given
+
+    Raises:
+        ImportError: psd-tools has no lazy reads (psd_tools.range_reader); RangeError: no range reply (a 404: the commit
+        is not on GitHub), another size, or a range other than asked; RequestException, or what psd-tools raises on the
+        records. A read that fails after the open sets failed (the caller may have caught it)
+    """
+    def __init__(self, repository: str, ref: str, path: str, size=None, timeout: int = 60):
+        from psd_tools import PSDImage
+        from psd_tools.range_reader import RangeReader
+        self.url, self.timeout = raw_url(repository, ref, path), timeout
+        self.failed = False                     # a fetch raised (the parse may have caught it): read the PSD whole
+        self.total = None                       # the file's size from the first reply
+        self.reader = RangeReader(self._fetch)
+        if size is not None and self.reader.size != size:
+            raise RangeError(f"{self.reader.size} bytes at {ref[:8]}, the tree says {size}")
+        self.psd = PSDImage.open(self.reader, lazy=True)
+
+    def _fetch(self, start: int, stop: int) -> tuple:
+        """Bytes [start, stop) and the file's size: one range request (get_with_retry's tries)."""
+        try:
+            reply = get_with_retry(self.url, stream=True, timeout=self.timeout,
+                                   headers={**HEADERS, "Range": f"bytes={start}-{stop - 1}"})
+            with reply:                         # a 200 would be the whole file: never read it here
+                if reply.status_code != 206:
+                    raise RangeError(f"HTTP {reply.status_code}, not a range", reply.status_code)
+                found = CONTENT_RANGE.fullmatch(reply.headers.get("Content-Range", ""))
+                first, last, total = (int(n) for n in found.groups()) if found else (-1, -1, -1)
+                if first != start or last != min(stop, total) - 1:      # the reader's checks, here: failed is set
+                    raise RangeError(f"Content-Range {reply.headers.get('Content-Range')!r} for bytes {start}-{stop - 1}")
+                if self.total not in (None, total):
+                    raise RangeError(f"file size changed: {self.total} -> {total}")
+                data = reply.content
+            if len(data) != last - start + 1:
+                raise RangeError(f"{len(data)} bytes for bytes {start}-{last}")
+            self.total = total
+            return data, total
+        except Exception:
+            self.failed = True
+            raise
+
+    @property
+    def fetched(self) -> int:
+        """Bytes fetched so far."""
+        return self.reader.fetched
+
+    def close(self) -> None:
+        self.reader.close()
+
+
 # ========================
 # Module Exports
 # ========================
 __all__ = [
     'GIT_TOKEN',
     'HEADERS',
+    'RANGE_READS',
+    'RangeError',
+    'RemotePSD',
     'api_url',
     'blob_sha',
     'blob_text',
@@ -158,6 +250,8 @@ __all__ = [
     'get',
     'get_with_retry',
     'print_token_status',
+    'range_reads',
+    'raw_url',
     'session',
     'token_from_env',
 ]
