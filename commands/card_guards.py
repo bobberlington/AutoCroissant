@@ -62,6 +62,7 @@ SUPPRESS_EMBEDS = 4                             # Discord message flag: no link 
 URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
 NOBODY = "Someone"
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
+ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
@@ -108,6 +109,8 @@ class Job:
     png_new: str = ""                           # the pushed PNG (R10)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> blob at after
     copy_from: str = ""                         # rename: the old PNG's blob, copied to png
+    psd_anchor: str = ""                        # stale: the PSD as of its PNG's last change, when a burst's earlier push
+    anchor_commit: str = ""                     # changed the PSD without the PNG (G5's second try); that commit
     left: str = ""                              # rename: the old PNG, still at its old path
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
@@ -251,6 +254,26 @@ class Source:
                         people[path.strip("\n")] = writer
         return {**out, **people}
 
+    def anchor(self, png: str, psd: str, before: str, after: str, psd_old: str, window: timedelta = ANCHOR_WINDOW) -> tuple:
+        """
+        (blob, commit): the PSD as of the commit that last changed its PNG (up to before), when the PSD changed since only
+        in commits within window of after (a burst: an earlier push's PNG was not made, its run superseded); else ("", "").
+        """
+        if before == EMPTY_TREE:
+            return "", ""
+        try:
+            last = self.git("log", "-1", "--format=%H", before, "--", png).strip()
+            if not last:
+                return "", ""
+            blob = self.git("rev-parse", f"{last}:{psd}").strip()
+            since = [int(t) for t in self.git("log", "--format=%ct", f"{last}..{before}", "--", psd).split()]
+            now = int(self.git("log", "-1", "--format=%ct", after).strip())
+        except (Transient, ValueError):         # the PSD did not exist then, or no history: no anchor
+            return "", ""
+        if not blob or blob == psd_old or not since or any(now - t > window.total_seconds() for t in since):
+            return "", ""
+        return blob, last
+
     def blob(self, sha: str) -> bytes:
         """A blob by sha, verified; raises Refused("blob")."""
         return fetch_verified(self.repository, sha, "", self.clone)
@@ -354,6 +377,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             job.case, job.png, job.png_new = "pair", png, pngs[png].new
         elif png and change.status == "M":
             job.case, job.png, job.png_old, job.numbered = "stale", png, tree[png][1], numbered(change.path)
+            job.psd_anchor, job.anchor_commit = source.anchor(png, change.path, before, after, change.old)
         elif png:
             job.case, job.png, job.png_old, job.numbered = "beside", png, tree[png][1], numbered(change.path)
         elif _key(change.path) in png_deleted:      # the author deleted the PNG: the standards only
@@ -517,6 +541,12 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
+        if found.outcome == "refused" and found.gate == "G5" and job.psd_anchor:
+            anchored = png_export.export(png_export.open_psd(source.blob(job.psd_anchor)), new, old_png, numbered)
+            if anchored.outcome != "refused":   # the PNG matched the PSD before the burst: its whole change is ours
+                found = anchored
+                result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
+                                     f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG", False))
         result.export = _export_dict(found)
         stale = found.numbers.get("png_vs_psd", {})
         if found.outcome == "current" and stale.get("px") and not psd_edit._within_bar(stale):

@@ -231,6 +231,40 @@ def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
     assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
 
 
+def _dated(root, work, stem, image, when):
+    """Alice's commit of FOLDER/<stem>.psd from image, dated when (committer and author)."""
+    _psd(root, work, f"{FOLDER}/{stem}.psd", image)
+    env = {**os.environ, "GIT_AUTHOR_NAME": "Alice", "GIT_AUTHOR_EMAIL": "alice@example.com", "GIT_COMMITTER_NAME": "Alice",
+           "GIT_COMMITTER_EMAIL": "alice@example.com", "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-am", f"{stem} at {when}"], check=True, env=env)
+    return _git(root, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("first, made", [("2026-10-22T10:00:00Z", True), ("2026-10-22T06:00:00Z", False)])
+def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
+    """Two PSD pushes 10 minutes apart, no PNG: the first run is superseded, so the second checks against the PSD as of
+    the PNG's last change (the base): outside both changes the PNG still matches, and the PNG is made. Four hours apart,
+    no anchor: G5 refuses as before."""
+    root, base, alice, bot = cards
+    work = tmp_path / "burst"
+    work.mkdir()
+    one = _dated(root, work, "Bread", card(base=(30, 200, 30)), first)             # the Base layer: everywhere
+    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")   # the square
+    source = cg.Source(str(root))
+    (job,) = cg.plan_jobs(source, one, two, "actor")[0]
+    assert job.case == "stale" and bool(job.psd_anchor) is made
+    if made:
+        assert job.psd_anchor == source.tree(alice)[f"{FOLDER}/Bread.psd"][1] and job.anchor_commit == alice
+    data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
+    (entry,) = data["cards"]
+    if made:
+        assert entry["export"]["outcome"] == "re-exported" and entry["writes"][0]["path"] == f"{FOLDER}/Bread.png"
+        assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
+        assert not any(line.startswith("PNG not made") for line in entry["told"])
+    else:
+        assert entry["export"]["gate"] == "G5" and entry["told"][0].startswith("PNG not made: the PSD and its old PNG already")
+
+
 def test_png_mismatch_reaches_discord_only_when_switched_on(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
     monkeypatch.setattr(cg, "TELL_PNG_MISMATCH", True)
