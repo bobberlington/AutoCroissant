@@ -105,6 +105,20 @@ def at_rev(clone, rev: str, rel: str) -> bytes:
         pytest.skip(f"the clone's history lacks {rev}:{rel}")
 
 
+def painted(png: bytes, box: tuple, rows: float) -> bytes:
+    """A PNG with the top share (rows) of a box's colours inverted, alpha kept: a render broken there."""
+    from io import BytesIO
+    import numpy as np
+    from PIL import Image
+    image = np.array(Image.open(BytesIO(png)))
+    x0, y0, x1, y1 = box
+    y1 = y0 + int((y1 - y0) * rows)
+    image[y0:y1, x0:x1, :3] = 255 - image[y0:y1, x0:x1, :3]
+    out = BytesIO()
+    Image.fromarray(image).save(out, "PNG")
+    return out.getvalue()
+
+
 def text_engine() -> bool:
     """psd_edit's probe (not card_bake's: it imports requests)."""
     from commands.psd_edit import text_engine as probe

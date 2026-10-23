@@ -27,8 +27,8 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
-from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, rounds_bytes, saves_preview,
-                      story_sync as _story_sync, text_engine as _text_engine)
+from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, painted, rounds_bytes,
+                      saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 
 # ========================
 # Configuration
@@ -1629,12 +1629,13 @@ def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
 
 @text_edit
 def test_baseline_miss_under_the_floor_bakes_with_a_note(clone, parser, tmp_path):
-    """Red_Knife's title (its outer glow's noise, which no render matches) misses the parity bar: baked and told, no
-    longer refused (owner, 2026-10-23); the parser reads the new title back."""
-    rel = "Auxiliary/Items/Red_Knife.psd"
-    psd_path = _card(clone, rel)[0]
-    name = _typo_fix(pe.read_name(PSDImage.open(psd_path)))
-    _, baked = _bake(clone, parser, rel, {"name": name}, tmp_path)
+    """A title missing the parity bar under the floor: baked and told, no longer refused (owner, 2026-10-23); the parser
+    reads the new title back. The miss is painted (the top tenth of Mini Doomer's title box inverted in its PNG): since
+    round 10 every title is within the bar (Red_Knife's outer glow noise, the last miss, is matched)."""
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    name = _typo_fix(pe.read_name(psd))
+    paths = _painted(clone, tmp_path, 0.1, pe.name_layer(psd).bbox)
+    _, baked = _bake(clone, parser, MINI_DOOMER, {"name": name}, tmp_path, paths=paths)
     measured = baked.parity["name"]
     assert not pe._within_bar(measured) and not pe._past_floor(measured)
     assert pe.read_name(PSDImage.open(baked.psd_path)) == name
@@ -1642,16 +1643,13 @@ def test_baseline_miss_under_the_floor_bakes_with_a_note(clone, parser, tmp_path
                                     % (measured["bad_pct"], measured["mean"], measured["max"])]
 
 
-def _painted(clone, tmp_path, rows: float) -> tuple:
-    """Mini Doomer's PSD, and its PNG with the top share of the hp row inverted (a render broken there), in tmp_path/card."""
+def _painted(clone, tmp_path, rows: float, box: tuple = HP_ROW) -> tuple:
+    """Mini Doomer's PSD, and its PNG with the top share of a box (the hp row) inverted (a render broken there), in
+    tmp_path/card."""
     psd, png = _card(clone, MINI_DOOMER)
     out = tmp_path / "card"
     out.mkdir()
-    image = np.array(Image.open(png))
-    x0, y0, x1, y1 = HP_ROW
-    y1 = y0 + int((y1 - y0) * rows)
-    image[y0:y1, x0:x1, :3] = 255 - image[y0:y1, x0:x1, :3]
-    Image.fromarray(image).save(out / Path(png).name)
+    (out / Path(png).name).write_bytes(painted(Path(png).read_bytes(), box, rows))
     (out / Path(psd).name).write_bytes(Path(psd).read_bytes())
     return str(out / Path(psd).name), str(out / Path(png).name)
 
