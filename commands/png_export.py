@@ -321,7 +321,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         numbered: {path: opened PNG} of the numbered duplicates (A_Snack2.png)
 
     Returns:
-        Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD), or refused
+        Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD; beside, no
+        pixel of it past the parity threshold), or refused
         (why, gate). numbers: records, region, render_s (CPU seconds), composite_px (D), where (D outside R), png_vs_psd,
         outside (G5), baseline and png_vs_old_psd (G5/G6), cross (G6), png_ahead
     """
@@ -403,24 +404,28 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
 
 def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
     """
-    A new PSD beside an existing PNG (no old PSD, so no baseline): the whole card rendered, and the PNG takes the render
-    where it differs from it past TOL, when the PNG then shows Photoshop's image wherever either moved.
+    A new PSD beside an existing PNG (no old PSD, so no baseline). D is where Photoshop's image differs from the PNG past
+    TOL. No pixel past the parity threshold: the PNG already shows the PSD (pushed first), current, nothing rendered.
+    Else the whole card is rendered and the PNG takes it over D only (elsewhere it already shows the PSD), then G6 (b).
     """
     result.vote = psd_edit.icc_vote(new, old_png)               # that PNG's own export
     icc = psd_edit.export_icc(new, old_png)
     result.icc, result.writer = icc_mode(new, icc), "new"
     truth = like_mode(convert(new, composed, icc), old_png.mode)
+    diff = _diff(truth, old_png)
+    moved = diff > TOL
+    result.numbers.update(composite_px=int(moved.sum()), png_vs_psd=_stats(diff))
+    if int(diff.max()) <= psd_edit.PARITY_THRESH:              # export noise at most: never redrawn by the fork
+        result.numbers["png_ahead"] = {"card": result.numbers["png_vs_psd"]}
+        return result
     box = (0, 0, new.width, new.height)
     render = like_mode(_render(new, box, icc, result.numbers), old_png.mode)
-    moved, composite_moved = _diff(render, old_png) > TOL, _diff(truth, old_png) > TOL
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
-    result.numbers.update(region=list(box), composite_px=int(composite_moved.sum()), png_vs_psd=_stats(_diff(truth, old_png)))
-    if not moved.any() and not composite_moved.any():
-        return result
+    result.numbers["region"] = list(box)
     out = np.array(old_png)
     out[moved] = np.asarray(render)[moved]
     merged = Image.fromarray(out)
-    result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
+    result.numbers["cross"] = _stats(_diff(merged, truth)[moved])
     if not _within(result.numbers["cross"]):
         return _refuse(result, G6.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)

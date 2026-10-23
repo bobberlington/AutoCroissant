@@ -241,6 +241,27 @@ def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
     assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
 
 
+def test_a_new_psd_beside_its_pushed_png_tells_nothing(cards, tmp_path):
+    """A new card's PNG pushed first and its PSD in a later push (case beside): the PNG is the author's export, so the PSD
+    is current and nothing is made or told about the PNG (review 7: it was "PNG not made"). Beside an older PNG, the PNG
+    takes the render where Photoshop's image moved."""
+    root, base, alice, bot = cards
+    psd, png = (root / FOLDER / "Bread.psd").read_bytes(), (root / FOLDER / "Bread.png").read_bytes()
+    old_png = (root / FOLDER / "Snack2.png").read_bytes()
+    first = _plumb(root, {f"{FOLDER}/First.png": png, f"{FOLDER}/Older.png": old_png}, "the PNGs first")
+    push = _plumb(root, {f"{FOLDER}/First.psd": psd, f"{FOLDER}/Older.psd": psd}, "then the PSDs")
+    data = cg.check(str(root), push, first, mode="on", out=str(tmp_path / "out"), workers=1)
+    by = {c["card"]: c for c in data["cards"]}
+    assert by["First"]["case"] == by["Older"]["case"] == "beside"
+    found = by["First"]["export"]
+    assert (found["outcome"], found["changed_px"], by["First"]["writes"]) == ("current", 0, [])
+    assert not [t for t in by["First"]["told"] if t.startswith("PNG")]
+    assert cg._guard1_line(by["First"]) == "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
+    older = by["Older"]["export"]
+    assert older["outcome"] == "re-exported" and older["changed_px"] == 21 * 21 + 16 * 16
+    assert [w["path"] for w in by["Older"]["writes"]] == [f"{FOLDER}/Older.png"]
+
+
 def _dated(root, work, stem, image, when):
     """Alice's commit of FOLDER/<stem>.psd from image, dated when (committer and author)."""
     _psd(root, work, f"{FOLDER}/{stem}.psd", image)

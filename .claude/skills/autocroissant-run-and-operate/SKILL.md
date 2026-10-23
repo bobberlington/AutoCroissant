@@ -537,14 +537,15 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
 The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
-without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261022b` renders
-the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is never
-written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop"; nothing
-when the PNG already shows the PSD, pushed before it), the pushed PSDs are checked against the card standards, fonts (R7)
-included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told until the owner says yes,
-`card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no
-ping; font-check.yml posts there too, with its role ping) and at most one bot commit, both after a 30-minute quiet window.
-On the 34 replayed commits the render passes the gates on 25 and refuses 9 (PUSH_GUARDS.md section 17).
+without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261022b`
+renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
+never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
+nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
+card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel
+(`DISCORD_STANDARDS_WEBHOOK`, no ping; font-check.yml posts there too, with its role ping) and at most one bot commit,
+both after a 30-minute quiet window. On the 34 replayed commits the render passes the gates on 25 and refuses 9
+(PUSH_GUARDS.md section 17).
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
@@ -865,3 +866,4 @@ abort.
 2026-10-22 (card guards, review 4): the Card guards subsection gains the any-case switch, the refused dispatch, the dispatch's author, the streak artifact and the unread-comment re-run; the Card bake `--local` bullet no longer calls card-sync.yml planned; no cited line moved.
 2026-10-22 (card guards, review 5): the Card guards subsection gains the dispatch outside CARD_GUARDS, `land`'s refusal of a non-`on` plan, the retried lookup, the alert's own lookup on a re-run, the re-run's window and the unstarted site build; no cited line moved.
 2026-10-22 (card guards, review 6): report mode tells the PNG it would make, R11 told until the owner says yes (AUTO_FIX), a PNG pushed before its PSD, a re-run's unread branch and refresh, a cancel by hand; no cited line moved.
+2026-10-23 (card guards, review 7): a new card's PNG pushed before its PSD is current too; no cited line moved.

@@ -296,7 +296,8 @@ one ends "export it in Photoshop").
 - **current:** no write; job summary only. Also when the PNG in the tree already shows the pushed PSD (review 6): the
   author pushed the PNG first and the PSD minutes later in a push of its own. Over F the PNG is nearer the new render than
   the old, within the bar there, and within the bar of Photoshop's image over the card (`png_ahead`), so the bot does not
-  re-export over the author's export.
+  re-export over the author's export. A new PSD beside its PNG (5.5) is current when no pixel of the PNG is past the
+  parity threshold (24 levels) from Photoshop's image: nothing is rendered.
 - **refused:** report line and Discord ("PNG not made: ...; export it in Photoshop").
 - **superseded:** summary only.
 - **error:** the card's line on Discord ("the bot could not finish checking it (MemoryError); PNG not made: export it in
@@ -316,8 +317,10 @@ one ends "export it in Photoshop").
   has transparency, and that render is the PNG.
 - G6 (b) is the whole card: the render matches the PSD's composite within the bar, else "PNG not made: the bot's drawing
   of the new PSD does not match its own image (...); export it in Photoshop". No composite: G2.
-- A new PSD beside an existing PNG (no old PSD, so no baseline): the whole card rendered, the PNG takes the render where it
-  differs past 2 levels, then G6 (b) over F and D.
+- A new PSD beside an existing PNG (no old PSD, so no baseline; its PNG pushed first, or a PNG-only card getting its
+  PSD): D is where Photoshop's image differs from that PNG past 2 levels. No pixel past the parity threshold: current
+  (5.3). Else the whole card is rendered, the PNG takes the render over D only (elsewhere it already shows the PSD), then
+  G6 (b) over D (review 7, section 17).
 - The PNG is written beside the PSD, with the PSD's stem in its case.
 
 **5.6 What the bake's gates become.**
@@ -990,6 +993,28 @@ guard after the quiet window (no ping).
 `test_r7_is_told_in_the_standards_post`; the real-card tests re-pinned to the render's numbers. The standards tests and
 R10's read the cards at 6e50c3ee from the clone's history: the Desktop clone's later standardization commits changed
 Dirty Bed, Blindness and Dark Mind Eye.
+
+**Review fix (2026-10-23): a new PSD beside its PNG** (5.3, 5.5). `_beside` (a PSD added where its PNG is already in the
+tree: the PNG pushed first, or a PNG-only card getting its PSD) pasted the fork's render wherever the render differed
+from the PNG, so the fork's own drawing errors (drop shadow edges, glows) were the change, and a PNG that already was
+the author's export was refused "PNG not made: the bot's drawing of your change does not match the PSD's own image", or
+overwritten with the fork's pixels when within the bar. The composite build had found these current. Now D (where
+Photoshop's image differs from the PNG past 2 levels) decides: no pixel past the parity threshold is current with
+nothing rendered, and otherwise the PNG takes the render over D only, then G6 (b) over D. The review found 7 of 8 live
+cards whose R10 passes refused this way (Defcon Panda, Mini Doomer, Militron, Poison Circle, Zero, Dirty Bed, Niko).
+Measured with the fixed code (fork `cards-20261022b`, `scratch/guards-rulings/beside/`): those 7 are current, and so are
+32 of the 34 replayed new PSDs beside the author's own PNG. Final Dark Mind Eye is one of the 32 (45 px of export noise,
+max 4). The 2 left are the bot bakes PoD09DDT and PoD10BFB, refused G6 (their PNG differs from the patched preview by up
+to 49; bot commits are never guarded). Beside the old PNG (a PNG-only card getting a newer PSD), 26 of 34 are
+re-exported, all within the bar of the author's export (max 0-55, bad at most 0.0004%), and 8 refuse G6 for the causes
+of the table above (Defcon Panda, The Radiance, Clock, Pandamonium 38c55bd3, 20 Creature Types, 11 Abilities5, the two
+bot bakes). Whole-card render 1-16 s CPU a card (the Mac under load). Tests:
+`test_a_new_psd_beside_its_own_png_is_current`,
+`test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved`,
+`test_a_new_psd_beside_the_authors_png_is_current` (Dirty Bed and Defcon Panda, real blobs), and
+`test_a_new_psd_beside_its_pushed_png_tells_nothing` (card_guards end to end). Left open: a tool save beside a PNG whose
+stored composite was not updated reads as current (no old PSD to compare its layers with; the composite build did the
+same).
 
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).

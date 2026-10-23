@@ -165,6 +165,42 @@ def test_a_png_pushed_before_its_psd_is_current(tmp_path, monkeypatch, photoshop
     assert pe.export(old, fixture_psd(tmp_path, card(colour=(0, 255, 0)), "green"), half).gate == "G5"
 
 
+def test_a_new_psd_beside_its_own_png_is_current(tmp_path, monkeypatch):
+    """A new PSD beside the PNG the author pushed first (or a PNG-only card's PSD): the PNG already shows Photoshop's
+    image, export noise at most (no pixel past the parity threshold), so nothing is rendered, made or told."""
+    monkeypatch.setattr(psd_edit, "render_region", lambda *a, **k: pytest.fail("rendered a PNG that is current"))
+    new = fixture_psd(tmp_path, card(), "new")
+    found = pe.export(None, new, card())
+    assert (found.outcome, found.changed_px, found.data, found.writer) == ("current", 0, b"", "new")
+    assert found.numbers["composite_px"] == 0 and "png_ahead" in found.numbers
+    noisy = card()
+    ImageDraw.Draw(noisy).rectangle((40, 60, 44, 64), fill=(200, 30, 30 + psd_edit.PARITY_THRESH))
+    found = pe.export(None, new, noisy)
+    assert (found.outcome, found.numbers["composite_px"], found.data) == ("current", 25, b"")
+
+
+def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved(tmp_path, monkeypatch):
+    """The PNG shows an older card: it takes the fork's render only where Photoshop's image differs from it (D); the
+    render's own errors elsewhere never reach it. Errors inside D past the bar refuse."""
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    draw = psd_edit.render_region
+
+    def off(psd, box, icc=True):                     # the fork draws the base 9 levels off, the square right
+        image = np.array(draw(psd, box, icc).convert("RGB"))
+        image[60:, :] = (209, 39, 39)
+        return Image.fromarray(image)
+
+    monkeypatch.setattr(psd_edit, "render_region", off)
+    found = pe.export(None, new, card())
+    assert found.outcome == "re-exported" and found.changed_px == 21 * 21 and found.box == (10, 10, 31, 31)
+    assert found.numbers["cross"]["max"] == 0
+    assert np.asarray(pe.open_png(found.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
+    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True: card(colour=(0, 200, 0)))
+    refused = pe.export(None, new, card())
+    assert (refused.outcome, refused.gate, refused.data) == ("refused", "G6", b"")
+    assert refused.why.startswith("PNG not made: the bot's drawing of your change")
+
+
 def test_g5_the_old_png_was_stale_elsewhere(tmp_path):
     """The old PNG disagrees with the old PSD outside the change: no PNG, the author exports it."""
     old = fixture_psd(tmp_path, card(), "old")
@@ -311,6 +347,16 @@ def test_the_refusals_of_the_replay(clone):
     old, new, _, _ = pair(clone, DEFCON_PANDA)
     first = pe.export(old, new, pe.open_png(blob(clone, "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")))
     assert first.outcome == "current" and "png_ahead" in first.numbers
+
+
+def test_a_new_psd_beside_the_authors_png_is_current(clone, monkeypatch):
+    """Review 7: beside the author's own export (pushed first), Dirty Bed and Defcon Panda were refused (the fork's
+    drawing errors over the card made D). The PNG shows Photoshop's image: current, nothing rendered."""
+    monkeypatch.setattr(psd_edit, "render_region", lambda *a, **k: pytest.fail("rendered a PNG that is current"))
+    for psd, png in ((DIRTY_BED[1], DIRTY_BED[3]), (DEFCON_PANDA[1], "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")):
+        found = pe.export(None, pe.open_psd(blob(clone, psd)), pe.open_png(blob(clone, png)))
+        assert (found.outcome, found.data, found.numbers["composite_px"]) == ("current", b"", 0), psd
+        assert "png_ahead" in found.numbers
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):
