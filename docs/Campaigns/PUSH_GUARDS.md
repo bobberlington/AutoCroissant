@@ -23,7 +23,7 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
    the comment ("PNG not made: ...; export it in Photoshop"). The stored composite stays only as a cross-check that can
    refuse, never as the PNG's source.
 2. *font-check.yml posts to the standards channel*: `DISCORD_STANDARDS_WEBHOOK` instead of `DISCORD_FONT_WEBHOOK`, its role
-   ping and wording kept (card-check.yml keeps `DISCORD_FONT_WEBHOOK`).
+   ping and wording kept. Since 2026-10-23 card-check.yml posts there too, with no ping; `DISCORD_FONT_WEBHOOK` is deleted.
 3. *The guard tells font issues (R7)* in its standards-channel post too.
 
 **What the measurements changed in the design (section 2).** (The first two bullets argued for the composite as the PNG's
@@ -732,7 +732,7 @@ jobs:
 4. **Decided (rulings 2 and 3, 2026-10-22): fonts in the standards channel.** font-check.yml posts there
    (`DISCORD_STANDARDS_WEBHOOK`, its role ping and wording kept) and the guard tells R7 in its own post too, so a missing
    font is told twice in that channel: at once by font-check (with the role ping) and after the quiet window by the guard
-   (no ping). card-check.yml stays in the font channel (`DISCORD_FONT_WEBHOOK`); the parser's notes stay card-check's.
+   (no ping). card-check.yml posts in the standards channel too, no ping (owner, 2026-10-23); the parser's notes stay card-check's.
 5. **The login** in "<login> pushed <card>": the commit author's GitHub login; for an author with no GitHub account, the
    pusher's login (7.3).
 6. **The commit link.** The brief's line is "<GitHub login> pushed <card> with these issues: ..."; each line also ends with
@@ -1027,7 +1027,7 @@ Why the 9 refuse (diagnosed with `why.py`, the crops in `why/`):
   all 34. Fork fixes for the drop shadow's edge, the outer glow and the gradient overlay would lift 4 of the 9.
 
 **Ruling 2: font-check.yml posts to the standards channel.** Its Tell Discord step reads `DISCORD_STANDARDS_WEBHOOK`; the
-role ping and the wording are `font_check.discord_payload`'s, unchanged. card-check.yml keeps `DISCORD_FONT_WEBHOOK`.
+role ping and the wording are `font_check.discord_payload`'s, unchanged. card-check.yml moved there too on 2026-10-23, no ping.
 `test_font_check.test_workflow_shape` pins the secret (`FONT_CHECK_YML` points it at the branch's file until it lands).
 
 **Ruling 3: R7 is told in the guard's post.** `card_standards.rule_fonts` no longer marks R7 comment-only; BabaUI stays

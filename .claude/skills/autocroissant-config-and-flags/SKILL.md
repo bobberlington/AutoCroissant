@@ -357,7 +357,7 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml 
 |---|---|---|
 | `FONTS_DIR` | `"MDW/Fonts"` | the card repo's fonts folder; top level only (`stoogedings-src/` is the icon font's source) |
 | `EXCLUDE_FOLDERS` | `("MDW", "Markers")` | PSDs under these path parts are not cards (card_data's list) |
-| `ROLE_ID` | `"546427268751294475"` | the card makers' role the Discord message pings (`<@&id>`; `allowed_mentions` names that role only) |
+| `ROLE_ID` | `"546427268751294475"` | the card makers' role the Discord message pings (`<@&id>`; `allowed_mentions` names that role only); the only role ping (card_check, card_guards and changelog post with `{"parse": []}`, owner 2026-10-23) |
 | `BITE` | `"{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."` | the user's wording, one line per (author, font) |
 | `DISCORD_LIMIT` | `2000` | the webhook payload is cut to one message; the rest is in the commit comment |
 | `NOBODY` | `"Someone"` | the author when no login is known (a checkout scan, the bot) |
@@ -379,7 +379,7 @@ The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied 
 | `CLOSING` | `"The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the website as Parser notes."` | the Discord message's last line (the validator's notes never reach the website) |
 | `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
 
-Shared with font_check (imported): `ROLE_ID`, `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
+Shared with font_check (imported): `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
 through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR`, `STARS_DIR`, `ICON_MANIFEST_PATH`, `EDITS_PATHS`.
 
 ### commands/psd_details.py (Configuration block, added 2026-10-21; not compiled)

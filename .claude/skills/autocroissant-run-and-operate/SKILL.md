@@ -424,9 +424,9 @@ present. It reports and never rejects: a missing font is a message to a person, 
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
   `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
-  missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (moved from the font
-  channel's `DISCORD_FONT_WEBHOOK` by the owner on 2026-10-22, on TTSCardMaker `work/push-guards` until it lands; the URL is
-  in no file) and then comments on the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
+  missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
+  `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
+  546427268751294475 once (the only role ping of any check's post, owner 2026-10-23), then one line per author and font: "<name> has pushed a card without
   adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
   card PSD by blob (~813 downloads).
 - **After the cutover** (`CARD_SYNC` on) `/fonts` reads the card data's `psd_details.json` instead (section 12): no PSD or font is
@@ -457,9 +457,8 @@ network, a truncated tree) is one error line.
   it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
   requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
-  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font channel; the font check posts to the standards channel since
-  2026-10-22; unset: a warning) and comments on the commit. The
-  message pings role 546427268751294475 once, then one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
+  notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
+  on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the
   website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
   lists no PSD, so it reports nothing.
@@ -552,7 +551,7 @@ never written, only a cross-check that can refuse; a refusal is told as "PNG not
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
 card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel
-(`DISCORD_STANDARDS_WEBHOOK`, no ping; font-check.yml posts there too, with its role ping) and at most one bot commit,
+(`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
 both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18).

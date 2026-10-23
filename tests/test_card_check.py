@@ -15,7 +15,7 @@ import pytest
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import REPO, Reply, blob_sha_bytes as _sha
+from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha
 from test_font_check import FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
@@ -485,6 +485,16 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_check", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-check.yml installs none of these: {sorted(extra)}"
+
+
+def test_workflow_posts_to_the_standards_channel():
+    """card-check.yml: the standards channel's secret, no ping (owner, 2026-10-23); the font channel's secret is deleted."""
+    wf = CLONE / ".github" / "workflows" / "card-check.yml"
+    if not wf.exists():
+        pytest.skip(f"no {wf}")
+    text = wf.read_text(encoding="utf-8")
+    assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "DISCORD_FONT_WEBHOOK" not in text
+    assert "discord.com/api/webhooks" not in text and "<@&" not in text
 
 
 def test_cli_only_and_uncompiled():

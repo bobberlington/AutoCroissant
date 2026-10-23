@@ -36,8 +36,8 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | TTS save workflow | `.github/workflows/tts-save.yml` (keeps `TTS/Impossibility Simulator.json` current with the bot's updater; rules `TTS/decks.json`; §2.6) | Source |
-| Font check workflow | `.github/workflows/font-check.yml` (on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping in the standards channel, secret `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22 (TTSCardMaker `work/push-guards` until it lands; `DISCORD_FONT_WEBHOOK` before); never reverts; §3) | Source |
-| Card check workflow | `.github/workflows/card-check.yml` (2026-10-21, push guard rule 2: on a push changing a PSD, `site/Card Edits.json` or `Types/`, the bot's parser and validator notes for the pushed PSDs, as a job summary, a commit comment and a Discord role ping with plain wording; AutoCroissant `commands/card_check.py`, sparse list `card_check.SPARSE_FILES`, the `DISCORD_FONT_WEBHOOK` secret (the font channel, card-check's alone once the font check moved); never reverts; §3) | Source |
+| Font check workflow | `.github/workflows/font-check.yml` (on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping in the standards channel, secret `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22 (`DISCORD_FONT_WEBHOOK` before, now deleted); the only role ping of the checks' posts; never reverts; §3) | Source |
+| Card check workflow | `.github/workflows/card-check.yml` (2026-10-21, push guard rule 2: on a push changing a PSD, `site/Card Edits.json` or `Types/`, the bot's parser and validator notes for the pushed PSDs, as a job summary, a commit comment and a Discord post with plain wording and no ping (owner, 2026-10-23); AutoCroissant `commands/card_check.py`, sparse list `card_check.SPARSE_FILES`, the `DISCORD_STANDARDS_WEBHOOK` secret (the standards channel); never reverts; §3) | Source |
 | Card guards workflow | `.github/workflows/card-guards.yml` (BUILT 2026-10-22 on `work/push-guards` in both repos, not landed; off until the repo variable `CARD_GUARDS` is `report` or `on`): on a push changing a PSD or PNG, a PSD pushed without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork at `cards-20261023` renders the changed layers in the card's ICC export mode, merged into the old PNG; Photoshop's stored composite only cross-checks and never is the PNG; a refusal is told "PNG not made: ...; export it in Photoshop"; since the owner's ruling of 2026-10-23 the fork's drawing refuses only past 25% bad (a card drawn whole, new or beside its PNG, per text and stat box, and a missed box drawn blank refuses too), a smaller miss is made and told in the comment and the bot commit; 29 of the 34 replayed commits get their PNG, the rest refuse on stale old PNGs and type rasters Photoshop redrew), and the pushed PSDs are checked against the card standards, fonts (R7) included (Txt2 sync fixed, the owner's one easy fix; the rest reported, exact layer names too until the owner says yes); one Discord post per push to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no role ping, no previews), a commit comment, writes landed in one bot commit after 30 quiet minutes. AutoCroissant `commands/card_guards.py`, `png_export.py`, `card_standards.py`; sparse list `card_guards.SPARSE_FILES`; AutoCroissant `docs/Campaigns/PUSH_GUARDS.md` | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
@@ -676,12 +676,12 @@ fonttools requests`). It reads the visible type layers' StyleRun fonts (plus the
 the text; an empty layer asks for nothing; hidden layers are ignored) and resolves them against the PostScript names (name
 ID 6, else 4, else 1, as FreeType reports them: `Kung Fu Panda` -> KungFuPanda) of every top-level font file, exact or loose (casefolded alphanumerics, `-Regular` stripped), with `FONT_ALIASES` (AutoCroissant
 global_config.py: Papyrus-Regular -> Papyrus, Kung-Fu-Panda -> KungFuPanda). Findings exit 0 and go to the job summary, then,
-when the repo secret `DISCORD_STANDARDS_WEBHOOK` is set (the standards channel since the owner's ruling of 2026-10-22, on
-`work/push-guards` until it lands; `DISCORD_FONT_WEBHOOK`, the font channel, before; the URL is in no file), one Discord
+when the repo secret `DISCORD_STANDARDS_WEBHOOK` is set (the standards channel since the owner's ruling of 2026-10-22;
+`DISCORD_FONT_WEBHOOK`, the font channel, before, now deleted; the URL is in no file), one Discord
 message, then a comment on the
 commit (`permissions: contents: write`). The message: `<@&546427268751294475>` once, then per (author, font) "<login> has pushed a card
 without adding the <font> font to MDW/Fonts, bite this user." with the cards and layers indented below; `allowed_mentions`
-is that role only. It never reverts or rejects; a failed webhook call only warns; a force push whose old head is gone checks the head commit's files. No developer-to-Discord mapping: the
+is that role only (the only role ping of the checks' posts; card-check and card-guards ping nobody, owner 2026-10-23). It never reverts or rejects; a failed webhook call only warns; a force push whose old head is gone checks the head commit's files. No developer-to-Discord mapping: the
 author is the commit's GitHub login, else the pusher. The bot's `/fonts` runs the same check over the whole repo
 (autocroissant-run-and-operate §7). State on 2026-10-21 (`--all` over the checkout, 133 s, 813 PSDs): six faces (BabaUI,
 Elephant-Regular, JavaneseText, MyriadArabic-Regular, OCRAExtended, Pristina-Regular) on 15 cards, 29 visible layers (30
@@ -694,7 +694,7 @@ no card-repo checkout at all; the bot files are `card_check.SPARSE_FILES` (card_
 card_models, card_edits, global_config; pip `psd-tools fonttools requests`). It reports what `/update_stats` prints for each card
 (the parser's own notes such as NO STARS FOUND, MISSPELT TYPE, SEVERAL CREATURES are also the website's Parser notes; the
 validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, ABILITY TEXT NOT FOUND, UNKNOWN TYPE are printed only), after the card's
-edits entry and `ABILITY_EXCLUSIONS`. Same three outputs and the same secret; the Discord line is plain: "<login> has pushed <card>
+edits entry and `ABILITY_EXCLUSIONS`. Same three outputs and the same secret, but no ping; the Discord line is plain: "<login> has pushed <card>
 with: <note>; <note>." An unreadable PSD or a failed API call is one error line, exit 0 (both checkers since 2026-10-21).
 The first whole-repo dispatch ran on 2026-10-21 (run 39690899334; expected: Bubble and God_Tamer NO STARS FOUND, 20_Creature_Types
 MISSPELT TYPE: tornado, Tainted_Lazarus, Pix, Twin_Emperors SEVERAL CREATURES, Computer_Virus HP/DEF/ATK/SPD NOT FOUND).
@@ -947,7 +947,7 @@ python3 TTS/checks/run_all.py
 # Font check workflow: triggers, the three bot files, the secret by name only (the standards channel's since 2026-10-22), the comment permission (expect no "discord.com" hit)
 grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_STANDARDS_WEBHOOK\|contents: write\|discord.com" .github/workflows/font-check.yml
 # Card check workflow: the same, seven bot files (expect no "discord.com" hit; the sparse list equals card_check.SPARSE_FILES)
-grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_FONT_WEBHOOK\|contents: write\|discord.com" .github/workflows/card-check.yml
+grep -n "paths:\|workflow_dispatch\|/commands/\|/global_config.py\|DISCORD_STANDARDS_WEBHOOK\|contents: write\|discord.com" .github/workflows/card-check.yml
 # Site data source and deck rules
 grep -n "^BOT_REPO\|^CARD_REPO" site/build/build_site.py; grep -n "tiers\|FIELD_MAX_STARS =" site/assets/deck.js
 # Bot pickle reachable (site build depends on it; expect HTTP/2 200)

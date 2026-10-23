@@ -288,9 +288,8 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 ## 5. The future guard: an Action on push that reports (then fixes)
 
 Each rule is one TTSCardMaker Action on push that runs a bot module on the pushed PSDs by blob sha, writes the job summary, comments on the
-commit and pings the card makers' role on Discord (`DISCORD_FONT_WEBHOOK`, the font channel; the font check posts to the standards
-channel's `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22, on TTSCardMaker `work/push-guards` until it lands), and
-never reverts or rejects.
+commit and posts in the standards channel on Discord (`DISCORD_STANDARDS_WEBHOOK`; only the font check pings the card makers' role,
+owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejects.
 
 - **Rule 1, the font check** (LIVE since 2026-10-21: TTSCardMaker f5a0e50, AutoCroissant ae1d2c5, secret set):
   `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
