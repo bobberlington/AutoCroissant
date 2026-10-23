@@ -2,7 +2,8 @@
 card_standards (guard 2 of the push guards): the rules on real cards of the clone (read-only opens; the counts of
 docs/Campaigns/PUSH_GUARDS.md section 6 per card), the owner's waivers, "(new)" against the old blob, the R4 new-card and
 regression cases, and the two 0-pixel fixes on copies: R11's rename (only the names change, byte for byte) and R9's Txt2
-story sync (Clot White). The badge vocabulary is pinned against the glyph names of MDW/Fonts/stoogedings.ttf.
+story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
+glyph names of MDW/Fonts/stoogedings.ttf.
 """
 from pathlib import Path
 
@@ -12,12 +13,14 @@ from psd_tools import PSDImage
 import commands.card_standards as cs
 import commands.psd_edit as psd_edit
 from commands.card_check import clone_vocabulary
-from conftest import story_sync
+from conftest import at_rev, story_sync
 
 # ========================
 # Configuration
 # ========================
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
+CLOT_WHITE = "Auxiliary/Minions/Clot_White.psd"
+STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title story out of sync (7b48db05 repaired it)
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
     ("Creatures/Kirby/3 Stars/Skullord.psd", {"R3", "R5"}, {"R4"}),
@@ -205,12 +208,16 @@ def test_r11_gate_refuses_any_other_change(clone, tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's Txt2 story sync (fix/txt2-sync)")
 def test_r9_story_sync_on_clot_white(clone, context, tmp_path):
-    rel = "Auxiliary/Minions/Clot_White.psd"
-    psd = _open(clone, rel)
-    issues = cs.check(psd, rel, context)
+    """The pushed blob, not the working tree: main's Txt2 repair (7b48db05) synced the live file, so the stale story is
+    read from the commit before it."""
+    rel = CLOT_WHITE
+    data = at_rev(clone, STALE_TXT2, rel)
+    stale = tmp_path / "Clot_White.psd"
+    stale.write_bytes(data)
+    issues = cs.check(PSDImage.open(str(stale)), rel, context)
     (rule,) = [i for i in issues if i.code == "R9"]
     assert rule.fix and rule.items == ("Name",) and not cs.reported(issues)
-    fixed = cs.fix((clone / rel).read_bytes(), rel, issues, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser())
+    fixed = cs.fix(data, rel, issues, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser())
     assert fixed.refused == [] and fixed.applied == [rule.line()]
     out = tmp_path / "fixed.psd"
     out.write_bytes(fixed.data)
