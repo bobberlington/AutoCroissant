@@ -1004,7 +1004,7 @@ def test_a_pool_worker_takes_the_token(monkeypatch):
 def test_guard_modules_stay_uncompiled():
     """Not in setup.py's INCLUDE_FILES: the Action runs them as pure Python (the change-control skill's step 5)."""
     setup = (REPO / "setup.py").read_text(encoding="utf-8")
-    for module in ("card_guards", "png_export", "card_standards"):
+    for module in ("card_guards", "png_export", "card_standards", "psd_diff"):
         assert f"commands/{module}.py" not in setup
 
 
