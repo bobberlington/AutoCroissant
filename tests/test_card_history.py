@@ -750,8 +750,10 @@ def test_recover_restores_lost_versions_starts_and_gone_cards(lost):
     New (date_archive), whose author stays maker's. Nothing changes the second time."""
     index = ch.GitIndex.from_git(str(lost.cards))
     snaps = ch.bot_snapshots(str(lost.bot))
+    pickles = ch.bot_pickles(str(lost.bot))
+    assert ch.bot_pickles(str(lost.bot)) is pickles and set(pickles.at_of) == {s.sha for s in snaps}   # read once
     stats, old = lost.stats, lost.old
-    report = ch.recover(stats, old, index, snaps)
+    report = ch.recover(stats, old, index, pickles)
     first = old["A"][0]
     assert [v.ability for v in old["A"]] == ["Old words."] and first.blob_sha == blob(A1)
     assert (first.timestamp, first.version["from"], first.version["from_commit"]) == (1000.0, 1000.0, lost.c[1])
@@ -764,9 +766,9 @@ def test_recover_restores_lost_versions_starts_and_gone_cards(lost):
     found = ch.Refined()
     ch.date_archive(stats, old, index, found, backfill=False)
     assert old["Old"][0].archived["renamed_to"] == "New" and old["Old"][0].author == "maker"
-    again = ch.recover(stats, old, index, snaps)
+    again = ch.recover(stats, old, index, ch.Pickles.of(snaps))
     assert not again.changed()
-    report = ch.refine(stats, old, index, snaps)                  # the seed pass after it: nothing more to recover
+    report = ch.refine(stats, old, index, pickles)                # the seed pass after it: nothing more to recover
     assert report.recovered is not None and not report.recovered.changed()
     assert old["A"][0].version["restored_from"] == snaps[0].sha   # the seed keeps where it came from
 

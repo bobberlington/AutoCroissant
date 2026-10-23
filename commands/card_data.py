@@ -856,14 +856,14 @@ def history_index(clone: Optional[str] = None):
         return None
 
 
-def bot_snapshots():
-    """The bot's PICKLE commits (card_history.bot_snapshots) from its own clone (BOT_CLONE, else this checkout); []
-    without a full clone."""
-    from commands.card_history import BOT_CHECKOUT, bot_snapshots as snapshots
-    return snapshots(expanduser(BOT_CLONE) if BOT_CLONE else BOT_CHECKOUT)
+def bot_pickles():
+    """recover's input from the bot's PICKLE commits (card_history.bot_pickles) in its own clone (BOT_CLONE, else this
+    checkout); None without a full clone."""
+    from commands.card_history import BOT_CHECKOUT, bot_pickles as pickles
+    return pickles(expanduser(BOT_CLONE) if BOT_CLONE else BOT_CHECKOUT)
 
 
-def clean_history(db: StatsDatabase, index=None, snapshots=None) -> tuple:
+def clean_history(db: StatsDatabase, index=None, pickles=None) -> tuple:
     """
     The one-time history cleanup at each /update_stats (with nothing left it changes nothing): with the history
     clone's index and the bot's PICKLE commits, the history they held recovered and the cards gone before archiving
@@ -876,7 +876,7 @@ def clean_history(db: StatsDatabase, index=None, snapshots=None) -> tuple:
         None, impossible values set to unknown, misreads merged): the lists of card_history's functions
     """
     from commands.card_history import Refined, date_archive, dedupe, misreads, normalize, recover, unknown_values
-    recovered = recover(db.stats, db.old_stats, index, snapshots) if index is not None and snapshots else None
+    recovered = recover(db.stats, db.old_stats, index, pickles) if index is not None and pickles is not None else None
     normalized = normalize(db.stats, db.old_stats)
     unknowns = unknown_values(db.stats, db.old_stats)
     merged = misreads(db.stats, db.old_stats, index) if index is not None else []
@@ -966,7 +966,7 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     build.details = psd_details.load()
     index = history_index()
-    cleaned = clean_history(db, index, bot_snapshots() if index is not None else [])   # one-time (2026-10-23)
+    cleaned = clean_history(db, index, bot_pickles() if index is not None else None)   # one-time (2026-10-23)
     line = history_line(*cleaned, db=db)
     if line:
         build.report(line)
@@ -1440,7 +1440,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     db.stats, db.old_stats = stats, old
     run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget, aliases=aliases)
     index = run_build.index
-    seeded = refine(db.stats, db.old_stats, index, bot_snapshots()) if seeding else None
+    seeded = refine(db.stats, db.old_stats, index, bot_pickles()) if seeding else None
     restored_manifest: dict = {}
     if restore:
         db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)

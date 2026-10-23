@@ -663,16 +663,23 @@ class Recovered:
                 f"Readings git can't date (skipped): {self.undated}"]
 
 
-_SNAPSHOTS: dict = {}                             # (clone, sha) -> Snapshot: the PICKLEs never change
+@dataclass
+class Pickles:
+    """What recover reads from the bot's PICKLE commits: each name's readings (_readings) and each commit's time."""
+    readings: dict
+    at_of: dict
+
+    @classmethod
+    def of(cls, snapshots: list) -> "Pickles":
+        return cls(_readings(snapshots), {snap.sha: snap.at for snap in snapshots})
 
 
-def bot_snapshots(clone: str) -> list:
-    """
-    The bot's committed database: a Snapshot for each commit of clone's HEAD history that changed stats.pkl or
-    old_stats.pkl, oldest first, without the ones a later commit reverted (cca0aaf); [] when clone is no full git clone
-    (the Action's sparse checkout, a git archive). Read once per process (git cat-file --batch, the allow-list
-    unpickler; a pickle it refuses is left out).
-    """
+_PICKLES: dict = {}                                   # (clone, its PICKLE commits) -> Pickles: read once per process
+
+
+def _pickle_commits(clone: str) -> list:
+    """(sha, committer time) of each commit of clone's HEAD history that changed stats.pkl or old_stats.pkl, oldest
+    first, without the ones a later commit reverted (cca0aaf); [] when clone is no full git clone."""
     env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
     if not clone or not isdir(clone):
         return []
@@ -690,32 +697,53 @@ def bot_snapshots(clone: str) -> list:
             sha, at, body = (chunk.split("\t", 2) + ["", ""])[:3]
             reverted.update(findall(r"This reverts commit ([0-9a-f]{7,40})", body))
             commits.append((sha, float(at or 0)))
-    commits = [(sha, at) for sha, at in reversed(commits) if not any(sha.startswith(r) for r in reverted)]
-    todo = [(sha, name) for sha, _ in commits if (clone, sha) not in _SNAPSHOTS for name in PICKLE_FILES]
-    blobs: dict = {}
-    if todo:
-        done = run(["git", "-C", clone, "cat-file", "--batch"], input="".join(f"{s}:{n}\n" for s, n in todo).encode(),
-                   capture_output=True, env=env)
-        data, pos = done.stdout, 0
-        for key in todo:
-            end = data.find(b"\n", pos)
-            if end < 0:
-                break
-            header, pos = data[pos:end].split(), end + 1
-            if len(header) == 3 and header[1] == b"blob":
-                size = int(header[2])
-                blobs[key], pos = data[pos:pos + size], pos + size + 1
+    return [(sha, at) for sha, at in reversed(commits) if not any(sha.startswith(r) for r in reverted)]
+
+
+def bot_snapshots(clone: str) -> list:
+    """
+    The bot's committed database: a Snapshot for each of _pickle_commits(clone), oldest first; [] without a full clone
+    (the Action's sparse checkout, a git archive). One git cat-file --batch, the allow-list unpickler; a pickle it
+    refuses is left out.
+    """
+    commits = _pickle_commits(clone)
+    if not commits:
+        return []
+    env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
+    todo = [(sha, name) for sha, _ in commits for name in PICKLE_FILES]
+    done = run(["git", "-C", clone, "cat-file", "--batch"], input="".join(f"{s}:{n}\n" for s, n in todo).encode(),
+               capture_output=True, env=env)
+    data, pos, blobs = done.stdout, 0, {}
+    for key in todo:
+        end = data.find(b"\n", pos)
+        if end < 0:
+            break
+        header, pos = data[pos:end].split(), end + 1
+        if len(header) == 3 and header[1] == b"blob":
+            size = int(header[2])
+            blobs[key], pos = data[pos:pos + size], pos + size + 1
     out = []
     for sha, at in commits:
-        if (clone, sha) not in _SNAPSHOTS:
-            try:
-                pickles = [SeedUnpickler(BytesIO(blobs[(sha, n)])).load() if (sha, n) in blobs else {} for n in PICKLE_FILES]
-            except Exception as e:                      # noqa: BLE001 - an unreadable PICKLE is one line, never a failed run
-                print(f"History: PICKLE {sha[:7]} not read ({e})")
-                continue
-            _SNAPSHOTS[(clone, sha)] = Snapshot(sha, at, *(p if isinstance(p, dict) else {} for p in pickles))
-        out.append(_SNAPSHOTS[(clone, sha)])
+        try:
+            pickles = [SeedUnpickler(BytesIO(blobs[(sha, n)])).load() if (sha, n) in blobs else {} for n in PICKLE_FILES]
+        except Exception as e:                          # noqa: BLE001 - an unreadable PICKLE is one line, never a failed run
+            print(f"History: PICKLE {sha[:7]} not read ({e})")
+            continue
+        out.append(Snapshot(sha, at, *(p if isinstance(p, dict) else {} for p in pickles)))
     return out
+
+
+def bot_pickles(clone: str) -> Optional[Pickles]:
+    """recover's input from clone's PICKLE commits (bot_snapshots, then _readings), kept for the process while they
+    stay the same (a few MB of readings, not the snapshots); None without a full clone."""
+    commits = _pickle_commits(clone)
+    if not commits:
+        return None
+    key = (abspath(clone), tuple(sha for sha, _ in commits))
+    if key not in _PICKLES:
+        _PICKLES.clear()
+        _PICKLES[key] = Pickles.of(bot_snapshots(clone))
+    return _PICKLES[key]
 
 
 def _as_card(key: str, value) -> Optional[tuple]:
@@ -818,7 +846,7 @@ def _same_printed(a: dict, b: dict) -> bool:
     return all(a[k] == b[k] or (k == "ability" and PRINTS_NONE in (a[k], b[k])) for k in a if k in b)
 
 
-def recover(stats: dict, old_stats: dict, index: GitIndex, snapshots: list) -> Recovered:
+def recover(stats: dict, old_stats: dict, index: GitIndex, pickles: Pickles) -> Recovered:
     """
     History the bot's own PICKLE commits held and old_stats lost (the 2026-02-07 cleanup dropped all but 208 names; the
     2025 pickles held states no backfill read; 795fd23 replaced Spawn of the Forbidden One's June reading), in place.
@@ -835,14 +863,14 @@ def recover(stats: dict, old_stats: dict, index: GitIndex, snapshots: list) -> R
     Args:
         stats, old_stats: The database (changed in place)
         index: The card repo's GitIndex
-        snapshots: bot_snapshots()
+        pickles: bot_pickles() (or Pickles.of(snapshots))
 
     Returns:
         What changed
     """
     report = Recovered()
-    at_of = {snap.sha: snap.at for snap in snapshots}
-    for name, readings in _readings(snapshots).items():
+    at_of = pickles.at_of
+    for name, readings in pickles.readings.items():
         holder = stats.get(name)
         if holder is not None and getattr(holder, "duplicate_of", None):
             continue
@@ -1173,9 +1201,9 @@ def _dated(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], report
     return fresh
 
 
-def refine(stats: dict, old_stats: dict, index: GitIndex, snapshots: Optional[list] = None) -> Refined:
+def refine(stats: dict, old_stats: dict, index: GitIndex, pickles: Optional[Pickles] = None) -> Refined:
     """
-    The seed pass, in place: history the bot's PICKLE commits held recovered (with snapshots), stored versions
+    The seed pass, in place: history the bot's PICKLE commits held recovered (with pickles), stored versions
     normalized and their impossible values unknown, cards and versions dated from git, type misreads and duplicate
     versions dropped (collapse; never an archived one), blob-less versions marked legacy, archive tags added and dated,
     every version and current card given its `version` record. Idempotent: a second pass changes nothing.
@@ -1184,14 +1212,14 @@ def refine(stats: dict, old_stats: dict, index: GitIndex, snapshots: Optional[li
         stats: {name: CardInfo} (stats.pkl)
         old_stats: {name: [CardInfo]} (old_stats.pkl), oldest first
         index: The card repo's GitIndex
-        snapshots: bot_snapshots() of a clone of the bot's repo ([] or None: no recovery)
+        pickles: bot_pickles() of a clone of the bot's repo (None: no recovery)
 
     Returns:
         The counts
     """
     report = Refined()
-    if snapshots:
-        report.recovered = recover(stats, old_stats, index, snapshots)
+    if pickles is not None:
+        report.recovered = recover(stats, old_stats, index, pickles)
     report.normalized = normalize(stats, old_stats)
     report.unknown = unknown_values(stats, old_stats)
     date_cards(stats, index, report)
@@ -1349,7 +1377,7 @@ def main(argv: Optional[list] = None) -> int:
     args = parser.parse_args(argv)
     stats, old = read_pickles(args.pickles)
     before = sum(len(v) for v in old.values())
-    report = refine(stats, old, GitIndex.from_git(args.git, args.head), bot_snapshots(args.bot_git))
+    report = refine(stats, old, GitIndex.from_git(args.git, args.head), bot_pickles(args.bot_git))
     print(f"{len(stats)} cards, {before} versions before, {sum(len(v) for v in old.values())} after.")
     print("\n".join(report.lines()))
     if args.out:
@@ -1376,9 +1404,11 @@ __all__ = [
     'Commit',
     'GitIndex',
     'Reading',
+    'Pickles',
     'Recovered',
     'Refined',
     'Snapshot',
+    'bot_pickles',
     'bot_snapshots',
     'carry',
     'carry_to',
