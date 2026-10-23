@@ -188,11 +188,38 @@ def test_text_blends_follow_the_fork():
 
 
 def test_parity_bar():
-    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24."""
-    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH) == (2.0, 0.5, 24)
+    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24. Missing it is told, not
+    refused (2026-10-23); only past the floor, more than 25% of the region's pixels past 24, is a render broken."""
+    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH, pe.PARITY_FLOOR) == (2.0, 0.5, 24, 25.0)
     assert pe._within_bar({"bad_pct": 0.5, "mean": 2.0, "max": 200})
     assert not pe._within_bar({"bad_pct": 0.0, "mean": 2.01, "max": 7})
     assert not pe._within_bar({"bad_pct": 0.51, "mean": 0.5, "max": 7})
+    assert not pe._past_floor({"bad_pct": 25.0, "mean": 90.0, "max": 255})
+    assert pe._past_floor({"bad_pct": 25.01, "mean": 1.0, "max": 30})
+
+
+def test_miss_notes():
+    """The owner's note per edited box past the bar (2026-10-23); the re-render's only when the baseline was within it."""
+    ok, miss = {"bad_pct": 0.0, "mean": 0.8, "max": 7}, {"bad_pct": 1.9725, "mean": 1.5955, "max": 217}
+    note = "baked with a pixel difference: bad 1.97%, mean 1.60, max 217"
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": ok}, rerender={"hp": ok})) == []
+    assert pe.miss_notes(SimpleNamespace(parity={"name": miss}, rerender={"name": miss})) == [f"name {note}"]
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": ok, "spd": ok}, rerender={"spd": miss})) == [
+        "spd baked with a pixel difference (re-render): bad 1.97%, mean 1.60, max 217"]
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": miss, "spd": ok})) == [f"hp {note}"]     # a Baked without rerender
+
+
+def test_own_pixels():
+    """The blank-render check's pixels (review 2026-10-23): the merge's replaced pixels no other edit's region reaches;
+    all of them when the others cover the region."""
+    replaced = np.zeros((10, 20), bool)
+    replaced[0:2, 0:2] = True                                               # another edit's change, in the overlap
+    region = (100, 50, 120, 60)
+    assert not pe.own_pixels(replaced, region, [(90, 40, 105, 55)]).any()
+    assert pe.own_pixels(replaced, region, [(110, 55, 130, 70), (0, 0, 10, 10)]).sum() == 4    # no overlap there
+    replaced[9, 19] = True
+    assert pe.own_pixels(replaced, region, [(90, 40, 105, 55)]).sum() == 1
+    assert pe.own_pixels(replaced, region, [(0, 0, 200, 200)]).sum() == 5   # covered: every replaced pixel counts
 
 
 def test_jsx_fx_fixture_is_vendored_and_small():
@@ -636,10 +663,9 @@ def test_raw_export_bakes_unconverted(clone, parser, tmp_path):
     psd_path, png_path = _card(clone, RED_BLOON)
     parsed, baked = _bake(clone, parser, RED_BLOON, {"hp": 2}, tmp_path)
     assert baked.icc is False and baked.reparse["card"]["hp"] == 2
-    assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
-    with pytest.raises(pe.Refused, match="baseline bad") as refused:
-        pe.baseline(PSDImage.open(psd_path), Image.open(png_path), baked.edits[0].region)
-    assert refused.value.code == "parity" and float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > 10
+    assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX and pe.miss_notes(baked) == []
+    _, converted = pe.baseline(PSDImage.open(psd_path), Image.open(png_path), baked.edits[0].region)
+    assert converted["mean"] > 10 and not pe._within_bar(converted)    # a miss: it would bake, told
 
 
 @text_engine
@@ -800,15 +826,14 @@ def test_toggle_round_trip_keeps_block_order(clone, tmp_path):
 
 
 @before_textures
-def test_cannon_rows_refuse_parity_without_bevel_textures(clone, parser, tmp_path):
-    """Before round 4 the fork skips the digits' BevelEmboss texture (5-7% wrong, max 110): apply_jobs refuses parity before
-    any pixel is pasted, for the two-row atk as for its one-row hp."""
+def test_cannon_rows_bake_with_a_note_without_bevel_textures(clone, parser, tmp_path):
+    """Before round 4 the fork skips the digits' BevelEmboss texture (5-7% wrong, max 110): refused `parity` until
+    2026-10-23, now baked under the floor with the miss told, for the two-row atk as for its one-row hp."""
     for stat, value in (("atk", 15), ("hp", 2)):
-        with pytest.raises(pe.Refused) as refused:
-            _bake(clone, parser, CANNON, {stat: value}, tmp_path)
-        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad")
-        assert float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) > pe.PARITY_BAD_MAX
-    assert not list(tmp_path.iterdir())
+        (tmp_path / stat).mkdir()
+        _, baked = _bake(clone, parser, CANNON, {stat: value}, tmp_path / stat)
+        assert pe.PARITY_BAD_MAX < baked.parity[stat]["bad_pct"] <= pe.PARITY_FLOOR and baked.reparse["card"][stat] == value
+        assert pe.miss_notes(baked)[0].startswith(f"{stat} baked with a pixel difference: bad ")
 
 
 # ========================
@@ -1129,14 +1154,125 @@ def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
     assert refused.value.code == "font" and refused.value.why.startswith("not resolved exactly: ")
 
 
-@text_engine
-def test_baseline_refuses_a_region_the_fork_renders_wrong(clone, parser, tmp_path):
-    """Red_Knife's title (its outer glow's noise, which no render matches) misses the parity bar: refused, never pasted."""
+@text_edit
+def test_baseline_miss_under_the_floor_bakes_with_a_note(clone, parser, tmp_path):
+    """Red_Knife's title (its outer glow's noise, which no render matches) misses the parity bar: baked and told, no
+    longer refused (owner, 2026-10-23); the parser reads the new title back."""
     rel = "Auxiliary/Items/Red_Knife.psd"
     psd_path = _card(clone, rel)[0]
+    name = _typo_fix(pe.read_name(PSDImage.open(psd_path)))
+    _, baked = _bake(clone, parser, rel, {"name": name}, tmp_path)
+    measured = baked.parity["name"]
+    assert not pe._within_bar(measured) and not pe._past_floor(measured)
+    assert pe.read_name(PSDImage.open(baked.psd_path)) == name
+    assert pe.miss_notes(baked) == ["name baked with a pixel difference: bad %.2f%%, mean %.2f, max %d"
+                                    % (measured["bad_pct"], measured["mean"], measured["max"])]
+
+
+def _painted(clone, tmp_path, rows: float) -> tuple:
+    """Mini Doomer's PSD, and its PNG with the top share of the hp row inverted (a render broken there), in tmp_path/card."""
+    psd, png = _card(clone, MINI_DOOMER)
+    out = tmp_path / "card"
+    out.mkdir()
+    image = np.array(Image.open(png))
+    x0, y0, x1, y1 = HP_ROW
+    y1 = y0 + int((y1 - y0) * rows)
+    image[y0:y1, x0:x1, :3] = 255 - image[y0:y1, x0:x1, :3]
+    Image.fromarray(image).save(out / Path(png).name)
+    (out / Path(psd).name).write_bytes(Path(psd).read_bytes())
+    return str(out / Path(psd).name), str(out / Path(png).name)
+
+
+@text_engine
+def test_a_broken_render_is_refused_past_the_floor(clone, parser, tmp_path):
+    """The safety floor (owner, 2026-10-23): more than 25% of the edited box's pixels past 24 is a broken render, refused
+    `parity` before anything is written; a box a tenth broken bakes, told; the re-render is held to the same floor."""
     with pytest.raises(pe.Refused) as refused:
-        _bake(clone, parser, rel, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
-    assert refused.value.code == "parity" and not list(tmp_path.iterdir())
+        _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path, paths=_painted(clone, tmp_path, 1.0))
+    assert refused.value.code == "parity" and refused.value.why.endswith("past the 25% floor")
+    assert float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) > pe.PARITY_FLOOR
+    assert [p.name for p in tmp_path.iterdir()] == ["card"]
+    out = tmp_path / "out"
+    out.mkdir()
+    _, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, out, paths=_painted(clone, out, 0.1))
+    assert 5 < baked.parity["hp"]["bad_pct"] < pe.PARITY_FLOOR and baked.reparse["card"]["hp"] == 8
+    assert pe.miss_notes(baked)[0].startswith("hp baked with a pixel difference: bad ")
+    merged = np.array(Image.open(baked.png_path))
+    x0, y0, x1, y1 = HP_ROW
+    merged[y0:y1, x0:x1, :3] = 255 - merged[y0:y1, x0:x1, :3]
+    with pytest.raises(pe.Refused) as refused:
+        pe.gate_idempotence(baked.reparse, {"hp": 8}, PSDImage.open(baked.psd_path), Image.fromarray(merged), baked.edits,
+                            baked.icc)
+    assert refused.value.code == "idempotence" and refused.value.why.endswith("past the 25% floor")
+
+
+SHIELD = "Items/Equip/3 Stars/Shield_of_the_Guilty.psd"   # its ability box drawn without text: 10.7% bad, under the floor
+
+
+def _no_ability(monkeypatch):
+    """The fork drawing no ability text: every render hides the visible Text/Ability layer."""
+    for name in ("render_region", "render_pair"):
+        def blank(psd, region, icc=True, text="preview", edited=(), real=getattr(pe, name)):
+            layer = pe.ability_layer(psd)
+            layer.visible = False
+            try:
+                return real(psd, region, icc, text, edited)
+            finally:
+                layer.visible = True
+        monkeypatch.setattr(pe, name, blank)
+
+
+@text_edit
+def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monkeypatch):
+    """The fork drawing no ability text misses only 10.7% of Shield of the Guilty's box, under the floor, and its merge
+    replaces no pixel: the PSD would carry the new ability, the PNG the old. Refused `parity` before anything is written
+    (review, 2026-10-23). An edit that draws no change where the render matches the PNG still bakes."""
+    psd_path, png_path = _card(clone, SHIELD)
+    _no_ability(monkeypatch)
+    old = pe.parse_card(parser, psd_path, SHIELD)["card"]["ability"]
+    new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, SHIELD, {"ability": new}, tmp_path)
+    assert refused.value.code == "parity" and refused.value.why.startswith("ability: the render shows no change, baseline bad ")
+    assert 5 < float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) < pe.PARITY_FLOOR
+    assert not list(tmp_path.iterdir())
+    region = pe.set_text_layer(PSDImage.open(psd_path), "ability", new, str(clone / pe.FONTS_DIR), None).region
+    old_psd, png = PSDImage.open(psd_path), Image.open(png_path)
+    png.load()
+    drawn = png.copy()
+    drawn.paste(pe.render_region(old_psd, region, pe.export_icc(old_psd, png)).convert(png.mode), region[:2])
+    out = tmp_path / "drawn"
+    out.mkdir()
+    drawn.save(out / Path(png_path).name)
+    (out / Path(psd_path).name).write_bytes(Path(psd_path).read_bytes())
+    (tmp_path / "baked").mkdir()
+    _, baked = _bake(clone, parser, SHIELD, {"ability": new}, tmp_path / "baked",
+                     paths=(str(out / Path(psd_path).name), str(out / Path(png_path).name)))
+    assert baked.changed_pixels == 0 and pe._within_bar(baked.parity["ability"]) and pe.miss_notes(baked) == []
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(new)
+
+
+@text_edit
+def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, monkeypatch):
+    """Another edit's pixels inside an overlapping region are not this edit's drawing (review 2026-10-23): Shield of the
+    Guilty retitled and its ability drawn blank, the ability's region stretched over the title, is refused `parity` as
+    the blank render it is (it baked before: the title's pixels made the ability's merge non-empty)."""
+    psd_path, _ = _card(clone, SHIELD)
+    _no_ability(monkeypatch)
+    old = pe.parse_card(parser, psd_path, SHIELD)["card"]["ability"]
+    new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
+    real = pe.set_text_layer
+
+    def stretched(psd, which, text, fonts_dir, chart=None):
+        edit = real(psd, which, text, fonts_dir, chart)
+        if which == "ability":
+            edit.region = pe.union_box([edit.region, pe.name_layer(psd).bbox])
+        return edit
+    monkeypatch.setattr(pe, "set_text_layer", stretched)
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, SHIELD, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path))), "ability": new}, tmp_path)
+    assert refused.value.code == "parity" and refused.value.why.startswith("ability: the render shows no change, baseline bad ")
+    assert not list(tmp_path.iterdir())
 
 
 @text_engine

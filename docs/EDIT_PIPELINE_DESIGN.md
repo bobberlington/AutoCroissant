@@ -173,9 +173,33 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `unsupported-card` (non-template rows, not one visible `Text/Ability`, name layer not `Text/Name`, overlay word or
    ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
-   ignore_preview=True)` vs the official PNG crop. Gate `parity`: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
-   and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12). A row the
-   fork already renders wrong (class A) is refused here, never pasted.
+   ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
+   and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12).
+   **Since 2026-10-23 a miss of the bar bakes and is told** (the owner: "let's not refuse bakes for failing the pixel check
+   anymore. rather, we should improve psd-tools and fix these as we come across them"): the report's card line and the
+   commit note say, per edited box, `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217`
+   (`psd_edit.miss_notes`). Gate `parity` is now only the safety floor: more than 25% of the region's pixels past 24
+   (`PARITY_FLOOR`) is a broken render, refused before anything is written. So is a box that misses the bar and whose
+   merge replaces no pixel (`<field>: the render shows no change`, review 2026-10-23): the fork drew nothing new there,
+   so the PSD would carry the edit and the PNG the old card. Only the replaced pixels no other edit's region reaches count
+   (`own_pixels`, review 2026-10-23: a retitle in a region stretched over a blank ability made its merge non-empty and it
+   baked); when the others cover the whole region, all count. A blank ability box stays under the floor on 9 of 24
+   sampled cards (Shield_of_the_Guilty 10.7%, Clot_Blood 12.5%, Lost_Kin 16.6%, Rusty_Knife 19.1% ... Grey_Prince_Zote
+   23.6%); the 8 re-run are all refused now. A box within the bar that draws no change (a case fix under all caps) still
+   bakes. The other floor is the data one, step 8: what the bot reads back from the baked PSD must be the edit. Before
+   the ruling a row the fork rendered wrong (class A) was refused here. Measured 2026-10-23 with a real edit through
+   every gate on the bot-gate scan's 118 parity misses (35 titles, 30 abilities, 53 rows of 15 stat cards; frozen corpus
+   6e50c3ee, fork r6-color-glyphs b8739c37; `~/Documents/Tools/wt/scratch/soft-parity/softscan.py`): the old bar refused
+   66 of them in the bake's own regions (the scan's boxes are wider, so 51 already baked); now 117 bake, those 66 with a
+   note (max bad 6.35%, Corruptor's spd; re-render max 5.40%), none hits the floor, and 1 is refused either way for its
+   badge layer (PoD06Rainbow_Bloon's ability). The fewest pixels one of those 117 replaced is 2,287, so the no-change
+   rule refuses none of them. **What the floor lets through, told** (review, 2026-10-23): a stat row drawn 8 px off is
+   8.5-9.7% bad (Mini_Doomer, Lich_King; 3 px: 12.8-17.5%), a title 3 px off 19.8-25.9% (The_Freezer, Mini_Doomer,
+   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font or a missing inline badge
+   was not measured; they should come out at or under a blank box. Not caught: a blank ability whose edit also changes
+   overlay words or FX layers (the merge replaces their pixels), or a new render blank while the old one draws. Tighter
+   options are the owner's: a mean ceiling (blank boxes: mean 17.7-32.5; the unbakeable list's misses: at most 7.39,
+   Dark_Bramble's title) or the floor counted over inked pixels only.
 4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
    enough: Mini_Doomer `Hp Dark/2` has `effects.enabled` True over an InnerShadow and a GradientOverlay both `enabled=False`);
@@ -236,7 +260,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    visible, styled, directly above `Text`, no overlay word layer showing.
    Name: `Text/Name` read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
-   region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels).
+   region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
+   the render is held to the same floor (refused past 25% bad); a miss is told, as `(re-render)` when only it missed.
 10. **Commit, one per run** (since 2026-10-22; `card_bake.land`). Re-fetch head H' and the file at H'. Per card: gate
     `head-moved`, its PSD and PNG at H' still hold the blobs it read, and gate `edit-changed`, its PSD-kind values at H' equal
     what was baked (never remove a value you did not render); a card that fails either stays out of the commit as a try-again
@@ -246,7 +271,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
     does this explicitly; `editsFile` itself keeps any non-`FIELDS` key, `edit.js:39-40`, and would leave a `_`-only entry);
     otherwise `_by`/`_at` stay. Author/committer `AutoCroissant <autocroissant@gmail.com>`, non-force ref update, 409/422 ->
     back to step 10 up to 3 times (`head-moved` for every card after that). Message: `Card edits: 5 baked, 20 redundant, 4
-    refused`, one `- <card>: <what>` line per baked card (`- Goombella: spd 4 -> 5`), then one `Edit-by: <login>`
+    refused`, one `- <card>: <what>` line per baked card (`- Goombella: spd 4 -> 5`; a box that missed the bar adds its
+    note, `- The Freezer: name 'The Freezer' -> 'The Freezee'; name baked with a pixel difference: bad 1.97%, mean 1.60,
+    max 217`, 2026-10-23), then one `Edit-by: <login>`
     trailer per baked card and editor, sorted (build_site.EDIT_BY counts an editor's trailers as their cards in the run's
     commit); shas, gate codes and the fork tag go to the report and `_psd`.
     Until 2026-10-22 it was one commit per card plus one for the refused verdicts (26 commits for the first live run).
@@ -282,7 +309,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   toggles over lit cells (mean 1.03-1.04) wait for a fork fix of the pixel bars' GradientOverlay shade (a rendering round candidate),
   not a looser bar. **Revised (the user, 2026-10-22):** mean 2.0 (`PARITY_MEAN_MAX`; bad 0.5% and max 24 unchanged), so those
   toggles, the Cannon's one-row hp (mean 1.06) and Z.O.M.G.'s title (1.28) pass the baseline; the 0.5% bad-pixel bar still refuses
-  a row the fork renders wrong (the Cannon before round 4: 5-7% bad).
+  a row the fork renders wrong (the Cannon before round 4: 5-7% bad). **Revised again (the owner, 2026-10-23):** the bar
+  no longer refuses; a miss bakes with a note, only past 25% bad (`PARITY_FLOOR`) is a render broken (section 5 step 3).
 - **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
   Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
   marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
@@ -368,9 +396,17 @@ minute; `card_bake` imports psd-tools at the top, so the gate can't run before i
 retries it. A `duplicate` or no-PNG refusal likewise carries `pngs`, a key of the PNG paths it rests on
 (`Snapshot.pngs_key`: the official PNG and the numbered ones beside the PSD, or the numbered PNG a PSD-less card is), and is
 final only while they hold: removing `NME_Stock2.png` retries it, a re-export of the same paths doesn't (a verdict written
-before 2026-10-22 has no key and is retried once). A `Card Edits.json` that isn't JSON fails the gate (Discord is told)
-rather than ending it silently. Not covered: another refused card whose PSD and edit are unchanged is not retried after a
-pipeline, fork or chart fix; a dispatch (`dry_run` unticked) does that.
+before 2026-10-22 has no key and is retried once). A pixel refusal under the floor (`parity: baseline bad 0.11% ...` or
+`idempotence: <field> re-render bad ...`, written under the old bar before 2026-10-23: Masked Dedede, PoD11ZOMG and Zero
+Override on that day) is never final: the next scheduled run bakes it or refuses it again past the floor or as a render
+that shows no change, and those stay final. Until that run the website still shows it refused: TTSCardMaker
+`site/build/build_site.py` (about line 855) shows any `_psd` refusal while its `for` values and `psd` prefix hold and
+knows nothing of the floor (review 2026-10-23). `pending()` takes these cards on the first 30-minute tick after this lands
+(3 cards, under `MAX_BAKES`), and the bake commit rebuilds the site, so the window is one tick; a dispatch closes it at
+once. Teaching build_site the floor is a TTSCardMaker change, not made. A `Card
+Edits.json` that isn't JSON fails the gate (Discord is told) rather than ending it silently. Not covered: another refused
+card whose PSD and edit are unchanged is not retried after a pipeline, fork or chart fix; a dispatch (`dry_run` unticked)
+does that.
 
 **Cap and alert** (2026-10-22). A run bakes at most `MAX_BAKES` = 40 cards and starts none after `BUDGET` = 40 min; the
 rest are refused `capped` (try-again: no verdict, pending, the next tick takes them). A title bake took 29-31 s in run
@@ -447,10 +483,13 @@ reminder's cadence (daily `/update_stats` at 5AM).
 Four sinks: the commit body; the job summary + artifact (report, before/after/diff crops, parse diff, record diff); `_psd` for
 the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes are a closed list: `duplicate`, `unsupported-card`,
 `stat>10`, `recent`, `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
-`idempotence`, `edit-changed`, `head-moved`, `capped`, `error`. Since 2026-10-21 `unsupported-card` also names a row whose several digits
+`idempotence`, `edit-changed`, `head-moved`, `capped`, `error`. Since 2026-10-23 `parity` and `idempotence` on pixels mean
+past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
+the bar is no refusal but a note in the commit body and the report (section 5
+step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
 carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
 +2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
-styled digit means the render missed the bar, no longer that the digit is styled, and `styled-word` means only that this
+styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
 Per card all-or-nothing; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
