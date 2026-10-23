@@ -26,9 +26,9 @@ from typing import Callable, Optional
 
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RAW_BASE,
-                           RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
-from commands.card_edits import CardAuthors, CardEdits
+from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH, EDITS_PATHS,
+                           ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
@@ -270,6 +270,7 @@ class CardBuild:
         self.changed += self._apply_edits()
         self.changed += self._sync_duplicates(resp)
         self.changed += self._apply_edits()             # the duplicates' own edits
+        self.changed += self._apply_dates(self._dates_from_response(resp, repository))
 
         if self.legacy:                                 # the build keeps each version's own path
             self._record_history()
@@ -426,6 +427,30 @@ class CardBuild:
         changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
         if changed:
             print(f"{changed} cards changed by {EDITS_PATH}.")
+        return changed
+
+    def _dates_from_response(self, response, repository: str) -> Optional[CardDates]:
+        """The card repo's creation dates (the first of CREATED_PATHS in the tree), or None if missing or unreadable."""
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        path = next((p for p in CREATED_PATHS if p in paths), None)
+        if path is None:
+            return None
+        try:
+            return CardDates.parse(self._repo_text(path))
+        except (RequestException, ValueError) as e:
+            if isinstance(e, RequestException):
+                self.failed += 1
+                self.lost.append(path)
+            print(f"Could not read {path}; creation dates stay as they are: {e}")
+            return None
+
+    def _apply_dates(self, dates: Optional[CardDates]) -> int:
+        """Set every card's created from the dates file (duplicates included). Returns how many changed."""
+        if dates is None:
+            return 0
+        changed = sum(1 for name, card in self.db.stats.items() if dates.apply(name, card))
+        if changed:
+            print(f"{changed} creation dates set from {CREATED_PATH}.")
         return changed
 
     def _icons_from_local(self, local_path: str) -> IconVocabulary:
@@ -1263,6 +1288,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "seed": ((({"repo": BOT_REPO, "commit": seed} if not isdir(seed) else {"pickles": seed}) if seeding
                   else manifest_before.get("seed"))),
         "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
+                                                                   ("created_blob", CREATED_PATH),
                                                                    ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
                                                                    ("types_tree", TYPES_DIR), ("fonts_tree", "MDW/Fonts"))},
         "counts": out.counts,

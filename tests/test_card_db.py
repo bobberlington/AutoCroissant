@@ -37,9 +37,9 @@ def _full():
 # ========================
 def test_record_has_every_field_and_the_stats_by_name():
     rec = cdb.record(_card())
-    assert set(rec) == {f.name for f in fields(cm.CardInfo)} | {"version"}
+    assert set(rec) == {f.name for f in fields(cm.CardInfo)} | {"version", "created"}
     assert rec["stats"] == {"hp": 5, "defense": 2, "attack": 3, "speed": 4}
-    assert rec["creatures"] is None and rec["version"] is None and rec["archived"] is None
+    assert rec["creatures"] is None and rec["version"] is None and rec["archived"] is None and rec["created"] is None
 
 
 def test_round_trip_is_exact():

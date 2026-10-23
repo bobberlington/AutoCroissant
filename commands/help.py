@@ -60,6 +60,7 @@ card_commands = {
                                                   "- Numeric comparisons: hp>5, def<=10, atk==3, spd>=7, stars<6\n"
                                                   "- String exact: type==creature, subtype==attack, series==kirby, subseries==paper mario\n"
                                                   "- String contains: type~creature, series~kirby, subseries~door (case-insensitive)\n"
+                                                  "- Creation dates (first Discord post or upload): created>=2025, created==2023-10, created<2021-06-01\n"
                                                   "- Combine conditions: '\"damage\" & type==creature & hp>7', 'series==mario & subseries~door'\n"
                                                   "- Values with & or | go in quotes: subseries==\"mario & luigi\"\n"
                                                   "- Fuzzy matching works for non-exact text queries",

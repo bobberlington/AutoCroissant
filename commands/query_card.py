@@ -34,6 +34,7 @@ RESULTS_PER_MESSAGE = 10                                 # /query_ability lines 
 _alias_lock = Lock()                                     # one writer for aliases.pkl
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
+DATE_PATTERN = compile(r"^(created)(<=|>=|==|<|>)(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created==2023-10
 AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are not dated yet: a version shows those it had "
                     "when it was replaced, the current card today's.")
 
@@ -216,6 +217,17 @@ class CardRepository:
         Returns:
             DataFrame of matching cards or None
         """
+        # Dates at the precision given (created>=2025: 2025 or later; created==2023-10: in October 2023)
+        date_match = DATE_PATTERN.match(ability.strip().lower())
+        if date_match:
+            column, operator, value = date_match.groups()
+            if column not in self.cards_dff.columns:
+                return None
+            col = self.cards_dff[column]
+            day = col.where(col.notna(), "").astype(str).str[:len(value)]
+            kept = {"<": day < value, "<=": day <= value, "==": day == value, ">=": day >= value, ">": day > value}[operator]
+            return self.cards_dff[col.notna() & kept]
+
         # Try numeric comparison pattern (e.g., hp>5, stars<=3)
         numeric_match = self._stat_pattern.match(ability.lower())
         if numeric_match:
@@ -492,8 +504,9 @@ class CardRepository:
         cards_df = DataFrame.from_dict(get_stats_as_dict()).transpose()
 
         if not cards_df.empty:
-            if "subseries" not in cards_df:             # database-only field: absent until a card has one
-                cards_df = cards_df.assign(subseries=None)
+            for column in ("subseries", "created"):     # database-only fields: absent until a card has one
+                if column not in cards_df:
+                    cards_df = cards_df.assign(**{column: None})
             if "hidden" in cards_df:                    # hidden on the website
                 cards_df = cards_df[cards_df["hidden"] != True]
             if "duplicate_of" in cards_df:              # same card as its original
@@ -611,6 +624,9 @@ def _post_card(interaction: Interaction, closest: str) -> None:
              getattr(card, "note", None) or "" if card else ""]
     if card and (shown or subseries or any(extra)):     # website name, subseries, note or duplicate: an embed says so
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
+        created = getattr(card, "created", None)
+        if created:
+            extra.append(f"Created {'about ' if created.get('provisional') else ''}{created['date']}")
         found = card_repo.site_ids.get(basename(card_repo.git_files.get(closest, "")).lower())
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)

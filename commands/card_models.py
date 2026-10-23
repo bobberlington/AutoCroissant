@@ -110,6 +110,7 @@ class CardInfo:
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
     archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
     version = None                            # card_history's {from, to, cause...}; no field: parsed cards pickle as before
+    created = None                            # CardDates: {date, from[, provisional]}; no field either
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""
@@ -147,6 +148,8 @@ class CardInfo:
                 result[key] = getattr(self, key)
         if getattr(self, "creatures", None):
             result["creatures"] = [c.to_dict() for c in self.creatures]
+        if getattr(self, "created", None):
+            result["created"] = self.created["date"]
 
         return result
 
