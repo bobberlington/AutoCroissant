@@ -52,6 +52,7 @@ EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_L
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG
 PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
+COPY_SEEN = 1               # a copy of the title or ability shows when leaving it out moves a pixel past rounding
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
@@ -326,17 +327,29 @@ def _top(layer):
     return layer
 
 
-def _copies(psd: PSDImage, layer) -> list:
+def _shows(psd: PSDImage, layer) -> bool:
+    """Does the card's render change without the layer (not when the art covers it: Doctor Zomboss's 'images/Name')."""
+    box = clip(layer.bbox, psd.width, psd.height)
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return False
+    shown = psd.composite(viewport=box, ignore_preview=True, apply_icc=False)
+    left_out = psd.composite(viewport=box, ignore_preview=True, apply_icc=False,
+                             layer_filter=lambda other: other.is_visible() and other is not layer)
+    return bool((np.abs(_flat(shown).astype(np.int16) - _flat(left_out).astype(np.int16)) > COPY_SEEN).any())
+
+
+def _copy(psd: PSDImage, layer) -> Optional[str]:
     """
-    The other visible text layers with pixels printing the layer's words (a copy for an effect, a watermark): an edit
-    would change one and leave the rest.
+    The first other visible text layer printing the layer's words where they show (a copy for an effect, a watermark):
+    an edit would change one and leave the rest. None when there is none.
     """
-    words = " ".join((layer.text or "").replace("\x03", " ").split()).casefold()
-    if not words:
-        return []
-    return [other.name for other in psd.descendants() if _is_text_layer(other) and other is not layer and other.is_visible()
-            and other.bbox[2] > other.bbox[0] and other.bbox[3] > other.bbox[1]
-            and " ".join((other.text or "").replace("\x03", " ").split()).casefold() == words]
+    def words(text):
+        return " ".join((text or "").replace("\x03", " ").split()).casefold()
+    own = words(layer.text)
+    if not own:
+        return None
+    return next((other.name for other in psd.descendants() if _is_text_layer(other) and other is not layer
+                 and other.is_visible() and words(other.text) == own and _shows(psd, other)), None)
 
 
 def _no_title(psd: PSDImage) -> str:
@@ -367,7 +380,7 @@ def name_layer(psd: PSDImage, card: str = ""):
 
     Returns:
         The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
-        title split over layers, a copy for an effect)
+        title split over layers, a copy for an effect that shows)
     """
     found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
     if not found:
@@ -376,9 +389,9 @@ def name_layer(psd: PSDImage, card: str = ""):
         raise Refused("unsupported-card", f"{len(found)} title layers")
     if PSDParser.split_title(psd, found, title_text(found[0].text), card):
         raise Refused("unsupported-card", "the title is split over several layers")
-    copies = _copies(psd, found[0])
-    if copies:
-        raise Refused("unsupported-card", f"the title is printed again by {copies[0]!r}")
+    copy = _copy(psd, found[0])
+    if copy is not None:
+        raise Refused("unsupported-card", f"the title is printed again by {copy!r}")
     return found[0]
 
 
@@ -537,15 +550,16 @@ def ability_layer(psd: PSDImage):
     The single visible Ability text layer, in whatever group the developer put it (the parser reads it wherever it is).
 
     Returns:
-        The layer; raises Refused("unsupported-card") for none or several, or another layer printing its words
+        The layer; raises Refused("unsupported-card") for none or several, or another layer printing its words where
+        they show
     """
     visible = [layer for layer in psd.descendants()
                if _is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
     if len(visible) != 1:
         raise Refused("unsupported-card", f"{len(visible)} visible Ability layers")
-    copies = _copies(psd, visible[0])
-    if copies:
-        raise Refused("unsupported-card", f"the ability is printed again by {copies[0]!r}")
+    copy = _copy(psd, visible[0])
+    if copy is not None:
+        raise Refused("unsupported-card", f"the ability is printed again by {copy!r}")
     return visible[0]
 
 

@@ -55,6 +55,8 @@ VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"               # its Name la
 MARX = "Creatures/Kirby/5 Stars/Marx.psd"                          # its Ability sits at the root, 'Ability FX: Glued' over it
 EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"                  # 'Name copy' and 'Name copy 2' print the title again
 SOMETHING = "Creatures/Omori/3 Stars/SOMETHING.psd"                # two offset copies print the ability again
+ZOMBOSS = "Creatures/Other/5 Stars/Doctor_Zomboss.psd"             # 'images/Name' prints the title again under the art
+MOSLING = "Auxiliary/Minions/Mosling.psd"                          # a faint watermark 'Group 1/Name' prints the title again
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -504,6 +506,18 @@ def test_a_title_or_ability_printed_twice_refuses(clone):
     assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
 
 
+def test_a_copy_the_art_hides_does_not_refuse(clone):
+    """Only a copy people can see refuses: Doctor Zomboss's 'images/Name' sits under the art (the card renders the same
+    without it), so its Text/Name bakes; Mosling's faint watermark still shows and refuses."""
+    zomboss = PSDImage.open(_card(clone, ZOMBOSS)[0])
+    layer = pe.name_layer(zomboss, card_name(ZOMBOSS))
+    assert layer.parent is pe._text_group(zomboss) and pe.read_name(zomboss, card_name(ZOMBOSS)) == "Doctor Zomboss"
+    hidden = next(other for other in zomboss.descendants() if other.name == "Name" and other.parent.name == "images")
+    assert hidden.is_visible() and pe.collapse(hidden.text) == "Doctor Zomboss" and not pe._shows(zomboss, hidden)
+    with pytest.raises(pe.Refused, match="the title is printed again by 'Name'"):
+        pe.name_layer(PSDImage.open(_card(clone, MOSLING)[0]), card_name(MOSLING))
+
+
 def test_name_redundancy_uses_the_printed_title(clone, parser):
     """A name edit is redundant when the bot already shows it (the parser's display_name, else the file name)."""
     path = _card(clone, MINI_DOOMER)[0]
@@ -863,10 +877,11 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
 
 
 @text_edit
-@pytest.mark.parametrize("rel, record", [(BONE, "Wham Bam Bone"), (VIRUS, "Name")])
+@pytest.mark.parametrize("rel, record", [(BONE, "Wham Bam Bone"), (VIRUS, "Name"), (ZOMBOSS, "Name")])
 def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, record, tmp_path):
-    """A title named after the card (Wham Bam Bone) or a Name layer at the root (Computer Virus) bakes through every
-    gate: the parser reads the new title back and nothing is left to bake."""
+    """A title named after the card (Wham Bam Bone), a Name layer at the root (Computer Virus) or a Text/Name with a
+    copy under the art (Doctor Zomboss) bakes through every gate: the parser reads the new title back and nothing is
+    left to bake."""
     psd_path = _card(clone, rel)[0]
     new = _typo_fix(pe.read_name(PSDImage.open(psd_path), card_name(rel)))
     parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
