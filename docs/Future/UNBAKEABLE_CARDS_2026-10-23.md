@@ -30,6 +30,44 @@ card and field, whether a bake works, why not, and what would fix it.
   with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
 
+**BUG 2: the Ability FX layers made again (`work/fx-rebuild`, 2026-10-23, not landed):** an ability bake runs
+Effect Layers.jsx's Update all on the new text (`psd_edit._rebuild_fx`, design section 5 step 4): every `Ability FX: ...`
+layer is cut again in place over its words' new places (its record, style and place kept), a phrase that left the text
+leaves the name, a layer with none left goes, and the report says so. A badge layer (queue A's gradient cards) and a
+layer carrying a chart status's style (Monkey D Goofy's `1#1`, Clot Gold's `1 Become Back Money`) are rebuilt; an FX
+layer whose style is no chart status's still refuses (owner 2026-10-21). Measured dry with every gate (gate_fx too:
+each FX layer inside its words' glyph boxes, covering them, the Ability's own pixels) on copies of the frozen corpus
+(the 34 cards with FX layers) and of TTSCardMaker `6a54b4f6` (68, the L7 cards included), five edits each: the
+website's own text (no-op), the layer's own text with the chart's recolouring left out (Update all alone), a word
+before an FX word deleted (moved), " Die." appended, the first FX word removed (scripts and JSON:
+`~/Documents/Tools/wt/bf-fx-scratch/`, `census.py`, `runs/{corpus3,clone3}.json`):
+
+| Cards | Bake an ability edit | Refused (why) |
+|---|---|---|
+| corpus, 34 FX cards | **32**: 17 of section 2.15's 18 badge cards, Monkey D Goofy and the 14 chart-word cards | Morpho Knight (its Burning, +2/4/6 ATK, Smoldering strokes), Miracle Matter (5 visible Ability layers, 2.19) |
+| TTSCardMaker main, 68 FX cards | **58** | 8 FX layers the chart has no style for (Morpho Knight, The Watcher, Computer Virus, Mr Krabs's `2T`, Palace of Shadow's `+2 DEF`, Fire Staff, Ice Staff, Flameblade), Miracle Matter, Apex Predator (no visible Ability layer) |
+
+- **No-op:** on main 47 of 55 Update-all no-ops leave every FX record and the PNG byte for byte; the other 8 are the L7
+  cards whose FX layers kept their old overlay's style (Royal Eradicator Main Cannon, Zero, Doctor Zomboss, Oryx,
+  Snow Bunny, Freeze Spell, Pandora's Box, Standstill): the chart's style replaces it (owner question 6), told in the
+  report. The website no-op adds 5 cards whose status words take the chart's swatch (Ancient Fuelweaver, Monkey D
+  Goofy's Become Back Money, Undyne, Pananda Peel, Flower Of Decay) and Warcraftian Hunter, whose website text lacks
+  its column spaces. On the corpus the 6 layers the B1 batch leaked badge pills into (std-batch2 FX.md: The Radiance,
+  Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too; 22 of 31 no-ops are identical.
+  PoD06Rainbow Bloon's and The Radiance's no-ops refuse `parity` (a render that changes nothing on a box past the bar,
+  section 10); their real edits bake.
+- **Real edits (main):** a moved word bakes on 46 cards (13 have no plain word before an FX word): 22 FX layers kept
+  whole, 28 cut again at their new place; " Die." bakes on 57 (Pandamonium overflows); removing the first FX word bakes
+  on 57: 47 layers deleted, 8 renamed (`(1GCD) | (2U) | (2CD)` -> `(2U) | (2CD)`). Monkey D Goofy refuses only when its
+  "1" leaves the text (the JSX would then cut a badge). Parity notes only where the card's baseline already misses the
+  bar (PoD06Rainbow Bloon, The Radiance). A bake took 7 s (median; 16 s at most on a loaded Mac).
+- **Photoshop cross-check (copies under `~/std-work-1022/fx-1023/`):** Effect Layers.jsx's Update all run in Photoshop on 8
+  baked copies (badges moved and renamed, chart words moved, a restyle) rebuilt the same layers: same boxes, style and
+  place, ink IoU 0.955-1.0 (ours 0-132 faint edge pixels more), no differing pixel on the shared ink. Photoshop renders
+  the rebuilt layers as the bake's PNG shows them (0% of FX ink past 24 on 6 cards; the PoD cards' Photoshop exports
+  differ from their official PNGs everywhere, 3.9-6.7%), and a moved layer as the original did at its old place (mean
+  1.1 or less, 0-1.6% past 24; Royal Eradicator's restyle apart).
+
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
 dry with every gate on copies of the frozen corpus (`corpus-6e50c3ee`, 764 cards; fork `cards-20261023`; script and
@@ -96,8 +134,8 @@ Why, per field (today → after all pending changes; section 2 has the cards):
 | Several visible Ability layers |  | 5 → 5 |  |  |  |  | card maker |
 | The ability's words are printed twice |  | 0 → 1 |  |  |  |  | card maker |
 | The ability's icons are pictures |  | 8 → 15 |  |  |  |  | card maker (stoogedings tokens) |
-| A badge layer would be lost (BUG 2) |  | 18 → 18 |  |  |  |  | BUG 2 fix (approved, not started) |
-| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | stays refused (owner, 10-21); Goofy: BUG 2 fix |
+| A badge layer would be lost (BUG 2) |  | 18 → 18 |  |  |  |  | BUG 2 fix (built, `work/fx-rebuild`): 17 bake, Morpho Knight stays (2.17) |
+| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | stays refused (owner, 10-21); Goofy and Clot Gold bake with the BUG 2 fix |
 | Colour icons would turn one colour |  | 213 → 0 |  |  |  |  | colour glyphs (built, not released) |
 | No template stat bar |  |  | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | card maker (template bars) |
 | The stat bar is not the template's |  |  | 30 → 30 | 30 → 30 | 27 → 27 | 27 → 27 | card maker (template bars) |
@@ -113,7 +151,8 @@ What stands out:
   are status effects whose title is a top-level layer named after the card, which refused-layers does not look at.
 - What is left after the pending changes is mostly card-maker work: stat bars the bot can't use (38 cards),
   pictures instead of icon-font tokens (15 abilities), numbered PNGs (5 cards), plus the 18 badge layers waiting for
-  the approved BUG 2 fix (19 gradient badge cards with Miracle Matter; 20 with Monkey D Goofy, the owner's count).
+  the approved BUG 2 fix (19 gradient badge cards with Miracle Matter; 20 with Monkey D Goofy, the owner's count; built
+  2026-10-23 on `work/fx-rebuild`: 17 of the 18 and Goofy bake, see the BUG 2 block).
 - **A bug in today's bot:** where the title is split over several layers or printed twice, it writes the whole edited
   title into the layer named Name and leaves the others. A dry run on Warcraftian Druid printed "Warcraftian Druidess"
   with the old "Druid" line still under it, and the read-back gate passed. Of the 20 cards with such a title, 9 bake
@@ -562,7 +601,7 @@ After the pending changes: **bakes (pixels not measured) (refused-layers)** (1):
 Today: **18 cards** (Ability 18). After the pending changes, **0** of them bake.
 
 - **Why:** An 'Ability FX: ...' layer paints the timing badges or icons over the ability with a gradient; a bake would delete it and the bot can't rebuild it yet.
-- **What would fix it:** Code fix approved, not started: rebuild the Ability FX layers from the new text's word boxes (NEXT_IDEAS section 5, idea 4; needs text geometry and colour glyphs). Until then, edit in Photoshop. There are 19 gradient badge cards: these 18 and Miracle Matter ('Ability FX: (1GCD)'; listed under several visible Ability layers, its first refusal). With Monkey D Goofy ('Ability FX: 1#1', listed under word layers) they are the owner's 20 BUG 2 cards.
+- **What would fix it:** Code fix approved and built 2026-10-23 (`work/fx-rebuild`, not landed; the BUG 2 block at the top): the bake rebuilds the Ability FX layers as Effect Layers.jsx's Update all does. All of these but Morpho Knight then bake (its Burning, +2/4/6 ATK and Smoldering layers carry strokes the chart has no style for, 2.17). Until it lands, edit in Photoshop. There are 19 gradient badge cards: these 18 and Miracle Matter ('Ability FX: (1GCD)'; listed under several visible Ability layers, its first refusal). With Monkey D Goofy ('Ability FX: 1#1', listed under word layers) they are the owner's 20 BUG 2 cards.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -620,7 +659,7 @@ Cards that meet this reason only once the pending changes land (7; another reaso
 Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 
 - **Why:** A hand-made word layer over the ability (an overlay or FX layer for a word such as Smoldering or +2 DEF) has no style on the status chart, so the bot can't recreate it after an edit.
-- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it.
+- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it. The BUG 2 fix (`work/fx-rebuild`, 2026-10-23) rebuilds an FX layer that carries a styled chart status's style: Goofy's '1#1' and Clot Gold's '1 Become Back Money' (both Become Back Money's gradient) bake; the others keep strokes or gradients of their own and stay refused, Mr Krabs for its unstyled '2T' (owner to confirm Clot Gold).
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|

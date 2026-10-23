@@ -197,7 +197,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
    `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word or
-   ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
+   ` FX: ` layers the chart has no style for, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12).
@@ -237,20 +237,42 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
    `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
-   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
-   deleted and one is cut per styled status word in the new text (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat,
-   named as `Effect Layers.jsx` names them): the JSX's key copy (the word's runs white, the rest black) laid out and rasterized
-   again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1; the key may pass a
-   spliced layer's bbox by `KEY_SLACK`), the ability's own raster gives the pixels (`numpy("color"/"shape")` after `rasterize`;
-   on a splice Photoshop's for a kept word: the JSX's own cut, IoU 1.0 on Gasoline and the Cannon against 0.953 / 0.994 from
-   the engine's pixels), `PixelLayer.fromarray` makes the layer with a unicode name
-   and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
-   it goes directly above the ability's top-level group (`Text`; the layer itself at the root), as Effect Layers.jsx puts it. A hand-made overlay word layer over the ability is hidden when it names a
-   styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
-   layer holding a badge or token run (`Ability FX: (BOT)`, `Ability FX: (1CD) | (2U)`: queue A's gradient cards, 2026-10-22)
-   or a word the chart has no style for (Morpho Knight's `Smoldering`) cannot be made again exactly, so the edit refuses
-   `unsupported-card` before anything changes ("ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop",
-   `psd_edit.kept_fx`). `styled-word` remains only for a psd-tools without the engine pieces (`psd_edit._fx_engine`).
+   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers
+   (idea 14, 2026-10-21; BUG 2, 2026-10-23): the bake does what `Effect Layers.jsx`'s Update all does. The model, from the
+   JSX: an FX layer is a pixel layer `<base> FX: <phrase>[ | <phrase>...]` ("#n" after a phrase: only its nth occurrence)
+   holding the base text layer's own raster under a key mask: a copy of the text with the phrases' runs white and every
+   other run black, red over black at level 1 (`phraseRanges`: any case, any blanks or forced breaks between words, whole
+   words when there are any, else every match: Monkey D Goofy's `1#1` is the "1" of "3T1"). The icon font's colour glyphs
+   keep their SVG colours in any key, so they are taken out (an all-black key's ink, TTSCardMaker 11faa634) unless the
+   phrases meet an icon-font run: a badge layer (`Ability FX: (1CD) | (2U)`, queue A's gradient cards, no style of its
+   own; it restores the badges' colours over the Ability's Gradient or Color Overlay) takes every colour glyph on purpose.
+   The style is the chart's (Add), the overlay's (Convert overlays, whose words take the overlay's colour: its first drawn
+   run, 08b1152a) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
+   (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a
+   styled chart status's style on another phrase (`"styled"`: Goofy's `1#1`, Clot Gold's `1 Become Back Money`, the
+   enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again; any other (`""`: Smoldering's
+   stroke, +2 DEF, Despair...) refuses `unsupported-card` before anything changes ("ability edit would drop FX layers the
+   chart has no style for", owner 2026-10-21). `_rebuild_fx` cuts each in place from the new raster (`phrase_ranges` over
+   the new text: a phrase that occurs more often is cut on every occurrence) and keeps its record (id, name, flags,
+   opacity, blending, clipping, blocks, place): only rect and channels change, written by the fork's raster writer
+   (`TypeLayer._store_raster` on the pixel layer). The key is the engine's layout; on a splice the raster under it is
+   Photoshop's for kept glyphs, whose anti-aliasing reaches a pixel past the engine's on some faces (The Radiance's
+   Perpetua: 246 of 5,210 px), so the mask takes the raster's own ink one pixel around the key's that is no other glyph's
+   (the complement key's, grown a pixel; `_phrase_mask`): the Photoshop cut footprint exactly on The Radiance, Mini
+   Doomer, Goofy, Star Cannon and Gasoline. A layer none of whose glyphs was redrawn (the band misses its box) whose phrases
+   cover the same kept characters (`kept_chars`, `_kept`) keeps its record whole, unless it holds pixels its words' cut does
+   not (`_holds`: the B1 batch's leaked badge pills, std-batch2 FX.md), then it is cut again clean. A phrase gone from the
+   text leaves the name (the parser flags a name the text lacks); a layer with none left is deleted; a non-badge layer whose
+   words now fall in a badge (`1#1` once its "1" is gone) refuses `unsupported-card` (the JSX would cut every badge). A
+   `"status"` layer whose style draws other effects than the chart's takes the chart's blocks (owner question 6: an edit
+   normalizes status words to the chart's colour and effect; 8 L7 cards, below). Text typed into a `"styled"` layer's
+   phrase takes the phrase's colour, its first drawn run (08b1152a). A styled status word no FX layer covers gets a new one
+   (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered), cut the same way, the
+   chart layer's `lfx2`/`lrFX` deep-copied, a fresh layer id (the seed resource moves past it), directly above the ability's
+   top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
+   the ability is hidden when it names a styled chart status, else the card refuses `unsupported-card`. The report tells
+   every FX layer deleted, renamed, restyled or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
+   remains for a psd-tools without the engine pieces (`psd_edit._fx_engine`) and for FX words with no pixels.
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
@@ -259,9 +281,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    records old vs new (names, flags, channel lengths, EngineData), not raw offsets (a text edit shifts every later record): a
    toggle changes exactly the two flag bytes of `N_old`/`N_new` plus the effect blocks its Edit declares moved (the same bytes leave
    one record and land on the other, or leave only when cleared), a text edit one record + its channels; an ability edit's FX
-   layers: exactly the declared `<Ability> FX: ...` records gone and the regenerated ones come (pixel records, transparency
-   channel first, carrying the chart's `lfx2`/`lrFX` bytes), one flag byte per hidden overlay; records are paired in file order
-   once those are taken out (`gate_bytes`). Gate `size`: PSD within
+   layers: exactly the declared `<Ability> FX: ...` records gone and the new ones come (pixel records, transparency
+   channel first, carrying the chart's `lfx2`/`lrFX` bytes), a rebuilt one its rect and channels only, plus its unicode
+   name when a phrase left and the chart's effect blocks byte for byte when restyled (`_fx_rebuilt`), one flag byte per
+   hidden overlay; records are paired in file order once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
    Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
    `TextIndex` is the story's index) and rebuilds the layer's TySh from it on save, so the five titles baked that morning
@@ -285,8 +308,12 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
    every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
-   2026-10-21 review). FX layers back as declared after the reopen: the names in order,
-   visible, styled, directly above the ability's top-level group, no overlay word layer showing.
+   2026-10-21 review). FX layers back as declared after the reopen: the names in order, the new ones
+   visible, styled, directly above the ability's top-level group, no overlay word layer showing. Gate `gate_fx` (BUG 2,
+   2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
+   the new layout): every FX layer inks only inside its phrases' glyph boxes (a badge layer also the icon font's) padded
+   by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
+   reaches, and one the edit cut holds the Ability's own pixels byte for byte (refused `reparse` naming the layer).
    Name: the title layer's read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
@@ -379,6 +406,16 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the declared removed/added FX records; gate `reparse` checks the layers back, visible, styled, directly above `Text`, no overlay
   showing, no `EFFECT LAYER` problem. Tests: `tests/test_psd_edit.py` (the JSX comparison skips when the trial copies are gone),
   `tests/test_card_bake.py` dry run.
+  **BUG 2 (2026-10-23, `work/fx-rebuild`, not landed): Update all, not derived state.** The FX layers are no longer deleted
+  and regenerated: each is cut again in place (section 5 step 4), so badge layers, chart-style word layers and the L7
+  cards' converted overlays keep their records, styles and places, and a repeat is cut into the same layer (`Blazing`
+  over both, as the JSX's phraseRanges does), no longer `Blazing#1`/`#2`. Dry census with every gate (UNBAKEABLE_CARDS
+  BUG 2 block): 32 of the corpus's 34 FX cards and 58 of main's 68 bake an ability edit; an Update-all no-op leaves 47 of
+  55 cards byte for byte in their FX records and PNG, the other 8 the L7 cards restyled to the chart (q6). Effect
+  Layers.jsx's Update all run in Photoshop on 8 baked copies rebuilt the same layers (same boxes, style and place, IoU
+  0.955-1.0, no differing pixel on the shared ink). Tests: `test_noop_ability_bake_keeps_the_badge_layer`,
+  `test_ability_bake_moves_the_badge_layer_with_its_badge`, `test_ability_bake_drops_the_fx_layer_of_a_word_it_removes`,
+  `test_ability_bake_cuts_a_leaky_fx_layer_again`, `test_goofys_styled_one_is_made_again`, `test_phrase_ranges_follow_the_jsx`.
 
 ## 8. Runner
 
@@ -516,10 +553,11 @@ the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes a
 past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
 the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
-carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
-+2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
+carry enabled effects (which one the row shows is ambiguous) and the overlay word or FX layers the chart has no style for (Smoldering,
++2 DEF, Despair...; since BUG 2, 2026-10-23, also an FX layer whose words would fall in a badge), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
-psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
+psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
+words have no pixels: a styled word gets its FX layer.
 Per card all-or-nothing, but for stars and types (2026-10-23): their refusal is the field's, the card's other fields
 bake and the commit line says `stars not baked: <why>`; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside

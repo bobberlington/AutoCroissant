@@ -604,6 +604,12 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) and a single
   visible Ability layer under another name. Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
+- **Ability FX layers (BUG 2, branch work/fx-rebuild, not landed):** an ability bake makes the card's `Ability FX: ...`
+  layers again as Effect Layers.jsx's Update all does (the gradient cards' badge layers included): each cut in place over
+  its words' new places, its style and place kept. The report says when a layer's words left the text (deleted, or a
+  phrase dropped from its name) or a status layer took the chart's style. Only an FX layer whose style is no chart
+  status's (Fire Staff's Smoldering stroke, owner 2026-10-21) still refuses the card ("ability edit would drop FX layers
+  the chart has no style for"); edit those in Photoshop and run Effect Layers > Update all.
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
@@ -1025,3 +1031,4 @@ the .mailmap authors bullet, today's problem baselines and the bake's current re
 splice; the jetson has the fork and fonts_cache); the card guards and card check headings say landed; section 8's temp-file,
 fonts_cache and bake rows; section 12's status, step 1 done and the seed precondition; every main.py, update_bot.py,
 card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py citation re-pointed at 2ada357.
+2026-10-23 (BUG 2, work/fx-rebuild): section 7's Card bake subsection gains the Ability FX layers bullet (the bake runs Effect Layers.jsx's Update all; unstyled word layers still refuse); no cited line moved.

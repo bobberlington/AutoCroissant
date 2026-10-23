@@ -108,8 +108,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       (The_Structure, Clot_White, Clot_Gold, The_Kingchin). Never merge `feat/layer-edit` 9233a172 as is.
 
 ### 7. Bot and bake follow-ups
-- [ ] **BUG 2** (BUGS D7): rebuild `Ability FX: ...` badge layers in the bake (approved; text geometry and colour
-      glyphs are in the fork now). Until then 18-20 gradient badge cards refuse ability bakes.
+- [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
+      runs Effect Layers.jsx's Update all on the new text. Land it (review, full suite) and deploy; owner to confirm
+      the restyle of the 8 L7 cards whose FX keep their overlay's style (question 6) and Clot Gold baking.
 - [ ] Re-check the 4 stale verdicts (Metal General, Z.O.M.G., Star Dream, Zero Override) without `--pending` (Z.O.M.G.
       baked in e1a491be).
 - [ ] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? `txt2_repair.py --check`; repair if so.
