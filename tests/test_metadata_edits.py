@@ -695,6 +695,17 @@ def test_refresh_uses_aliases_pkl_when_card_edits_was_never_read(repo):
     assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("MichaelJSr", "A Snack")
 
 
+def test_refresh_copies_a_dup_of_card_again(repo):
+    """A PNG-only card made a duplicate by dup_of (Stubborn_Queen.png) is copied again when its original changes, its
+    own name its title."""
+    queen = "Items/Heal/2 Stars/Queen.png"
+    repo.registry.git_files["queen.png"] = queen
+    repo.stats["Queen"] = _card("Queen", SNACK[:-4] + ".psd", author="MichaelJSr", card_type="item", duplicate_of="A Snack")
+    de.refresh(None, None, AUTHORS.replace("A Snack = MichaelJSr", "A Snack = Zomoroko"))
+    assert (repo.stats["Queen"].author, repo.stats["Queen"].duplicate_of, repo.stats["Queen"].display_name) == \
+        ("Zomoroko", "A Snack", None)
+
+
 def test_refresh_waits_for_a_running_update(repo):
     """A Discord edit's refresh never saves stats.pkl inside /update_stats or a bake: it waits for bake_lock."""
     from threading import Thread
