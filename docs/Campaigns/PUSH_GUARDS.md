@@ -18,7 +18,7 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 
 **The owner's rulings (2026-10-22 ~23:00), built in section 17.**
 1. *The PNG is a fork render*, the same render the bake uses (`psd_edit.render_region` and `merge_png`, the card's ICC
-   export mode by `icc_vote`, the fork pinned at `cards-20261022b` as card-edits.yml), **not** Photoshop's stored composite.
+   export mode by `icc_vote`, the fork pinned at `cards-20261023` as card-edits.yml), **not** Photoshop's stored composite.
    Gated as designed (the old PNG outside the PSD's changed layers, the bake's gates). A refusal is told on Discord and in
    the comment ("PNG not made: ...; export it in Photoshop"). The stored composite stays only as a cross-check that can
    refuse, never as the PNG's source.
@@ -172,7 +172,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
     work/r5-bot;
   - `psd_regions`: `overlay_words`, `fx_pad`;
   - `txt2_repair.repair` / `verify`.
-- **Fork pin:** `cards-20261022b` (it carries `sync_story`), shared with card-edits.yml and card-sync.yml: guard 1's render
+- **Fork pin:** `cards-20261023` (it carries `sync_story`), shared with card-edits.yml and card-sync.yml: guard 1's render
   is the bake's.
 
 ## 4. Triggers and change detection
@@ -262,7 +262,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 **5.1 The source is the bake's render** (ruling 1, 2026-10-22; until then the stored composite was written, section 16).
 - R, the changed layers' box: the layer records that differ between the old and the new PSD (Photoshop's volatile blocks
   ignored, 2.2), each padded by its effects' reach (`fx_pad`).
-- The fork pinned at `cards-20261022b` renders R for the old and the new PSD (`psd_edit.render_region`, never the stored
+- The fork pinned at `cards-20261023` renders R for the old and the new PSD (`psd_edit.render_region`, never the stored
   preview) in the card's ICC export mode: work/r5-bot's `icc_vote` over the old PSD's composite and the old PNG (raw when it
   votes raw, else converted by the embedded profile).
 - The old PNG takes the new render's pixels where it differs from the old render (`psd_edit.merge_png`, the bake's
@@ -363,8 +363,8 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | exactly one visible `Text/Ability` text layer (L5, `psd_edit.ability_layer`) | report (moving a layer under `Text` adds the group's effects) | 651 | 47: 35 outside `Text`, 7 hidden, 5 with several | 42 (5 several-Ability cards waived, Q2) |
-| R4 | a visible `Text/Name` text layer holds the title (L6, `psd_edit.name_layer`) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 150: 84 titled by a card-named layer, 50 no `Text/Name`, 13 no `Text` group, 3 hidden | 0 (every existing deviation is waived; a new PSD, or a push that loses its `Text/Name`, is reported) |
+| R3 | exactly one visible `Text/Ability` text layer (L5, `card_standards._template_ability`; the bake takes any group since refused-layers) | report (moving a layer under `Text` adds the group's effects) | 651 | 47: 35 outside `Text`, 7 hidden, 5 with several | 42 (5 several-Ability cards waived, Q2) |
+| R4 | a visible `Text/Name` text layer holds the title (L6, `card_standards._template_name`; the bake takes the parser's title) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 150: 84 titled by a card-named layer, 50 no `Text/Name`, 13 no `Text` group, 3 hidden | 0 (every existing deviation is waived; a new PSD, or a push that loses its `Text/Name`, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
@@ -412,7 +412,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
   - `gate_size` within 1%.
 - **Repo size:** the fork keeps every untouched byte, so git packs the fixed blob as a delta of a few KB against the pushed
   one.
-- **R9 needs the fork tag with `sync_story`** (`cards-20261022b`, pinned). Without it R9 is report-only, as the bake's
+- **R9 needs the fork tag with `sync_story`** (`cards-20261023`, pinned). Without it R9 is report-only, as the bake's
   `story_sync()` check does.
 - **Plainly, for the owner:** "fix the easy issues" means R9 (Txt2 sync) only. Everything else is told, R11 included
   (0 cases in the tree today).
@@ -726,7 +726,7 @@ jobs:
    ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
    card pushed again to the later push, and tells the writes that did not land. Cost: a runner held about 31 minutes per
    push with anything to tell, free while TTSCardMaker is public (it is). The alternative is the post at check time.
-3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261022b` has `sync_story`. R11's exact-name rename is
+3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261023` has `sync_story`. R11's exact-name rename is
    built and gated but told, not fixed, until the owner says yes (`card_standards.AUTO_FIX`; 0 cases in the tree).
    Report mode tells everything, the PNGs the bot would make included.
 4. **Decided (rulings 2 and 3, 2026-10-22): fonts in the standards channel.** font-check.yml posts there
@@ -832,7 +832,7 @@ jobs:
 10. The fixes run at check time, so dry and report runs carry the fixed PSD in the artifact; `land` only re-checks the blobs.
 11. The commit comment goes up only when a card has something told, a write or an error (`summary.json`); the job summary
     always has the report.
-12. The fork pin is `cards-20261022b` (with `sync_story`), as card-edits.yml and card-sync.yml; R9 is a fix in `on`. Replay
+12. The fork pin is `cards-20261023` (with `sync_story`), as card-edits.yml and card-sync.yml; R9 is a fix in `on`. Replay
     after the release (2026-10-22, main 7b48db05, blobless clone, `--repo`): of the last 10 pushes the Txt2 repair push
     (2 PSDs without PNGs) checks both as current (0 pixels moved, nothing re-exported, no R9) and tells one R1 issue
     (Springtrap's (OD) is set in the card's font); the pin push and 3 others are skipped by the paths filter, 3 bot pushes
@@ -986,7 +986,7 @@ Nothing pushed, dispatched or posted; the Desktop clone was only read. AutoCrois
 
 **Ruling 1: the PNG is a fork render** (5.1, 5.2, 5.5, 5.6).
 - `png_export.export` renders the changed layers' box R of the old and the new PSD with `psd_edit.render_region` (the fork
-  pin `cards-20261022b`, the card's `icc_vote` mode) and merges the new render into the old PNG with `psd_edit.merge_png`;
+  pin `cards-20261023`, the card's `icc_vote` mode) and merges the new render into the old PNG with `psd_edit.merge_png`;
   `gate_shape` and `gate_region` follow. The bake's parity gate is G6 (a). `export_new` writes the fork's whole-card render.
 - The stored composite never reaches a PNG. It refuses only: G2 (none to check against), G5 (the old PNG against
   Photoshop's image of the new PSD outside R; inside R when the baseline fails and the old composite disagrees too), G6 (b)

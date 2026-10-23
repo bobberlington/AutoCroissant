@@ -212,12 +212,38 @@ def rule_icons(psd: PSDImage, types) -> Optional[Issue]:
                        f"{_list(['[' + n + ']' for n in names])} in the stoogedings font", names)
 
 
+def _template_ability(psd: PSDImage) -> Optional[str]:
+    """Why the card misses L5, or None. The template, not psd_edit.ability_layer (the bake takes any group)."""
+    visible = [layer for layer in psd.descendants()
+               if psd_edit._is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
+    if len(visible) != 1:
+        return f"{len(visible)} visible Ability layers"
+    if visible[0].parent is not psd_edit._text_group(psd):
+        return "Ability layer outside the Text group"
+    return None
+
+
+def _template_name(psd: PSDImage) -> Optional[str]:
+    """Why the card misses L6, or None. The template, not psd_edit.name_layer (the bake takes the parser's title)."""
+    group = psd_edit._text_group(psd)
+    if group is None:
+        return "no Text group"
+    layer = next((child for child in group if child.name.strip() == "Name"), None)
+    if layer is None:
+        titles = [child.name for child in group if psd_edit._is_text_layer(child) and child.name.strip().lower() != "ability"
+                  and child.bbox[1] < psd.height * 0.15]
+        return f"title layer named {titles[0]!r}, not Name" if titles else "no Text/Name layer"
+    if not psd_edit._is_text_layer(layer):
+        return "rasterized name layer"
+    if not layer.is_visible():
+        return "hidden name layer"
+    return None
+
+
 def rule_ability(psd: PSDImage) -> Optional[Issue]:
     """R3: exactly one visible Text/Ability text layer (L5)."""
-    try:
-        psd_edit.ability_layer(psd)
-    except Refused as refused:
-        why = refused.why
+    why = _template_ability(psd)
+    if why is not None:
         if why.startswith("0 "):
             text = "no visible Ability text layer (hidden or missing)"
         elif why.endswith("visible Ability layers"):
@@ -230,10 +256,8 @@ def rule_ability(psd: PSDImage) -> Optional[Issue]:
 
 def rule_name(psd: PSDImage) -> Optional[Issue]:
     """R4: a visible Text/Name text layer holds the title (L6)."""
-    try:
-        psd_edit.name_layer(psd)
-    except Refused as refused:
-        why = refused.why
+    why = _template_name(psd)
+    if why is not None:
         if why.startswith("title layer named"):
             text = f"the title layer is {why[len('title layer named '):].split(', not')[0]}, not Text/Name"
         elif why == "no Text group":
