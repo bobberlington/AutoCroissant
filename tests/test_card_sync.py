@@ -36,6 +36,7 @@ class FakeGitHub:
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
+        self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs = {"jobs": [{"steps": [{"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress"}]}]}
 
     def get(self, url, headers=None, timeout=None, stream=False, **kw):
@@ -57,7 +58,7 @@ class FakeGitHub:
             return Reply(404) if data is None else Reply(200, data)
         if url.endswith("/runs?per_page=10"):
             self.calls.append(("runs", None))
-            return Reply(200, body={"workflow_runs": self.runs})
+            return self.runs_reply or Reply(200, body={"workflow_runs": self.runs})
         if url.endswith("/jobs"):
             return Reply(200, body=self.jobs)
         if "/actions/runs/" in url:
@@ -77,6 +78,8 @@ class FakeGitHub:
         reply = self.post_replies.pop(0) if self.post_replies else Reply(204)
         if self.on_post:
             self.on_post(len(self.posts))
+        if isinstance(reply, Exception):
+            raise reply
         return reply
 
     def publish(self, stats: dict, old: dict, folder, details: str = '{"version": 1, "cards": {\n\n}}\n', **manifest) -> str:
@@ -449,6 +452,32 @@ def test_a_refused_token_is_said_never_shown(github, tmp_path):
     github.post_replies.append(Reply(403, body={"message": "Resource not accessible by personal access token"}))
     cs.update(ME, cards="A")
     assert "GitHub refused ACTIONS_TOKEN (HTTP 403)" in _said()[0] and all(TOKEN not in s for s in _said())
+
+
+def test_a_dispatch_without_an_answer_may_have_started(github, tmp_path):
+    from requests.exceptions import ReadTimeout
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    github.post_replies.append(ReadTimeout("read timed out"))
+    cs.update(ME, cards="A")
+    assert "the run may have started: look on <" in _said()[0] and "try again" not in _said()[0]
+
+
+@pytest.mark.parametrize("reply", [Reply(403, body={"message": "You have exceeded a secondary rate limit."}),
+                                   Reply(403, body={"message": "x"}, headers={"X-RateLimit-Remaining": "0"}),
+                                   Reply(429, body={"message": "x"}, headers={"Retry-After": "60"})])
+def test_a_rate_limit_is_not_a_refused_token(github, tmp_path, reply):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    github.post_replies.append(reply)
+    cs.update(ME, cards="A")
+    assert "rate limit" in _said()[0] and "refused ACTIONS_TOKEN" not in _said()[0]
+
+
+def test_an_expired_token_is_said_at_the_run_list(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    github.runs_reply = Reply(401, body={"message": "Bad credentials"})
+    cs.update(ME, cards="A")
+    assert "GitHub refused ACTIONS_TOKEN (HTTP 401)" in _said()[0] and github.posts == []
+    assert all(TOKEN not in s for s in _said())
 
 
 def test_a_run_past_the_wait_is_left_going(github, tmp_path, monkeypatch):

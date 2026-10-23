@@ -57,6 +57,14 @@ class TokenRefused(Exception):
     """GitHub refused ACTIONS_TOKEN (401, 403, 404)."""
 
 
+class RateLimited(ValueError):
+    """GitHub's rate limit (a 403 or 429 saying so)."""
+
+
+class NoAnswer(Exception):
+    """The dispatch got no reply: the run may have started."""
+
+
 # ========================
 # Helper Functions
 # ========================
@@ -288,6 +296,16 @@ def _headers() -> dict:
             "X-GitHub-Api-Version": "2022-11-28"}
 
 
+def _refusal(reply) -> None:
+    """Raise RateLimited or TokenRefused for an Actions reply that is one."""
+    headers = {k.lower(): v for k, v in (reply.headers or {}).items()}
+    if reply.status_code in (403, 429) and (headers.get("x-ratelimit-remaining") == "0" or "retry-after" in headers
+                                            or "rate limit" in reply.text.lower()):
+        raise RateLimited(f"GitHub's rate limit, HTTP {reply.status_code}")
+    if reply.status_code in (401, 403, 404):
+        raise TokenRefused(f"HTTP {reply.status_code}")
+
+
 def _post_dispatch(repository: str, body: dict):
     return session().post(api_url(repository, f"actions/workflows/{WORKFLOW}/dispatches"), json=body,
                           headers=_headers(), timeout=30)
@@ -302,15 +320,21 @@ def dispatch(repository: str, inputs: dict) -> Optional[dict]:
         The run, or None when it did not show up
 
     Raises:
-        TokenRefused: 401, 403 or 404; ValueError: another refusal; requests' exceptions
+        TokenRefused: 401, 403 or 404; RateLimited, ValueError: another refusal; NoAnswer: the dispatch got no reply;
+        requests' exceptions (the run list before it)
     """
-    seen = {r.get("id") for r in _runs(repository, _headers())}
+    listed = get_with_retry(api_url(repository, f"actions/workflows/{WORKFLOW}/runs?per_page=10"), headers=_headers())
+    _refusal(listed)
+    listed.raise_for_status()
+    seen = {r.get("id") for r in listed.json().get("workflow_runs") or []}
     body = {"ref": CARD_BRANCH, "inputs": inputs, "return_run_details": True}
-    reply = _post_dispatch(repository, body)
-    if reply.status_code == 422 and "return_run_details" in reply.text:   # GitHub without that option: not started
-        reply = _post_dispatch(repository, {"ref": CARD_BRANCH, "inputs": inputs})
-    if reply.status_code in (401, 403, 404):
-        raise TokenRefused(f"HTTP {reply.status_code}")
+    try:
+        reply = _post_dispatch(repository, body)
+        if reply.status_code == 422 and "return_run_details" in reply.text:   # GitHub without that option: not started
+            reply = _post_dispatch(repository, {"ref": CARD_BRANCH, "inputs": inputs})
+    except RequestException as e:
+        raise NoAnswer(f"{type(e).__name__}: {e}") from e
+    _refusal(reply)
     if reply.status_code >= 400:
         raise ValueError(f"HTTP {reply.status_code}: {reply.text[:200]}")
     run_id = None
@@ -429,6 +453,10 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
             except TokenRefused as e:
                 say(interaction, f"GitHub refused ACTIONS_TOKEN ({e}): it lacks Actions write on the card repo or "
                                  f"has expired. Start the run on <{actions_link()}> or with `{gh_command(full, names)}`.")
+                return None
+            except NoAnswer as e:
+                say(interaction, f"GitHub did not answer the Card sync dispatch ({e}), so the run may have started: "
+                                 f"look on <{actions_link()}> before asking again.")
                 return None
             except (RequestException, ValueError) as e:
                 say(interaction, f"Could not start a Card sync run ({type(e).__name__}: {e}); try again, or start "
