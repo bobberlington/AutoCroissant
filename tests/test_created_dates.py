@@ -275,3 +275,21 @@ def test_created_command(tmp_path, capsys):
     assert de.main(["created", "--archive", str(archive), "--out", str(tmp_path / "x.json")]) == 1
     assert "review_pages.py" in capsys.readouterr().out and not (tmp_path / "x.json").exists()
     assert de.main(["created", "--archive", str(tmp_path / "none"), "--repo", str(repo)]) == 1
+
+
+def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
+    """to_dict's created: /update_metadata's view lists it after timestamp, both exports carry it (CSV: a created column)."""
+    import csv
+    import commands.psd_analyzer as pa
+    goombella, kirby = _dated("Goombella", "2023-10-13", provisional=True), _dated("Kirby", None)
+    monkeypatch.setattr(pa, "get_card_aliases", lambda name=None: [] if name else {})
+    lines = pa._format_metadata(goombella, "Goombella").split("\n")
+    assert lines[lines.index("created: 2023-10-13") - 1].startswith("timestamp: ")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pa, "queue_file", lambda inter, f: None)
+    monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby})
+    pa.export_stats_to_file(SimpleNamespace(), as_csv=True)
+    rows = {r[""]: r for r in csv.DictReader(open("stats.csv", encoding="utf-8"))}
+    assert rows["Goombella"]["created"] == "2023-10-13" and rows["Kirby"]["created"] == ""
+    pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
+    assert "\n2023-10-13\n" in open("stats.txt", encoding="utf-8").read()

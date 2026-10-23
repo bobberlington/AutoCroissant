@@ -97,7 +97,7 @@ stats_commands = {
                                                   "- dry_run: Render and check the edits, commit nothing (default: True)",
     "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "
                                                   "and the fonts folder's count. Reads every card PSD once (cached by blob; a first run warms the cache over several calls).",
-    "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook).\n"
+    "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook), its creation date (created) included.\n"
                                                    "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
     "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
@@ -109,7 +109,7 @@ stats_commands = {
                                                   "- stars, types: not yet (the card bake can't print them); change them in the PSD\n"
                                                   "- del_entry: Hide the card on the website and in queries\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
-                                                  "- No parameters (except query) shows current metadata",
+                                                  "- No parameters (except query) shows current metadata, its creation date (created) included",
     "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
     "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only). "
