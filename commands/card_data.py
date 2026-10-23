@@ -185,12 +185,10 @@ class CardBuild:
         Uses the most recent commit for timestamp, but preserves original author
         from the first commit if not already set.
 
-        A path GitHub lists no commit for (it never did for a PSD in the tree) is dated by this run, when the bot first
-        saw it (no made-up year-1000 date), with no author (the authors file sets one): one console line, no failure,
-        so it is not fetched again at every run nor holds the archive.
-
         Raises:
-            LookupError: no repo: the card waits for the next run (_not_looked_up)
+            LookupError: no repo, or no commit listed for the path (an empty page, as right after a push): the card
+                waits for the next run (_not_looked_up), so no made-up date (once year 1000, or the run's clock: a
+                saved blob is never looked up again) and no missing first author is stored
         """
         if not repo:
             raise LookupError(f"no repository to look up {path} in")
@@ -198,8 +196,7 @@ class CardBuild:
         pending = self._lookups.pop(path, None)                 # started beside the download
         commits = pending.result() if pending is not None else self._commit_page(path)
         if not commits:
-            print(f"{path}: no commits found; dated by this run")
-            return (datetime.now(timezone.utc).timestamp(), None)
+            raise LookupError(f"no commits found for {path}")
 
         # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
         # (AUTHORS_PATH) corrects either afterwards.
@@ -1163,10 +1160,10 @@ class GitBuild(CardBuild):
         return None
 
     def _get_remote_timestamp(self, repo, path: str, name: str) -> tuple[float, Optional[str]]:
-        """The blob's intro (a move or the same bytes again is no new date; a rename whose old name the database holds:
-        the rename, intro_of); a new card's author: the first commit's at the oldest path its exact renames came from
-        (never the renamer's)."""
-        intro = self.index.intro_of(self.shas.get(path), name, set(self.db.stats) | set(self.db.old_stats))
+        """The blob's intro (a move or the same bytes again is no new date; after a revert, the revert: blob_since; a
+        rename whose old name the database holds: the rename, intro_of); a new card's author: the first commit's at the
+        oldest path its exact renames came from (never the renamer's)."""
+        intro = self.index.intro_of(self.shas.get(path), name, set(self.db.stats) | set(self.db.old_stats), path)
         at = intro.at if intro is not None else self.at
         if name not in self.db.stats or not self.db.stats[name].author:
             first = self.index.first.get(self.index.origin(path))

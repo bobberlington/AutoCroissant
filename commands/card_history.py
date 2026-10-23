@@ -145,18 +145,41 @@ class GitIndex:
         found = self.intro.get(blob) if blob else None
         return found[0] if found else None
 
-    def intro_of(self, blob: Optional[str], name: str, others=()) -> Optional[Commit]:
-        """blob_intro for the card `name`, except when the bytes were also at a path of another name in `others` (the
-        database's names: a renamed card's archive holds that time, a copy is another card): then the oldest commit
-        that put them at a path of this name."""
-        intro = self.blob_intro(blob)
-        if intro is None or not others:
-            return intro
+    def blob_since(self, blob: Optional[str], path: str, at: Optional[float] = None) -> Optional[Commit]:
+        """When a version's bytes became its card's: the blob's intro, unless path (or the path an exact rename brought
+        them from) held other bytes after it: then the newest commit that put these back, no later than at (the
+        version's reading; None: the newest). A revert dates from the revert (2025-04-04), an exact rename keeps the
+        date (even onto a path that held others); idempotent on its result."""
+        first = self.blob_intro(blob)
+        starts, seen, after = [], {path}, None        # starts newest first; after: the rename that took them from path
+        while first is not None:
+            puts = [(c, b) for c, b in self.at_path.get(path, []) if after is None or c.order > after.order]
+            mine = [c for c, b in puts if b == blob]
+            old, came = self.renamed_from.get(path), mine[len(mine) - 1] if mine else None
+            renamed = came is not None and old is not None and old not in seen and \
+                (self.renames.get(old) or (None, None))[1] is came
+            starts += [c for i, (c, b) in enumerate(puts) if b == blob and i + 1 < len(puts) and not (renamed and c is came)
+                       and puts[i + 1][1] != blob and puts[i + 1][0].order < first.order]
+            if not renamed:
+                break
+            seen.add(old)
+            path, after = old, came
+        return next((c for c in starts if at is None or c.at <= at), first)
+
+    def intro_of(self, blob: Optional[str], name: str, others=(), path: Optional[str] = None,
+                 at: Optional[float] = None) -> Optional[Commit]:
+        """blob_since at path (no path: blob_intro) for the card `name`, never before the oldest commit that put the
+        bytes at a path of this name when they were also at a path of another name in `others` (the database's names:
+        a renamed card's archive holds that time, a copy is another card)."""
+        since = self.blob_since(blob, path, at) if path else self.blob_intro(blob)
+        if since is None or not others:
+            return since
         paths = self.paths_of.get(blob) or {}
         if not any(card_name(p) != name and card_name(p) in others for p in paths):
-            return intro
+            return since
         mine = [c for p, c in paths.items() if card_name(p) == name]
-        return max(mine, key=lambda c: c.order) if mine else intro
+        own = max(mine, key=lambda c: c.order) if mine else None
+        return own if own is not None and own.order < since.order else since
 
     def arrival(self, blob: Optional[str], path: str) -> Optional[Commit]:
         """The oldest commit that put blob at path (a path in another letter case counts), else None."""
@@ -328,8 +351,11 @@ def carry_to(holder: CardInfo, at: float, commit: Optional[str]) -> None:
 def _reread(older: CardInfo, newer: CardInfo) -> bool:
     """Whether older is an earlier reading of newer's PSD: the same start (one commit read twice, by an older parser
     or before an edit) and no other blob, newer read with a blob or older without one, by no older parser, knowing
-    every field older knew (unknown)."""
+    every field older knew (unknown). A version an edit or authors change made (cause edit, authors) is no re-read:
+    it starts no earlier than the version it ends, so at its start when the edits commit is older."""
     if getattr(older, "archived", None) or start(older)[0] != start(newer)[0]:
+        return False
+    if (getattr(newer, "version", None) or {}).get("cause") in ("edit", "authors"):
         return False
     a, b = getattr(older, "blob_sha", None), getattr(newer, "blob_sha", None)
     if (a and b and a != b) or (a and not b) or not unknown(newer) <= unknown(older):
@@ -508,12 +534,13 @@ def close(card: CardInfo, index: GitIndex, end_at: Optional[float], end: Optiona
 
 def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], others=()) -> dict:
     """
-    A version's start from git: its blob's intro (psd; intro_of: not at another name of `others`); the previous
-    version's blob again: reparse from the same intro, or moved from the commit that put the blob at this path (a
-    folder's data); no blob in the index: legacy, at the stored timestamp.
+    A version's start from git: its blob's intro (psd; after a revert, the revert: blob_since; intro_of: not at another
+    name of `others`); the previous version's blob again: reparse from the same intro, or moved from the commit that
+    put the blob at this path (a folder's data); no blob in the index: legacy, at the stored timestamp.
     """
     blob = getattr(card, "blob_sha", None)
-    intro = index.intro_of(blob, getattr(card, "name", None) or card_name(card.path or ""), others)
+    intro = index.intro_of(blob, getattr(card, "name", None) or card_name(card.path or ""), others, card.path,
+                           card.timestamp)
     if intro is None:
         return meta(None, card.timestamp, "legacy", legacy=True)
     if previous is not None and getattr(previous, "blob_sha", None) == blob:
@@ -1215,12 +1242,13 @@ class Refined:
 
 
 def date_cards(stats: dict, index: GitIndex, report: Refined, others=()) -> None:
-    """Each current card's timestamp becomes its blob's intro (intro_of `others`); a duplicate takes its original's."""
+    """Each current card's timestamp becomes its blob's intro (blob_since, intro_of `others`); a duplicate takes its
+    original's."""
     for name, card in stats.items():
         if getattr(card, "duplicate_of", None):
             continue
         report.cards += 1
-        intro = index.intro_of(getattr(card, "blob_sha", None), name, others)
+        intro = index.intro_of(getattr(card, "blob_sha", None), name, others, card.path, card.timestamp)
         if intro is not None and intro.at != card.timestamp:
             card.timestamp = intro.at
             report.cards_dated.append(name)
@@ -1298,7 +1326,8 @@ def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, repo
             report.legacy += 1
         elif getattr(version, "blob_sha", None):
             report.versions_with_blob += 1
-            intro = None if info.get("restored_from") else index.intro_of(version.blob_sha, name, others)
+            intro = None if info.get("restored_from") else index.intro_of(version.blob_sha, name, others, version.path,
+                                                                          version.timestamp)
             if intro is not None and version.timestamp != intro.at:
                 version.timestamp = intro.at
                 report.versions_dated += 1
@@ -1345,7 +1374,8 @@ def _dated(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], report
                 fresh["from_commit"] = found[0].sha
                 if report is not None:
                     report.commits_found += 1
-            intro = index.intro_of(found[1], getattr(card, "name", None) or card_name(card.path or ""), others)
+            intro = index.intro_of(found[1], getattr(card, "name", None) or card_name(card.path or ""), others,
+                                   card.path, fresh["from"])
             if intro is not None and intro.at < fresh["from"] and getattr(previous, "blob_sha", None) != found[1]:
                 fresh["from"], fresh["from_commit"] = intro.at, intro.sha   # the carried version's bytes, dated as
     return fresh                                                            # start_of dates a version (no move)

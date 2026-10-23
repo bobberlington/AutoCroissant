@@ -112,6 +112,45 @@ def test_parse_handles_odd_paths_and_merges():
     assert index.newest['Items/We\tird "x".psd'].author == "ann" and [c.author for c in index.commits] == ["ann", "bo b"]
 
 
+def test_a_revert_dates_from_the_revert(tmp_path):
+    """King Dedede (2025-04-04): bytes X, then Y, then X again (a revert): the card and a version read after the revert
+    start at the revert, one read before it at X's intro. Holo Defense API: renamed after its revert (same bytes), it
+    still starts at the revert. The same bytes at a path that held no others keep their intro, and so does an exact
+    rename onto a path that held others. A start dates itself."""
+    repo = tmp_path / "cards"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "Items/A.psd", X)
+    c1 = commit(repo, "alice", 1000)
+    write(repo, "Items/A.psd", Y)
+    c2 = commit(repo, "bob", 2000)
+    write(repo, "Items/A.psd", X)
+    c3 = commit(repo, "carol", 3000)
+    index = ch.GitIndex.from_git(str(repo))
+    since = lambda path, at=None: index.blob_since(blob(X), path, at).sha
+    assert (since("Items/A.psd"), since("Items/A.psd", 3500.0), since("Items/A.psd", 3000.0)) == (c3, c3, c3)
+    assert since("Items/A.psd", 1500.0) == since("Items/A.psd", 1000.0) == index.blob_intro(blob(X)).sha == c1
+    stats = {"A": _card(blob_sha=blob(X), timestamp=3000.0)}
+    old = defaultdict(list, {"A": [_card(ability="One.", blob_sha=blob(X), timestamp=1000.0),
+                                   _card(ability="Two.", blob_sha=blob(Y), timestamp=2000.0)]})
+    ch.refine(stats, old, index)
+    assert [(v.version["from"], v.version["to"]) for v in old["A"]] == [(1000.0, 2000.0), (2000.0, 3000.0)]
+    assert (stats["A"].timestamp, stats["A"].version["from"], stats["A"].version["from_commit"]) == (3000.0, 3000.0, c3)
+    git(repo, "mv", "Items/A.psd", "Items/B.psd")
+    commit(repo, "dave", 4000)
+    write(repo, "Items/C.psd", X)
+    commit(repo, "erin", 5000)
+    write(repo, "Items/D.psd", b"other")
+    commit(repo, "fay", 6000)
+    git(repo, "rm", "-q", "Items/D.psd")
+    commit(repo, "fay", 6500)
+    git(repo, "mv", "Items/C.psd", "Items/D.psd")
+    commit(repo, "gus", 7000)
+    index = ch.GitIndex.from_git(str(repo))
+    assert since("Items/B.psd") == since("Items/B.psd", 4000.0) == since("Items/B.psd", 3000.0) == c3
+    assert since("Items/D.psd") == c1             # a copy (no other bytes at its path), renamed onto a used path
+
+
 # ========================
 # Versions
 # ========================
@@ -232,6 +271,21 @@ def test_a_stale_index_never_dates_a_tag_back_to_an_older_deletion():
         report = ch.Refined()
         ch.date_archive({}, defaultdict(list, {"A": [record]}), index, report, backfill=False)
         assert (record.archived["at"], record.archived["commit"], report.tags_dated) == (300.0, commit, [])
+
+
+def test_a_stale_index_never_dates_a_restored_cards_tag():
+    """Read at 100, deleted at 150, restored with the same bytes (its timestamp stays 100) and deleted at 300: a clone
+    not fetched since knows only the 150 deletion (and a rename then), newer than the reading. The tag's commit is not
+    in it, so neither dates the tag nor names a rename."""
+    index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
+    index.renames["Items/A.psd"] = ("Items/B.psd", index.by_sha["old"])
+    record = _card(timestamp=100.0, blob_sha="b1", archived={"at": 300.0, "path": "Items/A.psd", "blob": "b1",
+                                                              "commit": "new"})
+    report = ch.Refined()
+    ch.date_archive({"B": _card("B", path="Items/B.psd")}, defaultdict(list, {"A": [record]}), index, report,
+                    backfill=False)
+    assert record.archived == {"at": 300.0, "path": "Items/A.psd", "blob": "b1", "commit": "new"}
+    assert not report.changed()
 
 
 def test_a_psd_moved_into_mdw_is_retired_not_deleted():
@@ -385,6 +439,21 @@ def test_a_near_equal_run_keeps_the_reading_that_knew_most():
     assert ch.collapse([titled], current) == ([titled], [])                                  # idempotent
 
 
+def test_a_run_holds_readings_that_each_knew_less_than_one_of_them():
+    """A title-less early reading, the full one, then a reading without its stars: the two that knew less differ in
+    what they missed (neither stands for the other), but the full reading knew all of both, so all three are one run
+    and it alone stays, from the earliest start. The card after it (other stars) agrees with the starless reading
+    too, but that reading belongs to the run: the card does not start at it."""
+    early = _card(timestamp=100.0, stars=1)
+    full = _card(timestamp=200.0, stars=1, display_name="T", blob_sha="b2", **V2)
+    starless = _card(timestamp=300.0, stars=0, display_name="T", blob_sha="b3", problems=["NO STARS FOUND"], **V2)
+    current = _card(timestamp=400.0, stars=2, display_name="T", blob_sha="b4", **V2)
+    assert not ch.same_data(early, starless) and ch.knows(full, early) and ch.knows(full, starless)
+    assert ch.knows(current, starless) and not ch.knows(current, full)
+    assert ch.collapse([early, full, starless], current) == ([full], [early, starless])
+    assert ch.start(full) == (100.0, None) and ch.start(current) == (400.0, None) and current.version is None
+
+
 def test_an_earlier_reading_of_the_same_commit_goes():
     """Tainted Bethany, omori, How To Jump: one commit read before parser 2 (no blob) and again by parser 2 (its blob),
     both kept at the same second. The earlier reading goes (nothing to carry), so the kept one has the blob and no
@@ -399,6 +468,25 @@ def test_an_earlier_reading_of_the_same_commit_goes():
     assert ch.collapse([before], holder) == ([], [before]) and holder.version is None
     a, b = _card(timestamp=100.0, blob_sha="b1", **V2), _card(ability="B.", timestamp=100.0, blob_sha="b2", **V2)
     assert ch.collapse([a, b], current) == ([a, b], [])
+
+
+def test_an_edit_older_than_the_card_it_changes_stays_a_version():
+    """Card Edits.json's newest commit older than the card's start (an edits commit merged after a PSD push): the
+    edit's version starts at the card's start (never before it), and the cleanup keeps the card before it (no re-read:
+    its cause is edit), from record_edits (legacy) and a build's record_versions (authors too)."""
+    old = _card(timestamp=1000.0, blob_sha="b1", **V2)
+    db = _db({"A": _card(ability="Edited.", timestamp=1000.0, blob_sha="b1", **V2)})
+    assert ch.record_edits(db, {"A": deepcopy(old)}, 900.0, "e1") == ["A"]
+    assert ch.start(db.stats["A"])[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == []
+    assert [v.ability for v in db.old_stats["A"]] == ["Text."] and db.stats["A"].ability == "Edited."
+    index = _index_with({"b1": ("c1", 1000.0)})
+    old.version = ch.start_of(old, index, None)
+    for after, cause in ((_card(ability="Edited.", blob_sha="b1", **V2), "edit"),
+                         (_card(blob_sha="b1", author="New", **V2), "authors")):
+        db = _db({"A": after})
+        assert ch.record_versions({"A": deepcopy(old)}, {}, db, {}, [], index, ch.Commit(0, "e1", 900.0, "web"),
+                                  ch.Commit(0, "a1", 900.0, "web")) == [("A", cause)]
+        assert ch.start(after)[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == [] and len(db.old_stats["A"]) == 1
 
 
 def test_a_field_its_parse_failed_on_is_unknown():

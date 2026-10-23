@@ -557,19 +557,26 @@ stored before once (`card_history.dedupe`: the first of a run stays, a run equal
 ability none, the retired type `offense` is `negation`), a field a reading could not know is no difference (a title
 before parser 2; stars, types or ability its parse reported a problem with) nor is the series split's move under a parent;
 stored versions' series are filled from the next version (items) or moved under that parent, and an earlier reading of
-the same commit (one start, no other blob) goes first. The rule runs one way (`card_history.knows`): the reading that knew
-more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer keeps the
-card before as a version. An applied database edit that changes a card's data (Card Edits.json at /update_stats, a
-Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`, since
-2026-10-23). The same cleanup (2026-10-23, `card_history.recover`, with the history clone and the bot's own full clone
-`BOT_CLONE`) puts back what the bot's PICKLE commits held and old_stats lost: a reading whose printed ability words (any
-case, icon tokens and punctuation aside), types, stars, stats or card type no neighbouring version prints becomes a
+the same commit (one start, no other blob) goes first, never the card before an edit's version (cause `edit` or
+`authors`, which starts no earlier than the version it ends). The rule runs one way (`card_history.knows`): the reading
+that knew more absorbs the one that knew less, never the reverse, so a commit with a broken ability, star or type layer
+keeps the card before as a version. An applied database edit that changes a card's data (Card Edits.json at
+/update_stats, a Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`,
+since 2026-10-23). The same cleanup (2026-10-23, `card_history.recover`, with the history clone and the bot's own full
+clone `BOT_CLONE`) puts back what the bot's PICKLE commits held and old_stats lost: a reading whose printed ability words
+(any case, icon tokens and punctuation aside), types, stars, stats or card type no neighbouring version prints becomes a
 legacy version (`version.restored_from` its PICKLE), one that prints the same only moves the next version's start
-earlier (the version knowing all it knew); the cards gone before archiving are archived from their last reading
-(`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW). Consecutive versions whose
-PSD changed, PNG did not (from the older reading to the newer one's start) and types alone differ are one misread (`misreads`), and impossible
-history values (a stat above 20, above 10 without allow_high_stats, stars outside 0..7) become unknown with an
-`OUT OF RANGE: ...` problem keeping the old value (`unknown_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+earlier (the version knowing all it knew); readings are keyed by name, path and blob (the same bytes in another folder
+print another card type: Air Totem a minion, then an item), dated where the PICKLE read them (never a time the file sat
+at another path), each restored version's blob that of its start's commit; a name the 2025 PICKLEs held at two paths
+keeps its own path's (Auto Croissant, not Mini Auto Croissant's minion); the cards gone before archiving are archived
+from their last reading (`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW), and a
+renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before).
+Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
+differ are one misread (`misreads`), and impossible history values become unknown with an `OUT OF RANGE: ...` problem
+keeping the old value (`unknown_values`): stars outside 0..7, a stat above 10 without an allowance (`allows_high`: the
+card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS names, or no current card), any stat of three digits;
+the kept ones above 10 are listed for the owner (`high_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
