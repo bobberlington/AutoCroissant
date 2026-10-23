@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 from io import BytesIO
+from os import environ
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
@@ -23,7 +24,7 @@ from conftest import CLONE, REPO, Reply, blob_sha, blob_sha_bytes as _sha
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 
-WORKFLOW = CLONE / ".github" / "workflows" / "font-check.yml"
+WORKFLOW = Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML") else CLONE / ".github" / "workflows" / "font-check.yml"
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
 ROLE = "546427268751294475"
@@ -685,7 +686,9 @@ def test_workflow_shape():
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "discord.com/api/webhooks" not in text and "secrets.DISCORD_FONT_WEBHOOK" in text and "<@&" not in text   # no URL, no mention in the yaml
+    assert "discord.com/api/webhooks" not in text and "<@&" not in text   # no URL, no mention in the yaml
+    # the standards channel since 2026-10-22 (owner); the role ping and wording stay font_check.discord_payload's
+    assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "secrets.DISCORD_FONT_WEBHOOK" not in text
     assert '"**/*.psd"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
     assert '--repo "$GITHUB_REPOSITORY"' in text and '--after "$GITHUB_SHA"' in text and "--whole-tree" in text and '--before "$BEFORE"' in text
     assert "contents: write" in text and '|| echo "::warning::' in text and "actions/checkout@v7" in text and "actions/cache@v6" in text

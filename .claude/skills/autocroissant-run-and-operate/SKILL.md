@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, and a guild-admin table.
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, and a guild-admin table.
 ---
 
 # AutoCroissant: Run and Operate
@@ -418,8 +418,9 @@ present. It reports and never rejects: a missing font is a message to a person, 
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
   `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
-  missing, posts to the Discord webhook in the repo secret `DISCORD_FONT_WEBHOOK` (the URL is in no file) and then comments on
-  the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
+  missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (moved from the font
+  channel's `DISCORD_FONT_WEBHOOK` by the owner on 2026-10-22, on TTSCardMaker `work/push-guards` until it lands; the URL is
+  in no file) and then comments on the commit, pinging role 546427268751294475 once, then one line per author and font: "<name> has pushed a card without
   adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
   card PSD by blob (~813 downloads).
 - **By hand: `/fonts`** (anyone). Runs in a thread against the card repo's current tree through the API with the per-blob
@@ -448,7 +449,8 @@ network, a truncated tree) is one error line.
   it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
   requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
-  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font check's secret; unset: a warning) and comments on the commit. The
+  notes it posts to the webhook in `DISCORD_FONT_WEBHOOK` (the font channel; the font check posts to the standards channel since
+  2026-10-22; unset: a warning) and comments on the commit. The
   message pings role 546427268751294475 once, then one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the
   website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
@@ -508,9 +510,10 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   edit without a refused verdict for exactly its values on the current PSD) finds work, bakes only those cards (`--pending`;
   a dispatch re-checks every card), at most 40 a run, and posts to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a streak of
   failed scheduled runs starts (once, not every tick); nothing in this repo triggers it.
-- **`--local <clone>`** (2026-10-22, for the planned card-sync.yml, docs/Campaigns/DATA_BUILD_ACTION.md §6.3 stage 1): the
-  tree and blobs come from that clone (blobless is enough; a missing blob by REST, never a lazy fetch) and the run's commit
-  B is made there on `--head` (default its HEAD) and pushed by nobody; a checkout at `--head` fast-forwards to B. Same gates.
+- **`--local <clone>`** (2026-10-22, for card-sync.yml, on TTSCardMaker main and dispatch only until its cutover,
+  docs/Campaigns/DATA_BUILD_ACTION.md §6.3 stage 1): the tree and blobs come from that clone (blobless is enough; a
+  missing blob by REST, never a lazy fetch) and the run's commit B is made there on `--head` (default its HEAD) and pushed
+  by nobody; a checkout at `--head` fast-forwards to B. Same gates.
 - **By hand: `/bake_cards [card] [dry_run]`** (admin only; `dry_run` defaults to True, `card` restricts the run to one card
   matched like Card Authors.txt). Same code, same Lock. Not dry: commits through `git_commit.commit_files` with
   `GIT_TOKEN` (the API), SSH through the history clone when the token can't write (the unit's `SSH_AUTH_SOCK`).
@@ -529,6 +532,57 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   a fresh `mkdtemp(prefix="card-bake_")` per run there).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
   docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
+
+### Card guards (added 2026-10-22; TTSCardMaker's card-guards.yml Action, BUILT on `work/push-guards`, not landed)
+
+The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
+failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
+without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261022b`
+renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
+never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
+nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
+card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel
+(`DISCORD_STANDARDS_WEBHOOK`, no ping; font-check.yml posts there too, with its role ping) and at most one bot commit,
+both after a 30-minute quiet window. On the 34 replayed commits the render passes the gates on 25 and refuses 9
+(PUSH_GUARDS.md section 17).
+
+- **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
+  `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
+  would make is told ("PNG not exported with the PSD: export it in Photoshop") and the comment says it "would be
+  re-exported (CARD_GUARDS=on)". `on`: also land the PNGs and fixes. Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on`
+  (owner's call; the items to confirm first are at the top of PUSH_GUARDS.md section 15).
+- **Dispatch (Actions > Card guards > Run workflow):** `dry_run` defaults to true (job summary and the `card-guards`
+  artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
+  against its first parent; `cards` limits it; `all` audits every card PSD (about 40 minutes, always dry). `dry_run` off
+  comments, posts and lands at once on the blob check alone (no quiet window), so it refuses ("still in its quiet
+  window") while a push run of that commit, or of a later one, is unfinished: dispatch again once it has finished.
+  `CARD_GUARDS` does not bind a dispatch: unset or `report`, a dispatch with `dry_run` off still comments, posts and
+  lands, so dispatch dry while testing in the `report` phase. An author with no GitHub account is named by the git author
+  name there, never the dispatcher.
+- **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
+  --out <dir>` (any clone with the history; blobs it lacks come by API), then `land --plan <dir>/plan.json --dry-run`
+  or `--local <clone>` (commits there, pushes nothing). A bare `land` commits to TTSCardMaker with config.py's token, so it
+  refuses a plan not checked with `--mode on` (exit 2). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
+- **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the told mark on any guards comment;
+  the lookup is tried 3 times, and a re-run that still cannot read the comments counts the push as told: neither its
+  failure alert nor its post goes out, and its error says the push may be untold, so re-run again once GitHub answers).
+  A re-run that fails in Check looks the mark up in the alert step, so a push already told gets no "was not guarded".
+  The quiet window counts from the push, so a late re-run does not wait again. After a run that landed, the re-run finds
+  its blobs on the branch ("already on the branch"), writes nothing and starts the site build and the TTS save again
+  (the first attempt's may not have started). A re-run (or a dispatch) that cannot read the branch tells no write as
+  "not made" (an earlier run may have landed it); its comment says this run committed nothing.
+- **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
+  or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
+  run failed" once Check passed. Once per streak: a run that sent it, or stayed quiet inside a told streak, leaves the
+  `card-guards-failure-told` artifact, and the next failing run is quiet only when the last finished push run left it
+  and is not green. A red run that posted its own lines (a card error, a failed comment) leaves none, so the next
+  failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
+  errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
+  bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
+  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout) sends no message.
+- **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
+  the files only bot commits changed.
 
 ### Discord archive and card matching (added 2026-10-22; CLI only, run by hand)
 
@@ -808,3 +862,8 @@ saving bullet names the per-PSD failure messages (an unreadable PSD, a failed co
 abort.
 2026-10-22 (one commit per run): section 7's Card bake subsection says one commit per run and that card-edits.yml bakes live every 30 minutes behind its `pending` gate; no cited line moved. Same day: the 40-card cap and the failed-run Discord message, then `--pending` and once-per-streak messages.
 2026-10-22 (bake --local): section 7's Card bake subsection gains the `--local` bullet; no cited line moved.
+2026-10-22 (card guards): section 7's Card guards subsection (the CARD_GUARDS switch, dispatches, re-runs, the failure alert); no cited line moved.
+2026-10-22 (card guards, review 4): the Card guards subsection gains the any-case switch, the refused dispatch, the dispatch's author, the streak artifact and the unread-comment re-run; the Card bake `--local` bullet no longer calls card-sync.yml planned; no cited line moved.
+2026-10-22 (card guards, review 5): the Card guards subsection gains the dispatch outside CARD_GUARDS, `land`'s refusal of a non-`on` plan, the retried lookup, the alert's own lookup on a re-run, the re-run's window and the unstarted site build; no cited line moved.
+2026-10-22 (card guards, review 6): report mode tells the PNG it would make, R11 told until the owner says yes (AUTO_FIX), a PNG pushed before its PSD, a re-run's unread branch and refresh, a cancel by hand; no cited line moved.
+2026-10-23 (card guards, review 7): a new card's PNG pushed before its PSD is current too; no cited line moved.

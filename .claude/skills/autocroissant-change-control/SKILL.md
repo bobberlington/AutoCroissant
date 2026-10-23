@@ -203,13 +203,16 @@ Worked example to imitate: the `/update_stats` block at main.py:374-386 (2026-10
    `print_help` (help.py:136) dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, and the Discord writers' `discord_edits` (2026-10-22: the jetson runs the same pure Python as the Action; tests/test_card_data.py checks they stay out) are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the Discord writers' `discord_edits`, and the push guards' `card_guards`, `png_export` and `card_standards` (2026-10-22: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
-   sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: the last one's list is
-   `card_check.SPARSE_FILES`; the planned card-sync.yml will check out `card_data.SPARSE_FILES`, whose test runs `--help` on
-   the build, the bake and the save with exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; three of the lists
-   have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py; tts-save.yml's has
-   none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
+   sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: its list is
+   `card_check.SPARSE_FILES`; card-guards.yml: its list is `card_guards.SPARSE_FILES`, 16 files including `psd_edit`,
+   `card_bake`, `txt2_repair` and `png_export`; card-sync.yml, on TTSCardMaker main since 2026-10-22 (dispatch only until
+   its cutover), checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
+   exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; five of the lists
+   have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py,
+   test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
+   tts-save.yml's has none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, the `wraparound=False` directive
    (setup.py:39) applies: **no negative indexing anywhere in the file** — use
    `x[len(x)-1]`, never `x[-1]` — and Cython 3.3 rejects re-annotating a variable
    that is already declared (declare it once; the management.py incident,
@@ -358,3 +361,5 @@ and update this file.
 2026-10-22 (data build): the /update_stats traversal moved to the uncompiled commands/card_data.py (checklist step 1);
 `card_data`, `card_history`, `card_db` and `changelog` named among the uncompiled modules in step 5, with
 `card_data.SPARSE_FILES` (card-sync.yml, planned) beside the Actions' sparse lists.
+
+2026-10-22 (card-sync.yml landed): step 5 no longer calls card-sync.yml planned (on TTSCardMaker main, dispatch only) and counts its sparse-list test, test_card_data.py, among the five.
