@@ -544,8 +544,9 @@ nothing when the PNG already shows the PSD, pushed before it, a new card's too),
 card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; font-check.yml posts there too, with its role ping) and at most one bot commit,
-both after a 30-minute quiet window. On the 34 replayed commits the render passes the gates on 25 and refuses 9
-(PUSH_GUARDS.md section 17).
+both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
+a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
+replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18).
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot

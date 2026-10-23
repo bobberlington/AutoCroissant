@@ -1,6 +1,7 @@
 # Push guards: stale PNGs and card standards, checked on every push (2026-10-22)
 
 **Status:** designed and BUILT 2026-10-22 (section 16), the owner's three rulings of 2026-10-22 ~23:00 built (section 17),
+the pixel-miss ruling of 2026-10-23 built (section 18, AutoCroissant `work/soft-parity-guards` on `work/push-guards`),
 not landed: AutoCroissant `work/push-guards`, TTSCardMaker `work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
@@ -282,7 +283,7 @@ one ends "export it in Photoshop").
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
-| G6 | the bot's drawing | (a) the bake's parity gate: the fork's render of the old PSD over R matches the old PNG within the bar; (b) the cross-check: wherever the render or Photoshop's image moved (F and D), the new PNG matches the new composite within the bar; F empty while D is not: refused | (a) "PNG not made: the bot cannot draw this part of the card as its old PNG shows it (1.4% of pixels differ); export it in Photoshop"; (b) "PNG not made: the bot's drawing of your change does not match the PSD's own image (...)"; D outside every changed layer: "PNG not made: the PSD's own image changed where the bot sees no layer change; export it in Photoshop"; a tool save whose composite is stale: "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in Photoshop with Maximize Compatibility, or export it in Photoshop" |
+| G6 | the bot's drawing | (a) the bake's parity gate: the fork's render of the old PSD over R matches the old PNG within the bar; (b) the cross-check: wherever the render or Photoshop's image moved (F and D), the new PNG matches the new composite within the bar; F empty while D is not: refused. Since 2026-10-23 (a) and (b) refuse only past the floor (more than 25% bad); a miss of the bar under it is written and told (section 18). D outside every changed layer that disagrees still refuses | (a) "PNG not made: the bot cannot draw this part of the card as its old PNG shows it (1.4% of pixels differ); export it in Photoshop"; (b) "PNG not made: the bot's drawing of your change does not match the PSD's own image (...)"; D outside every changed layer: "PNG not made: the PSD's own image changed where the bot sees no layer change; export it in Photoshop"; a tool save whose composite is stale: "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in Photoshop with Maximize Compatibility, or export it in Photoshop" |
 | G8 | numbered PNGs | per numbered file, the delta transfer's condition (5.4) | "A_Snack2.png not updated: re-export it in Photoshop" (the base PNG still lands) |
 | G9 | quiet | at land, no later push touched the PSD or PNG, and their blobs at the head are still the pushed ones | none: dropped as superseded, and the newer push's run decides |
 
@@ -292,7 +293,9 @@ one ends "export it in Photoshop").
   `TySh` (its stored raster stayed, Photoshop's image moved): the render cannot see that change, so G6 refuses.
 
 **5.3 Outcomes.**
-- **re-exported:** in the bot commit, with F's pixel count and box, the baseline and the cross-check in the comment.
+- **re-exported:** in the bot commit, with F's pixel count and box, the baseline and the cross-check in the comment. A
+  measure that missed the bar under the floor adds "made with a pixel difference (...): bad X%, mean Y, max Z" to the
+  comment's line and the bot commit's line (section 18).
 - **current:** no write; job summary only. Also when the PNG in the tree already shows the pushed PSD (review 6): the
   author pushed the PNG first and the PSD minutes later in a push of its own. Over F the PNG is nearer the new render than
   the old, within the bar there, and within the bar of Photoshop's image over the card (`png_ahead`), so the bot does not
@@ -330,7 +333,7 @@ one ends "export it in Photoshop").
 | `blob` | G1 |
 | `recent` | G9 (the same 30 min) |
 | `duplicate` | G8 (delta transfer instead of a flat refusal) |
-| `parity` (baseline) | G6 (a), over R, the same render and bar |
+| `parity` (baseline) | G6 (a), over R, the same render and bar; both refuse only past the floor since 2026-10-23 (section 18) |
 | `shape`, `region` | G7 (`gate_shape`, `gate_region` on the merge) |
 | `idempotence` | G6 (b): the merge against Photoshop's own image of the new PSD (the bake re-renders its saved PSD) |
 | `size`, `bytes`, `reparse`, `stories` | n/a (no PSD is written by guard 1) |
@@ -545,8 +548,8 @@ not land.**
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
 | A PSD saved without Maximize Compatibility | G2 refusal for guard 1; guard 2 still runs | save with it on |
-| A PSD written by a script without updating the composite | the render shows the new layers, the stale composite does not: G6 (b) refuses | export in Photoshop |
-| The fork draws a changed area otherwise than Photoshop (a layer effect such as a drop shadow's edge, an outer glow, a gradient overlay) | G6 (a) or (b) refuses: no PNG, "export it in Photoshop" (5 of the 34 replayed commits, section 17) | export in Photoshop; a fork fix lifts the class |
+| A PSD written by a script without updating the composite | the render shows the new layers, the stale composite does not: G6 (b) refuses past the floor (a hidden title: the whole change disagrees); since 2026-10-23 a smaller disagreement is made and told (section 18) | export in Photoshop |
+| The fork draws a changed area otherwise than Photoshop (a layer effect such as a drop shadow's edge, an outer glow, a gradient overlay) | since 2026-10-23 the PNG is made and the miss told in the comment and the bot commit ("made with a pixel difference ..."); past 25% bad G6 (a) or (b) refuses: no PNG, "export it in Photoshop" (section 18) | a fork fix; export in Photoshop when the miss shows |
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
 | GitHub schedules late | n/a: push runs are not scheduled; only the Card sync fold depends on the cron | none |
 | A burst of pushes | each its own run, so no report is lost (4.4); landing commits serialize by retry | none |
@@ -1020,3 +1023,35 @@ same).
 **Before `CARD_GUARDS=report`:** merge both branches; the first dry dispatches (section 8); check one of the 57 "within the bar,
 past 2 levels" cards in Photoshop (section 15).
 
+
+## 18. The owner's ruling on pixel misses, built (2026-10-23)
+
+The owner (2026-10-23 ~03:15): "let's not refuse bakes for failing the pixel check anymore. rather, we should improve
+psd-tools and fix these as we come across them." For guard 1 the same rule as the bake: write the fork's PNG unless it is
+grossly wrong, and tell the miss in the report and the comment. Built on AutoCroissant `work/soft-parity-guards` (from
+`work/push-guards`); the bake's side is `work/soft-parity` (EDIT_PIPELINE_DESIGN.md §5 step 3). Nothing pushed.
+
+- **Softened: the checks with the bot's drawing on one side.** G6 (a) the baseline, G6 (b) the cross-check, the new
+  card's whole render (G6, 5.5) and the beside case's G6 (b) refuse only past `psd_edit.PARITY_FLOOR`: more than 25% of
+  their pixels past 24. A miss of the bar under it is written; `Export.misses` keeps the measure and
+  `png_export.miss_notes` words it: "made with a pixel difference (the old PSD drawn against the old PNG): bad 1.35%,
+  mean 1.00, max 79", "(against the PSD's own image)" for G6 (b). The line goes on the card's guard-1 line in the comment
+  and on the PNG's line in the bot commit, never on Discord.
+- **Still refused, under the floor too.** G5 (outside R, and inside R when Photoshop's old image disagrees with the old
+  PNG too): the old PNG was already stale, Photoshop's own image says so, and no psd-tools fix makes the PNG right. G6
+  "changed where the bot sees no layer change": the PNG would not show the author's change (a type layer whose stored
+  raster stayed), the guard's read-back floor. G2, G7 and G8 as before; the burst anchor still retries a G5 or G6
+  refusal. Softening G5 as well, if the owner wants it, is one `_drawn` call in `export`.
+- **Measured on the 34 replayed commits** (fork pin `cards-20261022b` at 90508839, `scratch/soft-parity/replay34_soft.jsonl`,
+  the Mac under load): 29 PNGs made (25 before), 5 refused (9 before). The 4 that moved are the drawing misses of
+  section 17, each now within the parity bar of the author's own export: Defcon Panda (baseline 1.35% bad, cross 12.79%;
+  max 79 against the author's PNG), Clock (cross 3.6%; max 107), The Radiance (cross mean 3.84; max 48), Pandamonium
+  (cross mean 3.15; max 9). Still refused: Restrained (G5, 7.1%), 20 Creature Types and 11 Abilities5 (G6, unseen), and
+  the bot bakes PoD09DDT and PoD10BFB (G6, unseen; bot commits are never guarded). PNG pushed first: 34 of 34 current.
+- **Tests** (fail without the change): `test_a_drawing_miss_under_the_floor_is_written_and_told` (one row 30 levels off:
+  4.76% bad, made and told; ten rows: 47.6%, refused), `test_a_new_card_drawn_with_a_miss_is_made` (new and beside),
+  `test_g5_stays_a_refusal_under_the_floor`, `test_the_refusals_of_the_replay` (Defcon Panda now made, its baseline miss
+  told), `test_a_drawing_miss_is_told_in_the_comment_and_the_commit` (card_guards: the comment, the bot commit's line,
+  nothing on Discord).
+- **Open, not this ruling's:** `test_a_faint_beside_mismatch_note_names_the_case` fails on `work/push-guards` at 0b101e9
+  already (BESIDE_CUT 8 makes its 10-level PNG re-exported, not current).
