@@ -4,7 +4,7 @@ bot commits left out), check end to end on it (the report, the one Discord post 
 land against a fake GitHub (superseded cards, a moved head, the quiet wait) and in a local clone, the replay of the real
 push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12 Reactions2 "PNG still current"), the
 Action's sparse copy (SPARSE_FILES), card-guards.yml's shape, and its steps' shell against a fake gh and curl (one post
-per push, the failure streak, the refused dispatch, MODE in any case).
+per push, the failure streak, a re-run's lookups and window, the refused dispatch, MODE in any case).
 """
 import json
 import os
@@ -896,6 +896,10 @@ def test_workflow_shape(clone):
     assert 'OUT=$RUNNER_TEMP/guards' in steps[names.index("Start")]["run"]
     follow = steps[names.index("Follow up")]
     assert "report-landed.md" in follow["run"] and follow["if"] == "always() && steps.land.outputs.ran == 'true'"
+    assert follow["id"] == "follow" and tell["env"]["REFRESH"] == "${{ steps.follow.outputs.refresh }}"
+    # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
+    uploads = [s for s in steps if s.get("uses", "").startswith("actions/upload-artifact")]
+    assert len(uploads) == 2 and all(s["with"]["overwrite"] is True for s in uploads)
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
@@ -914,8 +918,11 @@ def jq(data):
 
 
 if os.environ.get("FAKE_FAIL") and os.environ["FAKE_FAIL"] in " ".join(args):
-    json.dump(db, open(state, "w"))
-    sys.exit(1)
+    # FAKE_FAIL_TIMES: only the first n matching calls fail (a transient error)
+    db["failed"] = db.get("failed", 0) + 1
+    if db["failed"] <= int(os.environ.get("FAKE_FAIL_TIMES", "1000")):
+        json.dump(db, open(state, "w"))
+        sys.exit(1)
 if args[:2] == ["workflow", "run"]:
     pass
 elif args[:2] == ["run", "list"]:
@@ -933,7 +940,8 @@ elif args[0] == "api":
     elif method == "PATCH":
         db["comments"][path.rsplit("/", 1)[1]] = json.load(sys.stdin)["body"]
     elif path.endswith("/comments"):
-        out = "\n".join(i for i, body in db["comments"].items() if body.startswith("## Card guards"))
+        listed = [{"id": int(i), "user": {"login": "github-actions[bot]"}, "body": body} for i, body in db["comments"].items()]
+        out = jq(listed) if "--jq" in args else json.dumps(listed)
     else:
         out = db["comments"][path.rsplit("/", 1)[1]]
 json.dump(db, open(state, "w"))
@@ -973,12 +981,7 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     doc = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))
     job = doc["jobs"]["guard"]
     steps = {s["name"]: s for s in job["steps"] if s.get("name")}
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "gh").write_text(FAKE_GH)
-    (bin_dir / "curl").write_text(FAKE_CURL)
-    for tool in ("gh", "curl"):
-        (bin_dir / tool).chmod(0o755)
+    bin_dir = _fake_tools(tmp_path)
     out = tmp_path / "guards"
     out.mkdir()
     (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 1, "comment": 1, "writes": 0,
@@ -1022,7 +1025,7 @@ def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
            "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": job["env"]["STREAK"], "RUNNER_TEMP": str(runner),
            "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "CHECKED": "failure",
-           "RUN": "https://github.com/o/cards/actions/runs/7"}
+           "RUN": "https://github.com/o/cards/actions/runs/7", "TOLD": job["env"]["TOLD"], "GITHUB_SHA": "f" * 40}
     def runs(*pairs):
         return json.dumps([{"databaseId": run, "conclusion": conclusion} for run, conclusion in pairs])
     red = runs((5, "failure"))
@@ -1045,8 +1048,50 @@ def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
         posts.write_text("")
         _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_RUNS": "[]", "CHECKED": checked}, {})
         assert json.loads(posts.read_text()) == {
-            "content": f"Card guards: the push by Alice {what} (the next failures stay quiet until a run succeeds). "
+            "content": f"Card guards: the push by Alice {what} (the next failures stay quiet until a push run succeeds or "
+                       "posts its issues). "
                        "https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
+
+
+def test_a_rerun_that_fails_in_check_finds_the_told_mark(clone, tmp_path):
+    """Attempt 1 posted the card lines, marked the comment and went red (a card error, say); the re-run fails in Check,
+    so the Comment step does not run and its `told` is empty. The alert looks the comment's mark up itself: quiet, and no
+    streak mark (the push was told, not a failure). This is the review's case: the last push run green, no artifact. It
+    is quiet too when the comments stay unreadable (as the Comment step counts them). With no mark it tells as before;
+    a first attempt does not look."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    told = job["env"]["TOLD"]
+    posts, runner, state = tmp_path / "posts.txt", tmp_path / "runner", tmp_path / "gh.json"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
+           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state), "FAKE_POSTS": str(posts),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": job["env"]["STREAK"], "RUNNER_TEMP": str(runner),
+           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "2", "GITHUB_ACTOR": "alice", "CHECKED": "failure", "TOLD": told,
+           "RUN": "https://github.com/o/cards/actions/runs/7", "GITHUB_SHA": "f" * 40, "FAKE_MARKED": "",
+           "FAKE_RUNS": json.dumps([{"databaseId": 6, "conclusion": "success"}])}
+    marked = {"101": f"## Card guards\n\nAlice's card.\n\n{told}\n"}
+    cases = ((marked, {}, 0, ""),                                       # attempt 1 told: quiet, no streak mark
+             (marked, {"FAKE_FAIL": "--paginate"}, 0, ""),              # unreadable: counts as told
+             ({"101": "## Card guards\n\nAlice's card.\n"}, {}, 1, "true"),   # attempt 1 commented, never told
+             ({}, {}, 1, "true"),                                       # attempt 1 failed in Check too
+             (marked, {"GITHUB_RUN_ATTEMPT": "1"}, 1, "true"))          # a first attempt does not look
+    for comments, extra, sent, streak in cases:
+        posts.write_text("")
+        shutil.rmtree(runner, ignore_errors=True)
+        state.write_text(json.dumps({"comments": comments, "next": 101, "log": []}))
+        out = _run_steps(steps, ["Tell Discord the run failed"], {**env, **extra}, {})["tell"]
+        lines = [json.loads(l) for l in posts.read_text().splitlines() if l.strip()]
+        assert len(lines) == sent and out.get("streak", "") == streak, (comments, extra, lines, out)
+        assert not lines or "the push by alice was not guarded" in lines[0]["content"]
+        looked = [c for c in json.loads(state.read_text())["log"] if c.endswith("/comments --paginate")]
+        assert looked == ([] if extra.get("GITHUB_RUN_ATTEMPT") == "1" else
+                          [f"api repos/o/cards/commits/{'f' * 40}/comments --paginate"] * (3 if "FAKE_FAIL" in extra else 1))
+    lookups = {name: re.search(r"guards_comments\(\) \{.*?\n *\}\n", steps[name]["run"], re.S).group(0).strip()
+               for name in ("Comment on the commit", "Tell Discord the run failed")}
+    assert len(set(lookups.values())) == 1                              # one lookup, one fail-safe
 
 
 def test_workflow_tells_only_the_settled_post(clone, tmp_path):
@@ -1058,12 +1103,7 @@ def test_workflow_tells_only_the_settled_post(clone, tmp_path):
         pytest.skip("no jq")
     job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
     steps = {s["name"]: s for s in job["steps"] if s.get("name")}
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "gh").write_text(FAKE_GH)
-    (bin_dir / "curl").write_text(FAKE_CURL)
-    for tool in ("gh", "curl"):
-        (bin_dir / tool).chmod(0o755)
+    bin_dir = _fake_tools(tmp_path)
     out = tmp_path / "guards"
     out.mkdir()
     (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 0, "comment": 1, "writes": 0,
@@ -1092,11 +1132,13 @@ def test_workflow_tells_only_the_settled_post(clone, tmp_path):
 
 
 def _fake_tools(tmp_path) -> Path:
+    """gh, curl and a sleep that does not wait (the comment lookup's retries)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "gh").write_text(FAKE_GH)
     (bin_dir / "curl").write_text(FAKE_CURL)
-    for tool in ("gh", "curl"):
+    (bin_dir / "sleep").write_text("#!/bin/sh\necho \"$1\" >> \"${FAKE_SLEPT:-/dev/null}\"\n")
+    for tool in ("gh", "curl", "sleep"):
         (bin_dir / tool).chmod(0o755)
     return bin_dir
 
@@ -1110,10 +1152,12 @@ def _shell(step, env, cwd=None):
 
 
 def test_workflow_comment_lookup_never_posts_twice(clone, tmp_path):
-    """The Comment step reads the lookup whole (no pipe into head, which can kill gh under pipefail): with two earlier
-    comments it edits the first. A lookup that fails on a re-run, or an earlier comment it cannot read, counts as told:
-    no new comment, the step fails, and Tell Discord and the failure alert stay quiet (their `if`). On a first attempt a
-    failed lookup still comments (no earlier comment of this run can exist)."""
+    """The Comment step reads the guards' comments in one lookup, whole (no pipe into head, which can kill gh under
+    pipefail), with their bodies: it edits the oldest, and the TOLD mark on any of them counts (Tell Discord's own
+    comment). The lookup is tried 3 times. One that still fails on a re-run, or in a dispatch (its commit's push run may
+    have told), counts as told: no new comment, the step fails, and Tell Discord and the failure alert stay quiet (their
+    `if`). Only a push run's first attempt comments anyway (no earlier comment of its own can exist). The id is out before
+    the edit, so a failed edit still leaves the comment to Follow up and the mark."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
@@ -1125,31 +1169,155 @@ def test_workflow_comment_lookup_never_posts_twice(clone, tmp_path):
     (out / "summary.json").write_text(json.dumps({"comment": 1}))
     (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
     (out / "report.md").write_text("## Card guards\n\nAgain.\n")
-    state = tmp_path / "gh.json"
+    state, slept = tmp_path / "gh.json", tmp_path / "slept.txt"
     told = job["env"]["TOLD"]
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
            "GITHUB_REPOSITORY": "o/cards", "FAKE_STATE": str(state), "GITHUB_OUTPUT": str(out / "comment.output"),
-           "GITHUB_RUN_ATTEMPT": "2"}
+           "GITHUB_RUN_ATTEMPT": "2", "GITHUB_EVENT_NAME": "push", "FAKE_SLEPT": str(slept)}
+    seeded = {"101": f"## Card guards\n\nFirst.\n\n{told}\n", "102": "## Card guards\n\nOld.\n"}
 
-    def seed():
-        state.write_text(json.dumps({"comments": {"101": f"## Card guards\n\nFirst.\n\n{told}\n", "102": "## Card guards\n\nOld.\n"},
-                                     "next": 102, "log": []}))
-    seed()
-    done, outputs = _shell(step, env)
-    assert done.returncode == 0 and outputs == {"told": "true", "id": "101"}, done.stderr
-    comments = json.loads(state.read_text())["comments"]
-    assert set(comments) == {"101", "102"} and comments["101"].startswith("## Card guards\n\nAgain.") and told in comments["101"]
-    for fail in ("--paginate", "comments/101 --jq"):           # the lookup, then the earlier comment's body
+    def seed(comments=seeded):
+        state.write_text(json.dumps({"comments": comments, "next": 102, "log": []}))
+        slept.write_text("")
+    for comments in (seeded, {"101": "## Card guards\n\nFirst.\n", "102": f"## Card guards\n\nTell's own.\n\n{told}\n"}):
+        seed(comments)
+        done, outputs = _shell(step, env)
+        assert done.returncode == 0 and outputs == {"told": "true", "id": "101"}, done.stderr
+        after = json.loads(state.read_text())["comments"]
+        assert set(after) == {"101", "102"} and after["101"].startswith("## Card guards\n\nAgain.") and told in after["101"]
+        assert slept.read_text().split() == ["0"]
+    seed({"101": "## Card guards\n\nFirst.\n"})                     # attempt 1 did not tell: no mark, Tell Discord posts
+    done, outputs = _shell(step, {**env, "FAKE_FAIL": "--paginate", "FAKE_FAIL_TIMES": "1"})      # read on the second try
+    assert done.returncode == 0 and outputs == {"id": "101"} and slept.read_text().split() == ["0", "10"], done.stderr
+    for extra in ({}, {"GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "workflow_dispatch"}):     # a re-run, a dispatch
         seed()
-        done, outputs = _shell(step, {**env, "FAKE_FAIL": fail})
-        assert done.returncode == 1 and outputs == {"told": "true"}, (fail, done.stderr)
-        assert json.loads(state.read_text())["comments"] == {"101": f"## Card guards\n\nFirst.\n\n{told}\n",
-                                                            "102": "## Card guards\n\nOld.\n"}
+        done, outputs = _shell(step, {**env, **extra, "FAKE_FAIL": "--paginate"})
+        assert done.returncode == 1 and outputs == {"told": "true"}, (extra, done.stderr)
+        assert "could not be read" in done.stdout and slept.read_text().split() == ["0", "10", "30"]
+        assert json.loads(state.read_text())["comments"] == seeded
+    seed()
+    done, outputs = _shell(step, {**env, "FAKE_FAIL": "--method PATCH"})                       # the edit fails
+    assert done.returncode == 1 and outputs == {"told": "true", "id": "101"}
     for name in ("Tell Discord", "Tell Discord the run failed"):
         assert "steps.comment.outputs.told != 'true'" in steps[name]["if"]
     state.unlink()
     done, outputs = _shell(step, {**env, "FAKE_FAIL": "--paginate", "GITHUB_RUN_ATTEMPT": "1"})
     assert done.returncode == 0 and outputs == {"id": "101"} and list(json.loads(state.read_text())["comments"]) == ["101"]
+
+
+def test_workflow_tell_marks_a_comment_of_its_own(clone, tmp_path):
+    """The Comment step failed (no id): Tell Discord still posts, then puts up a comment of its own (the settled body)
+    carrying the TOLD mark, which a re-run's lookup finds, so the re-run does not post again. When that comment cannot
+    be made either, it warns that a re-run would post again."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    told = job["env"]["TOLD"]
+    out = tmp_path / "guards"
+    out.mkdir()
+    (out / "summary.json").write_text(json.dumps({"comment": 1, "told": 1, "writes": 0}))
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
+    (out / "report.md").write_text("## Card guards\n\nAt check time.\n")
+    (out / "report-landed.md").write_text("## Card guards\n\nAfter the window.\n")
+    (out / "discord-final.json").write_text(json.dumps({"content": "settled"}))
+    state, posts = tmp_path / "gh.json", tmp_path / "posts.txt"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
+           "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state),
+           "FAKE_POSTS": str(posts), "GITHUB_OUTPUT": str(out / "tell.output"), "COMMENT": "", "LAND_RAN": "true",
+           "GITHUB_RUN_ATTEMPT": "2", "GITHUB_EVENT_NAME": "push"}
+    done, outputs = _shell(steps["Tell Discord"], env)
+    assert done.returncode == 0 and outputs == {"posted": "true"}, done.stderr
+    (comment_id, body), = json.loads(state.read_text())["comments"].items()
+    assert body == f"## Card guards\n\nAfter the window.\n\n{told}\n"
+    done, outputs = _shell(steps["Comment on the commit"], {**env, "GITHUB_OUTPUT": str(out / "comment.output")})
+    assert done.returncode == 0 and outputs == {"told": "true", "id": comment_id}       # the re-run: Tell Discord skipped
+    state.unlink()
+    posts.write_text("")
+    done, outputs = _shell(steps["Tell Discord"], {**env, "FAKE_FAIL": "--method POST"})
+    assert done.returncode == 0 and outputs == {"posted": "true"} and posts.read_text().count("settled") == 1
+    assert "no commit comment carries the told mark: a re-run would post again" in done.stdout
+
+
+def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
+    """Follow up starts the site build and the TTS save after a bot commit; when one does not start, the comment says so,
+    the run fails, and the one post gets a line for it (the failure alert stays quiet once the post went out). A post
+    with no room for the line goes out as settled."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    told = job["env"]["TOLD"]
+    out = tmp_path / "guards"
+    out.mkdir()
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
+    state, posts = tmp_path / "gh.json", tmp_path / "posts.txt"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
+           "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state),
+           "FAKE_POSTS": str(posts), "SHA": "c" * 40, "COMMENT": "101", "TOLD_BEFORE": "", "LAND_RAN": "true"}
+    line = "The bot's commit did not start the site build and the TTS save"
+    for fail, refreshed in (("", True), ("workflow run tts-save.yml", False), ("workflow run site.yml", False)):
+        (out / "report-landed.md").write_text("## Card guards\n\nLanded.\n")
+        state.write_text(json.dumps({"comments": {"101": "## Card guards\n\nAt check time.\n"}, "next": 101, "log": []}))
+        follow, outputs = _shell(steps["Follow up"], {**env, "FAKE_FAIL": fail, "GITHUB_OUTPUT": str(out / "follow.output")})
+        db = json.loads(state.read_text())
+        assert follow.returncode == (0 if refreshed else 1) and outputs == ({} if refreshed else {"refresh": "failed"}), fail
+        assert ("did not start after this commit" in db["comments"]["101"]) is not refreshed
+        assert db["comments"]["101"].startswith("## Card guards\n\nLanded.")
+        assert [c for c in db["log"] if c.startswith("workflow run")] == (
+            ["workflow run site.yml", "workflow run tts-save.yml"] if fail != "workflow run site.yml" else ["workflow run site.yml"])
+    for content, extended in (("settled", True), ("x" * 1950, False)):
+        posts.write_text("")
+        (out / "discord-final.json").write_text(json.dumps({"content": content, "flags": 4}))
+        tell, outputs = _shell(steps["Tell Discord"], {**env, "REFRESH": "failed", "GITHUB_OUTPUT": str(out / "tell.output")})
+        sent = json.loads(posts.read_text())
+        assert tell.returncode == 0 and outputs == {"posted": "true"} and sent["flags"] == 4
+        assert sent["content"].startswith(content) and (line in sent["content"]) is extended and len(sent["content"]) <= 2000
+    assert "steps.tell.outputs.posted != 'true'" in steps["Tell Discord the run failed"]["if"]
+
+
+def test_workflow_a_rerun_counts_the_window_from_the_push(clone, tmp_path):
+    """Start: a first attempt's quiet window starts now; a re-run's at the push (the event's pushed_at: Unix seconds in a
+    push event, an ISO time taken too), so a re-run hours later does not wait another 31 minutes. Anything else: now.
+    (Land passes --quiet-from on a push only.)"""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    step = next(s for s in job["steps"] if s.get("name") == "Start")
+    assert step["env"]["PUSHED_AT"] == "${{ github.event.repository.pushed_at }}"
+    pushed = 1761130800                                                 # 2025-10-22T11:00:00Z
+    for attempt, pushed_at, at_push in (("2", str(pushed), True), ("1", str(pushed), False), ("2", "2025-10-22T11:00:00Z", True),
+                                        ("2", "", False), ("2", "2025-10-22 11:00", False), ("2", "1e9; date", False)):
+        github_env = tmp_path / "env"
+        github_env.write_text("")
+        before = datetime.now(timezone.utc).replace(microsecond=0)
+        done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": "on", "RUNNER_TEMP": str(tmp_path), "PUSHED_AT": pushed_at,
+                                "GITHUB_RUN_ATTEMPT": attempt, "GITHUB_ENV": str(github_env),
+                                "GITHUB_OUTPUT": str(tmp_path / "start.output")})
+        assert done.returncode == 0, done.stderr
+        quiet = dict(l.split("=", 1) for l in github_env.read_text().splitlines())["QUIET_FROM"]
+        when = datetime.fromisoformat(quiet.replace("Z", "+00:00"))
+        if at_push:
+            assert quiet == "2025-10-22T11:00:00Z"
+        else:
+            assert before <= when <= datetime.now(timezone.utc), (attempt, pushed_at, quiet)
+
+
+def test_land_commits_only_an_on_plan(tmp_path, capsys):
+    """`check` defaults to --mode dry and `land` to a real commit (on the Mac the token comes from config.py): a plan not
+    checked with --mode on is refused before anything is read or written, unless --dry-run or --local."""
+    for mode in ("dry", "report"):
+        plan = _full_plan(tmp_path, [_entry("Quiet")], mode=mode)
+        for name in ("landed.json", "report-landed.md", "discord-final.json"):
+            (Path(plan).parent / name).unlink(missing_ok=True)
+        with pytest.raises(SystemExit) as stop:
+            cg.main(["land", "--plan", plan])
+        assert stop.value.code == 2 and f"checked with --mode {mode}" in capsys.readouterr().err
+        assert not (Path(plan).parent / "landed.json").exists()
+        assert cg.main(["land", "--plan", plan, "--dry-run"]) == 0 and (Path(plan).parent / "landed.json").exists()
 
 
 def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_path):
@@ -1185,7 +1353,7 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
-    step (Land's --dry-run test is exact: a "Report" Check now accepts would otherwise commit)."""
+    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
     yaml = pytest.importorskip("yaml")
     job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
     step = next(s for s in job["steps"] if s.get("name") == "Start")

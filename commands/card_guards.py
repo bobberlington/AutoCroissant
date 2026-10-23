@@ -1099,7 +1099,8 @@ def finish(plan_path: str, landed: dict) -> dict:
 # ========================
 def main(args: Optional[list] = None) -> int:
     """check: the report on stdout (exit 0 whatever it finds, 1 when it could not check); land: one line per card, exit 1
-    when the commit failed (its files are written either way)."""
+    when the commit failed (its files are written either way), exit 2 for a plan not checked with --mode on that would
+    commit to the repo (neither --dry-run nor --local)."""
     cli = ArgumentParser(prog="python -m commands.card_guards",
                          description="The push guards: a forgotten PNG made from the PSD's stored composite, the card standards "
                                      "checked (0-pixel fixes planned). check never writes to the card repo; land commits a plan once.")
@@ -1122,9 +1123,14 @@ def main(args: Optional[list] = None) -> int:
     two.add_argument("--plan", required=True, metavar="FILE", help="check's plan.json (its files beside it)")
     two.add_argument("--repo", default="", metavar="OWNER/NAME", help="the card repo (default: the plan's)")
     two.add_argument("--quiet-from", default="", metavar="ISO", help="the push time: land waits until 30 min after it")
-    two.add_argument("--dry-run", action="store_true", help="decide what would land, commit nothing")
+    two.add_argument("--dry-run", action="store_true", help="decide what would land, commit nothing (needed for a plan not checked with --mode on)")
     two.add_argument("--local", default="", metavar="DIR", help="commit in this clone (nothing pushed)")
     options = cli.parse_args(args)
+    if options.command == "land" and not (options.dry_run or options.local):
+        with open(options.plan, encoding="utf-8") as fh:
+            planned = load(fh).get("mode", "dry")
+        if planned != "on":                     # a dry or report check must never reach the branch
+            cli.error(f"the plan was checked with --mode {planned}: land commits only an `on` plan (pass --dry-run, or --local DIR)")
     token_from_env()
     if options.command == "check":
         cards = {CardAuthors.key(n) for n in options.cards.split(",") if n.strip()} or None
