@@ -615,13 +615,14 @@ class CardBuild:
 
     def _record_history(self) -> None:
         """Legacy: each replaced card becomes a version when its data changed; the same data is no version (the blob,
-        path, date and parse bookkeeping are no data), the card keeping its start for as_of (card_history.carry)."""
-        from commands.card_history import carry, same_data
+        path, date and parse bookkeeping are no data), the card keeping its start for as_of (card_history.carry). A new
+        reading that knew less (card_history.knows: a parse that failed on a field) keeps the card before."""
+        from commands.card_history import carry, knows
         for name, old in self.replaced.items():
             card = self.db.stats.get(name)
             if card is None:
                 continue
-            if same_data(old, card):
+            if knows(card, old):
                 carry(old, card)
             else:
                 self.db.add_history(name, old)
