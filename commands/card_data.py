@@ -42,6 +42,7 @@ LOOKUP_WORKERS = 2                                                # commit looku
 COMMITS_PAGE = 100                                                # commits per request: newest and first in one
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
+REAL_DATES = 946684800.0                                          # 2000-01-01 UTC: older stamps are no commit found (year 1000)
 
 
 # ========================
@@ -444,13 +445,34 @@ class CardBuild:
             print(f"Could not read {path}; creation dates stay as they are: {e}")
             return None
 
+    def _first_upload(self, name: str, card: CardInfo) -> Optional[str]:
+        """
+        The UTC day of the earliest version of the card the database holds: its first upload as far as the bot saw it
+        (the website's is its PNG's first commit; the dates file covers the cards from before the bot's history).
+        None for a rulebook page (the website dates none) or no real date.
+        """
+        if RULEBOOK_DIR in (card.path or ""):
+            return None
+        from commands.card_history import start
+        versions = [*self.db.old_stats.get(name, ()), card]
+        if name in getattr(self, "replaced", {}):              # replaced this run: old_stats gets it after (legacy)
+            versions.append(self.replaced[name])
+        known = [at for at in (start(v)[0] for v in versions) if at and at >= REAL_DATES]
+        return datetime.fromtimestamp(min(known), timezone.utc).date().isoformat() if known else None
+
     def _apply_dates(self, dates: Optional[CardDates]) -> int:
-        """Set every card's created from the dates file (duplicates included). Returns how many changed."""
+        """Set every card's created from the dates file and its first upload (duplicates included). Returns how many
+        changed."""
         if dates is None:
             return 0
-        changed = sum(1 for name, card in self.db.stats.items() if dates.apply(name, card))
+        uploads = {name: self._first_upload(name, card) for name, card in self.db.stats.items()}
+        changed = sum(1 for name, card in self.db.stats.items() if dates.apply(name, card, uploads[name]))
         if changed:
-            print(f"{changed} creation dates set from {CREATED_PATH}.")
+            print(f"{changed} creation dates set from {CREATED_PATH} and first uploads.")
+        missing = sorted(n for n, card in self.db.stats.items() if uploads[n] and CardAuthors.key(n) not in dates.cards)
+        if missing:
+            print(f"{len(missing)} cards not in {CREATED_PATH}, dated by their first upload (python -m "
+                  f"commands.discord_edits created adds them): {', '.join(missing[:10])}")
         return changed
 
     def _icons_from_local(self, local_path: str) -> IconVocabulary:

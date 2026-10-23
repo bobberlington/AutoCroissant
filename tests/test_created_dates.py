@@ -62,6 +62,55 @@ def test_apply_sets_changes_and_clears():
     assert not _dates({}).apply("Foo Bar", card)
 
 
+def test_the_websites_rule_with_the_first_upload():
+    """build_site.py apply_created's rule: the entry, unless the first upload is earlier and the entry isn't a hand one;
+    no entry: the first upload ("from": "git", never provisional); neither: undated."""
+    d = _dates({"Posted": {"date": "2023-10-13", "from": "discord", "provisional": True},
+                "Late": {"date": "2024-02-02", "from": "discord", "provisional": True},
+                "Hand": {"date": "2025-01-01", "from": "hand"}})
+    assert d.created("Posted", "2023-11-05") == {"date": "2023-10-13", "from": "discord", "provisional": True}
+    assert d.created("Posted", "2023-10-13")["from"] == "discord" and d.created("Posted")["from"] == "discord"
+    assert d.created("Late", "2024-01-30") == {"date": "2024-01-30", "from": "git"}
+    assert d.created("Hand", "2020-01-01") == {"date": "2025-01-01", "from": "hand"}
+    assert d.created("New", "2026-11-01") == {"date": "2026-11-01", "from": "git"} and d.created("New") is None
+    card = _card("New")
+    assert d.apply("New", card, "2026-11-01") and card.created == {"date": "2026-11-01", "from": "git"}
+    assert not d.apply("New", card, "2026-11-01") and d.apply("New", card) and card.created is None
+
+
+def test_first_upload_is_the_earliest_version_the_bot_holds():
+    """Its old_stats versions' starts and its own (a version record's from, else its timestamp), as a UTC day; a stamp
+    before 2000 (no commit found) and a rulebook page give none."""
+    from datetime import datetime, timezone
+    at = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
+    old = [_card(timestamp=at(2025, 3, 1, 23, 30)), _card(timestamp=at(2025, 6, 1))]
+    old[1].version = {"from": at(2024, 12, 31, 23), "to": None}
+    card = _card(timestamp=at(2026, 1, 5))
+    build = SimpleNamespace(db=SimpleNamespace(old_stats={"Foo Bar": old}))
+    assert cd.CardBuild._first_upload(build, "Foo Bar", card) == "2024-12-31"
+    assert cd.CardBuild._first_upload(build, "Other", card) == "2026-01-05"
+    build.replaced = {"Other": _card(timestamp=at(2025, 12, 1))}               # replaced this run, not in old_stats yet
+    assert cd.CardBuild._first_upload(build, "Other", card) == "2025-12-01"
+    build.replaced = {}
+    assert cd.CardBuild._first_upload(build, "Other", _card(timestamp=datetime(1000, 1, 1).timestamp())) is None
+    page = cm.CardInfo(name="00 Toc", card_type="rulebook", path="Auxiliary/Rulebook/00_Toc.psd", ability="x",
+                       timestamp=at(2025, 1, 1))
+    assert cd.CardBuild._first_upload(build, "00 Toc", page) is None
+
+
+def test_apply_dates_dates_a_card_the_file_misses(capsys):
+    from datetime import datetime, timezone
+    build = cd.CardBuild.__new__(cd.CardBuild)
+    new, old = _card("New Card"), _card("Old Card")
+    at = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
+    new.timestamp, old.timestamp = at(2026, 11, 1), at(2026, 1, 1)
+    build.db = SimpleNamespace(stats={"New Card": new, "Old Card": old}, old_stats={})
+    assert build._apply_dates(_dates({"Old Card": {"date": "2020-07-22", "from": "discord"}})) == 2
+    assert new.created == {"date": "2026-11-01", "from": "git"} and old.created == {"date": "2020-07-22", "from": "discord"}
+    assert "1 cards not in site/Card Creation Dates.json, dated by their first upload" in capsys.readouterr().out
+    assert build._apply_dates(None) == 0 and new.created["from"] == "git"           # no file read: as they are
+
+
 def test_created_is_no_field_and_undated_cards_pickle_as_before():
     from dataclasses import fields
     assert "created" not in {f.name for f in fields(cm.CardInfo)} and cm.CardInfo.created is None

@@ -217,7 +217,8 @@ class CardDates:
     TTSCardMaker's site/Card Creation Dates.json: when each card was made, the earlier of its first Discord post and
     its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord", "provisional": true}}};
     names match like the authors file. Written by `python -m commands.discord_edits created`, which keeps "from": "hand"
-    entries (the owner's). The website and /update_stats read it; it is no edit (never in Card Edits.json).
+    entries (the owner's). The website and /update_stats read it, each with its own first upload for the cards it
+    misses (created()); it is no edit (never in Card Edits.json).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {"date", "from"[, "provisional"]}
 
@@ -244,15 +245,32 @@ class CardDates:
                                                       **({"provisional": True} if entry.get("provisional") else {})}
         return dates
 
-    def apply(self, name: str, card: "CardInfo") -> bool:
-        """Set the card's created ({date, from[, provisional]}; none: the class default). Returns whether it changed."""
+    def created(self, name: str, upload: Optional[str] = None) -> Optional[dict]:
+        """
+        A card's created, by the website's rule (build_site.py apply_created): its entry, unless its first upload is
+        earlier and the entry isn't a hand one; no entry: the first upload ("from": "git").
+
+        Args:
+            name: Card name
+            upload: Its first upload (UTC day, YYYY-MM-DD), or None when unknown
+
+        Returns:
+            {date, from[, provisional]}, or None (undated)
+        """
         found = self.cards.get(CardAuthors.key(name))
-        if found == getattr(card, "created", None):
+        if found and (found["from"] == "hand" or not upload or found["date"] <= upload):
+            return dict(found)
+        return {"date": upload, "from": "git"} if upload else None
+
+    def apply(self, name: str, card: "CardInfo", upload: Optional[str] = None) -> bool:
+        """Set the card's created (created(); none: the class default). Returns whether it changed."""
+        value = self.created(name, upload)
+        if value == getattr(card, "created", None):
             return False
-        if found is None:
+        if value is None:
             card.__dict__.pop("created", None)      # the class default: an undated card pickles as before
         else:
-            card.created = dict(found)
+            card.created = value
         return True
 
 
