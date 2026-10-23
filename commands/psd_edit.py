@@ -1176,7 +1176,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also colour glyphs),
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs),
         overflow; ImportError when the fork edits TySh alone (no story_sync: Photoshop would show the story's old text)
 
     The engine gives replaced or inserted text the style of the run before it, so an edit after a colored status
@@ -1251,7 +1251,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         raise Refused("font", f"not resolved exactly: {', '.join(loose)}")
     if "overflow" in report.warnings:
         raise Refused("overflow", f"{which} does not fit")
-    if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # stoogedings' icons are SVG colour glyphs
+    if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # an SVG colour glyph the fork draws in one colour
         raise Refused("font", f"{which}: colour glyphs (the icon font) would be drawn in one colour")
     bbox = tuple(layer.bbox)
     if clip(bbox, psd.width, psd.height) != bbox:

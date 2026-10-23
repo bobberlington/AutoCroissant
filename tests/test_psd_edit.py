@@ -25,14 +25,15 @@ from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, regions, stat_rows
-from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, fork_reason, rounds_bytes, saves_preview, story_sync as _story_sync,
-                      text_engine as _text_engine)
+from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, rounds_bytes, saves_preview,
+                      story_sync as _story_sync, text_engine as _text_engine)
 
 # ========================
 # Configuration
 # ========================
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                 # template rows, no digit effects (certified golden)
+HIVE = "Field/4 Stars/The_Hive.psd"                                # stoogedings badges, no overlay over the ability
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, chart words and unstyled words on FX layers
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
@@ -1195,17 +1196,21 @@ def test_ability_edit_keeps_a_leading_empty_paragraph(clone, chart, tmp_path):
 
 @text_edit
 def test_icon_font_tokens_and_colour_glyphs(clone, chart):
-    """The_Hive is set in stoogedings: a typed [fire] takes the icon font in TySh and the story; its colour glyphs
-    would come out white with no overlay over the ability (Mini Doomer's gradient covers them), so it refuses."""
-    psd = PSDImage.open(_card(clone, "Field/4 Stars/The_Hive.psd")[0])
+    """The_Hive is set in stoogedings: a typed [fire] takes the icon font in TySh and the story. Its glyphs are SVG colour
+    glyphs and no overlay covers the ability (Mini Doomer's gradient covers its badges): a fork that draws them in colour
+    takes the edit, one that draws them in one colour (they would come out white) refuses it."""
+    psd = PSDImage.open(_card(clone, HIVE)[0])
     layer = pe.ability_layer(psd)
     assert pe.uses_icon_font(layer) and pe.icon_font(layer) == "stoogedings-Regular"
     assert not pe.uses_icon_font(pe.name_layer(psd)) and not pe._overlaid(layer)
     assert pe._overlaid(pe.ability_layer(PSDImage.open(_card(clone, MINI_DOOMER)[0])))
     text = pe.normalize_ability(layer.text) + " Deal 1 [fire] damage."
-    with pytest.raises(pe.Refused, match="colour glyphs") as refused:
-        pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
-    assert refused.value.code == "font"
+    if colour_glyphs():
+        assert pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart).layers == [layer]
+    else:
+        with pytest.raises(pe.Refused, match="colour glyphs") as refused:
+            pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
+        assert refused.value.code == "font"
     start = layer.text.index("[fire]")
     fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
     style, unit = layer.engine_dict["StyleRun"], 0
@@ -1215,6 +1220,23 @@ def test_icon_font_tokens_and_colour_glyphs(clone, chart):
             assert unit + int(n) == start + len("[fire]")
         unit += int(n)
     assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []     # the story's font is the same
+
+
+@text_edit
+@pytest.mark.skipif(not colour_glyphs(), reason="the fork draws SVG colour glyphs in one colour")
+def test_colour_glyph_ability_bakes_through_every_gate(clone, parser, chart, tmp_path):
+    """The_Hive's typed [fire] through apply_jobs: within the parity bar, the validator clean, nothing outside the region,
+    and the new badge in its SVG colours (the body text is white on a dark stroke: saturated pixels are the badge's)."""
+    old = pe.parse_card(parser, _card(clone, HIVE)[0], HIVE)["card"]["ability"]
+    _, baked = _bake(clone, parser, HIVE, {"ability": old + " Deal 1 [fire] damage."}, tmp_path, chart)
+    assert pe._within_bar(baked.parity["ability"]) and baked.reparse["validator"] == [] and baked.fx == []
+    before = np.asarray(Image.open(_card(clone, HIVE)[1]).convert("RGB")).astype(np.int16)
+    after = np.asarray(Image.open(baked.png_path).convert("RGB")).astype(np.int16)
+    differs = (before != after).any(axis=2)
+    x0, y0, x1, y1 = baked.region
+    assert not differs[:y0].any() and not differs[y1:].any() and not differs[:, :x0].any() and not differs[:, x1:].any()
+    saturated = after.max(axis=2) - after.min(axis=2) > 96
+    assert int((differs & saturated).sum()) > 50
 
 
 @text_edit
