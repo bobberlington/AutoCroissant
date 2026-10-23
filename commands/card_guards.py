@@ -580,8 +580,11 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         result.export = _export_dict(found)
         stale = found.numbers.get("png_vs_psd", {})
         if found.outcome == "current" and stale.get("px") and not psd_edit._within_bar(stale):
-            result.notes.append((f"{basename(job.png)} does not match the PSD ({stale['bad_pct']:.1f}% of pixels differ), "
-                                 "though this push moved no pixel: export it in Photoshop", TELL_PNG_MISMATCH))
+            off = (f"{stale['bad_pct']:.1f}% of pixels differ" if stale["bad_pct"] > psd_edit.PARITY_BAD_MAX
+                   else f"mean difference {stale['mean']:.1f}")
+            why = "the PSD is new beside it" if job.case == "beside" else "though this push moved no pixel"
+            result.notes.append((f"{basename(job.png)} does not match the PSD ({off}), {why}: export it in Photoshop",
+                                 TELL_PNG_MISMATCH))
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",

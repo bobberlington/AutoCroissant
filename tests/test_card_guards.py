@@ -814,6 +814,25 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
     assert again["cards"] == []                                                             # the bot's commit is never guarded
 
 
+def test_a_faint_beside_mismatch_note_names_the_case(cards, tmp_path):
+    """Beside, current (no pixel past the threshold) but the mean is outside the bar: the note says the PSD is new and
+    gives the mean, not "0.0% of pixels differ" nor "this push moved no pixel"."""
+    import io
+    root, base, alice, bot = cards
+    psd = (root / FOLDER / "Bread.psd").read_bytes()
+    image = Image.open(root / FOLDER / "Bread.png")
+    faint = Image.eval(image.convert("RGB"), lambda v: max(v - 10, 0)).convert(image.mode)
+    buf = io.BytesIO()
+    faint.save(buf, "PNG")
+    first = _plumb(root, {f"{FOLDER}/Faint.png": buf.getvalue()}, "the PNG first")
+    push = _plumb(root, {f"{FOLDER}/Faint.psd": psd}, "then the PSD")
+    data = cg.check(str(root), push, first, mode="on", out=str(tmp_path / "out"), workers=1)
+    (entry,) = data["cards"]
+    assert entry["case"] == "beside" and entry["export"]["outcome"] == "current"
+    (note,) = [n for n in entry["notes"] if "does not match the PSD" in n]
+    assert "mean difference" in note and "the PSD is new beside it" in note and "moved no pixel" not in note
+
+
 def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     """A pair (PSD and PNG pushed together): the fix rests on the pushed PNG's blob, so it lands (it was dropped as
     "superseded" when the plan expected no PNG)."""
