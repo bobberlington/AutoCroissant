@@ -284,8 +284,9 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    unchanged. A scheduled run (or its retry) bakes with `--pending`. A card's error fails the step but keeps B for the cards
    that baked (card-edits.yml's per-card rule); with no B the run goes on from main's head, and the report says so.
    Since 2026-10-23 (owner) a pixel miss is no refusal: a box past the parity bar bakes, and B's card line and the report
-   say `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217`; only past 25% bad, or when the re-parse does
-   not read the edit back, is a card refused (EDIT_PIPELINE_DESIGN.md §5 step 3). M's body carries those card lines.
+   say `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217`; only past 25% bad, when the render shows no
+   change, or when the re-parse does not read the edit back, is a card refused (EDIT_PIPELINE_DESIGN.md §5 step 3). M's
+   body carries those card lines.
 2. **Build** on B, or main's head without a bake, with env `GIT_NO_LAZY_FETCH=1`, `GITHUB_TOKEN` and
    `PSD_TOOLS_FONT_DIRS=$GITHUB_WORKSPACE/MDW/Fonts`:
    ```

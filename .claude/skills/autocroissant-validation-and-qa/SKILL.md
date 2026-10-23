@@ -58,8 +58,8 @@ Discord but produces one unexplained `diff_stats` row is NOT accepted.
 **Card images (the edit pipeline's bake, 2026-10-23).** Pixel parity against the official PNG (bad <= 0.5% past 24,
 mean <= 2.0) is evidence about the psd-tools fork, not a gate on a card: a miss bakes, and the report and commit note
 say `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217` per edited box. Only a broken render (more than
-25% bad, `psd_edit.PARITY_FLOOR`) or a re-parse that does not read the edit back refuses. A fork round is judged by the
-misses it removes (the bot-gate scan, `~/Documents/Tools/psd-research/score/r6/botgate`). Of that scan's 118 parity
+25% bad, `psd_edit.PARITY_FLOOR`, or a missed box whose render shows no change) or a re-parse that does not read the edit
+back refuses. A fork round is judged by the misses it removes (the bot-gate scan, `~/Documents/Tools/psd-research/score/r6/botgate`). Of that scan's 118 parity
 misses, 117 bake on 2026-10-23 (66 of them refused under the old bar, now with a note) and 1 is refused for its badge
 layer; none hits the floor (docs/EDIT_PIPELINE_DESIGN.md §5 step 3). The push guards' PNG export follows the same rule (work/push-guards, docs/Campaigns/PUSH_GUARDS.md §18).
 

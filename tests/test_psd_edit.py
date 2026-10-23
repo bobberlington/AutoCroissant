@@ -1179,6 +1179,52 @@ def test_a_broken_render_is_refused_past_the_floor(clone, parser, tmp_path):
     assert refused.value.code == "idempotence" and refused.value.why.endswith("past the 25% floor")
 
 
+SHIELD = "Items/Equip/3 Stars/Shield_of_the_Guilty.psd"   # its ability box drawn without text: 10.7% bad, under the floor
+
+
+def _no_ability(monkeypatch):
+    """The fork drawing no ability text: every render hides the visible Text/Ability layer."""
+    for name in ("render_region", "render_pair"):
+        def blank(psd, region, icc=True, real=getattr(pe, name)):
+            layer = pe.ability_layer(psd)
+            layer.visible = False
+            try:
+                return real(psd, region, icc)
+            finally:
+                layer.visible = True
+        monkeypatch.setattr(pe, name, blank)
+
+
+@text_edit
+def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monkeypatch):
+    """The fork drawing no ability text misses only 10.7% of Shield of the Guilty's box, under the floor, and its merge
+    replaces no pixel: the PSD would carry the new ability, the PNG the old. Refused `parity` before anything is written
+    (review, 2026-10-23). An edit that draws no change where the render matches the PNG still bakes."""
+    psd_path, png_path = _card(clone, SHIELD)
+    _no_ability(monkeypatch)
+    old = pe.parse_card(parser, psd_path, SHIELD)["card"]["ability"]
+    new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, SHIELD, {"ability": new}, tmp_path)
+    assert refused.value.code == "parity" and refused.value.why.startswith("ability: the render shows no change, baseline bad ")
+    assert 5 < float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) < pe.PARITY_FLOOR
+    assert not list(tmp_path.iterdir())
+    region = pe.set_text_layer(PSDImage.open(psd_path), "ability", new, str(clone / pe.FONTS_DIR), None).region
+    old_psd, png = PSDImage.open(psd_path), Image.open(png_path)
+    png.load()
+    drawn = png.copy()
+    drawn.paste(pe.render_region(old_psd, region, pe.export_icc(old_psd, png)).convert(png.mode), region[:2])
+    out = tmp_path / "drawn"
+    out.mkdir()
+    drawn.save(out / Path(png_path).name)
+    (out / Path(psd_path).name).write_bytes(Path(psd_path).read_bytes())
+    (tmp_path / "baked").mkdir()
+    _, baked = _bake(clone, parser, SHIELD, {"ability": new}, tmp_path / "baked",
+                     paths=(str(out / Path(psd_path).name), str(out / Path(png_path).name)))
+    assert baked.changed_pixels == 0 and pe._within_bar(baked.parity["ability"]) and pe.miss_notes(baked) == []
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(new)
+
+
 # ========================
 # Txt2 stories (the copy of the text Photoshop reads)
 # ========================

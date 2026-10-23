@@ -687,7 +687,7 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
 
 def test_old_bar_pixel_verdicts_are_retried(github):
     """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
-    now; one past the floor stays final."""
+    now; one past the floor, or a render that shows no change, stays final."""
     files = github.files_at(github.head)
     psd = _sha(files[DOOMER])[:8]
 
@@ -701,6 +701,7 @@ def test_old_bar_pixel_verdicts_are_retried(github):
     assert verdict("parity: baseline bad 31.20% mean 40.00 max 255: past the 25% floor") == []
     assert verdict("idempotence: hp re-render bad 40.00% mean 50.00: past the 25% floor") == []
     assert verdict("parity: Hp Dark/5: effects unreadable: x") == []
+    assert verdict("parity: ability: the render shows no change, baseline bad 10.70% mean 22.35 max 255") == []
     assert verdict("reparse: fields differ from the expected parse: hp") == []
 
 

@@ -179,13 +179,25 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    anymore. rather, we should improve psd-tools and fix these as we come across them"): the report's card line and the
    commit note say, per edited box, `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217`
    (`psd_edit.miss_notes`). Gate `parity` is now only the safety floor: more than 25% of the region's pixels past 24
-   (`PARITY_FLOOR`) is a broken render, refused before anything is written. The other floor is the data one, step 8: what
-   the bot reads back from the baked PSD must be the edit. Before the ruling a row the fork rendered wrong (class A) was
-   refused here. Measured 2026-10-23 with a real edit through every gate on the bot-gate scan's 118 parity misses (35
-   titles, 30 abilities, 53 rows of 15 stat cards; frozen corpus 6e50c3ee, fork r6-color-glyphs b8739c37;
-   `~/Documents/Tools/wt/scratch/soft-parity/softscan.py`): the old bar refused 66 of them in the bake's own regions (the
-   scan's boxes are wider, so 51 already baked); now 117 bake, those 66 with a note (max bad 6.35%, Corruptor's spd;
-   re-render max 5.40%), none hits the floor, and 1 is refused either way for its badge layer (PoD06Rainbow_Bloon's ability).
+   (`PARITY_FLOOR`) is a broken render, refused before anything is written. So is a box that misses the bar and whose
+   merge replaces no pixel (`<field>: the render shows no change`, review 2026-10-23): the fork drew nothing new there,
+   so the PSD would carry the edit and the PNG the old card. A blank ability box stays under the floor on 9 of 24
+   sampled cards (Shield_of_the_Guilty 10.7%, Clot_Blood 12.5%, Lost_Kin 16.6%, Rusty_Knife 19.1% ... Grey_Prince_Zote
+   23.6%); the 8 re-run are all refused now. A box within the bar that draws no change (a case fix under all caps) still
+   bakes. The other floor is the data one, step 8: what the bot reads back from the baked PSD must be the edit. Before
+   the ruling a row the fork rendered wrong (class A) was refused here. Measured 2026-10-23 with a real edit through
+   every gate on the bot-gate scan's 118 parity misses (35 titles, 30 abilities, 53 rows of 15 stat cards; frozen corpus
+   6e50c3ee, fork r6-color-glyphs b8739c37; `~/Documents/Tools/wt/scratch/soft-parity/softscan.py`): the old bar refused
+   66 of them in the bake's own regions (the scan's boxes are wider, so 51 already baked); now 117 bake, those 66 with a
+   note (max bad 6.35%, Corruptor's spd; re-render max 5.40%), none hits the floor, and 1 is refused either way for its
+   badge layer (PoD06Rainbow_Bloon's ability). The fewest pixels one of those 117 replaced is 2,287, so the no-change
+   rule refuses none of them. **What the floor lets through, told** (review, 2026-10-23): a stat row drawn 8 px off is
+   8.5-9.7% bad (Mini_Doomer, Lich_King; 3 px: 12.8-17.5%), a title 3 px off 19.8-25.9% (The_Freezer, Mini_Doomer,
+   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font or a missing inline badge
+   was not measured; they should come out at or under a blank box. Not caught: a blank ability whose edit also changes
+   overlay words or FX layers (the merge replaces their pixels), or a new render blank while the old one draws. Tighter
+   options are the owner's: a mean ceiling (blank boxes: mean 17.7-32.5; the unbakeable list's misses: at most 7.39,
+   Dark_Bramble's title) or the floor counted over inked pixels only.
 4. **Apply.** Stat: visibility toggle; the row's effect follows the visible digit (idea 12, 2026-10-21): the hidden digit's
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
    enough: Mini_Doomer `Hp Dark/2` has `effects.enabled` True over an InnerShadow and a GradientOverlay both `enabled=False`);
@@ -385,9 +397,10 @@ final only while they hold: removing `NME_Stock2.png` retries it, a re-export of
 before 2026-10-22 has no key and is retried once). A pixel refusal under the floor (`parity: baseline bad 0.11% ...` or
 `idempotence: <field> re-render bad ...`, written under the old bar before 2026-10-23: Masked Dedede, PoD11ZOMG and Zero
 Override on that day) is never final: the next scheduled run bakes it (build_site shows it refused until that run rewrites
-the verdict). A `Card Edits.json` that isn't JSON fails the gate (Discord is told)
-rather than ending it silently. Not covered: another refused card whose PSD and edit are unchanged is not retried after a
-pipeline, fork or chart fix; a dispatch (`dry_run` unticked) does that.
+the verdict) or refuses it again past the floor or as a render that shows no change, and those stay final. A `Card
+Edits.json` that isn't JSON fails the gate (Discord is told) rather than ending it silently. Not covered: another refused
+card whose PSD and edit are unchanged is not retried after a pipeline, fork or chart fix; a dispatch (`dry_run` unticked)
+does that.
 
 **Cap and alert** (2026-10-22). A run bakes at most `MAX_BAKES` = 40 cards and starts none after `BUDGET` = 40 min; the
 rest are refused `capped` (try-again: no verdict, pending, the next tick takes them). A title bake took 29-31 s in run
@@ -465,7 +478,8 @@ Four sinks: the commit body; the job summary + artifact (report, before/after/di
 the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes are a closed list: `duplicate`, `unsupported-card`,
 `stat>10`, `recent`, `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
 `idempotence`, `edit-changed`, `head-moved`, `capped`, `error`. Since 2026-10-23 `parity` and `idempotence` on pixels mean
-past the 25% floor (a broken render); a miss of the bar is no refusal but a note in the commit body and the report (section 5
+past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
+the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
 carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
 +2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a

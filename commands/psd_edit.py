@@ -1412,7 +1412,8 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True) -
         icc: render_region()'s
 
     Returns:
-        (render, measurement); raises Refused("parity") past PARITY_FLOOR only (a miss of the bar bakes, told: miss_notes)
+        (render, measurement); raises Refused("parity") past PARITY_FLOOR only (a miss of the bar bakes, told: miss_notes;
+        apply_jobs refuses a miss whose edit renders no change)
     """
     render = render_region(psd, region, icc)
     measured = _measure(render, png.crop(region))
@@ -1928,6 +1929,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
             render, raw = render_pair(new, edit.region, icc)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
+        if not replaced.any() and not _within_bar(parity[edit.field]):     # a blank render: the PNG would keep the old one
+            raise Refused("parity", "%s: the render shows no change, baseline bad %.2f%% mean %.2f max %d"
+                          % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]))
         if preview is not None:
             patches.append((replaced, raw, edit.region))
         changed_pixels += int(replaced.sum())
