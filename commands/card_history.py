@@ -41,6 +41,7 @@ HIGH_STATS_LISTED = frozenset({"Royal Eradicator Main Cannon", "Pix", "Tainted L
 PNG_SLACK = 6 * 3600.0                                # a push's PNG export can follow its PSD by hours
 PICKLE_FILES = ("stats.pkl", "old_stats.pkl")         # the bot's committed database (PICKLE commits)
 PRINTED = ("card_type", "ability", "types", "stars", "stats")    # what a reading of the card prints
+STAT_KEYS = ("hp", "defense", "attack", "speed")      # _printed's stats, each known or not on its own
 PRINTS_NONE = ("",)                                   # _printed's ability when parser 2 found none printed
 BOT_CHECKOUT = abspath(join(dirname(abspath(__file__)), ".."))   # this AutoCroissant checkout (its PICKLE commits)
 
@@ -580,7 +581,7 @@ def out_of_range(card: CardInfo, allowed: bool = False) -> list:
     found = []
     stats = getattr(card, "stats", None)
     high = allowed or getattr(card, "allow_high_stats", False)
-    values = [getattr(stats, key, -1) for key in ("hp", "defense", "attack", "speed")] if stats is not None else []
+    values = [getattr(stats, key, -1) for key in STAT_KEYS] if stats is not None else []
     if any(isinstance(v, int) and v > (STAT_CAP if high else STAT_MAX) for v in values):
         found.append("stats")
     stars = getattr(card, "stars", None)
@@ -624,7 +625,7 @@ def high_values(stats: dict, old_stats: dict) -> list:
     for name, versions in old_stats.items():
         for version in versions:
             s = getattr(version, "stats", None)
-            values = [getattr(s, key, -1) for key in ("hp", "defense", "attack", "speed")] if s is not None else []
+            values = [getattr(s, key, -1) for key in STAT_KEYS] if s is not None else []
             if any(isinstance(v, int) and v > STAT_MAX for v in values) and not out_of_range(version, True):
                 found.append((name, version.timestamp, "/".join(str(v) for v in values)))
     return found
@@ -977,13 +978,16 @@ def _words(text: Optional[str]) -> list:
 
 
 def _printed(card: CardInfo, lacks: set, allowed: bool) -> dict:
-    """What a reading prints (PRINTED), without the fields it could not know."""
+    """What a reading prints (PRINTED), without the fields it could not know: each stat apart (-1: not read, as
+    Uumuu's 2025 DEF)."""
     stats = getattr(card, "stats", None)
     out = {"card_type": card.card_type, "ability": _words(card.ability),
            "types": sorted(TYPE_RENAMES.get(t, t) for t in getattr(card, "types", None) or []),
            "stars": getattr(card, "stars", None),
-           "stats": tuple(getattr(stats, k, -1) for k in ("hp", "defense", "attack", "speed")) if stats is not None else None}
+           **{key: getattr(stats, key, -1) if stats is not None else -1 for key in STAT_KEYS}}
     skip = set(lacks) | set(out_of_range(card, allowed)) | (unknown(card) - {"display_name"})
+    if "stats" in skip:
+        skip.update(STAT_KEYS)
     if not out["ability"]:
         if (getattr(card, "parser_version", None) or 0) >= 2 and card.ability == "" and "ability" not in skip:
             out["ability"] = PRINTS_NONE            # parser 2 reads a hidden Ability layer as nothing printed
@@ -991,8 +995,7 @@ def _printed(card: CardInfo, lacks: set, allowed: bool) -> dict:
             skip.add("ability")                     # none read (a failed parse's empty text; data_of: none)
     if out["stars"] is None:                        # none counted: no field a reading can disagree on
         skip.add("stars")
-    if out["stats"] is None or all(v == -1 for v in out["stats"]):
-        skip.add("stats")
+    skip.update(key for key in STAT_KEYS if out[key] == -1)
     return {k: v for k, v in out.items() if k not in skip}
 
 

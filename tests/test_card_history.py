@@ -1067,6 +1067,20 @@ def test_a_reverted_blob_is_recovered_from_the_revert(tmp_path, case):
     assert index.arrival(blob(A1), "Items/A.psd").sha == index.arrival(blob(A1), "Items/A.psd", 1500.0).sha == c[0]
 
 
+def test_a_stat_the_reading_did_not_read_is_unknown_alone(tmp_path):
+    """Uumuu: a 2025 reading with the same words but DEF -1 (not read) prints what the card prints: its start is
+    carried, no version; a known stat that differs is a version."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/A.psd": A1}), (2000, {"Items/A.psd": A2})])
+    for stats_then, versions in ((cm.CardStats(6, -1, 4, 5), 0), (cm.CardStats(6, 3, 4, 5), 1)):
+        (tmp_path / str(versions)).mkdir()
+        bot, _ = _bot_repo(tmp_path / str(versions), [(1500, {"A": _card(ability="Words.", stats=stats_then,
+                                                                         timestamp=1000.0)})])
+        card = _card(ability="Words.", stats=cm.CardStats(6, 2, 4, 5), blob_sha=blob(A2), timestamp=2000.0)
+        old = defaultdict(list)
+        ch.recover({"A": card}, old, index, ch.Pickles.of(ch.bot_snapshots(str(bot))))
+        assert (len(old["A"]), ch.start(card)[0]) == (versions, 1000.0 if not versions else 2000.0)
+
+
 def test_a_restored_version_pairs_its_start_with_that_commits_blob(tmp_path):
     """Two readings printing the same (spacing aside) from two commits are one version: the newer parse's data, the
     older start and that start's own blob (a pair git had)."""
