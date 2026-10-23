@@ -356,7 +356,7 @@ commit of every build. The pin also pins the bake and the save, which come from 
 
 | Path | What |
 |---|---|
-| `commands/card_data.py` | The build and its CLI (`python -m commands.card_data`). The traverser's data path is **moved** here from `repo_traverser.py`: the changed-PSD loop, `_gather_details`, authors, edits, duplicates and archive. It reads a **source**: a tree (in the API's shape), a `text(path)` and a `download(path, sha)`. It also holds the gates and `SPARSE_FILES`. |
+| `commands/card_data.py` | The build and its CLI (`python -m commands.card_data`). The traverser's data path is **moved** here from `repo_traverser.py`: the changed-PSD loop, `_details`, authors, edits, duplicates and archive. It reads a **source**: a tree (in the API's shape), a `text(path)` and a `download(path, sha)`. It also holds the gates and `SPARSE_FILES`. |
 | `commands/card_history.py` | The git index from one `git log --raw`, the version rules, re-dating, dedupe, archive dates and renames |
 | `commands/card_db.py` | JSON records (`record(card)`, `card(record)`), reading and writing `db/` files atomically one record per line, the manifest with sha256 per file, the one-time seed from pickles (an allow-list unpickler mapping `commands.psd_analyzer`/`commands.card_models` CardInfo and CardStats to card_models), `export-pickles`, and the bot's `sync()` |
 | `commands/changelog.py` | Events from before/after plus the index, each with its push; the CLI `post` (Discord payloads, one per push; the cursor) |

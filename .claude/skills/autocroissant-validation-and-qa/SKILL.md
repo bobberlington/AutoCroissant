@@ -267,7 +267,8 @@ python3 -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer impor
   ignore old_stats growth. Never promote its pickles to the live repo (docs/BUGS_AND_IMPROVEMENTS.md B6).
 - **API budget warning:** change detection compares each PSD's blob sha in the tree with
   `card.blob_sha` (`_psd_changed`, card_data.py:217); an unchanged PSD costs no requests. Each
-  re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4) plus one commit
+  re-parsed PSD costs one `/git/blobs` download (`_download`, DOWNLOAD_WORKERS=4; none when range reads
+  work: raw.githubusercontent requests, not REST, plus one `branches/` request a run) plus one commit
   page (`_commit_page`, card_data.py:125-128; per_page=100, LOOKUP_WORKERS=2 beside the downloads)
   that gives both the newest commit and, for a new or authorless card, the first author (a file with
   100+ commits costs one more request, `_get_remote_timestamp`, card_data.py:169-194). So

@@ -158,11 +158,12 @@ WORKER THREAD: update_stats() (repo_traverser.py:59; the traversal is card_data.
       |  pick PSDs (GitHub only; local mode archived 2026-10-20, weak point 5): new, moved, blob sha
       |    != card.blob_sha (_psd_changed, card_data.py:217-229; commits-since fallback for
       |    cards without blob_sha), named in cards:, or force_update
-      |  DOWNLOAD_WORKERS=4 stream blobs (git/blobs API) into mkstemp files ahead of parsing
-      |    (card_data.py:144-167, 452-529)
+      |  DOWNLOAD_WORKERS=4 fetch up to AHEAD=8 PSDs ahead of parsing: with a lazy psd-tools, range
+      |    requests at the tree's commit (RemotePSD, ~2.5% of the bytes); else, or on any failure, the
+      |    whole blob (git/blobs API) into a mkstemp file (card_data _fetch_psd, _download)
       v
-per picked PSD: one commit lookup (_get_remote_timestamp); PSDParser.parse; psd_details.gather on the same
-  temp file (the website's Details record, by blob sha; a failure is one console line); remove temp file; a lookup
+per picked PSD: one commit lookup (_get_remote_timestamp); one PSDImage open for PSDParser.parse and
+  psd_details.gather (the website's Details record, by blob sha; a failure is one console line); release; a lookup
   or parse that raises fails that card only (it keeps its last version; no ETag kept, so the next run retries);
   old CardInfo -> old_stats only if its blob changed or it moved and its data did (after edits); CardValidator
       v

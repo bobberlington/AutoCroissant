@@ -475,7 +475,7 @@ canvas (size, mode, depth, ICC description), type-icon style (images / tokens / 
 ledger's cheap deviations, and a compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
 in `psd_details.json` (repo root, committed; `{"version": 1, "cards": {sha: record}}`, one card per line so diffs stay per card).
 
-- **In `/update_stats`:** after each re-parsed card's parse, `_gather_details` opens the temp PSD once more and stores the record
+- **In `/update_stats`:** after each re-parsed card's parse, `_details` reads the same open PSD and the record is stored
   under the blob sha (a failure is one console line `<path>: details not gathered (...)`, never a failed update); at the end of a
   run that read the tree the records are pruned to the tree's blobs and the file is saved like a pickle (tmp, fsync, replace)
   when anything was gathered or pruned. A 304 writes nothing. The `supplied` flags come from the /fonts cache `font_names.json`
