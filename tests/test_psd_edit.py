@@ -875,9 +875,11 @@ def test_a_bar_outside_the_card_refuses(clone):
     assert [layer.name for layer in edit.layers] == ["3", "7"] and 0 <= x0 < x1 <= pure.width and 0 <= y0 < y1 <= pure.height
 
 
+@text_engine
 def test_a_digit_outside_the_card_refuses(clone):
     """One digit's mask wholly off the canvas, the rest of the bar on it (no card today): hiding only that digit (5 -> 10) gave
-    an empty region (a ValueError at the render, an `error`); it refuses `unsupported-card` naming the digit, before a layer changes."""
+    an empty region (a ValueError at the render, an `error`); it refuses `unsupported-card` naming the digit, before a layer changes.
+    Moving the mask needs the fork's Mask.offset setter (upstream's mask has no offset)."""
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     row = pe.template_rows(psd, "hp")[0]
     five = row.digits["5"]
