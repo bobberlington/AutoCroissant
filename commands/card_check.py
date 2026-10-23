@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from json import dump, loads
 from os import cpu_count, remove, walk
 from os.path import abspath, basename, dirname, isdir, isfile, join, relpath, splitext
+from sys import stderr
 from tempfile import mkstemp
 from typing import Optional
 
@@ -386,7 +387,7 @@ def _ranged_notes(repository: str, ref: str, path: str, parser: PSDParser, edits
         notes = card_notes(parser, edits, remote.psd, path)
         return None if remote.failed else notes
     except Exception as e:
-        print(f"{path}: range reads failed ({e}); reading it whole")
+        print(f"{path}: range reads failed ({e}); reading it whole", file=stderr)     # stdout is the report
         return None
     finally:
         if remote is not None:
