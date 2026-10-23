@@ -129,6 +129,24 @@ class GitIndex:
         found = self.intro.get(blob) if blob else None
         return found[0] if found else None
 
+    def blob_since(self, blob: Optional[str], path: str, at: Optional[float] = None) -> Optional[Commit]:
+        """When a version's bytes became its card's: the blob's intro, unless path (or the path an exact rename brought
+        them from) held other bytes after it: then the newest commit that put these back, no later than at (the
+        version's reading; None: the newest). A revert dates from the revert (2025-04-04); idempotent on its result."""
+        first = self.blob_intro(blob)
+        starts, seen, after = [], {path}, None        # starts newest first; after: the rename that took them from path
+        while first is not None:
+            puts = [(c, b) for c, b in self.at_path.get(path, []) if after is None or c.order > after.order]
+            starts += [c for i, (c, b) in enumerate(puts) if b == blob and i + 1 < len(puts)
+                       and puts[i + 1][1] != blob and puts[i + 1][0].order < first.order]
+            mine = [c for c, b in puts if b == blob]
+            old, came = self.renamed_from.get(path), mine[len(mine) - 1] if mine else None
+            if came is None or old is None or old in seen or (self.renames.get(old) or (None, None))[1] is not came:
+                break
+            seen.add(old)
+            path, after = old, came
+        return next((c for c in starts if at is None or c.at <= at), first)
+
     def origin(self, path: str, once: bool = False) -> str:
         """The path an exact rename (or a chain of them; once: the newest only) brought path from, else path."""
         seen = {path}
@@ -250,8 +268,11 @@ def carry(dropped: CardInfo, holder: CardInfo) -> None:
 def _reread(older: CardInfo, newer: CardInfo) -> bool:
     """Whether older is an earlier reading of newer's PSD: the same start (one commit read twice, by an older parser
     or before an edit) and no other blob, newer read with a blob or older without one, by no older parser, knowing
-    every field older knew (unknown)."""
+    every field older knew (unknown). A version an edit or authors change made (cause edit, authors) is no re-read:
+    it starts no earlier than the version it ends, so at its start when the edits commit is older."""
     if getattr(older, "archived", None) or start(older)[0] != start(newer)[0]:
+        return False
+    if (getattr(newer, "version", None) or {}).get("cause") in ("edit", "authors"):
         return False
     a, b = getattr(older, "blob_sha", None), getattr(newer, "blob_sha", None)
     if (a and b and a != b) or (a and not b) or not unknown(newer) <= unknown(older):
@@ -430,12 +451,12 @@ def close(card: CardInfo, index: GitIndex, end_at: Optional[float], end: Optiona
 
 def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo]) -> dict:
     """
-    A version's start from git: its blob's intro (psd); the previous version's blob again: reparse from the same intro,
-    or moved from the commit that put the blob at this path (a folder's data); no blob in the index: legacy, at the
-    stored timestamp.
+    A version's start from git: its blob's intro (psd; after a revert, the revert: blob_since); the previous version's
+    blob again: reparse from the same intro, or moved from the commit that put the blob at this path (a folder's data);
+    no blob in the index: legacy, at the stored timestamp.
     """
     blob = getattr(card, "blob_sha", None)
-    intro = index.blob_intro(blob)
+    intro = index.blob_since(blob, card.path, card.timestamp)
     if intro is None:
         return meta(None, card.timestamp, "legacy", legacy=True)
     if previous is not None and getattr(previous, "blob_sha", None) == blob:
@@ -490,12 +511,12 @@ class Refined:
 
 
 def date_cards(stats: dict, index: GitIndex, report: Refined) -> None:
-    """Each current card's timestamp becomes its blob's intro; a duplicate takes its original's."""
+    """Each current card's timestamp becomes its blob's intro (blob_since); a duplicate takes its original's."""
     for name, card in stats.items():
         if getattr(card, "duplicate_of", None):
             continue
         report.cards += 1
-        intro = index.blob_intro(getattr(card, "blob_sha", None))
+        intro = index.blob_since(getattr(card, "blob_sha", None), card.path, card.timestamp)
         if intro is not None and intro.at != card.timestamp:
             card.timestamp = intro.at
             report.cards_dated.append(name)
@@ -567,7 +588,7 @@ def date_versions(name: str, stats: dict, old_stats: dict, index: GitIndex, repo
             report.legacy += 1
         elif getattr(version, "blob_sha", None):
             report.versions_with_blob += 1
-            intro = index.blob_intro(version.blob_sha)
+            intro = index.blob_since(version.blob_sha, version.path, version.timestamp)
             if intro is not None and version.timestamp != intro.at:
                 version.timestamp = intro.at
                 report.versions_dated += 1
