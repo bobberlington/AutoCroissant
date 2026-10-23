@@ -336,28 +336,24 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     stats, old = _read(cards)[:2]
     assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
         "The Big Freezer"
+    assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
 
 
-def test_a_rename_keeps_the_author_never_the_renamer(cards):
-    """The Freezer renamed by dave (same bytes), then a copy of its art renamed with an edited PSD: the new card is
-    the old one parsed again, its author alice's (the first commit at the oldest path), its series kept."""
+def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
+    """The Freezer renamed while its PSD was edited (another blob), its PNG renamed unchanged: the new card is parsed
+    with the old one (its author, not the renamer's), and the archive names it."""
+    put(cards.repo, "Field/1 Stars/The_Freezer.png", b"freezer art")
+    commit(cards.repo, "alice", 1100)
     _build(cards, "--seed", str(cards.seed))
-    git(cards.repo, "mv", FREEZER, "Field/1 Stars/The_Big_Freezer.psd")
+    big = "Field/1 Stars/The_Big_Freezer"
+    git(cards.repo, "mv", "Field/1 Stars/The_Freezer.png", f"{big}.png")
+    git(cards.repo, "rm", "-q", FREEZER)
+    put(cards.repo, f"{big}.psd", cards.psds[OTHER])
     commit(cards.repo, "dave", 2000)
-    assert _build(cards)[0] == cd.EXIT_OK
-    stats = _read(cards)[0]
-    assert stats["The Big Freezer"].author == "alice" and "The Freezer" not in stats
-    put(cards.repo, "Field/1 Stars/The_Big_Freezer.png", b"art")
-    commit(cards.repo, "erin", 3000)
-    _build(cards)
-    git(cards.repo, "mv", "Field/1 Stars/The_Big_Freezer.png", "Field/1 Stars/The_Huge_Freezer.png")
-    git(cards.repo, "rm", "-q", "Field/1 Stars/The_Big_Freezer.psd")
-    put(cards.repo, "Field/1 Stars/The_Huge_Freezer.psd", cards.psds[FREEZER] + b"\0")
-    commit(cards.repo, "frank", 4000)
-    assert _build(cards)[0] == cd.EXIT_OK
+    assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK
     stats, old = _read(cards)[:2]
-    assert stats["The Huge Freezer"].author == "alice"
-    assert old["The Big Freezer"][len(old["The Big Freezer"]) - 1].archived["renamed_to"] == "The Huge Freezer"
+    assert stats["The Big Freezer"].author == "alice"
+    assert old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == "The Big Freezer"
 
 
 def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):

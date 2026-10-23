@@ -428,7 +428,8 @@ def _link(sha: str) -> str:
 def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str] = None) -> list:
     """
     The committed files applied in memory, as the next build applies them: the authors file and Card Edits.json on these
-    cards, then the duplicates copied again and renamed (card_data._sync_duplicates: an alias on a duplicate's PNG names
+    cards (an edit that changed a card's data keeps its card before as a version: card_history.record_edits), then the
+    duplicates copied again and renamed (card_data._sync_duplicates: an alias on a duplicate's PNG names
     it), then the query tables rebuilt and stats.pkl saved (so a restart before the next /update_stats keeps the edit;
     the next build writes the same values).
 
@@ -450,22 +451,25 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
 def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> list:
     """refresh's body, under bake_lock."""
     from commands.card_data import CardBuild
+    from commands.card_history import record_edits
     from commands.psd_analyzer import stats_db
     from commands.query_card import card_repo
     edits = CardEdits.parse(edits_text) if edits_text is not None else None
     authors = CardAuthors.parse(authors_text) if authors_text is not None else None
     stats = stats_db.stats
     wanted = [n for n in (list(stats) if names is None else names) if n in stats]
-    changed = []
+    changed, edited = [], {}
     for name in wanted:
         card = stats[name]
         before = repr(card)
         if authors is not None:
             card.author = authors.resolve(name, card.author)
         if edits is not None:
+            edited[name] = deepcopy(card)
             edits.apply(name, card)
         if repr(card) != before:
             changed.append(name)
+    record_edits(stats_db, {n: edited[n] for n in changed if n in edited}, datetime.now(timezone.utc).timestamp())
     current = edits if edits is not None else card_repo._edits
     moved = edits.aliases_moved if edits is not None else card_repo.aliases_moved()   # no file read: aliases.pkl, as the build
     legacy = {} if moved else card_repo.git_file_alias

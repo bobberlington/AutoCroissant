@@ -931,6 +931,54 @@ def test_rename_onto_a_listed_name_records_renamed_to(github, psds):
     assert old["The Freezer"][0].archived["renamed_to"] == "Mini Doomer"
 
 
+def test_a_renamed_psd_keeps_its_cards_author_and_series(github, psds, monkeypatch):
+    """The Freezer's PSD renamed (same bytes) by someone else: the new card keeps the old card's author, series and
+    subseries (the parse takes the old card as its own), not the renamer's credit or the folder's series."""
+    big = "Field/1 Stars/The_Big_Freezer.psd"
+    monkeypatch.setattr(pa.RepositoryTraverser, "_get_remote_timestamp",
+                        lambda self, repo, path, name: (TIME, "Mover" if path == big else "Maker"))
+    _run()
+    stats, _ = _saved()
+    stats["The Freezer"].series, stats["The Freezer"].subseries = "Ice Age", "Glacial"
+    with open("stats.pkl", "wb") as f:
+        pickle.dump(stats, f)
+    github.files[big] = github.files.pop(FREEZER)
+    _run()
+    stats, old = _saved()
+    card = stats["The Big Freezer"]
+    assert (card.author, card.series, card.subseries) == ("Maker", "Ice Age", "Glacial")
+    assert old["The Freezer"][0].archived["renamed_to"] == "The Big Freezer"
+
+
+def test_an_edit_that_changes_a_card_keeps_its_card_before(github, psds, capsys):
+    """Legacy: a Card Edits.json change to a card whose PSD did not change keeps the card before as a version (cause
+    edit, dated by the edits file's commit: none here, so the run); an edit changing no data field (aliases) none."""
+    _run()
+    github.files[pa.EDITS_PATH] = json.dumps({"cards": {"The Freezer": {"note": "rechecked", "_by": "web"},
+                                                        "Mini Doomer": {"aliases": ["mini"], "_by": "web"}}}).encode()
+    _run()
+    stats, old = _saved()
+    assert [v.note for v in old["The Freezer"]] == ["checked"] and stats["The Freezer"].note == "rechecked"
+    assert stats["The Freezer"].version["cause"] == "edit" and "Mini Doomer" not in old
+    assert "1 edited card kept its card before as a version: The Freezer" in capsys.readouterr().out
+    _run()
+    assert _saved()[1]["The Freezer"] == old["The Freezer"]
+
+
+def test_side_file_lines_that_match_no_card_are_listed(github, psds, capsys):
+    """Card Authors.txt, Card Edits.json lines under no card's name: one console line each; an archived card's lines
+    are named in the archive report."""
+    github.files[pa.EDITS_PATH] = json.dumps({"cards": {"The Freezer": {"note": "checked", "_by": "web"},
+                                                        "Gone Card": {"note": "x", "_by": "web"}}}).encode()
+    _run()
+    out = capsys.readouterr().out
+    assert "Card Edits.json: 1 name match no card: gone card" in out and "Card Authors.txt:" not in out
+    del github.files[FREEZER]
+    _run()
+    assert ("Lines still keyed by an archived name (move them to its new name, or drop them): The Freezer "
+            "(Card Edits.json)") in capsys.readouterr().out
+
+
 class _File:
     def __init__(self, filename, status="removed", previous_filename=None):
         self.filename, self.status, self.previous_filename = filename, status, previous_filename
@@ -964,6 +1012,20 @@ def test_archive_records_the_deleting_commit(github, psds, monkeypatch, capsys):
     assert old["Mini Doomer"][0].archived["commit"] == "d" * 40
     assert old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
     assert "Mini Doomer (now Mega Doomer), The Freezer" in capsys.readouterr().out
+
+
+def test_a_backfilled_tag_gets_its_deleting_commit_and_a_rename_to_a_listed_card(github, psds, monkeypatch):
+    """ZOEY!!!!!'s case in legacy: a name gone before archiving existed, renamed to a card listed long since. The first
+    full run backfills its tag and reads its path's newest commit: its date, its sha and the rename (any listed card
+    counts for a backfill, not only one new this run)."""
+    pages = {"Items/Gone_Card.psd": [_Commit("g" * 40, [_File(FREEZER, "renamed", "Items/Gone_Card.psd")], at=TIME - 900)]}
+    monkeypatch.setattr(pa.RepositoryTraverser, "_commit_page", lambda self, path: pages.get(path))
+    _run()
+    _seed_old_stats(_gone_card())
+    github.files["notes.txt"] = b"a change"
+    _run()
+    tag = _saved()[1]["Gone Card"][0].archived
+    assert (tag["commit"], tag["at"], tag["renamed_to"], tag["backfill"]) == ("g" * 40, TIME - 900, "The Freezer", True)
 
 
 def test_cards_deleted_together_read_the_commit_once(github, psds, monkeypatch):
@@ -1247,21 +1309,3 @@ def test_alt_art_duplicates_are_archived_never_dropped(github, psds, capsys):
     stats, old = _saved()
     assert set(stats) == {"The Freezer"} and old["Mini Doomer2"][0].archived["at"] == old["Mini Doomer"][0].archived["at"]
 
-
-def test_a_rename_keeps_the_cards_author_and_series(github, psds, capsys):
-    """An exact rename (same bytes, new name): the new card is parsed as the old one, so the author and series curated
-    on it stay (never the renamer's); its name-keyed side-file entries are reported under the old name."""
-    _run()
-    stats, _ = _saved()
-    assert stats["Mini Doomer"].author == "Bob"
-    stats["Mini Doomer"].series = "Doom"
-    with open("stats.pkl", "wb") as f:
-        pickle.dump(stats, f)
-    github.files["Auxiliary/Minions/Mega_Doomer.psd"] = github.files.pop(DOOMER)
-    capsys.readouterr()
-    _run()
-    stats, old = _saved()
-    assert (stats["Mega Doomer"].author, stats["Mega Doomer"].series) == ("Bob", "Doom")
-    assert old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
-    out = capsys.readouterr().out
-    assert "Name-keyed entries left under archived names" in out and "Mini Doomer (now Mega Doomer): Card Authors.txt" in out

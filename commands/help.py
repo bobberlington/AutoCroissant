@@ -43,8 +43,8 @@ card_commands = {
     "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
                                                   "The Card page button opens it on the website; the printed title, website names and notes show too.\n"
                                                   "- as_of: A date, YYYY-MM-DD in Pacific time: the card as it was at the end of that day, from its stored "
-                                                  "versions (archived cards too). The reply says which version and its date; an older version shows its "
-                                                  "data instead of the image (default: the current card)",
+                                                  "versions (archived cards too). The reply says which version and its date; the current card posts its "
+                                                  "image of that day, an older version its data and an Image button (default: the current card)",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions. One match posts its image; "
                                                    "more are listed as name and image link, 10 per message.\n"
@@ -110,7 +110,7 @@ stats_commands = {
                                                   "- del_entry: Hide the card on the website and in queries\n"
                                                   "- subseries: A series within the series (Paper Mario in Mario). Database only, never in the PSD; the website sets it too\n"
                                                   "- No parameters (except query) shows current metadata, its creation date (created) included",
-    "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data.\n"
+    "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data (archived cards too, by their own name).\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
     "/mass_replace <field> <old_value> <new_value>:" : "Replace all instances of one field value with another across the entire database: author, series, subseries, subtype or card_type (admin only). "
                                                        "One commit to the card repo: author rewrites site/Card Authors.txt; the other fields write each card's entry in site/Card Edits.json.",

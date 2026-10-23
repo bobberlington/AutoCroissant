@@ -236,6 +236,9 @@ def test_update_metadata_makes_one_commit(repo):
     card = repo.stats["Mini Doomer"]                                             # applied in memory at once
     assert (card.stats.hp, card.stats.defense, card.ability, card.hidden, card.subseries, card.author) == (6, 0, "Explodes.  [fire] then.", True, "Mini", "Zomoroko")
     assert card.parsed_values["hp"] == 5 and repo.prepped and repo.saves == [1]         # stats.pkl kept for a restart
+    (before,) = cm.stats_db.old_stats["Mini Doomer"]                             # the card before is a version now
+    assert (before.stats.hp, before.ability != card.ability, card.version["cause"]) == (5, True, "edit")
+    assert "A Snack2" not in cm.stats_db.old_stats
     assert "Updated **Mini Doomer**" in repo.sent[len(repo.sent) - 1] and "pending on the card image" in repo.sent[len(repo.sent) - 1]
     assert cb.select(CardEdits.parse(_at_head(repo.github, EDITS_PATH)), cb.Snapshot(cb.CARD_REPO, "h", {}, {}), "Mini Doomer")[0].fields["hp"] == 6
 
