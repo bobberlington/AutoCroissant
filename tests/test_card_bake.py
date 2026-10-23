@@ -932,6 +932,25 @@ def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
     assert "## Refused (1)" in text and why in text
 
 
+@icons
+def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch):
+    """Stars refused, then the card's last field (types, then hp) too: the card's verdict names both, the stars once."""
+    def outside(before, psd, edit):
+        raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
+    monkeypatch.setattr(pe, "gate_outside", outside)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
+    stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
+    for fields, last in (({"stars": 3, "types": ["wind", "light"]}, types), ({"stars": 3, "hp": 8}, "unsupported-card: hp: no stat row")):
+        files = github.files_at(github.head)
+        files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {**fields, "_by": "web", "_at": AT}})
+        github.commit(files, "web", "Website edit: Mini Doomer")
+        text, commits = cb.run()
+        verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+        assert (verdict["state"], verdict["for"], verdict["reason"]) == ("refused", fields, f"{last}; {stars}")
+        assert "## Refused (1)" in text and text.count(stars) == 1
+
+
 @fork_text
 def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     """Idea 14 through the driver: an ability edit adding Blazing fetches the chart by sha, cuts "Ability FX: Blazing" above

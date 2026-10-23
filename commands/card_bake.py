@@ -760,7 +760,10 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                     break
                 except Refused as refused:
                     if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
-                        raise
+                        if not card.partial:
+                            raise
+                        earlier, card.partial = card.partial, []    # the card's reason names them too
+                        raise Refused(refused.code, "; ".join([refused.why] + [f"{r.code}: {r.why}" for r in earlier])) from refused
                     card.partial.append(refused.refusal)
                     del card.jobs[refused.field]
                     if not card.jobs:
