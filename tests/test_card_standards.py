@@ -27,7 +27,11 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
     ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),      # its Ability outside Text and title in Stat Txt: layout
     ("Auxiliary/Items/Lit_Bob-omb.psd", set(), {"R3"}),           # 2 visible Ability layers (Q2)
-    ("Auxiliary/Minions/Shadow_Duelist.psd", {"R3"}, set()),      # its Ability layer hidden
+    ("Auxiliary/Minions/Shadow_Duelist.psd", {"R3"}, set()),      # its Ability layer hidden, its words printed nowhere
+    ("Auxiliary/Minions/Abyss_Watcher.psd", set(), set()),        # hidden and empty: no ability
+    ("Auxiliary/Minions/Warrior_Dee.psd", set(), set()),
+    ("Creatures/Kirby/5 Stars/Butterfly.psd", set(), set()),      # hidden, laid out again in visible pieces
+    ("Creatures/R.E.P.O/2 Stars/Apex_Predator.psd", set(), set()),
     ("Creatures/Other/4 Stars/Sonic.psd", set(), {"R4"}),          # hidden Name, the title a pixel layer
     ("Creatures/Pandas/2 Stars/Pandanoko.psd", {"R1"}, {"R4"}),    # rasterized Name
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
@@ -109,7 +113,7 @@ def test_wording(clone, context):
     assert lines == ['"Blazing" is an overlay text layer, not an Ability FX: layer']
     rel = "Items/Active/2 Stars/Dirty_Bed.psd"
     assert [i.line() for i in cs.check(_open(clone, rel), rel, context)] == ["timing tag (1GCD) not set in the stoogedings badge font"]
-    for rel, code, line in (("Auxiliary/Minions/Shadow_Duelist.psd", "R3", "no visible Ability text layer (hidden or missing)"),
+    for rel, code, line in (("Auxiliary/Minions/Shadow_Duelist.psd", "R3", "the Ability layer is hidden (the bot reads no ability)"),
                             ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "R3", "5 visible Ability layers (one is the standard)"),
                             ("Items/Equip/2 Stars/Man_Serpent_Shield.psd", "R4", "the Name layer is hidden"),
                             ("Creatures/Other/5 Stars/Tyler.psd", "R4", "the Name layer is rasterized")):   # a smart object
@@ -150,8 +154,9 @@ def _saved(psd, path) -> PSDImage:
 
 
 def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
-    """R3 and R4 keep the real issues: no visible Ability layer, and a Name layer the title can't be read from (told for
-    a new card or a push that causes it; an existing card's waived). A title named otherwise is the developer's layout."""
+    """R3 and R4 keep the real issues: a hidden Ability layer whose words the parser reads nowhere, and a Name layer the
+    title can't be read from (told for a new card or a push that causes it; an existing card's waived). An ability or a
+    title named otherwise is the developer's layout."""
     rel = "Creatures/Other/4 Stars/Sonic.psd"
     (name,) = [i for i in cs.check(_open(clone, rel), rel, context, added=True) if i.code == "R4"]
     assert not name.waived and cs.reported([name]) == [name]
@@ -161,9 +166,10 @@ def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
     psd_edit.ability_layer(hidden).visible = False
     issues = cs.check(_saved(hidden, tmp_path / "hidden.psd"), MINI_DOOMER, context, old=old)
     assert [(i.code, i.line()) for i in cs.reported(issues) if i.code in ("R3", "R4")] == [
-        ("R3", "no visible Ability text layer (hidden or missing) (new)"), ("R4", "the Name layer is hidden (new)")]
+        ("R3", "the Ability layer is hidden (the bot reads no ability) (new)"), ("R4", "the Name layer is hidden (new)")]
     renamed = _open(clone, MINI_DOOMER)
     psd_edit.name_layer(renamed).name = "Title"
+    psd_edit.ability_layer(renamed).name = "Effect"         # no Ability layer at all: the ability named otherwise
     assert psd_edit.read_name(renamed, "Mini_Doomer") is None
     issues = cs.check(_saved(renamed, tmp_path / "renamed.psd"), MINI_DOOMER, context, old=old, added=True)
     assert not [i for i in issues if i.code in ("R3", "R4")]

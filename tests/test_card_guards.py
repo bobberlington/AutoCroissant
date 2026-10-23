@@ -209,9 +209,9 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 8, "writes": 4, "errors": 0,
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "errors": 0,
                        "card_errors": 0} and summary["told"] >= 1
-    assert by["Bread"]["told"] == ["no visible Ability text layer (hidden or missing)"]   # R3: the fixtures have none
+    assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
     assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
@@ -434,9 +434,9 @@ def test_font_issues_are_told_in_the_standards_post(cards, tmp_path, monkeypatch
     (bread,) = data["cards"]
     (font,) = [issue for issue in bread["issues"] if issue["code"] == "R7"]
     assert font["discord"] and font["told"] and not font["waived"]
-    assert bread["told"] == ["no visible Ability text layer (hidden or missing)", "font ComicSansMS not in MDW/Fonts"]
-    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: no visible "
-                                                 "Ability text layer (hidden or missing); font ComicSansMS not in MDW/Fonts. [")
+    assert bread["told"] == ["font ComicSansMS not in MDW/Fonts"]
+    assert data["discord"]["content"].startswith("Alice pushed Bread (Square pixels changed) with these issues: "
+                                                 "font ComicSansMS not in MDW/Fonts. [")
     assert json.loads((out / "summary.json").read_text())["told"] == 1
 
 

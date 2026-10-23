@@ -29,9 +29,11 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 **The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
 group or not) and which layer holds the title (`Text/Name` or one named after the card) are the developers' freedom, and
 the bake handles those layouts. The ruling was first applied as dropping both rules whole (2ada357); R3 and R4 are back
-for the real issues only, the ones the bot can't read or bake past: no visible Ability layer, several visible Ability
-layers, and a hidden or rasterized Name layer the title can't be read from (section 6.1), with their waivers and
-`card_guards.added()` (R4's new-card rules).
+for the real issues only (section 6.1), with their waivers and `card_guards.added()` (R4's new-card rules): a hidden
+Ability layer with words the parser reads nowhere (an empty one, on a card with no ability, or one laid out again in
+visible pieces is not told), several visible Ability layers (the bake can't pick one), and a hidden or rasterized Name
+layer the title can't be read from. Bringing them back was an unattended call during the release's finalize, **not an
+owner ruling**: the owner confirms it, and R3's told list, before `CARD_GUARDS=report` (section 15).
 
 **What the measurements changed in the design (section 2).** (The first two bullets argued for the composite as the PNG's
 source; ruling 1 overrules them: the PNG is the fork's render, section 17. They stand as measurements.)
@@ -360,8 +362,8 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 ## 6. Guard 2: the standards
 
 **6.1 The rules.**
-- Scope "651" = creatures, auxiliary creatures, minions, items, auxiliary items and N.M.E. items (the ledger's 651); "cards" =
-  all but rule pages.
+- Scope "651 cards" = creatures, auxiliary creatures, minions, items, auxiliary items and N.M.E. items (the ledger's 651);
+  "cards" = all but rule pages.
 - "At 6e50c3ee" counts every card that rule flags in the whole tree today; after waivers is what a push of that card would
   report.
 - Lists are in `rules_summary.json`.
@@ -373,15 +375,15 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes): none ("no visible Ability text layer (hidden or missing)") or several is told | report | 651 | 12: 7 hidden (Abyss_Watcher, Bulborb Larva, Shadow_Duelist, Warrior_Dee, Butterfly, Empress Bulblax, Apex_Predator; the parser reads the 4 re-laid ones from their pieces), 5 several (Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid); the same at 96d61368 | 7 (the 5 several-Ability cards waived, Q2) |
-| R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
+| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at 96d61368 | 1: Shadow_Duelist, told on every push of it (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"; the owner may waive it). The 5 several-Ability cards are waived (Q2) |
+| R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
 | R8 | Single-line composer on visible Ability and Name layers (L10) | report | cards | 0 | 0 |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
-| R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename is built and gated, 0 pixels; `card_standards.AUTO_FIX` adds it once the owner says yes, review 6) | 651 | 0 | 0 |
+| R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename is built and gated, 0 pixels; `card_standards.AUTO_FIX` adds it once the owner says yes, review 6) | 651 cards | 0 | 0 |
 
 **Not rules (decided).**
 - 28 star groups named `stars` or `3 stars` are compliant: the parser reads any case, and a rename is churn.
@@ -769,6 +771,10 @@ jobs:
 - Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
   ["R5"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
+- **R3 and R4's real issues, before `CARD_GUARDS=report`** (an unattended call on 2026-10-23, after the owner dropped their
+  template layout; section 6.1): keep them as reports? R3 tells Shadow_Duelist (a hidden Ability layer the card prints
+  nowhere, in the parser's `ABILITY_EXCLUSIONS`) on every push of it, and any new card with several visible Ability
+  layers; R4 tells only new cards and regressions. Dropping them is the R3/R4 block of `card_standards.check`.
 - Choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
   copying the changed pixels into them (G8); R10 now stays in the comment (`TELL_PNG_MISMATCH = True` would post it: 0
   flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).

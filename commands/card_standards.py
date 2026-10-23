@@ -1,8 +1,9 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R9 and R11 run over an open PSD (R10, the PNG against the PSD, is
-png_export.png_check). R3 and R4 keep only the real issues (no or several visible Ability layers; a hidden or rasterized
-Name layer the title can't be read from): the template layout they also checked was dropped by the owner on 2026-10-23.
+png_export.png_check). R3 and R4 keep only the real issues (several visible Ability layers, or a hidden one with words
+the parser reads nowhere; a hidden or rasterized Name layer the title can't be read from): the template layout they also
+checked was dropped by the owner on 2026-10-23.
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
@@ -214,16 +215,28 @@ def rule_icons(psd: PSDImage, types) -> Optional[Issue]:
                        f"{_list(['[' + n + ']' for n in names])} in the stoogedings font", names)
 
 
+def _words(layer) -> list:
+    """A text layer's words, split as PSDParser._relaid splits them."""
+    return (layer.text or "").replace("\x03", " ").replace("\ufeff", "").split()
+
+
 def rule_ability(psd: PSDImage) -> Optional[Issue]:
-    """R3: one visible Ability text layer, in any group (what psd_edit.ability_layer bakes); none or several is told."""
-    count = sum(1 for layer in psd.descendants()
-                if psd_edit._is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability")
-    if count == 1:
+    """
+    R3: one visible Ability text layer, in any group (what psd_edit.ability_layer bakes). Several are told; none only
+    when a hidden Ability layer holds words the parser reads nowhere. An empty one (a card with no ability), one laid
+    out again in visible pieces (PSDParser._relaid) or none at all (the ability named otherwise) is the developer's.
+    """
+    named = [layer for layer in psd.descendants()
+             if psd_edit._is_text_layer(layer) and layer.name.strip().lower() == "ability"]
+    count = sum(1 for layer in named if layer.is_visible())
+    if count > 1:
+        return Issue("R3", f"{count} visible Ability layers (one is the standard)", (f"{count} visible Ability layers",))
+    if count or not any(_words(layer) for layer in named):
         return None
-    why = f"{count} visible Ability layers"
-    if not count:
-        return Issue("R3", "no visible Ability text layer (hidden or missing)", (why,))
-    return Issue("R3", f"{count} visible Ability layers (one is the standard)", (why,))
+    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
+    if any(PSDParser._relaid(layer, texts) for layer in named):
+        return None
+    return Issue("R3", "the Ability layer is hidden (the bot reads no ability)", ("hidden ability layer",))
 
 
 def title_problem(psd: PSDImage, card: str) -> Optional[str]:

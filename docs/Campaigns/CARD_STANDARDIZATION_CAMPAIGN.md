@@ -310,7 +310,7 @@ owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejec
   landed; design and build notes `docs/Campaigns/PUSH_GUARDS.md`): `.github/workflows/card-guards.yml` runs
   `commands/card_guards.py` (`png_export.py`: a PSD pushed without its PNG gets the PNG the bake would make, the fork's
   render of the changed layers merged into the old PNG and gated, the stored composite only a cross-check (owner's ruling
-  2026-10-22); `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD (R3 and R4 without the template layout, dropped by the owner on 2026-10-23: no or several visible Ability layers, a hidden or rasterized Name layer), R9 Txt2 sync fixed with byte gates
+  2026-10-22); `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD (R3 and R4 without the template layout, dropped by the owner on 2026-10-23: several visible Ability layers, a hidden one with words the parser reads nowhere, a hidden or rasterized Name layer; kept unattended, for the owner to confirm), R9 Txt2 sync fixed with byte gates
   (R11's exact-name rename is built but reported until the owner says yes), the rest, fonts (R7) included, reported once
   per push in the standards channel after the 30-minute quiet window, `DISCORD_STANDARDS_WEBHOOK`, no role ping). Off until the repo variable
   `CARD_GUARDS` is `report`, then `on`; dispatches default to dry runs. At 6e50c3ee the rules reproduce this ledger's counts
