@@ -535,13 +535,15 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 
 The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
-without its PNG gets the PNG from its stored composite (gated), the pushed PSDs are checked against the card standards
-(0-pixel fixes only), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no ping)
+without its PNG gets the PNG from its stored composite (gated; nothing when the PNG already shows the PSD, pushed before
+it), the pushed PSDs are checked against the card standards (the owner's one easy fix, R9's Txt2 sync; R11's exact-name
+rename is built but told until the owner says yes, `card_standards.AUTO_FIX`), one commit comment, one Discord post to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no ping)
 and at most one bot commit, both after a 30-minute quiet window.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
-  `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit. `on`: also land the
-  PNGs and fixes. Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on`
+  `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
+  would make is told ("PNG not exported with the PSD: export it in Photoshop") and the comment says it "would be
+  re-exported (CARD_GUARDS=on)". `on`: also land the PNGs and fixes. Rollout: no variable, then dry dispatches, then `report` for 3 days or 10 card pushes, then `on`
   (owner's call; the items to confirm first are at the top of PUSH_GUARDS.md section 15).
 - **Dispatch (Actions > Card guards > Run workflow):** `dry_run` defaults to true (job summary and the `card-guards`
   artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
@@ -560,7 +562,9 @@ and at most one bot commit, both after a 30-minute quiet window.
   failure alert nor its post goes out, and its error says the push may be untold, so re-run again once GitHub answers).
   A re-run that fails in Check looks the mark up in the alert step, so a push already told gets no "was not guarded".
   The quiet window counts from the push, so a late re-run does not wait again. After a run that landed, the re-run finds
-  its blobs on the branch ("already on the branch") and writes nothing.
+  its blobs on the branch ("already on the branch"), writes nothing and starts the site build and the TTS save again
+  (the first attempt's may not have started). A re-run (or a dispatch) that cannot read the branch tells no write as
+  "not made" (an earlier run may have landed it); its comment says this run committed nothing.
 - **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
   or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
   run failed" once Check passed. Once per streak: a run that sent it, or stayed quiet inside a told streak, leaves the
@@ -569,7 +573,7 @@ and at most one bot commit, both after a 30-minute quiet window.
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
   bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
-  next day).
+  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout) sends no message.
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -854,3 +858,4 @@ abort.
 2026-10-22 (card guards): section 7's Card guards subsection (the CARD_GUARDS switch, dispatches, re-runs, the failure alert); no cited line moved.
 2026-10-22 (card guards, review 4): the Card guards subsection gains the any-case switch, the refused dispatch, the dispatch's author, the streak artifact and the unread-comment re-run; the Card bake `--local` bullet no longer calls card-sync.yml planned; no cited line moved.
 2026-10-22 (card guards, review 5): the Card guards subsection gains the dispatch outside CARD_GUARDS, `land`'s refusal of a non-`on` plan, the retried lookup, the alert's own lookup on a re-run, the re-run's window and the unstarted site build; no cited line moved.
+2026-10-22 (card guards, review 6): report mode tells the PNG it would make, R11 told until the owner says yes (AUTO_FIX), a PNG pushed before its PSD, a re-run's unread branch and refresh, a cancel by hand; no cited line moved.

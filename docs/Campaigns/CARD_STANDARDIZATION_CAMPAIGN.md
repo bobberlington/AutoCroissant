@@ -306,8 +306,8 @@ commit and pings the card makers' role on Discord (the shared secret `DISCORD_FO
 - **Rules 3+, the push guards** (BUILT 2026-10-22 on AutoCroissant `work/push-guards` and TTSCardMaker `work/push-guards`, not
   landed; design and build notes `docs/Campaigns/PUSH_GUARDS.md`): `.github/workflows/card-guards.yml` runs
   `commands/card_guards.py` (`png_export.py`: a PSD pushed without its PNG gets the PNG from its stored composite, gated;
-  `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD, R9 Txt2 sync and R11 exact names fixed with byte gates, the
-  rest reported once per push in the standards channel after the 30-minute quiet window, `DISCORD_STANDARDS_WEBHOOK`, no
+  `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD, R9 Txt2 sync fixed with byte gates (R11's
+  exact-name rename is built but reported until the owner says yes), the rest reported once per push in the standards channel after the 30-minute quiet window, `DISCORD_STANDARDS_WEBHOOK`, no
   role ping). Off until the repo variable
   `CARD_GUARDS` is `report`, then `on`; dispatches default to dry runs. At 6e50c3ee the rules reproduce this ledger's counts
   (PUSH_GUARDS.md section 16).
