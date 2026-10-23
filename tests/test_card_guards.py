@@ -1184,8 +1184,8 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
-    """The job's `if` matches CARD_GUARDS in any case ("On"), argparse's choices and the shell do not: Start lowercases
-    MODE for every later step (a "Report" that stayed as typed would make Land commit), and --mode takes any case."""
+    """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
+    step (Land's --dry-run test is exact: a "Report" Check now accepts would otherwise commit)."""
     yaml = pytest.importorskip("yaml")
     job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
     step = next(s for s in job["steps"] if s.get("name") == "Start")

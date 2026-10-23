@@ -801,9 +801,9 @@ jobs:
 - A dispatch with `dry_run` off on a commit whose push run was still waiting posted and landed first, then the push run
   posted again: it is refused while such a run is unfinished
   (`test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits`).
-- `CARD_GUARDS=On` passed the job's `if` (expressions ignore case) and then failed argparse on every push (and `Report`
-  would have made Land commit): Start lowercases `MODE`, `--mode` takes any case (`test_workflow_lowercases_card_guards`,
-  `test_mode_takes_any_case`).
+- `CARD_GUARDS=On` passed the job's `if` (expressions ignore case) and then failed argparse on every push: Start
+  lowercases `MODE` (so Land's exact `--dry-run` test holds for `Report`), and `--mode` takes any case
+  (`test_workflow_lowercases_card_guards`, `test_mode_takes_any_case`).
 - A dispatch named an author with no GitHub account after the dispatcher: a dispatch passes no `--author`, so the git
   author name stands.
 - The commit link in each Discord line is listed for the owner (15, item 6).
