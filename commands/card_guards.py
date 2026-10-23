@@ -462,6 +462,11 @@ def _r10_line(job: Job, measured: dict) -> str:
     return f"{basename(job.png)} does not match the PSD ({bad:.1f}% of pixels differ): export it again"
 
 
+def added(job: Job) -> bool:
+    """A new card PSD (the new-card rules, R4 in full): no PNG yet, beside a PNG, or added with its PNG or with it deleted."""
+    return job.case in ("new", "beside") or (job.case in ("pair", "psd-only") and not job.psd_old)
+
+
 def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> Result:
     """
     Both guards on one card; never raises (an error is the result's error line).
@@ -544,7 +549,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     if job.case == "png-only" or rule_page:
         return
     # guard 2
-    issues = standards.check(new, job.psd, context, old=old, added=job.case in ("new", "beside"))
+    issues = standards.check(new, job.psd, context, old=old, added=added(job))
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
@@ -918,6 +923,7 @@ __all__ = [
     'SPARSE_FILES',
     'Source',
     'Writer',
+    'added',
     'build_context',
     'check',
     'discord_payload',

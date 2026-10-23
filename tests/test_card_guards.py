@@ -216,6 +216,21 @@ def test_check_end_to_end(cards, tmp_path):
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
 
 
+def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
+    """A PSD added with its PNG (case pair, status A) is a new card: R4 is told, not waived, as for one pushed alone."""
+    root, base, alice, bot = cards
+    psd, png = (root / FOLDER / "Bread.psd").read_bytes(), (root / FOLDER / "Bread.png").read_bytes()
+    push = _plumb(root, {f"{FOLDER}/Fresh.psd": psd, f"{FOLDER}/Fresh.png": png, f"{FOLDER}/Alone.psd": psd}, "two new cards")
+    data = cg.check(str(root), push, bot, mode="report", out=str(tmp_path / "out"), workers=1)
+    by = {c["card"]: c for c in data["cards"]}
+    assert by["Fresh"]["case"] == "pair" and by["Alone"]["case"] == "new"
+    for name in ("Fresh", "Alone"):
+        (r4,) = [i for i in by[name]["issues"] if i["code"] == "R4"]
+        assert not r4["waived"] and r4["told"] and r4["line"] in by[name]["told"], by[name]
+    assert cg.added(cg.Job("X.psd", "psd-only")) and not cg.added(cg.Job("X.psd", "pair", psd_old="s"))
+    assert not cg.added(cg.Job("X.psd", "stale", psd_old="s")) and not cg.added(cg.Job("X.psd", "whole"))
+
+
 def test_whole_tree(cards, tmp_path):
     root, base, alice, bot = cards
     data = cg.check(str(root), bot, whole_tree=True, out=str(tmp_path / "out"), workers=1)
