@@ -661,6 +661,72 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     assert cb.pending() == ["Mini Doomer"]
 
 
+def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
+    """A box past the parity bar, under the floor, bakes (owner, 2026-10-23): the commit note and the report say so."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    miss = {"bad_pct": 1.9725, "mean": 1.5955, "max": 217}
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        for ext, old in (("psd", old_psd), ("png", old_png)):
+            shutil.copy(old, f"{new_dir}/new.{ext}")
+        with open(f"{new_dir}/new.psd", "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=f"{new_dir}/new.psd", png_path=f"{new_dir}/new.png", edits=[SimpleNamespace(field="hp", old=5)],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], parity={"hp": miss},
+                               rerender={"hp": miss}, flag_bytes=2, changed_pixels=1)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    text, commits = cb.run()
+    note = "hp baked with a pixel difference: bad 1.97%, mean 1.60, max 217"
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; {note}\n\nEdit-by: web"
+    assert f"parity hp 1.97% bad, mean 1.60; {note}; 2 flag bytes" in text.split("## Baked (1)", 1)[1]
+    assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
+
+
+def test_old_bar_pixel_verdicts_are_retried(github):
+    """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
+    now; one past the floor stays final."""
+    files = github.files_at(github.head)
+    psd = _sha(files[DOOMER])[:8]
+
+    def verdict(reason: str) -> list:
+        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "reason": reason, "at": AT}, "_by": "web", "_at": AT}
+        files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": entry})
+        github.commit(files, "web", "Website edit: a verdict")
+        return cb.pending()
+    assert verdict("parity: baseline bad 0.11% mean 3.01 max 136") == ["Mini Doomer"]
+    assert verdict("idempotence: hp re-render bad 0.62% mean 0.80") == ["Mini Doomer"]
+    assert verdict("parity: baseline bad 31.20% mean 40.00 max 255: past the 25% floor") == []
+    assert verdict("idempotence: hp re-render bad 40.00% mean 50.00: past the 25% floor") == []
+    assert verdict("parity: Hp Dark/5: effects unreadable: x") == []
+    assert verdict("reparse: fields differ from the expected parse: hp") == []
+
+
+@fork_text
+def test_freezer_title_bakes_with_a_pixel_note(github, tmp_path):
+    """End to end: The Freezer's title misses the parity bar (bad 1.97%, mean 1.60 on 2026-10-23) and bakes; the commit
+    note says so per edited box; the PSD, PNG and file land in one commit."""
+    from psd_tools import PSDImage
+    files = github.files_at(github.head)
+    (tmp_path / "freezer.psd").write_bytes(files[FREEZER])
+    title = pe.read_name(PSDImage.open(str(tmp_path / "freezer.psd")))
+    name = title[:len(title) - 1] + ("e" if title[len(title) - 1] != "e" else "a")
+    files[cb.EDITS_PATHS[0]] = _edits({"The Freezer": {"name": name, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: The Freezer")
+    text, commits = cb.run()
+    message = github.commits[commits[0]]["message"]
+    line = re.search(r"^- The Freezer: name .* -> .*; name baked with a pixel difference: bad ([\d.]+)%, mean ([\d.]+), max (\d+)$",
+                     message, re.MULTILINE)
+    assert len(commits) == 1 and message.startswith("Card edits: 1 baked\n") and line, message
+    bad, mean = float(line.group(1)), float(line.group(2))
+    assert (bad > pe.PARITY_BAD_MAX or mean > pe.PARITY_MEAN_MAX) and bad <= pe.PARITY_FLOOR
+    assert "; name baked with a pixel difference: bad " in text.split("## Baked (1)", 1)[1]
+    after = github.files_at(github.head)
+    assert sorted(p for p in after if after[p] != files.get(p)) == [FREEZER[:len(FREEZER) - 4] + ".png", FREEZER, cb.EDITS_PATHS[0]]
+
+
 def test_transient_errors_write_no_verdict(github, monkeypatch):
     """A 5xx on a blob, a rate-limited POST: reported under Errors, retried next run, never a verdict for the editor."""
     github.down.add(_sha(github.files_at(github.head)[DOOMER]))

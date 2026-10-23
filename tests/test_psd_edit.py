@@ -174,11 +174,25 @@ def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False, 
 # Pure functions (any psd-tools)
 # ========================
 def test_parity_bar():
-    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24."""
-    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH) == (2.0, 0.5, 24)
+    """The owner's bar (2026-10-22): mean |diff| <= 2.0 (was 1.0), at most 0.5% of pixels past 24. Missing it is told, not
+    refused (2026-10-23); only past the floor, more than 25% of the region's pixels past 24, is a render broken."""
+    assert (pe.PARITY_MEAN_MAX, pe.PARITY_BAD_MAX, pe.PARITY_THRESH, pe.PARITY_FLOOR) == (2.0, 0.5, 24, 25.0)
     assert pe._within_bar({"bad_pct": 0.5, "mean": 2.0, "max": 200})
     assert not pe._within_bar({"bad_pct": 0.0, "mean": 2.01, "max": 7})
     assert not pe._within_bar({"bad_pct": 0.51, "mean": 0.5, "max": 7})
+    assert not pe._past_floor({"bad_pct": 25.0, "mean": 90.0, "max": 255})
+    assert pe._past_floor({"bad_pct": 25.01, "mean": 1.0, "max": 30})
+
+
+def test_miss_notes():
+    """The owner's note per edited box past the bar (2026-10-23); the re-render's only when the baseline was within it."""
+    ok, miss = {"bad_pct": 0.0, "mean": 0.8, "max": 7}, {"bad_pct": 1.9725, "mean": 1.5955, "max": 217}
+    note = "baked with a pixel difference: bad 1.97%, mean 1.60, max 217"
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": ok}, rerender={"hp": ok})) == []
+    assert pe.miss_notes(SimpleNamespace(parity={"name": miss}, rerender={"name": miss})) == [f"name {note}"]
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": ok, "spd": ok}, rerender={"spd": miss})) == [
+        "spd baked with a pixel difference (re-render): bad 1.97%, mean 1.60, max 217"]
+    assert pe.miss_notes(SimpleNamespace(parity={"hp": miss, "spd": ok})) == [f"hp {note}"]     # a Baked without rerender
 
 
 def test_jsx_fx_fixture_is_vendored_and_small():
@@ -622,10 +636,9 @@ def test_raw_export_bakes_unconverted(clone, parser, tmp_path):
     psd_path, png_path = _card(clone, RED_BLOON)
     parsed, baked = _bake(clone, parser, RED_BLOON, {"hp": 2}, tmp_path)
     assert baked.icc is False and baked.reparse["card"]["hp"] == 2
-    assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX
-    with pytest.raises(pe.Refused, match="baseline bad") as refused:
-        pe.baseline(PSDImage.open(psd_path), Image.open(png_path), baked.edits[0].region)
-    assert refused.value.code == "parity" and float(search(r"mean ([\d.]+)", refused.value.why).group(1)) > 10
+    assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX and pe.miss_notes(baked) == []
+    _, converted = pe.baseline(PSDImage.open(psd_path), Image.open(png_path), baked.edits[0].region)
+    assert converted["mean"] > 10 and not pe._within_bar(converted)    # a miss: it would bake, told
 
 
 @text_engine
@@ -786,15 +799,14 @@ def test_toggle_round_trip_keeps_block_order(clone, tmp_path):
 
 
 @before_textures
-def test_cannon_rows_refuse_parity_without_bevel_textures(clone, parser, tmp_path):
-    """Before round 4 the fork skips the digits' BevelEmboss texture (5-7% wrong, max 110): apply_jobs refuses parity before
-    any pixel is pasted, for the two-row atk as for its one-row hp."""
+def test_cannon_rows_bake_with_a_note_without_bevel_textures(clone, parser, tmp_path):
+    """Before round 4 the fork skips the digits' BevelEmboss texture (5-7% wrong, max 110): refused `parity` until
+    2026-10-23, now baked under the floor with the miss told, for the two-row atk as for its one-row hp."""
     for stat, value in (("atk", 15), ("hp", 2)):
-        with pytest.raises(pe.Refused) as refused:
-            _bake(clone, parser, CANNON, {stat: value}, tmp_path)
-        assert refused.value.code == "parity" and refused.value.why.startswith("baseline bad")
-        assert float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) > pe.PARITY_BAD_MAX
-    assert not list(tmp_path.iterdir())
+        (tmp_path / stat).mkdir()
+        _, baked = _bake(clone, parser, CANNON, {stat: value}, tmp_path / stat)
+        assert pe.PARITY_BAD_MAX < baked.parity[stat]["bad_pct"] <= pe.PARITY_FLOOR and baked.reparse["card"][stat] == value
+        assert pe.miss_notes(baked)[0].startswith(f"{stat} baked with a pixel difference: bad ")
 
 
 # ========================
@@ -1115,14 +1127,56 @@ def test_missing_font_refuses(clone, parser, tmp_path, monkeypatch):
     assert refused.value.code == "font" and refused.value.why.startswith("not resolved exactly: ")
 
 
-@text_engine
-def test_baseline_refuses_a_region_the_fork_renders_wrong(clone, parser, tmp_path):
-    """The Freezer's title (KrabbyPatty over the Text group's effects) misses the parity bar: refused, never pasted."""
+@text_edit
+def test_baseline_miss_under_the_floor_bakes_with_a_note(clone, parser, tmp_path):
+    """The Freezer's title (KrabbyPatty over the Text group's effects) misses the parity bar (bad 1.97%, mean 1.60, max 217
+    on 2026-10-23): baked and told, no longer refused (owner, 2026-10-23); the parser reads the new title back."""
     rel = "Field/1 Stars/The_Freezer.psd"
     psd_path = _card(clone, rel)[0]
+    name = _typo_fix(pe.read_name(PSDImage.open(psd_path)))
+    _, baked = _bake(clone, parser, rel, {"name": name}, tmp_path)
+    measured = baked.parity["name"]
+    assert not pe._within_bar(measured) and not pe._past_floor(measured)
+    assert pe.read_name(PSDImage.open(baked.psd_path)) == name
+    assert pe.miss_notes(baked) == ["name baked with a pixel difference: bad %.2f%%, mean %.2f, max %d"
+                                    % (measured["bad_pct"], measured["mean"], measured["max"])]
+
+
+def _painted(clone, tmp_path, rows: float) -> tuple:
+    """Mini Doomer's PSD, and its PNG with the top share of the hp row inverted (a render broken there), in tmp_path/card."""
+    psd, png = _card(clone, MINI_DOOMER)
+    out = tmp_path / "card"
+    out.mkdir()
+    image = np.array(Image.open(png))
+    x0, y0, x1, y1 = HP_ROW
+    y1 = y0 + int((y1 - y0) * rows)
+    image[y0:y1, x0:x1, :3] = 255 - image[y0:y1, x0:x1, :3]
+    Image.fromarray(image).save(out / Path(png).name)
+    (out / Path(psd).name).write_bytes(Path(psd).read_bytes())
+    return str(out / Path(psd).name), str(out / Path(png).name)
+
+
+@text_engine
+def test_a_broken_render_is_refused_past_the_floor(clone, parser, tmp_path):
+    """The safety floor (owner, 2026-10-23): more than 25% of the edited box's pixels past 24 is a broken render, refused
+    `parity` before anything is written; a box a tenth broken bakes, told; the re-render is held to the same floor."""
     with pytest.raises(pe.Refused) as refused:
-        _bake(clone, parser, rel, {"name": _typo_fix(pe.read_name(PSDImage.open(psd_path)))}, tmp_path)
-    assert refused.value.code == "parity" and not list(tmp_path.iterdir())
+        _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path, paths=_painted(clone, tmp_path, 1.0))
+    assert refused.value.code == "parity" and refused.value.why.endswith("past the 25% floor")
+    assert float(search(r"bad ([\d.]+)%", refused.value.why).group(1)) > pe.PARITY_FLOOR
+    assert [p.name for p in tmp_path.iterdir()] == ["card"]
+    out = tmp_path / "out"
+    out.mkdir()
+    _, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, out, paths=_painted(clone, out, 0.1))
+    assert 5 < baked.parity["hp"]["bad_pct"] < pe.PARITY_FLOOR and baked.reparse["card"]["hp"] == 8
+    assert pe.miss_notes(baked)[0].startswith("hp baked with a pixel difference: bad ")
+    merged = np.array(Image.open(baked.png_path))
+    x0, y0, x1, y1 = HP_ROW
+    merged[y0:y1, x0:x1, :3] = 255 - merged[y0:y1, x0:x1, :3]
+    with pytest.raises(pe.Refused) as refused:
+        pe.gate_idempotence(baked.reparse, {"hp": 8}, PSDImage.open(baked.psd_path), Image.fromarray(merged), baked.edits,
+                            baked.icc)
+    assert refused.value.code == "idempotence" and refused.value.why.endswith("past the 25% floor")
 
 
 # ========================

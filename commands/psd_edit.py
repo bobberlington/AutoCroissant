@@ -50,7 +50,7 @@ MARKER = "10"                                   # a two-row card's parser marker
 EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V0,
                  Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V1, Tag.EFFECTS_LAYER)   # a digit's effect blocks: lfx2 and its kin
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
-PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG
+PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG (past it: a miss, told)
 PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
 PARITY_FLOOR = 25.0         # % of bad pixels past which a region's render is broken: refused; a miss under it is told (owner, 2026-10-23)
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
@@ -170,6 +170,7 @@ class Baked:
     block_bytes: int = 0    # effect block bytes that moved with a toggle (idea 12) or landed on an FX layer (idea 14)
     fx: list = field(default_factory=list)      # names of the FX layers regenerated
     icc: bool = True        # export_icc(): rendered converted by the embedded profile (False: the PNG was exported raw)
+    rerender: dict = field(default_factory=dict)    # field -> gate_idempotence()'s measurement of its region
 
 
 # ========================
@@ -1411,13 +1412,29 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True) -
         icc: render_region()'s
 
     Returns:
-        (render, measurement); raises Refused("parity") when the fork already renders the region wrong
+        (render, measurement); raises Refused("parity") past PARITY_FLOOR only (a miss of the bar bakes, told: miss_notes)
     """
     render = render_region(psd, region, icc)
     measured = _measure(render, png.crop(region))
-    if not _within_bar(measured):
-        raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d" % (measured["bad_pct"], measured["mean"], measured["max"]))
+    if _past_floor(measured):
+        raise Refused("parity", "baseline bad %.2f%% mean %.2f max %d: past the %g%% floor"
+                      % (measured["bad_pct"], measured["mean"], measured["max"], PARITY_FLOOR))
     return render, measured
+
+
+def miss_notes(baked) -> list:
+    """
+    The note per edited box that missed the parity bar under the floor (owner, 2026-10-23): "name baked with a pixel
+    difference: bad 1.97%, mean 1.60, max 217"; the re-render's numbers when only it missed.
+    """
+    out = []
+    for name, measured in baked.parity.items():
+        again = getattr(baked, "rerender", {}).get(name)
+        miss = measured if not _within_bar(measured) else again if again and not _within_bar(again) else None
+        if miss:
+            out.append("%s baked with a pixel difference%s: bad %.2f%%, mean %.2f, max %d" % (
+                name, "" if miss is measured else " (re-render)", miss["bad_pct"], miss["mean"], miss["max"]))
+    return out
 
 
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
@@ -1772,8 +1789,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
                      icc: bool = True) -> dict:
     """
-    Nothing left to bake on the new PSD, and each edit's region re-rendered from it matches the merged PNG within
-    the parity bar (not byte-equal: the delta merge keeps Photoshop's pixels where the render matched the baseline).
+    Nothing left to bake on the new PSD, and each edit's region re-rendered from it is not broken against the merged PNG
+    (PARITY_FLOOR; a miss of the bar is told: the delta merge keeps Photoshop's pixels where the render matched the baseline).
 
     Args:
         new_parsed: gate_reparse()'s parse of the saved PSD
@@ -1792,8 +1809,9 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     out = {}
     for edit in edits:
         measured = _measure(render_region(psd, edit.region, icc), merged.crop(edit.region))
-        if not _within_bar(measured):
-            raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f" % (edit.field, measured["bad_pct"], measured["mean"]))
+        if _past_floor(measured):
+            raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f: past the %g%% floor"
+                          % (edit.field, measured["bad_pct"], measured["mean"], PARITY_FLOOR))
         out[edit.field] = measured
     return out
 
@@ -1932,10 +1950,10 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
-    gate_idempotence(reparse, jobs, reopened, merged, edits, icc)
+    rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc)
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
-                 block_bytes, [name for edit in edits for name, _ in edit.fx], icc)
+                 block_bytes, [name for edit in edits for name, _ in edit.fx], icc, rerender)
 
 
 # ========================
@@ -1990,6 +2008,7 @@ __all__ = [
     'layer_records',
     'merge_png',
     'merge_preview',
+    'miss_notes',
     'name_layer',
     'normalize_ability',
     'offline_parser',

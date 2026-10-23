@@ -36,7 +36,7 @@ from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep
 from os.path import abspath, basename, dirname, expanduser, isdir, join, splitext
-from re import IGNORECASE, escape, fullmatch
+from re import IGNORECASE, escape, fullmatch, search
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
@@ -563,7 +563,8 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
 def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
     """
     Whether the card's verdict is final (pending's rule): refused for exactly its PSD-kind values on the PSD blob the
-    tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do.
+    tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do; a pixel
+    refusal under psd_edit.PARITY_FLOOR (the old bar's, before 2026-10-23) never: it bakes now.
     """
     verdict = edits.meta.get(card.key, {}).get("_psd")
     if not (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
@@ -575,7 +576,13 @@ def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
     if (reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}") \
             and verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key):
         return False
-    return True
+    bad = search(r"^(?:parity: baseline|idempotence: \w+ re-render) bad ([\d.]+)%", reason)
+    return not (bad and float(bad.group(1)) <= psd_edit.PARITY_FLOOR)
+
+
+def _misses(card: Card) -> str:
+    """'; name baked with a pixel difference: bad 1.97%, mean 1.60, max 217' (psd_edit.miss_notes), "" for none."""
+    return "".join(f"; {note}" for note in (psd_edit.miss_notes(card.baked) if card.baked else []))
 
 
 def _describe(card: Card) -> str:
@@ -617,7 +624,7 @@ def _message(cards: list) -> str:
     redundant = [c for c in cards if not c.jobs and not c.refusal]
     refused = [c for c in cards if c.refusal]
     counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
-    lines = [f"- {c.name}: {_describe(c)}" for c in baked]
+    lines = [f"- {c.name}: {_describe(c)}{_misses(c)}" for c in baked]
     trailers = [f"{EDIT_BY}: {login}" for login in sorted(login for c in baked for login in editors(c))]
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
@@ -808,7 +815,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f": {card.refusal.code}: {card.refusal.why}"
     if card.baked:
         parity = "; ".join("%s %.2f%% bad, mean %.2f" % (f, m["bad_pct"], m["mean"]) for f, m in card.baked.parity.items())
-        line += f"; parity {parity}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
+        line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
         if card.baked.fx:
             line += f"; FX layers: {', '.join(card.baked.fx)}"
     if card.redundant:
