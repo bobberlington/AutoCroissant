@@ -30,6 +30,14 @@ card and field, whether a bake works, why not, and what would fix it.
   with edits far apart, the style of the first changed character to everything between (badges drawn as text). Fixed:
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
 
+**Since (work/bake-verdicts, 2026-10-23 evening, TTSCardMaker `5c88f230`):**
+
+- Section 4 is settled: the live dispatch e1a491be (18:29) dropped Dark matter, Masked Dedede, Metal General, NME
+  Stock, Star Dream and Zero Override as redundant, baked PoD11ZOMG and refused Papyrus and Sans again (the new reason).
+  A dry run without `--pending` now finds only Papyrus and Sans, their verdicts unchanged: no stale verdict is left.
+- 2.24: Green Mage's stat edits are refused as a final verdict (`unsupported-card: hp: the bar 'Hp Dark' lies outside
+  the card ...`), no longer an error that fails the run. It is the only PSD with a bar wholly off the canvas.
+
 How to read it: section 1 is the one-screen summary. Section 2 has one part per reason: a plain explanation, what would
 fix it, and the cards (alphabetical, with their folder). A card counts once per field, under the first reason the bake
 stops at today; the last column says what the pending changes do to it. A card can sit in several parts, one per field.
@@ -104,8 +112,9 @@ What stands out:
   the stars or type icons, and Autopsy Report and Warcraftian Shaman fail the read-back. refused-layers refuses all 20
   earlier, as titles printed by several layers, split or printed twice (2.10, 2.11, 2.12), which is right.
 - **Four refused edits in Card Edits.json would bake today** (Metal General, Z.O.M.G., Star Dream, Zero Override;
-  section 4). Their verdicts come from the old pixel bar and fork, and the schedule treats them as final until the PSD
-  changes; a dispatched run without `--pending` re-checks them.
+  section 4; settled by the live dispatch e1a491be: three redundant, Z.O.M.G. baked). Their verdicts come from the
+  old pixel bar and fork, and the schedule treats them as final until the PSD changes; a dispatched run without
+  `--pending` re-checks them.
 
 ## 2. Why cards can't bake, by reason
 
@@ -733,7 +742,7 @@ Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** 
 
 Today: **1 card** (HP 1, DEF 1, ATK 1, SPD 1). After the pending changes, **0** of these 4 fields bake.
 
-- **Why:** The bar's digit layers lie below the edge of the card, so there is nothing on the card for a bake to redraw (the bake would stop with an error).
+- **Why:** The bar's digit layers lie below the edge of the card, so there is nothing on the card for a bake to redraw. The bake refuses it (`unsupported-card: <stat>: the bar ... lies outside the card`, a final verdict; until 2026-10-23 it stopped with an error). The printed bars are pixel layers: they show ATK 6, the bot reads 10 from the hidden bar.
 - **What would fix it:** Card maker: move the stat bars onto the card, or delete them if the card shows its stats another way.
 
 | Card | Folder | Field | Detail | After the pending changes |
@@ -901,6 +910,8 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
 
 - Metal General, Z.O.M.G., Star Dream and Zero Override bake today: their verdicts are from 2026-10-22 (old bar and fork).
   The schedule (`card_bake.final`) skips a refused verdict until the PSD changes, so they wait for a dispatched run.
+  Settled by the live dispatch e1a491be (2026-10-23 18:29); their PSDs had changed (the Standardize title case), so the
+  schedule would have taken them too. Three were redundant by then and Z.O.M.G. baked.
 - Papyrus and Sans ask for the title the card already prints ('The Great Papyrus', 'snas.'). There is nothing to redraw;
   the bot just doesn't read those layers as the title (their layer names differ from the card's name).
 - Masked Dedede bakes with a pixel note once soft parity lands. NME Stock needs its numbered PNG sorted out (2.2).

@@ -110,10 +110,15 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 7. Bot and bake follow-ups
 - [ ] **BUG 2** (BUGS D7): rebuild `Ability FX: ...` badge layers in the bake (approved; text geometry and colour
       glyphs are in the fork now). Until then 18-20 gradient badge cards refuse ability bakes.
-- [ ] Re-check the 4 stale verdicts (Metal General, Z.O.M.G., Star Dream, Zero Override) without `--pending` (Z.O.M.G.
-      baked in e1a491be).
+- [x] Re-check the 4 stale verdicts (Metal General, Z.O.M.G., Star Dream, Zero Override) without `--pending`: none
+      left (work/bake-verdicts). The live dispatch e1a491be re-checked them (their PSDs had changed, so `final()` would
+      have let the schedule take them too), dropped the three names as redundant (the 10-23 Standardize title case
+      prints them) and baked Z.O.M.G.; its `baked` verdict is current (psd 9b87525a) and stays beside series/aliases.
+      A dry run at 5c88f230: 2 cards with PSD fields (Papyrus, Sans), verdicts unchanged, nothing pending. No code bug.
 - [ ] PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD: stale Txt2 stories on origin? `txt2_repair.py --check`; repair if so.
-- [ ] Green Mage: stat rows below the canvas (an error, not a verdict).
+- [x] Green Mage: stat rows below the canvas (an error, not a verdict). work/bake-verdicts: `set_stat` refuses a bar
+      wholly off the canvas (`unsupported-card: hp: the bar 'Hp Dark' lies outside the card ...`), a final verdict; the
+      only such PSD of 812 on origin/main. Its printed ATK is 6, the bot reads 10 (BUGS D8: owner).
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; colour
       glyphs landed in round 6, so this is unblocked).
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),

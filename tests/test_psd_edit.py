@@ -40,7 +40,9 @@ MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, 
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
-GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"          # atk 10: no digit visible, hidden 7 styled (the from-10 move)
+GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"          # atk 10: no digit visible, hidden 7 styled (the from-10 move);
+#   its four bars lie below the canvas (the printed cells are pixel layers)
+PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"   # digit masks start on the canvas and reach past it
 AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 10 with 6, 8 and 9 styled: ambiguous
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
 ASTR = "Auxiliary/Minions/Astr_Mionion.psd"                       # "Attacks inflict 1T3 Empowered." with Empowered in red
@@ -744,7 +746,8 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
 def test_effect_rules_on_styled_rows(clone):
     """Idea 12's rule on real rows: Mettaton atk 7 -> 8 moves nothing (7 is unstyled; the hidden styled 6 stays); 7 -> 6 keeps 6's
     own effect; hp 5 -> 10 moves nothing (5 keeps its block, hidden) and 10 -> 3 then takes it from 5; Green Mage atk 10 -> 4 takes
-    the one hidden styled digit's (7); Azamoth the Forgotten King's hp (10; 6, 8 and 9 styled) refuses as ambiguous."""
+    the one hidden styled digit's (7) (its row's toggle: set_stat refuses its bars, below the canvas); Azamoth the Forgotten
+    King's hp (10; 6, 8 and 9 styled) refuses as ambiguous."""
     path = _card(clone, METTATON)[0]
     parsed = {"card": {"hp": 5, "atk": 7}}
     psd = PSDImage.open(path)
@@ -767,13 +770,32 @@ def test_effect_rules_on_styled_rows(clone):
     assert [layer.name for layer in edit.layers] == ["3", "5"]
     assert row.visible == [3] and pe._enabled_effects(row.digits["3"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["5"]) == []
     green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
-    edit = pe.set_stat(green, {"card": {"atk": 10}}, "atk", 4)
     row = pe.template_rows(green, "atk")[0]
-    assert [layer.name for layer in edit.layers] == ["4", "7"] and [key for _, _, key in edit.moves] == [b"lfx2", b"lrFX"]
+    changed, moves, _ = pe._toggle_row(row, 4, "atk")
+    assert [layer.name for layer in changed] == ["4", "7"] and [bytes(key) for _, _, key in moves] == [b"lfx2", b"lrFX"]
     assert pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["7"]) == []
     with pytest.raises(pe.Refused, match="6, 8, 9") as refused:
         pe.set_stat(PSDImage.open(_card(clone, AZAMOTH_KING)[0]), {"card": {"hp": 10}}, "hp", 3)
     assert refused.value.code == "unsupported-card"
+
+
+def test_a_bar_outside_the_card_refuses(clone):
+    """Green Mage's four bars lie below its 2400 px canvas (the printed cells are pixel layers): a toggle there would change
+    nothing on the card, so every stat refuses `unsupported-card` before a layer changes (it was a ValueError from the empty
+    render region: an `error` that failed the run). Pure Vessel's masks start on the canvas and reach past it: it toggles."""
+    path = _card(clone, GREEN_MAGE)[0]
+    parsed = {"card": {"hp": 7, "def": 4, "atk": 10, "spd": 7}}
+    for stat, value in (("hp", 3), ("def", 5), ("atk", 6), ("spd", 10)):
+        psd = PSDImage.open(path)
+        before = [layer.visible for layer in pe.template_rows(psd, stat)[0].digits.values()]
+        with pytest.raises(pe.Refused, match=rf"^unsupported-card: {stat}: the bar '{stat.capitalize()} Dark' lies outside the "
+                                             r"card \(digit masks \(960, \d+, 1773, \d+\) on the 1200x2400 canvas\)"):
+            pe.set_stat(psd, parsed, stat, value)
+        assert [layer.visible for layer in pe.template_rows(psd, stat)[0].digits.values()] == before
+    pure = PSDImage.open(_card(clone, PURE_VESSEL)[0])
+    edit = pe.set_stat(pure, {"card": {"hp": 7}}, "hp", 3)
+    x0, y0, x1, y1 = edit.region
+    assert [layer.name for layer in edit.layers] == ["3", "7"] and 0 <= x0 < x1 <= pure.width and 0 <= y0 < y1 <= pure.height
 
 
 def test_layer_records_fingerprint(clone):

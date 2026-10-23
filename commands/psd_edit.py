@@ -1397,10 +1397,16 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         value: 0-10 (one row) or 0-20 (two rows)
 
     Returns:
-        Edit over the toggled digits; raises Refused for other row shapes and ambiguous effects (unsupported-card),
-        values the rows cannot show (stat>10) and unreadable effect stacks (parity)
+        Edit over the toggled digits; raises Refused for other row shapes, a bar wholly off the canvas and ambiguous
+        effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect stacks (parity)
     """
     rows = template_rows(psd, stat)
+    for row in rows:                            # Green_Mage: masks below the canvas, the cells drawn as pixels
+        x0, y0, x1, y1 = union_box([tuple(layer.mask.bbox) for layer in row.digits.values()])
+        if x1 <= 0 or y1 <= 0 or x0 >= psd.width or y0 >= psd.height:
+            raise Refused("unsupported-card", f"{stat}: the bar {row.group.name!r} lies outside the card (digit masks "
+                                              f"{(x0, y0, x1, y1)} on the {psd.width}x{psd.height} canvas): a toggle "
+                                              "would change nothing on the card")
     old = stat_value(rows)
     if parsed["card"].get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the row shows {old}")

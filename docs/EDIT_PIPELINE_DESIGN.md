@@ -207,7 +207,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    hidden styled digit's block comes back, several such digits refuse `unsupported-card`; a hidden styled digit beside a visible
    unstyled one (Mettaton_EX Atk 6) is left alone, so the path matters (7 -> 10 -> 4 styles 4 with the 6's effect, 7 -> 4 moves
    nothing). Two rows (idea 13): Top shows the value and Bottom 0 up to 10, then Top none
-   and Bottom value - 10 (`psd_edit.set_stat`). Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
+   and Bottom value - 10 (`psd_edit.set_stat`). A bar whose digit masks lie wholly off the canvas refuses
+   `unsupported-card` before anything toggles (2026-10-23: Green_Mage's four bars sit below its 2400 px canvas and its
+   printed cells are pixel layers; the empty render region was a `ValueError`, an `error` that failed the run).
+   Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
    `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
@@ -491,7 +494,8 @@ past the 25% floor (a broken render), or for `parity` a box that misses the bar 
 the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
 carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
-+2 DEF, Despair...), `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
++2 DEF, Despair...), since 2026-10-23 a bar wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`),
+`stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
 Per card all-or-nothing; nothing bakeable = exit 0 with a one-line

@@ -604,6 +604,8 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) and a single
   visible Ability layer under another name. Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
+  A stat bar wholly off the canvas (Green Mage, the only one) refuses `unsupported-card` as a final verdict; it was an
+  `error` that failed the run until work/bake-verdicts (2026-10-23).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is
