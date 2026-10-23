@@ -52,6 +52,7 @@ RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exporte
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"               # its Name layer sits at the root
+MARX = "Creatures/Kirby/5 Stars/Marx.psd"                          # its Ability sits at the root, 'Ability FX: Glued' over it
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -477,6 +478,17 @@ def test_title_layer_is_the_one_the_parser_reads(clone, parser):
         assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
 
 
+def test_ability_layer_wherever_the_card_keeps_it(clone):
+    """ability_layer takes the single visible Ability layer in any group or at the root (NEXT_IDEAS 5b A: 92 cards keep it
+    outside the Text group); its FX layers go directly above its top-level group, the layer itself at the root."""
+    marx = PSDImage.open(_card(clone, MARX)[0])
+    layer = pe.ability_layer(marx)
+    assert layer.parent is marx and pe._top(layer) is layer
+    assert [fx.name for fx in pe.fx_layers(marx, layer)] == ["Ability FX: Glued"]
+    doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    assert pe._top(pe.ability_layer(doomer)) is pe._text_group(doomer)
+
+
 def test_name_redundancy_uses_the_printed_title(clone, parser):
     """A name edit is redundant when the bot already shows it (the parser's display_name, else the file name)."""
     path = _card(clone, MINI_DOOMER)[0]
@@ -848,6 +860,20 @@ def test_name_edit_on_the_title_the_parser_reads(clone, parser, chart, rel, reco
     saved = PSDImage.open(baked.psd_path)
     assert pe.read_name(saved, card_name(rel)) == new and pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
+
+
+@text_edit
+def test_ability_bake_at_the_root_keeps_its_fx_layer_above_it(clone, parser, chart, tmp_path):
+    """Marx's root Ability bakes through every gate; 'Ability FX: Glued' comes back directly above the Ability layer,
+    where Effect Layers.jsx puts it for a root layer, not above Text."""
+    psd_path = _card(clone, MARX)[0]
+    new = pe.normalize_ability(pe.parse_card(parser, psd_path, MARX)["card"]["ability"]).replace("Glued", "Glued at once", 1)
+    parsed, baked = _bake(clone, parser, MARX, {"ability": new}, tmp_path, chart)
+    assert baked.fx == ["Ability FX: Glued"] and pe.normalize_ability(baked.reparse["card"]["ability"]) == new
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(saved)
+    fx, = pe.fx_layers(saved, layer)
+    assert layer.parent is saved and saved.index(fx) == saved.index(layer) + 1
 
 
 @text_edit

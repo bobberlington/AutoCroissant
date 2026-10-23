@@ -147,7 +147,7 @@ class Edit:
     region: Optional[tuple]  # padded canvas bbox the edit can reach
     moves: list = field(default_factory=list)   # (record from, record to or None, block key): effect blocks moved or cleared
     hidden: list = field(default_factory=list)  # record indices of the overlay word layers an ability edit hid
-    fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above Text, bottom to top
+    fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer cut above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted first (derived state: all of the text layer's)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
 
@@ -319,6 +319,13 @@ def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
 # ========================
 # Layers
 # ========================
+def _top(layer):
+    """The layer's top-level group, or the layer at the root: Effect Layers.jsx puts an FX layer directly above it."""
+    while layer.parent is not None and layer.parent.parent is not None:
+        layer = layer.parent
+    return layer
+
+
 def _no_title(psd: PSDImage) -> str:
     """Why the parser reads no title layer (name_layer's refusal)."""
     group = _text_group(psd)
@@ -511,19 +518,16 @@ def story_style_drift(psd: PSDImage) -> list:
 
 def ability_layer(psd: PSDImage):
     """
-    The single visible Ability text layer directly under Text.
+    The single visible Ability text layer, in whatever group the developer put it (the parser reads it wherever it is).
 
     Returns:
-        The layer; raises Refused("unsupported-card") for hidden, several or stray Ability layers
+        The layer; raises Refused("unsupported-card") for none or several
     """
     visible = [layer for layer in psd.descendants()
                if _is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
     if len(visible) != 1:
         raise Refused("unsupported-card", f"{len(visible)} visible Ability layers")
-    layer = visible[0]
-    if layer.parent is not _text_group(psd):
-        raise Refused("unsupported-card", "Ability layer outside the Text group")
-    return layer
+    return visible[0]
 
 
 def icon_font(layer) -> Optional[str]:
@@ -934,7 +938,8 @@ def _cut_fx(psd: PSDImage, layer, name: str, mask: np.ndarray, color: np.ndarray
 
 def _regenerate_fx(psd: PSDImage, layer, text: str, styled: list, fonts, engine: tuple) -> list:
     """
-    One FX layer per styled status word of the rasterized layer, directly above the top-level Text group in text order.
+    One FX layer per styled status word of the rasterized layer, directly above its top-level group (the Text group;
+    the layer itself at the root) in text order, where Effect Layers.jsx puts it.
 
     Args:
         psd: The card
@@ -947,7 +952,7 @@ def _regenerate_fx(psd: PSDImage, layer, text: str, styled: list, fonts, engine:
     Returns:
         The new layers, bottom to top
     """
-    group = _text_group(psd)
+    group = _top(layer)
     offset = engine[0].from_layer(layer).text.find(text)
     if offset < 0:
         raise Refused("styled-word", "the engine's text differs from the layer's")
@@ -1223,7 +1228,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     takes its swatch (the chart is the authority, an off-swatch word is normalized). A chart status's FX layers are
     derived state (idea 14): every "<Ability> FX: ..." layer goes and one comes back per styled status word in the new text
     ("Blazing", "Frozen#2" for a repeat), the word's glyph pixels cut from the new raster under a copy of the chart
-    layer's effect blocks, directly above the top-level Text group as Effect Layers.jsx places them. A hand-made
+    layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx places them. A hand-made
     overlay word layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX
     layer standing in for it; one naming anything else refuses (unsupported-card). Any other FX layer refuses too, before
     anything changes (unsupported-card): a badge or token run's (queue A's gradient cards) or a word's the chart has no
@@ -1728,7 +1733,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     Re-parse the new PSD: the old parse with exactly the edited fields replaced, no new problems (a stat above 10
     reads STATS TOO HIGH by design when it sits on Top and Bottom rows; no EFFECT LAYER problem: the validator's
     coverage check is the FX layers' gate), one digit per edited row, the title read back for a name edit, and an
-    ability edit's FX layers back as declared: visible, styled, directly above Text, no overlay word layer showing.
+    ability edit's FX layers back as declared: visible, styled, directly above the ability's top-level group (_top), no
+    overlay word layer showing.
 
     Args:
         parser: offline_parser()
@@ -1750,14 +1756,15 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                     raise Refused("reparse", f"{stat}: row {row.group.name!r} shows {row.visible}")
     for edit in edits:
         if edit.field == "ability" and (edit.fx or edit.dropped or edit.hidden):
-            layer, group = ability_layer(psd), _text_group(psd)
+            layer = ability_layer(psd)
+            group = _top(layer)
             found = fx_layers(psd, layer)
             if [fx.name for fx in found] != [name for name, _ in edit.fx]:
                 raise Refused("reparse", f"FX layers after reopen: {[fx.name for fx in found]}")
             for k, fx in enumerate(found):
                 if (fx.parent is not psd or psd.index(fx) != psd.index(group) + 1 + k or not fx.is_visible()
                         or not _enabled_effects(fx, strict=True)):
-                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above Text")
+                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above {group.name!r}")
             if overlay_words(psd):
                 raise Refused("reparse", "overlay word layers still show over the ability")
     new = parse_card(parser, new_path, rel)
