@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from json import loads as json_loads
 from os import environ, fdopen, listdir, remove, walk
-from os.path import abspath, basename, dirname, isdir, isfile, join as path_join, splitext
+from os.path import abspath, basename, dirname, expanduser, isdir, isfile, join as path_join, splitext
 from re import IGNORECASE, match as re_match
 from subprocess import CalledProcessError, run
 from sys import version_info
@@ -27,7 +27,7 @@ from typing import Callable, Optional
 from requests.exceptions import RequestException
 
 from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH, EDITS_PATHS,
-                           ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+                           HISTORY_CLONE, ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
@@ -61,8 +61,7 @@ class CardBuild:
             (a duplicate's own Card Edits.json aliases count either way)
         etags: repository -> the last kept tree ETag (/update_stats keeps it between runs for a free 304)
         file_cache: repo path -> (blob sha, text) of the small files, kept between runs
-        legacy: History as /update_stats keeps it (a version per changed blob or move whose data changed; old paths
-            follow the card)
+        legacy: History as /update_stats keeps it (a version per changed blob or move whose data changed)
     """
     def __init__(self, db: StatsDatabase, report: Optional[Callable] = None, progress: Optional[Callable] = None,
                  aliases: Optional[dict] = None, etags: Optional[dict] = None, file_cache: Optional[dict] = None,
@@ -95,6 +94,7 @@ class CardBuild:
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self._recent: Optional[set] = None
         self.restored: list = []                 # archived cards whose PSD is back
+        self.returned: list = []                 # archived names back under another PSD (path and blob): new cards
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the build's history)
         self.replaced: dict = {}                 # legacy: name -> its card before, when its PSD changed or moved (history)
@@ -180,14 +180,18 @@ class CardBuild:
 
         Uses the most recent commit for timestamp, but preserves original author
         from the first commit if not already set.
+
+        Raises:
+            LookupError: no repo or no commit for the path: the card waits for the next run (_not_looked_up), so no
+                made-up date (once year 1000) is stored
         """
         if not repo:
-            return (datetime(1000, 1, 1).timestamp(), None)
+            raise LookupError(f"no repository to look up {path} in")
 
         pending = self._lookups.pop(path, None)                 # started beside the download
         commits = pending.result() if pending is not None else self._commit_page(path)
         if not commits:
-            return (datetime(1000, 1, 1).timestamp(), None)
+            raise LookupError(f"no commits found for {path}")
 
         # New card: its author is whoever wrote the FIRST commit (not who committed it). The authors file
         # (AUTHORS_PATH) corrects either afterwards.
@@ -207,18 +211,6 @@ class CardBuild:
     # ------------------------
     # The traversal
     # ------------------------
-    def _update_old_stats_paths(self) -> None:
-        """
-        Update paths in old_stats to match current paths.
-        This ensures historical entries reflect where the card is now located.
-        """
-        for name in self.db.old_stats:
-            if name in self.db.stats:
-                current_path = self.db.stats[name].path
-                # Update all historical entries to use the current path
-                for old_card in self.db.old_stats[name]:
-                    old_card.path = current_path
-
     def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
         """Changed = new, moved, an older parser or a different blob. Cards saved before blob shas: committed since the last update."""
         card = self.db.stats.get(name)
@@ -273,9 +265,8 @@ class CardBuild:
         self.changed += self._apply_edits()             # the duplicates' own edits
         self.changed += self._apply_dates(self._dates_from_response(resp, repository))
 
-        if self.legacy:                                 # the build keeps each version's own path
+        if self.legacy:                                 # each version keeps its own path (git dates it there)
             self._record_history()
-            self._update_old_stats_paths()
         if self.failed:                                 # no 304 next time: the failed files are fetched again
             self.etags.pop(repository, None)
             self._send_failures()
@@ -489,18 +480,40 @@ class CardBuild:
                 print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
+    def _card_psds(self, response) -> list:
+        """The tree's card PSDs (excluded folders left out), one per card name: of two PSDs with one name the stored
+        card's path stays (else the first in tree order) and the other is ignored, one line each (a clash would
+        otherwise flip the card between them and add a version at every run)."""
+        items, by_name = [], {}
+        for item in self._tree_items(response):
+            path = item.get("path", "")
+            if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
+                by_name.setdefault(card_name(path), []).append(item)
+                items.append(item)
+        skipped = set()
+        for name, found in by_name.items():
+            if len(found) < 2:
+                continue
+            stored = getattr(self.db.stats.get(name), "path", None)
+            keep = next((item for item in found if item.get("path") == stored), found[0])
+            others = [item.get("path", "") for item in found if item is not keep]
+            skipped.update(others)
+            self.report(f"Two PSDs share the card name {name}: {', '.join(item.get('path', '') for item in found)}; "
+                        f"{', '.join(others)} ignored until one is renamed.")
+        return [item for item in items if item.get("path", "") not in skipped]
+
     def _todo(self, response, force_update: bool) -> tuple[list, int]:
         """The tree's card PSDs to re-parse (path, name, blob) and how many stay; archived names back are restored."""
         todo, num_old = [], 0
-        for item in self._tree_items(response):
+        for item in self._card_psds(response):
             path = item.get("path", "")
-            if not path.endswith('.psd') or any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
-                continue
             name = card_name(path)
             self.db.seen_cards.append(name)
             if name not in self.db.stats and self.db.restore(name, path, item.get("sha")):  # same blob: no download
                 self.restored.append(name)
                 self.changed += 1
+            elif name not in self.db.stats and self.db.archive_tag(name):
+                self.returned.append(name)              # another PSD under an archived name: a new card, history kept
             if (force_update or CardAuthors.key(name) in self.only or path in self.again
                     or self._psd_changed(name, path, item.get("sha"))):
                 todo.append((path, name, item.get("sha")))
@@ -614,30 +627,34 @@ class CardBuild:
                 self.db.add_history(name, old)
         self.replaced = {}
 
-    def _archive_sources(self, names: list) -> None:
+    def _archive_sources(self, names: list, backfilled: tuple = ()) -> None:
         """
-        Each archived card's deleting commit (its path's newest, one request, run side by side) and, for a rename,
-        the new name: the card new or changed this run with its blob, else the commit's rename of the path (its files
-        read once per commit, only when this run parsed a new blob or restored a card). A failure leaves them unset.
+        Each archived card's deleting commit (its path's newest, one request, run side by side), its date the tag's
+        `at`, and, for a rename, the new name: the card new or changed this run with its blob, else the commit's rename
+        of the path (its files read once per commit, only when this run parsed a new blob or restored a card; for a
+        card archived before this run, any listed card). A failure leaves them unset.
         """
-        tags = {name: self.db.archive_tag(name) for name in names}
+        tags = {name: self.db.archive_tag(name) for name in [*names, *backfilled]}
         tags = {name: tag for name, tag in tags.items() if tag}
         fresh = set(self.new_blobs.values()) | set(self.restored)
+        listed = set(self.db.stats)
         renames: dict = {}                                      # commit sha -> {old path: new name}
         with ThreadPoolExecutor(LOOKUP_WORKERS) as pool:
             pages = {name: pool.submit(self._commit_page, tag["path"]) for name, tag in tags.items()}
         for name, tag in tags.items():
             renamed = self.new_blobs.get(tag["blob"]) if tag.get("blob") else None
+            known = listed if name in backfilled else fresh
             try:
                 commits = pages[name].result()
                 if commits:
                     sha = tag["commit"] = commits[0].sha
-                    if renamed is None and fresh:
+                    if renamed is None and known:
                         if sha not in renames:
                             renames[sha] = {f.previous_filename: card_name(f.filename)
                                             for f in commits[0].files if f.status == "renamed"}
                         renamed = renames[sha].get(tag["path"])
-                        renamed = renamed if renamed in fresh else None
+                        renamed = renamed if renamed in known else None
+                    tag["at"] = commits[0].commit.committer.date.timestamp()     # git's date, not the run's clock
             except Exception as e:
                 print(f"{tag['path']}: deleting commit not found ({e})")
             if renamed:
@@ -720,6 +737,54 @@ def archived_names(db: StatsDatabase, names: list) -> list:
     return out
 
 
+def history_index(clone: Optional[str] = None):
+    """The card repo's card_history.GitIndex from the bot's history clone (HISTORY_CLONE, which repo_history fetches;
+    no blob is read), or None without a readable one (one console line; what needs it waits for the next run)."""
+    from commands.card_history import GitIndex
+    folder = expanduser(clone or HISTORY_CLONE)
+    if not isdir(folder):
+        return None
+    try:
+        return GitIndex.from_git(folder, CARD_BRANCH)
+    except (OSError, ValueError, CalledProcessError) as e:
+        print(f"History clone {folder} not read ({e}); archive dates from git wait for the next /update_stats")
+        return None
+
+
+def clean_history(db: StatsDatabase, index=None) -> tuple:
+    """
+    The one-time history cleanup at each /update_stats (with nothing left it changes nothing): stored versions in
+    today's forms (card_history.normalize), duplicates dropped (dedupe), and with the history clone's index the
+    archive tags dated from their deleting commit, an exact rename's new name or MDW folder recorded (date_archive).
+
+    Returns:
+        (versions normalized, versions dropped, archived names whose tag git dated, renamed or moved): (name, ...) lists
+    """
+    from commands.card_history import Refined, date_archive, dedupe, normalize
+    normalized = normalize(db.stats, db.old_stats)
+    deduped = dedupe(db.stats, db.old_stats)
+    dated: list = []
+    if index is not None:
+        found = Refined()
+        date_archive(db.stats, db.old_stats, index, found, backfill=False)      # tagging stays the guarded prune's
+        dated = sorted(set(found.tags_dated) | {name for name, _ in found.renamed} | set(found.retired))
+    return (normalized, deduped, dated)
+
+
+def history_line(normalized: list, deduped: list, dated: list) -> Optional[str]:
+    """clean_history's one line, or None when it changed nothing."""
+    if not (normalized or deduped or dated):
+        return None
+    cards = len({name for name, _ in deduped})
+    parts = [f"{len(deduped)} duplicate version{'' if len(deduped) == 1 else 's'} removed "
+             f"({cards} card{'' if cards == 1 else 's'})"]
+    if normalized:
+        parts.append(f"{len(normalized)} brought to today's series and type names")
+    if dated:
+        parts.append(f"archive tag{'' if len(dated) == 1 else 's'} from git: {', '.join(dated)}")
+    return "History: " + ", ".join(parts) + "."
+
+
 def report_archive(build: CardBuild, gone: list, backfilled: list) -> None:
     """The archived, backfilled and restored names, one message each."""
     if gone:
@@ -729,6 +794,8 @@ def report_archive(build: CardBuild, gone: list, backfilled: list) -> None:
                      + ", ".join(backfilled))
     if build.restored:
         build.report("Restored (PSD back in the card repo): " + ", ".join(sorted(build.restored)))
+    if build.returned:
+        build.report("Back under a new PSD (the archived record stays as history): " + ", ".join(sorted(build.returned)))
 
 
 # ========================
@@ -749,22 +816,20 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
         The formatted problem card messages
     """
     from commands import psd_details                # lazy: fontTools loads here, not at startup
-    from commands.card_history import dedupe
     db = build.db
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
     build.details = psd_details.load()
-    deduped = dedupe(db.stats, db.old_stats)         # versions archived twice before 2026-10-22 (none after once)
-    if deduped:
-        cards = len({name for name, _ in deduped})
-        build.report(f"History: {len(deduped)} duplicate version{'' if len(deduped) == 1 else 's'} removed "
-                     f"({cards} card{'' if cards == 1 else 's'}).")
+    cleaned = clean_history(db, history_index())     # one-time: duplicates archived before 2026-10-22, old forms, dates
+    line = history_line(*cleaned)
+    if line:
+        build.report(line)
     problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
 
     gone, backfilled = db.prune_clean_cards(at) if can_prune(build) else ([], [])
-    if gone:
-        build._archive_sources(gone)
+    if gone or backfilled:
+        build._archive_sources(gone, tuple(backfilled))
     report_archive(build, gone, backfilled)
-    if num_changed > 0 or gone or backfilled or build.changed or deduped or db.stale_archives():
+    if num_changed > 0 or gone or backfilled or build.changed or line or db.stale_archives():
         db.save()
     if build.tree is not None:                      # new blobs in; gone blobs out unless truncated or archived
         refilled = psd_details.refill(build.details, build.font_index) if build.font_index is not None else 0
@@ -1282,7 +1347,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             out.problems.append({"card": name, "path": card.path, "notes": notes})
 
     same_blob = [n for n, (o, _, sha) in run_build.reparsed.items() if o is not None and getattr(o, "blob_sha", None) == sha]
-    out.refused, out.lifted = gates(before, db.stats, details_before, len(details), gone, same_blob, approved,
+    lost = [n for n in gone if not (db.archive_tag(n) or {}).get("renamed_to")]      # an exact rename loses no card
+    out.refused, out.lifted = gates(before, db.stats, details_before, len(details), lost, same_blob, approved,
                                     run_build.only, allow_archive)
     if carried and not full:
         out.lifted = {g: f"full (approved by {carried.get('approved_run') or 'an earlier run'})" if why == "full" else why
@@ -1552,7 +1618,10 @@ __all__ = [
     'archived_names',
     'build',
     'can_prune',
+    'clean_history',
     'gates',
+    'history_index',
+    'history_line',
     'load_aliases',
     'ls_tree',
     'main',

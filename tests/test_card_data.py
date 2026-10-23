@@ -324,6 +324,19 @@ def test_gate_refusal_exits_2_and_writes_nothing(cards, monkeypatch, capsys):
     assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK and "The Freezer" not in _read(cards)[0]
 
 
+def test_an_exact_rename_passes_g2(cards, monkeypatch):
+    """A renamed PSD (the same bytes under another name) archives the old name with renamed_to: no card is lost, so G2
+    lets it through at a ceiling of 0 (d64fc8d4 renamed 27 cards at once)."""
+    _build(cards, "--seed", str(cards.seed))
+    git(cards.repo, "mv", FREEZER, "Field/1 Stars/The_Big_Freezer.psd")
+    commit(cards.repo, "dave", 2000)
+    monkeypatch.setattr(cd, "ARCHIVE_MIN", 0)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old = _read(cards)[:2]
+    assert "The Big Freezer" in stats and old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == \
+        "The Big Freezer"
+
+
 def test_dry_run_and_errors(cards, tmp_path):
     assert _build(cards, "--seed", str(cards.seed), "--dry-run")[0] == cd.EXIT_OK and not any(cards.db.iterdir())
     assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ and no seed

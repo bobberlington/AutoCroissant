@@ -3,7 +3,9 @@ import hashlib
 import json
 import os
 import pickle
+from datetime import datetime, timezone
 from threading import Thread
+from types import SimpleNamespace
 
 import pytest
 from requests import HTTPError
@@ -244,11 +246,25 @@ def test_moved_card(github, capsys):
     _run()
     stats, old = _saved()
     assert stats["The Freezer"].path == "Field/2 Stars/The_Freezer.psd" and stats["The Freezer"].stars == 2
-    assert [c.path for c in old["The Freezer"]] == ["Field/2 Stars/The_Freezer.psd"]   # history follows the move
+    assert [c.path for c in old["The Freezer"]] == [FREEZER]           # each version keeps its own path (git dates it)
     assert [c.stars for c in old["The Freezer"]] == [1]
     out = capsys.readouterr().out
     assert "0 cards changed or new, 1 unchanged, 1 moved." in out and "Archived" not in out   # a move archives nothing
     assert not any(c.archived for versions in old.values() for c in versions) and pa.stats_db.archived() == {}
+
+
+def test_two_psds_with_one_name_never_flip_the_card(github, psds, capsys):
+    """A copy of The Freezer's PSD under another folder (another blob): the stored card keeps its path, the copy is
+    ignored with one line, and no run moves the card or adds a version."""
+    _run()
+    github.files["Field/2 Stars/The_Freezer.psd"] = psds[OTHER]
+    capsys.readouterr()
+    for _ in range(2):
+        _run()
+        stats, old = _saved()
+        assert stats["The Freezer"].path == FREEZER and "The Freezer" not in old
+    assert ("Two PSDs share the card name The Freezer: Field/1 Stars/The_Freezer.psd, Field/2 Stars/The_Freezer.psd; "
+            "Field/2 Stars/The_Freezer.psd ignored until one is renamed.") in capsys.readouterr().out
 
 
 def test_deleted_card_archived_with_a_change(github, psds):
@@ -817,8 +833,8 @@ def test_change_kill_between_the_saves_keeps_one_history(github, psds, monkeypat
 
 
 def test_move_kill_between_the_saves_keeps_one_history(github, monkeypatch):
-    """A same-blob move killed before stats.pkl: its history entry already has the new path; the next run replaces
-    it instead of doubling it."""
+    """A same-blob move killed before stats.pkl: its history entry (at its own path) is already saved; the next run
+    replaces it instead of doubling it."""
     import commands.card_models as cm
     _run()
     moved = "Field/2 Stars/The_Freezer.psd"
@@ -826,11 +842,11 @@ def test_move_kill_between_the_saves_keeps_one_history(github, monkeypatch):
     real = _kill_on(monkeypatch, cm.STATS_PKL)
     with pytest.raises(KeyboardInterrupt):
         _run()
-    assert [c.path for c in _saved()[1]["The Freezer"]] == [moved]
+    assert [c.path for c in _saved()[1]["The Freezer"]] == [FREEZER]
     _restart(monkeypatch, real)
     _run()
     stats, old = _saved()
-    assert stats["The Freezer"].path == moved and [(c.path, c.stars) for c in old["The Freezer"]] == [(moved, 1)]
+    assert stats["The Freezer"].path == moved and [(c.path, c.stars) for c in old["The Freezer"]] == [(FREEZER, 1)]
 
 
 def test_restore_reparse_kill_between_the_saves_stays_archived(github, psds, monkeypatch):
@@ -902,7 +918,8 @@ def test_another_psd_under_an_archived_name_is_a_new_card(github, psds, monkeypa
     assert stats["The Freezer"].author == "Newcomer" and stats["The Freezer"].blob_sha == _sha(psds[OTHER])
     assert [(c.blob_sha, c.archived) for c in old["The Freezer"]] == [(gone.blob_sha, None)]
     assert pa.stats_db.archived() == {}
-    assert "Restored" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Restored" not in out and "Back under a new PSD (the archived record stays as history): The Freezer" in out
 
 
 def test_rename_onto_a_listed_name_records_renamed_to(github, psds):
@@ -920,8 +937,9 @@ class _File:
 
 
 class _Commit:
-    def __init__(self, sha, files=()):
+    def __init__(self, sha, files=(), at=TIME - 500):
         self.sha, self._files = sha, list(files)
+        self.commit = SimpleNamespace(committer=SimpleNamespace(date=datetime.fromtimestamp(at, timezone.utc)))
 
     @property
     def files(self):
@@ -942,6 +960,7 @@ def test_archive_records_the_deleting_commit(github, psds, monkeypatch, capsys):
     _run()
     old = _saved()[1]
     assert old["The Freezer"][0].archived["commit"] == "f" * 40 and "renamed_to" not in old["The Freezer"][0].archived
+    assert old["The Freezer"][0].archived["at"] == TIME - 500           # the deleting commit's date, not the run's
     assert old["Mini Doomer"][0].archived["commit"] == "d" * 40
     assert old["Mini Doomer"][0].archived["renamed_to"] == "Mega Doomer"
     assert "Mini Doomer (now Mega Doomer), The Freezer" in capsys.readouterr().out
@@ -991,6 +1010,50 @@ def test_failed_commit_lookup_still_archives(github, monkeypatch, capsys):
     old = _saved()[1]
     assert old["The Freezer"][0].archived["commit"] is None
     assert f"{FREEZER}: deleting commit not found (502 Server Error)" in capsys.readouterr().out
+
+
+def _git(repo, *args, at=None):
+    import subprocess
+    stamp = {} if at is None else {"GIT_AUTHOR_DATE": f"@{at} +0000", "GIT_COMMITTER_DATE": f"@{at} +0000"}
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
+                          env={**os.environ, "GIT_AUTHOR_NAME": "Zomoroko", "GIT_AUTHOR_EMAIL": "z@x",
+                               "GIT_COMMITTER_NAME": "Zomoroko", "GIT_COMMITTER_EMAIL": "z@x", **stamp}).stdout
+
+
+def test_history_clone_dates_archive_tags(github, psds, tmp_path, monkeypatch, capsys):
+    """ZOEY!!!!!, archived by the run's clock (2026-10-22) though git renamed it to Z!!!!! (same bytes) months before:
+    with the bot's history clone the cleanup gives its tag the deleting commit's date and the new name, once."""
+    import commands.card_data as cd
+    zoey, z = "Creatures/Other/5 Stars/ZOEY!!!!!.psd", "Creatures/Other/5 Stars/Z!!!!!.psd"
+    repo = tmp_path / "cards"
+    (repo / "Creatures/Other/5 Stars").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / zoey).write_bytes(b"zoey")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "ZOEY", at=1000)
+    _git(repo, "mv", zoey, z)
+    _git(repo, "commit", "-q", "-m", "Z!!!!!!", at=2000)
+    renaming = _git(repo, "rev-parse", "HEAD").strip()
+    _git(tmp_path, "clone", "-q", "--bare", str(repo), str(tmp_path / "history.git"))
+    monkeypatch.setattr(cd, "HISTORY_CLONE", str(tmp_path / "history.git"))
+    github.files[z] = psds[OTHER]
+    _run()
+    gone = pa.CardInfo(name="ZOEY!!!!!", card_type="creature", path=zoey, ability="Was a card.", timestamp=500.0,
+                       archived={"at": TIME, "path": zoey, "blob": None, "commit": None, "backfill": True})
+    _seed_old_stats(gone)
+    capsys.readouterr()
+    _run()
+    tag = _saved()[1]["ZOEY!!!!!"][0].archived
+    assert (tag["at"], tag["commit"], tag["renamed_to"]) == (2000.0, renaming, "Z!!!!!")
+    line = "History: 0 duplicate versions removed (0 cards), archive tag from git: ZOEY!!!!!."
+    assert line in capsys.readouterr().out
+    _run()
+    assert "History:" not in capsys.readouterr().out and _saved()[1]["ZOEY!!!!!"][0].archived == tag
+    old = _saved()[1]                                           # a lost stats.pkl: the cleanup tags nothing (prune's job)
+    old["Lost Card"] = [_gone_card("Lost Card")]
+    db = pa.StatsDatabase()
+    db.stats, db.old_stats = {}, old
+    assert cd.clean_history(db, cd.history_index())[2] == [] and db.old_stats["Lost Card"][0].archived is None
 
 
 def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
