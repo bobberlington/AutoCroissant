@@ -1,0 +1,375 @@
+"""
+card_guards (the push guards' driver): a card repo made here with git (fixture PSDs, every case of PUSH_GUARDS.md 4.2,
+bot commits left out), check end to end on it (the report, the one Discord post without mentions or previews, the plan),
+land against a fake GitHub (superseded cards, a moved head, the quiet wait) and in a local clone, the replay of the real
+push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12 Reactions2 "PNG still current"), the
+Action's sparse copy (SPARSE_FILES) and card-guards.yml's shape.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from sys import executable
+
+import pytest
+from PIL import Image, ImageDraw
+
+import commands.card_guards as cg
+import commands.git_commit as gc
+from commands.github_api import blob_sha
+from test_png_export import card, fixture_psd
+
+# ========================
+# Configuration
+# ========================
+REPO = Path(__file__).resolve().parents[1]
+FOLDER = "Items/Heal/2 Stars"
+WORKFLOW = Path(os.environ.get("CARD_GUARDS_YML", "")) if os.environ.get("CARD_GUARDS_YML") else None
+
+
+# ========================
+# A card repo
+# ========================
+def _git(root, *args, author="Base", subject=None):
+    env = {**os.environ, "GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": f"{author.lower()}@example.com",
+           "GIT_COMMITTER_NAME": author, "GIT_COMMITTER_EMAIL": f"{author.lower()}@example.com"}
+    if author == "AutoCroissant":
+        env.update(GIT_AUTHOR_EMAIL=gc.AUTHOR["email"], GIT_COMMITTER_EMAIL=gc.AUTHOR["email"])
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+
+def _commit(root, message, author="Base"):
+    _git(root, "add", "-A", author=author)
+    _git(root, "commit", "-q", "-m", message, author=author)
+    return _git(root, "rev-parse", "HEAD")
+
+
+def _psd(root, work, rel, image):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fixture_psd(work, image, Path(rel).stem)
+    shutil.copy(work / f"{Path(rel).stem}.psd", path)
+
+
+def _png(root, rel, image):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path)
+
+
+@pytest.fixture
+def cards(tmp_path):
+    """(root, base commit, push commits): the base tree, then Alice's push and two bot commits."""
+    root = tmp_path / "cards"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    work = tmp_path / "psds"
+    work.mkdir()
+    titled = card()
+    ImageDraw.Draw(titled).rectangle((40, 70, 55, 85), fill=(0, 0, 0))
+    for stem in ("Snack", "Bread", "Gone", "Lonely", "Kept", "Bot_Card"):
+        _psd(root, work, f"{FOLDER}/{stem}.psd", card())
+        _png(root, f"{FOLDER}/{stem}.png", card())
+    _png(root, f"{FOLDER}/Snack2.png", titled)                       # a numbered PNG of Snack.psd
+    _psd(root, work, "Creatures/Other/3 Stars/Old_Name.psd", card())
+    _png(root, "Creatures/Other/3 Stars/Old_Name.png", card())
+    _psd(root, work, "MDW/Template.psd", card())
+    _png(root, "Types/fire.png", card(size=(8, 8)))
+    base = _commit(root, "base")
+    green = card(colour=(0, 255, 0))
+    _psd(root, work, f"{FOLDER}/Snack.psd", green)                    # stale: PSD without its PNG
+    _psd(root, work, f"{FOLDER}/Bread.psd", green)                    # pair: PSD and PNG together
+    _png(root, f"{FOLDER}/Bread.png", green)
+    _psd(root, work, f"{FOLDER}/New_Card.psd", green)                 # new: no PNG
+    (root / "Creatures/Other/3 Stars/Old_Name.psd").rename(root / "Creatures/Other/3 Stars/New_Name.psd")   # rename
+    (root / f"{FOLDER}/Gone.psd").unlink()                            # deleted: its PNG stays
+    _png(root, f"{FOLDER}/Lonely.png", green)                         # PNG pushed alone, not matching its PSD
+    (root / f"{FOLDER}/Kept.png").unlink()                            # PNG deleted, PSD kept
+    _psd(root, work, "MDW/Template.psd", green)                       # not a card
+    alice = _commit(root, "Alice's cards", author="Alice")
+    _psd(root, work, f"{FOLDER}/Bot_Card.psd", green)
+    bot = _commit(root, "Card edits: 1 baked", author="AutoCroissant")
+    return root, base, alice, bot
+
+
+# ========================
+# The push range and the jobs
+# ========================
+def test_jobs_cover_every_case(cards):
+    root, base, alice, bot = cards
+    source = cg.Source(str(root))
+    jobs, skipped, notes, tree = cg.plan_jobs(source, base, bot, "actor")
+    got = {(Path(j.psd).name, j.case, Path(j.png).name if j.png else "") for j in jobs}
+    assert got == {("Snack.psd", "stale", "Snack.png"), ("Bread.psd", "pair", "Bread.png"),
+                   ("New_Card.psd", "new", "New_Card.png"), ("New_Name.psd", "rename", "New_Name.png"),
+                   ("Gone.psd", "deleted", "Gone.png"), ("Lonely.psd", "png-only", "Lonely.png"),
+                   ("Kept.psd", "png-deleted", "Kept.png")}
+    assert set(skipped) == {f"{FOLDER}/Bot_Card.psd"} and notes == []
+    snack = next(j for j in jobs if j.case == "stale")
+    assert snack.numbered == {f"{FOLDER}/Snack2.png": tree[f"{FOLDER}/Snack2.png"][1]} and snack.login == "Alice"
+    assert snack.commit == alice and snack.psd_old and snack.psd_new and snack.png_old == tree[f"{FOLDER}/Snack.png"][1]
+    rename = next(j for j in jobs if j.case == "rename")
+    assert rename.copy_from == tree.get("Creatures/Other/3 Stars/Old_Name.png", ("", ""))[1]
+    only = cg.plan_jobs(source, base, bot, "actor", {"snack"})[0]
+    assert [j.case for j in only] == ["stale"]
+
+
+def test_push_range_resolves_before(cards):
+    root, base, alice, bot = cards
+    source = cg.Source(str(root))
+    assert cg.push_range(source, base, bot) == (base, bot, [])
+    assert cg.push_range(source, "", bot)[0] == alice                     # a dispatch: the first parent
+    assert cg.push_range(source, cg.ZEROS, alice)[:2] == (base, alice)
+    _, _, notes = cg.push_range(source, "f" * 40, bot)
+    assert cg.push_range(source, "f" * 40, bot)[0] == alice and "lacks" in notes[0]
+    assert cg.push_range(source, bot, alice)[0] == base                   # not an ancestor: a force push
+    assert cg.push_range(source, "", base)[0] == cg.EMPTY_TREE            # a root commit
+    with pytest.raises(gc.Transient):
+        cg.push_range(source, base, "e" * 40)
+
+
+def test_bot_writers():
+    assert cg.Writer("x", "AutoCroissant", "a@b", "anything").bot
+    assert cg.Writer("x", "Someone", gc.AUTHOR["email"], "anything").bot
+    assert all(cg.Writer("x", "Alice", "a@b", f"{s} 2 PNGs").bot for s in cg.BOT_SUBJECTS)
+    assert not cg.Writer("x", "Alice", "a@b", "Card editing by hand").bot
+
+
+# ========================
+# check, end to end
+# ========================
+def test_check_end_to_end(cards, tmp_path):
+    root, base, alice, bot = cards
+    out = tmp_path / "out"
+    data = cg.check(str(root), bot, base, "o/cards", "actor", mode="report", out=str(out), workers=1)
+    by = {Path(c["psd"]).stem: c for c in data["cards"]}
+    snack = by["Snack"]
+    assert snack["export"]["outcome"] == "re-exported" and snack["export"]["writer"] == "tool"
+    assert [w["path"] for w in snack["writes"]] == [f"{FOLDER}/Snack.png", f"{FOLDER}/Snack2.png"]
+    for write in snack["writes"]:
+        assert blob_sha((out / write["file"]).read_bytes()) == write["sha"]
+    assert snack["expect"] == {f"{FOLDER}/Snack.psd": cg.Source(str(root)).tree(bot)[f"{FOLDER}/Snack.psd"][1],
+                               f"{FOLDER}/Snack.png": cg.Source(str(root)).tree(bot)[f"{FOLDER}/Snack.png"][1],
+                               f"{FOLDER}/Snack2.png": cg.Source(str(root)).tree(bot)[f"{FOLDER}/Snack2.png"][1]}
+    assert by["New_Card"]["export"]["outcome"] == "re-exported" and by["New_Card"]["writes"][0]["path"] == f"{FOLDER}/New_Card.png"
+    assert by["New_Name"]["writes"][0]["sha"] == cg.Source(str(root)).tree(base)["Creatures/Other/3 Stars/Old_Name.png"][1]
+    assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
+    assert by["Lonely"]["r10"]["ok"] is False and "push the PSD too?" in by["Lonely"]["told"][0]
+    assert by["Gone"]["told"] == ["Gone.png is left without its PSD"]
+    assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
+    assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary == {"after": bot, "cards": 7, "told": summary["told"], "writes": 4, "errors": 0} and summary["told"] >= 2
+    report = (out / "report.md").read_text()
+    assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
+    payload = json.loads((out / "discord.json").read_text())
+    assert payload["allowed_mentions"] == {"parse": []} and payload["flags"] == 4 and "<@" not in payload["content"]
+    lines = payload["content"].splitlines()
+    assert all(re.fullmatch(r"\S+ pushed .+ with these issues: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{40}\)", l)
+               for l in lines), lines
+    assert any(l.startswith("Alice pushed Lonely with these issues: Lonely.png does not match its PSD") for l in lines)
+    assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
+
+
+def test_whole_tree(cards, tmp_path):
+    root, base, alice, bot = cards
+    data = cg.check(str(root), bot, whole_tree=True, out=str(tmp_path / "out"), workers=1)
+    assert {Path(c["psd"]).stem for c in data["cards"]} == {"Snack", "Bread", "Lonely", "Kept", "Bot_Card", "New_Card", "New_Name"}
+    assert all(c["case"] == "whole" and not c["writes"] for c in data["cards"])
+    assert {Path(c["psd"]).stem for c in data["cards"] if c["r10"].get("ok") is False} == {"Snack", "Lonely", "Bot_Card"}
+
+
+def test_discord_fits_and_says_nothing_without_issues():
+    entry = {"login": "Zomoroko", "card": "Skullord", "told": ["the Ability layer is outside the Text group"], "commit": "7" * 40}
+    data = {"after": "a" * 40, "cards": [dict(entry, card=f"Card {i}") for i in range(80)]}
+    payload = cg.discord_payload(data, "MichaelJSr/TTSCardMaker")
+    assert len(payload["content"]) <= cg.DISCORD_LIMIT and payload["flags"] == 4
+    last = payload["content"].splitlines()[-1]
+    assert re.fullmatch(r"\.\.\. and \d+ more cards: \[details\]\(https://github\.com/MichaelJSr/TTSCardMaker/commit/a{40}\)", last)
+    one = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "MichaelJSr/TTSCardMaker")["content"]
+    assert one == ("Zomoroko pushed Skullord with these issues: the Ability layer is outside the Text group. "
+                   "[77777777](https://github.com/MichaelJSr/TTSCardMaker/commit/" + "7" * 40 + ")")
+    assert cg.discord_payload({"after": "a" * 40, "cards": [dict(entry, told=[])]}, "o/r") == {}
+
+
+def test_message():
+    landed = [{"login": "Zomoroko", "commit": "7cb4c867" + "0" * 32,
+               "writes": [{"path": "Items/X.png", "kind": "png", "line": "re-exported from the PSD's composite (12 px changed)"},
+                          {"path": "Items/Y.psd", "kind": "psd", "line": "Txt2 synced"}]}]
+    text = cg.message(landed, "f" * 40)
+    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed (push {'f' * 8})"
+    assert "Items/X.png: re-exported from the PSD's composite (12 px changed) (Zomoroko, 7cb4c867)" in text
+    assert text.rstrip().endswith(f"Guarded-push: {'f' * 40}") and "Edit-by" not in text
+
+
+# ========================
+# land
+# ========================
+class FakeHub:
+    """snapshot_at / ref_head / recent_paths / commit_files for land."""
+    def __init__(self, tree, heads=("h1",), recent=()):
+        self.tree, self.heads, self.recent, self.commits, self.calls = dict(tree), list(heads), set(recent), [], 0
+
+    def install(self, monkeypatch):
+        monkeypatch.setattr(cg, "ref_head", lambda repo: self.heads[min(self.calls, len(self.heads) - 1)])
+        monkeypatch.setattr(cg, "snapshot_at", lambda repo, head: cg.Snapshot(repo, head, {"tree": {"sha": "t" + head}}, self.tree))
+        monkeypatch.setattr(cg, "recent_paths", lambda repo, head, now, local="": self.recent)
+        monkeypatch.setattr(cg, "commit_files", self.commit)
+
+    def commit(self, repo, head, base_tree, modes, files, message, uploaded=None):
+        self.calls += 1
+        if self.calls < len(self.heads):
+            return None                                 # the head moved
+        self.commits.append((head, sorted(files), message))
+        return "c" * 40
+
+
+def _plan(tmp_path, entries):
+    out = tmp_path / "plan"
+    (out / "files").mkdir(parents=True)
+    cards = []
+    for name, path, data, expect in entries:
+        (out / "files" / name).write_bytes(data)
+        cards.append({"card": name, "login": "Alice", "commit": "a" * 40, "expect": expect,
+                      "writes": [{"path": path, "file": f"files/{name}", "sha": blob_sha(data), "kind": "png", "line": "made"}]})
+    (out / "plan.json").write_text(json.dumps({"repo": "o/r", "after": "f" * 40, "cards": cards}))
+    return str(out / "plan.json")
+
+
+def test_land_commits_what_still_holds(tmp_path, monkeypatch):
+    plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1", "X/A.png": "p1"}),
+                            ("B", "X/B.png", b"b", {"X/B.psd": "s2", "X/B.png": "p2"}),
+                            ("C", "X/C.png", b"c", {"X/C.psd": "s3", "X/C.png": ""})])
+    hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1"), "X/B.psd": ("100644", "moved"),
+                   "X/B.png": ("100644", "p2"), "X/C.psd": ("100644", "s3")}, heads=("h1", "h2"), recent={"X/C.psd"})
+    hub.install(monkeypatch)
+    report = cg.land(plan)
+    assert report["sha"] == "c" * 40 and report["landed"] == ["A"]
+    assert report["dropped"] == [["B", "superseded: X/B.psd changed on the branch"], ["C", "superseded: a later push touched X/C.psd"]]
+    assert len(hub.commits) == 1 and hub.commits[0][:2] == ("h2", ["X/A.png"])            # retried on the new head
+    assert hub.commits[0][2].startswith("Card guards: 1 PNG re-exported (push ffffffff)")
+
+
+def test_land_waits_for_the_quiet_window(tmp_path, monkeypatch):
+    plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1"})])
+    FakeHub({"X/A.psd": ("100644", "s1")}).install(monkeypatch)
+    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
+    waits = []
+    report = cg.land(plan, quiet_from="2026-10-22T17:50:00Z", dry_run=True, sleep=waits.append, now=lambda: now)
+    assert waits == [(timedelta(minutes=20) + cg.QUIET_MARGIN).total_seconds()] and report["landed"] == ["A"] and report["sha"] == ""
+
+
+def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
+    plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1"})])
+    (Path(plan).parent / "files" / "A").write_bytes(b"changed")
+    FakeHub({"X/A.psd": ("100644", "s1")}).install(monkeypatch)
+    with pytest.raises(gc.Transient, match="does not hash"):
+        cg.land(plan)
+
+
+def test_land_local_commits_in_the_clone(cards, tmp_path):
+    root, base, alice, bot = cards
+    out = tmp_path / "out"
+    cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert report["sha"] and report["sha"] == _git(root, "rev-parse", "HEAD")              # the checkout moved to it
+    assert _git(root, "log", "-1", "--format=%an %s", report["sha"]).startswith("AutoCroissant Card guards: 4 PNGs re-exported")
+    changed = set(_git(root, "show", "--name-only", "--format=", report["sha"]).splitlines())
+    assert changed == {f"{FOLDER}/Snack.png", f"{FOLDER}/Snack2.png", f"{FOLDER}/New_Card.png", "Creatures/Other/3 Stars/New_Name.png"}
+    again = cg.check(str(root), report["sha"], bot, mode="on", out=str(tmp_path / "again"), workers=1)
+    assert again["cards"] == []                                                             # the bot's commit is never guarded
+
+
+# ========================
+# The real push of 2026-10-22 15:18 (the clone, read-only)
+# ========================
+def test_replay_of_the_stale_png_push(clone, tmp_path):
+    source = cg.Source(str(clone))
+    if not (source.commit("38c55bd3") and source.commit("07589cc7")):
+        pytest.skip("the clone lacks the push")
+    data = cg.check(str(clone), "07589cc7", "38c55bd3", out=str(tmp_path / "out"), workers=1)
+    by = {c["card"]: c for c in data["cards"]}
+    assert len(by) == 19
+    assert {name for name, c in by.items() if c["export"].get("outcome") == "current"} == {"God Tamer", "Bubble", "12 Reactions2"}
+    assert all(not c["writes"] for c in data["cards"])
+    assert data["discord"]["content"].startswith("MichaelJSr pushed God Tamer with these issues: the Ability layer is outside "
+                                                 "the Text group. [dc37f4ad]")
+    assert len(data["discord"]["content"].splitlines()) == 1
+
+
+# ========================
+# The Action
+# ========================
+def test_action_shaped_copy(tmp_path):
+    """Exactly SPARSE_FILES (card-guards.yml's list), no config.py: --help works and the closure is that list."""
+    bot = tmp_path / "bot"
+    for rel in cg.SPARSE_FILES:
+        assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
+        (bot / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO / rel, bot / rel)
+    for command in ("--help", "check --help", "land --help"):
+        done = subprocess.run([executable, "-m", "commands.card_guards", *command.split()], cwd=bot, capture_output=True,
+                              text=True, timeout=120)
+        assert done.returncode == 0, done.stderr
+    code = ("import sys, commands.card_guards, commands.txt2_repair; "
+            "print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer', 'pandas') if m in sys.modules)); "
+            "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
+    done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    bad, closure = done.stdout.splitlines()
+    assert bad == "[]"
+    assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == set(cg.SPARSE_FILES)
+    from test_card_bake import ALLOWED_IMPORTS, third_party_imports
+    extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
+    assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
+
+
+def _workflow(clone) -> Path:
+    path = WORKFLOW or (clone / ".github" / "workflows" / "card-guards.yml")
+    if not path.exists():
+        pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file)")
+    return path
+
+
+def test_workflow_shape(clone):
+    """card-guards.yml: push on PSDs and PNGs behind CARD_GUARDS, dry dispatches by default, a run per push, the bot's
+    commits skipped, the sparse list = SPARSE_FILES, the fork pin shared with card-edits.yml, secrets by name only, no ping."""
+    yaml = pytest.importorskip("yaml")
+    path = _workflow(clone)
+    text = path.read_text(encoding="utf-8")
+    doc = yaml.safe_load(text)
+    on = doc[True]
+    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG"]}
+    inputs = on["workflow_dispatch"]["inputs"]
+    assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
+    assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
+                                           "format('card-guards-{0}', github.run_id) }}") and doc["concurrency"]["cancel-in-progress"] is False
+    job = doc["jobs"]["guard"]
+    assert "github.actor != 'AutoCroissant'" in job["if"] and "github.actor != 'github-actions[bot]'" in job["if"]
+    assert "vars.CARD_GUARDS == 'report' || vars.CARD_GUARDS == 'on'" in job["if"]
+    assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
+                                  "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
+    steps = job["steps"]
+    bot = next(s for s in steps if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
+    assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
+    cards = next(s for s in steps if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
+    assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
+    pin = re.search(r"psd-tools@([\w.-]+)\"", text).group(1)
+    edits = path.parent / "card-edits.yml"
+    if edits.exists():
+        assert re.search(r"psd-tools@([\w.-]+)\"", edits.read_text(encoding="utf-8")).group(1) == pin
+    names = [s.get("name") for s in steps]
+    assert names.index("Check") < names.index("Tell Discord") < names.index("Comment on the commit") < names.index("Land") \
+        < names.index("Follow up")
+    tell = steps[names.index("Tell Discord")]
+    assert tell["env"] == {"WEBHOOK": "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"} and tell["if"] == "env.MODE == 'report' || env.MODE == 'on'"
+    assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in tell["run"] and "set -x" not in text
+    assert steps[names.index("Land")]["if"] == "env.MODE == 'on'"
+    assert "<@&" not in text and "ROLE" not in text and "DISCORD_FONT_WEBHOOK" not in text
+    assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN", "DISCORD_STANDARDS_WEBHOOK"}
+    check = steps[names.index("Check")]
+    for flag in ("--clone", "--repo", "--after", "--author", "--fonts", "--out", "--mode", "--before", "--cards", "--whole-tree"):
+        assert flag in check["run"]

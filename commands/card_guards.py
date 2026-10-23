@@ -304,9 +304,11 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     changes = [c for c in changes if c.path not in skipped]
     psds = [c for c in changes if is_card_psd(c.path)]
     pngs = {c.path: c for c in changes if _card_png(c.path)}
-    added = {c.new: c for c in psds if c.status == "A"}
-    deleted = {c.old: c for c in psds if c.status == "D"}
-    renamed_new = {added[sha].path: deleted[sha].path for sha in set(added) & set(deleted)}
+    deleted: dict = {}                          # blob -> deleted paths: an added path with one of them is a rename
+    for c in psds:
+        if c.status == "D":
+            deleted.setdefault(c.old, []).append(c.path)
+    renamed_new = {c.path: deleted[c.new].pop(0) for c in psds if c.status == "A" and deleted.get(c.new)}
     renamed_old = set(renamed_new.values())
     notes, jobs = [], []
 
@@ -761,7 +763,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
     out_dir = dirname(plan_path)
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
-    repository = repository or data.get("repo") or CARD_REPO
+    repository = repository or data.get("repo") or ("" if local else CARD_REPO)
     entries = [entry for entry in data["cards"] if entry.get("writes")]
     report = {"sha": "", "landed": [], "dropped": []}
     if not entries:
@@ -782,7 +784,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
     uploaded: set = set()
     for attempt in range(COMMIT_TRIES if not local else 1):
         tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
-        recent = recent_paths(repository, tip.head, now(), local) if not local or repository else set()
+        recent = recent_paths(repository, tip.head, now(), local) if repository else set()   # a clone alone: no push times
         included, report["dropped"] = [], []
         for entry in entries:
             moved = [p for p, sha in entry["expect"].items() if (tip.tree.get(p, ("", ""))[1]) != sha]
