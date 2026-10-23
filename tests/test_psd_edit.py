@@ -557,13 +557,13 @@ def test_effect_rules_on_styled_rows(clone):
     assert pe._enabled_effects(row.digits["5"]) == ["GradientOverlay"] and pe.stat_value([row]) == 10
     edit = pe.set_stat(psd, {"card": {"hp": 10}}, "hp", 3)
     five, three = pe._record_index(row.digits["5"]), pe._record_index(row.digits["3"])
-    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX"), (five, three, b"fxrp"), (three, five, b"fxrp")]
+    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX")]                 # a gradient tiles nothing: no fxrp trade
     assert [layer.name for layer in edit.layers] == ["3", "5"]
     assert row.visible == [3] and pe._enabled_effects(row.digits["3"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["5"]) == []
     green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
     edit = pe.set_stat(green, {"card": {"atk": 10}}, "atk", 4)
     row = pe.template_rows(green, "atk")[0]
-    assert [layer.name for layer in edit.layers] == ["4", "7"] and [key for _, _, key in edit.moves] == [b"lfx2", b"lrFX", b"fxrp", b"fxrp"]
+    assert [layer.name for layer in edit.layers] == ["4", "7"] and [key for _, _, key in edit.moves] == [b"lfx2", b"lrFX"]
     assert pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["7"]) == []
     with pytest.raises(pe.Refused, match="6, 8, 9") as refused:
         pe.set_stat(PSDImage.open(_card(clone, AZAMOTH_KING)[0]), {"card": {"hp": 10}}, "hp", 3)
@@ -670,14 +670,14 @@ def test_two_stats_gate_one_region_per_row(clone, parser, tmp_path):
 @text_engine
 def test_mettaton_hp_5_to_8_moves_the_effect(clone, parser, tmp_path):
     """Idea 12 through every gate: hp 5 -> 8 hides the styled 5 and shows 8 with its GradientOverlay. 2 flag bytes plus the
-    lfx2 and lrFX blocks (5884 bytes) leaving record 5 for record 8 and the two trading fxrp (2 x 28), nothing else; the dark cells render within the bar
+    lfx2 and lrFX blocks (5884 bytes) leaving record 5 for record 8, nothing else (a gradient tiles nothing: fxrp stays); the dark cells render within the bar
     (mean 0.90, 0% bad, max 7 on 2026-10-21); the parser reads 8; a rerun finds nothing."""
     parsed, baked = _bake(clone, parser, METTATON, {"hp": 8}, tmp_path)
     assert parsed["card"]["hp"] == 5 and baked.reparse["card"]["hp"] == 8 and baked.reparse["validator"] == []
-    assert baked.flag_bytes == 2 and baked.block_bytes == 5884 + 2 * 28
+    assert baked.flag_bytes == 2 and baked.block_bytes == 5884
     assert [(name, fields) for _, name, fields in baked.records] == [("5", STAT_RECORD), ("8", STAT_RECORD)]
     five, eight = (index for index, _, _ in baked.records)
-    assert baked.edits[0].moves == [(five, eight, b"lfx2"), (five, eight, b"lrFX"), (five, eight, b"fxrp"), (eight, five, b"fxrp")]
+    assert baked.edits[0].moves == [(five, eight, b"lfx2"), (five, eight, b"lrFX")]
     assert baked.parity["hp"]["bad_pct"] == 0 and baked.parity["hp"]["mean"] <= pe.PARITY_MEAN_MAX and baked.parity["hp"]["max"] <= 7
     assert clip(baked.region, 1200, 2400) == (763, 1199, 1174, 1285) and baked.changed_pixels > 0
     saved = PSDImage.open(baked.psd_path)
@@ -745,6 +745,23 @@ def test_cannon_toggle_keeps_the_texture_anchor(clone):
     assert measured["bad_pct"] == 0 and measured["mean"] <= pe.PARITY_MEAN_MAX
     pe.set_stat(psd, {"card": {"hp": 8}}, "hp", 9)
     assert {name: {bytes(k): v.tobytes() for k, v in row.digits[name].tagged_blocks.items()} for name in ("8", "9")} == before
+
+
+def test_toggle_round_trip_keeps_block_order(clone, tmp_path):
+    """Moved blocks land where they sat on their source and a traded fxrp stays in place: the Cannon's hp 9 -> 8 gives 8
+    9's block order, and 8 -> 9 saves both records byte for byte as they were (fxrp used to move after lfx2/lrFX)."""
+    path = _card(clone, CANNON)[0]
+    psd = PSDImage.open(path)
+    row = pe.template_rows(psd, "hp")[0]
+    order = {name: [bytes(key) for key in row.digits[name].tagged_blocks.keys()] for name in ("8", "9")}
+    assert order["9"] == order["8"][:1] + [b"lfx2", b"lrFX"] + order["8"][1:] and order["8"][-1] == b"fxrp"
+    pe.set_stat(psd, {"card": {"hp": 9}}, "hp", 8)
+    assert [bytes(key) for key in row.digits["8"].tagged_blocks.keys()] == order["9"]
+    assert [bytes(key) for key in row.digits["9"].tagged_blocks.keys()] == order["8"]
+    pe.set_stat(psd, {"card": {"hp": 8}}, "hp", 9)
+    saved = str(tmp_path / "cannon_round_trip.psd")
+    pe.save_psd(psd, saved, update_preview=False)
+    assert pe.gate_bytes(path, saved, []) == ([], 0, 0)
 
 
 @before_textures

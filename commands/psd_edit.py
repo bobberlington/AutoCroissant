@@ -987,19 +987,59 @@ def _targets(rows: list, stat: str, value: int) -> list:
     return [None, value - STAT_MAX if value < 2 * STAT_MAX else None]
 
 
+def _tiles(layer) -> bool:
+    """Whether the layer's style tiles a pattern from its fxrp: a pattern overlay, a pattern stroke or a bevel texture."""
+    for effect in layer.effects:
+        kind = type(effect).__name__
+        fill = getattr(effect, "fill_type", None)
+        if (kind == "PatternOverlay" or (kind == "BevelEmboss" and getattr(effect, "use_texture", True))
+                or (kind == "Stroke" and getattr(fill, "value", fill) == b"Ptrn")):
+            return True
+    return False
+
+
 def _trade_anchor(source, target) -> list:
     """
     The moves trading two digits' reference points (fxrp): a style's pattern and bevel texture tile from its layer's
     fxrp, so the anchor travels with the effect (the Cannon's digits sit 138-160 px apart, off the 64 px texture).
 
     Returns:
-        [(from layer, to layer, b"fxrp")]: none when the two hold the same bytes
+        [(from layer, to layer, b"fxrp")]: none when the source's style tiles nothing (_tiles) or the two hold the same bytes
     """
     key = Tag.REFERENCE_POINT
     held = {layer: layer.tagged_blocks[key].tobytes() if key in layer.tagged_blocks else None for layer in (source, target)}
-    if held[source] == held[target]:
+    if held[source] == held[target] or not _tiles(source):
         return []
     return [(a, b, key) for a, b in ((source, target), (target, source)) if held[a] is not None]
+
+
+def _move_blocks(moves: list) -> None:
+    """
+    Apply [(from layer, to layer or None, block key)] moves, every record keeping its block order: a block replaces the
+    target's own in place, or lands after the block it followed on its source (a round trip gives back the same bytes).
+    """
+    before = {}
+    for source, target, _ in moves:
+        for layer in (source, target):
+            if layer is not None and layer not in before:
+                before[layer] = list(layer.tagged_blocks.items())
+    gone = {(source, key) for source, _, key in moves}
+    landing = {}
+    for source, target, key in moves:
+        if target is not None:
+            landing.setdefault(target, {})[key] = (dict(before[source])[key], source)
+    for layer, items in before.items():
+        lands = landing.get(layer, {})
+        kept = [(key, lands.pop(key)[0] if key in lands else block) for key, block in items
+                if (layer, key) not in gone or key in lands]
+        for key, (block, source) in lands.items():      # new to the record: after its source's nearest earlier block
+            order = [k for k, _ in before[source]]
+            earlier = order[:order.index(key)]
+            at = max((i + 1 for i, (k, _) in enumerate(kept) if k in earlier), default=0)
+            kept.insert(at, (key, block))
+        layer.tagged_blocks.clear()
+        for key, block in kept:
+            layer.tagged_blocks[key] = block
 
 
 def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
@@ -1033,10 +1073,7 @@ def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
             moves += [(show, None, key) for key in EFFECT_BLOCKS if key in show.tagged_blocks]
             moves += [(styled[0], show, key) for key in EFFECT_BLOCKS if key in styled[0].tagged_blocks]
             moves += _trade_anchor(styled[0], show)
-    taken = [(source_layer.tagged_blocks.pop(key), target_layer, key) for source_layer, target_layer, key in moves]
-    for block, target_layer, key in taken:     # all popped first: a traded anchor lands on a record it just left
-        if target_layer is not None:
-            target_layer.tagged_blocks[key] = block
+    _move_blocks(moves)
     changed = []
     if show is not None and not show.visible:
         show.visible = True
@@ -1059,12 +1096,13 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 
     The row's effect follows the visible digit (idea 12): when digit O goes hidden and N shows, O's effect blocks
     (lfx2 and its lmfx/lfxs/lrFX kin) move onto N's record, replacing any block of N's with nothing enabled, and O
-    and N trade reference points (fxrp, where the effect's textures tile from; a round trip gives both their blocks
-    back); when N carries an enabled effect of its own it keeps it and O's is cleared. Nothing moves to a 10 (no digit shows: the
-    effect stays on the hidden O), and a toggle from 10 takes the effect of the one hidden digit carrying one; several
-    such digits refuse (unsupported-card). A hidden styled digit beside a visible unstyled one (Mettaton_EX's Atk 6)
-    is left alone: showing it later shows it styled. So the path matters: atk 7 -> 4 moves nothing, 7 -> 10 -> 4 gives
-    4 the hidden 6's effect (from 10 the row cannot tell a stale style from its own).
+    and N trade reference points when the effect tiles a pattern or texture (fxrp, where it tiles from; a round trip
+    gives both records their blocks back, in their order); when N carries an enabled effect of its own it keeps it
+    and O's is cleared. Nothing moves to a 10 (no digit shows: the effect stays on the hidden O), and a toggle from
+    10 takes the effect of the one hidden digit carrying one; several such digits refuse (unsupported-card). A
+    hidden styled digit beside a visible unstyled one (Mettaton_EX's Atk 6) is left alone: showing it later shows it
+    styled. So the path matters: atk 7 -> 4 moves nothing, 7 -> 10 -> 4 gives 4 the hidden 6's effect (from 10 the
+    row cannot tell a stale style from its own).
 
     Args:
         psd: The open card (edited in place)
@@ -1250,7 +1288,8 @@ def icc_vote(psd: PSDImage, png: Image.Image) -> Optional[tuple]:
         png: Its official PNG
 
     Returns:
-        (vote, moved pixels); None without a foreign profile, a preview of the canvas size, or an RGB(A) one
+        (vote, moved pixels); None without a foreign profile or a stored preview, or when the preview is not RGB(A) of the
+        PNG's size
     """
     profile = foreign_profile(psd)
     if profile is None or not psd.has_preview():
