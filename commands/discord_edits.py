@@ -11,7 +11,7 @@ Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve,
 
 Fields: author -> a [cards] line in Card Authors.txt; ability, stars, types, hp/def/atk/spd -> the "psd" kind (they
 persist and show "PSD pending" on the website; the next bake prints them, and a stars or types layout it can't follow is
-refused for that field alone); subtype, series, card_type -> subtype, series, type (the "folder" kind); subseries;
+refused for that field alone; a types name no Types/ icon at the head has is refused before the commit); subtype, series, card_type -> subtype, series, type (the "folder" kind); subseries;
 del_entry -> hidden: true. /mass_replace author rewrites the right-hand sides in Card Authors.txt where
 they stand (old's group renamed) and adds a "[people] old = new" line; its other fields write one entry per card, in one
 commit. /alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the
@@ -36,6 +36,7 @@ edits_file and authors_file are ports of site/assets/edit.js editsFile and autho
 from argparse import ArgumentParser
 from copy import deepcopy
 from datetime import datetime, timezone
+from difflib import get_close_matches
 from json import loads
 from os.path import basename
 from re import IGNORECASE, compile as re_compile, fullmatch
@@ -533,6 +534,23 @@ def _already(card, field: str, value) -> bool:
     return have == value and type(have) is type(value)
 
 
+def type_names(names: list) -> tuple:
+    """
+    Types as the card bake reads them: the icon vocabulary of the card repo's head (card_bake.vocabulary: Types/ and
+    the stoogedings manifest's aliases).
+
+    Returns:
+        (the known ones in the vocabulary's spelling, "'fyre' (fire?)" per name that is no type icon)
+    """
+    import commands.card_bake as card_bake      # lazy, as commit()
+    icons = card_bake.vocabulary(card_bake.snapshot_at(CARD_REPO, card_bake.ref_head(CARD_REPO))).icons
+    known = sorted({name for name, kind in icons.tokens.values() if kind == "type"})
+    hits = [icons.lookup(name) for name in names]
+    unknown = [f"'{name}'" + "".join(f" ({close}?)" for close in get_close_matches(name, known, 1))
+               for name, hit in zip(names, hits) if hit is None or hit[1] != "type"]
+    return [hit[0] for hit in hits if hit is not None and hit[1] == "type"], unknown
+
+
 def manual_metadata_entry(interaction,
                           query: str,
                           del_entry: bool = False,
@@ -558,7 +576,7 @@ def manual_metadata_entry(interaction,
         del_entry: Hide the card (hidden: true)
         author: Card author ([cards] line)
         ability, stars, types, hp, defense, attack, speed: PSD fields (pending until the bake prints them; types
-            comma-separated)
+            comma-separated Types/ icon names: an unknown one is refused)
         subtype, series, card_type, subseries: folder and database fields
     """
     from commands.psd_analyzer import _format_metadata, stats_db
@@ -610,6 +628,15 @@ def manual_metadata_entry(interaction,
         say(interaction, f"Not committed: {', '.join(bad) or 'author'} must be "
                          + ("a whole number, 0 or more, or some text." if bad else "a name."))
         return
+    if "types" in given:                        # a typo would sit in the database until the bake refused it
+        try:
+            given["types"], unknown = type_names(given["types"])
+        except Exception as error:              # noqa: BLE001 - as the commit's failures
+            _failed(interaction, f"/update_metadata {name}", error)
+            return
+        if unknown:
+            say(interaction, f"Not committed: no type icon in Types/ is named {', '.join(unknown)}.")
+            return
     by, at = editor(interaction), now()
     done: dict = {"fields": {}, "author": False}
 
@@ -1190,4 +1217,5 @@ __all__ = [
     'migrate_aliases',
     'refresh',
     'replace_author',
+    'type_names',
 ]

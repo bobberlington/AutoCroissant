@@ -485,7 +485,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     attack='Attack stat value.',
     speed='Speed stat value.',
     card_type='Card type (e.g., creature, item, field).',
-    types='Type icons, comma-separated, printed on the card image by the next card bake.',
+    types='Types/ icon names, comma-separated, printed on the card image by the next card bake.',
 )
 async def slash_update_metadata(
     interaction: Interaction,
