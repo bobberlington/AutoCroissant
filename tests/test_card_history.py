@@ -966,15 +966,28 @@ def test_impossible_values_become_unknown_once():
     assert "Impossible values set to unknown: 0" in ch.Refined().lines()[10]
 
 
-def test_a_rename_chain_reaches_the_listed_card():
-    """Azamoth the Possessed King: renamed twice; the tag names the card listed now."""
-    index = _index_with({}, deletions={"Items/K.psd": ("d1", 4000.0)})
-    index.renames["Items/K.psd"] = ("Items/K2.psd", index.by_sha["d1"])
-    index.renames["Items/K2.psd"] = ("Items/V.psd", index.by_sha["d1"])
-    king = _card("K", path="Items/K.psd", archived={"at": None, "path": "Items/K.psd", "blob": None, "commit": None})
+def test_a_rename_chain_reaches_the_listed_card(tmp_path):
+    """Azamoth the Possessed King: moved within its name (2000), then renamed to Vessel (3000); Pandiety: renamed to
+    Pandeity (2000, a name no record holds), then moved into MDW (3000). Each tag names where the chain ends, dated by
+    the step that reached it (the old name's last day), where the new name starts; a second pass changes nothing."""
+    index, c = _cards_repo(tmp_path, [(1000, {"Items/K.psd": O1, "Items/P.psd": G1}),
+                                      (2000, {"Items/K.psd": ("mv", "Aux/K.psd"), "Items/P.psd": ("mv", "Items/P2.psd")}),
+                                      (3000, {"Aux/K.psd": ("mv", "Aux/V.psd"), "Items/P2.psd": ("mv", "MDW/P2.psd")})])
+    tags = {n: {"at": 2000.0, "path": f"Items/{n}.psd", "blob": b, "commit": c[1], "backfill": True}
+            for n, b in (("K", blob(O1)), ("P", blob(G1)))}
+    old = defaultdict(list, {n: [_card(n, path=f"Items/{n}.psd", blob_sha=tag["blob"], timestamp=1000.0, archived=tag)]
+                             for n, tag in tags.items()})
+    stats = {"V": _card("V", path="Aux/V.psd", blob_sha=blob(O1), timestamp=1000.0)}
     report = ch.Refined()
-    ch.date_archive({"V": _card("V")}, defaultdict(list, {"K": [king]}), index, report)
-    assert king.archived["renamed_to"] == "V" and report.renamed == [("K", "V")]
+    ch.date_archive(stats, old, index, report)
+    assert [(t.get("renamed_to"), t.get("moved_to"), t["at"], t["commit"]) for t in tags.values()] == [
+        ("V", None, 3000.0, c[2]), (None, "MDW/P2.psd", 3000.0, c[2])]
+    assert sorted(report.tags_dated) == ["K", "P"] and report.renamed == [("K", "V")] and report.retired == ["P"]
+    again = ch.Refined()
+    ch.date_archive(stats, old, index, again)
+    assert not again.changed()
+    ch.refine(stats, old, index)
+    assert old["K"][0].version["to"] == ch.start(stats["V"])[0] == 3000.0
 
 
 def _bot_repo(tmp_path, snapshots: list):

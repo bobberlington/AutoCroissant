@@ -242,7 +242,8 @@ class GitIndex:
         """
         Where an exact rename chain from path leads (the PSD's, else its PNG's: a rename that edited the PSD), its first
         rename no older than `since` (a record's own reading): (the name of a card in stats (any container of names),
-        None), or (None, the path in a folder of no cards: retired), or (None, None).
+        None, the rename that reached it), or (None, the path in a folder of no cards: retired, the move into it), or
+        (None, None, None). That step is the name's last day: Azamoth the Possessed King moved within its name first.
         """
         for old in (path, splitext(path)[0] + ".png"):
             if old in self.renames and self.renames[old][1].at < since:
@@ -250,12 +251,12 @@ class GitIndex:
             seen = set()
             while old in self.renames and old not in seen:
                 seen.add(old)
-                old = self.renames[old][0]
+                old, step = self.renames[old]
                 if card_name(old) in stats and not any(folder in RETIRED for folder in old.split("/")):
-                    return (card_name(old), None)
+                    return (card_name(old), None, step)
                 if any(folder in RETIRED for folder in old.split("/")):
-                    return (None, old if old.lower().endswith(".psd") else None)
-        return (None, None)
+                    return (None, old, step) if old.lower().endswith(".psd") else (None, None, None)
+        return (None, None, None)
 
     def png_commit(self, psd_path: str, before: Optional[Commit] = None, before_at: Optional[float] = None) -> Optional[str]:
         """The newest commit of the card's PNG older than `before` (else older than before_at; else the newest); a PNG
@@ -1296,7 +1297,8 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
     /update_stats leaves that to its guarded prune); every tag's at and commit from its path's deleting commit (an
     archived duplicate's from its PNG's, or its original's when the PNG stayed), renamed_to from an exact rename chain
     that ends at a listed card (else its PNG's: a rename that also edited the PSD), moved_to from one into a folder of
-    no cards (MDW/The Morgue: retired, not deleted). A deletion or rename older than the record's own reading, or an
+    no cards (MDW/The Morgue: retired, not deleted), either dated by the chain's step that reached it (Pandiety's move
+    into MDW, not its rename to Pandeity 44 min before; the new name starts there too: intro_of). A deletion or rename older than the record's own reading, or an
     index that lacks the tag's commit (a clone not fetched since: a path deleted, added back and deleted again),
     changes nothing."""
     for name, versions in sorted(old_stats.items(), key=lambda item: bool(getattr(
@@ -1321,12 +1323,16 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
             mine = old_stats.get(original) or []                # its PNG is there: it left with its original's PSD
             theirs = getattr(mine[len(mine) - 1], "archived", None) if mine and original not in stats else None
             gone = index.by_sha.get((theirs or {}).get("commit") or "")
+        new, retired, step = (None, None, None) if original or stale else index.renamed(tag.get("path") or "", stats, read)
+        if (tag.get("renamed_to") or tag.get("moved_to")) and (new, retired) != (tag.get("renamed_to"), tag.get("moved_to")):
+            step = None                                         # linked otherwise (a commit page, a new blob)
+        if step is not None and (gone is None or step.at >= gone.at):
+            gone = step                                         # the chain's step that reached the card or MDW
         if gone is not None and not stale and gone.at >= read and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
             tag["at"], tag["commit"] = gone.at, gone.sha
             report.tags_dated.append(name)
         if original or stale or tag.get("renamed_to") or tag.get("moved_to"):
             continue
-        new, retired = index.renamed(tag.get("path") or "", stats, read)
         if new:
             tag["renamed_to"] = new
             report.renamed.append((name, new))
