@@ -579,3 +579,24 @@ def test_duplicates_named_by_the_seed_aliases(cards, tmp_path):
     cards.aliases.write_bytes(pickle.dumps({"tiny doom": "mini_doomer2.png"}))
     assert _build(cards)[0] == cd.EXIT_OK                                        # no --aliases: AutoCroissant main's
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
+
+
+def test_a_duplicate_keeps_its_originals_version(cards):
+    """A duplicate's `version` is its original's even when the original was re-parsed this run (it was copied before
+    the original got it back): a full re-parse writes the stats.json an incremental build does, and the run after
+    it writes nothing."""
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
+    commit(cards.repo, "alice", 1100)
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    stats = _read(cards)[0]
+    assert stats["Mini Doomer2"].version == stats["Mini Doomer"].version and stats["Mini Doomer"].version["cause"] == "psd"
+    first = (cards.db / "stats.json").read_text(encoding="utf-8")
+
+    def times():
+        return {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
+    before = times()
+    assert _build(cards)[0] == cd.EXIT_OK and times() == before                  # nothing new: no write
+    assert _build(cards, "--full")[0] == cd.EXIT_OK
+    assert (cards.db / "stats.json").read_text(encoding="utf-8") == first         # re-parsed: the same stats.json
+    before = times()
+    assert _build(cards)[0] == cd.EXIT_OK and times() == before                  # and the run after writes nothing

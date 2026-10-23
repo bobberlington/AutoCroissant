@@ -267,6 +267,7 @@ class CardBuild:
 
         if self.legacy:                                 # each version keeps its own path (git dates it there)
             self._record_history()
+            self.duplicate_versions()
         if self.failed:                                 # no 304 next time: the failed files are fetched again
             self.etags.pop(repository, None)
             self._send_failures()
@@ -396,6 +397,19 @@ class CardBuild:
             self.db.stats[name] = card
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n])) + sum(1 for n in before if n not in found)
+
+    def duplicate_versions(self) -> None:
+        """Each duplicate's `version` a copy of its original's, once the original has its own for this run (a re-parsed
+        original gets it after _sync_duplicates copied it): the same whether or not the original was re-parsed."""
+        for card in self.db.stats.values():
+            original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
+            if original is None or original is card:
+                continue
+            info = getattr(original, "version", None)
+            if info is None:
+                vars(card).pop("version", None)         # the class default, as an original without one
+            else:
+                card.version = deepcopy(info)
 
     @staticmethod
     def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None,
@@ -1312,6 +1326,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             close_archived(db.old_stats, list(gone) + list(backfilled), index)
         edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
         record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
+        run_build.duplicate_versions()
         db.drop_stale_archives()
         if run_build.font_index is not None:
             psd_details.refill(details, run_build.font_index)
