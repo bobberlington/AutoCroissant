@@ -509,7 +509,8 @@ def _crops(out: str, rel: str, before, after, box) -> None:
 def _export_dict(found) -> dict:
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
-            "vote": list(found.vote) if found.vote else None, "numbers": found.numbers}
+            "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
+            "misses": png_export.miss_notes(found)}
 
 
 def _r10_line(job: Job, measured: dict) -> str:
@@ -588,7 +589,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
-                                  "line": f"re-exported by the bot's render of the PSD ({found.changed_px:,} px changed)"})
+                                  "line": f"re-exported by the bot's render of the PSD ({found.changed_px:,} px changed)"
+                                          + "".join(f"; {note}" for note in png_export.miss_notes(found))})
             _crops(out, job.png, old_png, found.image, found.box)
             refused = []
             for path, (data, why) in sorted(found.numbered.items()):
@@ -604,7 +606,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
-                                  "line": "made by the bot's render of the PSD (new card)"})
+                                  "line": "made by the bot's render of the PSD (new card)"
+                                          + "".join(f"; {note}" for note in png_export.miss_notes(found))})
     # R10: a pushed PNG against the PSD
     if job.case in ("pair", "png-only", "whole") and job.png_new:
         png = png_export.open_png(source.blob(job.png_new))
@@ -699,7 +702,8 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     if found.get("writer") in ("photoshop", "tool"):
         parts.append("saved by Photoshop" if found["writer"] == "photoshop" else "not saved by Photoshop")
     verb = "made" if entry["case"] == "new" else "re-exported"
-    return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}"
+    misses = "".join(f"; {note}" for note in found.get("misses", []))
+    return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}{misses}"
 
 
 ALREADY = "already on the branch (an earlier run of this push landed it)"

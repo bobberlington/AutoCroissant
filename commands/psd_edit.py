@@ -50,7 +50,8 @@ MARKER = "10"                                   # a two-row card's parser marker
 EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V0,
                  Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V1, Tag.EFFECTS_LAYER)   # a digit's effect blocks: lfx2 and its kin
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
-PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG
+PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG (past it: a miss, told)
+PARITY_FLOOR = 25.0         # % of bad pixels past which a region's render is broken: refused; a miss under it is told (owner, 2026-10-23)
 PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
@@ -216,6 +217,11 @@ def _measure(a: Image.Image, b: Image.Image) -> dict:
 
 def _within_bar(measured: dict) -> bool:
     return measured["bad_pct"] <= PARITY_BAD_MAX and measured["mean"] <= PARITY_MEAN_MAX
+
+
+def _past_floor(measured: dict) -> bool:
+    """A broken render: more than PARITY_FLOOR % of the region's pixels past PARITY_THRESH (the only pixel refusal)."""
+    return measured["bad_pct"] > PARITY_FLOOR
 
 
 def text_engine() -> bool:

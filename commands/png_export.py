@@ -5,6 +5,11 @@ bake would make (owner, 2026-10-22). The fork renders the changed layers' box of
 differs from the old one (psd_edit.merge_png), gated as the bake is (the baseline's parity, shape, region). Photoshop's
 stored composite is never written: it is only a cross-check that can refuse (the old PNG outside the change, the drawn
 change against Photoshop's own image). A refusal is data (an Export with outcome "refused" and the line card makers read).
+As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
+written and told (Export.misses). A card drawn whole (new, or beside its PNG) is held to the floor per text and stat
+box too, and a text box drawn blank refuses (the bake's blank render). A stale old PNG
+(Photoshop's own image against it, G5) and a change the bot cannot see (G6_UNSEEN) still refuse: no psd-tools fix can
+draw those.
 
     export(old_psd, new_psd, old_png, numbered) -> Export   a PSD pushed without its PNG (gates G2-G8); old None: a new
                                                              PSD beside an existing PNG
@@ -31,7 +36,7 @@ from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.psd_edit import Refused
-from commands.psd_regions import fx_pad
+from commands.psd_regions import fx_pad, stat_rows
 
 # ========================
 # Configuration
@@ -55,8 +60,11 @@ G6_UNSEEN = "PNG not made: the PSD's own image changed where the bot sees no lay
 G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in "
             "Photoshop with Maximize Compatibility, or " + EXPORT)
 G6_NEW = "PNG not made: the bot's drawing of the new PSD does not match its own image ({bad:.1f}% of pixels); " + EXPORT
+G6_BOX = "PNG not made: the bot's drawing of {what} does not match the PSD's own image ({bad:.1f}% of pixels there); " + EXPORT
+G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own image shows; " + EXPORT
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
+MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
 
 
 # ========================
@@ -76,6 +84,7 @@ class Export:
     vote: Optional[tuple] = None                # psd_edit.icc_vote over the old pair
     writer: str = ""                            # "photoshop", "tool" (no new XMP stamp) or "new" (no old PSD)
     numbers: dict = field(default_factory=dict) # the gates' measures
+    misses: dict = field(default_factory=dict)  # "baseline" / "cross" / a box: a measure past the bar, under the floor (told)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> (bytes, "") or (b"", refusal line)
 
 
@@ -102,6 +111,88 @@ def _stats(diff: np.ndarray) -> dict:
 
 def _within(measured: dict) -> bool:
     return psd_edit._within_bar(measured)
+
+
+def _drawn(result: "Export", key: str) -> bool:
+    """The bot's drawing over numbers[key]: False past the floor (refuse); a miss of the bar under it is kept in misses."""
+    measured = result.numbers[key]
+    if psd_edit._past_floor(measured):
+        return False
+    if measured.get("px", 1) and not _within(measured):
+        result.misses[key] = measured
+    return True
+
+
+def _boxes(psd: PSDImage) -> list:
+    """The text and stat boxes of a card drawn whole (the bake's edit boxes): (what, layer, box) per visible, non-empty
+    type layer drawn at some opacity, and per stat row (psd_regions.stat_rows), padded as changed_layers pads."""
+    found = [(f"the {layer.name.strip() or 'untitled'} text", layer, layer.bbox) for layer in psd.descendants()
+             if layer.kind == "type" and layer.is_visible() and layer.opacity]
+    for stat, rows in stat_rows(psd).items():
+        found += [(f"the {stat} row" + (f" {n + 1}" if len(rows) > 1 else ""), group, bbox)
+                  for n, (group, _, bbox) in enumerate(rows) if bbox and group.is_visible()]
+    out, seen = [], {}
+    for what, layer, (x0, y0, x1, y1) in found:
+        if x1 <= x0 or y1 <= y0:                # an empty text layer draws nothing in Photoshop either
+            continue
+        pad = fx_pad(layer) + FX_EXTRA
+        box = (max(0, x0 - pad), max(0, y0 - pad), min(psd.width, x1 + pad), min(psd.height, y1 + pad))
+        if box[2] > box[0] and box[3] > box[1]:
+            seen[what] = seen.get(what, 0) + 1
+            out.append((what if seen[what] == 1 else f"{what} ({seen[what]})", layer, box))
+    return out
+
+
+def _ink(layer, box: tuple) -> Optional[np.ndarray]:
+    """A text layer's letters as Photoshop rasterized them (alpha past psd_edit.INK_ALPHA), a box-sized mask; None
+    without stored pixels."""
+    alpha = psd_edit._alpha(layer)
+    if alpha is None:
+        return None
+    lx0, ly0 = layer.bbox[:2]
+    x0, y0, x1, y1 = max(box[0], lx0), max(box[1], ly0), min(box[2], lx0 + alpha.shape[1]), min(box[3], ly0 + alpha.shape[0])
+    mask = np.zeros((box[3] - box[1], box[2] - box[0]), bool)
+    if x1 > x0 and y1 > y0:
+        mask[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]] = alpha[y0 - ly0:y1 - ly0, x0 - lx0:x1 - lx0] > psd_edit.INK_ALPHA
+    return mask
+
+
+def _boxes_drawn(result: "Export", psd: PSDImage, image: Image.Image, render: Image.Image, truth: Image.Image,
+                 icc: bool) -> bool:
+    """
+    A card drawn whole, per text and stat box against Photoshop's image (review 2026-10-23: over the whole card a blank
+    text box stays under the floor). False past the floor, or for a missed text box drawn blank: more than the floor of
+    its letters' own pixels (_ink) off, and hiding the layer moves no pixel of the render (the bake's blank render; a
+    layer covered by a copy moves none either, but its letters show). A miss under it is kept in misses, the whole
+    card's then dropped.
+    """
+    diff, boxes, missed = _diff(image, truth), result.numbers.setdefault("boxes", {}), {}
+    for what, layer, box in _boxes(psd):
+        x0, y0, x1, y1 = box
+        measured = boxes[what] = _stats(diff[y0:y1, x0:x1])
+        if _within(measured):
+            continue
+        if psd_edit._past_floor(measured):
+            _refuse(result, G6_BOX.format(what=what, bad=measured["bad_pct"]), "G6")
+            return False
+        ink = _ink(layer, box) if layer.kind == "type" else None
+        if ink is not None and ink.any():
+            measured["ink"] = _stats(diff[y0:y1, x0:x1][ink])
+        if "ink" in measured and psd_edit._past_floor(measured["ink"]):
+            was = layer.visible
+            layer.visible = False
+            try:
+                hidden = _render(psd, box, icc, result.numbers)
+            finally:
+                layer.visible = was
+            if not (_diff(hidden, render.crop(box)) > TOL).any():
+                measured["blank"] = True
+                _refuse(result, G6_BLANK.format(what=what), "G6")
+                return False
+        missed[what] = measured
+    if missed:
+        result.misses = missed
+    return True
 
 
 def composite(psd: PSDImage) -> Optional[Image.Image]:
@@ -383,7 +474,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
             result.numbers["png_vs_old_psd"] = was
             if not _within(was):
                 return _refuse(result, G5_IN.format(bad=was["bad_pct"]), "G5")
-        return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
+        if not _drawn(result, "baseline"):
+            return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
     merged, _ = psd_edit.merge_png(old_png, base, render, region)
     try:                                        # G7: the bake's shape and region gates
         psd_edit.gate_shape(old_png, merged, new)
@@ -394,9 +486,11 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
     if not _within(result.numbers["cross"]):
         unseen = composite_moved & ~inside      # Photoshop's image moved outside every changed layer
-        why = (G6_UNSEEN if unseen.any() and not _within(_stats(_diff(merged, truth)[unseen])) else
-               G6 if result.writer == "photoshop" else G6_STALE)
-        return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+        if unseen.any() and not _within(_stats(_diff(merged, truth)[unseen])):
+            return _refuse(result, G6_UNSEEN, "G6")
+        if not _drawn(result, "cross"):
+            why = G6 if result.writer == "photoshop" else G6_STALE
+            return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
     # G8: numbered duplicates take F's pixels when F stays clear of their toggled titles
     for path, image in sorted((numbered or {}).items()):
@@ -428,8 +522,10 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     out[moved] = np.asarray(render)[moved]
     merged = Image.fromarray(out)
     result.numbers["cross"] = _stats(_diff(merged, truth)[moved])
-    if not _within(result.numbers["cross"]):
+    if not _drawn(result, "cross"):
         return _refuse(result, G6.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+    if not _boxes_drawn(result, new, merged, render, truth, icc):
+        return result
     result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
@@ -444,7 +540,16 @@ def _no_composite(psd: PSDImage) -> Export:
 
 def _refuse(result: Export, why: str, gate: str) -> Export:
     result.outcome, result.why, result.gate, result.image, result.data = "refused", why, gate, None, b""
+    result.misses = {}
     return result
+
+
+def miss_notes(found: Export) -> list:
+    """The note per measure that missed the bar under the floor (as the bake's psd_edit.miss_notes): "made with a pixel
+    difference (the old PSD drawn against the old PNG): bad 1.35%, mean 1.00, max 79" (Defcon Panda)."""
+    return ["made with a pixel difference (%s): bad %.2f%%, mean %.2f, max %d"
+            % (MISSED.get(key, f"{key} against the PSD's own image"), m["bad_pct"], m["mean"], m["max"])
+            for key, m in found.misses.items()]
 
 
 def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image.Image, moved: np.ndarray,
@@ -471,7 +576,8 @@ def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image
 def export_new(new: PSDImage) -> Export:
     """
     Guard 1 on a new PSD with no PNG (5.5): the fork renders the whole card, converted (Export As' default), RGBA when it
-    has transparency; written when it matches the PSD's own image within the bar.
+    has transparency; written unless it is past the floor against the PSD's own image, over the card or a text or stat
+    box, or draws a text box blank (_boxes_drawn); a miss of the bar is told.
 
     Returns:
         Export
@@ -485,9 +591,12 @@ def export_new(new: PSDImage) -> Export:
     if out.mode == "RGBA" and int(np.asarray(out)[..., 3].min()) == 255:
         out = out.convert("RGB")
     result.changed_px, result.box = out.width * out.height, box
-    result.numbers["cross"] = _stats(_diff(out, convert(new, composed, True)))
-    if not _within(result.numbers["cross"]):
+    truth = convert(new, composed, True)
+    result.numbers["cross"] = _stats(_diff(out, truth))
+    if not _drawn(result, "cross"):
         return _refuse(result, G6_NEW.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
+    if not _boxes_drawn(result, new, out, out, truth, True):
+        return result
     result.outcome, result.image, result.data = "re-exported", out, encode(out, None)
     return result
 
@@ -539,13 +648,17 @@ __all__ = [
     'G5_IN',
     'G6',
     'G6_BASE',
+    'G6_BLANK',
+    'G6_BOX',
     'G6_NEW',
     'G6_STALE',
     'G6_UNSEEN',
     'G7',
     'G8',
+    'MISSED',
     'export',
     'export_new',
+    'miss_notes',
     'fingerprints',
     'like_mode',
     'open_png',

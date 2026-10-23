@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw
 import commands.card_guards as cg
 import commands.git_commit as gc
 from commands.github_api import blob_sha
-from test_png_export import card, fixture_psd
+from test_png_export import _rows_off, card, fixture_psd
 
 # ========================
 # Configuration
@@ -224,6 +224,21 @@ def test_check_end_to_end(cards, tmp_path):
     assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
     assert "Alice pushed Snack with these issues: PNG not exported with the PSD: export it in Photoshop; Snack2.png" in payload["content"]
+
+
+def test_a_drawing_miss_is_told_in_the_comment_and_the_commit(cards, tmp_path, monkeypatch):
+    """Owner (2026-10-23): a PNG the bot drew missing the bar under the floor is made; the miss goes in the comment and
+    the bot commit's line per measure, never on Discord."""
+    root, base, alice, bot = cards
+    _rows_off(monkeypatch, 1)
+    data = cg.check(str(root), bot, base, "o/cards", "actor", mode="on", out=str(tmp_path / "out"), workers=1, cards={"snack"})
+    (snack,) = data["cards"]
+    notes = snack["export"]["misses"]
+    assert snack["export"]["outcome"] == "re-exported" and len(notes) == 2
+    assert notes[0].startswith("made with a pixel difference (the old PSD drawn against the old PNG): bad ")
+    assert snack["writes"][0]["line"].endswith("px changed); " + "; ".join(notes))
+    assert data["markdown"].count("; ".join(notes)) == 1 and "; ".join(notes) in cg.message([snack], bot)
+    assert not [t for t in snack["told"] if "pixel difference" in t] and "pixel difference" not in json.dumps(data["discord"])
 
 
 def test_a_new_psd_pushed_with_its_png_gets_the_new_card_rules(cards, tmp_path):
