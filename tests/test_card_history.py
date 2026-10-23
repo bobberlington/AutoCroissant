@@ -831,6 +831,26 @@ def test_a_misread_is_judged_at_the_newer_versions_start(tmp_path):
     assert [n for n, *_ in ch.misreads(stats, old, index)] == ["B"] and ch.start(card)[0] == 100000.0
 
 
+def test_a_misread_after_a_rename_reads_the_png_at_its_own_path(tmp_path):
+    """You are going DOWN you Sputnik!: the older version's date is its bytes' first commit under the old name (the
+    seed dates so); the PNG beside it is its own path's from when the rename brought the bytes there."""
+    repo = tmp_path / "renamed"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "Items/Old.psd", b"b one")
+    write(repo, "Items/Old.png", b"b png")
+    commit(repo, "a", 100000)
+    git(repo, "mv", "Items/Old.psd", "Items/B.psd")
+    git(repo, "mv", "Items/Old.png", "Items/B.png")
+    commit(repo, "a", 150000)
+    write(repo, "Items/B.psd", b"b two")
+    commit(repo, "a", 300000)
+    index = ch.GitIndex.from_git(str(repo))
+    v0 = _card("B", path="Items/B.psd", blob_sha=blob(b"b one"), timestamp=100000.0)
+    card = _card("B", path="Items/B.psd", blob_sha=blob(b"b two"), timestamp=300000.0, types=["counter"])
+    assert [n for n, *_ in ch.misreads({"B": card}, defaultdict(list, {"B": [v0]}), index)] == ["B"]
+
+
 def test_impossible_values_become_unknown_once():
     lazarus = _card("L", stats=cm.CardStats(110, 110, 110, 110), stars=3, timestamp=1.0)
     spawn = _card("S", stars=10, timestamp=2.0)
