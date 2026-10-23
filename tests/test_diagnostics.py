@@ -71,3 +71,23 @@ def test_inspect_pickle_reads_a_db_folder_or_a_data_commit(tmp_path):
     assert code == 0 and "stats     : 1 cards" in out and "1 archived versions total" in out, out
     code, out = _run("inspect_pickle.py", "--db", "HEAD", "--git", data, "Kirby")
     assert code == 0 and "=== Kirby ===" in out and "'cause': 'psd'" in out and "old versions: 1" in out, out
+
+
+def test_diff_stats_matches_versions_the_seed_pass_dated(tmp_path):
+    """A version given its commit's blob, or re-dated to its blob's intro (the data build's seed pass), is the same
+    version: no version added or dropped; the re-dated one's start moved, a normalized one's data changed."""
+    stats = {"Kirby": _card("Kirby")}
+    jetson = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1.0, blob_sha=None),
+                                          _card("Kirby", ability="B.", timestamp=2.0, blob_sha="b" * 40),
+                                          _card("Kirby", ability="C.", timestamp=3.0, blob_sha="c" * 40, series=None)]})
+    built = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1.0, blob_sha="a" * 40),
+                                         _card("Kirby", ability="B.", timestamp=1.5, blob_sha="b" * 40),
+                                         _card("Kirby", ability="C.", timestamp=3.0, blob_sha="c" * 40, series="Kirby")]})
+    (tmp_path / "pk").mkdir()
+    cdb.dump_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
+    cdb.dump_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
+    _db(tmp_path / "db", stats, built)
+    code, out = _run("diff_stats.py", tmp_path / "pk" / "stats.pkl", tmp_path / "db")
+    assert code == 1, out
+    assert "versions added: 0 (0 names)   dropped: 0 (0 names)" in out, out
+    assert "starts moved: 1" in out and "kept versions with other data: 1" in out and "  data Kirby" in out, out

@@ -75,29 +75,57 @@ def key(card):
     return (getattr(card, "timestamp", None), getattr(card, "blob_sha", None))
 
 
+def pair(a, b):
+    """
+    Two lists of one name's stored versions matched up: one version when the same timestamp and blob; else the same
+    blob (re-dated from git); else the same timestamp where one side has no blob (given its commit's blob: the data
+    build's seed pass, which /update_stats never does).
+
+    Returns:
+        ([(a's version, b's version)], a's unmatched, b's unmatched)
+    """
+    def blob(card):
+        return getattr(card, "blob_sha", None)
+    rules = (lambda x, y: key(x) == key(y),
+             lambda x, y: bool(blob(x)) and blob(x) == blob(y),
+             lambda x, y: getattr(x, "timestamp", None) == getattr(y, "timestamp", None) and not (blob(x) and blob(y)))
+    left, right, pairs = list(range(len(a))), list(range(len(b))), []
+    for rule in rules:
+        for i in list(left):
+            j = next((j for j in right if rule(a[i], b[j])), None)
+            if j is not None:
+                pairs.append((a[i], b[j]))
+                left.remove(i)
+                right.remove(j)
+    return (pairs, [a[i] for i in left], [b[j] for j in right])
+
+
+def data(card):
+    """A version's data as diffed (its timestamp aside: a re-dated version shows as a moved start)."""
+    out = norm(card)
+    out.pop("timestamp", None)
+    return out
+
+
 def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
     """Print the history section; returns whether anything changed."""
     def count(hist):
         return sum(len(v) for v in hist.values())
     print(f"\n-- history --\nold: {len(old_hist)} names {count(old_hist)} versions   "
           f"new: {len(new_hist)} names {count(new_hist)} versions")
-    added, dropped, starts, tags, data = Counter(), Counter(), [], [], []
+    added, dropped, starts, tags, other = Counter(), Counter(), [], [], []
     for name in sorted(set(old_hist) | set(new_hist)):
         a, b = list(old_hist.get(name) or []), list(new_hist.get(name) or [])
-        ka, kb = Counter(map(key, a)), Counter(map(key, b))
-        if kb - ka:
-            added[name] = sum((kb - ka).values())
-        if ka - kb:
-            dropped[name] = sum((ka - kb).values())
-        by_key = {key(v): v for v in a}
-        for v in b:
-            w = by_key.get(key(v))
-            if w is None:
-                continue
+        pairs, gone, new = pair(a, b)
+        if new:
+            added[name] = len(new)
+        if gone:
+            dropped[name] = len(gone)
+        for w, v in pairs:
             if start(w) != start(v):
-                starts.append((f"{name} (version {key(v)[0]})", start(w), start(v)))
-            if norm(w) != norm(v):
-                data.append(name)
+                starts.append((f"{name} (version {key(w)[0]})", start(w), start(v)))
+            if data(w) != data(v):
+                other.append(name)
         last_a, last_b = (getattr(a[len(a) - 1], "archived", None) if a else None,
                           getattr(b[len(b) - 1], "archived", None) if b else None)
         if last_a != last_b:
@@ -113,7 +141,7 @@ def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
     print(f"versions added: {sum(added.values())} ({len(added)} names)   "
           f"dropped: {sum(dropped.values())} ({len(dropped)} names)")
     print(f"starts moved: {len(starts)}   archive tags changed: {len(tags)}   "
-          f"kept versions with other data: {len(set(data))}   cards with another blob or parser: {len(blobs)}")
+          f"kept versions with other data: {len(set(other))}   cards with another blob or parser: {len(blobs)}")
     rows = [("+", n, c) for n, c in sorted(added.items())] + [("-", n, c) for n, c in sorted(dropped.items())]
     for sign, name, n in rows if verbose else rows[:40]:
         print(f"  {sign}{n} {name}")
@@ -121,12 +149,12 @@ def history_diff(old_stats, new_stats, old_hist, new_hist, verbose):
         print(f"  start {name}: {a} -> {b}")
     for name, a, b in tags:
         print(f"  tag {name}: {a} -> {b}")
-    for name in sorted(set(data)):
+    for name in sorted(set(other)):
         print(f"  data {name}")
     if verbose:
         for name, fields in blobs:
             print(f"  bookkeeping {name}: {fields}")
-    return bool(added or dropped or starts or tags or data or blobs)
+    return bool(added or dropped or starts or tags or other or blobs)
 
 
 def main() -> int:
