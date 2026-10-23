@@ -101,8 +101,9 @@ Before ANY pickle push (i.e. before running /push or /update after anything touc
 the card DB), run the diff gate from the repo root:
 
 ```
-git show HEAD:stats.pkl > /tmp/stats_head.pkl
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl
+git show HEAD:stats.pkl > /tmp/stats_head.pkl && git show HEAD:old_stats.pkl > /tmp/old_stats_head.pkl
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl \
+    --history /tmp/old_stats_head.pkl old_stats.pkl
 ```
 
 Exit 0 = no changes; exit 1 = changes found — read them; exit 2 = load error (worse:
@@ -110,8 +111,8 @@ the working pickle may be unreadable). Red flags: cards "removed" that nobody
 deleted, mass path changes, type counts shifting, hundreds of cards whose only change is
 `timestamp` (the signature of a sweep that used local mtimes, docs/BUGS_AND_IMPROVEMENTS.md B6: only possible from
 the archived traversal on branch `archive/local-update-stats` since local mode was archived on 2026-10-20), and old_stats.pkl
-growing more than about 10% in one run (`git cat-file -s HEAD:old_stats.pkl; wc -c old_stats.pkl` —
-diff_stats.py reads stats.pkl only). A version is archived only when its PSD blob changed or the
+growing more than about 10% in one run (diff_stats.py's `-- history --` section, since 2026-10-23: versions added
+and dropped per name, starts moved, archive tags). A version is archived only when its PSD blob changed or the
 card moved AND its data changed (2026-10-22: the same data from a new blob is no version, `card_history.same_data`),
 so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all, and a re-saved PSD neither. Interpretation guide and the other
 four scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance

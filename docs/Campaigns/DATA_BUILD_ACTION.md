@@ -457,10 +457,31 @@ github_api reads it inside a try/except and takes the token from the environment
   before only when its data changed too (`_record_history`, after the authors and edits); with the same data the card
   takes the new blob, path and date and keeps its start in a `version` record (`card_history.carry`: cause `legacy`, no
   git), which `/query as_of` reads (`from` before `timestamp`) and the seed pass dates again from git, keeping the earlier
-  start. Each `/update_stats` runs `card_history.dedupe` (the seed pass's collapse) first: one line, "History: N duplicate
-  versions removed (M cards)", the first time; nothing after.
+  start. Each `/update_stats` runs `card_data.clean_history` first: one line, "History: N duplicate versions removed (M
+  cards), K brought to today's series and type names, archive tags from git: ...", the first time; nothing after.
+- **What counts as the same data (2026-10-23, owner: "fix the dupes and other issues with our history").** `same_data`
+  compares one form of each field: a title equal to the name is none, an empty ability is none, a retired type icon is
+  its name now (`TYPE_RENAMES`: `offense` became `Negation.png`, the same bytes, in 9649b4d). A field a reading could not
+  know is no difference (`unknown`): the title of a version read before parser 2 (it read no titles), the stars of a
+  `NO STARS FOUND` parse, the types of a `MISSPELT TYPE` one, the ability of `NO ABILITY LAYER`. A series the 2026-10-20
+  split moved under a parent (the same subseries-or-series) is no difference. The changelog's steps use the same rules.
+- **The one-time cleanup** (`clean_history`, also the seed pass's first step):
+  - `normalize`: a stored version's series is filled from the version after it when it had none (an item's series is typed
+    in later; a creature's comes from its folder, never filled), or moved under the parent the split gave it; retired type
+    icons renamed; a version's copy of the card's creation date dropped (the card and an archived record keep it);
+  - `collapse`: an earlier reading of the same commit goes first (two versions at one start, no other blob: the older
+    parser's or the pre-edit reading; nothing carried), then runs of the same data. A run joins only versions the same as
+    every member, so an unknown title never joins two known ones; a run of exactly equal versions keeps its first, a run
+    that is only the same because a reading knew less keeps the reading that knew the most;
+  - with the bot's history clone (`HISTORY_CLONE`; skipped without one): `date_archive`, so an archive tag made by the
+    run's clock takes its deleting commit's date, an exact rename's `renamed_to` (else its PNG's exact rename), or
+    `moved_to` for a PSD moved into MDW (retired, not deleted).
+  Measured on the jetson's 15:41 pickles at TTSCardMaker 6e50c3ee: 755 -> 446 versions, 448 -> 354 names (309 dropped on
+  293 cards, 63 normalized), 289 version records; ZOEY!!!!! (renamed to Z!!!!! in 35adb383) and White Palace (moved to
+  MDW/The Morgue in b6330730) dated from git.
 - **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
-  every old path to the current one) is removed, so each version keeps the path it was parsed at. Both readers key history by
+  every old path to the current one) is removed from both modes (legacy too, 2026-10-23), so each version keeps the path it
+  was parsed at. Both readers key history by
   name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
   version's own path.
 - **Duplicates** (`duplicate_of`) get no versions; they are copies of their original.
@@ -470,7 +491,8 @@ github_api reads it inside a try/except and takes the token from the environment
     card. The run's earliest `from` moves to the version that holds its data; that version keeps its own cause and
     `legacy` flag (−15 on the 2026-10-22 pickles: 5 repeats of the version before, 10 equal to the current card);
   - re-date the versions that have a blob (3 of 178 change);
-  - mark the 291 blob-less versions `legacy: true` with their stored dates;
+  - give a blob-less version the blob of the one commit at its path with its stored time (`GitIndex.blob_at`; then it
+    is dated like any version), and a carried start that commit; mark the rest `legacy: true` with their stored dates;
   - date ZOEY!!!!!'s archive tag: `at` 2026-06-18 and `commit` 35adb383. The merged archive code backfills the tag on the
     jetson's first /update_stats after the deploy (no PICKLE since dfdf953 yet); the seed pass then only adds the commit and
     date, or tags it itself when seeded from an older PICKLE.
@@ -496,8 +518,8 @@ github_api reads it inside a try/except and takes the token from the environment
   exactly), and atomically: temp file, fsync, replace, as `save_pickle` does.
 - **The round trip is a test:** `record(card(record(c))) == record(c)` and every field equal through `getattr`, for all 819 cards
   and 469 versions of the live pickles.
-- **The archive tag** is main's `{at, path, blob, commit, renamed_to?, backfill?}`, with `at` and `commit` from git (§7.1,
-  step 8).
+- **The archive tag** is main's `{at, path, blob, commit, renamed_to?, moved_to?, backfill?}`, with `at` and `commit` from
+  git (§7.1, step 8); `moved_to` is the MDW path of a PSD moved there (retired, not deleted).
 
 **Manifest.**
 ```json
