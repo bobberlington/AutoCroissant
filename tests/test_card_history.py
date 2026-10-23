@@ -867,13 +867,15 @@ def lost(tmp_path):
     return SimpleNamespace(cards=cards, bot=bot, c=c, stats=stats, old=defaultdict(list))
 
 
-def test_bot_snapshots_skip_reverted_and_non_clones(lost, tmp_path):
+def test_bot_snapshots_skip_reverted_and_non_clones(lost, tmp_path, capsys):
     snaps = ch.bot_snapshots(str(lost.bot))
     assert [s.at for s in snaps] == [1500.0, 2500.0, 4500.0, 4700.0]                    # 4600 reverted by 4700
     assert "Items/A.psd" in snaps[0].stats and snaps[2].stats["Gone"].ability == "Gone words."
     assert ch.bot_snapshots(str(tmp_path / "nothing")) == [] and ch.bot_snapshots("") == []
     subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{lost.bot}", str(tmp_path / "shallow")], check=True)
+    capsys.readouterr()
     assert ch.bot_snapshots(str(tmp_path / "shallow")) == []                              # a shallow clone: no history
+    assert "is no full clone (git fetch --unshallow)" in capsys.readouterr().out        # said, not silent
 
 
 def test_recover_restores_lost_versions_starts_and_gone_cards(lost):

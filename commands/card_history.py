@@ -876,6 +876,7 @@ def _pickle_log(clone: str) -> tuple:
         return ([], [])
     shallow = run(["git", "-C", clone, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True, env=env)
     if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        print(f"History recovery: {clone} is no full clone (git fetch --unshallow); the PICKLE commits wait for one")
         return ([], [])
     log = run(["git", "-C", clone, "log", "HEAD", "--format=%H%x09%ct%x09%B%x00", "--", *PICKLE_FILES],
               capture_output=True, env=env)
