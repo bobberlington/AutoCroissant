@@ -95,11 +95,11 @@ def batch_env(where: str = "", **extra: str) -> dict:
 # ========================
 # Helper Functions
 # ========================
-def _git(*args: str) -> str:
+def _git(*args: str, **extra: str) -> str:
     """Run git in the history clone (blobless: only rev-list, ls-tree, merge-base, fetch here, never diff/log)."""
     clone = expanduser(HISTORY_CLONE)
     return run(["git", "-C", clone, *args], capture_output=True, encoding="utf-8",
-               check=True, timeout=GIT_TIMEOUT, env=batch_env(clone)).stdout
+               check=True, timeout=GIT_TIMEOUT, env=batch_env(clone, **extra)).stdout
 
 
 def _tree(commit: str) -> dict:
@@ -242,7 +242,34 @@ def pinned_ref(repository: str, path: str, blob: Optional[str] = None) -> Option
 
 def raw_url(repository: str, path: str, blob: Optional[str] = None) -> str:
     """A raw link pinned to the commit that last changed path, if blob matches it; else the branch link."""
-    return f"{RAW_BASE}{repository}/{pinned_ref(repository, path, blob) or CARD_BRANCH}/{quote(path, safe='/')}"
+    return raw_url_at(repository, path, pinned_ref(repository, path, blob) or CARD_BRANCH)
+
+
+def raw_url_at(repository: str, path: str, ref: str) -> str:
+    """A raw link to path at a commit (or branch)."""
+    return f"{RAW_BASE}{repository}/{ref}/{quote(path, safe='/')}"
+
+
+def commit_before(repository: str, path: str, end: float) -> Optional[tuple]:
+    """
+    The newest commit on the card branch that changed path before end (/query as_of's image of that day), from the
+    history clone (rev-list over its trees: no blob is read, none fetched).
+
+    Returns:
+        (commit sha, its committer time, whether a later commit changed path), or None: no commit that old, another
+        repository than the clone's, or no readable clone (one console line)
+    """
+    if repository != REPOSITORY or not isdir(expanduser(HISTORY_CLONE)):
+        return None
+    try:
+        rows = _git("rev-list", "--timestamp", CARD_BRANCH, "--", path, GIT_NO_LAZY_FETCH="1").split()
+    except (OSError, SubprocessError) as e:
+        print(f"Repo history: no commit of {path} looked up ({e})")
+        return None
+    for i in range(0, len(rows) - 1, 2):
+        if float(rows[i]) < end:
+            return (rows[i + 1], float(rows[i]), i > 0)
+    return None
 
 
 # ========================
@@ -252,8 +279,10 @@ __all__ = [
     'BATCH_MODE',
     'batch_env',
     'batch_overrides',
+    'commit_before',
     'pinned_ref',
     'raw_url',
+    'raw_url_at',
     'refresh',
     'ssh_command',
 ]

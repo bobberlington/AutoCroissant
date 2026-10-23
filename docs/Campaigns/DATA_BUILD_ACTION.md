@@ -750,12 +750,17 @@ A duplicate's change is listed under its original.
     card's first version, so "not made yet" would overclaim).
   - When archived and `t ≥ archived.at`: "archived on <date> (PSD deleted in <commit>)", showing the last version. A tag
     with no `at` counts as archived after its last version only.
-- **The image** is pinned to `version.png_commit`, so the jetson runs no git.
+- **The image** of that day (2026-10-23): the newest commit of the card's PNG before the end of the day, from the bot's
+  history clone (`repo_history.commit_before`: one `rev-list` over trees, no blob). The current card posts it pinned to
+  that commit with "Image: as of <date> (it has changed since)" when the PNG changed later (a carried start reaches back
+  before today's re-render); an older version adds an "Image (<date>)" button. Without the clone, a day before the
+  current card's own commit says "Image: today's (that day's is not known)". `version.png_commit` (the PNG at `to`)
+  stays for the website.
 - **Legacy versions** say "(date approximate)".
 - **It ships first (step 3) on today's old_stats.** There, `from` is the stored timestamp and `to` is the next version's. Until the
   build records `edit` versions, the reply says "Database edits (website, /update_metadata) are not dated yet: a version
   shows those it had when it was replaced, the current card today's." (no cutover date exists before step 8). An older
-  version shows its stored data, not its image, until `png_commit` arrives with the build.
+  version shows its stored data and, with the history clone, an Image button.
 - **The live check card** is Tainted Bethany: 4 old versions dated 2026-01-30, 02-07, 10-19, 10-19 in `TIMEZONE` (01-31,
   02-08, 10-19, 10-19 in UTC). Only the fourth has a blob, so the first three say "(date approximate)". Versions 3 and 4 share
   a timestamp, so version 3 is never picked until the seed pass drops duplicates.
