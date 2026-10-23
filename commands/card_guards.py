@@ -4,7 +4,8 @@ The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml 
 merged into the old PNG; Photoshop's stored composite only cross-checks); guard 2 (card_standards) checks the pushed PSDs
 against the card standards (fonts included) and fixes only the 0-pixel classes. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
-previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window.
+previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
+pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] [--fonts <dir>] --out <dir>
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from json import dump, dumps, load, loads
 from os import cpu_count, environ, makedirs
 from os.path import basename, dirname, join, splitext
-from re import fullmatch
+from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from time import sleep as _sleep
@@ -34,6 +35,7 @@ from typing import Callable, Optional
 
 import commands.card_standards as standards
 import commands.png_export as png_export
+import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
 from commands.card_bake import RECENT, Snapshot, fetch_verified, local_snapshot, recent_paths, snapshot_at
 from commands.card_check import vocabulary
@@ -49,7 +51,7 @@ from global_config import CARD_REPO, ICON_MANIFEST_PATH
 # Configuration
 # ========================
 SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/card_standards.py", "commands/txt2_repair.py",
-                "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
+                "commands/psd_diff.py", "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
                 "commands/psd_parser.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
@@ -58,7 +60,10 @@ BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besi
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
 MODES = ("dry", "report", "on")
-LINE = "{login} pushed {card} with these issues: {issues}. [{short}]({url})"
+LINE = "{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"
+CHANGES_DISCORD = 120                           # characters of a card's changes in its Discord line (psd_diff)
+CHANGES_COMMENT = 600                           # and in the commit comment
+MARKDOWN = r"([\\`*_~|<\[\]])"                   # escaped in card text and layer names (GitHub and Discord markdown)
 DISCORD_LIMIT = 2000
 SUPPRESS_EMBEDS = 4                             # Discord message flag: no link previews
 URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
@@ -130,6 +135,7 @@ class Result:
     r10: dict = field(default_factory=dict)     # png_check of a pushed PNG
     notes: list = field(default_factory=list)   # (text, told on Discord)
     writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind", "line"}
+    changes: list = field(default_factory=list) # what changed inside a modified PSD (psd_diff phrases)
     error: str = ""
 
     @property
@@ -566,6 +572,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes)
     old = png_export.open_psd(source.blob(job.psd_old)) if job.psd_old else None
+    if old is not None:
+        result.changes = changes(old, new, parser)
     rule_page = standards.kind_of(job.psd) == "rule"
     # guard 1
     if job.case in ("stale", "beside"):
@@ -633,6 +641,16 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
                                   "line": "; ".join(fixed.applied)})
 
 
+def changes(old, new, parser) -> list:
+    """What changed inside the PSD (psd_diff), icons named by the parser's vocabulary; [] when psd_diff fails (it only
+    tells, so it never stops a card)."""
+    try:
+        return psd_diff.changes(old, new, getattr(getattr(parser, "icons", None), "codepoints", None))
+    except Exception:                           # report only: the guards go on without it
+        print(format_exc(), file=stderr)
+        return []
+
+
 def _init_worker(clone: str, repository: str, context, vocab) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     _worker.update(source=Source(clone, repository), context=context, parser=vocab.parser())
@@ -664,7 +682,7 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "commit": result.job.commit, "export": result.export, "r10": result.r10, "issues": result.issues,
                  "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
                  "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
-                 "expect": _expect(result.job)}
+                 "changes": result.changes, "expect": _expect(result.job)}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -767,6 +785,8 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
         out.append("No card PSD or PNG to guard.")
     for entry in data["cards"]:
         out.append(f"**{entry['card']}** (`{entry['psd']}`, {entry['login']}, `{entry['commit'][:8]}`)")
+        if entry.get("changes"):
+            out.append(f"- Changed: {_changes_line(entry, CHANGES_COMMENT)}")
         line = _guard1_line(entry, mode)
         if line:
             out.append(f"- {line}")
@@ -805,15 +825,31 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
     return "\n".join(out)
 
 
+def _changes_line(entry: dict, limit: int) -> str:
+    """The card's changes (psd_diff) as markdown text: card text and layer names never format or link."""
+    return psd_diff.line([sub(MARKDOWN, r"\\\1", phrase) for phrase in entry.get("changes", [])], limit)
+
+
+def _changed(entry: dict) -> str:
+    """" (what changed)" after the card's name in its Discord line; "" for a new PSD or a re-save."""
+    text = _changes_line(entry, CHANGES_DISCORD)
+    return f" ({text})" if text else ""
+
+
 def discord_payload(data: dict, repository: str) -> dict:
     """
-    The webhook body: one LINE per card with something to tell (a refusal or a remaining issue), whole lines dropped from
-    the end to fit DISCORD_LIMIT; {} when nothing. Nobody is pinged and links get no preview.
+    The webhook body: one LINE per card with something to tell (a refusal or a remaining issue), with what changed in
+    its PSD; to fit DISCORD_LIMIT, cards lose their changes (the last card first) before whole lines go from the end; {}
+    when nothing. Nobody is pinged and links get no preview.
     """
     url = f"https://github.com/{repository}/commit/"
-    lines = [LINE.format(login=entry["login"], card=entry["card"], issues="; ".join(entry["told"]).rstrip("."),
-                         short=(entry["commit"] or data["after"])[:8], url=url + (entry["commit"] or data["after"])[:URL_SHA])
-             for entry in data["cards"] if entry["told"]]
+    told = [entry for entry in data["cards"] if entry["told"]]
+
+    def card_line(entry: dict, changes: bool = True) -> str:
+        return LINE.format(login=entry["login"], card=entry["card"], changes=_changed(entry) if changes else "",
+                           issues="; ".join(entry["told"]).rstrip("."), short=(entry["commit"] or data["after"])[:8],
+                           url=url + (entry["commit"] or data["after"])[:URL_SHA])
+    lines = [card_line(entry) for entry in told]
     if not lines:
         return {}
 
@@ -824,6 +860,11 @@ def discord_payload(data: dict, repository: str) -> dict:
 
     kept = len(lines)
     content = assemble(kept)
+    for i in range(len(lines) - 1, -1, -1):     # the issues are what the post is for
+        if len(content) <= DISCORD_LIMIT:
+            break
+        lines[i] = card_line(told[i], False)
+        content = assemble(kept)
     while len(content) > DISCORD_LIMIT and kept > 0:
         kept -= 1
         content = assemble(kept)
@@ -1220,6 +1261,7 @@ __all__ = [
     'Writer',
     'added',
     'build_context',
+    'changes',
     'check',
     'discord_payload',
     'after_window',
