@@ -703,8 +703,8 @@ github_api reads it inside a try/except and takes the token from the environment
   A value the head's entry (or `[cards]` line) already has is no change: no op, no restamp of `_by`, no commit. An entry
   holding PSD fields keeps its `_by`/`_at` when a Discord edit sets none of them (an alias, a folder field): the bake
   credits the entry's `_by`, and a `discord:` one gets no `Edit-by` trailer, so the PSD field's editor keeps the credit.
-  The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands, and
-  until step 10 saves stats.pkl so a restart keeps it. A card with only
+  The bot applies the change in memory at once (`CardEdits.apply`), so `/query` shows it before the run lands; it
+  saves no stats.pkl (a restart loads card_data/, which has the edit once a run built it). A card with only
   a PNG gets the entry in the file (the website shows it) but no database row.
 - **`/mass_replace`:**
   - `author` → right-hand sides rewritten in Card Authors.txt plus a `[people] old = new` line;
