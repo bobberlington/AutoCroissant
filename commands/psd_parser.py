@@ -7,6 +7,7 @@ from bisect import bisect_left
 from copy import deepcopy
 from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
+from os import PathLike
 from psd_tools import PSDImage
 from re import compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
@@ -372,7 +373,7 @@ class PSDParser:
             )
 
         # Parse PSD layers
-        psd = file_path if isinstance(file_path, PSDImage) else PSDImage.open(file_path)
+        psd = PSDImage.open(file_path) if isinstance(file_path, (str, bytes, PathLike)) else file_path
         self._extract_from_layers(psd, card, relative_path)
 
         return card
