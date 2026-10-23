@@ -303,6 +303,13 @@ commit and pings the card makers' role on Discord (the shared secret `DISCORD_FO
   card into the job summary. Today's notes (the clone at e4e0a58): Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types
   `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`;
   `tests/test_card_check.py` pins them. Operations: autocroissant-run-and-operate §7.
+- **Rules 3+, the push guards** (BUILT 2026-10-22 on AutoCroissant `work/push-guards` and TTSCardMaker `work/push-guards`, not
+  landed; design and build notes `docs/Campaigns/PUSH_GUARDS.md`): `.github/workflows/card-guards.yml` runs
+  `commands/card_guards.py` (`png_export.py`: a PSD pushed without its PNG gets the PNG from its stored composite, gated;
+  `card_standards.py`: this ledger's rules R1-R11 on each pushed PSD, R9 Txt2 sync and R11 exact names fixed with byte gates, the
+  rest reported once per push in the standards channel, `DISCORD_STANDARDS_WEBHOOK`, no role ping). Off until the repo variable
+  `CARD_GUARDS` is `report`, then `on`; dispatches default to dry runs. At 6e50c3ee the rules reproduce this ledger's counts
+  (PUSH_GUARDS.md section 16).
 - **Later rules, deviations by class** (`site/build/check_cards.py` proposed beside the rulebook campaign's `check_rules.py`, or a bot
   module in the card check's shape): for each PSD whose blob changed on the push, report every deviation by class, the classes being this
   ledger's (the scratch `corpus_scan.py` + `aggregate.py` + `classify.py` ported into the bot next to `psd_edit.classify` and

@@ -70,7 +70,7 @@ def cards(tmp_path):
     work.mkdir()
     titled = card()
     ImageDraw.Draw(titled).rectangle((40, 70, 55, 85), fill=(0, 0, 0))
-    for stem in ("Snack", "Bread", "Gone", "Lonely", "Kept", "Bot_Card"):
+    for stem in ("Snack", "Bread", "Gone", "Lonely", "Kept", "Dropped", "Bot_Card"):
         _psd(root, work, f"{FOLDER}/{stem}.psd", card())
         _png(root, f"{FOLDER}/{stem}.png", card())
     _png(root, f"{FOLDER}/Snack2.png", titled)                       # a numbered PNG of Snack.psd
@@ -88,6 +88,8 @@ def cards(tmp_path):
     (root / f"{FOLDER}/Gone.psd").unlink()                            # deleted: its PNG stays
     _png(root, f"{FOLDER}/Lonely.png", green)                         # PNG pushed alone, not matching its PSD
     (root / f"{FOLDER}/Kept.png").unlink()                            # PNG deleted, PSD kept
+    _psd(root, work, f"{FOLDER}/Dropped.psd", green)                  # PSD pushed, its PNG deleted: no PNG made
+    (root / f"{FOLDER}/Dropped.png").unlink()
     _psd(root, work, "MDW/Template.psd", green)                       # not a card
     alice = _commit(root, "Alice's cards", author="Alice")
     _psd(root, work, f"{FOLDER}/Bot_Card.psd", green)
@@ -106,13 +108,14 @@ def test_jobs_cover_every_case(cards):
     assert got == {("Snack.psd", "stale", "Snack.png"), ("Bread.psd", "pair", "Bread.png"),
                    ("New_Card.psd", "new", "New_Card.png"), ("New_Name.psd", "rename", "New_Name.png"),
                    ("Gone.psd", "deleted", "Gone.png"), ("Lonely.psd", "png-only", "Lonely.png"),
-                   ("Kept.psd", "png-deleted", "Kept.png")}
-    assert set(skipped) == {f"{FOLDER}/Bot_Card.psd"} and notes == []
+                   ("Kept.psd", "png-deleted", "Kept.png"), ("Dropped.psd", "psd-only", "")}
+    assert set(skipped) == {f"{FOLDER}/Bot_Card.psd"} and notes == [f"`{FOLDER}/Dropped.psd` was pushed with its PNG deleted: no PNG is made"]
     snack = next(j for j in jobs if j.case == "stale")
     assert snack.numbered == {f"{FOLDER}/Snack2.png": tree[f"{FOLDER}/Snack2.png"][1]} and snack.login == "Alice"
     assert snack.commit == alice and snack.psd_old and snack.psd_new and snack.png_old == tree[f"{FOLDER}/Snack.png"][1]
     rename = next(j for j in jobs if j.case == "rename")
-    assert rename.copy_from == tree.get("Creatures/Other/3 Stars/Old_Name.png", ("", ""))[1]
+    assert rename.copy_from == source.tree(base)["Creatures/Other/3 Stars/Old_Name.png"][1]
+    assert rename.left == "Creatures/Other/3 Stars/Old_Name.png"
     only = cg.plan_jobs(source, base, bot, "actor", {"snack"})[0]
     assert [j.case for j in only] == ["stale"]
 
@@ -159,10 +162,12 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
     assert by["Lonely"]["r10"]["ok"] is False and "push the PSD too?" in by["Lonely"]["told"][0]
     assert by["Gone"]["told"] == ["Gone.png is left without its PSD"]
+    assert by["New_Name"]["told"] == ["Old_Name.png is left at the PSD's old name"]
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 7, "told": summary["told"], "writes": 4, "errors": 0} and summary["told"] >= 2
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "writes": 4, "errors": 0} and summary["told"] >= 2
+    assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
     assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
     payload = json.loads((out / "discord.json").read_text())
@@ -177,7 +182,8 @@ def test_check_end_to_end(cards, tmp_path):
 def test_whole_tree(cards, tmp_path):
     root, base, alice, bot = cards
     data = cg.check(str(root), bot, whole_tree=True, out=str(tmp_path / "out"), workers=1)
-    assert {Path(c["psd"]).stem for c in data["cards"]} == {"Snack", "Bread", "Lonely", "Kept", "Bot_Card", "New_Card", "New_Name"}
+    assert {Path(c["psd"]).stem for c in data["cards"]} == {"Snack", "Bread", "Lonely", "Kept", "Dropped", "Bot_Card", "New_Card",
+                                                            "New_Name"}
     assert all(c["case"] == "whole" and not c["writes"] for c in data["cards"])
     assert {Path(c["psd"]).stem for c in data["cards"] if c["r10"].get("ok") is False} == {"Snack", "Lonely", "Bot_Card"}
 

@@ -62,6 +62,7 @@ SUPPRESS_EMBEDS = 4                             # Discord message flag: no link 
 NOBODY = "Someone"
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
+CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 _worker: dict = {}
 
 
@@ -96,7 +97,7 @@ class Writer:
 class Job:
     """One card's work in the push."""
     psd: str                                    # the PSD path at after (the deleted one's for "deleted")
-    case: str                                   # stale, pair, new, beside, rename, png-only, deleted, png-deleted, whole
+    case: str                                   # stale, pair, new, beside, rename, psd-only, png-only, deleted, png-deleted, whole
     psd_old: str = ""                           # its blob before the push
     psd_new: str = ""                           # its blob at after
     png: str = ""                               # the PNG path (to check, or to write)
@@ -104,6 +105,7 @@ class Job:
     png_new: str = ""                           # the pushed PNG (R10)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> blob at after
     copy_from: str = ""                         # rename: the old PNG's blob, copied to png
+    left: str = ""                              # rename: the old PNG, still at its old path
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -160,8 +162,8 @@ def _is_png(path: str) -> bool:
 
 
 def _card_png(path: str) -> bool:
-    """A PNG beside the card PSDs (MDW/ and Markers/ hold none)."""
-    return _is_png(path) and is_card_psd(path[:len(path) - 4] + ".psd")
+    """A PNG in the card folders (not Types/, site/, TTS/; MDW/ and Markers/ hold no card)."""
+    return _is_png(path) and path.startswith(CARD_ROOTS) and is_card_psd(path[:len(path) - 4] + ".psd")
 
 
 # ========================
@@ -310,6 +312,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             deleted.setdefault(c.old, []).append(c.path)
     renamed_new = {c.path: deleted[c.new].pop(0) for c in psds if c.status == "A" and deleted.get(c.new)}
     renamed_old = set(renamed_new.values())
+    png_deleted = {_key(p) for p, c in pngs.items() if c.status == "D"}
     notes, jobs = [], []
 
     def who(path: str) -> tuple:
@@ -337,6 +340,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
                 if old_png:
                     job.case, job.png = "rename", splitext(change.path)[0] + splitext(old_png)[1]
                     job.copy_from, job.psd_old = old_tree[old_png][1], change.new
+                    job.left = old_png if old_png in tree else ""
                     jobs.append(job)
             continue
         if png and png in pngs and pngs[png].status in "AM":
@@ -345,6 +349,9 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             job.case, job.png, job.png_old, job.numbered = "stale", png, tree[png][1], numbered(change.path)
         elif png:
             job.case, job.png, job.png_old, job.numbered = "beside", png, tree[png][1], numbered(change.path)
+        elif _key(change.path) in png_deleted:      # the author deleted the PNG: the standards only
+            job.case = "psd-only"
+            notes.append(f"`{change.path}` was pushed with its PNG deleted: no PNG is made")
         else:
             job.case, job.png = "new", splitext(change.path)[0] + ".png"
         jobs.append(job)
@@ -486,6 +493,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         result.export = {"outcome": "re-exported", "why": "", "copied": True}
         result.writes.append({"path": job.png, "file": file, "sha": blob_sha(data), "kind": "png",
                               "line": "the PNG copied to the PSD's new name"})
+        if job.left:
+            result.notes.append((f"{basename(job.left)} is left at the PSD's old name", True))
         return
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes)

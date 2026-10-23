@@ -305,11 +305,9 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         return Export("refused", G7, "G7")
     before = composite(old) if old is not None else None
     # G4: how the old PNG was exported (raw or converted), from the old pair
-    if old is not None and before is not None:
-        result.vote = psd_edit.icc_vote(old, old_png)
-        icc = psd_edit.export_icc(old, old_png)
-    else:
-        icc = True
+    voter = old if old is not None and before is not None else new     # a new PSD beside a PNG: that PNG's own export
+    result.vote = psd_edit.icc_vote(voter, old_png)
+    icc = psd_edit.export_icc(voter, old_png)
     result.icc = icc_mode(new, icc)
     out = like_mode(convert(new, composed, icc), old_png.mode)
     # G3: did any pixel move? Composites in their own values when the profile stayed, else as exported
