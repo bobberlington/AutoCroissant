@@ -259,3 +259,53 @@ def test_an_archived_name_wins_over_an_alias(db, monkeypatch):
     monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
     assert qc._as_of_match("ZOEY!!!!!") == (None, "ZOEY!!!!!")
     assert qc._as_of_match("Z!!!!!") == ("z!!!!!.png", "Z!!!!!")
+
+
+# ========================
+# The image of that day
+# ========================
+def _png_clone(tmp_path, monkeypatch, path, times):
+    """A bare clone of a card repo whose PNG at path changed at each of times; the bot's history clone."""
+    import os
+    import subprocess
+    import commands.repo_history as rh
+    repo, shas = tmp_path / "cards", []
+    (repo / os.path.dirname(path)).mkdir(parents=True)
+
+    def git(*args, at=None):
+        stamp = {} if at is None else {"GIT_AUTHOR_DATE": f"@{int(at)} +0000", "GIT_COMMITTER_DATE": f"@{int(at)} +0000"}
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
+                              env={**os.environ, "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x",
+                                   "GIT_COMMITTER_NAME": "a", "GIT_COMMITTER_EMAIL": "a@x", **stamp}).stdout
+    git("init", "-q", "-b", "main")
+    for i, at in enumerate(times):
+        (repo / path).write_bytes(b"png %d" % i)
+        git("add", "-A")
+        git("commit", "-q", "-m", f"png {i}", at=at)
+        shas.append(git("rev-parse", "HEAD").strip())
+    subprocess.run(["git", "clone", "-q", "--bare", str(repo), str(tmp_path / "history.git")], check=True,
+                   capture_output=True)
+    monkeypatch.setattr(rh, "HISTORY_CLONE", str(tmp_path / "history.git"))
+    return shas
+
+
+def test_the_image_of_that_day(db, tmp_path, monkeypatch):
+    """Hiveblood: the current card's start carried back to 2026-02 while its PNG was re-rendered 2026-10-22. as_of a
+    day in between posts the PNG of that day (pinned to its commit), after the re-render today's; an old version links
+    its own image of that day. Without the history clone a carried day says today's image is shown."""
+    current = cm.stats_db.stats["Tainted Bethany"]
+    current.version = {"from": _at(2026, 2, 7, 21, 0), "from_commit": None, "to": None, "to_commit": None,
+                       "cause": "legacy", "png_commit": None, "legacy": False}
+    cm.stats_db.old_stats["Tainted Bethany"][1:] = []
+    assert _ask("Tainted Bethany", "2026-06-01")[0]["content"].endswith("Image: today's (that day's is not known).")
+    first, second = _png_clone(tmp_path, monkeypatch, f"{BETHANY}.png", [_at(2026, 1, 30, 17), _at(2026, 10, 22, 7)])
+    sent = _ask("Tainted Bethany", "2026-06-01")
+    assert sent[0]["content"].endswith("the current card (version 2 of 2), from 2026-02-07.\n"
+                                       f"{qc.AS_OF_EDITS_NOTE}\nImage: as of 2026-01-30 (it has changed since).")
+    png = BETHANY.replace(" ", "%20") + ".png"
+    assert sent[1]["content"] == f"https://raw.githubusercontent.com/{qc.card_repo.repository}/{first}/{png}"
+    assert [kw["content"] for kw in _ask("Tainted Bethany", "2026-10-22")][1:] == ["https://img/tainted_bethany.png"]
+    assert "Image:" not in _ask("Tainted Bethany", "2026-10-22")[0]["content"]
+    old = _ask("Tainted Bethany", "2026-02-01")[0]
+    assert old["links"][1] == ("Image (2026-01-30)", f"https://raw.githubusercontent.com/{qc.card_repo.repository}/"
+                                                     f"{first}/{png}")

@@ -19,7 +19,7 @@ from commands.card_edits import ALIASES_MOVED
 from commands.card_history import start as version_start
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
-from commands.repo_history import raw_url
+from commands.repo_history import commit_before, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
 from commands.utils import queue_long_message, queue_message, split_long_message
 
@@ -626,9 +626,10 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     _post_card(interaction, closest)
 
 
-def _post_card(interaction: Interaction, closest: str) -> None:
-    """The card's image (an embed when it has a website name, subseries, note or original) and any ambiguity."""
-    url, page = card_repo.get_card_url(closest), card_repo.site_url(closest)
+def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None) -> None:
+    """The card's image (an embed when it has a website name, subseries, note or original) and any ambiguity; url: an
+    image other than today's (/query as_of)."""
+    url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
     shown = getattr(card, "display_name", None) if card else None
@@ -796,13 +797,42 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         line = f"{head}{which}, {since}{until}."
     line = f"{line}\n{AS_OF_EDITS_NOTE}"
 
-    if card is current and key:                          # the current card: its image, as without as_of
-        queue_message(interaction, line)
-        _post_card(interaction, key)
+    if card is current and key:                          # the current card: its image of that day
+        url, said = _image_at(card_repo.git_files.get(key), end, card.timestamp)
+        queue_message(interaction, f"{line}\n{said}" if said else line)
+        _post_card(interaction, key, url)
         return
-    page = card_repo.site_url(key) if key else None      # an older version: its stored data (no image of it is kept)
-    queue_message(interaction, f"{line}\n```{_format_metadata(card, name)}```",
-                  links=[("Card page", page)] if page else None)
+    page = card_repo.site_url(key) if key else None      # an older version: its stored data, its image of that day
+    links = [("Card page", page)] if page else []
+    png = splitext(card.path or "")[0] + ".png"
+    known = card_repo.git_files.get(basename(png).lower(), "")
+    png = known if known.lower() == png.lower() else png     # a PNG named in another letter case (Grand_Doomer.png)
+    found = commit_before(card_repo.repository, png, end) if card.path else None
+    if found is not None:
+        links.append((f"Image ({_day(found[1])})", raw_url_at(card_repo.repository, png, found[0])))
+    queue_message(interaction, f"{line}\n```{_format_metadata(card, name)}```", links=links or None)
+
+
+def _image_at(png: Optional[str], end: float, read: float) -> tuple:
+    """
+    The current card's image as of end (a carried start reaches back before today's PNG): the newest commit of its PNG
+    before end, from the history clone (repo_history.commit_before).
+
+    Args:
+        png: The card's PNG path
+        end: The as_of moment
+        read: When the card's PSD was read (its timestamp): without the clone, a day before it says it can't tell
+
+    Returns:
+        (raw url, or None for today's image; a line saying which image it is, or "" when it is today's and that day's)
+    """
+    found = commit_before(card_repo.repository, png, end) if png else None
+    if found is None:
+        return (None, "Image: today's (that day's is not known)." if end <= (read or 0.0) else "")
+    sha, at, later = found
+    if not later:
+        return (None, "")
+    return (raw_url_at(card_repo.repository, png, sha), f"Image: as of {_day(at)} (it has changed since).")
 
 
 def query_ability(interaction: Interaction,
