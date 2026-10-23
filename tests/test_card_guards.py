@@ -198,12 +198,13 @@ def test_check_end_to_end(cards, tmp_path):
     assert by["New_Name"]["writes"][0]["sha"] == cg.Source(str(root)).tree(base)["Creatures/Other/3 Stars/Old_Name.png"][1]
     assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
     assert by["Lonely"]["r10"]["ok"] is False and by["Lonely"]["told"] == []          # R10: the comment only (TELL_PNG_MISMATCH)
-    assert by["Gone"]["told"] == ["Gone.png is left without its PSD"]
-    assert by["New_Name"]["told"] == ["Old_Name.png is left at the PSD's old name"]
+    assert by["Gone"]["told"] == [] and by["Gone"]["notes"] == ["Gone.png is left without its PSD"]     # comment only
+    assert by["New_Name"]["told"] == [] and by["New_Name"]["notes"] == ["Old_Name.png is left at the PSD's old name"]
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "writes": 4, "errors": 0} and summary["told"] >= 2
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 8, "writes": 4, "errors": 0,
+                       "card_errors": 0} and summary["told"] >= 1
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
     assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
@@ -270,6 +271,42 @@ def test_png_mismatch_reaches_discord_only_when_switched_on(cards, tmp_path, mon
     monkeypatch.setattr(cg, "TELL_PNG_MISMATCH", True)
     data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(tmp_path / "out"), workers=1, cards={"lonely"})
     assert "Lonely.png does not match its PSD" in data["discord"]["content"]
+
+
+def test_a_png_mismatch_alone_still_gets_its_comment(cards, tmp_path):
+    """R10 is comment-only: a PNG-only push whose PNG does not match its PSD tells nothing on Discord, yet summary.json
+    asks for the comment (card-guards.yml's Comment step gates on "comment")."""
+    root, base, alice, bot = cards
+    out = tmp_path / "out"
+    data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(out), workers=1, cards={"lonely"})
+    (lonely,) = data["cards"]
+    assert lonely["case"] == "png-only" and lonely["r10"]["ok"] is False and lonely["told"] == []
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["told"] == 0 and summary["writes"] == 0 and summary["comment"] == 1
+    assert "Lonely.png does not match its PSD" in (out / "report.md").read_text() and data["discord"] == {}
+
+
+def test_a_card_error_is_told_and_counted(cards, tmp_path, monkeypatch):
+    """A card whose download or composite crashed: its error is told on Discord (a stale or new PSD: "PNG not made"),
+    the others go on, and summary.json's card_errors turns the run red."""
+    root, base, alice, bot = cards
+    real = cg.png_export.export_new
+
+    def crash(*args, **kwargs):
+        raise MemoryError("composite")
+    monkeypatch.setattr(cg.png_export, "export_new", crash)
+    out = tmp_path / "out"
+    data = cg.check(str(root), bot, base, "o/cards", mode="on", out=str(out), workers=1, cards={"new card", "snack"})
+    by = {c["card"]: c for c in data["cards"]}
+    assert by["New Card"]["error"] == "MemoryError: composite" and not by["New Card"]["writes"]
+    assert "the bot could not finish checking it (MemoryError); PNG not made: export it in Photoshop" in by["New Card"]["told"]
+    assert by["Snack"]["writes"] and not by["Snack"]["error"]
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["card_errors"] == 1 and summary["errors"] == 1 and summary["told"] >= 1
+    assert "New Card with these issues: the bot could not finish checking it" in data["discord"]["content"]
+    result = cg.Result(cg.Job("X/A.psd", "pair"), error="KeyError: 'x'")
+    assert result.told() == ["the bot could not finish checking it (KeyError)"]
+    monkeypatch.setattr(cg.png_export, "export_new", real)
 
 
 def test_report_mode_tells_the_fixable_issues():
@@ -363,7 +400,8 @@ def test_land_commits_what_still_holds(tmp_path, monkeypatch):
     hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1"), "X/B.psd": ("100644", "moved"),
                    "X/B.png": ("100644", "p2"), "X/C.psd": ("100644", "s3")}, heads=("h1", "h2"), recent={"X/C.psd"})
     hub.install(monkeypatch)
-    report = cg.land(plan)
+    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
+    report = cg.land(plan, quiet_from="2026-10-22T17:00:00Z", now=lambda: now)          # a push run: later pushes count
     assert report["sha"] == "c" * 40 and report["landed"] == ["A"]
     assert report["dropped"] == [["B", "superseded: X/B.psd changed on the branch", "X/B.png"],
                                  ["C", "superseded: a later push touched X/C.psd", "X/C.png"]]
@@ -484,6 +522,123 @@ def test_a_psd_fix_survives_a_later_png_push(tmp_path, monkeypatch):
     comment = cg.landed_markdown(json.loads(Path(plan).read_text()), report)
     assert "- Fixed by the bot: the Name layer" in comment and "- Not landed (superseded: X/Snack.png changed on the branch): `X/Snack.png`" in comment
     assert "- The rest landed in `cccccccc`" in comment
+
+
+def test_land_never_raises_and_still_settles_the_post(tmp_path, monkeypatch):
+    """A requests error (a POST, or a GET past its retries) is the error like a Transient: landed.json, the comment's
+    new body and the settled post are written, exit 1, and the post tells the PNG and the fix that were not made."""
+    import requests
+    out = tmp_path / "plan"
+    snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
+    _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
+    bread = _entry("Bread", fixed=["the Name layer is named 'NAME'"])
+    _write(out, bread, "X/Bread.psd", "psd", b"psd", "the Name layer is named 'NAME'")
+    plan = _full_plan(tmp_path, [snack, bread])
+    for where in ("ref_head", "commit_files"):
+        FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1"), "X/Bread.psd": ("100644", "s1"),
+                 "X/Bread.png": ("100644", "p1")}).install(monkeypatch)
+
+        def down(*args, **kwargs):
+            raise requests.ConnectionError("connection reset")
+        monkeypatch.setattr(cg, where, down)
+        for name in ("landed.json", "report-landed.md", "discord-final.json"):
+            (out / name).unlink(missing_ok=True)
+        assert cg.main(["land", "--plan", plan]) == 1
+        landed = json.loads((out / "landed.json").read_text())
+        assert landed["error"] == "ConnectionError: connection reset" and landed["sha"] == "", where
+        assert "Not landed: ConnectionError: connection reset. Nothing was committed." in (out / "report-landed.md").read_text()
+        post = json.loads((out / "discord-final.json").read_text())["content"]
+        assert "PNG not made: the bot's commit failed" in post and "(the bot could not fix it: the bot's commit failed)" in post
+
+
+def test_a_dispatch_does_not_count_its_own_push_as_a_later_one(tmp_path, monkeypatch):
+    """No quiet_from (a dispatch with dry_run false): the last 30 minutes' pushes include the checked push itself, so only
+    the blob check decides; recent_paths is not consulted."""
+    plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1", "X/A.png": "p1"})])
+    hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1")}, recent={"X/A.psd", "X/A.png"})
+    hub.install(monkeypatch)
+    asked = []
+    monkeypatch.setattr(cg, "recent_paths", lambda *args, **kwargs: asked.append(args) or {"X/A.psd"})
+    report = cg.land(plan)
+    assert report["landed"] == ["A"] and report["dropped"] == [] and report["sha"] and not asked
+
+
+def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatch):
+    """The first attempt landed (the branch holds the bot's PNG and fixed PSD): the re-run writes nothing, drops nothing,
+    tells nothing, and the comment keeps saying the writes are on the branch."""
+    out = tmp_path / "plan"
+    snack = _entry("Snack", fixed=["the Name layer is named 'NAME'"], export={"outcome": "re-exported", "changed_px": 5, "numbers": {}},
+                   told=["the Ability layer is outside the Text group"])
+    _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
+    _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
+    plan = _full_plan(tmp_path, [snack])
+    hub = FakeHub({"X/Snack.psd": ("100644", blob_sha(b"psd")), "X/Snack.png": ("100644", blob_sha(b"png"))})
+    hub.install(monkeypatch)
+    report = cg.land(plan)
+    assert report["sha"] == "" and report["error"] == "" and report["dropped"] == [] and not hub.commits
+    assert sorted(report["already"]) == [["Snack", "X/Snack.png"], ["Snack", "X/Snack.psd"]]
+    assert report["told"] == {"X/Snack.psd": ["the Ability layer is outside the Text group"]}      # the PSD did not "change again"
+    comment = cg.landed_markdown(json.loads(Path(plan).read_text()), report)
+    assert "Nothing new to land: 1 card already on the branch" in comment and "Fixed by the bot" in comment
+    assert "Every write is already on the branch" in comment and "Not landed" not in comment and "Not fixed" not in comment
+
+
+def test_a_bot_change_in_the_window_keeps_the_lines(tmp_path, monkeypatch):
+    """A PSD a bot commit changed during the window (no run follows it): its lines are still told, and its fix that
+    could not land is told too. A person's change leaves the card to that push's run."""
+    out = tmp_path / "plan"
+    snack = _entry("Snack", told=["the Ability layer is outside the Text group"], fixed=["the Name layer is named 'NAME'"])
+    _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
+    plan = _full_plan(tmp_path, [snack])
+    FakeHub({"X/Snack.psd": ("100644", "baked"), "X/Snack.png": ("100644", "p1")}).install(monkeypatch)
+    for author, told in ((("AutoCroissant", gc.AUTHOR["email"]), ["the Ability layer is outside the Text group",
+                                                                    "the Name layer is named 'NAME' (the bot could not fix it: "
+                                                                    "X/Snack.psd changed on the branch)"]),
+                         (("Bob", "bob@example.com"), [])):
+        def commits(repo, method, path, **kwargs):
+            assert path == "commits" and kwargs["params"]["path"] == "X/Snack.psd"
+            return type("R", (), {"json": lambda self: [{"commit": {"author": {"name": author[0], "email": author[1]}}}]})()
+        monkeypatch.setattr(cg, "api", commits)
+        report = cg.land(plan)
+        assert report["told"] == {"X/Snack.psd": told}, author
+
+
+def test_bot_changed_in_a_clone(cards):
+    root, base, alice, bot = cards
+    assert cg._bot_changed("", str(root), bot, f"{FOLDER}/Bot_Card.psd")
+    assert not cg._bot_changed("", str(root), bot, f"{FOLDER}/Snack.psd")
+    assert not cg._bot_changed("", str(root), bot, "no/such.psd")
+
+
+def test_a_png_pushed_in_another_case_counts(tmp_path, monkeypatch):
+    """A new Foo.psd's PNG pushed as foo.png during the window: the bot adds no Foo.png beside it, and the refusal of
+    another card whose PNG came back in another case is withdrawn."""
+    out = tmp_path / "plan"
+    foo = _entry("Foo", case="new", png="X/Foo.png", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
+    foo["expect"] = {"X/Foo.psd": "s1", "X/Foo.png": ""}
+    _write(out, foo, "X/Foo.png", "png", b"png", "made")
+    refused = "PNG not made: the card changed size"
+    bar = _entry("Bar", export={"outcome": "refused", "why": refused}, told=[refused])
+    plan = _full_plan(tmp_path, [foo, bar])
+    hub = FakeHub({"X/Foo.psd": ("100644", "s1"), "X/foo.png": ("100644", "theirs"), "X/Bar.psd": ("100644", "s1"),
+                   "X/bar.png": ("100644", "new")})
+    hub.install(monkeypatch)
+    report = cg.land(plan)
+    assert not hub.commits and report["dropped"] == [["Foo", "superseded: X/Foo.png changed on the branch", "X/Foo.png"]]
+    assert report["told"] == {"X/Foo.psd": [], "X/Bar.psd": []}
+    assert report["after"]["X/Bar.psd"] == ["Bar.png was pushed since: the refusal is withdrawn"]
+
+
+def test_login_falls_back_to_a_github_login(monkeypatch):
+    """No GitHub account on the commit: the login in a noreply email, else the pusher's login (github.actor), never the
+    git author name while the API is there; a local run without a token names the git author."""
+    monkeypatch.setattr(cg, "token", lambda: "t")
+    monkeypatch.setattr(cg, "api", lambda *args, **kwargs: type("R", (), {"json": lambda self: {"author": None}})())
+    source = cg.Source("", "o/cards")
+    assert source.login(cg.Writer("c1", "Zom", "123+Zomoroko@users.noreply.github.com", ""), "MichaelJSr") == "Zomoroko"
+    assert source.login(cg.Writer("c2", "Laptop Name", "me@example.com", ""), "MichaelJSr") == "MichaelJSr"
+    monkeypatch.setattr(cg, "token", lambda: "")
+    assert cg.Source("", "o/cards").login(cg.Writer("c3", "Laptop Name", "me@example.com", ""), "MichaelJSr") == "Laptop Name"
 
 
 def test_land_local_commits_in_the_clone(cards, tmp_path):
@@ -662,13 +817,17 @@ def test_workflow_shape(clone):
         assert re.search(r"psd-tools@([\w.-]+)\"", edits.read_text(encoding="utf-8")).group(1) == pin
     names = [s.get("name") for s in steps]
     assert names.index("Check") < names.index("Comment on the commit") < names.index("Land") < names.index("Follow up") \
-        < names.index("Tell Discord") < names.index("Tell Discord the run failed")
+        < names.index("Tell Discord") < names.index("Fail on card errors") < names.index("Tell Discord the run failed")
     tell = steps[names.index("Tell Discord")]
     assert tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "discord-final.json" in tell["run"]
     assert tell["if"].startswith("always() && (env.MODE == 'report' || env.MODE == 'on') && steps.check.outcome == 'success'")
     assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in text and "set -x" not in text
     land = steps[names.index("Land")]
-    assert land["if"] == "env.MODE == 'report' || env.MODE == 'on'" and "--dry-run" in land["run"]
+    # Land never waits on the Comment step's success (a failed comment must not drop the writes), only on Check's
+    assert land["if"] == "!cancelled() && steps.check.outcome == 'success' && (env.MODE == 'report' || env.MODE == 'on')"
+    assert "--dry-run" in land["run"]
+    assert "discord.json" not in tell["run"].replace("discord-final.json", "")      # never check's early post
+    assert "card_errors" in steps[names.index("Fail on card errors")]["run"]
     alert = steps[names.index("Tell Discord the run failed")]
     assert alert["if"] == "(failure() || cancelled()) && github.event_name == 'push' && steps.tell.outputs.posted != 'true'"
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
@@ -753,7 +912,8 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
         (bin_dir / tool).chmod(0o755)
     out = tmp_path / "guards"
     out.mkdir()
-    (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 1, "writes": 0, "errors": 0}))
+    (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 1, "comment": 1, "writes": 0,
+                                                  "errors": 0, "card_errors": 0}))
     (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
     (out / "report.md").write_text("## Card guards\n\nAlice's card.\n")
     (out / "report-landed.md").write_text("## Card guards\n\nAfter the window.\n")
@@ -785,6 +945,48 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     assert sent[0] == {"content": "Card guards: the push by Alice was not guarded (the next failures stay quiet until a run "
                                   "succeeds). https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
     assert "WEBHOOK" in alert["env"]
+
+
+def test_workflow_tells_only_the_settled_post(clone, tmp_path):
+    """Tell Discord posts discord-final.json only: Land ran but settled nothing -> the step fails (the run-failed message
+    goes out instead), nothing posted; Land did not run -> nothing to tell. The Comment step goes up for comment-only
+    findings (R10 alone: told 0, comment 1). Fail on card errors fails on card_errors only."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    job = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))["jobs"]["guard"]
+    steps = {s["name"]: s for s in job["steps"] if s.get("name")}
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "curl").write_text(FAKE_CURL)
+    for tool in ("gh", "curl"):
+        (bin_dir / tool).chmod(0o755)
+    out = tmp_path / "guards"
+    out.mkdir()
+    (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 0, "comment": 1, "writes": 0,
+                                                  "errors": 0, "card_errors": 0}))
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
+    (out / "report.md").write_text("## Card guards\n\n- Lonely.png does not match its PSD\n")
+    (out / "discord.json").write_text(json.dumps({"content": "early"}))
+    posts = tmp_path / "posts.txt"
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "OUT": str(out), "TOLD": job["env"]["TOLD"], "MODE": "on",
+           "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"),
+           "FAKE_POSTS": str(posts), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")}
+    done = _run_steps(steps, ["Comment on the commit"], env, {})
+    assert done["comment"]["id"] and json.loads((tmp_path / "gh.json").read_text())["comments"]
+    tell = steps["Tell Discord"]["run"]
+    for ran, code in (("true", 1), ("", 0)):
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", tell], capture_output=True, text=True,
+                                env={**env, "LAND_RAN": ran, "GITHUB_OUTPUT": str(out / "tell.output")}, timeout=60)
+        assert result.returncode == code, (ran, result.stdout, result.stderr)
+    assert not posts.exists() or posts.read_text() == ""
+    fail = steps["Fail on card errors"]["run"]
+    for errors, code in ((0, 0), (2, 1)):
+        (out / "summary.json").write_text(json.dumps({"card_errors": errors}))
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", fail], capture_output=True, text=True,
+                                env=env, timeout=60)
+        assert result.returncode == code, (errors, result.stdout)
 
 
 def test_workflow_lints(clone):
