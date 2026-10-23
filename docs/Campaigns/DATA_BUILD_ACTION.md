@@ -470,6 +470,29 @@ github_api reads it inside a try/except and takes the token from the environment
   card before as a version (`_record_history`, `record_versions`, the untag step), and the cleanup never folds a
   version into a reading that knew less or links two versions whose known values differ.
 - **The one-time cleanup** (`clean_history`, also the seed pass's first step):
+  - with the history clone and the bot's own full clone (`BOT_CLONE`, default the checkout holding global_config.py: the
+    jetson's ~/Documents/AutoCroissant; skipped quietly without either; the seed pass reads the builder's checkout or
+    `refine --bot-git`): `recover` (2026-10-23, owner: "fix the dupes and other issues with our history"). Every
+    stats.pkl/old_stats.pkl the bot committed (`bot_snapshots`: one `git cat-file --batch`, the allow-list unpickler,
+    a reverted PICKLE left out, read once per process) gives readings; each is dated from git: the commit at its path
+    with its timestamp, else (the April 2025 PICKLEs hold file mtimes) the one blob its path held from then to the
+    PICKLE, dated by that blob's first commit at any path; undatable readings are skipped. A reading of a stored
+    version's blob only moves that version's start earlier (parser-only). The others, between the stored versions: one
+    printing what the version before it prints (ability words in any case without icon tokens or punctuation, types,
+    stars, stats, card type; a field it could not know, an impossible value or a type list alone that differs while
+    the PNG stayed aside) is nothing; a run printing the same goes into the version after it when that prints it too
+    and knew all it knew (its earlier start carried: format-only), else becomes a legacy version (the old parse's
+    PSD fields, the next version's series, title, author, note, hidden and creatures, `version.restored_from` the
+    PICKLE, blob and commit from git). A name in neither pickle gets its readings as versions, the last tagged
+    `archived` (`backfill`) from its path's deleting commit (none in git: nothing), `renamed_to` along an exact rename
+    chain to a listed card (`GitIndex.renamed`), `moved_to` into MDW. A second run finds every reading held;
+  - `unknown_values`: an impossible history value (a stat above 20, above 10 without allow_high_stats on the version or
+    its card, stars outside 0..7) becomes unknown (stats -1, stars None), the old value kept in an `OUT OF RANGE: ...`
+    problem; the build runs it after its versions and G3 refuses any left (the range check), the seed report counts it;
+  - with the history clone: `misreads`: consecutive versions whose PSD blobs differ while the card's PNG blob is the
+    same at both readings' commits (+6 h, at least 6 h apart) and whose data differ in the type list alone are one
+    version read twice: the older goes into the newer (which knew all else it did), its start carried; the list is
+    printed;
   - `normalize`: a stored version's series is filled from the version after it when it had none (an item's series is typed
     in later; a creature's comes from its folder, never filled), or moved under the parent the split gave it; retired type
     icons renamed; a version's copy of the card's creation date dropped (the card and an archived record keep it);
@@ -483,23 +506,24 @@ github_api reads it inside a try/except and takes the token from the environment
     `moved_to` for a PSD moved into MDW (retired, not deleted).
   Measured on the jetson's 15:41 pickles at TTSCardMaker 6e50c3ee: 755 -> 446 versions, 448 -> 354 names (309 dropped on
   293 cards, 63 normalized), 289 version records; ZOEY!!!!! (renamed to Z!!!!! in 35adb383) and White Palace (moved to
-  MDW/The Morgue in b6330730) dated from git.
-- **Open history decisions (2026-10-23; owner).** Findings in `wt/scratch/history-1023/all-findings.json`:
-  - **Cards dropped before archiving existed** (archive-1, INT-1): 64 names live only in older PICKLEs. A one-time
-    recovery from the PICKLE history (newest record per name, tagged `backfill`, then dated by `date_archive`) needs a
-    scope: (a) all 64; (b) the ~31 true deletions and MDW moves, folding the 33 exact renames into their new names'
-    history; (c) none, an accepted loss. INT-1's variant: (a) the 2 name-keyed Morgue cards (Ech, Cho'Gath), (b) plus
-    the early deletions and Morgue/Unfinished moves, (c) plus the renames.
-  - **59 types-only steps** (dupes2-png-unchanged-type-misreads): the PSD changed, the PNG did not, only `types` differ
-    (58 at the 2026-02-08 actionpoints commits). Is an unchanged PNG proof of a misread (then fold them, keeping the
-    earliest start), or re-parse the old blobs?
-  - **INT-4**: Tainted Lazarus v0/v1 (stats 110) and Spawn of the Forbidden One v0/v1 (10 stars) are legacy readings;
-    re-parse their git blobs (3feae2ef, 2de375f8, 64304b30, e4e1347b) or set the values unknown.
-  - **DATES3-1**: Spawn of the Forbidden One's 2026-06-19 reading (blob 91c4624d, d8e94877) was replaced without
-    history by PICKLE 795fd23; insert its re-parsed reading as a version.
+  MDW/The Morgue in b6330730) dated from git. With the recovery (work/history-recovery, the bot clone at main 8861696's
+  32 PICKLEs): 755 -> 1081 versions, 448 -> 654 names: 690 versions recovered on 548 names (366 from the CardInfo
+  PICKLEs, 324 from the 2025 dict ones; 614 on current cards, 76 on 64 archived names), 200 starts moved earlier by a
+  reading, 64 cards gone before archiving archived (38 with renamed_to, 25 moved_to into MDW, 3 deleted: Amy Rose's
+  Hammer, Sacrifice, Tainted Esau), 55 type misreads merged, 17 impossible values unknown, 309 duplicates dropped,
+  101 normalized; 404 version records; 0 cards modified; the next run changes nothing; no name lost, no start later.
+- **Open history decisions (2026-10-23; owner).** Findings in `wt/scratch/history-1023/all-findings.json`. Decided the
+  same day from the owner's rules (archive, never drop; skip identical versions, keep the earliest date; only printed
+  text counts) and done by work/history-recovery: all 64 cards dropped before archiving existed are archived with
+  their history, renames linked by `renamed_to` (archive-1, INT-1, D4); the lost pre-2026-02 and 2025 history is
+  recovered from the PICKLEs (D1, C1, DATES2-1); the types-only steps with an unchanged PNG are misreads (55 folded;
+  the 3 `offense` ones were already; Miracle Matter's is an ability step); INT-4's values are unknown; Spawn of the
+  Forbidden One's start is 2026-06-19 (d8e94877; its June reading printed what the card prints, the 10 stars aside).
+  Still open:
   - **Side files**: the 4 cards still credited to their renamer in Card Authors.txt (The Abyss Watchers, Pontiff
     Sulyvahn: hdckighfkvhvgmk; Firebomb, Maxim Tomato: MichaelJSr), and the lines that match no card (White Palace in
-    Card Authors.txt; Gust of Trees, Stubborn Queen in Card Creation Dates.json). `/update_stats` prints them each run.
+    Card Authors.txt; Gust of Trees, Stubborn Queen in Card Creation Dates.json until TTSCardMaker's work/history-dupof
+    lands their dup_of entries, which make them cards). `/update_stats` prints them each run.
   - **dupes-5**: the 4 rulebook pages (09, 11, 12 Reactions2, 22 Negation) keep versions that change nothing printed
     (hidden text read by the old parser) until their old blobs are re-read once; there is no idempotent marker for that
     inside `/update_stats`, so it is a one-off on copies.
@@ -516,7 +540,10 @@ github_api reads it inside a try/except and takes the token from the environment
   was parsed at. Both readers key history by
   name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
   version's own path.
-- **Duplicates** (`duplicate_of`) get no versions; they are copies of their original.
+- **Duplicates** (`duplicate_of`) get no versions; they are copies of their original. A duplicate is a numbered PNG beside
+  its original's PSD, or (2026-10-23) a card PNG with no PSD whose Card Edits.json entry has `dup_of` (build_site's rule;
+  Stubborn Queen, Gust of Trees). One whose PNG or original leaves is archived like any card (its tag at its own PNG,
+  dated like its original when the PNG stayed; never counted by G2), and back when found again.
 - **Seed pass** (once; idempotent afterwards, so a later run changes nothing):
   - drop the duplicates (`card_history.collapse`, never one tagged `archived`): of each run of consecutive versions with
     the same data the first stays; a run with the current card's data (or ending in the archived record) goes into that
