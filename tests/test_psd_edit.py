@@ -225,6 +225,16 @@ def test_normalize_ability_matches_the_parser():
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
+def test_keep_ends_puts_back_blank_first_and_last_paragraphs():
+    """The website and Discord trim an ability's ends: the layer's blank first and last paragraphs come back (PoD10BFB)."""
+    old = "\r(1GCD)(2U) Intercept.\r(2CD) Summon."
+    assert pe.keep_ends(old, "(1GCD)(2U) Intercept.\r(2CD) Summon!") == "\r(1GCD)(2U) Intercept.\r(2CD) Summon!"
+    assert pe.keep_ends(" \r\x03 Hit.  \r\r", "Hit hard.") == " \r\x03Hit hard.\r\r"     # the paragraphs, not the indent
+    assert pe.keep_ends("Hit.  ", "Hit hard.") == "Hit hard." and pe.keep_ends("Hit.", "Hit hard.") == "Hit hard."
+    assert pe.keep_ends(old, "\rAlready.") == "\rAlready." and pe.keep_ends("\r", "New.") == "New."
+    assert pe.keep_ends(old, "") == ""
+
+
 def test_keep_breaks_puts_back_the_layers_breaks():
     """The website shows an ability's \x03 as a newline and a name's breaks as spaces: kept where the edit kept them."""
     layer = "it. \x03(BOT) Die.\rAttacks pierce."
@@ -1167,6 +1177,20 @@ def test_ability_edit_keeps_a_forced_line_break(clone, chart, tmp_path):
     model = pe._story_list(pe._txt2(psd))[2][pe.story_index(layer)]["0"]
     assert runs == [int(run["1"].value) for run in model["5"]["0"]] == [72, len(layer.text) + 1 - 72]
     assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []
+
+
+@text_edit
+def test_ability_edit_keeps_a_leading_empty_paragraph(clone, chart, tmp_path):
+    """PoD10BFB's ability starts with an empty paragraph: an edit (the website's trimmed text) keeps it in TySh and the
+    story, so the text stays where it was."""
+    path = _card(clone, "Auxiliary/Minions/PoD10BFB.psd")[0]
+    psd = PSDImage.open(path)
+    layer = pe.ability_layer(psd)
+    old = layer.text
+    assert old.startswith("\r(1GCD)")
+    pe.set_text_layer(psd, "ability", pe.normalize_ability(old).replace("creature.", "creature!"), str(clone / pe.FONTS_DIR), chart)
+    assert layer.text == old.replace("creature.", "creature!") and pe.stories(psd)[pe.story_index(layer)] == layer.text + "\r"
+    assert [int(n) for n in layer.engine_dict["ParagraphRun"]["RunLengthArray"]][0] == 1
 
 
 @text_edit

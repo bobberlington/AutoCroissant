@@ -109,3 +109,15 @@ def test_shadow_duelist_exclusion(clone):
     assert "Shadow Duelist" in CardValidator.ABILITY_EXCLUSIONS
     parsed = parse(parser(), clone, rel)
     assert parsed["card"]["ability"] == "" and parsed["validator"] == []
+
+
+def test_unfilled_line_gaps_are_padding():
+    """A line's leading gap that no type fills is layout padding (Twin Emperors' body beside its label, Warcraftian
+    Druid's "Bear:" line): gone. A gap a type fills, and one inside a line, stay as before."""
+    from commands.psd_analyzer import BoundingBox, PSDParser, StatsDatabase
+    p = PSDParser(["fire"], StatsDatabase())
+    texts = [("Vek'nilash:\n", BoundingBox(18, 1951)), ("            Immune.\n(2CD) Hit.\n", BoundingBox(250, 2000)),
+             ("Turtle        Cat\n", BoundingBox(20, 2100))]
+    assert p._process_abilities(texts, [], 1200) == "Vek'nilash:\nImmune.\n(2CD) Hit.\nTurtle        Cat"
+    assert p._process_abilities([("    Burn.\n    Then.\n", BoundingBox(20, 2000))], [("fire", BoundingBox(30, 2010))], 1200) \
+        == "[fire] Burn.\nThen."

@@ -32,4 +32,6 @@ AUTHORS_PATHS   = ("site/Card Authors.txt",)   # who made each card; wins over t
 EDITS_PATHS     = ("site/Card Edits.json",)    # website fixes; win over the PSD
 AUTHORS_PATH    = AUTHORS_PATHS[0]
 EDITS_PATH      = EDITS_PATHS[0]
+CREATED_PATHS   = ("site/Card Creation Dates.json",)   # when each card was made (python -m commands.discord_edits created)
+CREATED_PATH    = CREATED_PATHS[0]
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save

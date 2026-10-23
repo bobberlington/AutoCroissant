@@ -106,6 +106,35 @@ def test_every_kind():
     assert by["Fresh"]["by"] == "Bob" and set(cl.KINDS) >= set(kinds.values())
 
 
+def test_bot_edits_never_read_as_website_edits():
+    """A _by AutoCroissant entry, and fields the migration listed in an editor's _bot, are the bot's: "(by AutoCroissant)",
+    never "on the website" (changes.js byWhom)."""
+    before = {n: _card(n) for n in ("Bot", "Moved", "Mixed", "Web")}
+    after = {"Bot": _card("Bot", note="x"), "Moved": _card("Moved", series="Kirby"),
+             "Mixed": _card("Mixed", series="Kirby", note="y"), "Web": _card("Web", card_type="item")}
+    meta = {"Bot": {"_by": "autocroissant"}, "Moved": {"_by": "web", "_bot": ["series"]},
+            "Mixed": {"_by": "web", "_bot": ["series"]}, "Web": {"_by": "web", "_bot": ["series"]}}
+    by = {e["card"]: e["edit_by"] for e in cl.events(before, after, {}, {}, edits_by=meta)}
+    assert by == {"Bot": "autocroissant", "Moved": "AutoCroissant", "Mixed": "web", "Web": "web"}
+    lines = [cl._line({"kind": "edited", "card": "A", "fields": {"note": [None, "x"]}, "edit_by": b}, "https://site", None)
+             for b in ("AutoCroissant", "web")]
+    assert lines[0].endswith(": note \u2192 x (by AutoCroissant)") and lines[1].endswith("(by web, on the website)")
+
+
+def test_a_mix_of_bot_fields_is_never_the_entrys_editor():
+    """Fields all in _bot with different credits (the migration's series, a Discord user's subseries) are the bot's,
+    not the entry's _by (none of them is web's); one of the _by's own fields in the mix: the _by."""
+    AT = "2026-10-22T00:00:00Z"
+    meta = {"_by": "web", "_bot": ["series", "subseries"], "_credit": {"subseries": {"_by": "discord:a", "_at": AT}}}
+    both = {"series": [None, "Kirby"], "subseries": [None, "Dream Land"]}
+    assert cl.edit_credit(meta, both) == "AutoCroissant"
+    assert cl.edit_credit(meta, {"subseries": [None, "x"]}) == "discord:a"
+    assert cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
+    assert cl.edit_credit(meta, {**both, "note": [None, "n"]}) == "web" and cl.edit_credit(meta, {}) == "web"
+    two = {**meta, "_credit": {"series": {"_by": "discord:b", "_at": AT}, "subseries": {"_by": "discord:a", "_at": AT}}}
+    assert cl.edit_credit(two, both) == "AutoCroissant"
+
+
 def test_seq_never_reused():
     first = cl.number([{"kind": "new", "card": "A"}, {"kind": "new", "card": "B"}], last_seq=0, posted_seq=0, at=T, build="1")
     assert [e["seq"] for e in first] == [1, 2] and first[0]["build"] == "1" and first[0]["at"] == T

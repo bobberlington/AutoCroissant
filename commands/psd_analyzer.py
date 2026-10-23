@@ -59,7 +59,7 @@ EXPORTED_RULES_NAME = "rules"
 
 COLUMN_ORDER = [
     'aliases', 'type', 'ability', 'hp', 'def', 'atk', 'spd',
-    'types', 'path', 'timestamp', 'author', 'stars',
+    'types', 'path', 'timestamp', 'created', 'author', 'stars',
     'problem', 'series', 'subseries', 'subtype'
 ]
 

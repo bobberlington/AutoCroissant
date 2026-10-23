@@ -26,9 +26,9 @@ from typing import Callable, Optional
 
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RAW_BASE,
-                           RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
-from commands.card_edits import CardAuthors, CardEdits
+from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH, EDITS_PATHS,
+                           ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name
 from commands.github_api import GIT_TOKEN, blob_text, fetch_blob, fetch_tree
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
@@ -42,6 +42,7 @@ LOOKUP_WORKERS = 2                                                # commit looku
 COMMITS_PAGE = 100                                                # commits per request: newest and first in one
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
+REAL_DATES = 946684800.0                                          # 2000-01-01 UTC: older stamps are no commit found (year 1000)
 
 
 # ========================
@@ -270,6 +271,7 @@ class CardBuild:
         self.changed += self._apply_edits()
         self.changed += self._sync_duplicates(resp)
         self.changed += self._apply_edits()             # the duplicates' own edits
+        self.changed += self._apply_dates(self._dates_from_response(resp, repository))
 
         if self.legacy:                                 # the build keeps each version's own path
             self._record_history()
@@ -426,6 +428,51 @@ class CardBuild:
         changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
         if changed:
             print(f"{changed} cards changed by {EDITS_PATH}.")
+        return changed
+
+    def _dates_from_response(self, response, repository: str) -> Optional[CardDates]:
+        """The card repo's creation dates (the first of CREATED_PATHS in the tree), or None if missing or unreadable."""
+        paths = [item.get("path", "") for item in self._tree_items(response)]
+        path = next((p for p in CREATED_PATHS if p in paths), None)
+        if path is None:
+            return None
+        try:
+            return CardDates.parse(self._repo_text(path))
+        except (RequestException, ValueError) as e:
+            if isinstance(e, RequestException):
+                self.failed += 1
+                self.lost.append(path)
+            print(f"Could not read {path}; creation dates stay as they are: {e}")
+            return None
+
+    def _first_upload(self, name: str, card: CardInfo) -> Optional[str]:
+        """
+        The UTC day of the earliest version of the card the database holds: its first upload as far as the bot saw it
+        (the website's is its PNG's first commit; the dates file covers the cards from before the bot's history).
+        None for a rulebook page (the website dates none) or no real date.
+        """
+        if RULEBOOK_DIR in (card.path or ""):
+            return None
+        from commands.card_history import start
+        versions = [*self.db.old_stats.get(name, ()), card]
+        if name in getattr(self, "replaced", {}):              # replaced this run: old_stats gets it after (legacy)
+            versions.append(self.replaced[name])
+        known = [at for at in (start(v)[0] for v in versions) if at and at >= REAL_DATES]
+        return datetime.fromtimestamp(min(known), timezone.utc).date().isoformat() if known else None
+
+    def _apply_dates(self, dates: Optional[CardDates]) -> int:
+        """Set every card's created from the dates file and its first upload (duplicates included). Returns how many
+        changed."""
+        if dates is None:
+            return 0
+        uploads = {name: self._first_upload(name, card) for name, card in self.db.stats.items()}
+        changed = sum(1 for name, card in self.db.stats.items() if dates.apply(name, card, uploads[name]))
+        if changed:
+            print(f"{changed} creation dates set from {CREATED_PATH} and first uploads.")
+        missing = sorted(n for n, card in self.db.stats.items() if uploads[n] and CardAuthors.key(n) not in dates.cards)
+        if missing:
+            print(f"{len(missing)} cards not in {CREATED_PATH}, dated by their first upload until it has them "
+                  f"(python -m commands.discord_edits created): {', '.join(missing[:10])}")
         return changed
 
     def _icons_from_local(self, local_path: str) -> IconVocabulary:
@@ -1214,11 +1261,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         return out
 
     edits_by = {}
-    if run_build.edits is not None:
-        edits_by = {n: run_build.edits.meta.get(CardAuthors.key(n), {}).get("_by") for n in db.stats}
+    if run_build.edits is not None:                      # each entry's _-keys: _by, and _bot's fields credited apart
+        edits_by = {n: run_build.edits.meta.get(CardAuthors.key(n), {}) for n in db.stats}
     file_commits = {"edited": edits.sha if edits else None, "authors": authors.sha if authors else None}
     new_events = changelog.events(before, db.stats, archived_before, db.archived(), run_build.reparsed,
-                                  {n: b for n, b in edits_by.items() if b}, index, file_commits)   # card changes only
+                                  {n: m for n, m in edits_by.items() if m.get("_by")}, index, file_commits)   # card changes only
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
     elif new_events:
@@ -1266,6 +1313,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "seed": ((({"repo": BOT_REPO, "commit": seed} if not isdir(seed) else {"pickles": seed}) if seeding
                   else manifest_before.get("seed"))),
         "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
+                                                                   ("created_blob", CREATED_PATH),
                                                                    ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
                                                                    ("types_tree", TYPES_DIR), ("fonts_tree", "MDW/Fonts"))},
         "counts": out.counts,

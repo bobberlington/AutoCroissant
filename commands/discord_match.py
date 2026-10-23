@@ -2269,8 +2269,9 @@ def proposals(paths: Paths, result: dict) -> dict:
                             first.get("creation_wording"), waits))
     makedirs(paths.proposal, exist_ok=True)
     write_json(join(paths.proposal, EDITS_FILE), {
-        "about": "Proposed from the Discord archive: merge into TTSCardMaker's site/Card Edits.json after review "
-                 "(created: a new database-only field, the date of the card's first Discord post). pending: waits "
+        "about": "Superseded: the dates go to TTSCardMaker's site/Card Creation Dates.json (review_pages.py, then "
+                 "python -m commands.discord_edits created). The first proposal, kept for reference: "
+                 "created, the date of the card's first Discord post, as a Card Edits.json field. pending: waits "
                  "on rulings in ambiguous.html; "
                  "created_if_ruled (not a field): a card whose first sure post is after fs gets this date if that "
                  "entry is ruled to show it.",
@@ -2991,17 +2992,17 @@ def _summary_lines(result: dict, entries: list) -> list:
     example = next(((c.get("key"), c) for _, c in dated if c["discord"].get("tier") in SURE_TIERS
                     and c["discord"]["fs_check"].get("verdict") == "discord_earlier"), (None, None))
     out += ["## Proposal (nothing is applied or published)", "",
-            "1. **created**, for the site's created sort: the date (day only) of the card's first Discord post, "
-            "when its tier is high, confident or ruled and it is earlier than fs. Written as a new database-only "
-            "field in TTSCardMaker's `site/Card Edits.json`, keyed like the other edits:", "",
-            "   ```json", f"   \"{example[0] or 'Card Name'}\": {{\"created\": "
-            f"\"{(example[1] or {}).get('discord', {}).get('first', {}).get('date', '2020-07-22')[:10]}\", \"_by\": "
-            "\"MichaelJSr\", \"_at\": \"<now>\"}", "   ```", "",
-            "   The site needs `created` added where the edit fields are listed (build_site.py EDIT_FIELDS, edit.js "
-            "FIELDS, AutoCroissant's CardEdits.TYPES with KIND `database`), and the created sort to use created, "
-            "else fs. Only dates leave this folder: no message text, links or Discord names. "
-            f"{proposal.get('created_ready', 0)} are ready, {proposal.get('created_pending', 0)} wait on rulings "
-            f"(`pending`, with their ids): `proposal/{EDITS_FILE}`.",
+            "1. **created**, for the site's created sort and card pages: the earliest evidence, the card's first sure "
+            "Discord post or its first git upload (fs), whichever is earlier. `review_pages.py` writes them to "
+            "`created_dates.json` (provisional while an open entry can move one); AutoCroissant's `python -m "
+            "commands.discord_edits created` turns that into TTSCardMaker's `site/Card Creation Dates.json` (its own "
+            "file, not a Card Edits.json field), one line per card:", "",
+            "   ```json", f"   \"{example[0] or 'Card Name'}\": {{\"date\":"
+            f"\"{(example[1] or {}).get('discord', {}).get('first', {}).get('date', '2020-07-22')[:10]}\",\"from\":"
+            "\"discord\"}", "   ```", "",
+            "   Re-run both after rulings. Only dates leave this folder: no message text, links or Discord names. "
+            f"The older proposal (a Card Edits.json field): {proposal.get('created_ready', 0)} ready, "
+            f"{proposal.get('created_pending', 0)} waiting on rulings, in `proposal/{EDITS_FILE}`.",
             "2. **Author corrections**: `[cards]` lines for `site/Card Authors.txt` (`Card Name = person`, replacing "
             f"the card's current line), {proposal.get('authors', 0)} in `proposal/{AUTHORS_FILE}` with the evidence "
             "in a comment. Confirm the Discord -> person map above first.",

@@ -5,7 +5,8 @@ commit per command; the commit never carries a pickle. It goes through card_bake
 the new head when main moved) and git_commit (the API with the bot's GIT_TOKEN, else the history clone pushed over SSH: the
 path /bake_cards and /update_tts_save commit by). Its subject starts "Discord:", it carries an Edit-by trailer, and each
 entry it changes gets _by ("discord:<username>") and _at (one holding PSD fields keeps its stamps when the edit sets
-none: their editor keeps the bake credit); a value the head already has is no change (no op, no restamp, no commit).
+none: their editor keeps the bake credit, and the fields the edit sets go in its _bot with their own credit in _credit);
+a value the head already has is no change (no op, no restamp, no commit).
 Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
 
 Fields: author -> a [cards] line in Card Authors.txt; ability, hp/def/atk/spd -> the "psd" kind (they persist and show
@@ -24,6 +25,12 @@ edits_file drop a field from _bot when they set or unset it):
     python -m commands.discord_edits migrate --clone <full card repo clone> [--ref HEAD] [--aliases aliases.pkl]
         [--stats stats.pkl] --out-dir DIR
 
+Creation dates: the Discord archive's created_dates.json (review_pages.py) as the card repo's site/Card Creation
+Dates.json (dates only; "from": "hand" entries kept). Re-run after rulings, review the diff, commit it:
+
+    python -m commands.discord_edits created [--archive ~/Documents/Tools/discord-archive] [--repo <card repo checkout>]
+        [--out FILE]
+
 edits_file and authors_file are ports of site/assets/edit.js editsFile and authorsFile.
 """
 from argparse import ArgumentParser
@@ -36,10 +43,10 @@ from subprocess import run as run_process
 from traceback import format_exc
 from typing import Callable, Optional
 
-from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardEdits, _collate, dump_edits
+from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardDates, CardEdits, _collate, dump_edits
 from commands.card_models import CardType, card_name
 from commands.github_api import blob_sha
-from global_config import AUTHORS_PATHS, CARD_REPO, EDITS_PATHS
+from global_config import AUTHORS_PATHS, CARD_REPO, CREATED_PATHS, EDITS_PATHS, LOCAL_DIR_LOC
 
 # ========================
 # Configuration
@@ -49,6 +56,7 @@ EDIT_BY = "Edit-by"                             # the trailer key (card_bake.EDI
 DISCORD = "discord:"                            # an editor's _by and Edit-by: "discord:<username>" (card_bake.DISCORD)
 BOT = "AutoCroissant"                           # the migration's _by (build_site.BOT_AUTHOR: counted for nobody)
 BOT_FIELDS = "_bot"                             # an entry's fields the migration set under another editor's _by (edit.js, build_site)
+CREDIT = "_credit"                              # {field: {"_by", "_at"}}: who set a _bot field from Discord (changelog, build_site)
 FIELDS = frozenset(ORDER)
 GROUP = re_compile(r"# --- credited to (.+) \((\d+)\) ---")     # authorsFile's group headers (fullmatch)
 RULEBOOK_GROUP = "# --- rulebook pages ---"
@@ -66,6 +74,12 @@ NOT_BAKED = ("stars", "types")                  # PSD fields the bake refuses fo
 MASS = {"series": "series", "subseries": "subseries", "subtype": "subtype", "card_type": "type"}   # /mass_replace -> field
 BODY_LINES = 40                                 # a commit body lists at most this many cards
 SHOWN = 60                                      # a value is cut to this many characters in a reply or commit body
+ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (discord_archive.DEFAULT_OUT; never in a repo)
+SOURCES = {"discord": "discord", "git-first-upload": "git"}    # created_dates.json source -> the file's "from"
+DATES_ABOUT = ("When each card was made: the earlier of its first Discord post and its first upload to this repo (UTC "
+               "day); provisional: an open ruling on the Discord archive may still move it. Written by AutoCroissant "
+               "(python -m commands.discord_edits created); an entry with \"from\": \"hand\" is set by hand and kept. "
+               "Read by the website (the created sort, card pages) and the bot (/update_stats).")
 
 
 # ========================
@@ -91,7 +105,8 @@ def _is_bot(by) -> bool:
 def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edit.js editsFile: Card Edits.json with ops applied. A touched entry is matched like the authors file, lists its
-    fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets), then _by and _at
+    fields in ORDER, then its other keys (_psd kept; _bot less the fields the op sets or unsets, _credit less the fields
+    no longer in _bot), then _by and _at
     (replaced); an entry left without keys goes. An entry the bot stamped lists its fields in _bot first, when another
     editor edits it.
 
@@ -129,6 +144,14 @@ def edits_file(text: Optional[str], ops: list, at: str, by: str) -> str:
                 current[BOT_FIELDS] = left
             else:
                 current.pop(BOT_FIELDS)
+        if CREDIT in current:                                   # a _bot field's Discord editor goes with it (edit.js)
+            bot = current.get(BOT_FIELDS) if isinstance(current.get(BOT_FIELDS), list) else []
+            was = current[CREDIT] if isinstance(current[CREDIT], dict) else {}
+            credit = {f: v for f, v in was.items() if f in bot}
+            if credit:
+                current[CREDIT] = credit
+            else:
+                current.pop(CREDIT)
         cards.pop(key, None)
         names = [f for f in ORDER if f in current] + [f for f in current if f not in FIELDS]
         if names:
@@ -156,19 +179,43 @@ def _stamped(text: Optional[str], ops: list, at: str, by: str) -> str:
     """
     edits_file for a Discord edit. No op: the head's text as it is (never reformatted). An entry holding PSD fields
     keeps its _by and _at when its op sets none of them: the bake credits the entry's _by, and a discord: one gets no
-    Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor.
+    Edit-by trailer, so an alias or folder edit would take the credit from the PSD fields' editor. The fields the op
+    sets there are listed in its _bot (not that editor's) and credited in its _credit; a _credit field out of _bot goes,
+    and an entry left with only its _credit goes (edits_file keeps it).
     """
     ops = [op for op in ops if op.get("set") or op.get("unset")]
     if not ops:
         return text
     psd = lambda fields: any(CardEdits.KIND.get(f) == "psd" for f in fields)
-    keep = {CardAuthors.key(op["key"]) for op in ops if not psd(op.get("set") or {})}
+    touched = {CardAuthors.key(op["key"]) for op in ops}
+    sets: dict = {}
+    for op in ops:
+        sets.setdefault(CardAuthors.key(op["key"]), set()).update(op.get("set") or ())
     data = loads(edits_file(text, ops, at, by))
     before = _entries(text)
-    for key, fields in data["cards"].items():
-        old = before.get(CardAuthors.key(key))
-        if CardAuthors.key(key) in keep and psd(fields) and isinstance(old, dict) and old.get("_by"):
-            fields.update({k: old[k] for k in ("_by", "_at") if k in old})
+    for key, fields in list(data["cards"].items()):
+        k = CardAuthors.key(key)
+        if k not in touched:
+            continue
+        old = before.get(k)
+        rest = {f: v for f, v in fields.items() if f not in ("_by", "_at", BOT_FIELDS, CREDIT)}
+        if not rest:                                            # only its _credit left: goes
+            del data["cards"][key]
+            continue
+        bot = list(fields.get(BOT_FIELDS) or [])
+        was = fields.get(CREDIT) if isinstance(fields.get(CREDIT), dict) else {}
+        credit = {f: v for f, v in was.items() if f in bot}
+        stamps = {s: fields[s] for s in ("_by", "_at")}
+        if not psd(sets[k]) and psd(fields) and isinstance(old, dict) and old.get("_by"):
+            stamps = {s: old[s] for s in ("_by", "_at") if s in old}
+            if old["_by"] != by:                                # not the stamp's editor: per-field credit
+                mine = [f for f in ORDER if f in sets[k] and f in fields]
+                bot += [f for f in mine if f not in bot]
+                credit.update({f: {"_by": by, "_at": at} for f in mine})
+        if bot == (fields.get(BOT_FIELDS) or []) and credit == (fields.get(CREDIT) or {}):
+            fields.update(stamps)                               # its layout kept
+            continue
+        data["cards"][key] = {**rest, **({BOT_FIELDS: bot} if bot else {}), **({CREDIT: credit} if credit else {}), **stamps}
     return dump_edits(data)
 
 
@@ -393,6 +440,15 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     Returns:
         The names whose card changed
     """
+    from commands.card_runner import bake_lock      # lazy: the CLI (migrate) needs no Discord
+    if bake_lock.locked():
+        print("Discord edit: its in-memory refresh waits for the running /update_stats or bake")
+    with bake_lock:                                 # never saves stats.pkl inside a build (repo_traverser holds it)
+        return _refresh(names, edits_text, authors_text)
+
+
+def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> list:
+    """refresh's body, under bake_lock."""
     from commands.card_data import CardBuild
     from commands.psd_analyzer import stats_db
     from commands.query_card import card_repo
@@ -964,6 +1020,95 @@ def migrate(aliases: dict, stats: dict, text: str, authors_text: Optional[str], 
     return dump_edits(data), new_authors, aliases_report + values_report
 
 
+# ========================
+# Creation dates (site/Card Creation Dates.json)
+# ========================
+def dates_file(created: dict, text: Optional[str]) -> tuple:
+    """
+    site/Card Creation Dates.json from the archive's created_dates.json: each dated card's day, from and provisional.
+    The file's "from": "hand" entries stay as they are; nothing else of the archive leaves it.
+
+    Args:
+        created: created_dates.json (card key -> {date, source, provisional, ...})
+        text: The file now ("" or None: none)
+
+    Returns:
+        (the text (dump_edits), report lines)
+    """
+    old = loads(text) if text else {}
+    before = old.get("cards") if isinstance(old, dict) and isinstance(old.get("cards"), dict) else {}
+    hand = {CardAuthors.key(k): (k, v) for k, v in before.items() if isinstance(v, dict) and v.get("from") == "hand"}
+    cards, skipped = {}, []
+    for name, entry in created.items():
+        if CardAuthors.key(name) in hand:
+            continue
+        value = {"date": str(entry.get("date") or "")[:10], "from": SOURCES.get(entry.get("source")),
+                 **({"provisional": True} if entry.get("provisional") else {})} if isinstance(entry, dict) else None
+        if CardDates.valid(value):
+            cards[name] = value
+        elif not isinstance(entry, dict) or entry.get("date"):
+            skipped.append(name)                # a date it can't read; an undated card is just left out
+    cards.update(hand.values())
+    count = lambda f: sum(1 for v in cards.values() if v["from"] == f)
+    lines = [f"{len(cards)} creation dates: {count('discord')} first Discord post, {count('git')} first git upload, "
+             f"{count('hand')} by hand; {sum(1 for v in cards.values() if v.get('provisional'))} provisional"]
+    if skipped:
+        lines.append(f"{len(skipped)} unreadable, left out: {', '.join(sorted(skipped)[:10])}")
+    old_by = {CardAuthors.key(k): v for k, v in before.items()}
+    new_by = {CardAuthors.key(k): k for k in cards}
+    added = sorted(k for key, k in new_by.items() if key not in old_by)
+    gone = sorted(k for k in before if CardAuthors.key(k) not in new_by)
+    moved = []
+    for key, k in sorted(new_by.items()):
+        was, now = old_by.get(key), cards[k]
+        if key in old_by and was != now:
+            was_day = was.get("date") if isinstance(was, dict) else was
+            moved.append(f"{k}: {was_day} -> {now['date']}" if was_day != now["date"] else
+                         f"{k}: {now['date']} {'provisional' if now.get('provisional') else 'no longer provisional'}")
+    if before:
+        lines.append(f"vs the file: {len(added)} new, {len(moved)} changed, {len(gone)} gone")
+        lines += [f"- {m}" for m in moved[:BODY_LINES]] + [f"- gone: {k}" for k in gone[:BODY_LINES]]
+    elif added:
+        lines.append(f"a new file: {len(added)} cards")
+    return dump_edits({"about": DATES_ABOUT, "cards": cards}), lines
+
+
+def _created(options) -> int:
+    """The created command: the archive's dates into <repo>/site/Card Creation Dates.json (or --out)."""
+    from os.path import dirname, expanduser, getmtime, isdir, isfile, join
+    archive = expanduser(options.archive)
+    source, matches = join(archive, "created_dates.json"), join(archive, "matches.json")
+    if not isfile(source):
+        print(f"No {source}: run review_pages.py in the Discord archive first.")
+        return 1
+    if isfile(matches) and getmtime(matches) > getmtime(source):
+        print(f"{source} is older than matches.json (rulings since?): run `python3 -I review_pages.py` in "
+              f"{archive} first, then this again.")
+        return 1
+    with open(source, encoding="utf-8") as fh:
+        created = loads(fh.read())
+    out = expanduser(options.out) if options.out else join(expanduser(options.repo), CREATED_PATHS[0])
+    if not isdir(dirname(out) or "."):
+        print(f"No {dirname(out)}: give --repo a card repo checkout, or --out a file.")
+        return 1
+    text = None
+    if isfile(out):
+        with open(out, encoding="utf-8") as fh:
+            text = fh.read()
+    try:
+        new, report = dates_file(created if isinstance(created, dict) else {}, text)
+    except ValueError as e:
+        print(f"{out} isn't valid JSON ({e}): fix or delete it, then run this again.")
+        return 1
+    if new == text:
+        report.append(f"Unchanged: {out}")
+    else:
+        _write(out, new)
+        report.append(f"Wrote {out}: review the diff, then commit it (the website and /update_stats read it).")
+    print("\n".join(report))
+    return 0
+
+
 def _git(clone: str, *args: str) -> str:
     return run_process(["git", "-C", clone, *args], capture_output=True, check=True, text=True, encoding="utf-8").stdout
 
@@ -974,7 +1119,7 @@ def _write(path: str, text: str) -> None:
 
 
 def main(args: Optional[list] = None) -> int:
-    """The command line: migrate (writes the migration commit's files; commits nothing)."""
+    """The command line: migrate (the migration commit's files) and created (the creation dates); commits nothing."""
     parser = ArgumentParser(prog="python -m commands.discord_edits", description="Discord's card edits (the bot's side).")
     sub = parser.add_subparsers(dest="command", required=True)
     step = sub.add_parser("migrate", help="aliases.pkl and the Discord-only values into the card repo's files "
@@ -985,7 +1130,14 @@ def main(args: Optional[list] = None) -> int:
     step.add_argument("--aliases", default="aliases.pkl", help="aliases.pkl (default ./aliases.pkl)")
     step.add_argument("--stats", default="stats.pkl", help="stats.pkl the parity re-parse matched (default ./stats.pkl)")
     step.add_argument("--out-dir", required=True, help="where Card Edits.json (and Card Authors.txt when it changes) go")
+    dates = sub.add_parser("created", help=f"the Discord archive's creation dates into the card repo's {CREATED_PATHS[0]} "
+                                           "(written in place, never committed)")
+    dates.add_argument("--archive", default=ARCHIVE, help="the Discord archive holding created_dates.json (default %(default)s)")
+    dates.add_argument("--repo", default=LOCAL_DIR_LOC, help="the card repo checkout to write (default %(default)s)")
+    dates.add_argument("--out", help=f"write this file instead of <repo>/{CREATED_PATHS[0]}")
     options = parser.parse_args(args)
+    if options.command == "created":
+        return _created(options)
     from commands.card_db import load_pickle   # the allow-list unpickler
     from commands.card_history import GitIndex
     from os import makedirs
@@ -1031,6 +1183,7 @@ __all__ = [
     'alias_ops',
     'card_line',
     'carried',
+    'dates_file',
     'migrate',
     'migrate_aliases',
     'refresh',

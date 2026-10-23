@@ -31,7 +31,7 @@ DETAILS_JSON = "psd_details.json"                  # psd_details' own format, co
 MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
 PICKLE_MODULE = CardInfo.__module__                # "commands.psd_analyzer": the class path the pickles store
-EXTRA_KEYS = ("version",)                         # CardInfo attributes outside its dataclass fields
+EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields
 CARD_FIELDS = {f.name: f for f in fields(CardInfo)}
 STAT_KEYS = tuple(f.name for f in fields(CardStats))
 # what the seed may unpickle: the two card classes under either module path, and old_stats' defaultdict(list)

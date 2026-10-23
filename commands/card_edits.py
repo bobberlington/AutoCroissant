@@ -1,9 +1,11 @@
 """
-TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors) and site/Card Edits.json (CardEdits), and
-the file's layout as the website writes it (dump_edits, the edit.js editsFile port). No Discord, network or psd-tools.
+TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors), site/Card Edits.json (CardEdits) and
+site/Card Creation Dates.json (CardDates), and the file's layout as the website writes it (dump_edits, the edit.js
+editsFile port). No Discord, network or psd-tools.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
+from datetime import date
 from json import dumps as json_dumps, loads as json_loads
 from re import sub
 from typing import Optional
@@ -209,6 +211,69 @@ class CardEdits:
         return out
 
 
+@dataclass
+class CardDates:
+    """
+    TTSCardMaker's site/Card Creation Dates.json: when each card was made, the earlier of its first Discord post and
+    its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord", "provisional": true}}};
+    names match like the authors file. Written by `python -m commands.discord_edits created`, which keeps "from": "hand"
+    entries (the owner's). The website and /update_stats read it, each with its own first upload for the cards it
+    misses (created()); it is no edit (never in Card Edits.json).
+    """
+    cards: dict = field(default_factory=dict)       # normalized card name -> {"date", "from"[, "provisional"]}
+
+    FROM = ("discord", "git", "hand")               # its first Discord post, first git upload, or set by hand
+
+    @classmethod
+    def valid(cls, entry) -> bool:
+        if not isinstance(entry, dict) or entry.get("from") not in cls.FROM or not isinstance(entry.get("provisional", False), bool):
+            return False
+        try:
+            return isinstance(entry.get("date"), str) and date.fromisoformat(entry["date"]).isoformat() == entry["date"]
+        except ValueError:
+            return False
+
+    @classmethod
+    def parse(cls, text: str) -> "CardDates":
+        """Raises ValueError for a file that isn't JSON; bad entries are skipped."""
+        data = json_loads(text)
+        cards = data.get("cards") if isinstance(data, dict) else None
+        dates = cls()
+        for name, entry in (cards if isinstance(cards, dict) else {}).items():
+            if cls.valid(entry):
+                dates.cards[CardAuthors.key(name)] = {"date": entry["date"], "from": entry["from"],
+                                                      **({"provisional": True} if entry.get("provisional") else {})}
+        return dates
+
+    def created(self, name: str, upload: Optional[str] = None) -> Optional[dict]:
+        """
+        A card's created, by the website's rule (build_site.py apply_created): its entry, unless its first upload is
+        earlier and the entry isn't a hand one; no entry: the first upload ("from": "git").
+
+        Args:
+            name: Card name
+            upload: Its first upload (UTC day, YYYY-MM-DD), or None when unknown
+
+        Returns:
+            {date, from[, provisional]}, or None (undated)
+        """
+        found = self.cards.get(CardAuthors.key(name))
+        if found and (found["from"] == "hand" or not upload or found["date"] <= upload):
+            return dict(found)
+        return {"date": upload, "from": "git"} if upload else None
+
+    def apply(self, name: str, card: "CardInfo", upload: Optional[str] = None) -> bool:
+        """Set the card's created (created(); none: the class default). Returns whether it changed."""
+        value = self.created(name, upload)
+        if value == getattr(card, "created", None):
+            return False
+        if value is None:
+            card.__dict__.pop("created", None)      # the class default: an undated card pickles as before
+        else:
+            card.created = value
+        return True
+
+
 # ========================
 # The file's layout (edit.js editsFile)
 # ========================
@@ -259,6 +324,7 @@ def dump_edits(data: dict) -> str:
 __all__ = [
     'ALIASES_MOVED',
     'CardAuthors',
+    'CardDates',
     'CardEdits',
     'ORDER',
     'PUNCTUATION',

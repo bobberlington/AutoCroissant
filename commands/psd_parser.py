@@ -881,6 +881,7 @@ class PSDParser:
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
+            ability_text = sub(r'(?m)^[^\S\n]{3,}(?=\S)', '', ability_text)     # a line's unfilled gap: layout padding
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
         return ability_text.strip(' \'"\n')
 
