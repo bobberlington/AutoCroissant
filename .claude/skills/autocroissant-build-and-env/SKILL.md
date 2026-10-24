@@ -70,7 +70,7 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | GitPython | The bot's self-update commands (`/push`, `/pull`, `/update`), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
 | numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
-| pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
+| pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). It reports version 1.25.0 at every tag, so a re-pin needs `--force-reinstall` (section 4). |
 | pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. Only where it has a wheel (above): not on 3.14. |
@@ -336,6 +336,8 @@ list, not the bot's.
 `cards-20261023`, gcc for `_distance`); bounds checks and wraparound on since 9919a14 (the `boundscheck=False` row
 folded into history, ba27fb7); 11 of 38 modules compiled, the uncompiled list extended; suite 1346 tests;
 import citations re-pointed at 2ada357.
+
+2026-10-23 (unbatch): pandas' query_card.py import re-pointed (:13).
 
 2026-10-23 (three layered files, one pin): requirements-card-data.txt became requirements-cards.txt (the fork pin,
 fonttools, requests, pyoxipng behind its wheel marker); requirements.txt and requirements-dev.txt `-r` the layer below

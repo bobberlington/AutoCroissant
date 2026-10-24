@@ -398,8 +398,8 @@ delays the sends behind it in that tick — that is Discord I/O time, not queue 
 the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An ability query queues one message per
 result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop; idle cost of the
 1 s loops was 0.33 ms CPU/s. **Changed 2026-10-21** (owner decisions, archaeology 10.30): the drains tick every 0.1 s, so
-the queue bound is ≤ ~100 ms per hop and ≤ ~200 ms for a reminder's two hops, and /query_ability lists cards 10 per
-message. Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
+the queue bound is ≤ ~100 ms per hop and ≤ ~200 ms for a reminder's two hops. /query_ability listed cards 10 per
+message from then until 2026-10-23, when it went back to one message per card (Discord previews only a few images per message). Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
 reminders, 1.53 with 200; 2 threads alive.
 
 **The diagnostic implication (the point of the recipe):** the queues can contribute at most ~0.2 s.
@@ -573,3 +573,5 @@ in TTSCardMaker 1c24dd48: its numbers kept as the token case); psd_parser.py cit
 commit page per changed card; force_update about 820) and four small files plus .mailmap, with card_data.py and
 github_api.py lines re-pointed; Recipe 5's main.py lines; Recipe 6 loads through `card_db.load_pickle`, problem
 baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, and points to the history rules.
+
+2026-10-23 (unbatch): Recipe 5 says /query_ability posts one message per card again.

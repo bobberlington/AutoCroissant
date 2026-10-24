@@ -276,7 +276,7 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:999) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:990) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -574,8 +574,8 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (`set_match_ratio`, query_card.py:954-972; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:974-997) | `"MichaelJSr/TTSCardMaker"` — always |
+| `/set_ratio` | `card_repo.match_ratio` (`set_match_ratio`, query_card.py:945-963; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:965-988) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`, `ACTIONS_TOKEN`,
 `browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
@@ -740,3 +740,5 @@ lazy fetch, one .mailmap blob, full clone); ICON_VARIANTS has six values on main
 wraparound on; card_runner's TEMP_PSD/TEMP_AGE and the fonts fallback (fonts_cache); new tables for card_sync, the push
 guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 lacks_admin sites (the conditional
 /update_stats gate); every main.py, query_card.py, card_data.py, psd_parser.py and psd_analyzer.py citation re-pointed.
+
+2026-10-23 (unbatch): query_card.py citations re-pointed (card_repo, set_match_ratio, set_repository) after /query_ability went back to one message per card.
