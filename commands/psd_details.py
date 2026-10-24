@@ -353,12 +353,13 @@ def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
             "at": at, "refused": refused}
 
 
-def _type_header(psd: PSDImage, vocab) -> Optional[dict]:
+def _type_header(psd: PSDImage, rel: str, name: str, vocab) -> Optional[dict]:
     """
-    The header type icons as plan_types reads them: the row ({name, core, box}, slot order), each longer row's spots past
-    it ({count: boxes}), icons the bake can't take off ([name, why]) and a token row's refusal. None without icons.
+    The header type icons as plan_types reads them (a title's tokens are the name's): the row ({name, core, box}, slot
+    order), each longer row's spots past it ({count: boxes}), icons the bake can't take off ([name, why]) and a token
+    row's refusal. None without icons.
     """
-    images, tokens = type_row(psd, _icon_parser(vocab))
+    images, tokens = type_row(psd, _icon_parser(vocab), name, RULEBOOK_DIR not in rel)
     if not images and not tokens:
         return None
     units, names, fixed = [], {}, []
@@ -379,9 +380,9 @@ def _type_header(psd: PSDImage, vocab) -> Optional[dict]:
             "refused": f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop" if tokens else None}
 
 
-def _header(psd: PSDImage, rel: str, vocab) -> dict:
+def _header(psd: PSDImage, rel: str, name: str, vocab) -> dict:
     """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
-    return {"stars": _guard(_star_header, psd, rel, vocab), "types": _guard(_type_header, psd, vocab)}
+    return {"stars": _guard(_star_header, psd, rel, vocab), "types": _guard(_type_header, psd, rel, name, vocab)}
 
 
 def _tree(group, depth: int = 0) -> list:
@@ -443,7 +444,7 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"],
                                 RULEBOOK_DIR in rel)
-    record["header"] = _guard(_header, psd, rel, vocab)
+    record["header"] = _guard(_header, psd, rel, name, vocab)
     record["tree"] = _guard(_tree, psd)
     return record
 

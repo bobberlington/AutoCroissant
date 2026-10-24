@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 from inspect import signature
 from io import BytesIO
 from os.path import basename, getsize, join
-from re import IGNORECASE, compile as re_compile, escape, fullmatch, sub
+from re import IGNORECASE, compile as re_compile, escape, finditer as re_finditer, fullmatch, sub
 from struct import pack
 from time import perf_counter
 from typing import Optional
@@ -72,6 +72,7 @@ TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability te
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
 TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colour: the :sticker outline, the :tint silhouette
 GLOWS = ("glow", "darkglow")  # token variants whose halo the fork draws as its glyf outline: a solid block, not a soft glow
+LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
@@ -734,9 +735,9 @@ def _overlaid(layer) -> bool:
         and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL for effect in effects)
 
 
-def _tinted(layer) -> bool:
+def _tinted(layer) -> Optional[str]:
     """
-    Whether the Ability's look changes its badges' and icons' colours: any enabled Color, Gradient or Pattern Overlay at
+    What in the Ability's look changes its badges' and icons' colours: any enabled Color, Gradient or Pattern Overlay at
     any opacity (Ice Staff's two at 69%), a blend mode other than Normal or an opacity or fill below full, its own or a
     group's above it (the Isaac items' Pin Light: Soul of Eden's white-on-cyan 1CD; The Patients' 78%: a dimmed pill).
     Also a visible layer clipped to it or to such a group: an adjustment or fill (Claw's and Miasma's Exposure 1 on Text:
@@ -744,28 +745,33 @@ def _tinted(layer) -> bool:
     A Satin, Inner Glow or Inner Shadow paints over them too, and a group's effects as its own (review 2026-10-24: The
     Radiance's title in 'Group 1' with a Gradient Overlay printed a typed [fire] as a cream silhouette).
     Only a badge FX layer over them restores them (std-batch2's fix for Pin Light; reviews 2026-10-23 and -24).
+    None when nothing does; else the first cause, for a refusal ("its Inner Glow", "the Gradient Overlay of its group
+    'Group 1'"; review 2026-10-24: Butterfly's title refused naming an overlay it lacks).
     """
     from psd_tools.api.effects import ColorOverlay, GradientOverlay, InnerGlow, InnerShadow, PatternOverlay, Satin
+    kinds = {ColorOverlay: "Color Overlay", GradientOverlay: "Gradient Overlay", PatternOverlay: "Pattern Overlay",
+             Satin: "Satin", InnerGlow: "Inner Glow", InnerShadow: "Inner Shadow"}
     x0, y0, x1, y1 = layer.bbox
     node = layer
     while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
+        whose = (lambda what: f"its {what}") if node is layer else (lambda what: f"the {what} of its group {node.name!r}")
         effects = node.effects
-        if effects.enabled and any(isinstance(effect, (ColorOverlay, GradientOverlay, PatternOverlay, Satin, InnerGlow,
-                                                       InnerShadow)) and effect.enabled for effect in effects):
-            return True
-        if node.blend_mode not in (BlendMode.NORMAL, BlendMode.PASS_THROUGH) or node.opacity < 255 \
-                or getattr(node, "fill_opacity", 255) < 255:
-            return True
+        found = [name for effect in effects if effect.enabled for kind, name in kinds.items()
+                 if isinstance(effect, kind)] if effects.enabled else []
+        if found:
+            return whose(found[0])
+        if node.blend_mode not in (BlendMode.NORMAL, BlendMode.PASS_THROUGH):
+            return whose(f"{node.blend_mode.name.replace('_', ' ').title()} blending")
+        if node.opacity < 255 or getattr(node, "fill_opacity", 255) < 255:
+            return whose("opacity or fill below full")
         for clipped in _clip_chain(node) if node.parent is not None else ():
             if not clipped.is_visible():
                 continue
-            if clipped.kind not in DRAWN_LAYER_KINDS:
-                return True
             a0, b0, a1, b1 = clipped.bbox
-            if a0 < x1 and x0 < a1 and b0 < y1 and y0 < b1:
-                return True
+            if clipped.kind not in DRAWN_LAYER_KINDS or (a0 < x1 and x0 < a1 and b0 < y1 and y0 < b1):
+                return f"{clipped.name!r}, clipped to {'it' if node is layer else f'its group {node.name!r}'}"
         node = node.parent
-    return False
+    return None
 
 
 def uses_icon_font(layer) -> bool:
@@ -1271,20 +1277,38 @@ def keep_breaks(old: str, new: str, which: str) -> str:
         which: "name" or "ability"
 
     Returns:
-        new, each \\r (ability) or space (name) the diff pairs with an old break of those kinds made that break; only
-        breaks between the old text's characters: its blank first and last paragraphs are keep_ends' (review
+        new, each \\r (ability) the diff pairs with an old \\x03 made that break, each lone space (name) it pairs with
+        an old run of blanks made that run (review 2026-10-24: "Pepperoni\\r\\rPizza" lost a break, "The  Spire" a
+        space); only between the old text's characters: its blank first and last paragraphs are keep_ends' (review
         2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new line, its space paired with the trailing \\r)
     """
-    kinds, shown = ("\r\x03", " ") if which == "name" else ("\x03", "\r")
-    if not any(c in old for c in kinds):
-        return new
     blank = " \t\r\x03"
     lo, hi = len(old) - len(old.lstrip(blank)), len(old.rstrip(blank))
-    seen = "".join(shown if c in kinds else c for c in old)
+    if which == "name":                         # the website shows each run of blanks as one space: runs pair as runs
+        runs = [(m.start(), m.end()) for m in re_finditer(r"[ \t\r\x03]+", old) if lo <= m.start() and m.end() <= hi]
+        if all(old[a:b] == " " for a, b in runs):
+            return new
+        seen, at, k = [], {}, 0
+        for a, b in runs:
+            seen.append(old[k:a])
+            at[sum(map(len, seen))] = old[a:b]
+            seen.append(" ")
+            k = b
+        seen = "".join(seen) + old[k:]
+        out = list(new)
+        for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
+            for i in range(size):
+                j = b + i               # a run the new text keeps as one space (two typed spaces stay as typed)
+                if a + i in at and (j == 0 or new[j - 1] not in blank) and (j + 1 == len(new) or new[j + 1] not in blank):
+                    out[j] = at[a + i]
+        return "".join(out)
+    if "\x03" not in old:
+        return new
+    seen = old.replace("\x03", "\r")
     out = list(new)
     for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
         for i in range(size):
-            if old[a + i] in kinds and lo <= a + i < hi:
+            if old[a + i] == "\x03" and lo <= a + i < hi:
                 out[b + i] = old[a + i]
     return "".join(out)
 
@@ -2437,7 +2461,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     color or icon font: an ability's changed parts take the fill of the text they replace (edit_styles; status words
     give none), words set in the icon font outside what the font draws (icon_text) that text's whole style; every badge
     or token the edit types is set in the icon font at the card's own badge or token style (icon_style; owner
-    2026-10-23), on a card with none at the text's own style (ICON_FONT added, Edit.fonts), the layer's own spellings
+    2026-10-23), on a card with none at the text's own style (ICON_FONT added, Edit.fonts), with ligatures on and a
+    LAYERED one (:sticker, :no) at tracking 0 (tracking split its glyphs apart), the layer's own spellings
     of the icons it kept staying (keep_tokens: "[dark:sticker]", where the website sends "[dark]"); then every status
     word in the text takes its swatch (the chart is the authority, an off-swatch word is normalized). The "<Ability> FX:
     ..." layers are then made again as Effect Layers.jsx's Update all makes them (BUG 2, _rebuild_fx): each cut in place
@@ -2544,11 +2569,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if badged:                                  # the owner's 2026-10-24 ruling names tokens: a badge or plain words?
         raise Refused("unsupported-card", f"{', '.join(badged)}: a timing badge typed in the title (the website shows "
                                           f"plain words there); edit in Photoshop")
-    if typed and _tinted(layer) and not any(BADGE_FX.fullmatch(fx_label(layer, fx)) for fx in old_fx):
+    tint = _tinted(layer) if typed else None
+    if tint and not any(BADGE_FX.fullmatch(fx_label(layer, fx)) for fx in old_fx):
         raise Refused("unsupported-card", f"{', '.join(text[a:b] for a, b in typed)}: the "
-                                          f"{'Ability' if which == 'ability' else 'title'}'s overlay, blending, "
-                                          f"opacity or clipped layers would change the badge's colours and no badge "
-                                          f"FX layer restores them; edit in Photoshop")
+                                          f"{'Ability' if which == 'ability' else 'title'}'s look ({tint}) would change "
+                                          f"the badge's colours and no badge FX layer restores them; edit in Photoshop")
     fonts = FontMap(dirs=[fonts_dir])
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
@@ -2591,6 +2616,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 layer.add_font(ICON_FONT)
                 look, faces = {"Font": ICON_FONT}, [ICON_FONT]
             layer.set_span_style(a, b, **look)
+        piece = text[a:b]       # ligatures on (a title's off: Gust_of_Wind); a layered token untracked (review 2026-10-24)
+        layered = piece[0] == "[" and token_variant(piece) in LAYERED
+        layer.set_span_style(a, b, Ligatures=True, **({"Tracking": 0} if layered else {}))
         fill = variant_fill(text[a:b], vocab, tints)
         if fill is not None:                    # a :sticker or :tint the colour of its kind on the card (owner 2026-10-24)
             layer.set_span_style(a, b, fill=fill)
@@ -3208,20 +3236,30 @@ def same_types(parser: Optional[PSDParser], a, b) -> bool:
     return Counter(canonical_type(parser, t) for t in a or []) == Counter(canonical_type(parser, t) for t in b or [])
 
 
-def type_row(psd: PSDImage, parser: PSDParser) -> tuple:
+def type_row(psd: PSDImage, parser: PSDParser, card: str = "", own_text: bool = True) -> tuple:
     """
     The header type icons the parser reads: (image layers [(canonical name, layer)], icon-font text layers).
 
     An image layer counts as PSDParser._process_layer counts it: named after a Types/ icon, visible, with pixels, its
-    top above the midline, and not under a stat row's group.
+    top above the midline, and not under a stat row's group. A text layer too, but the title's (title_layers: the
+    parser reads its icons as the name; review 2026-10-24: a baked "Po [fire]" refused every types edit after it).
+
+    Args:
+        psd: The open card
+        parser: offline_parser()
+        card: The card's name (file stem), for title_layers
+        own_text: title_layers' last rule applies (False on a rule page)
     """
     mid = int(psd.height * TYPE_REGION_RATIO)
+    texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
+    titles = {id(layer) for layer in PSDParser.title_layers(psd, texts, card, own_text)}
     images, tokens = [], []
     for layer in psd.descendants():
         if EFFECT_LAYER_TAG in layer.name and not layer.is_group():
             continue
         if _is_text_layer(layer):
-            if (layer.name.strip().lower() != "ability" and layer.is_visible() and layer.bbox[1] < mid
+            if (layer.name.strip().lower() != "ability" and id(layer) not in titles and layer.is_visible()
+                    and layer.bbox[1] < mid
                     and PSDParser._icon_font_spans(layer, layer.engine_dict["Editor"]["Text"].value)):
                 tokens.append(layer)
         elif (not parser._is_stat_layer(layer) and layer.name.lower() in parser.all_types and layer.is_visible()
@@ -3318,7 +3356,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         if hit is None or hit[1] != "type":
             refuse(f"{name!r} is no type icon")
         want.append(hit[0])
-    images, tokens = type_row(psd, parser)
+    images, tokens = type_row(psd, parser, _card_name(parsed), _own_text(parsed))
     if tokens:
         refuse(f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop")
     plan = IconPlan("types", [name for name, _ in images], value)
@@ -4690,8 +4728,9 @@ def _gate_icons(psd: PSDImage, layer, old: Optional[PSDImage], old_layer, fonts,
         return check(old, fonts, *args, layer=old_layer)
     bare = bare_icons(psd, fonts, layer=layer) - was(bare_icons)
     if bare:
-        raise Refused("reparse", f"{', '.join(sorted(bare))}: under the {what}'s overlay, blending, opacity or clipped "
-                                 f"layers with no badge FX layer over it")
+        raise Refused("reparse", f"{', '.join(sorted(bare))}: under the {what}'s look "
+                                 f"({_tinted(ability_layer(psd) if layer is None else layer)}) with no badge FX layer "
+                                 f"over it")
     through = see_through_icons(psd, fonts, layer=layer) - was(see_through_icons)
     if through:
         raise Refused("reparse", f"{', '.join(sorted(through))}: see-through, under a badge FX layer, which would print "

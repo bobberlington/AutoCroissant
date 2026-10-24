@@ -15,7 +15,7 @@ from dataclasses import replace
 from io import BytesIO
 from importlib.util import find_spec, module_from_spec, spec_from_file_location
 from pathlib import Path
-from re import search
+from re import escape, search
 from subprocess import CalledProcessError, run
 from types import SimpleNamespace
 
@@ -1972,9 +1972,9 @@ def test_typed_icons_refuse_where_they_would_print_wrong(clone, parser, chart):
     font would draw plainly ("(abc)"). Each unsupported-card."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit, why in (
-            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay, blending, "
-                                                                      r"opacity or clipped layers would change the badge's "
-                                                                      r"colours and no badge FX layer restores them"),
+            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's look \(its Color "
+                                                                      r"Overlay\) would change the badge's colours and no "
+                                                                      r"badge FX layer restores them"),
             ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
             (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'\(abc\)' would be set in the icon font, which draws no badge")):
         psd = PSDImage.open(_card(clone, rel)[0])
@@ -1999,19 +1999,21 @@ def test_typed_icons_refuse_under_any_tint_without_a_badge_layer(clone, parser, 
     one (reviews 2026-10-24): with no badge FX layer to restore them they refuse unsupported-card before anything changes.
     Binge Eater, Pin Light with a badge layer, still takes one (the layer names it)."""
     fonts = str(clone / pe.FONTS_DIR)
-    for rel, edit in (("Items/Equip/2 Stars/Soul_of_Eden.psd", lambda t: "(2CD) " + t),
-                      ("Items/Equip/2 Stars/Ice_Staff.psd", lambda t: "(2CD) " + t),
-                      ("Items/Equip/4 Stars/Holy_Mantle.psd", lambda t: t + " [fire]"),
-                      ("Creatures/Other/3 Stars/The_Patients.psd", lambda t: "(1CD) " + t),
-                      ("Auxiliary/Minions/Claw.psd", lambda t: t + " (1CD) Die."),
-                      ("Auxiliary/Minions/Miasma.psd", lambda t: t + " Gain [fire].")):
+    for rel, edit, why in (("Items/Equip/2 Stars/Soul_of_Eden.psd", lambda t: "(2CD) " + t, "its Pin Light blending"),
+                           ("Items/Equip/2 Stars/Ice_Staff.psd", lambda t: "(2CD) " + t, "its Gradient Overlay"),
+                           ("Items/Equip/4 Stars/Holy_Mantle.psd", lambda t: t + " [fire]", "its Pin Light blending"),
+                           ("Creatures/Other/3 Stars/The_Patients.psd", lambda t: "(1CD) " + t,
+                            "its opacity or fill below full"),
+                           ("Auxiliary/Minions/Claw.psd", lambda t: t + " (1CD) Die.", "'Exposure 1', clipped to its group 'Text'"),
+                           ("Auxiliary/Minions/Miasma.psd", lambda t: t + " Gain [fire].",
+                            "'Exposure 1', clipped to its group 'Text'")):
         psd = PSDImage.open(_card(clone, rel)[0])
         layer = pe.ability_layer(psd)
         before = layer.text
-        assert pe._tinted(layer) and not pe._overlaid(layer)
-        with pytest.raises(pe.Refused, match=r"^unsupported-card: .*: the Ability's overlay, blending, opacity or "
-                                             r"clipped layers would change the badge's colours and no badge FX layer "
-                                             r"restores them; edit in Photoshop$"):
+        assert pe._tinted(layer) == why and not pe._overlaid(layer)
+        with pytest.raises(pe.Refused, match=rf"^unsupported-card: .*: the Ability's look \({escape(why)}\) would change "
+                                             r"the badge's colours and no badge FX layer restores them; edit in "
+                                             r"Photoshop$"):
             pe.set_text_layer(psd, "ability", edit(pe.normalize_ability(before)), fonts, chart, parser=parser)
         assert layer.text == before
     assert not pe._tinted(pe.ability_layer(PSDImage.open(_card(clone, "Auxiliary/Creatures/Mettaton_NEO.psd")[0])))
@@ -2049,8 +2051,8 @@ def test_gate_fx_refuses_a_bare_badge_under_a_tinted_ability(clone):
     fx.parent.remove(fx)
     assert pe.bare_icons(psd, fonts) == Counter({"(1gcd)": 1})
     edit = SimpleNamespace(field="ability", fx_names=[])
-    with pytest.raises(pe.Refused, match=r"^reparse: \(1gcd\): under the Ability's overlay, blending, opacity or "
-                                         r"clipped layers with no badge FX layer over it$"):
+    with pytest.raises(pe.Refused, match=r"^reparse: \(1gcd\): under the Ability's look \(its Color Overlay\) with no "
+                                         r"badge FX layer over it$"):
         pe.gate_fx(psd, [edit], fonts_dir, None, old)
     bomb = PSDImage.open(_card(clone, BLOOD_BOMB)[0])
     assert pe.bare_icons(bomb, fonts) == Counter({"[machine]": 1})
@@ -2144,7 +2146,7 @@ def test_a_badge_layer_takes_its_icons_red_less_pixels(clone, parser, chart):
     with pytest.raises(pe.Refused, match=r"^reparse: 'Ability FX: \(1GCD\) \| \[undead\]' leaves 6 px of its badges and "
                                          r"icons out$"):
         pe.gate_fx(psd, [edit], fonts_dir, chart, old)
-    with pytest.raises(pe.Refused, match=r"^reparse: \[undead\]: under the Ability's overlay"):
+    with pytest.raises(pe.Refused, match=r"^reparse: \[undead\]: under the Ability's look \(its Color Overlay\)"):
         pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, chart, old)
 
 def _colour_px(layer, fonts, shape) -> np.ndarray:
@@ -2632,7 +2634,7 @@ def test_a_token_typed_in_the_title_is_set_in_the_icon_font(clone, parser, chart
     pe.set_text_layer(psd, "name", "\u2605 Mangle", fonts, chart, "Mangle", parser=parser)
     runs = _runs(pe.name_layer(psd, "Mangle"))
     assert runs[0][:2] == ("\u2605", pe.ICON_FONT) and runs[0][2:] == runs[1][2:]
-    for rel, title, why in ((NEO, "Mettaton NEO [fire]", r"\[fire\]: the title's overlay"),
+    for rel, title, why in ((NEO, "Mettaton NEO [fire]", r"\[fire\]: the title's look \(its Gradient Overlay\)"),
                             (BENCH, "Bench (1CD)", r"\(1CD\): a timing badge typed in the title"),
                             (BENCH, "Bench [fire:glow]", r"glow halo")):
         psd = PSDImage.open(_card(clone, rel)[0])
@@ -2654,7 +2656,7 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
     edits = [SimpleNamespace(field="name", fx_names=[])]
     for rel, title, icon, why in ((BENCH, "Bench [fire]", False, r"\[fire\]: not drawn as one badge or icon"),
                                   (BENCH, "Bench [fire:]", True, r"the icon font draws them as letters"),
-                                  (NEO, "Mettaton NEO [fire]", True, r"\[fire\]: under the title's overlay"),
+                                  (NEO, "Mettaton NEO [fire]", True, r"\[fire\]: under the title's look \(its Gradient Overlay\)"),
                                   (BENCH, "Bench [fire]", True, None)):
         old, psd = PSDImage.open(_card(clone, rel)[0]), PSDImage.open(_card(clone, rel)[0])
         layer = pe.name_layer(psd, Path(rel).stem.replace("_", " "))
@@ -2690,7 +2692,7 @@ def test_a_token_under_a_groups_overlay_refuses(clone, parser, chart):
         psd = PSDImage.open(_card(clone, rel)[0])
         layer = pe.name_layer(psd, card)
         assert not pe._overlaid(layer) and pe._tinted(layer)
-        with pytest.raises(pe.Refused, match=r"^unsupported-card: \[fire\]: the title's overlay"):
+        with pytest.raises(pe.Refused, match=r"^unsupported-card: \[fire\]: the title's look \(the Gradient Overlay of its group "):
             pe.set_text_layer(psd, "name", pe.collapse(layer.text) + " [fire]", fonts, chart, card, parser=parser)
 
 
@@ -2735,6 +2737,95 @@ def test_words_typed_after_a_title_token_take_the_titles_style(clone, parser, ch
     psd = PSDImage.open(_card(clone, BENCH)[0])
     pe.set_text_layer(psd, "name", "[fire:]", fonts, chart, "Bench", parser=parser)
     assert [run[:2] for run in _runs(pe.name_layer(psd, "Bench"))] == [("[fire:]", runs[0][1])]
+
+
+BARRY = "Creatures/Other/2 Stars/Barry_The_Barrel.psd"   # its badges and tokens at tracking 280
+GUST = "Items/Support/2 Stars/Gust_of_Wind.psd"            # its title's ligatures off
+PEPPERONI = "Items/Heal/2 Stars/Pepperoni_Pizza.psd"       # its title 'Pepperoni\r\rPizza'
+PO = "Creatures/Pandas/4 Stars/Po.psd"                     # types ['panda'] as image layers, room after its title
+BUTTERFLY = "Creatures/Kirby/5 Stars/Butterfly.psd"        # its title's own Inner Glow, no overlay
+
+
+def _typed_tokens(layer, fonts_dir: str, vocab) -> dict:
+    """{token: (Tracking, Ligatures, spread)} per icon-font token; spread: px between its glyphs' ink centres."""
+    from psd_tools.composite.text import FontMap
+    from psd_tools.composite.text.geometry import text_geometry
+    styles = pe._char_styles(layer)[2]
+    glyphs = text_geometry(layer, FontMap(dirs=[fonts_dir]))["glyphs"]
+    out = {}
+    for a, b in pe.icon_text(layer.text, vocab):
+        centres = [(glyph["ink"][0] + glyph["ink"][2]) / 2 for glyph in glyphs if glyph["i"] == a and glyph["ink"]]
+        out[layer.text[a:b]] = (pe._canon(styles[a].get("Tracking")), styles[a].get("Ligatures"),
+                                max(centres) - min(centres))
+    return out
+
+
+@text_edit
+def test_typed_layered_tokens_are_untracked_and_ligated(clone, parser, chart):
+    """Review 2026-10-24: a typed :sticker or :no took the card's tracking (Barry's tokens 280, The Hive's title 240),
+    which the fork adds between the overlapping glyphs of one cluster: the outline or no-circle slid off its icon, every
+    gate passing (no :sticker or :no on main is tracked). They are set at tracking 0, a plain [fire] keeping the
+    card's. Every typed token has ligatures on: Gust of Wind's title has them off, under which Photoshop may print the
+    letters while the engine (rlig) draws the icon."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, BARRY)[0])
+    layer = pe.ability_layer(psd)
+    assert pe._canon(pe.icon_style(layer, False, parser.icons)["Tracking"]) == 280
+    pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text) + " Gain [dark:sticker], [fire:no] and [fire].",
+                      fonts, chart, parser=parser)
+    got = _typed_tokens(pe.ability_layer(psd), fonts, parser.icons)
+    assert [got[token][:2] for token in ("[dark:sticker]", "[fire:no]", "[fire]")] == [(0, True), (0, True), (280, True)]
+    assert got["[dark:sticker]"][2] <= 2 and got["[fire:no]"][2] <= 2
+    psd = PSDImage.open(_card(clone, HIVE)[0])
+    pe.set_text_layer(psd, "name", "The Hive [fire:no]", fonts, chart, "The Hive", parser=parser)
+    tracking, ligatures, spread = _typed_tokens(pe.name_layer(psd, "The Hive"), fonts, parser.icons)["[fire:no]"]
+    assert (tracking, ligatures) == (0, True) and spread <= 2
+    psd = PSDImage.open(_card(clone, GUST)[0])
+    assert not pe._char_styles(pe.name_layer(psd, "Gust of Wind"))[2][0].get("Ligatures")
+    pe.set_text_layer(psd, "name", "Gust of Wind [fire]", fonts, chart, "Gust of Wind", parser=parser)
+    assert _typed_tokens(pe.name_layer(psd, "Gust of Wind"), fonts, parser.icons)["[fire]"][1]
+
+
+@text_edit
+def test_a_title_edit_keeps_its_runs_of_blanks(clone, parser, chart):
+    """Review 2026-10-24: the website shows a title's run of blanks as one space, and keep_breaks paired one break of
+    "Pepperoni\r\rPizza" with it: the PIZZA line moved up onto PEPPERONI, every gate passing. Runs pair as runs ("The
+    Spire"'s two spaces, a centred line's leading space); spaces typed as two stay as typed."""
+    for old, new, want in (("Pepperoni\r\rPizza", "Pepperoni Pizza [fire]", "Pepperoni\r\rPizza [fire]"),
+                           ("The  Spire", "The Spire [fire]", "The  Spire [fire]"),
+                           ("Spiky Ball\r Trap", "Spiky Ball Trap II", "Spiky Ball\r Trap II"),
+                           ("Mega\rBee", "Mega  Bees", "Mega  Bees"), ("The Spire", "The Spire", "The Spire")):
+        assert pe.keep_breaks(old, new, "name") == want
+    psd = PSDImage.open(_card(clone, PEPPERONI)[0])
+    assert pe.name_layer(psd, "Pepperoni Pizza").text.rstrip("\r") == "Pepperoni\r\rPizza"
+    pe.set_text_layer(psd, "name", "Pepperoni Pizza [fire]", str(clone / pe.FONTS_DIR), chart, "Pepperoni Pizza",
+                      parser=parser)
+    assert pe.name_layer(psd, "Pepperoni Pizza").text.rstrip("\r") == "Pepperoni\r\rPizza [fire]"
+
+
+@text_edit
+def test_a_title_token_is_no_header_type_row(clone, parser, chart, tmp_path):
+    """Review 2026-10-24: once "Po [fire]" was baked, type_row counted the title's token as a header type token and every
+    types edit after it refused ("printed as icon tokens in 'Po'"). The title's icons are the name's, as the parser
+    reads them."""
+    _, baked = _bake(clone, parser, PO, {"name": "Po [fire]"}, tmp_path, chart)
+    psd = PSDImage.open(baked.psd_path)
+    parsed = pe.parse_card(parser, baked.psd_path, PO)
+    assert parsed["card"]["types"] == ["panda"] and pe.type_row(psd, parser, "Po")[1] == []
+    assert pe.plan_types(psd, parsed, ["panda", "ice"], parser).new == ["panda", "ice"]
+
+
+@text_edit
+def test_a_title_token_under_its_own_inner_glow_refuses(clone, parser, chart, monkeypatch):
+    """Review 2026-10-24: Butterfly's title has no overlay, blending, opacity or clipped layer, only its own Inner Glow,
+    which paints over a typed icon too (_tinted counts Satin, Inner Glow and Inner Shadow): the refusal names it."""
+    from psd_tools.api.effects import InnerGlow
+    psd = PSDImage.open(_card(clone, BUTTERFLY)[0])
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: \[fire\]: the title's look \(its Inner Glow\) would "
+                                         r"change the badge's colours"):
+        pe.set_text_layer(psd, "name", "Butterfly [fire]", str(clone / pe.FONTS_DIR), chart, "Butterfly", parser=parser)
+    monkeypatch.setattr(InnerGlow, "enabled", property(lambda self: False))
+    assert pe._tinted(pe.name_layer(PSDImage.open(_card(clone, BUTTERFLY)[0]), "Butterfly")) is None
 
 
 @text_edit
@@ -2894,8 +2985,8 @@ def test_parentheses_typed_after_a_badge_are_body_text(clone, chart, tmp_path):
         runs = _runs(pe.ability_layer(psd))
         assert check(runs), (typed, runs)
     psd = PSDImage.open(pizza)
-    with pytest.raises(pe.Refused, match=r"^unsupported-card: \(2U\): the Ability's overlay, blending, opacity or "
-                                         r"clipped layers"):
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: \(2U\): the Ability's look \('Layer 12', clipped to "
+                                         r"it\)"):
         pe.set_text_layer(psd, "ability", pe.ability_layer(psd).text.replace("(1CD) Can", "(1CD)(2U) Can", 1),
                           str(clone / pe.FONTS_DIR), chart)
 
