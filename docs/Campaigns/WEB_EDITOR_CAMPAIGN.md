@@ -75,7 +75,7 @@ card once it is tier A; no new pickle (autocroissant-failure-archaeology Entry 7
 2. **The standardization batch** (ledger §3-4, on hold): tier A needs template structure. Of 651 bar-eligible cards today: 371 template stat
    rows (L2), 605 single `Text/Ability` (L5), 552 visible `Name` (L6), 0 cards on the stoogedings font and 0 `Ability FX:` layers (L1, L7),
    6 faces missing everywhere plus 2 near-misses (L13; the 10 platform-only faces are done, 136 of 144 names resolve from the repo; 2026-10-21:
-   only BabaUI was missing; added 2026-10-23, TTSCardMaker b03b9975, so none is missing now). Plus
+   only BabaUI was missing; added 2026-10-23, TTSCardMaker 92b5ae6b, so none is missing now). Plus
    the guard `check_cards.py` (ledger §5), which is how a card gets its tier automatically.
 3. **Rendering parity** ("extend psd-tools more", concretely). `cards_v1_icc`: median 0.186% bad pixels, 115 cards > 2%, 243 > 0.5%;
    target "no card > 2%" not met. Remaining classes (RENDER_STATUS "What is still missing" and the critic pass): **A** effects on empty-bbox

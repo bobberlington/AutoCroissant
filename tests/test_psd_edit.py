@@ -41,9 +41,9 @@ HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row:
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"          # fixed 2026-10-23: atk 6, its bars on the canvas
-OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card (atk 10: no digit visible, hidden 7 styled)
+OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (atk 10: no digit visible, hidden 7 styled)
 SHELL_SHOCK = "Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd"
-MISMATCHED_SHOCK = "baf89da9^"  # Shell_Shock before its re-save: its PNG another session's than its preview
+MISMATCHED_SHOCK = "8af07bcd^"  # Shell_Shock before its re-save: its PNG another session's than its preview
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"   # digit masks start on the canvas and reach past it
 AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 10 with 6, 8 and 9 styled: ambiguous
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
@@ -53,7 +53,7 @@ NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd", ANUBISATH,
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
 GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay "Blazing" type layer over the ability (OuterGlow)
 FIRE_STAFF = "Items/Equip/2 Stars/Fire_Staff.psd"                  # "Ability FX: Smoldering": unstyled on the chart, nothing to cut
-OVERLAY_STAFF = "49cf3b28^"                                        # Fire Staff before L7, its "Smoldering" an overlay text layer
+OVERLAY_STAFF = "0c573ed0^"                                        # Fire Staff before L7, its "Smoldering" an overlay text layer
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
@@ -72,7 +72,7 @@ KNIGHT = "Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd"        # 'Knight', '
 GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"              # a rule page: its heading 'Text/THE GLOBAL TURN'
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
 PIZZA = "Creatures/Other/3 Stars/Pizza.psd"                        # three lines in three colours, each after a badge
-COLOURED = "0bc4c099"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
+COLOURED = "7fd2aa30"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
 # the JSX-made FX layers to compare with: Effect Layers - All Cards.jsx's 2026-10-20 trial copies, cut down by
 # tests/fixtures/make_jsx_fx.py (the copies: ~/Documents/Tools/psd-research/fixtures/jsx-fx/)
 JSX_FX = Path(__file__).resolve().parent / "fixtures" / "jsx_fx"
@@ -630,7 +630,7 @@ def test_ability_layer_wherever_the_card_keeps_it(clone):
 def test_a_title_named_after_its_own_text(clone, parser):
     """The last rule (owner, 2026-10-23: where the title sits is the developer's): a visible layer in the title region
     named after its own text, as Photoshop names a new text layer, when nothing else is found. Papyrus prints 'The
-    Great Papyrus' and Sans 'snas.' (the live bake's two refusals of e1a491be): parser and bake read that layer, and
+    Great Papyrus' and Sans 'snas.' (the live bake's two refusals of b22f4cc4): parser and bake read that layer, and
     the website's edits asking for those titles are redundant. Several such layers (Knight Lost A Lot's stacked words)
     read as none; a rule page's heading is no title."""
     for rel, title in ((PAPYRUS, "The Great Papyrus"), (SANS, "snas.")):
@@ -1437,7 +1437,7 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
 
 @text_edit
 def test_fx_layer_without_a_chart_style_refuses(clone, chart):
-    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28): the edit would drop it and the chart has no
+    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (0c573ed0): the edit would drop it and the chart has no
     style to make it again."""
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_card(clone, FIRE_STAFF)[0])

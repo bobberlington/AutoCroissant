@@ -20,7 +20,7 @@ props without breaking the ~812 PSDs that parse correctly today (818 cards with 
 (impossibility-cards-reference §4.1). Adoption, measured from `psd_details.json` at the 2026-10-23 05:00 run (813 PSD
 records, before batch B2's ~219 re-parses): 275 PSDs have text in stoogedings; the records' `icons` field reads
 `tokens` 45, `mixed` 230, `images` 470, `none` 68. The standardization batches did the migration (242 cards pushed
-2026-10-22, queue A, batch B2 0bc4c099 on 2026-10-23). `icons` is the measure from now on: the 470 `images` cards (and
+2026-10-22, queue A, batch B2 7fd2aa30 on 2026-10-23). `icons` is the measure from now on: the 470 `images` cards (and
 the image half of the `mixed` ones) still rely on gap injection, so Options 2-3 below matter for them. Migrating a
 card is card-content work in TTSCardMaker (ttscardmaker-companion §5).
 
@@ -326,7 +326,7 @@ It re-drives the real `PSDParser` methods and prints 6 numbered steps. What each
 | [5] gap count vs kept types | the ordinal balance | MISMATCH → leftovers appended to last line, or gaps left unfilled |
 | [6] final text after injection + punctuation cleanup | what would be stored | `[type]` in the wrong slot; punctuation cleanup (`\s+([:;,\.\?!])`→`\1`, psd_parser.py:947 on 2026-10-23) having eaten a legitimate gap before punctuation |
 
-### Worked example — Nebulous Precipice (measured 2026-10-23, TTSCardMaker 96d61368)
+### Worked example — Nebulous Precipice (measured 2026-10-23, TTSCardMaker a7d1fe56)
 
 ```bash
 ~/.venvs/ac-py314-fork/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"

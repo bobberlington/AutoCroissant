@@ -90,7 +90,7 @@ need to know WHICH stage of the parse diverged — not just that it did.
    — it runs the actual `PSDParser` + `CardValidator` end to end, no Discord, nothing saved. The
    output should match your predicted values field for field.
 
-**Worked example — Nebulous Precipice as a healthy trace** (all outputs real, 2026-10-23, TTSCardMaker 96d61368,
+**Worked example — Nebulous Precipice as a healthy trace** (all outputs real, 2026-10-23, TTSCardMaker a7d1fe56,
 `~/.venvs/ac-py314-fork`):
 
 `dump_psd_layers.py` on `~/Desktop/TTSCardMaker/"Field/3 Stars/Nebulous_Precipice.psd"` shows size `1200 x 1800`

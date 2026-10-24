@@ -283,7 +283,7 @@ Algorithm:
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
 
-**Worked example — Nebulous Precipice** (measured 2026-10-23 at TTSCardMaker 96d61368 via
+**Worked example — Nebulous Precipice** (measured 2026-10-23 at TTSCardMaker a7d1fe56 via
 `~/.venvs/ac-py314-fork/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py ~/"Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"`):
 PSD 1200x1800, card_mid_y=900. Above midline: icon `field` → `card.types`. One ability text layer at (x=26, y=1229)
 whose first line is `"Friendly<GAP:5>gain +0.5 DEF and +1 SPD."` (a 5-space gap). One below-midline icon:

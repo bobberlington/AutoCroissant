@@ -729,7 +729,7 @@ shared with card-edits and card-sync): the icon manifest, the PSD and the PNG (3
 status chart for an ability and the added Types/ icons for a types edit. Fine at hobby volume; a burst of a hundred
 previews an hour would compete with the schedules.
 
-**Measured (2026-10-23, this Mac at load average ~55-66, the Desktop clone at 82a8ba7c then b03b9975, fork
+**Measured (2026-10-23, this Mac at load average ~55-66, the Desktop clone at b7798bb1 then 92b5ae6b, fork
 cards-20261023c):** Mini Doomer hp 5 -> 8 baked in 6-14 s (the same pixels as card_bake's dry run, a test); The
 Freezer's ability `+1 DEF` -> `+2 DEF` in 26 s, coloured as the original; hp 25 refused in 3 s; hp 5 redundant in 2 s;
 stars 0 + hp 8: hp baked, stars refused, 19 s; a publish 1-2 s. On the runner, from card-edits.yml dispatch 40003504861:

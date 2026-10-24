@@ -619,7 +619,7 @@ def test_real_card_psd(clone, tmp_path):
     assert fc.psd_fonts(data) == fonts
     index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
     assert index.errors == [] and index.files >= 270 and index.supplies("Domigorgon")
-    assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker b03b9975)
+    assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker 92b5ae6b)
     assert fc.check_psd(str(path), index) == {}
     assert index.supplies("Papyrus-Regular")                    # Papyrus.ttf (the Windows face), no alias since 2026-10-23
 

@@ -709,7 +709,7 @@ font_check import; `fonttools` added to requirements.txt).
 
 2026-10-23: `FONT_ALIASES` deleted (owner: "change the fonts to the exact ones and delete the aliases"): `Papyrus-Regular` is
 MDW/Fonts/Papyrus.ttf's own PostScript name and Kung Fu Panda Regular.ttf was renamed `Kung-Fu-Panda` (TTSCardMaker work/kfp-name
-2493651e); font_check matches PostScript names exactly, the fork's FontMap gets no aliases.
+be8c96ff); font_check matches PostScript names exactly, the fork's FontMap gets no aliases.
 
 2026-10-21 (audit fixes): the commit path of tts_save.py and card_bake.py folded into commands/git_commit.py (its table above; `GIT_TOKEN`
 row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_MIN`, `POOL_CHUNK` and takes the Action token through
