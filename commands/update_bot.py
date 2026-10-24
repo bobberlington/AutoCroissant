@@ -1,3 +1,4 @@
+from asyncio import to_thread
 from discord import Interaction
 from os import execl, execv
 from os.path import isfile
@@ -8,6 +9,7 @@ import global_config                    # CARD_SYNC, read at call time (the cuto
 from global_config import ALIAS_PKL, CARD_REPO, DETAILS_JSON, STATS_PKL, OLD_STATS_PKL
 
 NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
+SITE_FILES = {ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, DETAILS_JSON}   # what the website's build reads from this repo
 PUSH_RETIRED = ("Nothing to push: the card data is built by the Card sync Action in the card repo every 30 minutes "
                 f"(<https://github.com/{CARD_REPO}/actions/workflows/card-sync.yml>), and /update_stats loads it. "
                 "The pickles here are frozen since the cutover.")
@@ -103,8 +105,12 @@ async def git_push(interaction: Interaction):
         if git.rev_list('--count', 'origin/main..HEAD').strip() == "0":
             await interaction.followup.send("Pickles are already up to date.")
             return
+        site = set(git.diff('--name-only', 'origin/main', 'HEAD').split()) & SITE_FILES
         git.push(kill_after_timeout=NET_TIMEOUT)
         await interaction.followup.send("Successfully pushed!")
+        if site:                                        # the website reads them: build it now, not on its late schedule
+            from commands.card_sync import dispatch_site
+            print(await to_thread(dispatch_site))
     except GitCommandError as e:
         await interaction.followup.send(f"Push failed: {str(e)}")
         raise

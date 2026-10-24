@@ -33,6 +33,7 @@ from commands.utils import queue_command, queue_edit, say
 # ========================
 ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the card repo only, Actions read and write
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
+SITE_WORKFLOW = "site.yml"                           # the card repo's website build (it reads the bot's pickles)
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
 SCHEDULE = "every 30 minutes, at :04 and :34"        # its cron (card-sync.yml)
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
@@ -309,6 +310,26 @@ def _refusal(reply) -> None:
 def _post_dispatch(repository: str, body: dict):
     return session().post(api_url(repository, f"actions/workflows/{WORKFLOW}/dispatches"), json=body,
                           headers=_headers(), timeout=30)
+
+
+def dispatch_site(repository: str = CARD_REPO) -> str:
+    """
+    A website build (site.yml) after a /push of the pickles it reads: GitHub runs its schedule hours late. Never retried
+    or raised; without ACTIONS_TOKEN the schedule stays.
+
+    Returns:
+        One console line
+    """
+    if not ACTIONS_TOKEN:
+        return "Website build: no ACTIONS_TOKEN, so the site picks the push up on its schedule."
+    try:
+        reply = session().post(api_url(repository, f"actions/workflows/{SITE_WORKFLOW}/dispatches"), json={"ref": CARD_BRANCH},
+                               headers=_headers(), timeout=30)
+    except Exception as e:                           # noqa: BLE001 - never fails the push
+        return f"Website build not started ({type(e).__name__}: {e}); the site picks the push up on its schedule."
+    if reply.status_code >= 400:
+        return f"Website build not started (HTTP {reply.status_code}); the site picks the push up on its schedule."
+    return "Website build started."
 
 
 def dispatch(repository: str, inputs: dict) -> Optional[dict]:

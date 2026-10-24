@@ -176,7 +176,9 @@ the gitignored `.ssh/` directory in the repo root holds the deploy key (never co
 `git add aliases.pkl stats.pkl old_stats.pkl psd_details.json` (the details file travels with the pickles since 2026-10-21) -> `git commit -m "PICKLE"` (no-op if nothing changed) ->
 `git pull --rebase --autostash origin main` (picks up code pushed since the last pull) -> `git push`.
 Pickle snapshots are commits named PICKLE.
-Success: "Successfully pushed!" (also pushes a PICKLE commit left by an earlier failed push).
+Success: "Successfully pushed!" (also pushes a PICKLE commit left by an earlier failed push). When the push carried
+one of those four files, the bot then dispatches the website build (TTSCardMaker site.yml) with `ACTIONS_TOKEN`
+(card_sync.dispatch_site; one console line, never a failed push; without the token the site's 6-hour schedule stays).
 Nothing ahead of origin/main after the rebase: "Pickles are already up to date.".
 Rebase fails (conflict, network, auth): `git rebase --abort`, then "Push failed: <err>" and a re-raise; the
 local PICKLE commit stays. If no rebase had started (fetch failed or timed out), the pull's error is shown.
