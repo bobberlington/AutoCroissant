@@ -1285,6 +1285,18 @@ except 6, which is one day, not 14:
 6. **Within a day of clean runs (owner; 14 days was the proposal), delete the pickles, `psd_details.json` and `/push` from AutoCroissant main** (bobberlington's repo:
    tell him first). Answered: yes.
 
+7. **More on `data` (2026-10-23 ~18:30).** Answered: yes to both.
+   - **Bake verdicts** move out of `site/Card Edits.json` (the `_psd` blocks: baked, refused, redundant, the reason, the
+     PSD blob) into `db/verdicts.json` on `data` (`{"schema": 1, "cards": {key: verdict}}`, one card per line). Card
+     Edits.json keeps only people's edits; a refusal makes no main commit; a bake commits to main only the PSD, the PNG and
+     the edit fields it drops as printed. Readers: card_bake (`final()`, `--pending`), build_site (PSD pending, refused),
+     the bot's `/query` facts, card-sync's gate. Migration: one data commit with the current `_psd` blocks, then one main
+     commit removing them from Card Edits.json.
+   - **Bake and guard events** join the changelog: `baked` (fields, PNG changed), `bake-refused` (reason), `guard-png`
+     (a PNG the guards re-made or recompressed), `guard-fix` (a Txt2 or other fix the guards landed). The Changes page shows
+     them; the Discord post stays one post per push (they ride the push's post).
+   Built after BUG 2 (`work/fx-rebuild`) lands, as part of steps 7-9.
+
 ## 17. To confirm (settled by a test, not by the owner)
 
 - Whether a ruleset on a personal public repo can let only GitHub Actions update `data` (§5).

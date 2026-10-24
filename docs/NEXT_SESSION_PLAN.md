@@ -73,6 +73,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       `/update_stats` "already current", `/query` the goldens, the next push on the site/save/Discord within one interval).
       `ACTIONS_TOKEN` is already in the jetson's config.py.
 - [ ] **Step 9:** the Changes page's Changelog and Database edits tabs fed by `data/changelog.json`.
+- [ ] **Owner, 2026-10-23 ~18:30 (DATA_BUILD_ACTION §16 item 7):** bake verdicts move from Card Edits.json to
+      `db/verdicts.json` on `data`, and bake/guard events (`baked`, `bake-refused`, `guard-png`, `guard-fix`) join the
+      changelog. Build after BUG 2 lands, with steps 7-9.
 - [ ] **Step 10, within a day of clean runs:** retire the pickles, psd_details.json and `/push`. The owner tells
       bobberlington first.
 
