@@ -111,6 +111,15 @@ out({ pages: ["hp", "atk", "spd"].map(pages), pager: ["hp", "def", "atk", "spd"]
     assert out["lone"] == ["1"] and not out["p0vals"] and len(out["tops"]) == 1 and out["tops"][0] <= 144 - 3   # a lone card shows
 
 
+def test_item_types_read_as_in_the_rulebook(tmp_path):
+    """S19 rows: "Heal", not the subtype key "heal" (chart and table)."""
+    out = node(tmp_path, """
+const html = chart(render(fixture(), null).top, "itemtypes");
+out({ cells: [...html.matchAll(/<t[hd][^>]*>(\\w+)<\\/t[hd]>/g)].map(m => m[1]).filter(s => /^heal$/i.test(s)), table: rows(html.split('class="view-table"')[1] || "").map(r => r[0]) });
+""")
+    assert out["table"] == ["Heal"] and out["cells"] and set(out["cells"]) == {"Heal"}
+
+
 def test_cooldown_update_is_gone(tmp_path, an):
     """No "The cooldown update" chart (balance.js), no `old` flag on a change row and no "old tags" in the build log."""
     out = node(tmp_path, """
