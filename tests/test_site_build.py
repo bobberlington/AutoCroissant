@@ -26,6 +26,7 @@ from conftest import CLONE
 BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 APP_JS = BUILD_SITE.parents[1] / "assets" / "app.js"
+BALANCE_JS = BUILD_SITE.parents[1] / "assets" / "balance.js"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -437,3 +438,35 @@ def test_the_cards_page_has_a_banned_flag():
         pytest.skip("no round 3 person pages")
     text = APP_JS.read_text(encoding="utf-8")
     assert '["banned", "Banned (constructed)"]' in text and "banned: c => !!c._banned" in text
+
+
+def test_long_history_notes_are_gone():
+    """Dropped at the owner's ask (2026-10-24): the notes under Image versions and Recorded changes."""
+    if not APP_JS.is_file() or not BALANCE_JS.is_file():
+        pytest.skip(f"no site assets beside {APP_JS}")
+    assert "Each commit that changed the image" not in APP_JS.read_text(encoding="utf-8")
+    assert "From the bot's card history" not in BALANCE_JS.read_text(encoding="utf-8")
+
+
+def test_no_psd_details_flag():
+    """The Cards tab's "PSD details" chip is gone (owner, 2026-10-24); the search term has:details stays."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '"PSD details"]' not in text and "details: c => !!c.details" not in text
+    assert '"has:details": c => !!c.details' in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
+
+
+def test_card_buttons_sit_under_the_image():
+    """Add to deck, Compare and Edit under the card image (owner, 2026-10-24); the info column stays .detail's second child."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    text = APP_JS.read_text(encoding="utf-8")
+    body = text[text.index("function openCard("):]
+    body = body[:body.index("\n}\n")]
+    at = [body.index(s) for s in ('class="image-wrap"', 'class="actions card-actions"', 'data-action="deck-toggle"',
+                                  'data-action="compare-add"', 'data-action="edit-card"', 'data-nav="prev"', "<h2>${esc(c.name)}</h2>")]
+    assert at == sorted(at)
+    assert body.count('data-action="deck-toggle"') == 1
+    wrap = body[body.index('<div class="detail">'):body.index("<h2>")]
+    assert wrap.rstrip().endswith("</div></div>\n      <div>")      # image column closes, then the info column

@@ -1,6 +1,7 @@
 """
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
-style, stat-row encoding, status-word layers, template deviations and a compact layer tree. One record per card PSD,
+style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
+would put them: the website mock-up's, psd_edit's geometry) and a compact layer tree. One record per card PSD,
 keyed by its git blob sha, in psd_details.json beside the pickles (committed; /push carries it with them).
 
     python -m commands.psd_details --clone <dir> [--out psd_details.json] [--fonts <dir>]
@@ -23,7 +24,7 @@ from io import BytesIO
 from json import dumps, load as json_load
 from os import PathLike, cpu_count, fsync, listdir, remove, replace, walk
 from os.path import isdir, join, relpath, splitext
-from re import IGNORECASE, search
+from re import IGNORECASE, fullmatch, search, sub
 from statistics import median
 from threading import Lock
 from time import perf_counter
@@ -37,6 +38,10 @@ from commands.font_check import (
     EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, dir_fonts, find_fonts, is_card_psd, layer_fonts, tree_fonts,
 )
 from commands.github_api import blob_sha, token_from_env
+from commands.psd_edit import (
+    STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
+    _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
+)
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
 from global_config import CARD_REPO, DETAILS_JSON, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
@@ -50,8 +55,11 @@ TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
 MORE = ["…", "more", True]             # the tree's cut marker
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
+HEADER_STARS = 10                           # star counts the header section lays out (1..10)
+HEADER_ICONS = 8                            # type icons it keeps spots for
 _lock = Lock()                              # one writer of the file
 _indexes: dict = {}                         # (cache dir, its files) -> FontIndex: built once per MDW/Fonts change
+_parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
 
 
 # ========================
@@ -259,6 +267,123 @@ def _template(psd: PSDImage, texts: list, name: str, stats, icons, overlays, rul
             "ability_layers": [layer_path(layer) for layer in abilities], "deviations": deviations}
 
 
+def _ints(box) -> list:
+    return [int(round(v)) for v in box]
+
+
+def _icon_parser(vocab) -> PSDParser:
+    key = tuple(vocab)
+    if key not in _parsers:
+        _parsers[key] = offline_parser(list(key), [], None)
+    return _parsers[key]
+
+
+def _star_container(group, types):
+    """The group plan_stars lays the stars out in: the one shown "N stars" folder, or the one star group drawing them all."""
+    while True:
+        folders = [child for child in group if child.is_group() and fullmatch(STAR_FOLDER, child.name, IGNORECASE)]
+        if folders:
+            shown = [folder for folder in folders if folder.visible]
+            if len(shown) != 1:
+                return group
+            group = shown[0]
+            continue
+        shown, hidden = _star_units(group, types)
+        if len(shown) == 1 and shown[0].count > 1 and not hidden:
+            group = shown[0].layers[0]
+            continue
+        return group
+
+
+def _plan_centres(plan, container, types, size) -> list:
+    """The star centres once a plan_stars plan is applied, in reading order."""
+    if plan.how.startswith("folder"):
+        units = _star_units(plan.show[0] if plan.show else container, types)[0]
+    else:
+        shown, hidden = _star_units(container, types)
+        hide, show = {id(layer) for layer in plan.hide}, {id(layer) for layer in plan.show}
+        moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
+        units = []
+        for unit in shown + hidden:
+            ids = [id(layer) for layer in unit.layers]
+            if any(i in hide for i in ids) or (unit in hidden and not any(i in show for i in ids)):
+                continue
+            dx, dy = next((moved[i] for i in ids if i in moved), (0, 0))
+            units.append(_Unit([], _moved_box(unit.core, dx, dy)))
+        units += [_Unit([], _moved_box(unit.core, dx, dy)) for unit, dx, dy, _ in plan.copies]
+    return [_ints(unit.centre) for unit in _reading(units, size[1], True)]
+
+
+def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
+    """
+    The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
+    else the layout's: first n, then _star_layouts) and the counts the bake refuses ("*": all, for one reason).
+    None without exactly one Stars group drawing them.
+    """
+    types = _icon_parser(vocab).all_types
+    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
+    if len(groups) != 1:
+        return None
+    total, container = _stars_total(psd), _star_container(groups[0], types)
+    shown = _star_units(container, types)[0]
+    if not shown:
+        return None
+    size = _median_size(shown)
+    order = _reading(shown, size[1], True)
+    plain = len(order) == total and all(unit.count == 1 for unit in order)     # one unit per star: the layout's spots hold
+    source = max(order, key=lambda unit: max(container.index(layer) for layer in unit.layers))
+    parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
+    at, refused = {}, {}
+    for n in range(1, HEADER_STARS + 1):
+        try:
+            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, _icon_parser(vocab)), container, types, size)
+            continue
+        except Refused as e:
+            refused[str(n)] = sub(r"^stars: ", "", e.why)
+        if plain and n <= len(order):
+            at[str(n)] = [_ints(unit.centre) for unit in order[:n]]
+        elif plain:
+            layouts = _star_layouts(order, size, n)
+            if layouts:
+                at[str(n)] = [_ints(spot) for spot in layouts[0][1]]
+    if len(refused) == HEADER_STARS and len(set(refused.values())) == 1:
+        refused = {"*": refused["1"]}
+    return {"units": [{"core": _ints(unit.core), "box": _ints(unit.box)} for unit in order],
+            "icon": sub(r"\s+copy(\s+\d+)?$", "", source.layers[len(source.layers) - 1].name).strip().lower() or None,
+            "at": at, "refused": refused}
+
+
+def _type_header(psd: PSDImage, vocab) -> Optional[dict]:
+    """
+    The header type icons as plan_types reads them: the row ({name, core, box}, slot order), each longer row's spots past
+    it ({count: boxes}), icons the bake can't take off ([name, why]) and a token row's refusal. None without icons.
+    """
+    images, tokens = type_row(psd, _icon_parser(vocab))
+    if not images and not tokens:
+        return None
+    units, names, fixed = [], {}, []
+    for name, layer in images:
+        why = _icon_reason(psd, layer)
+        if why:
+            fixed.append([name, f"{layer.name!r} is {why}"])
+        else:
+            unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
+            units.append(unit)
+            names[id(unit)] = name
+    slots = _reading(units, _median_size(units)[1], False) if units else []
+    clear = _texts(psd) + badge_layers(psd)[0]
+    spots = {str(n): [_ints(box) for box in _icon_spots(psd, slots, n - len(slots), clear)]
+             for n in range(len(slots) + 1, HEADER_ICONS + 1)} if slots else {}
+    return {"row": [{"name": names[id(unit)], "core": _ints(unit.core), "box": _ints(unit.box)} for unit in slots],
+            "spots": spots, "fixed": fixed, "tokens": bool(tokens),
+            "refused": f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop" if tokens else None}
+
+
+def _header(psd: PSDImage, rel: str, vocab) -> dict:
+    """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
+    return {"stars": _guard(_star_header, psd, rel, vocab), "types": _guard(_type_header, psd, vocab)}
+
+
 def _tree(group, depth: int = 0) -> list:
     """[name, kind, visible, children?] per layer, bottom to top as psd-tools iterates; cut at TREE_CHILDREN and TREE_DEPTH."""
     if depth >= TREE_DEPTH:
@@ -305,7 +430,7 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
     texts = [layer for layer in layers if layer.kind == "type"] if layers is not None else []
     record["canvas"] = _guard(_canvas, psd)
     if layers is None:
-        for key in ("fonts", "text", "effects", "smart_objects", "icons", "stats", "fx", "overlays", "template", "tree"):
+        for key in ("fonts", "text", "effects", "smart_objects", "icons", "stats", "fx", "overlays", "template", "header", "tree"):
             record[key] = walk_error
         return record
     record["fonts"] = _guard(_fonts, texts, index)
@@ -318,6 +443,7 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"],
                                 RULEBOOK_DIR in rel)
+    record["header"] = _guard(_header, psd, rel, vocab)
     record["tree"] = _guard(_tree, psd)
     return record
 
@@ -580,6 +706,8 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'DRAWN',
+    'HEADER_ICONS',
+    'HEADER_STARS',
     'MORE',
     'TEXT_CHARS',
     'TREE_CHILDREN',
