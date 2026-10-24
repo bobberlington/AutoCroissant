@@ -683,6 +683,17 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `icon_text` of a text to set, `icon_spans` of a layer), so "[Blazing]" is styled as the JSX styles it. Tests:
   `test_a_badge_layer_takes_a_colour_icons_see_through_glow`, `test_a_status_word_in_lettered_brackets_takes_its_fx_layer`,
   `test_apply_jobs_checks_each_typed_icon_is_one_cluster`, The Patients in `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`.
+  **Round 5 (2026-10-24, same branch):** `keep_tokens` diffs whole tokens, not characters (a token typed right after a
+  kept `[unknown:sticker]` took its `]` and the sticker went plain: Error Room, Corruption, Elemental World, Palace of
+  Shadow). A new FX layer goes above the Text group's clip chain (Claw's and Miasma's MagentaSmorg and Exposure 1 left
+  the title and text in the PSD, not the PNG), and `gate_untouched` renders the whole card around the text edits: any
+  pixel outside their regions refuses `region` (about 5 s a render). `_tinted` counts visible layers clipped to the
+  Ability or a group above it (an adjustment or fill; a drawn layer over its box: Pizza's Multiply `Layer 12`), so a
+  typed badge or token there refuses. `unshaped_icons` counts a layer without the icon font too, so the 10 plain cards
+  that print tags as body text (Papyrus' `(1CD)`) take typed badges and tokens again. Tests:
+  `test_keep_tokens_pairs_whole_tokens`, `test_new_fx_layer_goes_above_the_groups_clip_chain`, Claw and Miasma in
+  `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`, `test_a_plain_cards_body_font_tags_do_not_refuse_a_typed_token`. Full suite after it
+  (79efb50): 1556 passed, 12 skipped, 0 failed; 60 sampled cards x 2 edits refuse no more than before (one fewer).
 
 ## 8. Runner
 
