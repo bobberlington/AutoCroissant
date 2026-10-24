@@ -1453,9 +1453,11 @@
 {"at": 1768457872.0, "blob": "b78bb6f65972f6014187c80471309dde2a20bcf5", "commit": "a6f6dd8faefd53603ad1c2c3ab8d6886e3b92ee0", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
 {"at": 1769818661.0, "blob": "c9d9bbba57eb50619e22d1ccf655e4ebab8d638d", "commit": "72774d193b0a6a92a932c4b1943442e10c963d6a", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
 {"at": 1792648670.0, "blob": "9a28efb6063fc0bfd1e939705848c0589d80157a", "commit": "09131c6703ccfdc94bd19ac64a38335b71ba0fb1", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
-{"at": 1792757740.0, "blob": "1dfbb89751b3e163a756d9ce71001befdad35db5", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"}
+{"at": 1792757740.0, "blob": "1dfbb89751b3e163a756d9ce71001befdad35db5", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1792849615.0, "blob": "db6901b4819f06f746cf97fcb1bc237a671a6016", "commit": "0262b2373ce6a58500c9208c49955151fa4891b1", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 4, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"}
 ], "segments": [
-{"blob": "3efbbe354ea0105fc05d1c9acaff688f6dc1b6a3", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "creatures": [], "from": 1699239877.0, "line": [5, 2, 6, 5], "path": "Creatures/Other/3 Stars/Grimora.psd"}
+{"blob": "3efbbe354ea0105fc05d1c9acaff688f6dc1b6a3", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "creatures": [], "from": 1699239877.0, "line": [5, 2, 6, 5], "path": "Creatures/Other/3 Stars/Grimora.psd"},
+{"blob": "aec4e726196fc1c71e946b57181fb745fb060b2d", "change": "buff", "commit": "ebf4a7dfa1fadde5a43f49e757992f58d0b64e13", "creatures": [], "from": 1741760724.0, "line": [5, 4, 6, 5], "path": "Creatures/Other/3 Stars/Grimora.psd"}
 ]},
 "Groda": {"allowed_high": false, "paths": ["Creatures/Pandas/4 Stars/Groda.psd"], "readings": [
 {"at": 1699239877.0, "blob": "25ae8200f295484f6aa5920cdbfa7beef41c8c4e", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "how": "template", "path": "Creatures/Pandas/4 Stars/Groda.psd", "print": "first", "read": [8, 4, 6, 3], "stars": 4, "type": "creature"},
@@ -4244,9 +4246,11 @@
 {"at": 1769819036.0, "blob": "67767125cca1feaf1ac51c343ea3d57694852d12", "commit": "5e6fcc81ba7bbc3889f29d184117363493039401", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 8, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1769828326.0, "blob": "f5e81cb0b686aa57d75dd3c097bc06e9884f289c", "commit": "ff054c8e1ad9e7a646ab95714bc01621b2186cde", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 8, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1770523886.0, "blob": "07a821709e61a04dd5ae5d1cf3a6523346fc7fb5", "commit": "24742d07fbb3874e2080c66deaea93c0fa7905e3", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 8, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
-{"at": 1792757740.0, "blob": "eb2b78e1f1b3948e38b8c091515845a68226102d", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 8, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"}
+{"at": 1792757740.0, "blob": "eb2b78e1f1b3948e38b8c091515845a68226102d", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 8, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
+{"at": 1792849606.0, "blob": "8603c0ca93be42722dbe7459a664ec9258df7340", "commit": "59956ce478b7ea2409cad5efee321149c02aa694", "how": "parser", "path": "Creatures/Other/5 Stars/The_Thin_Man.psd", "print": "same", "px": 0, "read": [8, 4, 7, 4], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"}
 ], "segments": [
-{"blob": "b231b592aac28f7fd5ad8d17fd1f855d3fc95955", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "creatures": [], "from": 1699239877.0, "line": [8, 4, 8, 4], "path": "Creatures/Other/5 Stars/The_Thin_Man.psd"}
+{"blob": "b231b592aac28f7fd5ad8d17fd1f855d3fc95955", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "creatures": [], "from": 1699239877.0, "line": [8, 4, 8, 4], "path": "Creatures/Other/5 Stars/The_Thin_Man.psd"},
+{"blob": "65a844e15f4c6e5bec7279205a36c7603fb04219", "change": "nerf", "commit": "0017695a939529898666bee7504fc30516f19213", "creatures": [], "from": 1741563746.0, "line": [8, 4, 7, 4], "path": "Creatures/Other/5 Stars/The_Thin_Man.psd"}
 ]},
 "The Watcher": {"allowed_high": false, "paths": ["Creatures/In Sound Mind/3 Stars/The_Watcher.psd"], "readings": [
 {"at": 1699765217.0, "blob": "b0a572e59b953c229e941cb31bc37c532cecef77", "commit": "945a22c237017cdc7286aee4c7812ee8b4d882ba", "how": "parser", "path": "Creatures/In Sound Mind/3 Stars/The_Watcher.psd", "print": "first", "read": [5, 3, 4, 4], "stars": 3, "type": "creature"},
@@ -5060,9 +5064,11 @@
 ["2025-03-09", "Hooktail", [4, 4, 5, 4], [4, 2, 5, 4], "nerf"],
 ["2025-03-09", "Sonic", [7, 4, 3, 20], [7, 4, 4, 20], "buff"],
 ["2025-03-09", "The Bull", [7, 7, 8, 4], [7, 7, 7, 4], "nerf"],
+["2025-03-09", "The Thin Man", [8, 4, 8, 4], [8, 4, 7, 4], "nerf"],
 ["2025-03-09", "Traitor Lord", [6, 5, 8, 6], [6, 4, 8, 6], "nerf"],
 ["2025-03-09", "YIIK Panda", [5, 4, 4, 3], [5, 3, 4, 3], "nerf"],
 ["2025-03-11", "Green Mage", [7, 4, 7, 7], [7, 4, 6, 7], "nerf"],
+["2025-03-11", "Grimora", [5, 2, 6, 5], [5, 4, 6, 5], "buff"],
 ["2025-03-11", "Pandora", [10, 4, 7, 3], [10, 4, 8, 3], "buff"],
 ["2025-03-11", "Toy Chica", [6, 4, 6, 6], [6, 4, 5, 6], "nerf"],
 ["2025-03-11", "Warcraftian Warrior", [7, 6, 5, 4], [7, 5, 5, 4], "nerf"],
@@ -5086,7 +5092,7 @@
 ["2025-10-30", "Kyle", [8, 6, 4, 4], [7, 7, 7, 7], "buff"]
 ],
 "id": "backfill-1",
-"made": {"bot_head": "f3e2018f4dfefb1acf8d2671b387738a824878de", "card_head": "efcf17d2003f5dad30150e8760ba50dfd4b29184", "card_head_at": 1792809291.0, "cards": 448, "full": 2825, "misread pairs": 13, "parser": 2, "partial": 33, "px": 1000, "px_row": 300, "readings": 2946, "rules": 4, "split": 15, "template": 27, "template agrees": 16, "unread": 88},
+"made": {"bot_head": "28f09a0c60964ca31f432cefe029a4d531f26656", "card_head": "0262b2373ce6a58500c9208c49955151fa4891b1", "card_head_at": 1792849615.0, "cards": 448, "full": 2827, "misread pairs": 15, "parser": 2, "partial": 33, "px": 1000, "px_row": 300, "readings": 2948, "rules": 4, "split": 15, "template": 27, "template agrees": 16, "unread": 88},
 "printed": {"Grimora": [5, 4, 6, 5], "The Thin Man": [8, 4, 7, 4]},
 "unread_edits": [
 ["2023-11-07", "Grimora", "3efbbe35", "3df48ea0", {"atk": 857, "hp": 642, "spd": 1365}, [5, 2, 6, 5]],
@@ -5112,8 +5118,6 @@
 ["2025-03-08", "Godskin Apostle", "8c4bb507", "1ef4250c", {"def": 476}, [5, 2, 5, 5]],
 ["2025-03-09", "Chef Saltbaker", "8fbc4186", "9a56ad2b", {"hp": 5015}, [8, 4, 6, 6], "confirmed: 2025-03-09 Salt baker: -1 HP"],
 ["2025-03-09", "The Kestrel", "1178e76f", "447f09f1", {"atk": 711, "def": 944, "hp": 382}, [7, 6, 3, 6]],
-["2025-03-09", "The Thin Man", "2b098443", "65a844e1", {"atk": 5474}, [8, 4, 8, 4], "confirmed: 2025-03-09 Thin Man: -1 ATK"],
-["2025-03-11", "Grimora", "a009f99e", "aec4e726", {"def": 4375}, [5, 2, 6, 5], "confirmed: 2025-03-12 Grimora: +2 DEF"],
 ["2025-03-17", "Artemis Missiles", "eb4fcc59", "eb6d31f3", {"atk": 752, "hp": 409}, [2, 0, 3, 6]],
 ["2025-03-17", "Burst Laser II", "04b4945d", "92656aed", {"atk": 752, "hp": 409}, [2, 0, 2, 6]],
 ["2025-03-17", "Heavy Ion", "63d9ce46", "50b8332d", {"atk": 752, "hp": 409}, [2, 0, 0, 6]],
