@@ -246,6 +246,46 @@ out([p.renderedHtml(null, v), p.renderedHtml(null, { ...v, n: 0 }), p.renderedHt
 
 
 @needs_js
+def test_the_viewer_tabs_and_default_tab(tmp_path):
+    """Three tabs in a tablist, the mode's selected and the only one in the tab order, New on Rendered. The card page opens
+    on Rendered while the newest result is unseen, else Original; the Edit dialog on Mock-up while the form changes the
+    image, else Original."""
+    out = node(tmp_path, """
+const e = (state, seen = false) => ({ request: "req-00001", at: 0, hash: "h", state, seen });
+out([p.tabsHtml("mockup"), p.tabsHtml("original", { news: true }),
+  [[1, e("baked")], [1, e("baked", true)], [0, e("refused")], [1, e("running")], [1, null], [0, null]].map(([n, entry]) => [p.defaultMode({ where: "card", n, entry }), p.defaultMode({ where: "form", n, entry })])]);""")
+    tabs, news, modes = out
+    assert 'role="tablist" aria-label="Card image"' in tabs and tabs.count('role="tab"') == 3
+    assert [t for t in ("Original", "Mock-up", "Rendered") if t in tabs] == ["Original", "Mock-up", "Rendered"]
+    assert 'data-iv-tab="mockup" aria-selected="true" tabindex="0"' in tabs and tabs.count('tabindex="-1"') == 2 and "New" not in tabs
+    assert 'data-iv-tab="original" aria-selected="true"' in news and news.index("New") > news.index('data-iv-tab="rendered"')
+    assert modes == [["rendered", "mockup"], ["original", "mockup"], ["rendered", "original"], ["original", "mockup"], ["original", "mockup"], ["original", "original"]]
+
+
+@needs_js
+def test_rendered_parts_split_stage_and_caption(tmp_path):
+    """The stage holds the preview (a link to the full size), the hidden current image and the diff canvas; the caption the
+    head, outcomes, notes and Diff. With Diff on the canvas shows instead of the preview. A state with no image puts its
+    words over the dimmed original. renderedHtml is the two together."""
+    out = node(tmp_path, """
+const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.webp", diff: false };
+const e = (state, extra = {}) => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state, result: { fields: { hp: state }, notes: ["n1"], base: {}, files: {}, ...extra } });
+const parts = [p.renderedParts(e("baked"), v), p.renderedParts(e("baked"), { ...v, diff: true }), p.renderedParts({ ...e("running"), result: undefined }, v),
+  p.renderedParts(null, v), p.renderedParts(e("refused", { reason: "no" }), v), p.renderedParts(e("expired"), v)];
+out([parts, p.renderedHtml(e("baked"), v) === parts[0].stage + parts[0].caption]);""")
+    (baked, diff, running, none, refused, expired), joined = out
+    assert baked["dim"] is False and 'data-pv-img="preview"' in baked["stage"] and 'href="https://r/p.png"' in baked["stage"]
+    assert '<img src="thumbs/ab-720.webp" alt="" crossorigin="anonymous" data-pv-img="current" hidden>' in baked["stage"]
+    assert "<canvas data-pv-diff" in baked["stage"] and "hidden></canvas>" in baked["stage"] and "pv-state" not in baked["stage"]
+    assert all(s in baked["caption"] for s in ("pv-state", "HP baked", "<li>n1</li>", 'data-pv="diff"')) and "data-pv-img" not in baked["caption"]
+    assert 'title="Full size" hidden>' in diff["stage"] and "hidden></canvas>" not in diff["stage"] and "data-pv-changed" in diff["caption"]
+    assert running["dim"] and "Baking a preview" in running["stage"] and "pv-spin" in running["stage"] and "1 to 3 minutes" in running["caption"]
+    assert none["dim"] and "Not previewed yet" in none["stage"] and "Anyone can see a previewed edit" in none["caption"]
+    assert refused["dim"] and "The bake would refuse this" in refused["stage"] and "data-pv-img" not in refused["stage"] + refused["caption"]
+    assert expired["dim"] and "Preview expired" in expired["stage"] and joined is True
+
+
+@needs_js
 def test_the_diff_marks_changed_pixels(tmp_path):
     """Changed pixels red, the rest the current image dimmed; the share of changed pixels."""
     out = node(tmp_path, """
