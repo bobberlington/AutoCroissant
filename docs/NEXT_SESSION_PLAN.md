@@ -100,7 +100,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
 - [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6, pinned in requirements-cards.txt): text
       diagonals, rulebook corners, inner glow, B11, fast open, render hotspots, wide strokes. Frozen corpus
-      corpus-ed58b187: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
+      corpus-b89ce169: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
       ~1.7x and PSD opens ~3.2x faster. B11's trade: Toriel's Ability 0.18% -> 4.19% bad when re-drawn (net gain over
       3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). Next fork work: the `:glow`/`:darkglow` halo (owner
       2026-10-24), then a tag.
