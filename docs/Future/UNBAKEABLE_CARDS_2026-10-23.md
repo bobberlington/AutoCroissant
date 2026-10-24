@@ -261,6 +261,24 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       `lettered_icons` refuses icon-font letters an edit adds (none of main's 381 icon-font Abilities draws any).
     - Also: an edit inside a phrase in several colours refuses (none on main); no status word inside a `[token]`; the
       ability is edited before the title (Fire Staff's name + ability bakes, refused `bytes` before).
+  - **Phase 2 review, round 4 (same branch, 2026-10-24; origin/main a8ece7f merged in):** dry bakes with every gate
+    on copies of TTSCardMaker efcf17d2 (`~/Documents/Tools/wt/scratch/bug2-p3/fix/`: `run.py`, `runs/`, `census.py`):
+    - A typed `[support]` printed its see-through, red-less glow (Types/Support.png: 194k faint px) in the overlay's
+      colour, maroon on Mini Doomer, olive on Turtle, every gate passing: the silhouette stops at alpha 110 and the gates
+      counted ink past 0.5. A badge layer takes every pixel of its glyphs at any alpha and every icon-font character (a
+      typed "★" left 2 faint px out on Turtle); `gate_fx`/`bare_icons` count every colour-glyph pixel past `FAINT_INK`
+      (0.05), from two renders of the text filled red and blue, and let a badge layer ink over them past its glyph boxes.
+      Every manifest icon on Mini Doomer **91 of 91 bake** (85; `light`, `lightshadow`, `6star`-`8star`,
+      `silksong_star` refused their flares), the review's 23 groups of 4 icons on 9 tinted cards **207 of 207** (171),
+      612 badge, token and variant bakes on 9 cards 608 (4 overflows): 0 colour-glyph pixels outside a badge layer at
+      any alpha. Main's 68 FX cards, " Die." and "Firstly, ": 126 PNGs identical to the tip before, 10 refused alike.
+      Census of main (904 PSDs): no badge-layer card leaves a faint colour-glyph pixel out.
+    - An Ability's opacity or fill below full counts as tinted: The Patients (78%) printed a typed badge dimmed, every
+      gate passing; it refuses now (Chomp, the other one, refused already).
+    - A status word in brackets the font draws as letters ("Inflict [Blazing].") baked unstyled: only what the icon
+      font draws is skipped (`status_spans(text, chart, icons)`: `icon_text` for a text to set, `icon_spans` of a
+      layer); no card on main reads differently.
+    - A test bakes through apply_jobs and checks `gate_fx` gets the parser's vocabulary (`unshaped_icons`).
 
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured

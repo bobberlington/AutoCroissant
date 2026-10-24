@@ -674,6 +674,15 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_parser_reads_a_colon_with_no_variant_as_letters`, `test_reparse_reads_a_token_with_no_variant_as_typed`,
   `test_gate_fx_refuses_a_token_not_shaped_as_one_icon`, `test_a_blank_ability_on_an_fx_card_refuses_as_blank`,
   `test_a_bake_opens_each_psd_once`.
+  **Round 4 (2026-10-24, same branch; origin/main a8ece7f merged in):** a badge layer takes every icon-font character
+  and every pixel of its glyphs at any alpha (`_glyph_ink`: the layout's glyphs of those characters rasterized alone),
+  so a colour icon's see-through, red-less glow ([support]) no longer prints in the overlay's colour; `gate_fx` and
+  `bare_icons` count every colour-glyph pixel past `FAINT_INK` (`_colour_ink`: two renders, every run red then blue,
+  agree), to the nearest icon glyph's, and a badge layer may ink over them past its glyph boxes. `_tinted` counts an
+  opacity or fill below full (The Patients). `status_spans` skips only what the icon font draws (a third argument:
+  `icon_text` of a text to set, `icon_spans` of a layer), so "[Blazing]" is styled as the JSX styles it. Tests:
+  `test_a_badge_layer_takes_a_colour_icons_see_through_glow`, `test_a_status_word_in_lettered_brackets_takes_its_fx_layer`,
+  `test_apply_jobs_checks_each_typed_icon_is_one_cluster`, The Patients in `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`.
 
 ## 8. Runner
 
