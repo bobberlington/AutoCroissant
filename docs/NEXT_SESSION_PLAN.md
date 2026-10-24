@@ -212,8 +212,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed. Review fixes (group overlays tint a title, title
       stickers read the card before the bake, blank end breaks, words after a title token, `[fire:]` in a title,
       `covered_ink` design layers, lazy renders in a RenderCache with `gate_pairs`; EDIT_PIPELINE_DESIGN section 7):
-      1649 passed, 13 skipped, 3 failed (`test_site_changes`, `test_site_previews`, `test_token_picker`: they fail on
-      b9f0be4 too, against the TTSCardMaker clone's site at 5edf655c, in flight elsewhere).
+      1649 passed, 13 skipped, 3 failed (`test_site_changes`, `test_site_previews`, `test_token_picker`: main's site
+      tests, fixed by origin/main 3ca616e, merged in after). Review fixes 2 (origin/main 3ca616e merged; EDIT_PIPELINE_DESIGN
+      section 7): typed `:sticker`/`:no` at tracking 0 (the fork split their glyphs), typed tokens with ligatures on, a
+      title's runs of blanks kept (Pepperoni Pizza), a title's tokens no header type row (`type_row`), `_tinted` names its
+      cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped).
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
@@ -233,11 +236,9 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       status word ("2T Smoldering" -> "2T Burning" on Fire Staff). Website track (TTSCardMaker, not edited here): text.js
       `icon()` still previews "[fire:]" (a colon with an empty variant) as the fire icon, and `norm()` forgives "[Fire.]"
       or "[warp  star]"; the bake refuses them (`font`), so the editor should treat them as text like the font does.
-      **Open owner items (BUG 2, not implemented):** (1) a badge or token typed in a title stays body text (ruling C says
-      "wherever it is typed"); (2) a typed `:sticker`/`:tint` token takes the fill of the text around it, not the card's
-      own token colour (Palace of Shadow's typed `[dark:sticker]` outline dark grey 0.2, its own white 1.0; the card is
-      itself mixed: its `[light:sticker]` uses the body grey); (3) a badge typed next to an odd-size badge takes that
-      badge's size (in front of Pizza's 18.66 pt first badge, not the card's usual 32 pt). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
+      **Open owner items (BUG 2):** a timing badge typed in a title (refuses; owner to rule) and `:glow`/`:darkglow`
+      (refused until the fork's halo fix lands). The 2026-10-24 rulings (title tokens in the icon font, a typed
+      `:sticker`/`:tint` in its kind's colour, new badges at the commonest size) are implemented (37dd00e, 73ceff3). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
       olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any
       ability edit.
       Not this branch's: appended text can run below the card's text panel artwork (the overflow gate checks the

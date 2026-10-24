@@ -769,6 +769,19 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_words_typed_after_a_title_token_take_the_titles_style`, `test_apply_jobs_runs_the_title_icon_checks`,
   `test_apply_jobs_checks_its_copy`, `test_a_bake_renders_the_card_only_once_an_edit_is_made`, Leshy and DooPliss in
   `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; each fails with its fix taken out (`fix5/mut.py`).
+  **Review fixes 2 (2026-10-24, origin/main 3ca616e merged; `scratch/bug2-p4/fix6/`):** a typed `:sticker` or `:no`
+  (`LAYERED`: several overlapping glyphs in one cluster) is set at tracking 0: it took the card's tracking (Barry's
+  tokens 280, The Hive's title 240), which the fork adds between the cluster's glyphs, sliding the outline or no-circle
+  off the icon (32 baked silently in the reviewer's set C; no :sticker or :no on main is tracked); a plain token keeps
+  the card's. Every typed badge or token has Ligatures on (5 titles have them off; the engine applies the font's rlig
+  anyway, Photoshop may not). `keep_breaks` pairs a title's runs of blanks as runs (the website shows each as one
+  space: "Pepperoni\r\rPizza" lost a break and its second line moved up; 0 of 728 titles now change an unedited
+  character, with or without a typed " [fire]"). `type_row` leaves out the title layers (`title_layers`): a baked
+  "Po [fire]" refused every later types edit. `_tinted` returns its cause and both refusals name it ("the title's
+  look (its Inner Glow)" on Butterfly, not "overlay, blending, opacity or clipped layers"). Tests:
+  `test_typed_layered_tokens_are_untracked_and_ligated`, `test_a_title_edit_keeps_its_runs_of_blanks`,
+  `test_a_title_token_is_no_header_type_row`, `test_a_title_token_under_its_own_inner_glow_refuses`; each fails with
+  its fix taken out (`fix6/mut.sh`).
 
 ## 8. Runner
 
@@ -917,7 +930,7 @@ layer whose badges all left while the icon font draws something, an edit inside 
 layer phrase the ability lacks), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
 `hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`), `font` also a typed character its font has no glyph
 for (`ability: '☃' has no glyph in its font (drawn as a box)`), `reparse` also an icon-font glyph a tinted Ability
-leaves without a badge FX layer (`(1cd): under the Ability's overlay, blending, opacity or clipped layers with no badge FX layer over it`),
+leaves without a badge FX layer (`(1cd): under the Ability's look (its Color Overlay) with no badge FX layer over it`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
