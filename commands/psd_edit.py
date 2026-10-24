@@ -735,6 +735,8 @@ def _tinted(layer) -> bool:
     Whether the Ability's look changes its badges' and icons' colours: any enabled Color, Gradient or Pattern Overlay at
     any opacity (Ice Staff's two at 69%), a blend mode other than Normal or an opacity or fill below full, its own or a
     group's above it (the Isaac items' Pin Light: Soul of Eden's white-on-cyan 1CD; The Patients' 78%: a dimmed pill).
+    Also a visible layer clipped to it or to such a group: an adjustment or fill (Claw's and Miasma's Exposure 1 on Text:
+    a pale pill), a drawn layer over the Ability's box (Pizza's Multiply 'Layer 12'; review 2026-10-24).
     Only a badge FX layer over them restores them (std-batch2's fix for Pin Light; reviews 2026-10-23 and -24).
     """
     from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
@@ -742,11 +744,20 @@ def _tinted(layer) -> bool:
     if effects.enabled and any(isinstance(effect, (ColorOverlay, GradientOverlay, PatternOverlay)) and effect.enabled
                                for effect in effects):
         return True
+    x0, y0, x1, y1 = layer.bbox
     node = layer
     while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
         if node.blend_mode not in (BlendMode.NORMAL, BlendMode.PASS_THROUGH) or node.opacity < 255 \
                 or getattr(node, "fill_opacity", 255) < 255:
             return True
+        for clipped in _clip_chain(node) if node.parent is not None else ():
+            if not clipped.is_visible():
+                continue
+            if clipped.kind not in DRAWN_LAYER_KINDS:
+                return True
+            a0, b0, a1, b1 = clipped.bbox
+            if a0 < x1 and x0 < a1 and b0 < y1 and y0 < b1:
+                return True
         node = node.parent
     return False
 
@@ -1941,7 +1952,8 @@ def new_fx(text: str, styled: list, covered: list) -> list:
 def _regenerate_fx(psd: PSDImage, layer, text: str, fresh: list, fonts, engine: tuple) -> list:
     """
     The FX layers new_fx() names, cut from the rasterized layer, directly above its top-level group (the Text group; the
-    layer itself at the root) in text order, where Effect Layers.jsx's Add puts them, under the chart's style.
+    layer itself at the root) and the layers clipped to it, in text order, where Effect Layers.jsx's Add puts them (the
+    group's clip chain kept on the group: Claw's MagentaSmorg and Exposure 1; review 2026-10-24), under the chart's style.
 
     Args:
         psd: The card
@@ -1955,6 +1967,7 @@ def _regenerate_fx(psd: PSDImage, layer, text: str, fresh: list, fonts, engine: 
         The new layers, bottom to top
     """
     group = _top(layer)
+    above = len(_clip_chain(group))
     model = engine[0].from_layer(layer)
     offset = model.text.find(text)
     if offset < 0:
@@ -1972,7 +1985,7 @@ def _regenerate_fx(psd: PSDImage, layer, text: str, fresh: list, fonts, engine: 
         if cut is None:
             raise Refused("styled-word", f"{name}: the word has no pixels")
         fx = _cut_fx(psd, name, cut, status.blocks, engine)
-        fx.move_to(psd, index=psd.index(group) + 1 + len(made))
+        fx.move_to(psd, index=psd.index(group) + 1 + above + len(made))
         made.append(fx)
     return made
 
@@ -2363,9 +2376,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     changed = [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0]
     typed = [(a, b) for a, b in drawn if any(a < b1 and b0 < b for b0, b1 in changed)]     # badges and tokens it types
     if typed and _tinted(layer) and not any(BADGE_FX.fullmatch(fx_label(layer, fx)) for fx in old_fx):
-        raise Refused("unsupported-card", f"{', '.join(text[a:b] for a, b in typed)}: the Ability's overlay, blending or "
-                                          f"opacity would change the badge's colours and no badge FX layer restores "
-                                          f"them; edit in Photoshop")
+        raise Refused("unsupported-card", f"{', '.join(text[a:b] for a, b in typed)}: the Ability's overlay, blending, "
+                                          f"opacity or clipped layers would change the badge's colours and no badge "
+                                          f"FX layer restores them; edit in Photoshop")
     fonts = FontMap(dirs=[fonts_dir])
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
@@ -3376,6 +3389,33 @@ def gate_outside(before: np.ndarray, psd: PSDImage, edit: Edit) -> np.ndarray:
     return after
 
 
+def gate_untouched(before: np.ndarray, psd: PSDImage, edits: list) -> None:
+    """
+    The text edits change the card's render only inside their regions, where the PNG takes the new pixels: a layer put
+    above the Text group, its clip chain's base, or an adjustment left on another layer would change the PSD and not the
+    PNG (review 2026-10-24: Claw's new FX layer took MagentaSmorg and Exposure 1 off its title). The stat edits' digits
+    stay in their rows.
+
+    Args:
+        before: render_all() of the card before them (after its stars and types edits)
+        psd: The card with them applied
+        edits: Them
+
+    Returns:
+        None; raises Refused("region") for any pixel outside every region
+    """
+    after = render_all(psd)
+    diff = (before != after).any(axis=2)
+    for edit in edits:
+        if edit.region:
+            x0, y0, x1, y1 = edit.region
+            diff[max(y0, 0):max(y1, 0), max(x0, 0):max(x1, 0)] = False
+    outside = int(diff.sum())
+    if outside:
+        raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
+                      % (", ".join(edit.field for edit in edits), outside))
+
+
 # ========================
 # Render and merge (section 6)
 # ========================
@@ -4041,11 +4081,12 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             found = fx_layers(psd, layer)
             if [fx.name for fx in found] != edit.fx_names:
                 raise Refused("reparse", f"FX layers after reopen: {[fx.name for fx in found]}")
-            made = {name for name, _ in edit.fx}
+            made, above = {name for name, _ in edit.fx}, psd.index(group) + 1 + len(_clip_chain(group))
             for k, fx in enumerate(fx for fx in found if fx.name in made):
-                if (fx.parent is not psd or psd.index(fx) != psd.index(group) + 1 + k or not fx.is_visible()
+                if (fx.parent is not psd or psd.index(fx) != above + k or not fx.is_visible()
                         or not _enabled_effects(fx, strict=True)):
-                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above {group.name!r}")
+                    raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above {group.name!r} "
+                                             "and its clip chain")
             if overlay_words(psd):
                 raise Refused("reparse", "overlay word layers still show over the ability")
     new = parse_card(parser, new_path, rel, psd)     # the reopened PSD: no second open
@@ -4266,10 +4307,12 @@ def unshaped_icons(psd: PSDImage, fonts, vocab: Optional[IconVocabulary]) -> Cou
     The Ability's icon_text spans (what the icon font should draw as one badge or icon) the layout does not shape as
     one icon-font cluster spanning all of it, by text: "[fire:]" if icon_text took it (seven letters), a token in the
     body font. The layout's own check of icon_text's rule (review 2026-10-24: gate_reparse shared it with the parser).
+    A layer without the icon font counts every span: the plain cards' tags printed as body text (Papyrus' (1CD)) cancel
+    out against the old card's (review 2026-10-24: the new side alone counted them once a typed badge added the font).
     """
     from psd_tools.composite.text.geometry import text_geometry
     layer = ability_layer(psd)
-    if vocab is None or not uses_icon_font(layer):
+    if vocab is None or not icon_text(layer.text, vocab):
         return Counter()
     geometry = text_geometry(layer, fonts)
     out = Counter()
@@ -4323,8 +4366,8 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
         _gate_fx_layers(psd, edit, fonts)
     bare = bare_icons(psd, fonts) - (bare_icons(old, fonts) if old is not None else Counter())
     if bare:
-        raise Refused("reparse", f"{', '.join(sorted(bare))}: under the Ability's overlay, blending or opacity with no "
-                                 f"badge FX layer over it")
+        raise Refused("reparse", f"{', '.join(sorted(bare))}: under the Ability's overlay, blending, opacity or clipped "
+                                 f"layers with no badge FX layer over it")
     lettered = lettered_icons(psd, fonts) - (lettered_icons(old, fonts) if old is not None else Counter())
     if lettered:
         raise Refused("reparse", f"{''.join(sorted(lettered.elements()))!r}: the icon font draws them as letters, no "
@@ -4537,6 +4580,11 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
+    others = [edit for edit in edits if edit.field in TEXT_FIELDS and edit.layers]
+    if others:
+        start = perf_counter()
+        gate_untouched(render_all(old) if shown is None else shown, new, others)
+        timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
     after = record_map(new)
     for edit in edits:
         if edit.icons is not None:
@@ -4662,6 +4710,7 @@ __all__ = [
     'gate_fx_colours',
     'gate_idempotence',
     'gate_outside',
+    'gate_untouched',
     'gate_region',
     'gate_reparse',
     'gate_shape',

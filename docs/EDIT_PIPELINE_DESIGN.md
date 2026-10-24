@@ -831,7 +831,7 @@ layer whose badges all left while the icon font draws something, an edit inside 
 layer phrase the ability lacks), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
 `hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`), `font` also a typed character its font has no glyph
 for (`ability: '☃' has no glyph in its font (drawn as a box)`), `reparse` also an icon-font glyph a tinted Ability
-leaves without a badge FX layer (`(1cd): under the Ability's overlay, blending or opacity with no badge FX layer over it`),
+leaves without a badge FX layer (`(1cd): under the Ability's overlay, blending, opacity or clipped layers with no badge FX layer over it`),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
