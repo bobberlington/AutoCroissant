@@ -196,9 +196,13 @@ def file_sha256(path: str) -> str:
         return sha256(fh.read()).hexdigest()
 
 
-def read_db(folder: str) -> tuple:
+def read_db(folder: str, details: bool = True) -> tuple:
     """
     db/'s cards.
+
+    Args:
+        folder: The db/ folder
+        details: Parse psd_details.json too (the bot's loads keep only the cards: {} then)
 
     Returns:
         (stats, old_stats, details, manifest); empty ones when db/ is empty (the seed's case)
@@ -209,12 +213,13 @@ def read_db(folder: str) -> tuple:
             return None
         with open(path, encoding="utf-8") as fh:
             return fh.read()
-    stats_t, old_t, details_t, manifest_t = (text(n) for n in (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON, MANIFEST_JSON))
+    stats_t, old_t, manifest_t = (text(n) for n in (STATS_JSON, OLD_STATS_JSON, MANIFEST_JSON))
+    details_t = text(DETAILS_JSON) if details else None
     stats = parse_stats(stats_t, join(folder, STATS_JSON)) if stats_t is not None else {}
     old = parse_old_stats(old_t, join(folder, OLD_STATS_JSON)) if old_t is not None else defaultdict(list)
-    details = (loads(details_t).get("cards") or {}) if details_t is not None else {}
+    found = (loads(details_t).get("cards") or {}) if details_t is not None else {}
     manifest = loads(manifest_t) if manifest_t is not None else {}
-    return (stats, old, details, manifest)
+    return (stats, old, found, manifest)
 
 
 def write_db(folder: str, stats: dict, old_stats: dict, details_text: str, manifest: dict) -> dict:
@@ -234,9 +239,13 @@ def write_db(folder: str, stats: dict, old_stats: dict, details_text: str, manif
     return manifest
 
 
-def check_db(folder: str) -> list:
+def check_db(folder: str, parse: bool = True) -> list:
     """
     Gate G3's file half: every data file parses and hashes to the manifest's sha256.
+
+    Args:
+        folder: The db/ folder
+        parse: Parse the files too (the gate); without, the hashes alone (the bot's copy: is it whole?)
 
     Returns:
         The problems, one line each ([] when db/ is whole)
@@ -255,7 +264,8 @@ def check_db(folder: str) -> list:
         elif files.get(name) != file_sha256(target):
             problems.append(f"{name}: sha256 differs from the manifest")
     try:
-        read_db(folder)
+        if parse:
+            read_db(folder)
     except (ValueError, TypeError) as e:
         problems.append(str(e))
     return problems
@@ -367,7 +377,7 @@ def export_pickles(source: str, out_folder: str, git_dir: str = ".") -> None:
         git_dir: A checkout of the data branch, for a commit
     """
     if isdir(source):
-        stats, old, _, _ = read_db(source)
+        stats, old, _, _ = read_db(source, details=False)
         details_path = join(source, DETAILS_JSON)
         details = None
         if isfile(details_path):
@@ -452,7 +462,7 @@ def sync(folder: str, repository: str, branch: str) -> dict:
     from commands.github_api import HEADERS, api_url, get_with_retry      # lazy: the build needs no network here
     from global_config import RAW_BASE
     state = read_json(join(folder, SYNC_JSON))
-    whole = bool(state.get("commit")) and not check_db(folder)
+    whole = bool(state.get("commit")) and not check_db(folder, parse=False)     # the hashes: a cut-off sync
     headers = {**HEADERS, "Accept": SHA_MEDIA, **({"If-None-Match": state["etag"]} if whole and state.get("etag") else {})}
     reply = get_with_retry(api_url(repository, f"commits/{branch}"), headers=headers)
     if reply.status_code == 304:

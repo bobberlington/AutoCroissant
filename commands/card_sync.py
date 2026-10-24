@@ -207,11 +207,11 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
     if not isfile(join(folder, card_db.STATS_JSON)):
         return False
     try:
-        stats, old, _, _ = card_db.read_db(folder)
+        stats, old, _, _ = card_db.read_db(folder, details=False)
     except (OSError, ValueError, TypeError) as e:
         print(f"{folder}: not loaded ({e}); the sync fetches it again")
         return False
-    problems = card_db.check_db(folder)
+    problems = card_db.check_db(folder, parse=False)    # parsed just above; the details file by its hash
     if problems:
         print(f"{folder}: a sync was cut off ({'; '.join(problems)}); loaded until the next sync completes it")
     _swap(stats, old, None if problems else card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))
@@ -239,7 +239,7 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
             got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
             reloaded = got["commit"] != before_commit
             if reloaded:
-                stats, old, _, _ = card_db.read_db(CARD_DATA_DIR)
+                stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
                 _swap(stats, old, got["commit"])
         except LookupError as e:
             say(interaction, f"No card data yet: {e}. The Card sync Action creates it: <{actions_link()}>")

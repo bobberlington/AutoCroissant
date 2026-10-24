@@ -738,3 +738,25 @@ def test_update_stats_options_are_admin_only_after_the_cutover(monkeypatch, swit
         admin = SimpleNamespace(user=SimpleNamespace(id=1), response=SimpleNamespace(send_message=send_message, defer=defer))
         asyncio.run(callback(admin, **options))
         assert ran
+
+
+# ========================
+# Loads that read psd_details.json by its hash only
+# ========================
+def test_the_bots_loads_never_parse_the_details(github, tmp_path, monkeypatch):
+    """load_local, a sync and card_db.sync's check read psd_details.json by its hash only (the bot keeps no details);
+    a damaged details file still makes the copy a cut-off one, reloaded by the next sync."""
+    details = '{"version": 1, "cards": {\n"b0": {"marker-details": 1}\n}}\n'
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path, details=details)
+    cdb.sync("card_data", REPO, "data")
+    seen, real = [], cdb.loads
+    monkeypatch.setattr(cdb, "loads", lambda text, *a, **k: seen.append("marker-details" in text) or real(text, *a, **k))
+    assert cs.load_local("card_data") and set(cm.stats_db.stats) == {"A"}
+    cs.sync(ME)                                                       # unchanged: a 304
+    github.publish({"A": _card("A"), "B": _card("B")}, defaultdict(list), tmp_path, details=details)
+    cs.sync(ME)                                                       # moved: reloaded
+    assert set(cm.stats_db.stats) == {"A", "B"} and seen and not any(seen)
+    (tmp_path / "card_data" / cdb.DETAILS_JSON).write_text(details.replace("1}", "2}"), encoding="utf-8")
+    assert cs.load_local("card_data") and cs._loaded["commit"] is None
+    assert cdb.check_db("card_data", parse=False) == cdb.check_db("card_data") == [f"{cdb.DETAILS_JSON}: sha256 differs from the manifest"]
+    assert cdb.read_db("card_data", details=False)[2] == {} and cdb.read_db("card_data")[2] == {"b0": {"marker-details": 2}}
