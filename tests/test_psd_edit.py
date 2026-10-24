@@ -2531,6 +2531,139 @@ def test_icon_style_is_the_cards_commonest(clone, parser, tmp_path):
     assert pe.icon_style(neo, True, parser.icons) is None
 
 
+def test_icon_style_takes_the_commonest_size_first(parser, monkeypatch):
+    """Owner 2026-10-24: a typed badge takes the card's usual badge size. Three 32 pt badges each with its own baseline
+    shift and two alike at 18 pt: 32 pt (the commonest whole style was the 18 pt one), then its commonest style."""
+    text = "(1CD)(1CD)(1CD)(2U)(2U) Die."
+    layer = SimpleNamespace(text=text)
+    style = lambda size, shift: {"Font": pe.ICON_FONT, "FontSize": size, "BaselineShift": shift}
+    looks = [style(32.0, 0.0)] * 5 + [style(32.0, 1.0)] * 5 + [style(32.0, 2.0)] * 5 + [style(18.0, 5.0)] * 8
+    styles = looks + [{"Font": "Body", "FontSize": 32.0}] * (len(text) - len(looks))
+    monkeypatch.setattr(pe, "_char_styles", lambda _: ([None] * len(text), [i < len(looks) for i in range(len(text))],
+                                                       styles, [0] * len(text)))
+    got = pe.icon_style(layer, True, parser.icons)
+    assert (got["FontSize"], got["BaselineShift"]) == (32.0, 0.0)
+
+
+@text_edit
+def test_a_typed_badge_takes_the_cards_usual_badge_size(clone, parser, chart, tmp_path):
+    """Owner 2026-10-24: a newly typed badge or token takes the card's commonest badge size in that text, not the style
+    of the badge beside it the engine gives it (Pizza's odd 18.66 pt first badge: a (2U) typed after it was 18.66 pt);
+    an old badge edited in place keeps its own ("(1GCD)" made "(2GCD)": 18.66, its letters one style)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    pizza = _at(clone, tmp_path, COLOURED, PIZZA)[0]
+    big = pe.icon_style(pe.ability_layer(PSDImage.open(pizza)), True, parser.icons)
+    for old, new, want in (("(1GCD) Remove", "(1GCD)(2U) Remove", [("(1GCD)", 18.66), ("(2U)", 32.0)]),
+                           ("(1GCD) Remove", "(2U) (1GCD) Remove", [("(2U)", 32.0), ("(1GCD)", 18.66)]),
+                           ("(1GCD) Remove", "(1GCD)[fire] Remove", [("(1GCD)", 18.66), ("[fire]", 32.0)]),
+                           ("(1GCD) Remove", "(2GCD) Remove", [("(2GCD)", 18.66)])):
+        psd = _unclipped(PSDImage.open(pizza))
+        pe.set_text_layer(psd, "ability", pe.ability_layer(psd).text.replace(old, new, 1), fonts, chart, parser=parser)
+        layer = pe.ability_layer(psd)
+        runs = [run for run in _runs(layer) if run[1] == pe.ICON_FONT]
+        assert [(run[0], run[2]) for run in runs[:len(want)]] == want, (new, runs)
+        styles = pe._char_styles(layer)[2]
+        assert all(pe._canon(styles[layer.text.index(piece)]) == pe._canon(big) for piece, size in want if size == 32.0)
+
+
+PALACE = "Field/4 Stars/Palace_of_Shadow.psd"   # [dark:sticker] white on its white first line, [light:sticker] in grey
+
+
+def test_variant_fill_takes_its_kinds_colour(parser):
+    """Owner 2026-10-24: a typed :sticker or :tint takes the colour of its kind on the card, the same icon's first, the
+    edited text's before the other's; none: the surrounding text's (None); a tie refuses."""
+    white, grey, red = (1.0, 1.0, 1.0), (0.2, 0.2, 0.2), (1.0, 0.0, 0.0)
+    palace = [("dark", "sticker", white), ("light", "sticker", grey)]
+    assert pe.variant_fill("[Dark:Sticker]", parser.icons, [palace, []]) == white
+    assert pe.variant_fill("[light:sticker]", parser.icons, [palace, []]) == grey
+    assert pe.variant_fill("[fire:tint]", parser.icons, [palace, [("dark", "tint", red)]]) == red
+    assert pe.variant_fill("[fire:tint]", parser.icons, [palace, []]) is None
+    assert pe.variant_fill("[fire]", parser.icons, [palace, []]) is pe.variant_fill("[dark:no]", parser.icons, [palace]) is None
+    assert pe.variant_fill("[fire:sticker]", parser.icons, [palace + [("ice", "sticker", grey)], []]) == grey
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: \[fire:sticker\]: the card's :sticker tokens are in as many"):
+        pe.variant_fill("[fire:sticker]", parser.icons, [palace, []])
+
+
+@text_edit
+def test_a_typed_sticker_takes_the_colour_of_its_kind(clone, parser, chart):
+    """Owner 2026-10-24: Palace of Shadow's [dark:sticker] is white, its [light:sticker] the body's grey: a [dark:sticker]
+    typed in the grey text is white (it was grey), a [light:sticker] grey, a :tint (none on the card) the text's grey,
+    and a [fire:sticker] refuses (one white, one grey: which can't be told)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    white, grey = (1.0, 1.0, 1.0), (0.2, 0.2, 0.2)
+    for typed, want in (("[dark:sticker]", white), ("[light:sticker]", grey), ("[fire:tint]", grey)):
+        psd = PSDImage.open(_card(clone, PALACE)[0])
+        layer = pe.ability_layer(psd)
+        pe.set_text_layer(psd, "ability", layer.text + f" Gain {typed}.", fonts, chart, parser=parser)
+        layer = pe.ability_layer(psd)
+        assert [run[1:] for run in _runs(layer) if run[0] == typed][-1] == (pe.ICON_FONT, 33.33, want), typed
+    psd = PSDImage.open(_card(clone, PALACE)[0])
+    with pytest.raises(pe.Refused, match=r"\[fire:sticker\]: the card's :sticker tokens are in as many of one colour"):
+        pe.set_text_layer(psd, "ability", pe.ability_layer(psd).text + " Gain [fire:sticker].", fonts, chart, parser=parser)
+
+
+BENCH = "Field/1 Stars/Bench.psd"           # its title 'Bench', no effects, room for an icon after it
+MANGLE = "Creatures/Fnaf/3 Stars/Mangle.psd"   # a stroked title
+NEO = "Auxiliary/Creatures/Mettaton_NEO.psd"   # its title under a gradient overlay
+
+
+@text_edit
+def test_a_token_typed_in_the_title_is_set_in_the_icon_font(clone, parser, chart, tmp_path):
+    """Owner 2026-10-24: a token typed in the title is set in the icon font too, at the title's own size and colour,
+    under the same gates. The parser reads a title's icons as its name, not as a header's types or stars (the re-parse
+    read Bench's [fire] as a fire type and refused). Refused: a token under the title's gradient overlay (Mettaton NEO),
+    a timing badge typed there (the ruling names tokens), a glow; without the vocabulary a title has no tokens."""
+    parsed, baked = _bake(clone, parser, BENCH, {"name": "Bench [fire]"}, tmp_path, chart)
+    assert baked.reparse["card"]["display_name"] == "Bench [fire]"
+    assert {key: baked.reparse["card"].get(key) for key in ("types", "stars")} == \
+        {key: parsed["card"].get(key) for key in ("types", "stars")}
+    runs = _runs(pe.name_layer(PSDImage.open(baked.psd_path), "Bench"))
+    assert [run[0] for run in runs] == ["Bench ", "[fire]"] and runs[1][1] == pe.ICON_FONT and runs[1][2:] == runs[0][2:]
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, MANGLE)[0])
+    pe.set_text_layer(psd, "name", "\u2605 Mangle", fonts, chart, "Mangle", parser=parser)
+    runs = _runs(pe.name_layer(psd, "Mangle"))
+    assert runs[0][:2] == ("\u2605", pe.ICON_FONT) and runs[0][2:] == runs[1][2:]
+    for rel, title, why in ((NEO, "Mettaton NEO [fire]", r"\[fire\]: the title's overlay"),
+                            (BENCH, "Bench (1CD)", r"\(1CD\): a timing badge typed in the title"),
+                            (BENCH, "Bench [fire:glow]", r"glow halo")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        with pytest.raises(pe.Refused, match=why):
+            pe.set_text_layer(psd, "name", title, fonts, chart, Path(rel).stem.replace("_", " "), parser=parser)
+    psd = PSDImage.open(_card(clone, BENCH)[0])
+    pe.set_text_layer(psd, "name", "[ice]", fonts, chart, "Bench")
+    assert pe.ICON_FONT not in [run[1] for run in _runs(pe.name_layer(psd, "Bench"))]
+
+
+@text_edit
+def test_gate_fx_checks_a_title_edits_icons(clone, parser):
+    """A title edit's icons take the Ability's icon checks (owner 2026-10-24, gate_fx's titles): "[fire]" typed in
+    Bench's title in its own font is six letters (unshaped_icons), "[fire:]" in the icon font seven (lettered_icons),
+    and under Mettaton NEO's gradient overlay an icon is bare (bare_icons); each refuses reparse. One set right passes."""
+    from psd_tools.composite.text import FontMap
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    fonts = FontMap(dirs=[fonts_dir])
+    edits = [SimpleNamespace(field="name", fx_names=[])]
+    for rel, title, icon, why in ((BENCH, "Bench [fire]", False, r"\[fire\]: not drawn as one badge or icon"),
+                                  (BENCH, "Bench [fire:]", True, r"the icon font draws them as letters"),
+                                  (NEO, "Mettaton NEO [fire]", True, r"\[fire\]: under the title's overlay"),
+                                  (BENCH, "Bench [fire]", True, None)):
+        old, psd = PSDImage.open(_card(clone, rel)[0]), PSDImage.open(_card(clone, rel)[0])
+        layer = pe.name_layer(psd, Path(rel).stem.replace("_", " "))
+        layer.set_text(title, keep="runs")
+        if icon:
+            layer.add_font(pe.ICON_FONT)
+            layer.set_span_style(title.index("["), len(title), Font=pe.ICON_FONT)
+        layer.rasterize(fonts=fonts)
+        titles = (layer, pe.name_layer(old, Path(rel).stem.replace("_", " ")))
+        pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old, parser.icons)
+        if why is None:
+            pe.gate_fx(psd, edits, fonts_dir, None, old, parser.icons, titles)
+            continue
+        with pytest.raises(pe.Refused, match="^reparse: .*" + why):
+            pe.gate_fx(psd, edits, fonts_dir, None, old, parser.icons, titles)
+
+
 @text_edit
 def test_inserted_text_takes_the_body_fill(clone, chart, tmp_path):
     """set_text(keep="runs") gives inserted text the run before it; after a status word that is the swatch colour."""

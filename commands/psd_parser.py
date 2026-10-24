@@ -432,6 +432,8 @@ class PSDParser:
         effect_layers = []
         text_layers = []
         hidden_abilities = []
+        titles = self.title_layers(psd, [layer for layer in psd.descendants() if layer.kind == "type"
+                                         and EFFECT_LAYER_TAG not in layer.name], card.name, not is_rulepage)
         for layer in psd.descendants():
             if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
                 effect_layers.append(layer)     # a pixel copy of words from a text layer; nothing to parse
@@ -446,7 +448,7 @@ class PSDParser:
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
-                is_rulepage, get_stars_from_psd, card_mid_y)
+                is_rulepage, get_stars_from_psd, card_mid_y, titles)
         for layer in hidden_abilities:
             self._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y,
                                      self._relaid(layer, text_layers))
@@ -638,11 +640,12 @@ class PSDParser:
     def _process_layer(self, layer, card: CardInfo,
                        num_stars: MutableValue, stat_trackers: StatTrackers,
                        type_bboxes: list, abilities: list, is_rulepage: bool,
-                       get_stars_from_psd: bool, card_mid_y: int) -> None:
-        """Process a single PSD layer."""
+                       get_stars_from_psd: bool, card_mid_y: int, titles=()) -> None:
+        """Process a single PSD layer (titles: title_layers(), whose icons are no header's)."""
         # Text layers
         if layer.kind == "type":
-            self._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y)
+            self._process_text_layer(layer, card, num_stars, abilities, is_rulepage, get_stars_from_psd, card_mid_y,
+                                     title=any(layer is title for title in titles))
 
         # Stat layers
         elif self._is_stat_layer(layer):
@@ -665,14 +668,16 @@ class PSDParser:
             card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
 
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
-                            is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False) -> None:
+                            is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False,
+                            title: bool = False) -> None:
         """
         Process text layer. A hidden Ability layer is the ability only when relaid (_relaid): only printed text counts.
 
         Text set in the stoogedings font is read as icons: [fire]-style tokens (any case, spacing or alias) become
         canonical [fire] tokens, and icon characters typed from the Glyphs panel become tokens too. Header text in
-        the font also adds to card.types, and to the star count where stars come from the PSD. Layers without the
-        font take the original path unchanged.
+        the font also adds to card.types, and to the star count where stars come from the PSD; a title's icons
+        (title: one of title_layers()) are part of its name (owner 2026-10-24: a token typed in it is set in the font).
+        Layers without the font take the original path unchanged.
         """
         engine_text = layer.engine_dict["Editor"]["Text"]
         is_ability = is_rulepage or (layer.name.lower() == "ability" and (relaid or layer.is_visible()))
@@ -681,7 +686,7 @@ class PSDParser:
         if icon_spans:
             text, icons = self._read_icon_tokens(engine_text.value, icon_spans, card)
             layer_text = repr(text)  # str() of the engine string is its repr, so the cleanup below is unchanged
-            if not is_ability and layer.is_visible() and layer.bbox[1] < card_mid_y:
+            if not is_ability and not title and layer.is_visible() and layer.bbox[1] < card_mid_y:
                 for name, kind in icons:
                     if kind == "type":
                         card.types.append(name)
