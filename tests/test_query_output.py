@@ -56,6 +56,12 @@ def test_a_card_without_an_image_posts_its_name(repo):
     assert out[1:4] == [_url(0), "Card 1", _url(2)]
 
 
+def test_a_single_result_without_an_image_posts_its_name(repo):
+    repo.get_card_url = lambda name: None
+    out, _ = _search(repo, 1)
+    assert out == ["Found 1 results for 'Fire'!", "Card 0", "Displayed 1 of 1 results for 'Fire'."]
+
+
 # ========================
 # Printed titles
 # ========================
