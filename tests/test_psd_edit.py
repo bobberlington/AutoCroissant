@@ -3291,10 +3291,12 @@ def test_deleting_a_line_keeps_the_next_lines_own_style(clone, parser, chart):
     """Review 2026-10-24: Dragon Mount's "+25% SPD" printed "+2" red after its "+2 ATK" line went, Chef Saltbaker's
     kept "(2 points)" took the deleted line's blue, and Spamton NEO's kept "(WOF)" split across two badge sizes (the
     gate refused its letters). Every kept character keeps its own fill and size; the engine's prefix is held to the
-    part (splice_text)."""
+    part (splice_text). Salt's kept "As an..." and Nightmare King Grimm's "(OD" took the deleted line's colour without
+    deletion_start, Gasoline's next "If" without the word-bound rule (review 2026-10-24)."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, line in (("Auxiliary/Items/Dragon_Mount.psd", 0), ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", 5),
-                      ("Creatures/Undertale/5 Stars/Spamton_Neo.psd", 0)):
+                      ("Creatures/Undertale/5 Stars/Spamton_Neo.psd", 0), ("Items/Support/2 Stars/Gasoline.psd", 0),
+                      ("Auxiliary/Items/Salt.psd", 1), ("Creatures/Hollow Knight/5 Stars/Nightmare_King_Grimm.psd", 1)):
         psd_path = _card(clone, rel)[0]
         psd = PSDImage.open(psd_path)
         layer = pe.ability_layer(psd)
