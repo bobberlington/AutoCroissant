@@ -66,7 +66,7 @@ def test_target_of_a_chip_and_a_box(tmp_path):
     out = node(tmp_path, """
 const list = (drop, series) => ({ dataset: series == null ? { drop } : { drop, series } });
 const chip = (value, l) => ({ dataset: { value }, closest: () => l });
-const box = d => ({ dataset: { pin: "0", ...d } });
+const box = d => ({ dataset: { pin: "0", ...Object.fromEntries(Object.entries(d).map(([k, v]) => [`pin${k.toUpperCase()}`, v])) } });   // data-pin-k
 process.stdout.write(JSON.stringify([I.targetOf(chip("Mario", list("series"))), I.targetOf(chip("Paper Mario", list("subseries", "Mario"))),
   I.targetOf(box({ k: "author", v: "bobberlington" })), I.targetOf(box({ k: "subseries", v: "Paper Mario", s: "Mario" }))]));""", I=INLINE_JS)
     assert out == [{"key": "series", "value": "Mario", "series": ""}, {"key": "subseries", "value": "Paper Mario", "series": "Mario"},
@@ -148,7 +148,7 @@ process.stdout.write(JSON.stringify([T.trayHtml([], []), T.trayHtml(pins, [42, 1
   T.trayHtml([], [], { form: { k: "series", v: "" } })]));""", T=TRAY_JS)
     empty, html, with_form, form_only = out
     assert empty == ""
-    assert re.findall(r'data-pin="(\d)" data-k="(\w+)" data-v="([^"]*)"(?: data-s="([^"]*)")?', html) == [
+    assert re.findall(r'data-pin="(\d)" data-pin-k="(\w+)" data-pin-v="([^"]*)"(?: data-pin-s="([^"]*)")?', html) == [
         ("0", "series", "Mario", ""), ("1", "subseries", "Paper &lt;Mario&gt;", "Mario"), ("2", "author", "Bob", "")]
     assert re.findall(r'<span class="kbd" aria-hidden="true">(\d)</span>', html) == ["1", "2", "3"]
     assert [m for m in re.findall(r'class="b-meta">([^<]*)<', html)] == ["42 cards", "1 card", "no cards yet"]
@@ -159,6 +159,7 @@ process.stdout.write(JSON.stringify([T.trayHtml([], []), T.trayHtml(pins, [42, 1
     assert re.search(r'<input class="pin-name" data-suggest="subseries" data-series="Mario"[^>]*value="pa">', with_form)
     assert "<option value=\"subseries\" selected>" in with_form
     assert "pin-form" in form_only and "data-pin" not in form_only
+    assert not re.search(r'\sdata-(v|tip)=', html)    # tip.js reads data-v as a chart value: no tooltip over the boxes
 
 
 @needs_node
