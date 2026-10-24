@@ -394,7 +394,9 @@ def normalize_ability(text: Optional[str]) -> str:
 # ========================
 def offline_parser(all_types: list, stars: list, manifest: Optional[dict]) -> PSDParser:
     """
-    A PSDParser on an empty database: a fresh parse with no author or series preservation.
+    A PSDParser on an empty database: a fresh parse with no author or series preservation. With a manifest, its icon
+    vocabulary knows only the icons the font was built with: a Types/ icon added before the font is rebuilt would be
+    set in the icon font as its letters and read back as its token (review 2026-10-23); it stays a plain [token].
 
     Args:
         all_types: Types/ icon names (lowercase stems)
@@ -406,7 +408,11 @@ def offline_parser(all_types: list, stars: list, manifest: Optional[dict]) -> PS
     """
     db = StatsDatabase()
     db.all_types = list(all_types)
-    return PSDParser(db.all_types, db, IconVocabulary.build(db.all_types, stars, manifest))
+    icons = IconVocabulary.build(db.all_types, stars, manifest)
+    fonted = set((manifest or {}).get("icons", {}))
+    for spelling in [spelling for spelling, (name, _) in icons.tokens.items() if fonted and name not in fonted]:
+        del icons.tokens[spelling]
+    return PSDParser(db.all_types, db, icons)
 
 
 def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
@@ -1283,6 +1289,8 @@ class FxPlan:
     found: list = field(default_factory=list)   # [(phrase, its phrase_ranges() in the old text)]
     status: str = ""        # "status": its chart status, lowercased (status_fills' key)
     own_style: bool = False  # its style is no chart status's for its words ("own", "styled"; a "status" layer's of L7)
+    edges: dict = field(default_factory=dict)   # "styled", "own": per old range, whether a word ends at its start, end
+    mixed: bool = False     # "styled", "own": its letters (status words apart) in more than one colour
 
 
 def fx_name(base: str, status: str, nth: int = 0) -> str:
@@ -1322,6 +1330,11 @@ def _numbered(phrase: str) -> tuple:
     return (numbered.group(1), int(numbered.group(2))) if numbered else (phrase, 0)
 
 
+def _edges(text: str, a: int, b: int) -> tuple:
+    """Whether a word starts at a and ends at b in the text (no letter or digit beside: the JSX's whole-word rule)."""
+    return not ALNUM.match(text[a - 1] if a else " "), not ALNUM.match(text[b] if b < len(text) else " ")
+
+
 def _matches(text: str, words: str) -> tuple:
     """A phrase's words' matches in the text (any case, any blanks or forced breaks between them), and the whole-word ones."""
     pattern = r"[\s\x03]+".join(escape(word) for word in words.replace("\x03", " ").split())
@@ -1330,7 +1343,7 @@ def _matches(text: str, words: str) -> tuple:
         a, b = match.span()
         if b > a:
             found.append((a, b))
-            if not ALNUM.match(text[a - 1] if a else " ") and not ALNUM.match(text[b] if b < len(text) else " "):
+            if all(_edges(text, a, b)):
                 whole.append((a, b))
     return found, whole
 
@@ -1404,19 +1417,23 @@ def fx_kind(fx, base, chart: Optional[dict]) -> str:
 
 def plan_fx(base, old_fx: list, chart: dict) -> list:
     """The FxPlans of a text layer's FX layers, before its text changes (fx_kind() of each is not "")."""
-    fills = _char_styles(base)[0]
+    fills, text = _char_styles(base)[0], base.text
+    words = {i for a, b, _ in status_spans(text, chart) for i in range(a, b)}
     out = []
     for fx in old_fx:
         kind, phrases = fx_kind(fx, base, chart), fx_phrases(base, fx)
-        fill = None
+        fill, edges, mixed = None, {}, False
         if kind in ANCHORED:
-            drawn = [i for a, b in phrase_ranges(base.text, phrases) for i in range(a, b) if fills[i] is not None]
-            seen = [i for i in drawn if base.text[i] not in " \t\r\x03"] or drawn
+            drawn = [i for a, b in phrase_ranges(text, phrases) for i in range(a, b) if fills[i] is not None]
+            seen = [i for i in drawn if text[i] not in " \t\r\x03"] or drawn
             fill = fills[seen[0]] if seen else None
-        found = [(phrase, phrase_ranges(base.text, [phrase])) for phrase in phrases]
+            edges = {(a, b): _edges(text, a, b) for a, b in phrase_ranges(text, phrases)}
+            mixed = len({fills[i] for i in seen if i not in words and text[i] not in " \t\r\x03"}) > 1
+        found = [(phrase, phrase_ranges(text, [phrase])) for phrase in phrases]
         status = collapse(_numbered(phrases[0])[0]).lower() if kind == "status" else ""
         own = kind in ANCHORED or (kind == "status" and _style_key(fx.tagged_blocks) != _style_key(chart[status].blocks))
-        out.append(FxPlan(fx, phrases, kind, fill, tuple(fx.bbox), phrase_ranges(base.text, phrases), found, status, own))
+        out.append(FxPlan(fx, phrases, kind, fill, tuple(fx.bbox), phrase_ranges(text, phrases), found, status, own,
+                          edges, mixed))
     return out
 
 
@@ -1448,7 +1465,11 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
     ("1#1" -> "1#2" when a "1" is typed before it), and leaves with it; a phrase whose kept occurrence its name no
     longer reaches (a whole-word "1" typed: the JSX's "1#1" leaves the "1" of "3T1" for it), that would spread to part
     of another word, or whose occurrence the edit changed rather than removed (letters kept, the phrase gone: Flameblade's
-    "Attacks inflict 2T" made "3T"; ruling B, review 2026-10-23) refuses unsupported-card. A "status" layer (its own style, owner q6) lands only on its status's own
+    "Attacks inflict 2T" made "3T"; ruling B, review 2026-10-23), that the edit makes part of a longer word (letters
+    glued on where a word of it ended: "Despair" made "Despairing", Goofy's "3T1" made "3T10": half a word in its
+    style) or whose every occurrence the edit deleted while typing it
+    again (a moved "+2 DEF": the layer would leave its characters for typed ones) refuses unsupported-card. A typed
+    whole-word copy beside a kept one joins it. A "status" layer (its own style, owner q6) lands only on its status's own
     words (spans): never the "Frozen" of "Frozen In Time" or of "Unfrozen", which new_fx gives a layer of the chart's
     style or none; a numbered phrase follows its occurrence as a "styled" one does ("Frozen In Time#2" -> "#3" when one
     is typed before it), an unnumbered one takes every word of its status, named by number when the JSX's phrase would
@@ -1488,6 +1509,15 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
             for span in images:
                 if span not in every:
                     raise moving(words, span)
+            for a, b in was:                    # "Despair" made "Despairing": letters glued on where a word ended
+                for c, d in _images([(a, b)], kept, found):
+                    if any(was_edge and not edge for was_edge, edge in zip(plan.edges.get((a, b), ()), _edges(text, c, d))):
+                        raise Refused("unsupported-card", f"{plan.layer.name}: the edit makes its {words!r} part of "
+                                                          f"{_word_at(text, (c, d))!r}, half a word in its style; edit "
+                                                          f"in Photoshop")
+            if not nth and now and not images:  # deleted and typed elsewhere: it would leave its characters
+                raise Refused("unsupported-card", f"{plan.layer.name}: the edit deletes its {words!r} and types it again, "
+                                                  f"which would move the layer; edit in Photoshop")
             if nth:
                 now = images[:1]
                 k = every.index(now[0]) + 1 if now else 0
@@ -1708,7 +1738,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     icon font refuses unsupported-card (the JSX would lift the letters, white, out of the Ability's overlay; set_text_layer
     sets every typed badge in it, so only text the font draws no badge of). Every layer keeps its own style, the chart's
     or not (owner q6, unattended call 2026-10-23): only a new one takes the chart's (_regenerate_fx); a typed word that
-    joins a layer whose style is no chart status's for it (FxPlan.own_style) is told.
+    joins a layer whose style is no chart status's for it (FxPlan.own_style) is told ("moved to" it when none of the
+    layer's old words stayed: Doctor Zomboss's Blazing swapped with Frostbite).
 
     Args:
         psd: The card
@@ -1791,7 +1822,9 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
         joined = list(dict.fromkeys(text[a:b] for _, still, now, anchored, _ in target if still and plan.own_style
                                     for a, b in now if (a, b) not in anchored))
         if joined:                              # the typed word takes this layer's style, not the chart's (q6)
-            notes.append(f"{name} also covers the typed {', '.join(map(repr, joined))}, in its own style")
+            stays = any(anchored for _, still, _, anchored, _ in target if still)     # else its old words left
+            notes.append(f"{name} {'also covers' if stays else 'moved to'} the typed {', '.join(map(repr, joined))}, "
+                         f"in its own style")
         rebuilt.append((fx, old))
     return rebuilt, deleted, covered, notes
 
@@ -2177,8 +2210,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     refuses. A styled status word no FX layer holds whole gets one (idea 14, new_fx: "Blazing", "Frozen#2" when only
     that one; one a layer covers in part refuses), its glyph pixels cut under a
     copy of the chart layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx's Add
-    places it; text the edit typed into a "styled" or "own" layer's own words takes that phrase's colour (the first
-    drawn run, as the JSX's overlay conversion), a status word among them keeping the chart's. A hand-made overlay word
+    places it; text the edit typed into a "styled" or "own" layer's own words, or a typed copy joining it ("Allies get
+    +2 DEF." on Palace of Shadow), takes that phrase's colour (the first drawn run, as the JSX's overlay conversion; a
+    stroke-only layer shows it: the copy printed in the body's grey, review 2026-10-23), a status word among them keeping
+    the chart's; a copy joining a layer whose words are in several colours refuses. A hand-made overlay word
     layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX layer standing
     in for it; one naming anything else refuses (unsupported-card), and so does an FX layer that is no pixel layer or
     whose phrase the ability lacks, a typed badge or token under the Ability's overlay (any opacity) or blending (Pin
@@ -2238,6 +2273,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                                                   f"Photoshop")
             kept = kept_chars(old_text, text)
             targets = [follow_fx(plan, text, kept, spans) for plan in plans]
+            for plan, target in zip(plans, targets):
+                joined = [text[a:b] for _, _, now, anchored, _ in target for a, b in now if (a, b) not in anchored]
+                if joined and plan.mixed:       # which colour the typed copy takes can't be told
+                    raise Refused("unsupported-card", f"{plan.layer.name}: its words are in more than one colour, so "
+                                                      f"the typed {joined[0]!r} has none of its own; edit in Photoshop")
             if styled or old_fx or hide:
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
@@ -2285,10 +2325,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     for span_start, span_end, color in spans:
         layer.set_span_style(span_start, span_end, fill=color.fill)
     status = {i for span_start, span_end, _ in spans for i in range(span_start, span_end)}
-    for plan, target in zip(plans, targets):    # typed into a styled phrase's own words: its colour (08b1152a)
-        for a, b in [span for *_, anchored, _ in target for span in anchored] if plan.fill is not None else []:
-            if a < end and start < b:           # a status word keeps the chart's swatch (owner 2026-10-23)
-                for c, d in _stretches([i for i in range(a, b) if i not in status]):
+    for plan, target in zip(plans, targets):    # typed into a styled phrase's words, or a copy joining it: its colour
+        for a, b, joined in [(*span, span not in anchored) for _, _, now, anchored, _ in target for span in now]:
+            if plan.fill is not None and (joined or a < end and start < b):    # (08b1152a); a status word keeps the
+                for c, d in _stretches([i for i in range(a, b) if i not in status]):   # chart's swatch (owner 2026-10-23)
                     layer.set_span_style(c, d, fill=plan.fill)
     try:
         report = layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
@@ -4015,6 +4055,34 @@ def gate_status_words(psd: PSDImage, chart: dict) -> None:
             raise Refused("reparse", f"{text[a:b]!r} has no FX layer of its own")
 
 
+def gate_fx_colours(psd: PSDImage, old: PSDImage, chart: dict) -> None:
+    """
+    Each "styled" or "own" FX layer of the old Ability (fx_kind) still in the card covers letters of only the colours
+    its words had before the edit, status words apart (the chart's swatch): its style draws over its words' own fill (a
+    stroke alone shows it). Matched by layer id. Independent of set_text_layer's fills (review 2026-10-23: a "+2 DEF"
+    typed on Palace of Shadow joined its blue "+2 DEF" layer in the body's grey, every other gate passing). Raises
+    Refused("reparse") naming the layer and the word.
+    """
+    def letters(base):          # an FX layer's letters under base's text: [(its phrase's range, the letter's fill)]
+        text, fills = base.text, _char_styles(base)[0]
+        words = {i for a, b, _ in status_spans(text, chart) for i in range(a, b)}
+        return lambda fx: [((a, b), tuple(round(v, 3) for v in fills[i]))
+                           for a, b in phrase_ranges(text, fx_phrases(base, fx)) for i in range(a, b)
+                           if fills[i] is not None and i not in words and text[i] not in " \t\r\x03"]
+
+    def key(fx):
+        return fx.layer_id if fx.layer_id != -1 else fx.name
+
+    was, layer = ability_layer(old), ability_layer(psd)
+    before, after = letters(was), letters(layer)
+    colours = {key(fx): {fill for _, fill in before(fx)} for fx in fx_layers(old, was) if fx_kind(fx, was, chart) in ANCHORED}
+    for fx in fx_layers(psd, layer):
+        odd = [span for span, fill in after(fx) if fill not in colours.get(key(fx), {fill})]
+        if odd:
+            raise Refused("reparse", f"{fx.name!r} covers {layer.text[odd[0][0]:odd[0][1]]!r} in a colour its words did "
+                                     f"not have")
+
+
 def bare_icons(psd: PSDImage, fonts) -> Counter:
     """
     The icon-font glyphs of a tinted Ability (_tinted: an overlay at any opacity, a blend other than Normal) that no
@@ -4061,7 +4129,8 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     Ability's ink in its words' boxes that no other glyph's box reaches (a word layer's words: not the icon font's colour
     glyphs, which the cut leaves out); one the edit cut (rebuilt or made) holds the Ability's own pixels byte for byte;
     and a "styled" layer's name still reaches the words of it the edit kept (Edit.held: Goofy's "1#1" on the "1" of
-    "3T1"); with the chart, every styled status word has its FX layer (gate_status_words); and under a tinted Ability
+    "3T1"); with the chart, every styled status word has its FX layer (gate_status_words) and, given the old card, a
+    "styled" or "own" layer covers no letter in a colour its words lacked (gate_fx_colours); and under a tinted Ability
     no icon-font glyph lacks a badge FX layer over it that lacked none before (bare_icons: Blood Bomb's [machine] was
     bare already; review 2026-10-23).
 
@@ -4078,6 +4147,8 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
         return
     if chart:
         gate_status_words(psd, chart)
+        if old is not None:
+            gate_fx_colours(psd, old, chart)
     from psd_tools.composite.text import FontMap
     fonts = FontMap(dirs=[fonts_dir])
     edit = next((e for e in edits if e.field == "ability" and e.fx_names), None)
@@ -4395,6 +4466,7 @@ __all__ = [
     'fx_phrases',
     'gate_bytes',
     'gate_fx',
+    'gate_fx_colours',
     'gate_idempotence',
     'gate_outside',
     'gate_region',
