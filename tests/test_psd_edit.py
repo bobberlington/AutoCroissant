@@ -2248,9 +2248,9 @@ def test_apply_jobs_checks_each_typed_icon_is_one_cluster(clone, parser, monkeyp
     icon-font cluster: the bake refuses, given the parser's vocabulary."""
     real, seen = pe.unshaped_icons, []
 
-    def unshaped(psd, fonts, vocab):
+    def unshaped(psd, fonts, vocab, layer=None):
         seen.append(vocab)
-        out = real(psd, fonts, vocab)
+        out = real(psd, fonts, vocab, layer=layer)
         return out + Counter({"[fire]": 1}) if vocab is not None and "[fire]" in pe.ability_layer(psd).text else out
 
     monkeypatch.setattr(pe, "unshaped_icons", unshaped)
