@@ -676,7 +676,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_bake_opens_each_psd_once`.
   **Round 4 (2026-10-24, same branch; origin/main a8ece7f merged in):** a badge layer takes every icon-font character
   and every pixel of its glyphs at any alpha (`_glyph_ink`: the layout's glyphs of those characters rasterized alone),
-  so a colour icon's see-through, red-less glow ([support]) no longer prints in the overlay's colour; `gate_fx` and
+  so no pixel of a colour icon's see-through, red-less glow ([support]) is left out of it (yet the glow still printed
+  in the overlay's colour: corrected in round 6); `gate_fx` and
   `bare_icons` count every colour-glyph pixel past `FAINT_INK` (`_colour_ink`: two renders, every run red then blue,
   agree), to the nearest icon glyph's, and a badge layer may ink over them past its glyph boxes. `_tinted` counts an
   opacity or fill below full (The Patients). `status_spans` skips only what the icon font draws (a third argument:
@@ -694,6 +695,21 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_keep_tokens_pairs_whole_tokens`, `test_new_fx_layer_goes_above_the_groups_clip_chain`, Claw and Miasma in
   `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`, `test_a_plain_cards_body_font_tags_do_not_refuse_a_typed_token`. Full suite after it
   (79efb50): 1556 passed, 12 skipped, 0 failed; 60 sampled cards x 2 edits refuse no more than before (one fewer).
+  **Round 6 (2026-10-24, same branch; review round 3 of phase 2):** round 4's fix was incomplete: a badge layer is a
+  copy of the Ability's pixels over it, so a pixel at alpha a still shows a*(1-a) of the tinted Ability below (Heavy
+  Mole's [support] olive-grey, [light] yellow-haloed, every gate passing). `see_through_icons`: an icon glyph a badge
+  layer holds whose soft pixels (partial, not an edge) weigh past `SEE_THROUGH` (0.03) of its ink is see-through
+  ([support], [light], [guild_seal], [lightshadow], [elden_ring], [silksong_star], [6-8star] 0.11-0.38, [warpstar]
+  0.049; opaque ones 0.02 at most); `gate_fx` refuses a new one. `apply_jobs` edits `edit_copy(old)`: the fork pairs
+  smart filters by id() of the record, which a plain deepcopy kept from the source, so the copy rendered Lorian,
+  Dragon_Mount, Defcon_Panda and 71 more without them and the PNG took that inside the regions (stat bakes silently);
+  `gate_copy` renders the copy against the card before any edit. `gate_untouched` leaves out every edit's region, the
+  stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
+  new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
+  reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
+  `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_gate_untouched`,
+  `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; `test_a_bake_opens_each_psd_once` asserts the bake
+  landed; the plain-card test moved to Koro-Sensei (on Papyrus the token now runs under the spaghetti).
 
 ## 8. Runner
 
