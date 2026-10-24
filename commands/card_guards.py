@@ -1189,8 +1189,9 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         for _ in range(COMMIT_TRIES if not local else 1):
             tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
             here = Head(tip)
-            # a clone alone has no push times; a dispatch's window would hold its own push
-            recent = recent_paths(repository, tip.head, now(), local) if repository and quiet_from else set()
+            # a clone alone has no push times; a dispatch's window would hold its own push. From the push, not now:
+            # the post job starts 30 minutes after the check job ends, and pushes made during the check count too
+            recent = recent_paths(repository, tip.head, min(now(), mark), local) if repository and quiet_from else set()
             included, report["dropped"], report["already"] = [], [], []
             for entry in entries:
                 for write in entry["writes"]:

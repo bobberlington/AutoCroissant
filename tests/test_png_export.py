@@ -208,6 +208,12 @@ def test_a_png_pushed_before_its_psd_is_current(tmp_path, monkeypatch, photoshop
         assert ahead.numbers["png_ahead"]["new"]["max"] == 0 and ahead.numbers["png_ahead"]["old"]["mean"] > 0
         stale = pe.export(old, new, card())
         assert stale.outcome == "re-exported" and "png_ahead" not in stale.numbers, colour
+        new.has_preview = lambda: False                                   # G2: no stored image, the render alone decides
+        ahead = pe.export(old, new, card(colour=colour))
+        assert (ahead.outcome, ahead.unchecked, ahead.data) == ("current", True, b""), colour
+        assert ahead.numbers["png_ahead"]["new"]["max"] == 0 and "baseline" not in ahead.numbers
+        stale = pe.export(old, new, card())
+        assert (stale.outcome, stale.unchecked) == ("re-exported", True) and "png_ahead" not in stale.numbers, colour
     half = card(colour=(0, 255, 0))                                       # the change, but stale elsewhere: not "ahead"
     ImageDraw.Draw(half).rectangle((0, 40, 59, 89), fill=(255, 255, 0))
     assert pe.export(old, fixture_psd(tmp_path, card(colour=(0, 255, 0)), "green"), half).gate == "G5"
@@ -235,6 +241,14 @@ def test_a_small_recolour_beside_its_png_is_rendered(tmp_path):
     ImageDraw.Draw(recoloured).rectangle((40, 60, 44, 64), fill=(200, 30, 50))
     found = pe.export(None, new, recoloured)
     assert found.outcome != "current" and "png_ahead" not in found.numbers
+    # G2 (no stored image): the same rule against the fork's render, though within the parity bar (over the whole card
+    # the bar hides a text edit). Redrawn where it differs past the cut and told (UNCHECKED)
+    new.has_preview = lambda: False
+    redrawn = pe.export(None, new, recoloured)
+    assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 25)
+    assert "png_ahead" not in redrawn.numbers and pe._within(redrawn.numbers["baseline"])
+    assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card()).tolist()
+    assert "png_ahead" in pe.export(None, new, card()).numbers                 # no pixel past 8: current, nothing told
 
 
 def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved(tmp_path, monkeypatch):
@@ -588,6 +602,53 @@ def test_a_bot_bake_is_drawn(clone):
     assert found.outcome == "re-exported" and found.writer == "tool"
     assert psd_edit._within_bar(found.numbers["baseline"]) and psd_edit._within_bar(found.numbers["cross"])
     _near_the_authors_export(found, truth)
+
+
+@fork
+def test_g2_real_cards_reread_the_parser_and_match_the_checked_png(clone):
+    """G2 on real pushes (no stored image): the parser's re-read finds the change (Dirty Bed's Ability, Springtrap's
+    Name), and the PNG made is the checked export's, pixel for pixel (the composite only ever cross-checks)."""
+    for shas, what in ((DIRTY_BED, ["the Ability text"]), (SPRINGTRAP, ["the Name text"])):
+        old, new, old_png, _ = pair(clone, shas)
+        checked = pe.export(old, new, old_png)
+        new.has_preview = lambda: False
+        found = pe.export(old, new, old_png)
+        assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, what), what
+        assert "cross" not in found.numbers and np.array_equal(np.asarray(found.image), np.asarray(checked.image)), what
+        beside = pe.export(None, new, old_png)          # beside its stale PNG: within the bar over the card, still redrawn
+        assert (beside.outcome, beside.unchecked) == ("re-exported", True) and _within_card(beside), what
+
+
+def _within_card(found) -> bool:
+    return pe._within(found.numbers["baseline"]) and found.changed_px > 5000
+
+
+def _blind(monkeypatch, real):
+    """The fork's render (real) ignoring layer visibility: a text hidden draws the same (the bake's blank render case)."""
+    whole = {}
+
+    def render(psd, box, icc, numbers):
+        if id(psd) not in whole:
+            whole[id(psd)] = real(psd, (0, 0, psd.width, psd.height), icc, numbers)
+        return whole[id(psd)].crop(box)
+    monkeypatch.setattr(pe, "_render", render)
+
+
+@fork
+def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
+    """With no stored image, a text the render does not show refuses G2_BLANK on every path: an old PSD's re-read change
+    the render did not move (_unchecked), and a card drawn whole whose text box does not change when the text is hidden
+    (_beside_unchecked, export_new)."""
+    old, new, old_png, _ = pair(clone, DIRTY_BED)
+    new.has_preview = lambda: False
+    real = pe._render
+    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers: real(old if psd is new else psd, box, icc, numbers))
+    found = pe.export(old, new, old_png)                                  # the Ability drawn as it was
+    assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the Ability text"))
+    _blind(monkeypatch, real)
+    for found in (pe.export(None, new, old_png), pe.export_new(new)):     # beside the older PNG; a new card
+        assert (found.outcome, found.gate, found.data) == ("refused", "G2", b"") and found.unchecked
+        assert found.why.startswith("PNG not made: the bot draws nothing for the ") and found.why.endswith(pe.EXPORT)
 
 
 @fork

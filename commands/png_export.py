@@ -740,8 +740,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
     each text and stat row reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the
     old PNG: past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
-    the whole card rendered; the PNG is current within the bar, else it takes the render where it differs past BESIDE_CUT
-    (the render against it past the floor: G6), every text drawn (_texts_drawn).
+    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, else it takes the render there (the render
+    against it past the floor: G6), every text drawn (_texts_drawn). A PNG pushed before its PSD is current (png_ahead).
     """
     result = Export("current", unchecked=True)
     if old is None:
@@ -765,6 +765,12 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     if not moved.any():
         return result
     crop = old_png.crop(region)
+    # the PNG already shows the pushed PSD (pushed before it): over F nearer the new render than the old, within the bar
+    changed_box = moved[region[1]:region[3], region[0]:region[2]]
+    to_new, to_old = _stats(_diff(render, crop)[changed_box]), _stats(_diff(base, crop)[changed_box])
+    if _within(to_new) and to_new["mean"] < to_old["mean"]:
+        result.numbers["png_ahead"] = {"new": to_new, "old": to_old}
+        return result
     result.numbers["baseline"] = _stats(_diff(base, crop))
     if not _drawn(result, "baseline"):
         return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
@@ -788,7 +794,9 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
     render = like_mode(_render(new, box, icc, result.numbers), old_png.mode)
     diff = _diff(render, old_png)
     result.numbers.update(region=list(box), baseline=_stats(diff))
-    if int(diff.max()) <= BESIDE_CUT or _within(result.numbers["baseline"]):
+    # as _beside: past BESIDE_CUT never a silent pass, even within the bar (over the whole card it hides a text edit:
+    # Dirty Bed, Springtrap, Defcon Panda); the cost, the fork's own noise redrawn on a current PNG, is told (UNCHECKED)
+    if int(diff.max()) <= BESIDE_CUT:
         result.numbers["png_ahead"] = {"card": result.numbers["baseline"]}
         return result
     if not _drawn(result, "baseline"):

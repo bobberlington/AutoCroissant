@@ -546,6 +546,28 @@ def test_land_waits_for_the_quiet_window(tmp_path, monkeypatch):
     assert waits == [(timedelta(minutes=20) + cg.QUIET_MARGIN).total_seconds()] and report["landed"] == ["A"] and report["sha"] == ""
 
 
+def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch):
+    """The environment's timer starts Land 30 minutes after the check job ends: a push made while the check ran (here a
+    case-only rename 3 minutes after the PSD, the same blob) is still a later push. The window counts from the push."""
+    import commands.card_bake as cb
+    plan = _plan(tmp_path, [("Foo", "C/foo.png", b"bot png", {"C/foo.psd": "s1", "C/foo.png": "p1"})])
+    hub = FakeHub({"C/foo.psd": ("100644", "s1"), "C/Foo.png": ("100644", "p1")})
+    hub.install(monkeypatch)
+    monkeypatch.setattr(cg, "recent_paths", cb.recent_paths)                 # the real window, over a faked API
+    start = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+    pushes = [{"timestamp": "2026-10-24T12:03:00Z", "before": "b" * 40, "after": "h1"}]
+
+    def api(repo, method, path, **kwargs):
+        reply = {"activity": pushes, f"compare/{'b' * 40}...h1": {"files": [
+            {"filename": "C/Foo.png", "previous_filename": "C/foo.png", "status": "renamed"}]}}[path]
+        return type("Reply", (), {"ok": True, "json": lambda self: reply})()
+    monkeypatch.setattr(cb, "api", api)
+    report = cg.land(plan, quiet_from="2026-10-24T12:00:00Z", sleep=lambda s: None,
+                     now=lambda: start + timedelta(minutes=40))               # check 10 min, then the 30-minute timer
+    assert report["sha"] == "" and report["landed"] == [] and not hub.commits
+    assert report["dropped"] == [["Foo", "superseded: a later push touched C/foo.png", "C/foo.png"]]
+
+
 def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
     plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1"})])
     (Path(plan).parent / "files" / "A").write_bytes(b"changed")
@@ -887,11 +909,11 @@ def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeyp
 
 
 def test_context_errors_alone_ask_no_comment():
-    """summary.json's comment counts cards only: a context error (a standing MDW/Fonts index error, a manifest or status
-    chart fetch) is in the job summary, and in the comment when there is one, but puts no comment on every push."""
+    """summary.json's comment counts cards only: a context error (a standing manifest or status chart one) is in the job
+    summary, and in the comment when there is one, but puts no comment on every push."""
     quiet = _entry("Quiet")
     broken = _entry("Broken", error="KeyError: 'x'")
-    errors = ["MDW/Fonts index: Foo.ttf unreadable", "site/stoogedings.json: timeout"]
+    errors = ["MDW/Croissant's Special Folder/Satus Effect Colors.psd: unreadable", "MDW/Fonts/stoogedings-src/stoogedings.json: timeout"]
     assert cg.summary({"after": "f" * 40, "cards": [quiet]}, errors)["comment"] == 0
     assert cg.summary({"after": "f" * 40, "cards": []}, errors) == {"after": "f" * 40, "cards": 0, "told": 0, "comment": 0,
                                                                      "writes": 0, "errors": 2, "card_errors": 0}
@@ -1278,13 +1300,20 @@ def test_workflow_shape(clone):
     assert job["outputs"] == {"mode": "${{ steps.start.outputs.mode }}", "quiet_from": "${{ steps.start.outputs.quiet_from }}",
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
-                              "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}"}
+                              "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
+                              "bot_sha": "${{ steps.bot.outputs.sha }}"}
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
     assert post["env"]["QUIET_FROM"] == "${{ needs.check.outputs.quiet_from }}" and post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
     for one in (job, post):
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
         assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
+        assert bot["with"].get("ref") == (None if one is job else "${{ needs.check.outputs.bot_sha }}")   # plan and land: one bot
+    sha = next(s for s in job["steps"] if s.get("id") == "bot")
+    assert sha["run"] == 'echo "sha=$(git -C bot rev-parse HEAD)" >> "$GITHUB_OUTPUT"'
+    for one in (job, post, finish):                                            # a copied step runs twice unseen
+        named = [s["name"] for s in one["steps"] if s.get("name")]
+        assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
     assert not [s for s in post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})]
