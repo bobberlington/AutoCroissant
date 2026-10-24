@@ -10,7 +10,7 @@ reboot; harness and notes: `~/Documents/Tools/psd-research/`.
 automatic baking. let's use 30 minute cadence"): the first live run (39761732714) baked Clot White and the four PoD
 trailing dots in 26 commits, one per card. Since then a run makes one commit, bakes at most 40 cards (the rest wait for
 the next run), and `card-edits.yml` runs every 30 minutes, live, behind the `pending` gate, telling Discord when a scheduled
-run fails (section 8).
+run fails (section 8). Since 2026-10-23 the website can also preview one card's edit: the same bake on the runner, nothing committed to main, the image on the branch `previews` (section 16).
 
 ## 1. Goal and done
 
@@ -632,3 +632,107 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
 - Checking out card folders in the Action (16.4 GB) or reading PSDs from `raw.githubusercontent.com` (lags the tree).
 - Fill-only recolouring of a styled status word (15 of 66): not Photoshop parity. Fenced since 2026-10-21 by construction: a
   styled word is coloured and gets its FX layer in the same edit (section 7 idea 14), or the card refuses `styled-word`.
+
+## 16. Preview (2026-10-23)
+
+**Ask (owner, 2026-10-23 ~18:10):** "press preview image to dry run bake a card, work on another card, and then go back to
+the first to see the preview". This section is the server side; the website's UI is a later task, against the contract
+below (also in TTSCardMaker `site/NOTES.md` section 19 and the ttscardmaker-companion skill §2.7).
+
+**What runs.** TTSCardMaker `.github/workflows/card-preview.yml` (workflow_dispatch only; inputs `card`, `edit`, `request`;
+`permissions: contents: write`; one concurrency group per request; 15 minutes) runs AutoCroissant `commands/card_preview.py`
+(uncompiled; import closure `card_preview.SPARSE_FILES`, which the workflow's bot checkout lists):
+
+    python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>] [--request <id>]
+    python -m commands.card_preview publish --out <dir> --request <id> [--git <checkout>] [--remote origin] [--png]
+
+The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG and blob gates, the redundancy check,
+`psd_edit.classify`, `apply_jobs` with every gate, the stars/types-refused-beside-the-rest rule, the creatures-stats gate),
+with the bake's fonts (`card_bake._fonts_dir`: `PSD_TOOLS_FONT_DIRS`, set to the checkout's `MDW/Fonts` from card-edits.yml's
+font cache), status chart (by blob sha, `psd_edit.status_fills`, as `run_report` reads it) and icon vocabulary
+(`card_bake.vocabulary`), under the same fork pin and Python. Not the bake's: the `recent` gate (it guards a commit; a
+preview commits nothing), the cap and budget (one card), and the edits file (the edit is the input). The card repo is only
+read: the tree by `git ls-tree` in the blobless checkout, the card's PSD and PNG, the chart, the manifest and the Types/
+PNGs it needs by blob sha through the API (verified), as card-edits.yml reads them. **Adjusted from the ask:** no sparse
+checkout of the card's files (that would put a dispatcher's path into a sparse pattern; by sha the blobs are verified and only
+what the card needs is fetched), and no Card Edits.json (the input is the entry). No change to card_bake.py or psd_edit.py
+(work/fx-rebuild was editing both): the preview calls `bake_card`, `vocabulary`, `local_snapshot`/`snapshot_at`, `psd_fields`
+and two private helpers, `_fonts_dir` and `_describe`, so the verdict text is the bake's.
+
+**Input.** `card`: the card's key as Card Edits.json keys it (the PSD's file name with spaces, the website's `c.key`; a
+duplicate's own key, A Snack2, so it refuses `duplicate` as the bake would), or a PSD path. `edit`: the card's entry as it
+would be published (the committed entry with the staged ops applied: every PSD-kind field it would hold, not only the staged
+one, or the preview misses an unbaked committed edit), Card Edits.json shapes, at most 16 KB; unknown fields and invalid
+values are input errors, `_`-keys are ignored, `creatures` (any non-empty list) gates the stats as in the bake. `request`:
+`[A-Za-z0-9-]{8,64}` (a `crypto.randomUUID()`), the folder on the branch; the workflow checks it in bash before anything and a
+bad one fails the run with nothing published. The inputs reach the shell only through `env` (never `${{ }}` in a script) and a
+file; card_preview checks all three again.
+
+**Output** (`--out`; card-preview.yml then publishes it): `result.json` always, `preview.png` (the PNG the bake would commit,
+losslessly recompressed by `png_export.recompress` when smaller) and `preview.webp` (720 px wide, quality 80: the site's card
+view size) when an image was rendered. result.json (`v` 1):
+
+| Key | Meaning |
+|---|---|
+| `request`, `card`, `path`, `png` | the request (null when invalid), the card's name, its PSD and PNG repo paths ("" without a PSD) |
+| `base` | `{repo, commit, psd_blob, png_blob}`: the commit and the full blob shas the preview was baked from (stale detection) |
+| `edit` | the PSD-kind fields previewed (`creatures: true` when the input had a creatures list) |
+| `state` | `baked` (something would print; an image), `redundant` (the card already prints it all; no image), `refused` (the bake would refuse; an image only when a gate after the save refused: what the render got), `error` (an input error, `reason` "input: ..."; or a runner, GitHub or code error) |
+| `transient` | with `error`: true = try again (a runner or GitHub failure), false = fix the input (or a bug) |
+| `fields` | `{field: baked \| redundant \| refused \| error}` per PSD-kind field (a refused stars edit beside a baked hp) |
+| `reason` | the bake's own words: `hp 5 -> 8`, `stat>10: hp 25: above 20`, `already on the card: hp`, `input: not a valid hp: '8'` |
+| `changes` | `[{field, old, new}]` of a bake |
+| `notes` | pixel misses (`miss_notes`), FX layers, FX notes (work/fx-rebuild's `fx_notes` once merged), icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
+| `parity`, `region` | `{field: {bad_pct, mean, max}}`; the edited box `[x0, y0, x1, y1]` on the full-size card |
+| `image`, `files`, `size`, `webp_size`, `bytes`, `recompressed` | `baked` / `refused` / null; `{png, webp}` file names; pixel sizes; file sizes |
+| `runner`, `run`, `took_s`, `at` | psd-tools version, text engine, story sync, fonts present; the Actions run URL; seconds; UTC time |
+
+Exit 0 for a verdict (baked, redundant, refused), 2 for an input error, 1 for any other error (all write result.json).
+
+**The previews branch.** An orphan branch `previews`: `previews/<request>/{result.json, preview.webp, preview.png}`,
+`index.json` (`{"v": 1, "previews": {request: {at, card, path, state, psd_blob, png_blob}}}`) and a README. `publish` (runs even
+when Preview failed: a missing result.json is published as `error`, `transient`) makes one commit per run on the branch head,
+from the workflow's blobless checkout and its credentials: `git fetch --depth 1 --filter=blob:none` of the head into
+`refs/card-preview/previews` (index.json by a lazy fetch), blobs and trees by `hash-object`/`mktree`, `commit-tree`,
+`push --no-thin` (card-sync.yml's lesson: a thin pack would want blobs a blobless clone lacks); a refused push (the head moved)
+is retried from the new head, 5 tries. When the branch would hold more than `KEEP` (200) previews or one older than `DAYS`
+(7 days, or of unknown age), the commit is a fresh orphan with this preview and the newest `KEEP_AFTER` (150) under
+`DAYS_AFTER` (6 days), pushed with `--force-with-lease` on the head it read (a run that landed meanwhile breaks the lease and
+the retry keeps its preview); the margin makes a rewrite about daily, not every run. So a preview stays at least 6 days unless
+150 newer ones came after it. Size: about 1.6 MB a preview with its PNG (Mini Doomer: PNG 1.57 MB, WebP 70 KB), so the branch
+holds up to about 320 MB, and history stays one rewrite deep. Nothing triggers on it: every push trigger in TTSCardMaker is
+`branches: [main]` (tests/test_card_preview.py checks every workflow), a GITHUB_TOKEN push starts no workflow anyway, and the
+full-depth checkouts (site, guards, card sync, TTS save) are blobless, so the branch adds only its commits and trees to them;
+the local clones fetch main only.
+
+**Measured (2026-10-23, this Mac at load average ~55, the Desktop clone at 82a8ba7c, fork cards-20261023c):** Mini Doomer hp
+5 -> 8 baked in 14 s (the same pixels as card_bake's dry run, a test); The Freezer's ability `+1 DEF` -> `+2 DEF` in 26 s,
+coloured as the original; hp 25 refused in 3 s; hp 5 redundant in 2 s; stars 0 + hp 8: hp baked, stars refused, 19 s; a
+publish 1-2 s. On the runner, from card-edits.yml dispatch 40003504861: queue 3 s, checkouts 4 s, pip 27 s, fonts 2 s. So
+a stat preview comes back in about 1-1.5 minutes after the dispatch, an ability or title in about 1.5-2.5.
+
+**Tested** (`tests/test_card_preview.py`, 31 tests): the outcomes above on a local card repo (and that it is left as it was),
+twelve bad inputs, the branch's commits, re-runs, both rewrites, a moved head and a moved lease (a `--force` instead of the
+lease fails the test), giving up after 5 tries, the workflow's shape, no other workflow on the branch, the Action-shaped copy,
+and the job's own Validate, Preview and Publish shell run here against a bare repo standing in for GitHub. Also run once by
+hand (2026-10-23, scratch `~/Documents/Tools/wt/scratch/preview-1023/`): every `run:` step of the workflow but pip, in order,
+against a stand-in repo of real files (Mini Doomer, The Freezer, the status chart, Types/, the manifest, MDW/Fonts' top
+level) with the font step's sparse checkout: The Freezer `[ice]: Blazing` baked with its `Ability FX: Blazing` layer (17 s),
+the same plus a line refused `overflow`, Mini Doomer hp 8 + stars 3 baked (`stars: rows of two`, 22 s), a request
+`bad id; echo pwned` stopped at Validate with nothing published, and (from a broken first try of that runner, which skipped
+Preview) a missing result published as the try-again error; each publish 5-10 s. Not tested here: the dispatch itself
+(forbidden, and workflow_dispatch needs the file on main), GitHub's lazy fetch, the persisted credentials and the API blob
+path on the runner.
+
+**First live dispatch (manual test plan).** In this order: (1) merge AutoCroissant work/card-preview to main (the workflow
+checks out the bot's main); (2) merge TTSCardMaker work/card-preview to main (the file must be on the default branch); (3)
+Actions > Card preview > Run workflow: card `Mini Doomer`, edit `{"hp": 8}`, request `manual-test-0001`: green in about 1.5
+minutes, the summary says Baked: hp 5 -> 8, a branch `previews` appears with `previews/manual-test-0001/` and `index.json`,
+main does not move, no other workflow starts; (4) open
+`https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/previews/previews/manual-test-0001/preview.webp` in a browser
+(it should show the card with 8 hp; confirm raw serves it as `image/webp`, else the site reads it by the API); (5) the same
+with edit `{"hp": 25}` (refused, no image), `{"hp": "x"}` (Preview red, Publish green, result `input: not a valid hp`), and
+request `bad id` (Validate red, nothing published); (6) an ability edit on a card with a status word (fonts from the cache);
+(7) two dispatches at once with different requests: both published, two commits; (8) from a browser console with an editor's
+token: the POST and the poll of the contract, to learn whether a classic `public_repo` token may dispatch (GitHub documents
+`repo`); (9) after a week, the first rewrite: `git ls-remote` shows a new root, older previews gone.
