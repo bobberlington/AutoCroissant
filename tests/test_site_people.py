@@ -290,6 +290,25 @@ out({ text: text(html), html });
     assert "Biggest swing: Big −9 · M100" in out["text"] and 'data-card="big"' in out["html"]
 
 
+def test_deck_facts(tmp_path):
+    """P20: their public decks' cards by kind and average stars; others' public decks with their cards (a duplicate as
+    its original; a private deck and their own left out); no decks: no panel."""
+    out = node(tmp_path, """
+const C = (id, type, stars, author, dup) => ({ id, name: id, type, stars, author, ...(dup ? { dup } : {}) });
+const cards = [C("a", "creature", 2, "A"), C("a2", "creature", 2, "A", "a"), C("b", "item", 3, "A"), C("x", "creature", 4, "X"), C("f", "field", 0, "X")];
+const byId = new Map(cards.map(c => [c.id, c])), own = cards.filter(c => c.author === "A" && !c.dup);
+const mine = [{ owner: "A", slug: "one", cards: ["a", "x"], field: "f" }];
+const all = [...mine, { owner: "X", slug: "two", cards: ["a2", "b"] }, { owner: "Y", slug: "three", cards: ["x"] }, { owner: "Z", slug: "p", private: true }];
+const x = { byId, kinds: [["creature", "Creatures"], ["field", "Field cards"]], kindOf: c => c.type, allDecks: all, deckTile: () => "", decks: { public: mine, private: [] } };
+out({ st: pf.deckStatsOf(own, mine, all, byId), text: text(pf.decksPanelHtml(x, own)),
+  none: pf.decksPanelHtml({ ...x, allDecks: [], decks: { public: [], private: [] } }, own), others: text(pf.decksPanelHtml({ ...x, decks: { public: [], private: [] } }, own)) });
+""")
+    assert out["st"] == {"n": 3, "kinds": [["creature", 2], ["field", 1]], "stars": 3, "used": {"decks": 1, "cards": 2}}
+    assert "In their decks: creatures 2 · field cards 1 · 3★ average" in out["text"]
+    assert "Their cards in others' decks: 2 cards in 1 deck" in out["text"]
+    assert out["none"] == "" and "Decks 0" in out["others"] and "In their decks" not in out["others"]
+
+
 def test_archived_tags(tmp_path):
     """renamed_to / moved_to / neither: Renamed with "renamed to" its card, Retired, Deleted; the years it lived."""
     out = node(tmp_path, """
