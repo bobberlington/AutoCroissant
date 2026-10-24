@@ -9,6 +9,7 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 """
 import json
 import sys
+from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 from io import BytesIO
@@ -1827,10 +1828,11 @@ def test_typed_icons_refuse_where_they_would_print_wrong(clone, parser, chart):
     font would draw plainly ("(abc)"). Each unsupported-card."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit, why in (
-            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay would paint over the "
-                                                                      r"badge's colours and no badge FX layer restores them"),
+            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay or blending would "
+                                                                      r"change the badge's colours and no badge FX layer "
+                                                                      r"restores them"),
             ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
-            (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'abc' would be set in the icon font, which draws no badge")):
+            (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'\(abc\)' would be set in the icon font, which draws no badge")):
         psd = PSDImage.open(_card(clone, rel)[0])
         layer = pe.ability_layer(psd)
         before = layer.text
@@ -1838,6 +1840,171 @@ def test_typed_icons_refuse_where_they_would_print_wrong(clone, parser, chart):
             pe.set_text_layer(psd, "ability", edit(pe.normalize_ability(before)), fonts, chart, parser=parser)
         assert refused.value.code == "unsupported-card"
         assert layer.text == before or rel == MINI_DOOMER          # the stray letters are found once the text is set
+
+
+TURTLE = "Auxiliary/Minions/Turtle.psd"               # '(1GCD)' under a Color Overlay, 'Ability FX: (1GCD)' over it
+BLOOD_BOMB = "Items/Attack/3 Stars/Blood_Bomb.psd"       # Pin Light: its [machine] token bare, no badge FX layer
+FLAMEBLADE = "Items/Equip/3 Stars/Flameblade.psd"        # 'Ability FX: Attacks inflict 2T': its own gradient (q6)
+
+
+@text_edit
+def test_typed_icons_refuse_under_any_tint_without_a_badge_layer(clone, parser, chart):
+    """Review 2026-10-23: the refusal above counted only an opaque Normal overlay. Soul of Eden's Pin Light blend printed
+    a typed (2CD) white on cyan, Ice Staff's two 69% gradients a pale blue one and Holy Mantle's Pin Light a washed [fire],
+    every gate passing: with no badge FX layer to restore them they refuse unsupported-card before anything changes.
+    Binge Eater, Pin Light with a badge layer, still takes one (the layer names it)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, edit in (("Items/Equip/2 Stars/Soul_of_Eden.psd", lambda t: "(2CD) " + t),
+                      ("Items/Equip/2 Stars/Ice_Staff.psd", lambda t: "(2CD) " + t),
+                      ("Items/Equip/4 Stars/Holy_Mantle.psd", lambda t: t + " [fire]")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        layer = pe.ability_layer(psd)
+        before = layer.text
+        assert pe._tinted(layer) and not pe._overlaid(layer)
+        with pytest.raises(pe.Refused, match=r"^unsupported-card: .*: the Ability's overlay or blending would change the "
+                                             r"badge's colours and no badge FX layer restores them; edit in Photoshop$"):
+            pe.set_text_layer(psd, "ability", edit(pe.normalize_ability(before)), fonts, chart, parser=parser)
+        assert layer.text == before
+    assert not pe._tinted(pe.ability_layer(PSDImage.open(_card(clone, "Auxiliary/Creatures/Mettaton_NEO.psd")[0])))
+    psd = PSDImage.open(_card(clone, "Items/Equip/4 Stars/Binge_Eater.psd")[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text) + " (2CD) Die."
+    assert pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).fx_names == ["Ability FX: (1CD) | (2CD)"]
+
+
+@text_edit
+def test_a_badge_edited_by_deleting_letters_keeps_its_badge_layer(clone, parser, chart, tmp_path):
+    """Review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" keeps every character, so it did not count as typed: the badge
+    layer, its only phrase gone, was deleted ("its words left the ability") and the new badge printed as a blank pill
+    under the Ability's Color Overlay, every gate passing. Any icon-font badge no badge layer names joins it: renamed,
+    every gate passing."""
+    psd_path = _card(clone, TURTLE)[0]
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, TURTLE)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, TURTLE, {"ability": old.replace("(1GCD)", "(1CD)")}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.fx_names == ["Ability FX: (1CD)"] and edit.dropped == [] and baked.fx == ["Ability FX: (1CD)"]
+    assert baked.fx_notes == ["Ability FX: (1GCD) renamed 'Ability FX: (1CD)': (1GCD) left the ability; (1CD) added"]
+
+
+@text_engine
+def test_gate_fx_refuses_a_bare_badge_under_a_tinted_ability(clone):
+    """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is covered by its badge FX layer;
+    with the layer gone (what the deleting-letters bug left) gate_fx refuses, even for an edit that cut no FX layer.
+    Blood Bomb's [machine] (Pin Light, no badge layer) was bare before the edit: it may stay so, not become so."""
+    from psd_tools.composite.text import FontMap
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    fonts = FontMap(dirs=[fonts_dir], aliases=pe.FONT_ALIASES)
+    old = PSDImage.open(_card(clone, TURTLE)[0])
+    assert pe.bare_icons(old, fonts) == Counter()
+    psd = PSDImage.open(_card(clone, TURTLE)[0])
+    fx, = pe.fx_layers(psd, pe.ability_layer(psd))
+    fx.parent.remove(fx)
+    assert pe.bare_icons(psd, fonts) == Counter({"(1gcd)": 1})
+    edit = SimpleNamespace(field="ability", fx_names=[])
+    with pytest.raises(pe.Refused, match=r"^reparse: \(1gcd\): under the Ability's overlay or blending with no badge FX "
+                                         r"layer over it$"):
+        pe.gate_fx(psd, [edit], fonts_dir, None, old)
+    bomb = PSDImage.open(_card(clone, BLOOD_BOMB)[0])
+    assert pe.bare_icons(bomb, fonts) == Counter({"[machine]": 1})
+    pe.gate_fx(bomb, [edit], fonts_dir, None, PSDImage.open(_card(clone, BLOOD_BOMB)[0]))
+    with pytest.raises(pe.Refused, match=r"^reparse: \[machine\]: under"):
+        pe.gate_fx(bomb, [edit], fonts_dir)
+
+
+@text_edit
+def test_letters_a_deletion_leaves_in_the_icon_font_refuse(clone, parser, chart):
+    """"(1GCD)" made "(GCD)" (Turtle) left "(GCD)" in the icon font, drawn as plain letters: the check looked only at
+    typed characters. Any letter the icon font now draws plainly refuses, unless it did before the edit. And a badge
+    layer whose badges all left while the icon font still draws something no badge layer would name ("★" for the
+    badge) refuses rather than go."""
+    psd = PSDImage.open(_card(clone, TURTLE)[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text)
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: '\(GCD\)' would be set in the icon font, which draws no "
+                                         r"badge or icon of it; edit in Photoshop$"):
+        pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "(GCD)"), str(clone / pe.FONTS_DIR), chart, parser=parser)
+    psd = PSDImage.open(_card(clone, TURTLE)[0])
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: Ability FX: \(1GCD\): its badges left the ability but the "
+                                         r"icon font still draws something there"):
+        pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "★"), str(clone / pe.FONTS_DIR), chart, parser=parser)
+
+
+@text_edit
+def test_a_typed_star_is_set_in_the_icon_font(clone, parser, chart):
+    """Ruling C (review 2026-10-23): the website writes "5★"; the stoogedings font draws ★ as its gold star and the parser
+    reads it so ([star]), but icon_text knew only "(tag)" and "[token]", so Standstill's "5 star or" made "5★ or" printed
+    a missing-glyph box in the body font, every gate passing (the re-parse read "★" back). It is set in the icon font as
+    a token is; canonical_tokens reads it as the parser does, but not on the re-parse's side (a "★" outside the font
+    stays one), and a typed character its font has no glyph for refuses font."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, STANDSTILL)[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text).replace("5 star or", "5★ or")
+    edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
+    assert [run[:2] for run in _runs(pe.ability_layer(psd)) if run[1] == pe.ICON_FONT] == [("★", pe.ICON_FONT)]
+    assert edit.fonts == [pe.ICON_FONT] and [text[a:b] for a, b in pe.icon_text(text, parser.icons)] == ["★"]
+    assert pe.canonical_tokens("5★ or", parser.icons) == "5[star] or" and pe.canonical_tokens("5★", parser.icons, False) == "5★"
+    psd = PSDImage.open(_card(clone, STANDSTILL)[0])
+    with pytest.raises(pe.Refused, match="^font: ability: '☃' has no glyph in its font"):
+        pe.set_text_layer(psd, "ability", text.replace("5★", "5☃"), fonts, chart, parser=parser)
+
+
+@text_edit
+def test_reparse_reads_a_star_outside_the_icon_font_as_typed(clone, parser, tmp_path):
+    """gate_reparse reads a typed "★" as [star] on the edit's side only: a "★" left in the body font (a box on the card)
+    reads back as "★" and refuses reparse (read as [star] on both sides, it passed: review 2026-10-23)."""
+    psd_path = _card(clone, STANDSTILL)[0]
+    parsed = pe.parse_card(parser, psd_path, STANDSTILL)
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)
+    text = layer.text.replace("5 star or", "5★ or")
+    pe.splice_text(layer, text, pe.edit_parts(layer.text, text, *pe.changed_range(layer.text, text)))
+    path = str(tmp_path / "Standstill.psd")
+    psd.save(path)
+    job = {"ability": pe.normalize_ability(text)}
+    with pytest.raises(pe.Refused, match="^reparse: fields differ from the expected parse: ability$"):
+        pe.gate_reparse(parser, parsed, path, STANDSTILL, job, PSDImage.open(path))
+
+
+def test_follow_fx_refuses_an_edit_inside_an_anchored_phrase():
+    """Ruling B: an "own" or "styled" layer stays on the characters it covered. "+2 DEF" made "+3 DEF" keeps most of
+    them but the phrase no longer matches: the layer was deleted ("its words left the ability", untrue) and its style
+    lost (Palace of Shadow's blue, Flameblade's gradient, Mr Krabs' 2T, Morpho Knight's +2/4/6 ATK). Refused
+    unsupported-card; a phrase the edit removes whole still leaves (told)."""
+    old = "[dark]: +2 DEF\rAfter 4 turns."
+    plan = pe.FxPlan(SimpleNamespace(name="Ability FX: +2 DEF"), ["+2 DEF"], "own", ranges=[(8, 14)],
+                     found=[("+2 DEF", [(8, 14)])])
+    new = old.replace("+2", "+3")
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: Ability FX: \+2 DEF: the edit changes its '\+2 DEF' \(now "
+                                         r"'\+3 DEF'\), which would lose the layer's style; edit in Photoshop$"):
+        pe.follow_fx(plan, new, pe.kept_chars(old, new))
+    new = "[dark]: After 4 turns."
+    assert pe.follow_fx(plan, new, pe.kept_chars(old, new)) == [("+2 DEF", None, [], [], "+2 DEF left the ability")]
+
+
+@text_edit
+def test_an_edit_inside_an_own_style_phrase_refuses(clone, chart):
+    """Flameblade's "Attacks inflict 2T" (its own gradient) made "3T": refused before anything changes."""
+    psd = PSDImage.open(_card(clone, FLAMEBLADE)[0])
+    layer = pe.ability_layer(psd)
+    before = layer.text
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: Ability FX: Attacks inflict 2T: the edit changes its "
+                                         r"'Attacks inflict 2T' \(now 'Attacks inflict 3T'\)"):
+        pe.set_text_layer(psd, "ability", before.replace("2T", "3T"), str(clone / pe.FONTS_DIR), chart)
+    assert layer.text == before
+
+
+@text_edit
+def test_an_fx_phrase_the_ability_lacks_refuses(clone, chart):
+    """A hand-named "Ability FX: Frozen In Time #1" (a space before "#": no number to Effect Layers.jsx, so no status
+    either) crashed plan_fx (fx_kind called it a Frozen In Time layer, the chart lookup a "frozen in time #1" one); its
+    phrase is in no text, so what it covers can't be told: refused unsupported-card."""
+    base = SimpleNamespace(name="Ability")
+    assert pe.fx_kind(SimpleNamespace(name="Ability FX: Frozen #2", kind="pixel", tagged_blocks=None), base, chart) == "own"
+    psd = PSDImage.open(_card(clone, STANDSTILL)[0])
+    layer = pe.ability_layer(psd)
+    fx = next(fx for fx in pe.fx_layers(psd, layer) if fx.name.endswith("#1"))
+    fx.name = "Ability FX: Frozen In Time #1"
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: FX layer phrases not in the ability: Frozen In Time #1; "
+                                         r"edit in Photoshop$"):
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text) + " Die.", str(clone / pe.FONTS_DIR), chart)
 
 
 def test_icon_text_follows_the_fonts_spellings(parser):
