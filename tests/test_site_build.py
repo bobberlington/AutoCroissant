@@ -2,7 +2,7 @@
 The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline: the same site from the
 bot's pickles and from the card sync's db/ (CARD_DATA_DIR, load_card_data: the shadow's comparison in small), the current
 text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
-author and created, image revisions (Stats), Pacific contribution months. Loads
+author and created, image revisions (Stats), Pacific contribution months, the person stats. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
@@ -414,3 +414,26 @@ def test_revisions_leave_out_uploads_and_mass_passes(bs, repo, tmp_path, monkeyp
     got = bs.card_revisions(found, by_png, commits, {"alice": "Alice"}, {}, skip={"page"})
     assert got == {"a": {"Alice": 1, "Bob": 1}, "a2": {"Alice": 1, "Bob": 1}}
     assert bs.card_revisions(None, by_png, None, {}, {}) is None
+
+
+def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
+    """Maker's row: Alpha's PNG changed in c2 and c3 (self 2), White Palace archived (Retired, without path or commit),
+    Alpha's strength."""
+    if not hasattr(bs, "person_extras"):
+        pytest.skip(f"{BUILD_SITE} has no person stats")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
+    assert (maker["revisions"]["self"], maker["revisions"]["others"]) == (2, 0)
+    assert [(r["card"], r["tag"]) for r in maker["archived"]] == [("White Palace", "retired")]
+    assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
+    assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
+
+
+def test_the_cards_page_has_a_banned_flag():
+    """The person page's banned link filters the Cards tab with flags=banned."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    if "styleOf" not in (APP_JS.parent / "profile.js").read_text(encoding="utf-8"):
+        pytest.skip("no round 3 person pages")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '["banned", "Banned (constructed)"]' in text and "banned: c => !!c._banned" in text
