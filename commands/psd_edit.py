@@ -852,9 +852,23 @@ def keep_tokens(layer, new: str, vocab: Optional[IconVocabulary]) -> str:
     if not spots:
         return new
     seen = "".join(out) + old[last:]
+
+    def units(text):
+        """Each [token] or icon character one unit, every other character its own: a diff of characters paired a
+        typed token's ']' with the kept one's (Error Room's "[unknown] [fire]:" lost its sticker; review 2026-10-24)."""
+        cut, at = [], 0
+        for match in ICON_SCAN_PATTERN.finditer(text):
+            cut += [(k, k + 1) for k in range(at, match.start())] + [match.span()]
+            at = match.end()
+        return cut + [(k, k + 1) for k in range(at, len(text))]
+    a_cut, b_cut = units(seen), units(new)
     back = []
-    for i, j, n in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
-        back += [(j + start - i, j + end - i, piece) for start, end, piece in spots if i <= start and end <= i + n]
+    for i, j, n in SequenceMatcher(None, [seen[x:y] for x, y in a_cut], [new[x:y] for x, y in b_cut],
+                                   autojunk=False).get_matching_blocks():
+        for start, end, piece in spots:
+            for k in range(i, i + n):
+                if a_cut[k] == (start, end):
+                    back.append((*b_cut[j + k - i], piece))
     for start, end, piece in sorted(back, reverse=True):
         new = new[:start] + piece + new[end:]
     return new

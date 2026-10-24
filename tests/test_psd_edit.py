@@ -2353,6 +2353,20 @@ def test_an_edit_keeps_the_cards_own_token_spellings(clone, parser, chart, tmp_p
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == old + " Die."
 
 
+def test_keep_tokens_pairs_whole_tokens(clone, parser):
+    """Review 2026-10-24: a diff of characters paired a token typed right after a kept one ("[dark] [fire]:") with the
+    kept token's ']' when the text after was the longer, so "[dark:sticker]" went plain (Error Room, Corruption,
+    Elemental World, Palace of Shadow). Whole tokens pair; the typed one stays as typed."""
+    layer = pe.ability_layer(PSDImage.open(_card(clone, "Field/4 Stars/Palace_of_Shadow.psd")[0]))
+    seen = pe.canonical_tokens(layer.text, parser.icons)
+    assert seen.startswith("[dark]: +2 DEF")
+    for typed in (" [fire]", " [support]", " (1CD)", " foes"):
+        got = pe.keep_tokens(layer, seen.replace("[dark]:", "[dark]" + typed + ":", 1), parser.icons)
+        assert got.startswith("[dark:sticker]" + typed + ": +2 DEF") and "[light:sticker] creature" in got
+    got = pe.keep_tokens(layer, "[fire] " + seen, parser.icons)
+    assert got.startswith("[fire] [dark:sticker]: +2 DEF")
+
+
 def test_icon_style_is_the_cards_commonest(clone, parser, tmp_path):
     """A typed badge takes the card's commonest badge style: Pizza's first badge is 18.66 pt with a baseline shift, its two
     others 32 pt (COLOURED), so 32; a tie goes to the body text's size, then the first (Morpho Knight's tracking 0 and 500,
