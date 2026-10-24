@@ -140,11 +140,43 @@ const odd = store.get("c"), oddIds = store.ids();
 process.stdout.write(JSON.stringify({ joined, whole, afterDrop, left, emptied, broken, odd, oddIds, key: drafts.DRAFT_KEY, stored: [...mem.keys()] }));
 """)
     assert out["key"] == "edit-drafts"
-    assert out["joined"] == {"at": 2000, "fields": {"ability": "Burns.", "hp": "7"}}
+    assert out["joined"] == {"at": 2000, "fields": {"ability": "Burns.", "hp": "7"}, "base": {}}
     assert out["whole"] == {"name": "G"}
     assert out["afterDrop"] == ["mini-doomer"] and out["left"] == ["b"] and out["emptied"] == []
     assert out["broken"] == []
-    assert out["odd"] == {"at": 5, "fields": {"name": "ok", "types": ["fire"]}} and out["oddIds"] == ["c"]
+    assert out["odd"] == {"at": 5, "fields": {"name": "ok", "types": ["fire"]}, "base": {}} and out["oddIds"] == ["c"]
+
+
+def test_a_crash_s_draft_survives_an_editor_closed_without_saving(tmp_path):
+    """The review's lost draft (2026-10-23): a crash left {ability, hp}; clicking the ability box and pressing Esc (or
+    clicking off without typing) dropped the ability. An editor now snaps the draft when it opens and puts it back when
+    it closes without saving (back), typed text or not; a save drops the field. The Edit dialog's typing over an
+    unanswered offer joins the older draft. The offer says when the card changed since a field was typed (base)."""
+    out = node(tmp_path, STORE + """
+store.put("goombella", { ability: "Burns.", hp: "9" }, false, { ability: "Old.", hp: "7" });
+const crash = store.get("goombella");
+now = 5000;
+let snap = store.snap("goombella", ["ability"]);                                // the inline editor opens on the ability
+store.put("goombella", { ability: "Typed" }, false, { ability: "Old." });         // a key, then Esc
+store.back("goombella", snap, ["ability"]);
+const afterEsc = store.get("goombella");
+snap = store.snap("goombella", ["note"]); store.put("goombella", { note: "x" }); store.back("goombella", snap, ["note"]);   // a field with no draft: what was typed goes
+const afterNote = store.get("goombella").fields;
+const whole = store.snap("goombella");                                           // the Edit dialog: a key in Note over the offer
+store.put("goombella", { ...whole.fields, note: "y" }, true, { ...whole.base, note: "" });
+const joined = store.get("goombella").fields;
+store.back("goombella", whole);                                                  // Cancel: the draft as the dialog found it
+const cancelled = store.get("goombella");
+store.back("goombella", null); const gone = store.get("goombella");
+const moved = drafts.movedSince(crash, { ability: "New on the card.", hp: "7" }), html = drafts.offerHtml(crash.fields, 0, 3600e3, moved);
+process.stdout.write(JSON.stringify({ crash, afterEsc, afterNote, joined, cancelled, gone, moved, html }));
+""")
+    assert out["crash"] == {"at": 1000, "fields": {"ability": "Burns.", "hp": "9"}, "base": {"ability": "Old.", "hp": "7"}}
+    assert out["afterEsc"] == out["crash"]             # the same text, base and time
+    assert out["afterNote"] == {"ability": "Burns.", "hp": "9"}
+    assert out["joined"] == {"ability": "Burns.", "hp": "9", "note": "y"}
+    assert out["cancelled"] == out["crash"] and out["gone"] is None
+    assert out["moved"] == ["ability"] and "Ability changed on the card since." in out["html"]
 
 
 def test_a_draft_the_card_already_shows_is_not_offered(tmp_path):
@@ -161,7 +193,7 @@ process.stdout.write(JSON.stringify({ now, restore: drafts.restorable(draft, now
                           "aliases": "goom, g", "hidden": True, "note": ""}
     assert out["restore"] == {"series": "Luigi", "banned": True}
     assert out["typed"] == {"name": "A"}
-    assert out["names"] == "Ability, HP, Ban"
+    assert out["names"] == "HP, Ability, Ban"          # in the form's order, each once
     assert out["creatures"] == [["3", "1", "2", ""], ["4", "", "", ""]]
 
 

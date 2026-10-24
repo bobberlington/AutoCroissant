@@ -95,8 +95,9 @@ def test_result_json_is_read_defensively(tmp_path):
 
 @needs_js
 def test_the_store_keeps_the_last_three_per_card(tmp_path):
-    """Newest first, KEEP (3) per card, a request replaced in place; a malformed stored entry is dropped; a running one
-    times out after MAX_WAIT_MS (20 minutes) or its own wait; one still starting a minute on (the page closed) failed."""
+    """Newest first, KEEP (3) per card, a request replaced in place; a malformed stored entry is dropped; one still starting
+    a minute on (the page closed) failed; a running one stays running however old (only a check that finds nothing
+    times it out: missed)."""
     out = node(tmp_path, """
 let s = {};
 for (let i = 0; i < 5; i++) s = p.remember(s, { card: "a", request: `req-0000${i}`, at: i, hash: "h", state: "running" });
@@ -104,13 +105,68 @@ s = p.remember(s, { card: "b", request: "req-b-0001", at: 1, hash: "h", state: "
 s = p.remember(s, { card: "d", request: "req-d-0001", at: 1, hash: "h", state: "starting" });
 s = p.remember(s, { card: "a", request: "req-00004", at: 4, hash: "h", state: "baked" });
 const read = p.readStore(JSON.stringify({ ...s, c: [{ request: "bad/one", at: 1, hash: "h" }, { request: "req-c-0001", at: "x", hash: "h" }] }));
-const t = p.expire(s, 20 * 60000 + 10);
+const t = p.expire(s, 25 * 60000);
 out([s.a.map(e => e.request), s.a[0].state, Object.keys(read).sort(), p.waiting(t).map(e => e.request), t.b[0].state, p.patch(s, "req-00003", { seen: true }).a[1].seen, p.KEEP, p.MAX_WAIT_MS,
   [t.d[0].state, t.d[0].seen, p.expire(s, 30000).d[0].state]]);""")
     assert out[0] == ["req-00004", "req-00003", "req-00002"] and out[1] == "baked"
-    assert out[2] == ["a", "b", "d"] and out[3] == [] and out[4] == "timeout" and out[5] is True
-    assert out[6:8] == [3, 20 * 60000]
+    assert out[2] == ["a", "b", "d"] and out[3] == ["req-00003", "req-00002", "req-b-0001"] and out[4] == "running" and out[5] is True
+    assert out[6:8] == [3, 16 * 60000]                 # the contract's 16 minutes
     assert out[8] == ["error", True, "starting"]       # a page closed mid-dispatch: not a spinner for ever, after a minute
+
+
+@needs_js
+def test_a_result_that_came_while_the_site_was_closed_is_found(tmp_path):
+    """The owner's flow: press Preview image, close the laptop, come back 25 minutes later. The entry is still running, so
+    the first check looks for it (a timed-out one too, on the first round after a load or a sign-in); only a check that
+    finds nothing times it out (past its wait) or, a day on, gives it up. Checks every 10 s for 3 minutes, then 30 s."""
+    out = node(tmp_path, """
+const now = 25 * 60000, s = { a: [{ card: "a", request: "req-a-0001", at: 0, hash: "h", state: "running" }],
+  b: [{ card: "b", request: "req-b-0001", at: 0, hash: "h", state: "timeout" }], c: [{ card: "c", request: "req-c-0001", at: 0, hash: "h", state: "baked" }] };
+const kept = p.expire(s, now);
+out([kept.a[0].state, p.due(kept, now).map(e => e.request), p.due(kept, now, true).map(e => e.request),
+  p.missed(kept.a[0], now), p.missed(kept.a[0], 60000), p.missed({ ...kept.a[0], wait: 40 * 60000 }, now), p.missed(kept.b[0], now), p.missed(kept.b[0], 2 * 86400000),
+  p.pollDelay(kept, 60000), p.pollDelay(kept, now), p.pollDelay({ c: s.c }, now), p.due(kept, 7 * 86400000, true).map(e => e.request)]);""")
+    assert out[0] == "running" and out[1] == ["req-a-0001"] and out[2] == ["req-a-0001", "req-b-0001"]
+    assert out[3] == {"state": "timeout"} and out[4] is None and out[5] is None
+    assert out[6] is None and out[7] == {"state": "expired", "seen": True}
+    assert out[8:11] == [10000, 30000, None]
+    assert out[11] == ["req-a-0001"]                   # a week on: a running one is looked for once more (then missed gives it up), a timed-out one not
+
+
+@needs_js
+def test_old_previews_expire(tmp_path):
+    """The previews branch keeps a preview about a week (rewritten past 200 or 7 days): a result older than SHOW_MS (6
+    days) is "expired" (no image: Preview again, no badge), an entry older than 30 days goes; the panel says so and
+    names the age in days."""
+    out = node(tmp_path, """
+const day = 86400000, e = (state, at, req) => ({ card: "x", request: req, at, hash: "h", state, edit: { hp: 8 }, result: { fields: { hp: "baked" }, notes: [], base: {}, files: { webp: "preview.webp" } } });
+const s = { x: [e("baked", 39 * day, "req-x-0003"), e("baked", 31 * day, "req-x-0002")], y: [e("baked", 0, "req-y-0001")], z: [e("timeout", 32 * day, "req-z-0001")] };
+const t = p.expire(s, 40 * day);
+const v = { card: { name: "The Freezer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 40 * day, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.webp", diff: false };
+out([t.x.map(e => [e.request, e.state, !!e.seen]), "y" in t, p.hasNews(t, "x"), p.hasNews(t, "z"), t.z[0].state, p.renderedHtml(t.x[1], v), p.ago(8 * day), p.ago(3 * 3600000)]);""")
+    assert out[0] == [["req-x-0003", "baked", False], ["req-x-0002", "expired", True]] and out[1] is False   # 40 days old: gone
+    assert out[2] is True and out[3] is False and out[4] == "expired"
+    out = out[:3] + out[5:]
+    assert "Preview expired" in out[3] and "kept about a week" in out[3] and "data-pv-img" not in out[3] and 'data-pv="start"' in out[3] and "9 days ago" in out[3]
+    assert out[4] == "8 days ago" and out[5] == "3 h ago"
+
+
+@needs_js
+def test_one_tab_checks_and_a_round_is_one_toast(tmp_path):
+    """Several tabs: the one holding the lock checks (the others get results through the storage event); a lapsed lock or
+    a malformed one is free. A round's results make one toast; a result already there (or expired) none."""
+    out = node(tmp_path, """
+const lock = p.takeLock(null, "A", 1000);
+out([lock, p.takeLock(JSON.stringify(lock), "B", 2000), p.takeLock(JSON.stringify(lock), "A", 2000).tab, p.takeLock(JSON.stringify(lock), "B", lock.until + 1).tab, p.takeLock("{bad", "B", 0).tab,
+  p.finished({ a: [{ request: "r1", state: "running", name: "Abbi" }], b: [{ request: "r2", state: "running", name: "Acro" }], c: [{ request: "r3", state: "baked" }] },
+             { a: [{ request: "r1", state: "baked", name: "Abbi" }], b: [{ request: "r2", state: "refused", name: "Acro" }], c: [{ request: "r3", state: "baked" }] }).map(e => e.request),
+  p.finishedToast([{ state: "baked", name: "Abbi" }]), p.finishedToast([{ state: "refused", name: "Poison" }]),
+  p.finishedToast(["Abbi", "Acro", "Mini Doomer", "Poison"].map(name => ({ state: "baked", name }))), p.finishedToast([{ state: "baked", name: "A" }, { state: "error", name: "B" }]), p.finishedToast([]),
+  p.editBytes({ ability: "é" }), JSON.stringify({ ability: "é" }).length]);""")
+    assert out[0]["tab"] == "A" and out[0]["until"] > 1000 and out[1] is None and out[2] == "A" and out[3] == "B" and out[4] == "B"
+    assert out[5] == ["r1", "r2"]
+    assert out[6:11] == ["Preview ready: Abbi", "Preview finished: Poison", "Previews ready: Abbi, Acro, Mini Doomer and Poison", "Previews finished: A and B", ""]
+    assert out[11] == out[12] + 1                      # UTF-8 bytes, as card_preview counts them
 
 
 @needs_js
@@ -154,7 +210,8 @@ out([p.startProblem(404, "", { installed: false }), p.startProblem(403, "", { sc
 def test_the_panel_for_each_state(tmp_path):
     """Baked: current and preview side by side with Diff and Full size, each field's outcome, notes escaped; refused: the
     reason (with the bake's render when it made one); an input error is the website's bug; a transient one says try
-    again; running: the check interval; no edit: the button disabled."""
+    again; running: how long; no edit: the button disabled. Baked with no image file: said so, not an error; an error
+    for an edit since changed: out of date, Preview again instead of Try again."""
     out = node(tmp_path, """
 const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.webp", diff: false };
 const e = state => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state });
@@ -162,14 +219,17 @@ const res = (state, extra = {}) => ({ ...e(state), result: { fields: { hp: state
 out([p.renderedHtml(res("baked"), v), p.renderedHtml(res("refused", { reason: "stat>10: hp 25", image: "refused" }), v),
   p.renderedHtml(res("refused", { reason: "overflow" }), { ...v, images: [] }), p.renderedHtml(res("error", { reason: "input: bad edit" }), v),
   p.renderedHtml(res("error", { reason: "error: timeout", transient: true }), v), p.renderedHtml(e("running"), v), p.renderedHtml(null, { ...v, n: 0 }),
-  p.renderedHtml(res("baked"), { ...v, hash: "other" })]);""")
-    baked, refused_img, refused, bug, transient, running, none, stale = out
+  p.renderedHtml(res("baked"), { ...v, hash: "other" }), p.renderedHtml(res("baked"), { ...v, images: [] }),
+  p.renderedHtml(res("error", { reason: "error: timeout", transient: true }), { ...v, hash: "other" })]);""")
+    baked, refused_img, refused, bug, transient, running, none, stale, no_file, err_stale = out
     assert 'data-pv-img="current"' in baked and 'src="https://r/p.webp"' in baked and 'href="https://r/p.png"' in baked and 'data-pv="diff"' in baked
     assert "HP baked" in baked and "&lt;script&gt;" in baked and "<script>" not in baked and "Mini &lt;Doomer&gt;" in baked and "3 min ago" in baked
     assert "stat&gt;10: hp 25" in refused_img and "before refusing" in refused_img and "data-pv-img" not in refused
     assert "website bug" in bug and "try again" in transient.lower()
-    assert "pv-spin" in running and "every 15 s" in running and "disabled" in none
+    assert "pv-spin" in running and "1 to 3 minutes" in running and "16 min" in running and "disabled" in none
     assert "Out of date: the edit changed since" in stale
+    assert "no image came with the result" in no_file and 'class="err"' not in no_file and "HP baked" in no_file   # not an error
+    assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
 
 
 @needs_js
@@ -288,6 +348,80 @@ def test_a_bar_is_told_from_art(tmp_path):
 for (let y = 100; y < 110; y++) for (let x = 20; x < 220; x++) put(x, y, (x - 20) % 20 < 2 ? 10 : 200);
 const L = m.luma(img); out([m.isBar(L, W, H, [20, 100, 220, 110]), m.isBar(L, W, H, [20, 30, 220, 40])]);""")
     assert out == [True, False]
+
+
+@needs_js
+def test_the_block_that_holds_the_old_text_is_chosen(tmp_path):
+    """The review's wrong mock-ups (2026-10-23): the heaviest cluster of edges was art (a sword), or text left out. Now
+    every run of paragraphs is a candidate and calibrate keeps the one the old text fits: its width at the block's size
+    (k) and its line count; art taken for a line fails (too tall, not lined up). A text far longer than the block fits
+    nowhere (the box instead). One line: its size from its width."""
+    out = node(tmp_path, PAINT + """
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+for (let y = 30; y < 92; y++) for (let x = 0; x < W; x++) put(x, y, rnd() < 0.5 ? 20 : 230);      // busy art, heavier than the text
+text([[40, 200, 150, 162], [52, 188, 170, 182], [46, 194, 190, 202]]);
+const L = m.luma(img), area = { box: [0, 20, W, H], seed: [20, H] }, measure = (s, z) => s.length * z * 0.5;
+const old = m.tokenize(Array(11).fill("aaaa").join(" "), {}), best = m.bestBlock(L, W, H, area, old, measure);
+const heaviest = m.findText(L, W, H, area.box), long = m.bestBlock(L, W, H, area, m.tokenize(Array(60).fill("aaaa").join(" "), {}), measure);
+const one = m.calibrate({ box: [40, 150, 200, 158], lines: [[40, 150, 200, 158]], size: 7, pitch: 0, align: "center" }, m.tokenize("aaaa aaaa aaaa aaaa", {}), measure);
+out([best && best.b.box, best && best.b.lines.length, heaviest.box[1] < 100, long, [one.ok, Math.round(one.size)],
+  m.lineLike({ box: [0, 0, 200, 100], align: "center", lines: [[50, 0, 150, 12], [0, 20, 200, 80], [60, 90, 140, 100]] }),
+  m.lineLike({ box: [0, 0, 200, 60], align: "center", lines: [[50, 0, 150, 12], [40, 20, 160, 32], [55, 40, 145, 52]] })]);""")
+    box, lines, heaviest_is_art, long, one, art_line, text_lines = out
+    assert lines == 3 and 38 <= box[0] <= 42 and 148 <= box[1] <= 151 and 196 <= box[2] <= 202 and 200 <= box[3] <= 204
+    assert heaviest_is_art and long is None
+    assert one == [True, 17]                           # 160 px for 19 characters at 0.5 em: 16.8 px, not the run of rows (7)
+    assert art_line is False and text_lines is True
+
+
+@needs_js
+def test_a_line_the_block_left_out_is_erased_too(tmp_path):
+    """A header in another size or a dim last line right next to the block goes with it (charge's "+2 ATK", grodus-x's
+    first line); a stat bar there doesn't (two long straight borders), nor a band across the card."""
+    out = node(tmp_path, PAINT + """
+text([[40, 200, 150, 162], [52, 188, 170, 182], [46, 194, 190, 202]]);
+text([[90, 150, 128, 140]]);                                                    // a short header above
+for (let y = 214; y < 228; y++) for (let x = 60; x < 236; x++) put(x, y, y === 214 || y === 227 || (x - 60) % 17 === 0 ? 0 : 200);   // a bar below
+const L = m.luma(img), found = m.textBlocks(L, W, H, [0, 145, W, 205], { span: 1 })[0];
+out([found.lines.length, m.strayLines(L, W, H, found).map(l => l.map(Math.round)), m.barLike(L, W, H, [60, 210, 236, 230]), m.barLike(L, W, H, [40, 150, 200, 162]),
+  m.eraseLines({ align: "center", lines: [[100, 0, 130, 10], [60, 20, 180, 30]] })]);""")
+    n, stray, bar, text_bar, even = out
+    assert n == 3 and len(stray) == 1
+    x0, y0, x1, y1 = stray[0]
+    assert 80 <= x0 <= 92 and 126 <= y0 <= 130 and 148 <= x1 <= 154 and 138 <= y1 <= 142
+    assert bar is True and text_bar is False
+    assert even == [[100, 0, 140, 10], [60, 20, 180, 30]]   # a line read short on one side: made even about the centre (120)
+
+
+@needs_js
+def test_badges_are_drawn_and_their_pills_erased(tmp_path):
+    """Timing tags are badges (text.js's tags, any case), not "(BOT)" text; another parenthesis stays text. The erase
+    fills short gaps between edges in a line (a pill's inside), so an old badge leaves no empty pill."""
+    out = node(tmp_path, PAINT + """
+const toks = m.tokenize("(1gcd)(3 points) Bake. (see below) (endgt).", {}).flat(2);
+for (let y = 100; y < 116; y++) for (let x = 40; x < 90; x++) put(x, y, x === 40 || x === 89 || y === 100 || y === 115 ? 0 : (x - 50) % 9 < 2 && x > 50 && x < 80 ? 255 : 150);   // a pill with letters
+const clean = new Uint8ClampedArray(img); for (let y = 100; y < 116; y++) for (let x = 40; x < 90; x++) { const i = (y * W + x) * 4; clean[i] = clean[i + 1] = clean[i + 2] = 60 + Math.round(y / 8); }
+const a = new Uint8ClampedArray(img), b = new Uint8ClampedArray(img);
+m.erase(a, W, H, [30, 90, 100, 126], { reach: 2, cell: 8, lines: [[40, 100, 90, 116]], close: 14 });
+m.erase(b, W, H, [30, 90, 100, 126], { reach: 2, cell: 8 });
+const worst = d => { let w = 0; for (let y = 100; y < 116; y++) for (let x = 40; x < 90; x++) { const i = (y * W + x) * 4; w = Math.max(w, Math.abs(d[i] - clean[i])); } return w; };
+out([toks.filter(t => t.badge).map(t => [t.badge, t.group]), toks.filter(t => t.text).map(t => t.text), worst(a), worst(b)]);""")
+    assert out[0] == [["1GCD", "any"], ["ENDGT", "forced"]]
+    assert "(3" in out[1] and "(see" in out[1] and "below)" in out[1]
+    assert out[2] <= 6 and out[3] > 40                  # closed: the pill goes; edges alone: its inside stays
+
+
+@needs_js
+def test_the_ability_layer_s_font_is_not_the_icon_font(tmp_path):
+    """A text that starts with a badge has the icon font as its layer's first run: the mock-up takes the layer's other
+    font (alex-yiik: Cambria, star-cannon: FOT Pop Happiness). The text area starts below the stat rows and spans the
+    card's width."""
+    out = node(tmp_path, """
+const rec = { template: { ability_layers: ["Text/Ability"] }, fonts: { "stoogedings-Regular": { layers: ["Text/Ability"] }, Cambria: { layers: ["Text/Ability", "Text/Stat"] } },
+  text: [{ layer: "Text/Ability", font: "stoogedings-Regular" }] };
+out([m.layerOf(rec, "ability").font, m.layerOf({ ...rec, fonts: {} }, "ability").font, m.textArea("tall", 720, 1440, 997).box.map(Math.round), m.textArea("item", 720, 1080, 0).seed.map(Math.round)]);""")
+    assert out[0] == "Cambria" and out[1] == ""
+    assert out[2] == [0, 1014, 720, 1433] and out[3] == [648, 1075]
 
 
 @needs_js
