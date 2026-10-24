@@ -35,7 +35,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (162 lines as of 2026-10-21, after the /query_ability entry grew a line and the /fonts and /bake_cards entries were added) is five module-level dicts, a
+`commands/help.py` (207 lines as of 2026-10-23) is five module-level dicts, a
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
@@ -187,7 +187,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
    (`stats_db = StatsDatabase()` at card_models.py:228 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:796-797).
+   `card_repo = CardRepository()` + `init_query` at query_card.py:990-991).
 8. **`# Module Exports` banner + `__all__`** — every command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    with one standing exception: utils.py, the shared toolbox, has none.
@@ -215,7 +215,7 @@ plain `import` lines repo-wide (2026-10-20 census, after the code-health pass; t
 music_player and utils; github_api reads it in a try/except — `import pandas as pd`, `import logging`,
 tts_save's `import commands.repo_history as repo_history`, and setup.py's `shutil`/`sys`).
 Even pickle is imported as `from pickle import load, dump` (card_models.py:10;
-query_card.py:5 imports only `load`). The deliberate exception: `import config` as a module, so
+query_card.py:6 imports only `load`). The deliberate exception: `import config` as a module, so
 optional secret fields can be read with `getattr(config, "X", default)`. Follow
 both halves of that pattern.
 
@@ -224,7 +224,7 @@ both halves of that pattern.
 Triple-quoted. One-liners for simple functions
 (`"""Send a message to the last active channel."""`, music_player.py:89).
 Args/Returns sections for anything with non-obvious parameters — real shapes:
-`populate_files` has `Args:` and `Returns:` blocks (query_card.py:67-73); `update_bot`
+`populate_files` has `Args:` and `Returns:` blocks (query_card.py:77-83); `update_bot`
 has an `Args:` block (update_bot.py:143-145). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
@@ -514,3 +514,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-21 (details): help.py's /pull, /push and /update entries and main.py's three describe strings (:177, :187, :197) name psd_details.json / the PSD details beside the pickles (same line count; the pull describe is 97 characters, under the 100 cap); no new command (52). repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-23 (docs drift): help.py's dict lines re-pointed and the sixth dict `card_sync_commands` (the cutover's overrides) named; §5.4 says `wraparound=False` was the build until 2026-10-23 (both bounds checks and wraparound on since 9919a14).
+
+2026-10-23 (unbatch): help.py is 207 lines; query_card.py citations re-pointed (`init_query`, the pickle import, `populate_files`' docstring); its main.py citations not re-pointed (several are stale).
