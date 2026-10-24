@@ -1402,3 +1402,49 @@ def test_an_alt_art_png_renamed_to_a_new_card_is_no_rename(github, psds, monkeyp
     stats, old = _saved()
     tag = old["Mini Doomer2"][0].archived
     assert "Mega Doomer" in stats and tag["commit"] == "e" * 40 and "renamed_to" not in tag
+
+
+def test_a_cleanup_that_found_nothing_is_not_run_again(github, monkeypatch, capsys):
+    """/update_stats' one-time cleanup and backfill run again only when what they read moved (the cards, the history
+    clone, the backfill file): a second 304 on the same cards skips them with the same messages, and no 304 reads
+    psd_details.json; cards that changed in the pickles run the cleanup again."""
+    import commands.card_data as cd
+    import commands.card_history as ch
+    import commands.history_backfill as hb
+    import commands.psd_details as pdt
+    monkeypatch.setattr(ch, "recovered_before", lambda stats, old: True)     # no bot clone needed for the key
+    _run()
+    calls = []
+    real_cleaned, real_merged, real_load = cd.cleaned, hb.merged, pdt.load
+    monkeypatch.setattr(cd, "cleaned", lambda *a, **k: calls.append("cleaned") or real_cleaned(*a, **k))
+    monkeypatch.setattr(hb, "merged", lambda *a, **k: calls.append("backfill") or real_merged(*a, **k))
+    monkeypatch.setattr(pdt, "load", lambda *a, **k: calls.append("details") or real_load(*a, **k))
+    capsys.readouterr()
+    _run()
+    first = capsys.readouterr().out
+    assert calls == ["cleaned", "backfill"] and "Nothing changed in the card repo" in first
+    _run()
+    assert calls == ["cleaned", "backfill"] and capsys.readouterr().out == first
+    stats, old = _saved()
+    stats["The Freezer"].note = "changed by hand"
+    with open("stats.pkl", "wb") as f:
+        pickle.dump(stats, f)
+    _run()
+    assert calls == ["cleaned", "backfill"] * 2
+
+
+def test_a_skipped_cleanup_still_backfills_cards_the_run_changed(github, psds, monkeypatch):
+    """With the cleanup skipped (nothing to do), a run that re-parses a card still runs the backfill over it."""
+    import commands.card_history as ch
+    import commands.history_backfill as hb
+    monkeypatch.setattr(ch, "recovered_before", lambda stats, old: True)
+    _run()
+    _run()                                                            # 304: the cleanup found nothing
+    calls = []
+    real = hb.merged
+    monkeypatch.setattr(hb, "merged", lambda *a, **k: calls.append(1) or real(*a, **k))
+    _run()
+    assert calls == []                                                # the same cards: skipped
+    github.files[DOOMER] = psds[OTHER]
+    _run()
+    assert calls == [1]
