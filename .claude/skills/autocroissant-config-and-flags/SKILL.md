@@ -522,18 +522,18 @@ Discord. Its branch `previews` is data, not a setting: it is rewritten by the wo
 ### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23)
 
 The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
-(`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261023d`, round 11, fonttools,
-requests, `pyoxipng==9.1.1` only where it has a wheel: CPython 3.9-3.13; skipped on the Mac's and the jetson's 3.14).
-`requirements.txt` (the bot) starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`.
-card-edits.yml, card-guards.yml, card-sync.yml (both its venvs) and card-preview.yml check the file out of AutoCroissant
-and install it offline from wheels in the Actions cache (path `~/.cache/card-wheels`, key
-`cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for card-edits, card-guards and
-card-preview on 3.12; card-sync's names both its Pythons, `-py<3.14.x>-py<3.12.x>`). The first run after a change to
-the file or a new runner Python builds them (`pip wheel -r`, the fork's C extensions) and saves them; later runs skip the
-git clone and the build (~25 s of the 29-35 s install). The install goes by name (a copy of the file without the URL,
-`sed 's/ @ [^;]*//'`): pip builds a URL line from git again, offline or not. The wheels freeze numpy, scipy, Pillow and
-the rest at that first build; any edit of the file refreshes them (for a bad dependency release, delete the entry:
-step 1's `gh cache delete`).
+(`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
+fonttools, requests, `pyoxipng==9.1.1` only where it has a wheel: CPython 3.9-3.13; skipped on the Mac's and the
+jetson's 3.14). `requirements.txt` (the bot) starts with `-r requirements-cards.txt`, `requirements-dev.txt` with
+`-r requirements.txt`. card-edits.yml, card-guards.yml, card-sync.yml (both its venvs) and card-preview.yml (without
+pyoxipng: its PNG is never published) check the file out of AutoCroissant and install it offline from wheels in the
+Actions cache (path `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`:
+one entry for card-edits, card-guards and card-preview on 3.12; card-sync's names both its Pythons,
+`-py<3.14.x>-py<3.12.x>`). The first run after a change to the file or a new runner Python builds them (`pip wheel -r`,
+the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of the 29-35 s install). The
+install goes by name (a copy of the file without the URL, `sed 's/ @ [^;]*//'`): pip builds a URL line from git again,
+offline or not. The wheels freeze numpy, scipy, Pillow and the rest at that first build; any edit of the file refreshes
+them (for a bad dependency release, delete the entry: step 1's `gh cache delete`).
 
 Re-pin:
 1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first wheels;
@@ -545,8 +545,11 @@ Re-pin:
    with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`test_card_bake.fork_install` checks each
    workflow's install: no pin of its own, the file's wheels).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
-   (a plain `pip install -r` keeps the old commit: the fork's version is 1.25.0 at every tag; autocroissant-run-and-operate,
-   "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 at every tag up to
+   `cards-20261023d`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+
+A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
+2026-10-23's requirements-cards.txt fails at its "Python environments" step: that commit has no such file.
 
 ### setup.py (lines 8-49) — Cython build configuration
 

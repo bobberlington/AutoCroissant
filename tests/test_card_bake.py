@@ -22,6 +22,7 @@ from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
@@ -1296,6 +1297,7 @@ FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os 
             "-py${{ steps.python.outputs.python-version }}")
 SYNC_KEY = FORK_KEY.replace("-py${{", "-py${{ steps.builder-python.outputs.python-version }}-py${{")   # both its Pythons
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
+NO_OXIPNG = "sed -e 's/ @ [^;]*//' -e '/^pyoxipng/d' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""   # card-preview's
 
 
 def card_pin() -> str:
@@ -1312,8 +1314,8 @@ def fork_install(path) -> str:
     """
     A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the four share it: the file checked
     out of AutoCroissant, no pin of the workflow's own; its wheels restored by the file's hash, runner and Python (card-sync:
-    both its Pythons), built only on a miss, installed offline by name (pip builds a URL line from git again), no other
-    install; saved only after they installed.
+    both its Pythons), built only on a miss, installed offline by name (pip builds a URL line from git again; card-preview
+    without pyoxipng: it would recompress a PNG it never publishes), no other install; saved only after they installed.
 
     Returns:
         The cache key.
@@ -1339,14 +1341,23 @@ def fork_install(path) -> str:
     assert restore["id"] == "wheels" and restore["with"]["key"] == (SYNC_KEY if sync else FORK_KEY)
     install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
     run = steps[install]["run"]
+    by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
+    assert by_name in run, f"{path.name}: the install's copy by name"
+    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
+        (Path(tmp) / "bot").mkdir()
+        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
+        run_process(["bash", "-c", by_name], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
+        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
+    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
+    assert any(line.startswith("pyoxipng==") for line in copy) == (by_name == BY_NAME), path.name
     assert steps.index(bot[0]) < steps.index(python) < first < install and restore.get("if") == steps[install].get("if")
     assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
     wheel = re.findall(r'^.*pip wheel -q -w ~/\.cache/card-wheels -r bot/requirements-cards\.txt(?:; done)?$', run, re.M)
     assert len(wheel) == 1 and (not sync or 'for python in python3.14 python3.12; do "$python" -m pip wheel' in wheel[0])
-    assert run.index(wheel[0]) < run.index(BY_NAME)
+    assert run.index(wheel[0]) < run.index(by_name)
     pips = re.findall(r'pip"? install [^\n]*', text)
     assert pips and all(p.endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"') for p in pips)
-    assert all(run.index(BY_NAME) < run.index(p) for p in pips) and len(pips) == (2 if sync else 1)
+    assert all(run.index(by_name) < run.index(p) for p in pips) and len(pips) == (2 if sync else 1)
     save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
     assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
     assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))

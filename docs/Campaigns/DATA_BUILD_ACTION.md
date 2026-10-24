@@ -282,7 +282,7 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    runs `--help` on the three CLIs with exactly that list, as test_card_check does for card-check.yml.
 4. **Python:** setup-python 3.14 (the builder's: the Mac test venv's and the jetson's version; the goldens pass there) and
    3.12 (the bake's, card-edits.yml's). One pin serves both since 2026-10-23: both virtual environments install
-   `bot/requirements-cards.txt` (the psd-tools fork at the one tag, `cards-20261023d`; fonttools, requests; pyoxipng on
+   `bot/requirements-cards.txt` (the psd-tools fork at the one tag, read there; fonttools, requests; pyoxipng on
    3.12 only, where it has a wheel), so the data build uses the fork, as the jetson does (stock `psd-tools==1.25.0` until
    then). They install offline from one wheel cache entry keyed on the file's hash, the runner and both Pythons, built on
    a miss for both; the bake's environment is set up only when the run bakes. Each environment's import closure is
@@ -367,7 +367,8 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
 The builder follows AutoCroissant main by default. Gate G4 stops a parser change from rewriting the database unannounced (§8).
 To roll back a broken parser push without touching AutoCroissant, set the repo variable `CARD_DATA_BUILDER_REF` (Settings →
 Variables; not a secret) to the last good commit, then clear it once main is fixed. `manifest.builder.commit` records the exact
-commit of every build. The pin also pins the bake and the save, which come from the same checkout.
+commit of every build. The pin also pins the bake and the save, which come from the same checkout. A ref from before
+requirements-cards.txt (2026-10-23) fails at the Python environments step: the workflow installs that file.
 
 ## 7. The builder (AutoCroissant, Discord-free)
 

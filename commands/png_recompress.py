@@ -9,7 +9,8 @@ or outside a sparse checkout) is skipped.
 
     python -m commands.png_recompress --clone <checkout> [--apply] [--workers N] [--report <file.json>] [--message <file>]
 
-Without --apply nothing is written (the savings are measured). Needs pyoxipng; no Discord, network or config.
+Without --apply nothing is written (the savings are measured). Needs pyoxipng (requirements-cards.txt skips it on 3.14:
+`pip install pyoxipng==9.1.1` builds it there); no Discord, network or config.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor

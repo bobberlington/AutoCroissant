@@ -458,7 +458,7 @@ def _workflow() -> tuple:
 def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
     preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; card-edits.yml's install of
-    requirements-cards.txt and its cache entry) hands its out dir to the publish job (contents: write;
+    requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write;
     card_preview_branch.SPARSE_FILES; the runner's python3, no setup-python or pip; no --png), 15 minutes between them;
     no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
     (only in env)."""

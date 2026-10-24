@@ -40,7 +40,7 @@ Three layered files since 2026-10-23 (owner: "three layered files, one pin"):
 
 | File | Holds | Installed by |
 |---|---|---|
-| `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261023d` (the fork: THE one pin), fonttools, requests, and `pyoxipng==9.1.1` behind a marker: only where 9.1.1 has a wheel (CPython 3.9-3.13 on macOS x86_64/arm64, Linux x86_64/aarch64, Windows x86/x64), so it is skipped on the Mac's and the jetson's 3.14 and never built from source (Rust) | `requirements.txt`; the card Actions (card-edits, card-guards, card-sync's two venvs, card-preview), offline from a wheel cache keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
+| `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests, and `pyoxipng==9.1.1` behind a marker: only where 9.1.1 has a wheel (CPython 3.9-3.13 on macOS x86_64/arm64, Linux x86_64/aarch64 with glibc 2.28+ or musl, Windows x86/x64), so it is skipped on the Mac's and the jetson's 3.14 and never built from source (Rust) on our hosts (a marker cannot see libc: an older glibc would build it) | `requirements.txt`; the card Actions (card-edits, card-guards, card-sync's two venvs, card-preview without pyoxipng: its PNG is never published), offline from a wheel cache keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
 | `requirements.txt` | `-r requirements-cards.txt`, then the bot's own (the table below) | the jetson, a dev machine |
 | `requirements-dev.txt` | `-r requirements.txt`, then pytest, pyyaml (the workflow-shape tests' yaml half skips without it) and `pyobjc-framework-Vision ; sys_platform == "darwin"` (`commands/discord_match.py`'s Foundation, Vision and objc) | a dev machine |
 
@@ -72,8 +72,8 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
-| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). It reports version 1.25.0 at every tag, so a re-pin needs `--force-reinstall` (section 4). |
-| pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. Only where it has a wheel (above): not on 3.14. |
+| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 at every tag up to `cards-20261023d`; the `cards` branch head says 1.26.0+cards), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
+| pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. Only where it has a wheel (above): not on 3.14. So a fresh Mac venv (3.14) has none: `commands/png_recompress.py`, the by-hand batch, cannot run, and the oxipng tests skip (test_png_recompress.py, test_png_export.py's `@oxipng`, test_card_guards' recompression test; `pytest -rs` lists them). For those, `pip install pyoxipng==9.1.1` builds it with cargo (`~/.venvs/ac-py314-fork` has such a build, 2026-10-23). |
 | PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:130, :140` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build needs no PyGithub, so requirements-cards.txt has none). |
 | PyNaCl | discord.py voice encryption (music is silent without it). Declared since 2026-10-20 (section 3). |
 | requests (cards) | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:9`, `commands/github_api.py:7`, `commands/tts_save.py:35`, `commands/git_commit.py:19`. |
@@ -300,7 +300,7 @@ Line numbers drift; re-verify volatile facts with:
 | Exclude list + reasons | `grep -n "EXCLUDE_FILES" -A12 setup.py` |
 | Include list (11 files of 38 command modules) | `grep -n "INCLUDE_FILES = " -A14 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (38) |
 | Compiler directives (bounds checks and wraparound on) | `grep -n "COMPILER_DIRECTIVES" -A14 setup.py` (`'boundscheck': True`, `'wraparound': True` at :38-39) |
-| The fork in each venv | `~/.venvs/ac-py314-fork/bin/pip freeze \| grep psd` (`@ecc4b773...`); on the jetson `~/venvs/autocroissant/bin/pip freeze \| grep psd` |
+| The fork in each venv | `~/.venvs/ac-py314-fork/bin/pip freeze \| grep psd` (`@1611fc6...` = `cards-20261023d` on 2026-10-24); on the jetson `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@ecc4b773...` = `cards-20261023` until it is moved to the pin) |
 | Offline suite size | `python -m pytest --collect-only -q tests \| tail -1` (1346 on 2026-10-23) |
 | No compiled artifacts in tree | `find . -name "*.so" -not -path "./.git/*"` |
 | Negative-index idiom commit | `git show dd800bc \| grep -E "^[-+].*bboxes"` |
@@ -343,3 +343,7 @@ import citations re-pointed at 2ada357.
 fonttools, requests, pyoxipng behind its wheel marker); requirements.txt and requirements-dev.txt `-r` the layer below
 (Cython, setuptools and pyobjc-framework-Vision added, uharfbuzz via psd-tools[text]); the import scan of code, scripts,
 skills scripts and tests found nothing else missing and nothing unused (davey and PyNaCl: discord.py voice).
+
+2026-10-24 (review): where the docs describe the pin they no longer copy its tag (the file alone holds it; venv states
+keep theirs); the fork's version is no longer claimed fixed at 1.25.0; the Mac's 3.14 venv without pyoxipng is written
+down (pyoxipng row); the evidence row's venv commit re-pointed (1611fc6).

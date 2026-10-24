@@ -896,7 +896,7 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-@pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs")
+@pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs (none on 3.14)")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%
     smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;

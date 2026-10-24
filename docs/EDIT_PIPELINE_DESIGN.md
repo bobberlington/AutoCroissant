@@ -685,9 +685,10 @@ clipped to `MAX_CARD` (200). The repo is public, so a preview is too: the dispat
 result on the branch; the site says so before an editor's first press.
 
 **Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the PNG the bake would
-commit, losslessly recompressed by `png_export.recompress` where pyoxipng is installed, as on the Mac; the workflow
-neither installs pyoxipng nor publishes the PNG, `--png` publishes it) and `preview.webp` (720 px wide, quality 75,
-method 4: build_site's `-720.webp`) when an image was rendered. result.json (`v` 1):
+commit, losslessly recompressed by `png_export.recompress` where pyoxipng is installed; the workflow leaves
+requirements-cards.txt's pyoxipng out (~4 s a preview for nothing) and does not publish the PNG, `--png` publishes it)
+and `preview.webp` (720 px wide, quality 75, method 4: build_site's `-720.webp`) when an image was rendered.
+result.json (`v` 1):
 
 | Key | Meaning |
 |---|---|
