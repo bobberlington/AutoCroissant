@@ -36,7 +36,8 @@ from golden_cards import VOCAB  # noqa: E402
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
-GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # its stat bars lie below the canvas
+GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
+OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
@@ -760,11 +761,13 @@ def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, tmp_path):
 
 @fork
 def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
-    """Green Mage's stat bars lie below its canvas: a stat edit is refused with the reason as a final verdict (the run
-    passes, the schedule leaves it), never an `error` that fails the run (a ValueError from the empty render, 2026-10-23).
-    Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same run."""
+    """Green Mage before its fix (OFF_CANVAS_MAGE): its stat bars lay below its canvas, so a stat edit is refused with the
+    reason as a final verdict (the run passes, the schedule leaves it), never an `error` that fails the run (a ValueError
+    from the empty render, 2026-10-23). Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same
+    run. Then the live card (the fix) lands: the refusal is pending again (its PSD changed) and the edit bakes."""
     files = github.files_at(github.head)
-    files.update(_card_files(clone, GREEN_MAGE))
+    png = GREEN_MAGE[:len(GREEN_MAGE) - 4] + ".png"
+    files.update({GREEN_MAGE: at_rev(clone, OFF_CANVAS_MAGE, GREEN_MAGE), png: at_rev(clone, OFF_CANVAS_MAGE, png)})
     files.update(_card_files(clone, PURE_VESSEL))
     files[cb.EDITS_PATHS[0]] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
                                        "Pure Vessel": {"hp": 3, "note": "checked", "_by": "web", "_at": AT}})
@@ -782,6 +785,15 @@ def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
     assert verdicts["Green Mage"]["reason"].startswith("unsupported-card: hp: the bar 'Hp Dark' lies outside the card (digit masks ")
     assert verdicts["Pure Vessel"]["state"] == "baked" and verdicts["Pure Vessel"]["reason"] == "hp 7 -> 3"
     assert after[GREEN_MAGE] == files[GREEN_MAGE] and after[PURE_VESSEL] != files[PURE_VESSEL] and cb.pending() == []
+    after.update(_card_files(clone, GREEN_MAGE))
+    github.commit(after, "owner", "Green Mage: stat bars on the card")
+    assert cb.pending() == ["Green Mage"]
+    report = cb.run_report()
+    mage = next(card for card in report.cards if card.name == "Green Mage")
+    assert mage.refusal is None and mage.baked.reparse["card"]["hp"] == 3 and mage.commit == report.commit
+    assert cb.failure(report) == "" and cb.pending() == [], report.text
+    assert "\n- Green Mage: hp 7 -> 3\n" in github.commits[report.commit]["message"]
+    assert github.files_at(github.head)[GREEN_MAGE] != after[GREEN_MAGE] and "Green Mage" not in _edits_at(github)["cards"]
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):
