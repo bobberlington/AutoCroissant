@@ -43,6 +43,28 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] Fix later: the second History line's 103 carried starts (noise) and the 14 Mario versions a second run moves
       (normalize after Card Edits; harmless).
 
+### 1b. The stat history backfill (branch `work/backfill`; after step 1, before step 3's re-seed)
+`history_backfill.json` (repo root) holds every stat-card PSD version in git read by today's parser, the misread rule
+(a stat change counts only where the PSD's stored preview shows the stat bars changed, more than 1,000 px past 24) and
+26 archive records. Made by hand on the Mac (`python -m commands.history_backfill build`, 461 s, the fork venv, the full
+clone `~/Documents/Tools/wt/tc-full.git`); design and runs in `~/Documents/Tools/wt/scratch/backfill/` (DESIGN.md, build/).
+`/update_stats` merges it once, after `recover()`, on a trial copy, and says so in one `Backfill:` line.
+- [ ] Owner reads the file's `changes` list (and DESIGN.md §11: the qualified keys `Pizza (item)`, `Dogma (item)`,
+      `Auto Croissant (minion)`; 4 changes within a day of a card's first commit; 20 authors by first commit).
+- [ ] After step 1's PICKLE is on origin/main: copy its pickles to `scratch/backfill/rehearsal/prod/`, run `python -m
+      commands.history_backfill rehearse --file history_backfill.json --git ~/Documents/Tools/wt/tc-full.git --pickles
+      <prod> --out <out>`, then `diff_stats.py prod/stats.pkl out/stats.pkl --history prod/old_stats.pkl out/old_stats.pkl`.
+      On the recovered copies of a7c310e (2026-10-24): stats.pkl 818/818, 0 modified; old_stats 1,102 -> 1,192 versions
+      (+65 stat versions, +26 archive records, -1 Pix fold), 660 -> 692 names; 53 starts moved earlier (6 current cards);
+      92 tags changed (26 new, 66 given an author, 2 of them retagged as renamed: Tainted Esau, Sacrifice); stat changes
+      11 -> 73 (33 buffs, 35 nerfs, 5 moved) on 62 cards. Step 1's re-parse removes the Green Mage 2026-06-18 and Tainted
+      Isaac 2026-10-21 artifact rows and turns Tainted Eden's 2023-11-24 buff into a nerf. Second cleanup and second
+      merge: nothing.
+- [ ] Land (one code commit; no pickles), deploy outside 05:00-05:40, run the diff_stats gate before the next `/push`.
+      Undo: revert that PICKLE and delete `history_backfill.json` in the same push.
+- [ ] **Dead code after its PICKLE is pushed:** delete `history_backfill.json`, `commands/history_backfill.py`, its call
+      in `card_data.update()`, `tests/test_history_backfill.py` and the skill lines that name them.
+
 ### 2. The owner's re-parses (Discord, after step 1; tell him when)
 - [ ] `/update_stats cards:Shadow Duelist` (only printed Ability text counts; it becomes "").
 - [ ] `/update_stats cards:00 Table of Contents,Miracle Matter,Twin Emperors,Warcraftian Druid,Warcraftian Hunter`

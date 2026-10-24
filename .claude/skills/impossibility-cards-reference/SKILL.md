@@ -596,7 +596,7 @@ history clone's `clean_history`, 2026-10-23: for a tag linked along an exact ren
 end; a recovered archive's `blob` is the bytes git deleted)
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename), `"moved_to"` when it moved into MDW
 (retired; set from the history clone, 2026-10-23), and `"backfill": True` on names that left
-stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). It runs only behind
+stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). The one-time history backfill (`commands/history_backfill.py`, branch work/backfill) adds `"author"` to every tag (the card it became, its Card Authors.txt line, else its first git author), `"backfill_id"` on what it wrote, and archives three renamed cards that shared a live card's name under qualified keys with the plain name as `display_name` (`Pizza (item)`, `Dogma (item)`, `Auto Croissant (minion)`); a corrected version keeps its old stats in `version["backfill_was"]`. It runs only behind
 `_can_prune` (a full tree, not truncated, no failed new-name download, some cards). An archived card is a name not in
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
 means current cards, so no query, export, alias or website reader sees them. A PSD back under the name at the tag's

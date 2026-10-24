@@ -121,7 +121,7 @@ and dropped per name, starts moved, archive tags). **The one expected exception:
 10:36 deploy (2ada357) does that recovery once; the rehearsal predicts "History: 698 versions recovered from the bot's
 PICKLE commits (553 cards), 171 starts moved earlier; 64 cards gone before archiving archived ..." and old_stats growing
 from 446 to about 1,155 versions (354 to 670 names), on top of about 219-236 re-parsed PSDs (the batch-B2 cards). Read it
-with `diff_stats.py --history`; to undo it, revert that one PICKLE commit (pickle-only). The recovery needs the bot's
+with `diff_stats.py --history`; to undo it, revert that one PICKLE commit (pickle-only). The same exception covers the one-time `Backfill: ...` line (branch work/backfill, `commands/history_backfill.py`, after the recovery): about +90 old_stats versions (+65 stat versions, +26 archive records), stats.pkl unchanged; undo = revert its PICKLE and delete `history_backfill.json` (docs/NEXT_SESSION_PLAN.md step 1b). The recovery needs the bot's
 full clone (BOT_CLONE, else its own checkout) and HISTORY_CLONE, and skips quietly without them. A version is archived only when its PSD blob changed or the
 card moved AND its data changed (2026-10-22: the same data from a new blob is no version, `card_history.same_data`),
 so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all, and a re-saved PSD neither. Interpretation guide and the other
