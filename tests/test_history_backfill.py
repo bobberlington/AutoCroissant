@@ -944,8 +944,10 @@ def test_worked_examples(committed):
     edits = {(e[0], e[1]): e[4] for e in committed["unread_edits"]}
     assert edits[("2023-11-24", "Chef Saltbaker")] == {"atk": 7547} and ("2025-08-28", "Slugcat") in edits
     confirmed = {(e[1], e[0]) for e in committed["unread_edits"] if len(e) > 6}
-    assert confirmed == set(hb.PATCH_NOTES)                    # every patch-note row is in the list, marked
-    assert "def" in edits[("2025-03-11", "Grimora")]                    # its label rows: the bones moved, the markers not
+    fixed = {k for k in hb.PATCH_NOTES if k[0] in hb.PRINTED}  # fixed PSDs: their rows now read, as changes
+    assert confirmed == set(hb.PATCH_NOTES) - fixed            # every other patch-note row is in the list, marked
+    assert ("2025-03-11", [5, 2, 6, 5], [5, 4, 6, 5], "buff") in _changes(committed, "Grimora")   # label rows
+    assert ("2025-03-09", [8, 4, 8, 4], [8, 4, 7, 4], "nerf") in _changes(committed, "The Thin Man")
     assert [(c[0], c[3]) for c in _changes(committed, "Star Dream")] == [("2025-04-29", "buff"), ("2025-08-27", "nerf")]
     assert ("2025-10-30", [8, 6, 4, 4], [7, 7, 7, 7], "buff") in _changes(committed, "Kyle")
     assert [(c[0], c[2][2], c[3]) for c in _changes(committed, "Green Mage")] == [("2025-03-11", 6, "nerf")]
