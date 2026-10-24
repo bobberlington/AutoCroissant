@@ -1,14 +1,13 @@
-cython
-davey
+-r requirements-cards.txt
 discord.py>=2.5
-fonttools
-GitPython
+davey
+PyNaCl
+yt-dlp
 numpy
-opencv-python
 pandas
 Pillow
-psd-tools
+opencv-python
+GitPython
 PyGithub
-PyNaCl
-requests
-yt-dlp
+Cython
+setuptools

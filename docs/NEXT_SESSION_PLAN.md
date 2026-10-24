@@ -101,7 +101,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] **Round 11** (resumed wf_502b9ebf-b59 with the cap raised to 11): stroke corners (`effects.py _signed_distance`
       `near = 0.5 - alpha` overstates a quarter-covered corner pixel by ~0.25 px; 3,103 px on 291 cards; needs Photoshop
       fixtures) and The_Spire's Name (vibrance). Bar ~2,770 px. If it integrates and audits clean: tag
-      `cards-2026102x`, re-pin card-edits.yml, card-sync.yml and card-guards.yml, reinstall the jetson venv (gcc builds
+      `cards-2026102x`, re-pin `requirements-cards.txt` (the one pin since 2026-10-23), reinstall the jetson venv with
+      `--force-reinstall` (gcc builds
       `_distance`; check `composite/noise_field.npz` is installed; `pip check`) and `~/.venvs/ac-py314-fork`; AC suite on
       the installed tag first.
 - [ ] After the rounds: delete the frozen corpus `~/Documents/Tools/psd-research/corpus-6e50c3ee` (21 GB), the fork's

@@ -18,8 +18,11 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 from os import environ
+from os.path import expanduser
+from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
@@ -41,7 +44,7 @@ OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
-WORKFLOW = CLONE / ".github" / "workflows" / "card-edits.yml"
+WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-edits.yml"
 AT = "2026-10-20T18:41:54Z"
 ABOUT = "Card data fixes from the website's Edit button."
 TOKEN = "test-token"
@@ -1325,8 +1328,10 @@ def _bot_files_in_workflow() -> list:
     return paths
 
 
-ALLOWED_IMPORTS = {"PIL", "attr", "attrs", "certifi", "charset_normalizer", "fontTools", "idna", "numpy", "psd_tools", "requests",
-                   "urllib3", "scipy", "aggdraw"}      # what the Actions' pip lines install (psd-tools' own dependencies included)
+CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
+                 "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"},
+                 "pyoxipng": {"oxipng"}}       # requirements-cards.txt's packages: what they import (dependencies included)
+ALLOWED_IMPORTS = set().union(*CARD_PACKAGES.values())      # what the Actions install
 SKIP_IMPORTS = {"commands", "global_config", "sitecustomize", "usercustomize", "cython_runtime"}
 
 
@@ -1342,7 +1347,7 @@ def third_party_imports(code: str, cwd) -> set:
 def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     """Exactly the yaml's files, no config.py: `python -m commands.card_bake --help` works (the import closure is complete)."""
     paths = _bot_files_in_workflow()
-    assert "commands/card_bake.py" in paths and "commands/git_commit.py" in paths
+    assert "commands/card_bake.py" in paths and "commands/git_commit.py" in paths and "requirements-cards.txt" in paths
     assert "commands/psd_analyzer.py" not in paths and "config.py" not in paths
     bot = tmp_path / "bot"
     for rel in paths:
@@ -1361,48 +1366,77 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     assert not extra, f"card-edits.yml installs none of these: {sorted(extra)}"    # a stray pandas/discord fails here, not in the Action
 
 
-FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml")   # one pin, one wheel cache entry
-FORK_WHEELS = "~/.cache/psd-tools-wheels"
-FORK_KEY = "psd-tools-${{ env.PSD_TOOLS_REF }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}"
+FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml")   # install requirements-cards.txt
+FORK_WHEELS = "~/.cache/card-wheels"
+FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
+            "-py${{ steps.python.outputs.python-version }}")
+SYNC_KEY = FORK_KEY.replace("-py${{", "-py${{ steps.builder-python.outputs.python-version }}-py${{")   # both its Pythons
+BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
+NO_OXIPNG = "sed -e 's/ @ [^;]*//' -e '/^pyoxipng/d' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""   # card-preview's
+
+
+def card_pin() -> str:
+    """The psd-tools fork's tag: requirements-cards.txt's one fork URL, the only pin (no other requirements file has one)."""
+    pins = re.findall(r"^psd-tools\[composite,text\] @ git\+https://github\.com/MichaelJSr/psd-tools@(\S+)$",
+                      (REPO / "requirements-cards.txt").read_text(encoding="utf-8"), re.M)
+    assert len(pins) == 1 and re.fullmatch(r"cards-\d{8}[a-z]*", pins[0]), "one fork pin, a tag (never a branch)"
+    for other in REPO.glob("requirements*.txt"):
+        assert other.name == "requirements-cards.txt" or "psd-tools" not in other.read_text(encoding="utf-8").lower(), other.name
+    return pins[0]
 
 
 def fork_install(path) -> str:
     """
-    A workflow's psd-tools fork install, as the four share it: the pin once (env PSD_TOOLS_REF); the fork's and its
-    dependencies' wheels restored by pin, Python and runner, built only on a miss, installed offline (the fork is 1.25.0,
-    as upstream's PyPI wheel an index would prefer), saved only after they installed.
+    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the four share it: the file checked
+    out of AutoCroissant, no pin of the workflow's own; its wheels restored by the file's hash, runner and Python (card-sync:
+    both its Pythons), built only on a miss, installed offline by name (pip builds a URL line from git again; card-preview
+    without pyoxipng: it would recompress a PNG it never publishes), no other install; saved only after they installed.
 
     Returns:
-        The pin.
+        The cache key.
     """
     text = path.read_text(encoding="utf-8")
-    pins = re.findall(r"^\s*PSD_TOOLS_REF: (\S+)", text, re.M)
-    assert len(pins) == 1, f"{path.name}: the pin in one place"
-    assert re.fullmatch(r"cards-\d{8}[a-z]*", pins[0]), f"{path.name}: a tag, never a branch"
-    assert re.findall(r"MichaelJSr/psd-tools@([^\s\"]+)", text) == ["$PSD_TOOLS_REF"], f"{path.name}: one fork URL, the pin's"
+    assert "PSD_TOOLS_REF" not in text and "MichaelJSr/psd-tools" not in text, f"{path.name}: the pin is requirements-cards.txt's"
+    assert not re.search(r"cards-\d{8}", text), f"{path.name}: no fork tag of its own"
     yaml = pytest.importorskip("yaml")
     steps = [step for job in yaml.safe_load(text)["jobs"].values() for step in job["steps"]]
-    python = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
-    assert python["id"] == "python" and str(python["with"]["python-version"]).split()[-1] == "3.12"   # the output's (the last)
+    bot = [s for s in steps if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
+           and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
+    assert len(bot) == 1, f"{path.name}: the bot checkout brings requirements-cards.txt"
+    python = next(s for s in steps if s.get("id") == "python")
+    assert python["uses"].startswith("actions/setup-python@") and python["with"] == {"python-version": "3.12"}  # no pip cache
+    sync = next((s for s in steps if s.get("id") == "builder-python"), None)
+    if sync:                                # card-sync: the builder's 3.14 before the baker's 3.12 (last on PATH)
+        assert sync["uses"] == python["uses"] and sync["with"] == {"python-version": "3.14"} and steps.index(sync) < steps.index(python)
+        venv = next(s for s in steps if s.get("id") == "venv")
+        assert "inputs.bake != 'none' && " in venv["env"]["BAKE"] and '[ "$BAKE" != none ]' in venv["run"]   # no baker then
     first = next(i for i, s in enumerate(steps)
                  if s.get("uses", "").startswith("actions/cache/restore@") and s["with"]["path"] == FORK_WHEELS)
     restore = steps[first]
-    assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
+    assert restore["id"] == "wheels" and restore["with"]["key"] == (SYNC_KEY if sync else FORK_KEY)
     install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
     run = steps[install]["run"]
-    assert first < install
-    if "if" in restore:                     # card-sync's: restored only for a bake, as Bake's `if` and the venv's BAKE say
-        bake = next(s for s in steps if s.get("id") == "bake")
-        assert restore["if"] == bake["if"].replace("steps.venv.outcome == 'success' && ", "")
-        assert "inputs.bake != 'none' && " in steps[install]["env"]["BAKE"]     # any letter case, as the `if`s compare
+    by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
+    assert by_name in run, f"{path.name}: the install's copy by name"
+    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
+        (Path(tmp) / "bot").mkdir()
+        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
+        run_process(["bash", "-c", by_name], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
+        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
+    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
+    assert any(line.startswith("pyoxipng==") for line in copy) == (by_name == BY_NAME), path.name
+    assert steps.index(bot[0]) < steps.index(python) < first < install and restore.get("if") == steps[install].get("if")
     assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-    assert re.search(r'pip"? wheel -q -w ~/\.cache/psd-tools-wheels requests "psd-tools\[composite,text\] @ '
-                     r'git\+https://github\.com/MichaelJSr/psd-tools@\$PSD_TOOLS_REF"$', run, re.M)
-    assert re.search(r'pip"? install -q --no-index -f ~/\.cache/psd-tools-wheels requests "psd-tools\[composite,text\]"$', run, re.M)
+    wheel = re.findall(r'^.*pip wheel -q -w ~/\.cache/card-wheels -r bot/requirements-cards\.txt(?:; done)?$', run, re.M)
+    assert len(wheel) == 1 and (not sync or 'for python in python3.14 python3.12; do "$python" -m pip wheel' in wheel[0])
+    assert run.index(wheel[0]) < run.index(by_name)
+    pips = re.findall(r'pip"? install [^\n]*', text)
+    assert pips and all(p.endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"') for p in pips)
+    assert all(run.index(by_name) < run.index(p) for p in pips) and len(pips) == (2 if sync else 1)
     save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
     assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
     assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
-    return pins[0]
+    return restore["with"]["key"]
 
 
 def test_workflow_shape():
@@ -1417,7 +1451,7 @@ def test_workflow_shape():
     assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
     assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text and '[ "$EVENT" = schedule ] && args+=(--pending)' in text
     assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
-    assert fork_install(WORKFLOW)                                                   # card-guards' test compares the four
+    assert fork_install(WORKFLOW) == FORK_KEY                                       # card-guards' test compares the four
     grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
     report = cb.Report("o/r", "h" * 40, False, "w")
     card = cb.Card("X", "x", {"hp": 1})

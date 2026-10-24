@@ -1170,12 +1170,13 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
 # ========================
 # The build (python -m commands.card_data)
 # ========================
-# what card-sync.yml checks out of AutoCroissant: the build's import closure, then the bake's and the save's
+# what card-sync.yml checks out of AutoCroissant: the build's import closure and requirements-cards.txt, then the bake's
+# and the save's
 # (tests/test_card_data.py runs --help on the three CLIs with exactly this list)
 SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/card_db.py", "commands/changelog.py",
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
                 "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
-                "requirements-card-data.txt",
+                "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/git_commit.py", "commands/repo_history.py",
                 "commands/tts_save.py")
 BOT_REPO = "bobberlington/AutoCroissant"

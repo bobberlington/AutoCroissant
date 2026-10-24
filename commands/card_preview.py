@@ -14,7 +14,8 @@ The edit is the card's Card Edits.json entry as it would be published (any of it
 `creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Not the bake's: the `recent` gate (a preview races nobody: it commits nothing). Exit 0, 2 for a bad input,
 1 for any other error (result.json's `transient`: try again). Every dispatched value printed goes through clean().
-No Discord or config imports; SPARSE_FILES is the import closure card-preview.yml checks out.
+No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and
+requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from io import BytesIO
@@ -49,7 +50,7 @@ from global_config import CARD_REPO
 SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "commands/card_bake.py",
                 "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
-                "commands/repo_history.py", "global_config.py")
+                "commands/repo_history.py", "global_config.py", "requirements-cards.txt")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 WEBP_WIDTH, WEBP_QUALITY = 720, 75              # build_site IMAGE_SIZES' 720: the card view's size and quality
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)

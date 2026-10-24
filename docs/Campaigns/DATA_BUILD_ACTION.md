@@ -280,13 +280,14 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
 3. **Check out the builder:** `bobberlington/AutoCroissant` at `inputs.builder_ref || vars.CARD_DATA_BUILDER_REF || 'main'`,
    `path: bot`, sparse to `card_data.SPARSE_FILES` (§7), which covers the bake and the save as well. `tests/test_card_data.py`
    runs `--help` on the three CLIs with exactly that list, as test_card_check does for card-check.yml.
-4. **Python:** setup-python 3.14, the Mac test venv's version (the goldens pass there), with `cache: pip` and
-   `cache-dependency-path: bot/requirements-card-data.txt`. Two virtual environments until one pin serves both:
-   - the builder's: `pip install -r bot/requirements-card-data.txt`, which pins `psd-tools==1.25.0` (the jetson's and the
-     goldens' version) plus fonttools and requests;
-   - the bake's: Python 3.12 with the psd-tools fork tag card-edits.yml installs (`cards-20261023` since 2026-10-23; `cards-20261022` when written), set up only when the
-     run bakes. The builder moves to the fork with the goldens when the fork tag is installed on the jetson, and the second
-     environment goes. Each environment's import closure is proven with `--help` before any stage.
+4. **Python:** setup-python 3.14 (the builder's: the Mac test venv's and the jetson's version; the goldens pass there) and
+   3.12 (the bake's, card-edits.yml's). One pin serves both since 2026-10-23: both virtual environments install
+   `bot/requirements-cards.txt` (the psd-tools fork at the one tag, read there; fonttools, requests; pyoxipng on
+   3.12 only, where it has a wheel), so the data build uses the fork, as the jetson does (stock `psd-tools==1.25.0` until
+   then). They install offline from one wheel cache entry keyed on the file's hash, the runner and both Pythons, built on
+   a miss for both; the bake's environment is set up only when the run bakes. Each environment's import closure is
+   proven with `--help` before any stage. One environment would do now (the same packages); it waits for a ruling on the
+   builder's Python and for TTSCardMaker `TTS/checks/card_sync_steps.py`, which runs the steps with both venvs' paths.
 5. **Fonts:** the cache key is `card-fonts-$(git rev-parse HEAD:MDW/Fonts)`, the key card-edits.yml uses today, so the
    entries carry over. On a miss, run `git sparse-checkout add '/MDW/Fonts/*' '!/MDW/Fonts/stoogedings-src/'`. This step runs
    without `GIT_NO_LAZY_FETCH`.
@@ -366,7 +367,8 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
 The builder follows AutoCroissant main by default. Gate G4 stops a parser change from rewriting the database unannounced (§8).
 To roll back a broken parser push without touching AutoCroissant, set the repo variable `CARD_DATA_BUILDER_REF` (Settings →
 Variables; not a secret) to the last good commit, then clear it once main is fixed. `manifest.builder.commit` records the exact
-commit of every build. The pin also pins the bake and the save, which come from the same checkout.
+commit of every build. The pin also pins the bake and the save, which come from the same checkout. A ref from before
+requirements-cards.txt (2026-10-23) fails at the Python environments step: the workflow installs that file.
 
 ## 7. The builder (AutoCroissant, Discord-free)
 
@@ -382,10 +384,10 @@ commit of every build. The pin also pins the bake and the save, which come from 
 | `commands/tts_save.py` (changed) | Gains `--names <stats.json>`: names from a `db/` instead of the website's `cards.json`, with the same rule build_site uses for `cards.json` names |
 | `commands/repo_traverser.py` (changed) | Becomes the bot's /update_stats. Until step 8 it calls `card_data.build` with the GitHub-API source and writes the root pickles as today (legacy mode, for the jetson). From step 8 it is sync and dispatch (§11). |
 | `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. `created` (2026-10-23) is a second such attribute: `site/Card Creation Dates.json`'s `{date, from[, provisional]}` (or the card's first upload, step 7), no data field (no version, no event). |
-| `requirements-card-data.txt` | The builder's pins: `psd-tools==1.25.0`, `fonttools`, `requests` |
+| `requirements-cards.txt` | The card code's packages, the bot's and every card Action's (`requirements-card-data.txt` until 2026-10-23, stock `psd-tools==1.25.0`): the psd-tools fork's one pin, `fonttools`, `requests`, `pyoxipng` where it has a wheel |
 
 `SPARSE_FILES`: card_data.py, card_history.py, card_db.py, changelog.py, card_models.py, card_edits.py, psd_parser.py,
-psd_details.py, psd_regions.py, font_check.py, github_api.py, global_config.py, requirements-card-data.txt, and for the other
+psd_details.py, psd_regions.py, font_check.py, github_api.py, global_config.py, requirements-cards.txt, and for the other
 two stages card_bake.py, psd_edit.py, git_commit.py, repo_history.py and tts_save.py (today's card-edits.yml and tts-save.yml
 lists). The list never includes psd_analyzer, query_card, utils or type_emojis (discord, pandas). There is no config.py:
 github_api reads it inside a try/except and takes the token from the environment.
@@ -1112,7 +1114,8 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
    source, root pickles, the bake lock, Discord messages).
    - *Verify:*
      - the full suite, plus the new tests in §10;
-     - `--help` of the three CLIs in a clean venv holding only `requirements-card-data.txt` (the bake's with its fork pin);
+     - `--help` of the three CLIs in a clean venv holding only `requirements-card-data.txt` (the bake's with its fork pin;
+       since 2026-10-23 both hold `requirements-cards.txt`);
      - on the Mac, in a sandbox copy, an incremental legacy run on fixture pickles writes byte-identical pickles to the old code;
      - `tts_save --names` on a copy of the save with a copy of today's data gives the same Nicknames as the live `cards.json`;
      - jetson deploy; the next 05:00 run reports as before;
@@ -1301,7 +1304,9 @@ except 6, which is one day, not 14:
 
 - Whether a ruleset on a personal public repo can let only GitHub Actions update `data` (§5).
 - That setup-python 3.14 with `psd-tools==1.25.0` installs on ubuntu-latest (a wheel, or a build from the sdist), and that the
-  bake's fork pin installs on 3.14 too (card-edits.yml runs it on 3.12 today).
+  bake's fork pin installs on 3.14 too (card-edits.yml runs it on 3.12 today). 2026-10-23: requirements-cards.txt resolves
+  for Linux x86_64 3.14 with wheels for every package but the fork (`uv pip compile --only-binary :all: --no-binary
+  psd-tools`); the fork builds from source there as on the jetson. The first card-sync run on the runner confirms it.
 - That every HEAD PSD blob is in the Mac's working clone, for the by-hand full re-parse (one PSD checked 2026-10-22).
 - How build_site's contribution counts treat a `_by` or `Edit-by` naming a Discord user rather than a GitHub login. The proposal
   is `discord:<name>`; it should be skipped or mapped, never given a person page.
@@ -1317,7 +1322,8 @@ except 6, which is one day, not 14:
   - `global_config.py`, `main.py`, `setup.py`;
   - `tests/conftest.py`, `tests/test_update_stats.py`, `tests/test_card_bake.py`;
   - `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` and `inspect_pickle.py`;
-  - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt`; at step 8
+  - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt` (now
+    `requirements-cards.txt`); at step 8
     `commands/card_sync.py` (the bot's side) and `tests/test_card_sync.py`.
 - TTSCardMaker (`~/Desktop/TTSCardMaker`):
   - `.github/workflows/site.yml`, `card-edits.yml` and `tts-save.yml` (both folded into card-sync.yml), `card-check.yml`,

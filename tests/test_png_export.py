@@ -406,7 +406,7 @@ def test_png_check(tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-oxipng = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs")
+oxipng = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs (none on 3.14)")
 
 
 def photoshop_png(image: Image.Image, icc: str = "sRGB") -> bytes:

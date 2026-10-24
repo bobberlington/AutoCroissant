@@ -13,7 +13,7 @@ import commands.png_export as pe
 import commands.png_recompress as batch
 from test_png_export import art, photoshop_png
 
-pytestmark = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng")
+pytestmark = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng (none on 3.14: requirements-cards.txt)")
 
 
 def _git(root, *args) -> str:
