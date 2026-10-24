@@ -118,9 +118,12 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [x] FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow,
       Fire/Ice Staff, Flameblade) are rebuilt in their own style (owner 2026-10-23 ~17:40): built on `work/fx-rebuild`
       phase 2 (42 of 48 dry bakes). Also there: every typed stoogedings token set in the font (62 of 85).
-- [ ] Tests drifted from the clone: Green Mage's PSD was fixed (TTSCardMaker 78798eac, ATK 6), so
+- [ ] Tests drifted from the clone (fail on main too; the full suite on `work/fx-rebuild` 2026-10-23 evening: 5 failed,
+      1421 passed, 13 skipped, all 5 these): Green Mage's PSD was fixed (TTSCardMaker 78798eac, ATK 6), so
       `test_effect_rules_on_styled_rows`, `test_a_bar_outside_the_card_refuses` and
-      `test_a_bar_outside_the_card_is_a_final_refusal` fail on main too: pin Green Mage at `78798eac^` (`at_rev`).
+      `test_a_bar_outside_the_card_is_a_final_refusal` fail: pin Green Mage at `78798eac^` (`at_rev`); Baba's font was
+      added (b03b9975), so `test_rules_on_real_cards[Baba]` and `test_r7_is_told_in_the_standards_post` (R7) fail:
+      pin Baba or MDW/Fonts at `b03b9975^`.
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       rcache wiring in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the
       Photoshop oracle loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).
