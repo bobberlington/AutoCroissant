@@ -445,6 +445,32 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
 
 
+def test_contributions_get_edits_by_field_and_ratings(bs, repo, tmp_path, monkeypatch):
+    """main() feeds contributions() the ratings and every edit batch of all time: Maker's row counts an old Card
+    Edits.json note, one Card Authors.txt line (not the lines of the commit that made the file) and a website rating,
+    and has others' ratings of Alpha (P4)."""
+    if not hasattr(bs, "person_extras"):
+        pytest.skip(f"{BUILD_SITE} has no person stats")
+    root, start = repo["root"], repo["t"][0] - REBASED
+    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Alpha": {"note": "Checked.", "_by": "Maker",
+                                                                                     "_at": "2025-01-01T00:00:00Z"}}}))
+    _commit(root, "Website edit: Alpha", start - 400 * DAY)                    # older than CHANGELOG_DAYS
+    authors = root / "site" / "Card Authors.txt"
+    authors.write_text("[cards]\nAlpha = Maker\n")
+    _commit(root, "Card authors file", start + 4 * DAY)
+    authors.write_text("[cards]\nAlpha = Maker\nWatermelon = Maker\n")
+    _commit(root, "Credit Watermelon", start + 5 * DAY)
+    ratings = root / "site" / "Card Ratings.json"
+    data = json.loads(ratings.read_text())
+    data["cards"]["Watermelon"] = [{"date": "2026-10-20", "scale": "favorability", "value": 8, "by": "Maker", "source": "website"}]
+    ratings.write_text(json.dumps(data))
+    _commit(root, "Website rating", start + 6 * DAY)
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
+    assert dict(maker["editFields"]) == {"note": 1, "author": 1, "rating": 1}
+    assert maker["ratings"]["powerN"] == 1 and maker["ratings"]["power"] == 5.5
+
+
 def test_the_cards_page_has_a_banned_flag():
     """The person page's banned link filters the Cards tab with flags=banned."""
     if not APP_JS.is_file():
