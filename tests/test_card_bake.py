@@ -412,6 +412,10 @@ def test_recent_paths_by_push_time(monkeypatch):
     assert cb.recent_paths(cb.CARD_REPO, "c3", now + timedelta(hours=1)) == set() and asked[2:] == ["activity"]
     pushes[1]["before"] = "0" * 40                                                      # a new branch: can't tell
     assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None
+    pushes[1]["before"] = "c1"
+    monkeypatch.setattr(cb, "api", lambda repository, method, path, **kwargs: Reply(body=pushes) if path == "activity"
+                        else Reply(status=422, body={"message": "Sorry, this diff is taking too long to generate."}))
+    assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None                              # a force push: no compare
 
 
 def test_stat_edit_with_creatures_is_refused(github):

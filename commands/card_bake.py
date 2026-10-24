@@ -315,7 +315,7 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
             lacks, a previous B), else by the compare API
 
     Returns:
-        The paths, or None when there were too many pushes or files to tell
+        The paths, or None when there were too many pushes or files to tell, or no compare (a force push)
     """
     since = (now - RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
     pushes = api(repository, "GET", "activity", params={"ref": CARD_BRANCH, "time_period": "day", "per_page": PUSHES}).json()
@@ -327,7 +327,10 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
         return None
     if local and _local_commit_exists(local, base):
         return {p for p in _git_local(local, "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}").split("\0") if p}
-    files = api(repository, "GET", f"compare/{base}...{head}", params={"per_page": 1}).json().get("files") or []
+    reply = api(repository, "GET", f"compare/{base}...{head}", check=False, params={"per_page": 1})
+    if not reply.ok:                            # 404/422 after a force push: can't tell
+        return None
+    files = reply.json().get("files") or []
     if len(files) >= COMPARE_FILES:
         return None
     return {f["filename"] for f in files} | {f["previous_filename"] for f in files if f.get("previous_filename")}
