@@ -214,17 +214,68 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
 
 @needs_node
 def test_card_text_fields_take_the_picker(tmp_path):
-    """The ability and note fields, in the full Edit form (cards and rulebook pages) and inline, carry data-tokens."""
+    """The ability and note fields, in the full Edit form (cards and rulebook pages) and inline, carry data-tokens; the
+    series, subseries and author fields (inline, All fields, the profile's "Cards as") the list of known names
+    (data-suggest), with no native datalist."""
     script = tmp_path / "inline.mjs"
     script.write_text(f"const I = await import({json.dumps(INLINE_JS.as_uri())});\n"
-                      "process.stdout.write(JSON.stringify(['ability', 'note', 'series', 'name'].map(f => I.control(f, 'x'))));\n",
+                      "process.stdout.write(JSON.stringify(['ability', 'note', 'series', 'name', 'subseries', 'author'].map(f => I.control(f, 'x', false, 'Mario'))));\n",
                       encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
-    assert ["data-tokens" in html for html in json.loads(done.stdout)] == [True, True, False, False]
-    fields = re.findall(r'<textarea id="ef-(ability|note)"[^>]*>', EDIT_JS.read_text(encoding="utf-8"))
+    html = json.loads(done.stdout)
+    assert ["data-tokens" in h for h in html] == [True, True, False, False, False, False]
+    assert ["data-suggest" in h for h in html] == [False, False, True, False, True, True]
+    assert 'data-suggest="subseries"' in html[4] and 'data-series="Mario"' in html[4] and not any("list=" in h for h in html)
+    edit = EDIT_JS.read_text(encoding="utf-8")
+    fields = re.findall(r'<textarea id="ef-(ability|note)"[^>]*>', edit)
     assert sorted(fields) == ["ability", "ability", "note", "note"]
-    assert all("data-tokens" in tag for tag in re.findall(r'<textarea id="ef-(?:ability|note)"[^>]*>', EDIT_JS.read_text(encoding="utf-8")))
+    assert all("data-tokens" in tag for tag in re.findall(r'<textarea id="ef-(?:ability|note)"[^>]*>', edit))
+    assert not re.search(r'<datalist id="dl-(series|subseries|people)"', edit)
+    for f in ("ef-series", "ef-subseries", "ef-author", "pf-author"):
+        assert re.search(rf'<input id="{f}" data-suggest="', edit), f
+
+
+NAMES = [{"value": "Mario", "n": 69, "kind": "series"}, {"value": "Kirby", "n": 12, "kind": "series"},
+         {"value": "Marvel", "n": 3, "kind": "series"}, {"value": "Omori", "n": 3, "kind": "series"},
+         {"value": "Animal Crossing", "n": 3, "kind": "series"}, {"value": "Smash", "n": 0, "kind": "series"}]
+
+
+@needs_node
+def test_names_rank_known_series_subseries_and_authors(tmp_path):
+    """Empty: own first, then most cards, then by name; typed: same name, prefix, a word's prefix, inside, then a slip;
+    a subseries of another series keeps its note; never more than the list's limit."""
+    subs = [{"value": "Paper Mario: The Thousand-Year Door", "n": 52, "kind": "subseries", "series": "Mario", "own": False,
+             "note": "Mario · 52 cards"},
+            {"value": "Super Mario 64", "n": 3, "kind": "subseries", "series": "Mario", "own": False, "note": "Mario · 3 cards"},
+            {"value": "Dream Land", "n": 1, "kind": "subseries", "series": "Kirby", "own": True, "note": "1 card"}]
+    many = [{"value": f"Name {i:03}", "n": 1} for i in range(300)]
+    out = node(tmp_path, f"""
+const N = {json.dumps(NAMES)}, SUBS = {json.dumps(subs)}, MANY = {json.dumps(many)};
+const v = (q, e) => P.suggestNames(q, e).map(r => r.value);
+process.stdout.write(JSON.stringify([v("", N), v("mar", N), v("thousand", SUBS), v("mraio", N), v("", SUBS),
+  P.suggestNames("pap", SUBS)[0], v("o", N), v("ari", N), P.suggestNames("", MANY).length, v("crossing", N)]));""")
+    assert out[0] == ["Mario", "Kirby", "Animal Crossing", "Marvel", "Omori", "Smash"]
+    assert out[1] == ["Mario", "Marvel"]
+    assert out[2] == ["Paper Mario: The Thousand-Year Door"]
+    assert out[3] == ["Mario"]
+    assert out[4] == ["Dream Land", "Paper Mario: The Thousand-Year Door", "Super Mario 64"]
+    assert out[5] == {"token": "Paper Mario: The Thousand-Year Door", "label": "Paper Mario: The Thousand-Year Door",
+                      "kind": "subseries", "note": "Mario · 52 cards", "plain": True,
+                      "value": "Paper Mario: The Thousand-Year Door", "series": "Mario"}
+    assert out[6] == ["Omori"]
+    assert out[7] == ["Mario"]
+    assert out[8] == 120
+    assert out[9] == ["Animal Crossing"]
+
+
+@needs_node
+def test_a_name_choice_replaces_the_whole_value(tmp_path):
+    out = node(tmp_path, """
+const it = P.suggestNames("pap", [{ value: "Paper Mario", n: 5 }])[0];
+process.stdout.write(JSON.stringify([P.applyChoice("Pap", { type: "name", start: 0, end: 3, close: 3 }, it),
+  P.applyChoice("paper mar", { type: "name", start: 0, end: 9, close: 9 }, { token: "Paper Mario" })].map(r => [r.text, r.caret])));""")
+    assert out == [["Paper Mario", 11], ["Paper Mario", 11]]
 
 
 @needs_node
