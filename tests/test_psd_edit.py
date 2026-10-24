@@ -70,6 +70,9 @@ JAWSUM = "Creatures/Omori/3 Stars/Mr_Jawsum.psd"                   # no Text gro
 SOUL_MASTER = "Creatures/Hollow Knight/4 Stars/Soul_Master.psd"    # its title 'Soul Master' sits beside the Text group
 PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                # its title layer 'Text/The Great Papyrus' is named after its text
 SANS = "Creatures/Undertale/5 Stars/Sans.psd"                      # likewise 'Text/snas.'
+LORIAN = "Auxiliary/Minions/Lorian.psd"                            # smart objects with smart filters
+PAINT_WARRIOR = "Auxiliary/Minions/Paint_Warrior.psd"              # a blank Ability whose box runs over the stat bars
+KORO = "Creatures/Other/5 Stars/Koro-Sensei.psd"                   # tags printed in the body font, no icon font
 KNIGHT = "Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd"        # 'Knight', 'Lost', 'A', 'Lot' stacked: two in the title region
 GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"              # a rule page: its heading 'Text/THE GLOBAL TURN'
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
@@ -1334,6 +1337,58 @@ def test_new_fx_layer_goes_above_the_groups_clip_chain(clone, parser, chart, tmp
 
 
 @text_edit
+def test_a_bake_runs_gate_untouched(clone, parser, chart, tmp_path, monkeypatch):
+    """apply_jobs runs gate_untouched: Claw's new FX layer put directly above its Text group, as before round 5, takes
+    MagentaSmorg and Exposure 1 off the title; the bake refuses region (review 2026-10-24)."""
+    rel = "Auxiliary/Minions/Claw.psd"
+    psd_path = _card(clone, rel)[0]
+    new = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"]) + " Inflict Blazing."
+    made = pe._regenerate_fx
+
+    def under_chain(psd, layer, *args):
+        out = made(psd, layer, *args)
+        group = pe._top(layer)
+        for n, fx in enumerate(out):
+            fx.move_to(psd, index=psd.index(group) + 1 + n)
+        return out
+    monkeypatch.setattr(pe, "_regenerate_fx", under_chain)
+    with pytest.raises(pe.Refused, match="outside the edited boxes") as refused:
+        _bake(clone, parser, rel, {"ability": new}, tmp_path, chart)
+    assert refused.value.code == "region"
+
+
+@text_edit
+def test_a_stat_and_the_ability_bake_together(clone, parser, chart, tmp_path):
+    """gate_untouched leaves out the stat edits' regions too: hp and the ability in one bake (review 2026-10-24: the hp
+    row's digits counted as changed outside the edited boxes)."""
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 6, "ability": old + " Die."}, tmp_path, chart)
+    assert sorted(edit.field for edit in baked.edits) == ["ability", "hp"]
+    assert baked.reparse["card"]["hp"] == 6
+
+
+@text_edit
+def test_the_edit_copy_keeps_smart_filters(clone, parser, chart, tmp_path):
+    """apply_jobs edits a deepcopy of the card, and the fork pairs a smart object with its smart filter by id() of its
+    record: a plain deepcopy renders Lorian without them (1.5M px), which the PNG took inside an edit's region (review
+    2026-10-24). edit_copy renders as the card; gate_copy refuses a copy that does not; an hp bake's PNG is its PSD."""
+    psd_path, png_path = _card(clone, LORIAN)
+    psd = PSDImage.open(psd_path)
+    before = pe.render_all(psd)
+    pe.gate_copy(before, pe.edit_copy(psd))
+    with pytest.raises(pe.Refused, match="renders") as refused:
+        pe.gate_copy(before, deepcopy(psd))
+    assert refused.value.code == "error"
+    hp = pe.parse_card(parser, psd_path, LORIAN)["card"]["hp"]
+    parsed, baked = _bake(clone, parser, LORIAN, {"hp": hp - 1}, tmp_path, chart)
+    x0, y0, x1, y1 = baked.region
+    saved = PSDImage.open(baked.psd_path)
+    render = saved.composite(viewport=baked.region, ignore_preview=True, apply_icc=baked.icc).convert("RGB")
+    png = Image.open(baked.png_path).convert("RGB").crop(baked.region)
+    assert int((np.abs(np.asarray(render).astype(int) - np.asarray(png).astype(int)).max(axis=2) > 24).sum()) == 0
+
+
+@text_edit
 def test_long_title_refuses_overflow(clone, chart):
     """Point text has no box: a title that runs off the canvas or onto a star badge refuses overflow (Q5's gate)."""
     fonts = str(clone / pe.FONTS_DIR)
@@ -2114,7 +2169,9 @@ def test_a_badge_layer_takes_a_colour_icons_see_through_glow(clone, parser, char
     stops at alpha 110): the badge layer left it out, and it printed in the overlay's colour (maroon on Mini Doomer, olive
     on Turtle), every gate passing (they counted ink past alpha 0.5). The layer takes every pixel of its glyphs, the
     gates every colour-glyph pixel past FAINT_INK: a hole in the glow refuses. A typed "★", which no badge phrase names
-    (Turtle: 2 faint px of its glow left out, the gate refused), is the layer's too."""
+    (Turtle: 2 faint px of its glow left out, the gate refused), is the layer's too. A typed [support] then refuses all
+    the same (see_through_icons): the layer over its see-through glow shows the overlay through it (review 2026-10-24,
+    third round: Heavy Mole's olive-grey [support])."""
     from psd_tools.composite.text import FontMap
     from psd_tools.composite.text.geometry import text_geometry
     fonts_dir = str(clone / pe.FONTS_DIR)
@@ -2131,7 +2188,11 @@ def test_a_badge_layer_takes_a_colour_icons_see_through_glow(clone, parser, char
         colour = _colour_px(layer, fonts, shape) & (alpha > 0)
         held = pe._on_canvas(fx, shape)[..., 3] > 0
         assert (colour & (alpha <= 110)).sum() > (1000 if "[" in tail else 100) and not (colour & ~held).any()
-        pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+        if "[" in tail:             # yet a see-through glow under a badge layer prints in the overlay's colour (review 3)
+            with pytest.raises(pe.Refused, match=r"^reparse: \[support\]: see-through, under a badge FX layer"):
+                pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+        else:
+            pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
     geometry = text_geometry(layer, fonts)
     ring, = [glyph for glyph in geometry["glyphs"] if geometry["text"][glyph["i"]:glyph["end"]] == "[support]"]
     glow = pe._boxes([ring], 20, shape) & ~pe._boxes([ring], pe.FX_BOX_PAD, shape)
@@ -2145,6 +2206,22 @@ def test_a_badge_layer_takes_a_colour_icons_see_through_glow(clone, parser, char
     with pytest.raises(pe.Refused, match=r"^reparse: 'Ability FX: \(1GCD\) \| \[support\]' leaves 6 px of its badges and "
                                          r"icons out$"):
         pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+
+
+@text_edit
+def test_a_see_through_icon_under_a_badge_layer_refuses(clone, parser, chart, tmp_path):
+    """Review 2026-10-24 (third round): a badge FX layer is a copy of the Ability's pixels over it, so a pixel at alpha a
+    shows a*(1-a) of the tinted Ability below: [support]'s glow on Mini Doomer printed maroon, every gate passing. A
+    typed see-through icon refuses (see_through_icons); an opaque one ([fire], (2CD)) bakes, its rim like the printed
+    badges'."""
+    from psd_tools.composite.text import FontMap
+    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)])
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER)["card"]["ability"])
+    with pytest.raises(pe.Refused, match=r"^reparse: \[warpstar\]: see-through"):
+        _bake(clone, parser, MINI_DOOMER, {"ability": old + " Gain [warpstar]."}, tmp_path, chart)
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Gain [fire]. (2CD) Die."}, tmp_path, chart)
+    saved = PSDImage.open(baked.psd_path)
+    assert pe.see_through_icons(saved, fonts) == Counter() == pe.see_through_icons(PSDImage.open(_card(clone, MINI_DOOMER)[0]), fonts)
 
 
 @text_edit
@@ -2298,15 +2375,17 @@ def test_gate_fx_refuses_a_token_not_shaped_as_one_icon(clone, parser):
 def test_a_plain_cards_body_font_tags_do_not_refuse_a_typed_token(clone, parser, chart, tmp_path):
     """Review 2026-10-24: unshaped_icons counted nothing on a card without the icon font, so once a typed token added it
     the new side alone counted the tags Papyrus prints as body text ("(1CD)") and every typed badge or token on 10 such
-    cards refused. Both sides count them now: the typed token bakes, one left in the body font still refuses."""
+    cards refused. Both sides count them now: the typed token bakes, one left in the body font still refuses. (Koro-Sensei:
+    on Papyrus an appended token now runs under the spaghetti and refuses overflow.)"""
     from psd_tools.composite.text import FontMap
     fonts_dir = str(clone / pe.FONTS_DIR)
     fonts = FontMap(dirs=[fonts_dir])
-    psd_path = _card(clone, PAPYRUS)[0]
+    psd_path = _card(clone, KORO)[0]
     old = PSDImage.open(psd_path)
-    assert not pe.uses_icon_font(pe.ability_layer(old)) and pe.unshaped_icons(old, fonts, parser.icons) == Counter({"(1CD)": 1})
-    new = pe.normalize_ability(pe.parse_card(parser, psd_path, PAPYRUS)["card"]["ability"]) + " Deal 1 [fire] damage."
-    parsed, baked = _bake(clone, parser, PAPYRUS, {"ability": new}, tmp_path, chart)
+    assert not pe.uses_icon_font(pe.ability_layer(old)) and pe.unshaped_icons(old, fonts, parser.icons) == Counter(
+        {"(1CD)": 1, "(1GCD)": 1, "(1PG)": 1, "(ENDGT)": 1})
+    new = pe.normalize_ability(pe.parse_card(parser, psd_path, KORO)["card"]["ability"]) + " Deal 1 [fire] damage."
+    parsed, baked = _bake(clone, parser, KORO, {"ability": new}, tmp_path, chart)
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == new
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
@@ -2316,6 +2395,23 @@ def test_a_plain_cards_body_font_tags_do_not_refuse_a_typed_token(clone, parser,
     assert not pe.uses_icon_font(layer)
     with pytest.raises(pe.Refused, match=r"^reparse: \[fire\]: not drawn as one badge or icon$"):
         pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old, parser.icons)
+
+
+@text_edit
+def test_new_text_under_a_layer_above_it_or_over_a_bar_refuses(clone, parser, chart):
+    """Review 2026-10-24: text set where a layer above the Ability hides it, or over the stat bars, baked with every gate
+    passing: Papyrus' spaghetti 'Layer 10' sits in the gap after "Spaghetti" ("Die." printed under it), Paint Warrior's
+    blank Ability box reaches its Health bar. covered_ink refuses overflow; text clear of both still sets."""
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, PAPYRUS)[0])
+    old = pe.normalize_ability(pe.ability_layer(psd).text)
+    with pytest.raises(pe.Refused, match=r"^overflow: ability: 'Layer 10' above it would cover \d+ px of the new text"):
+        pe.set_text_layer(psd, "ability", old + " Die.", fonts_dir, chart, parser=parser)
+    psd = PSDImage.open(_card(clone, PAPYRUS)[0])
+    assert pe.set_text_layer(psd, "ability", "Now " + old, fonts_dir, chart, parser=parser).field == "ability"
+    psd = PSDImage.open(_card(clone, PAINT_WARRIOR)[0])
+    with pytest.raises(pe.Refused, match=r"^overflow: ability: the new text runs over the hp bar \(\d+ px\)"):
+        pe.set_text_layer(psd, "ability", "Die.", fonts_dir, chart, parser=parser)
 
 
 @text_edit

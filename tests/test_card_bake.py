@@ -1019,7 +1019,9 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     monkeypatch.setattr(PSDImage, "open", classmethod(counted))
     text, commits = cb.run(card="Mini Doomer")
     assert len(commits) == 1, text
+    assert github.commits[commits[0]]["message"].startswith("Card edits: 1 baked\n"), text
     after = github.files_at(github.head)
+    assert after[DOOMER] != files[DOOMER], text            # the saved PSD's open is counted, not a refusal's
     assert seen == Counter({sha1(files[DOOMER]).hexdigest(): 1, sha1(after[DOOMER]).hexdigest(): 1,
                             sha1(files[pe.STATUS_CHART]).hexdigest(): 1}), text
 
@@ -1075,7 +1077,9 @@ def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
     def outside(before, psd, edit):
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
-    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
+    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
+    monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     text, commits = cb.run()
     why = "region: stars: the card changes 9 pixels outside the edited box"
     assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
@@ -1094,7 +1098,9 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
     def outside(before, psd, edit):
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
-    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
+    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
+    monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
     stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
     for fields, last in (({"stars": 3, "types": ["wind", "light"]}, types), ({"stars": 3, "hp": 8}, "unsupported-card: hp: no stat row")):
