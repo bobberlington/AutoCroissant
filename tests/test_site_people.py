@@ -323,8 +323,18 @@ def test_panels_hide_and_empty_states(tmp_path):
                                 'bal: { buff: 0, nerf: 0, shift: 0, madeBuff: 0, madeNerf: 2, recent: [] }, ratings: { favN: 1, powerN: 0, fav: 7 }, '
                                 'editFields: [["author", 3], ["problems_ok", 1]] }')
     assert "Balance" in new and "No buffs or nerfs recorded yet." in new and "Made: 2 nerfs to others' cards" in new
-    assert "Favorability 7 · 1 card" in new and "taste twin" not in new and "Own cards:" not in new
+    assert "Favorability 7 · 1 card" in new and "taste twin" not in new and "Own cards" not in new
     assert "Edited: author 3 · parser notes checked 1" in new
+
+
+def test_own_cards_line_shows_power_bias(tmp_path):
+    """P5: a power-only rater's bias has its own line; with both scales, both parts."""
+    out = node(tmp_path, """
+const html = sb => text(pf.ratingsPanelHtml({ ratings: { powerN: 6, power: 5.5, favN: 0 }, selfBias: sb }, { byId: new Map(), tile: () => "" }));
+out([html({ power: -1.5, powerN: 6 }), html({ fav: -0.1, n: 8, power: 2.1, powerN: 8 })]);
+""")
+    assert "Own cards vs others: power −1.5 (6)" in out[0] and "favorability" not in out[0]
+    assert "Own cards vs others: favorability −0.1 (8) · power +2.1 (8)" in out[1]
 
 
 def test_activity_labels_clear_the_top_tick(tmp_path):

@@ -342,6 +342,39 @@ def test_the_editor_writes_no_types_edit_that_only_reorders(tmp_path):
     assert [(o["set"], o["unset"]) for o in json.loads(done.stdout)] == [({}, []), ({"types": ["light", "wind"]}, []), ({}, ["types"])]
 
 
+def test_the_dist_pager_keeps_focus_at_its_ends(tmp_path):
+    """app.js distPage: › to the last page disables the focused button; focus moves to ‹ (a browser would drop it to
+    <body>), and with neither left, to the panel."""
+    if not APP_JS.is_file() or shutil.which("node") is None:
+        pytest.skip(f"no app.js at {APP_JS}, or no node")
+    text = APP_JS.read_text(encoding="utf-8")
+    if "function distPage(" not in text:
+        pytest.skip("no paged distributions")
+    body = text[text.index("function distPage("):]
+    body = body[:body.index("\n}\n") + 3]
+    script = tmp_path / "pager.mjs"
+    script.write_text("""
+const document = { body: { tag: "body" } };
+document.activeElement = document.body;
+const el = (o = {}) => Object.defineProperties({ dataset: {}, focus() { document.activeElement = this; } }, Object.getOwnPropertyDescriptors(o));
+const button = step => { let off = false; return el({ dataset: { step: String(step) }, label: step > 0 ? "next" : "prev",
+  get disabled() { return off; }, set disabled(v) { off = v; if (v && document.activeElement === this) document.activeElement = document.body; } }); };
+const btns = [button(-1), button(1)], panel = el({ label: "panel", dataset: { pages: "0,1", cur: "0", stat: "atk" } });
+btns[0].disabled = true;
+const $ = () => ({}), $$ = sel => sel === ".dist-pager button" ? btns : [], S = { distPage: {} };
+%s
+const seen = [];
+btns[1].focus(); distPage(panel, 1); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+distPage(panel, -1); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+panel.dataset.pages = "0"; panel.dataset.cur = "0"; btns[1].disabled = false; btns[1].focus();
+distPage(panel, 0); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+console.log(JSON.stringify(seen));
+""" % body, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [["1", "prev"], ["0", "next"], ["0", "panel"]]
+
+
 def test_the_card_page_has_no_share_full_image_or_psd_button():
     """Gone at the owner's ask (2026-10-23): the card page's Share (and its s key), Full image and PSD on GitHub."""
     if not APP_JS.is_file():
@@ -423,6 +456,23 @@ def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):
     live = lambda name: {"Pizza": "pizza", "Pepperoni Pizza": "pepperoni-pizza"}.get(name)
     assert bs.archived_cards(old, live, (), credited=credited)[0]["author"] == "Chestnut"
     assert bs.archived_cards(old, lambda name: None, (), credited=credited)[0]["author"] == "Croissant"
+
+
+def test_a_renamed_card_keeps_the_credit_of_the_card_it_became(bs):
+    """Meta Mato -> Maxim Tomato: the new name's Card Authors.txt line, else the old name's, else the live card's
+    author, before the tag's and the last version's."""
+    card = bs.CardInfo()
+    card.__dict__.update(timestamp=1.7e9, card_type="item", stars=2, author="MichaelJSr",
+                         archived={"at": 1_700_000_100, "renamed_to": "Maxim Tomato", "backfill": True})
+    old = {"Meta Mato": [card]}
+    live = lambda name: "maxim-tomato" if name == "Maxim Tomato" else None
+    rows = lambda credited, *of: bs.archived_cards(old, live, (), credited=credited, **({"author_of": of[0]} if of else {}))[0]["author"]
+    assert rows({"maxim tomato": "Chestnut"}) == "Chestnut"
+    assert rows({"maxim tomato": "Chestnut", "meta mato": "Croissant"}) == "Chestnut"
+    assert rows({}, lambda name: "Croissant") == "Croissant"
+    assert rows({"meta mato": "Listed"}, lambda name: "Croissant") == "Listed"
+    assert rows({}) == "MichaelJSr"
+    assert bs.archived_cards(old, lambda name: None, (), credited={"maxim tomato": "Chestnut"})[0]["author"] == "MichaelJSr"
 
 
 def test_revisions_leave_out_uploads_and_mass_passes(bs, repo, tmp_path, monkeypatch):
