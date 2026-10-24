@@ -635,12 +635,14 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
-both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
+both after a 30-minute quiet window (since 2026-10-24, branch work/py314: the post job waits in the TTSCardMaker
+environment `card-guards-quiet`'s 30-minute timer, created by the owner at landing; no runner sleeps; a PSD saved without
+Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post
 carry each card's semantic PSD diff (`psd_diff`, 0a34292): "{login} pushed {card}{changes} with these issues: ...", the
@@ -680,7 +682,7 @@ within 8 levels (`png_export.BESIDE_CUT`, owner).
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
   bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
-  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout) sends no message.
+  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout; on work/py314: no cancelled job ran to its timeout, check 100 or post 75 minutes) sends no message.
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -1048,3 +1050,6 @@ card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py cit
 the `previews` branch; design section 16); no cited line moved.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (prep_dataframes, init_query) after /query_ability went back to one message per card.
+
+2026-10-24 (py314, branch work/py314): the card guards' quiet window as an environment, R7 left to font-check, G2
+rendered anyway; no cited line moved.

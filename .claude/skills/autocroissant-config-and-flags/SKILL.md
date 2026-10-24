@@ -467,6 +467,7 @@ autocroissant-run-and-operate §9.
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
+| `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
 
 ### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
 
@@ -514,24 +515,28 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 | `MAIN_COMMIT`, `POSTS` | env in card-sync.yml | `off` during the shadow: Card sync writes only the data branch and posts nothing |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
+| `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it at landing) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 
 `card-preview.yml` (2026-10-23, website previews) reads none of these: no secret beyond `GITHUB_TOKEN`, no variable, no
 Discord. Its branch `previews` is data, not a setting: it is rewritten by the workflow and never merged.
 
-### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23)
+### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23; every Action on 3.14 since 2026-10-24, branch work/py314)
 
 The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
 (`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
-fonttools, requests, `pyoxipng==9.1.1` only where it has a wheel: CPython 3.9-3.13; skipped on the Mac's and the
-jetson's 3.14). `requirements.txt` (the bot) starts with `-r requirements-cards.txt`, `requirements-dev.txt` with
-`-r requirements.txt`. card-edits.yml, card-guards.yml, card-sync.yml (both its venvs) and card-preview.yml (without
-pyoxipng: its PNG is never published) check the file out of AutoCroissant and install it offline from wheels in the
-Actions cache (path `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`:
-one entry for card-edits, card-guards and card-preview on 3.12; card-sync's names both its Pythons,
-`-py<3.14.x>-py<3.12.x>`). The first run after a change to the file or a new runner Python builds them (`pip wheel -r`,
-the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of the 29-35 s install). The
+fonttools, requests, `pyoxipng==9.1.1` on Linux x86_64 at any CPython 3.9+, built from its sdist on 3.14, and elsewhere
+only where it has a wheel, CPython 3.9-3.13: skipped on the Mac's and the jetson's 3.14). `requirements.txt` (the bot)
+starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The six card workflows on
+Python 3.14, card-edits.yml, card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
+card-preview.yml (without pyoxipng: its PNG is never published), card-check.yml and font-check.yml (stock psd-tools until
+2026-10-24), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
+`~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
+six; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
+first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
+pyoxipng's Rust) and saves them; later runs skip the git clone and the builds (a cold miss on the Mac: 16.4 s for the
+wheels, 19.5 s for pyoxipng's sdist, 10.7 s to install; a runner is slower, PUSH_GUARDS.md section 20). The
 install goes by name (a copy of the file without the URL, `sed 's/ @ [^;]*//'`): pip builds a URL line from git again,
 offline or not. The wheels freeze numpy, scipy, Pillow and the rest at that first build; any edit of the file refreshes
 them (for a bad dependency release, delete the entry: step 1's `gh cache delete`).
@@ -543,14 +548,15 @@ Re-pin:
    they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days).
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers) and,
    against a TTSCardMaker checkout, `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml AC_SITE_SRC=<checkout>`
-   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`test_card_bake.fork_install` checks each
-   workflow's install: no pin of its own, the file's wheels).
+   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` and `tests/test_card_bake.py -k "fork or 314"`
+   (`test_card_bake.fork_install` checks each of the six workflows' install: no pin of its own, Python 3.14, the file's
+   wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
    1.26.0+cards since `cards-20261024`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
-2026-10-23's requirements-cards.txt fails at its "Python environments" step: that commit has no such file.
+2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
 
 ### setup.py (lines 8-49) — Cython build configuration
 
@@ -746,3 +752,7 @@ guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 la
 /update_stats gate); every main.py, query_card.py, card_data.py, psd_parser.py and psd_analyzer.py citation re-pointed.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (card_repo, set_match_ratio, set_repository) after /query_ability went back to one message per card.
+
+2026-10-24 (py314, branch work/py314): the fork pin section (six workflows on 3.14, one cache entry, the pyoxipng
+marker), the `card-guards-quiet` environment among the repo settings, `png_export.UNCHECKED`. The guards take no fonts
+(R7 dropped; no `--fonts`).

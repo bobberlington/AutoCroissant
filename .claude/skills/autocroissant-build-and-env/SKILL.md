@@ -40,7 +40,7 @@ Three layered files since 2026-10-23 (owner: "three layered files, one pin"):
 
 | File | Holds | Installed by |
 |---|---|---|
-| `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests, and `pyoxipng==9.1.1` behind a marker: only where 9.1.1 has a wheel (CPython 3.9-3.13 on macOS x86_64/arm64, Linux x86_64/aarch64 with glibc 2.28+ or musl, Windows x86/x64), so it is skipped on the Mac's and the jetson's 3.14 and never built from source (Rust) on our hosts (a marker cannot see libc: an older glibc would build it) | `requirements.txt`; the card Actions (card-edits, card-guards, card-sync's two venvs, card-preview without pyoxipng: its PNG is never published), offline from a wheel cache keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
+| `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests, and `pyoxipng==9.1.1` behind a marker (2026-10-24): Linux x86_64 at any CPython 3.9+ (the Actions, on 3.14, build it from the sdist with the runners' Rust), elsewhere only where 9.1.1 has a wheel (CPython 3.9-3.13 on macOS x86_64/arm64, Linux aarch64 with glibc 2.28+ or musl, Windows x86/x64), so it is skipped on the Mac's and the jetson's 3.14 (the bot never recompresses) | `requirements.txt`; the six card Actions on Python 3.14 (card-edits, card-guards' two jobs, card-sync's one venv, card-preview without pyoxipng: its PNG is never published, card-check, font-check), offline from one wheel cache entry keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
 | `requirements.txt` | `-r requirements-cards.txt`, then the bot's own (the table below) | the jetson, a dev machine |
 | `requirements-dev.txt` | `-r requirements.txt`, then pytest, pyyaml (the workflow-shape tests' yaml half skips without it) and `pyobjc-framework-Vision ; sys_platform == "darwin"` (`commands/discord_match.py`'s Foundation, Vision and objc) | a dev machine |
 
@@ -48,8 +48,11 @@ uharfbuzz and freetype-py come with psd-tools' `[text]` extra, scipy and aggdraw
 ignores `*.txt` and re-includes `requirements-dev.txt` and `requirements-cards.txt`; `requirements.txt` is tracked from
 before that rule. Proven 2026-10-23: `pip install --dry-run -r requirements-dev.txt` in a fresh 3.14 venv on the Mac
 resolves (53 packages, all wheels but the fork; pyoxipng skipped by its marker), and `uv pip compile --only-binary :all:
---no-binary psd-tools` resolves requirements-cards.txt for Linux x86_64 3.12 (the Actions; pyoxipng in), Linux x86_64
-3.14 (card-sync's builder) and Linux aarch64 3.14 (the jetson; pyoxipng out), and requirements.txt for the jetson.
+--no-binary psd-tools` resolves requirements-cards.txt for Linux x86_64 3.12 (the Actions then; pyoxipng in), Linux x86_64
+3.14 (the Actions since 2026-10-24; pyoxipng built from its sdist) and Linux aarch64 3.14 (the jetson; pyoxipng out), and
+requirements.txt for the jetson. Cold install on the Mac (2026-10-24, fresh wheel dir, no pip cache): `pip wheel -r
+requirements-cards.txt` 16.4 s on 3.14.8 (19.3 s on 3.12.15), pyoxipng's sdist 19.5 s with every crate downloaded, the
+offline install 10.7 s (docs/Campaigns/PUSH_GUARDS.md section 20).
 `tests/test_card_data.py::test_requirements_layers_and_pin` holds the layering, the pin and the marker.
 
 AI generation left main on 2026-10-20 (05c643e): its `requirements2.txt` (torch trio, diffusers etc., the CUDA nightly
@@ -73,7 +76,7 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
-| pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. Only where it has a wheel (above): not on 3.14. So a fresh Mac venv (3.14) has none: `commands/png_recompress.py`, the by-hand batch, cannot run, and the oxipng tests skip (test_png_recompress.py, test_png_export.py's `@oxipng`, test_card_guards' recompression test; `pytest -rs` lists them). For those, `pip install pyoxipng==9.1.1` builds it with cargo (`~/.venvs/ac-py314-fork` has such a build, 2026-10-23). |
+| pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. On the Actions' Linux x86_64 (built from the sdist on 3.14 since 2026-10-24), elsewhere only where it has a wheel (above): not on the Mac's or the jetson's 3.14. So a fresh Mac venv (3.14) has none: `commands/png_recompress.py`, the by-hand batch, cannot run, and the oxipng tests skip (test_png_recompress.py, test_png_export.py's `@oxipng`, test_card_guards' recompression test; `pytest -rs` lists them). For those, `pip install pyoxipng==9.1.1` builds it with cargo (`~/.venvs/ac-py314-fork` has such a build, 2026-10-23). |
 | PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:130, :140` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build needs no PyGithub, so requirements-cards.txt has none). |
 | PyNaCl | discord.py voice encryption (music is silent without it). Declared since 2026-10-20 (section 3). |
 | requests (cards) | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:9`, `commands/github_api.py:7`, `commands/tts_save.py:35`, `commands/git_commit.py:19`. |
@@ -347,3 +350,7 @@ skills scripts and tests found nothing else missing and nothing unused (davey an
 2026-10-24 (review): where the docs describe the pin they no longer copy its tag (the file alone holds it; venv states
 keep theirs); the fork's version is no longer claimed fixed at 1.25.0; the Mac's 3.14 venv without pyoxipng is written
 down (pyoxipng row); the evidence row's venv commit re-pointed (1611fc6).
+
+2026-10-24 (py314, branch work/py314): every card Action on 3.14 with one wheel cache entry (card-sync one venv,
+card-check and font-check on the fork); pyoxipng's marker takes Linux x86_64 at any Python (built from its sdist on the
+Actions); the Mac's cold-install numbers.

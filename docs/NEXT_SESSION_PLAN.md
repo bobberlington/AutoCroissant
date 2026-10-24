@@ -152,7 +152,18 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [x] `CARD_GUARDS=report` since 2026-10-23 13:04 PDT. The batch commit 2330d7b0 ran as "0 cards, 686 left out (bot
       commits)", nothing told.
 - [x] `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (owner: now). Watch the standards channel and the bot commits; R11
-      renames stay told (owner). Left in PUSH_GUARDS.md §15: the Environment wait timer and the other items below.
+      renames stay told (owner). Left in PUSH_GUARDS.md §15: the other items below (the wait timer, R7 and G2 were decided
+      on 2026-10-24: step 4b).
+
+### 4b. Python 3.14 and the owner's guard decisions of 2026-10-24 (branches `work/py314`, both repos; not landed)
+- Built: every Action on 3.14 (card-sync one venv; card-check and font-check on the fork; one wheel cache entry; the
+  pyoxipng marker takes Linux x86_64 at any Python), R7 left to font-check, G2 rendered anyway ("no stored image to
+  cross-check"), the quiet window as the environment `card-guards-quiet` (check / post / finish jobs). PUSH_GUARDS.md §20
+  has the design, the Mac's cold-install numbers and the landing order.
+- [ ] The owner creates the environment (§20's `gh api` command; nothing ran it).
+- [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
+- [ ] Watch the first runs: a cold wheel build on a runner (pyoxipng's Rust; card-preview's install step has 5 minutes),
+      card-sync's one venv, a push's post job waiting in the environment, a dispatch and a re-run taking none.
 
 ### 5. Follow-ups still open at the end
 - [ ] **BUG 2** (the bake rebuilds `Ability FX:` layers instead of refusing 18-20 gradient badge cards; BUGS D7):
@@ -237,9 +248,9 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
   draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 45cf8746: ATK 6, close BUGS D8 after step 1); all stale
   exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
-- **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's
-  refusals; Photoshop's image for a PNG pushed before its PSD; G2 (no Maximize Compatibility refuses); the "outside R"
-  parity method; the login fallback and the commit link in the post.
+- **Push guards** (PUSH_GUARDS.md §15): the fork render's refusals; Photoshop's image for a PNG pushed before its PSD; the
+  "outside R" parity method; the login fallback and the commit link in the post. (Decided 2026-10-24, §20: the wait timer,
+  R7 left to font-check, G2 rendered anyway.)
 - **History decisions left by the audit** (DATA_BUILD_ACTION.md §7.4): high stats kept by an allowance (Sonic 23, Pix, Twin
   Emperors, Royal Eradicator Main Cannon, archived Bill Cipher and Oryx) or set unknown (God Tamer's 15, Blank Card's 55s,
   Tainted Lazarus' 110s, the 10+ stars); 26 restored versions that differ in types alone while the PNG changed; whether a

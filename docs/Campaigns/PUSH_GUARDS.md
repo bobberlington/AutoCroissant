@@ -2,6 +2,7 @@
 
 **Status:** designed and BUILT 2026-10-22 (section 16), the owner's three rulings of 2026-10-22 ~23:00 built (section 17),
 the pixel-miss ruling of 2026-10-23 built (section 18, AutoCroissant `work/soft-parity-guards` on `work/push-guards`),
+the owner's five decisions of 2026-10-24 built (section 20, `work/py314` in both repos, not landed),
 not landed: AutoCroissant `work/push-guards`, TTSCardMaker `work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
@@ -24,7 +25,17 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
    refuse, never as the PNG's source.
 2. *font-check.yml posts to the standards channel*: `DISCORD_STANDARDS_WEBHOOK` instead of `DISCORD_FONT_WEBHOOK`, its role
    ping and wording kept. Since 2026-10-23 card-check.yml posts there too, with no ping; `DISCORD_FONT_WEBHOOK` is deleted.
-3. *The guard tells font issues (R7)* in its standards-channel post too.
+3. *The guard tells font issues (R7)* in its standards-channel post too. (Reversed 2026-10-24: font-check.yml alone
+   reports missing fonts, section 20.)
+
+**The owner's decisions (2026-10-24), built in section 20.**
+1. *Every Action on Python 3.14*, card-sync in one environment; pyoxipng built from its sdist on the Actions' Linux x86_64.
+2. *card-check.yml and font-check.yml install the fork* through requirements-cards.txt and the same wheel cache.
+3. *Missing fonts are reported by font-check only*: the guard drops R7.
+4. *A PSD saved without Maximize Compatibility (G2) is rendered anyway* under the bake's own gates; the post says "no
+   stored image to cross-check" instead of refusing.
+5. *The quiet window is a GitHub Environment wait timer* (`card-guards-quiet`, 30 minutes) on a post job; the check job
+   ends at once.
 
 **The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
 group or not) and which layer holds the title (`Text/Name`, one named after the card or, since title-own-text, after its
@@ -67,8 +78,8 @@ source; ruling 1 overrules them: the PNG is the fork's render, section 17. They 
 - No role ping.
 - No file renames or deletions (ledger L12).
 - Rulebook pages get PNG re-exports only, never a standards fix.
-- The parser notes stay card-check.yml's. The font pings stay font-check.yml's (its role ping, now in the standards
-  channel); the guard tells R7 in its own post too (ruling 3, section 6).
+- The parser notes stay card-check.yml's. Missing fonts are font-check.yml's alone (its role ping, in the standards
+  channel): the guard told R7 too from ruling 3 (2026-10-22) until the owner's decision 3 of 2026-10-24 (section 20).
 
 ## 2. What was measured (2026-10-22)
 
@@ -239,8 +250,12 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
     (0 pixels) on its PSD alone, so an author's later PNG push does not drop a pending fix.
 
 **4.5 The quiet window.**
-- `land` sleeps until 30 minutes after the push, then runs `card_bake.recent_paths` (2 API calls). A write that a later push
-  touched is dropped: that push's run owns it.
+- Since 2026-10-24 (decision 5, section 20) no runner sleeps for it: the check job ends after the comment, and the post job
+  (Land, Follow up, Tell Discord) waits in the environment `card-guards-quiet`, whose 30-minute wait timer the owner sets
+  (section 20's command). A push's first attempt takes the environment; a dispatch and a re-run take none. `land`
+  still gets `--quiet-from`: it sleeps out whatever is left of push + 31 minutes (nothing once the timer held the job; the
+  whole window if the environment has no timer, the old behaviour), then runs `card_bake.recent_paths` (2 API calls). A
+  write that a later push touched is dropped: that push's run owns it.
 - Every write also rests on its blobs (G9), looked up in any letter case: a teammate's `foo.png` pushed in the window for a
   new `Foo.psd` drops the bot's `Foo.png` and withdraws a refusal (review 3). A blob that is the bot's own write (a re-run
   after a landing) still holds: the re-run writes nothing and the comment says "already on the branch".
@@ -256,16 +271,16 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   refusal, or in report mode a PNG the bot would make (review 6), is withdrawn when the author pushed that PNG meanwhile, a card whose PSD changed again is left to that push's own
   post, and a write that did not land without the author replacing it is told ("PNG not made: ...; export it in Photoshop",
   "... (the bot could not fix it: ...)"). `card_guards.after_window`.
-- On a public repo the waiting runner costs nothing. Without the sleep:
+- Until 2026-10-24 a runner slept out the window (free on a public repo). Without the window:
   - a fix could race an author who is still editing;
   - their next push would be rejected, and a binary PSD or PNG conflict is the worst thing a teammate can meet in GitHub
     Desktop.
 - History (2.4) says a quick PNG follow-up is rare (3 of 613), but the PSD fixes need the window.
 - **A re-run** counts the window from the push (the push event's `repository.pushed_at`, Unix seconds or an ISO time),
   not from its own Start (the fallback for anything else), so a re-run hours later lands at once on the blob check and
-  `recent_paths` (review 5: it used to wait another 31 minutes).
-- **Alternative:** a GitHub Environment with a 30-minute wait timer on the land job holds no runner. The owner must create it
-  (Settings, Environments), so it is not the default.
+  `recent_paths` (review 5: it used to wait another 31 minutes). It takes no environment either (`github.run_attempt` is
+  not 1), so the timer does not hold it again; a re-run of the post job alone reads the check job's first attempt's
+  outputs, and its Told before step looks the comment's TOLD mark up itself.
 - After the Card sync cutover the wait disappears (section 11).
 
 ## 5. Guard 1: the stale-PNG re-export
@@ -291,7 +306,7 @@ one ends "export it in Photoshop").
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
 | G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
-| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB (the cross-check needs it) | "PNG not made: the PSD was saved without Maximize Compatibility, so the bot cannot check its drawing; save it with it on, or export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit): "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
+| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text and stat row, G7); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text or stat row the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
@@ -381,7 +396,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at a7d1fe56 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
-| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0: no waiver; BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker 92b5ae6b, the owner's file), and `font_check --all` finds nothing missing on 812 PSDs |
+| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | **dropped 2026-10-24** (decision 3): font-check.yml alone reports missing fonts (its role ping, the standards channel); the guard has no R7, no `--fonts` and no fonts cache | (cards) | 1: Baba (BabaUI) | 0: BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker 92b5ae6b), and `font_check --all` finds nothing missing on 812 PSDs |
 | R8 | Single-line composer on visible Ability and Name layers (L10) | report | cards | 0 | 0 |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
@@ -406,7 +421,8 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stal
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing).
-- **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker 92b5ae6b).
+- **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker 92b5ae6b); R7
+  itself is gone since 2026-10-24.
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
   the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
@@ -456,9 +472,9 @@ Guarded-push: 7cb4c867363c10cf5f562fcdf660ff7f94a154fe
 - No pickles, no `site/` files, no `TTS/`.
 
 **7.2 The commit comment** (on `after`, posted at check time when `summary.json`'s `comment` count is not 0: a card with
-something told, a write, a card's error, or comment-only lines (R10, an R7 issue, "PNG left without its PSD", "deleted; the PSD
+something told, a write, a card's error, or comment-only lines (R10, "PNG left without its PSD", "deleted; the PSD
 stays"...), so a push whose only finding is a PNG that does not match its PSD gets its comment (review 3); an error outside
-the cards (a standing MDW/Fonts index error, a manifest or status chart fetch) asks for none, so it is in the job summary
+the cards (a manifest or status chart fetch) asks for none, so it is in the job summary
 and in a comment that goes up anyway (review 4); saying "The bot
 will fix"; after `land` it is rewritten from
 `report-landed.md`: "Landed in `<sha>`" per landed card, "Fixed by the bot", for a card left out "Not landed (superseded:
@@ -582,15 +598,15 @@ not land.**
 
 | Item | Estimate (Mac numbers from section 2; the runner is ubuntu-latest, 4 vCPU, assumed 1.5-2x slower per core) |
 |---|---|
-| Setup | blobless checkout of TTSCardMaker (1.1 MB, 2 s, as Card sync measured), sparse bot checkout (2 s), setup-python, the fork from the pip cache (~10 s; a cold build of the git pin ~60-90 s), MDW/Fonts from the cache keyed by its tree sha (215 MB, ~15 s; only the R7 rule needs it): about 40-60 s |
+| Setup | blobless checkout of TTSCardMaker (1.1 MB, 2 s, as Card sync measured), sparse bot checkout (2 s), setup-python 3.14, requirements-cards.txt from the card workflows' wheel cache (~10 s; a cold miss builds the fork and pyoxipng, section 20); no fonts since 2026-10-24 (R7 dropped): about 30-45 s, and again in the post job |
 | Per pushed PSD, check only | blob download 1.5-2 s (25-30 MB; font_check measured 1.4 s for 15 MB), open 0.6-1 s, the rules ~1 s, R10's composite compare 0.5 s: about 4 s |
 | Per stale card | plus the old PSD and old PNG (~2.5 s), the fork's two renders of the changed layers' box (measured on the 34 replayed commits, section 17: 3.5 CPU-s median, 25 max on the Mac, so about 5-7 s median and 40-50 s for a whole-card box on the runner), the composites and record diff (0.5 s), the PNG write (~1 s): about 10-15 s, up to a minute; a new card renders the whole card once (10-30 s) |
-| Typical push (1-3 PSDs) | about 1-2 min; with writes or anything to tell, plus the 30 min sleep and ~20 s to land |
+| Typical push (1-3 PSDs) | about 1-2 min; with writes or anything to tell, the post job after the environment's 30-minute timer (no runner held) and ~1 min to set up and land |
 | A batch push (50 PSDs, as the badge batch's) | about 4-6 min with their PNGs; 50 stale PSDs (the PNGs forgotten): about 10-25 min in 2 processes, inside Check's 90 |
-| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the job's `timeout-minutes: 150` (Check 90, Land 60) |
+| Whole-tree audit (`all`) | 813 downloads, 16 GB: 25-30 min (card-check's measured pass), plus checks in 4 processes (~10 min); the check job's `timeout-minutes: 100` (Check 90) |
 | The 28 GB repo | never checked out: trees only, then blobs by sha for the touched cards. The alternative is the partial clone's lazy fetch of exactly those blobs (`git sparse-checkout set --no-cone <paths>` after a blobless clone), which costs no REST calls, for when the API quota gets tight |
 | API (`GITHUB_TOKEN`, 1,000 requests an hour per repo, shared with card-check, font-check and card-sync) | per push: 1 commits read per commit, k blob reads (k = pushed PSDs + 2 per stale card), 1 comment (+1 edit), at land 2 activity/compare reads and n+3 writes for n files |
-| Price | free: TTSCardMaker is public (checked 2026-10-22, `visibility: public`), so standard runners cost nothing; the sleeping land step holds one runner for about 31 min on every push with anything to tell or write, report mode included. Were the repo made private, that is about 31 billed minutes a push (2,000 free a month) |
+| Price | free: TTSCardMaker is public (checked 2026-10-22, `visibility: public`), so standard runners cost nothing. Since 2026-10-24 no runner sleeps out the window (the environment's timer holds the post job); until then the land step held one for about 31 min on every push with anything to tell or write |
 | Storage | a re-export adds one PNG blob, under half a Photoshop export (5.7). A fix adds a delta of a few KB. Nothing is written for the common "PNG still current" case (2.3) |
 
 ## 10. Failure modes
@@ -603,15 +619,16 @@ not land.**
 | The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
-| The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job |
-| A run cancelled by hand (during Land's wait, say) | no message: the alert is quiet for a cancel before the job's 150-minute timeout (`job.status` cancelled, under 145 minutes since Start's `STARTED`), and leaves no streak mark; the comment says "The bot could not finish this push" (review 6) | re-run it, or dispatch |
+| The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
+| The environment `card-guards-quiet` has no wait timer (not created yet, or deleted) | GitHub makes the environment on first use, with no rule: the post job starts at once and Land sleeps out the window (the behaviour before 2026-10-24) | create it with section 20's command |
+| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 100 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 95 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
 | The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); a failed POST: Tell Discord's own comment carries the told mark, or it warns that a re-run would post again; a failed edit: the id is already out, so the mark is still set; with nothing to tell, the alert says the push "was checked, but its run failed"; the lookup is tried 3 times, then on a re-run or a dispatch counts as told (never a second post; the step's error says the push may be untold) | re-run once GitHub answers |
 | The site build or the TTS save does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); site.yml catches up within 6 hours, the TTS save the next day | re-run the job (it finds the writes landed and starts both again; review 6), run them by hand, or wait |
 | A re-run (or a landing dispatch) cannot read the branch head | an earlier run may have landed the writes, so none is told as "not made" (Land's `--rerun`): the post keeps the card's other lines, the comment says "Nothing was committed by this run; an earlier run may have landed it" (review 6; a first attempt that cannot read it tells "PNG not made" as before) | re-run once GitHub answers |
 | The author pushes the PNG first and the PSD a few minutes later | the PSD's push is a stale case whose PNG already shows the PSD: "PNG already shows the pushed PSD", nothing written (review 6) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
-| A PSD saved without Maximize Compatibility | G2 refusal for guard 1; guard 2 still runs | save with it on |
+| A PSD saved without Maximize Compatibility | since 2026-10-24 the PNG is made under the bake's own gates and the post says "no stored image to cross-check" (G2, section 20); a changed text or stat row the render does not show still refuses; guard 2 runs as ever | save with it on, or look the PNG over |
 | A PSD written by a script without updating the composite | the render shows the new layers, the stale composite does not: G6 (b) refuses past the floor (a hidden title: the whole change disagrees); since 2026-10-23 a smaller disagreement is made and told (section 18) | export in Photoshop |
 | The fork draws a changed area otherwise than Photoshop (a layer effect such as a drop shadow's edge, an outer glow, a gradient overlay) | since 2026-10-23 the PNG is made and the miss told in the comment and the bot commit ("made with a pixel difference ..."); past 25% bad G6 (a) or (b) refuses: no PNG, "export it in Photoshop" (section 18) | a fork fix; export in Photoshop when the miss shows |
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
@@ -659,45 +676,62 @@ permissions: {contents: write, actions: write}     # commit and comment; gh work
 concurrency:
   group: ${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || format('card-guards-{0}', github.run_id) }}
   cancel-in-progress: false
-jobs:
-  guard:
+jobs:                    # three since 2026-10-24 (section 20): no runner sleeps out the quiet window
+  check:
     if: >-
       github.actor != 'AutoCroissant' && github.actor != 'github-actions[bot]' &&
       (github.event_name == 'workflow_dispatch' || vars.CARD_GUARDS == 'report' || vars.CARD_GUARDS == 'on')
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 100
     env:   # github, inputs, vars... only: OUT ($RUNNER_TEMP/guards) is set in the first step
       MODE: ${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || ((inputs.dry_run || inputs.all) && 'dry' || 'on') }}   # off | report | on | dry
+    outputs: {mode, quiet_from, started, checked, comment, told, land, card_errors}    # the steps' (Start, Check, Comment, Plan)
     steps:
+      - name: Start                                     # QUIET_FROM (a re-run's: the push), OUT, MODE lowercased; outputs too
       - uses: actions/checkout@v7                       # trees only: the diff, the pairing, no blobs
         with: {fetch-depth: 0, filter: "blob:none", sparse-checkout: "/.github/", sparse-checkout-cone-mode: false}
       - name: No push run in its window                 # a dispatch with dry_run off: refused while a push run of the commit (or a later one) is unfinished
-      - uses: actions/checkout@v7                       # card_guards.SPARSE_FILES
+      - uses: actions/checkout@v7                       # card_guards.SPARSE_FILES (requirements-cards.txt among them)
         with: {repository: bobberlington/AutoCroissant, path: bot, sparse-checkout-cone-mode: false, sparse-checkout: "..."}
       - uses: actions/setup-python@v7
-        with: {python-version: "3.12"}
-      - run: pip install -q requests fonttools "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>"
-      # fonts cache as font-check.yml (key card-fonts-<MDW/Fonts tree sha>)
-      - name: Check
+        with: {python-version: "3.14"}
+      # requirements-cards.txt from the card workflows' wheel cache (restore, build on a miss, install by name, save)
+      - name: Check                                     # no --fonts since 2026-10-24 (R7 is font-check.yml's)
         working-directory: bot
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", BEFORE: "${{ github.event.before }}", SHA: "${{ inputs.sha }}"}
         run: python -m commands.card_guards check --repo "$GITHUB_REPOSITORY" --after "${SHA:-$GITHUB_SHA}" ... --out "$RUNNER_TEMP/guards" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
-      - name: Land                                      # !cancelled(), Check passed, MODE report (--dry-run, something to tell)/on (or a
-                                                        # write): sleep to the quiet mark, recent check, one commit, discord-final.json;
-                                                        # --rerun on a re-run or a dispatch
+      - name: Plan for the post job                     # land=true: something to tell (report) or write (on); card_errors
+      - uses: actions/upload-artifact@v4                # card-guards: the plan and its files, for the post job
+  post:
+    needs: check
+    if: "!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && (mode report or on)"
+    environment: ${{ (github.event_name == 'push' && github.run_attempt == '1') && 'card-guards-quiet' || '' }}   # the 30-minute wait timer
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Work dir                                  # OUT
+      - uses: actions/download-artifact@v4              # the check job's plan
+      - name: Told before                               # the check's told; a re-run of this job alone looks the comment's mark up
+      # the bot checkout, setup-python 3.14 and the wheels, as in check
+      - name: Land                                      # sleep to the quiet mark (nothing left after the timer), recent check, one commit,
+                                                        # discord-final.json; --dry-run in report mode; --rerun on a re-run or a dispatch
       - name: Follow up                                 # always(): a commit, or a re-run finding it landed: gh workflow run site.yml,
                                                         # tts-save.yml (not started: said in the comment and the post, red); the
                                                         # comment rewritten
-      - name: Tell Discord                              # always(), Check passed, not told before: discord-final.json only; URL never printed
+      - name: Tell Discord                              # always(), not told before: discord-final.json only; URL never printed
         env: {WEBHOOK: "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"}
         run: curl -sS -o /dev/null -f -H "Content-Type: application/json" --data @"$OUT/discord-final.json" "$WEBHOOK" || echo "::warning::..."
-      - name: Fail on card errors                       # summary.json card_errors > 0: red (the errors were told)
+      - uses: actions/upload-artifact@v4                # card-guards again (overwrite): the plan and what Land settled
+  finish:
+    needs: [check, post]
+    if: always() && needs.check.result != 'skipped'
+    steps:
+      - name: Fail on card errors                       # the check's card_errors > 0: red (the errors were told)
       - name: Tell Discord the run failed               # a failed push run whose post did not go out, not told before (the comment's
-                                                        # mark, looked up here on a re-run), not cancelled by hand: once per failure
-                                                        # streak (the last push run's STREAK artifact)
+                                                        # mark, looked up here on a re-run), not cancelled by hand (no cancelled job
+                                                        # ran to its timeout): once per failure streak (the last push run's STREAK)
       - uses: actions/upload-artifact@v4                # STREAK (card-guards-failure-told), when the alert told or stayed quiet in a streak
-      - uses: actions/upload-artifact@v4                # always()
 ```
 
 ## 13. Code plan
@@ -744,15 +778,15 @@ jobs:
    refuse (section 17). Was: the stored composite written, the fork only a referee.
 2. **The Discord post waits out the 30-minute quiet window, in report mode too.** font-check.yml, the model the owner named
    ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
-   card pushed again to the later push, and tells the writes that did not land. Cost: a runner held about 31 minutes per
-   push with anything to tell, free while TTSCardMaker is public (it is). The alternative is the post at check time.
+   card pushed again to the later push, and tells the writes that did not land. Since 2026-10-24 (decision 5) the wait is
+   the environment `card-guards-quiet`'s 30-minute timer on the post job: no runner is held (section 20).
 3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261023` has `sync_story`. R11's exact-name rename is
    built and gated but told, not fixed, until the owner says yes (`card_standards.AUTO_FIX`; 0 cases in the tree).
    Report mode tells everything, the PNGs the bot would make included.
-4. **Decided (rulings 2 and 3, 2026-10-22): fonts in the standards channel.** font-check.yml posts there
-   (`DISCORD_STANDARDS_WEBHOOK`, its role ping and wording kept) and the guard tells R7 in its own post too, so a missing
-   font is told twice in that channel: at once by font-check (with the role ping) and after the quiet window by the guard
-   (no ping). card-check.yml posts in the standards channel too, no ping (owner, 2026-10-23); the parser's notes stay card-check's.
+4. **Decided (rulings 2 and 3, 2026-10-22; decision 3, 2026-10-24): fonts in the standards channel, by font-check
+   only.** font-check.yml posts there (`DISCORD_STANDARDS_WEBHOOK`, its role ping and wording kept); the guard told R7 in
+   its own post too until 2026-10-24, when the owner dropped it (a font was told twice). card-check.yml posts in the
+   standards channel too, no ping (owner, 2026-10-23); the parser's notes stay card-check's.
 5. **The login** in "<login> pushed <card>": the commit author's GitHub login; for an author with no GitHub account, the
    pusher's login (7.3).
 6. **The commit link.** The brief's line is "<GitHub login> pushed <card> with these issues: ..."; each line also ends with
@@ -761,21 +795,20 @@ jobs:
    "more" line).
 
 - **Questions on the rulings (2026-10-22, section 17)** for the owner:
-  1. A missing font is told twice in the standards channel (font-check at once with its role ping, the guard after the
-     window without): keep both, or should the guard leave R7 to font-check (or font-check stop posting on pushes)?
+  1. **Decided 2026-10-24 (decision 3):** the guard leaves R7 to font-check (section 20).
   2. The fork render refuses 9 of the 34 replayed commits (25 made), where the composite made all 34: accept, or start fork
      fixes for the drop shadow's edge, the outer glow and the gradient overlay first?
   3. Photoshop's image is used beyond refusals in one place: a PNG pushed before its PSD counts as "current" when it
      matches Photoshop's image where the fork draws the change otherwise (4 of 34; else "PNG not made" would be told for a
      PNG already exported). Keep?
-  4. A PSD saved without Maximize Compatibility refuses (G2): nothing could cross-check the render. Keep, or render it
-     with the bake's gates alone?
+  4. **Decided 2026-10-24 (decision 4):** render it with the bake's gates alone and tell "no stored image to
+     cross-check" (section 20).
   5. "Parity vs the old PNG outside the PSD's changed layers" is built as the old PNG against Photoshop's image of the
      pushed PSD there (the merge keeps the old PNG outside R). The alternative, a whole-card fork render compared with the
      old PNG outside R, costs a full render (2.5, 5-14 CPU-s on the Mac) and refuses every card the fork draws otherwise
      anywhere.
-- The Environment wait timer (4.5) instead of a sleeping runner: the owner's one-time setting. Until then a push with writes
-  holds a runner up to about 31 min (free on a public repo).
+- **Decided 2026-10-24 (decision 5):** the Environment wait timer (4.5) instead of a sleeping runner. The owner creates the
+  environment once, at landing (section 20's command); until then Land sleeps out the window as before.
 - Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
   ["R5"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
@@ -1163,8 +1196,8 @@ none. Built on AutoCroissant `work/png-optimize` and TTSCardMaker `work/png-opti
 `pyoxipng==9.1.1`; build_site skips recompressions in Image versions). The two land together: on a TTSCardMaker main
 without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_version` fail. Nothing pushed.
 
-- **oxipng** through `pyoxipng` (wheels for Python 3.9-3.13 on macOS and manylinux, so the Action's 3.12 takes a wheel;
-  3.14 builds it with cargo). `png_export.optimize`: level 2, colour type, bit depth and palette never reduced (the bake
+- **oxipng** through `pyoxipng` (wheels for Python 3.9-3.13 on macOS and manylinux, so the Action's 3.12 took a wheel;
+  3.14 builds it with cargo, as the Actions do since 2026-10-24, section 20). `png_export.optimize`: level 2, colour type, bit depth and palette never reduced (the bake
   and guard 1 read RGB and RGBA only; an opaque RGBA stays RGBA), no chunk stripped, 120 s at most per PNG. Pillow's
   `optimize=True` saved less (78.1% against 79.3%) and dropped pHYs; level 4 adds 0.3% for 1.8x the time.
 - **Proof, per file, before any write** (`png_export.same_png`): IHDR byte for byte, the pixels PIL decodes in the file's
@@ -1206,3 +1239,106 @@ without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_vers
   `test_a_pushed_numbered_png_holds_back_only_its_recompression`, `test_a_deleted_png_and_its_pushed_numbered_png_are_one_card`,
   `test_a_failed_recompression_is_a_comment_note`, test_site_build's `test_a_recompression_is_no_new_image_version`;
   the replay and Mini Doomer's R11 now expect their recompress writes.
+
+## 20. The owner's decisions of 2026-10-24, built
+
+Built on AutoCroissant `work/py314` and TTSCardMaker `work/py314` (both from origin/main of 2026-10-24; nothing pushed,
+dispatched or set). The two land together, TTSCardMaker first (below).
+
+**1. Every Action on Python 3.14; card-sync in one environment; pyoxipng built from its sdist.**
+- All eight TTSCardMaker workflows set up Python 3.14 in every job that runs Python: card-edits, card-guards (check and post
+  jobs), card-sync, card-preview (the publish job too, its stdlib publisher run with `python -S`: no site-packages, as the
+  runner's own python3 was), card-check, font-check, site, tts-save. AutoCroissant `tests/test_card_bake.py`
+  `test_every_action_runs_python_314` pins it (no `python3 ...` on the runner's own interpreter either).
+- card-sync.yml: one venv (`$RUNNER_TEMP/venv`) for the bake, the build, the save and the posts; the step "Python
+  environment" runs `--help` on card_data, tts_save and card_bake before any stage. The builder/baker split (3.14 and 3.12)
+  and its second cache key are gone; TTSCardMaker `TTS/checks/card_sync_steps.py` uses the one venv's path.
+- The six card workflows share one cache entry: `cards-<hashFiles(bot/requirements-cards.txt)>-<OS>-<arch>-py<3.14.x>`.
+- `requirements-cards.txt`'s pyoxipng marker: Linux x86_64 at any CPython 3.9+ (the Actions; 3.14 builds the sdist with
+  Rust, which GitHub's ubuntu runners ship), elsewhere only where 9.1.1 has a wheel (3.9-3.13 on macOS, Linux aarch64,
+  Windows). The jetson (Linux aarch64, 3.14) and the Mac (3.14) skip it: the bot never recompresses (png_export.recompress
+  is the guards' and the batch's); `pip install pyoxipng==9.1.1` by hand builds it there with cargo (the oxipng tests and
+  `png_recompress` need it). A Linux x86_64 machine on 3.14 without Rust would fail its install: none is ours.
+- **Cold install, measured on the Mac (2026-10-24, scratch `py314/measure.sh`; fresh wheel dir, `--no-cache-dir`):**
+  `pip wheel -r requirements-cards.txt` on 3.14.8: 16.4 s (14 wheels: the fork's clone and C build, numpy, scipy, Pillow,
+  ...; pyoxipng skipped by the marker on macOS); on 3.12.15: 19.3 s (15 wheels, pyoxipng's wheel included). pyoxipng 9.1.1
+  from its sdist on 3.14 with a fresh `CARGO_HOME` (every crate downloaded): 19.5 s. The offline install by name into a
+  fresh venv (a cache hit): 10.7 s on 3.14, 12.0 s on 3.12. So a cold miss on the Mac is about 16 + 20 + 11 = 47 s; the
+  same for each of the six workflows, which run the same install (card-sync now once instead of twice, card-guards in
+  both its jobs, card-preview installs without pyoxipng but builds its wheel into the shared entry). **Only a runner shows**
+  the runner's numbers: the Rust build on 4 vCPU x86_64 (the Mac has 10+ cores; expect 1-3 minutes), the git clone over
+  the runner's network, and whether ubuntu-latest's Rust toolchain builds pyoxipng's crate set as is. card-preview's install
+  step has a 5-minute timeout: watch the first cold miss there (the other five allow 10 or 15); any one of the six fills
+  the entry for all.
+
+**2. card-check.yml and font-check.yml install the fork.** Both check `requirements-cards.txt` out of AutoCroissant with
+their bot files (`card_check.SPARSE_FILES` gained it; font-check's list is in `test_font_check`) and install it from the
+shared wheel cache, as the other four do (`fork_install` checks all six), instead of stock `psd-tools fonttools requests`.
+
+**3. Missing fonts are font-check's alone.** R7 is gone from the guard: `card_standards.rule_fonts` and `Context.fonts`
+deleted, `card_guards.check`/`build_context` take no fonts and the CLI no `--fonts`, and card-guards.yml lost its fonts
+steps (the 215 MB MDW/Fonts cache). Nothing else in the guards used fonts (guard 1 draws type layers from their stored
+rasters); the bake's own font handling (`card_bake._fonts_dir`, `psd_edit.set_text_layer`'s FontMap, the preview's) is
+unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fonts_are_left_to_font_check` (card_guards).
+
+**4. G2 rendered anyway.** `png_export.export`/`export_new` with no stored composite on an 8-bit RGB PSD
+(`_no_composite` now refuses only a PSD that is not 8-bit RGB) go to `_unchecked`:
+- an old PSD: the changed layers' box rendered for both (as ever), the bake's baseline (the old PSD drawn against the old PNG:
+  past the floor G6, a miss told), the **re-read** (`png_export.reread`: every type layer whose drawn text changed and every
+  stat row whose visible digits changed must show a change in the render, else "PNG not made: the bot draws nothing for
+  {what} (and the PSD has no stored image to check it against); export it in Photoshop", the bake's blank render), the delta
+  merge, `gate_shape` and `gate_region` (G7); the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
+  Photoshop's image;
+- a new PSD beside its PNG: the whole card rendered; current when the render is within BESIDE_CUT or the bar of the PNG,
+  else the PNG takes the render where it differs past BESIDE_CUT (past the floor: G6), each drawn text layer shown (hiding
+  it changes the render);
+- a new card with no PNG: the whole render, each drawn text shown.
+The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
+(report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
+Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
+write did not land ("PNG not made: ..." alone). Tests: `test_g2_renders_anyway_with_the_bakes_own_gates`,
+`test_g2_refuses_a_change_the_render_does_not_show`, `test_g2_still_refuses_a_16_bit_or_cmyk_psd` (png_export),
+`test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
+2.1), so no replay measures it.
+
+**5. The quiet window is an environment.** card-guards.yml has three jobs:
+- `check` (timeout 100): Start, the checkouts, the refusal of a landing dispatch, the install, Check, Comment, "Plan for
+  the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
+  errors), the `card-guards` artifact. It ends at once;
+- `post` (needs check; only with `land=true`; timeout 75): `environment: card-guards-quiet` on a push's first attempt (a
+  dispatch lands at once; a re-run counts from the push), then Work dir, the artifact, Told before (the check's TOLD answer,
+  or on a re-run of this job alone the comment's mark looked up again: never a second post), the install, Land (still
+  `--quiet-from`: it sleeps only what the timer did not cover, all of it without a timer), Follow up, Tell Discord, the
+  artifact again (overwrite);
+- `finish` (needs both; always, unless check was skipped): Fail on card errors (the check's `card_errors`), Tell Discord
+  the run failed (any job's failure; a cancel by hand is told apart from a timeout by the attempt's job list: a cancelled
+  job that ran to its timeout, check 100 or post 75 minutes, is a timeout), the streak artifact.
+Every behaviour of the window stays (a refusal withdrawn when the author pushes the PNG, a card pushed again left to the
+later push, the writes that did not land told); `test_card_guards.py`'s step harness runs the three jobs' shell
+(`_guard_steps`, `needs.<job>.outputs` resolved through the job's outputs). To confirm on the first live run: that an
+empty `environment` expression (a dispatch, a re-run) runs the job with no environment, and that the deployment record
+the environment makes on each push run needs no `deployments` permission.
+
+**The environment (the owner runs this once, at landing; nothing here ran it):**
+```
+gh api --method PUT repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet \
+  -F wait_timer=30 -F deployment_branch_policy=null
+gh api repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet --jq '[.name, (.protection_rules[] | {type, wait_timer})]'
+```
+The second line should show `{"type": "wait_timer", "wait_timer": 30}`. No reviewers, any branch (push runs are main's
+only; the job takes the environment on pushes alone). Undo: `gh api --method DELETE
+repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet` (Land then sleeps out the window again).
+
+**Landing order.**
+1. The environment (the command above): before or with step 2, so the first push run already waits in it (without it, the
+   first runs fall back to Land's sleep, harmless).
+2. TTSCardMaker `work/py314` to main: the workflows work with AutoCroissant main as it is (the old marker only leaves
+   pyoxipng out on 3.14 until step 3: no recompression meanwhile; old card_guards still has `--fonts`, which the new
+   workflow no longer passes: R7 is simply skipped).
+3. AutoCroissant `work/py314` to main the same sitting (requirements-cards.txt's new marker re-keys the wheel cache: the
+   next card run builds the six's entry, pyoxipng from its sdist). The guard modules are uncompiled and the bot never
+   imports them, but the one-sitting deploy rule stands: pull, `build_ext`, restart on the jetson (nothing else changes
+   there: the marker skips pyoxipng on aarch64).
+4. Watch the first runs: a cold wheel build (card-preview's 5-minute step), card-sync's one venv, a push's post job
+   waiting in the environment.
+

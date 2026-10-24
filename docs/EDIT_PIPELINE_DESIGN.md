@@ -410,7 +410,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7      # sparse, non-cone: /site/Card Edits.json, /TTS/ (and every tree, for the fonts' sha)
       - uses: actions/checkout@v7      # bobberlington/AutoCroissant -> bot/: commands/{card_bake,psd_edit,psd_regions,psd_parser,card_models,card_edits,github_api,git_commit,repo_history}.py global_config.py (never psd_analyzer: discord, pandas)
-      - uses: actions/setup-python@v7  # 3.12
+      - uses: actions/setup-python@v7  # 3.12 (3.14, like every Action, since 2026-10-24)
       - run: pip install requests "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261021"   # timeout 10 min
       - id: gate                       # schedule only: python -c 'from commands.card_bake import pending ...' -> go=true|false (timeout 10 min)
       - uses: actions/cache@v6         # MDW/Fonts by its tree sha (if go)
