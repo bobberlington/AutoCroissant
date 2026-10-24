@@ -86,8 +86,9 @@ Owned by `ttscardmaker-companion`:
 - The website and editor are live (pushed 2026-10-20); the bot reads `site/Card Authors.txt` and `site/Card Edits.json` (moved there from `MDW/` the same day, TTSCardMaker 13ac680; the `MDW/` fallback is dropped).
 - The website unpickles the bot's pickles with stub classes for `commands.*`: anyone who can push AutoCroissant
   `main` can run code in the TTSCardMaker Actions job, and renaming CardInfo attributes blanks website fields.
-- Only BabaUI (`Baba.psd`) is still missing from `MDW/Fonts` (2026-10-21: the user added the Windows/Office faces in TTSCardMaker a88b232
-  and defers BabaUI; was 7).
+- No font is missing from `MDW/Fonts` (was 7): the user added the Windows/Office faces on 2026-10-21 (TTSCardMaker a88b232) and
+  BabaUI (`Baba.psd`) on 2026-10-23 (b03b9975, the owner's file `Baba UI Regular.ttf`). `font_check --all` over the clone:
+  812 card PSDs, `MDW/Fonts` 274 files / 282 faces, nothing missing.
 - Scratch scripts from 2026-10-19/20 live in `/private/tmp/fontexplore/`, which macOS clears on reboot.
 
 ---

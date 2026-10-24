@@ -241,7 +241,10 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   face, a PSD edit (question 7); until then text edits on those layers refuse `font` (TRIAGE.md, section 8).
 - **2026-10-21 (question 7 answered).** The missing fonts are the user's. They added Elephant, OCR A Extended, Pristina, Javanese Text and
   the Windows Papyrus (TTSCardMaker a88b232); Papyrus-Regular and Kung-Fu-Panda resolve through `FONT_ALIASES`; MyriadArabic-Regular sits
-  only on a leading byte-order-mark run (ignored). Only BabaUI (`Baba.psd`) is missing now, and the user defers it.
+  only on a leading byte-order-mark run (ignored). Only BabaUI (`Baba.psd`) was still missing, and the user deferred it.
+- **2026-10-23: done.** The owner added BabaUI (`MDW/Fonts/Baba UI Regular.ttf`, his file, TTSCardMaker b03b9975), so no font is
+  missing: `font_check --all` over the clone reads 812 card PSDs against 274 files / 282 faces and finds nothing. R7's BabaUI
+  waiver is gone. The same commit named every font file after the font's full name.
 
 ### L14. Stars
 - Creatures, items, field cards: stars are the `N Stars` folder, so a stars edit moves PSD + PNG (aliases, `old_stats`, authors and the
@@ -268,7 +271,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
 
 ## 4. Order and batching (one batch when the hold lifts)
 
-1. **Before the day (allowed now).** Code S0-S4 (design §13) and `check_cards.py` (section 5); fonts (L13); Thunderfury's entry (L8); the
+1. **Before the day (allowed now).** Code S0-S4 (design §13) and `check_cards.py` (section 5); fonts (L13, done 2026-10-23); Thunderfury's entry (L8); the
    15 styles loaded in Photoshop. The rehearsal: copy every PSD an entry names (about 110 cards; 688 more with L1's header scope) to
    `/tmp/rehearsal/`, run each tool there in the day's order, then the three gates on the copies (parse of all 813 vs the pre-batch parse,
    harness regions vs `score/results/cards_v1_icc.json`, goldens) and write the expected per-card diff list.
@@ -295,7 +298,7 @@ owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejec
 
 - **Rule 1, the font check** (LIVE since 2026-10-21: TTSCardMaker f5a0e50, AutoCroissant ae1d2c5, secret set):
   `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
-  for that `MDW/Fonts` lacks, per author and font (today only BabaUI, L13).
+  for that `MDW/Fonts` lacks, per author and font (none since BabaUI was added 2026-10-23, TTSCardMaker b03b9975; L13).
 - **Rule 2, the card check** (LANDED 2026-10-21: AutoCroissant df4a439 `commands/card_check.py`, TTSCardMaker a3451c8; the first
   whole-repo dispatch, run 39690899334, succeeded, job summary only):
   `.github/workflows/card-check.yml` runs `commands/card_check.py` (uncompiled; `python -m commands.card_check --help`) on every push that
@@ -342,7 +345,8 @@ owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejec
    2026-10-21: retyped as text, part of the batch (L6). The odd in-joke titles are never standardized; the six case-typo titles are
    asked card by card before any reprint.
 7. The 6 fonts missing everywhere (30 layers): hunt the files, or re-set those runs to a face in `MDW/Fonts`?
-   2026-10-21: the fonts are the user's; since TTSCardMaker a88b232 only BabaUI (`Baba.psd`) is missing, and the user defers it (L13).
+   2026-10-21: the fonts are the user's; since TTSCardMaker a88b232 only BabaUI (`Baba.psd`) was missing, and the user deferred it (L13).
+   2026-10-23: BabaUI added (TTSCardMaker b03b9975, the owner's file); nothing is missing now.
 8. The guard: report-only for how long, and may it ever fix on push?
    2026-10-21: it reports first (no fixed term) and may later fix 0-pixel deviations (layer names, grouping) on push, under section 5's
    conditions.

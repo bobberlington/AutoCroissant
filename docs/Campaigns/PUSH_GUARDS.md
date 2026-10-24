@@ -381,7 +381,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
-| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0 (deferred by the owner) |
+| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0: no waiver; BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker b03b9975, the owner's file), and `font_check --all` finds nothing missing on 812 PSDs |
 | R8 | Single-line composer on visible Ability and Name layers (L10) | report | cards | 0 | 0 |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
@@ -405,8 +405,8 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stal
   - cards in the parser's `ABILITY_EXCLUSIONS` (R3: Shadow_Duelist prints no ability; unattended, 2026-10-23);
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
-  - "leave the Name layers" (R4 existing);
-  - BabaUI.
+  - "leave the Name layers" (R4 existing).
+  BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker b03b9975); no font is waived now.
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
   the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
@@ -1055,8 +1055,8 @@ Why the 9 refuse (diagnosed with `why.py`, the crops in `why/`):
 role ping and the wording are `font_check.discord_payload`'s, unchanged. card-check.yml moved there too on 2026-10-23, no ping.
 `test_font_check.test_workflow_shape` pins the secret (`FONT_CHECK_YML` points it at the branch's file until it lands).
 
-**Ruling 3: R7 is told in the guard's post.** `card_standards.rule_fonts` no longer marks R7 comment-only; BabaUI stays
-waived. A missing font is therefore told twice in the standards channel: by font-check at once (role ping) and by the
+**Ruling 3: R7 is told in the guard's post.** `card_standards.rule_fonts` no longer marks R7 comment-only; BabaUI stayed
+waived until the owner added it on 2026-10-23 (TTSCardMaker b03b9975), and no font is waived now. A missing font is therefore told twice in the standards channel: by font-check at once (role ping) and by the
 guard after the quiet window (no ping).
 
 **Tests** (fork venv; `CARD_GUARDS_YML` and `FONT_CHECK_YML` at the TTSCardMaker branch's files):

@@ -31,7 +31,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
 | Build venv | `MDW/Fonts/stoogedings-src/.venv/` (gitignored by `stoogedings-src/.gitignore`) | Local only |
 | Icon sources | `Types/*.png` (35 "type" icons), `Types/Stars/*.png` (56 "star" icons) | Source art |
-| Letter / badge fonts the build embeds | `MDW/Fonts/BreeSerif-Regular.ttf` (OFL letters), `MDW/Fonts/ChangaOne-Regular.ttf` (badge labels) | Inputs |
+| Letter / badge fonts the build embeds | `MDW/Fonts/Bree Serif Regular.ttf` (OFL letters), `MDW/Fonts/Changa One.ttf` (badge labels) | Inputs |
 | Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit,profile,pick,inline,details,decks,balance}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/analytics.py`, `site/build/requirements.txt`, `site/README.md` | Source |
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
@@ -624,19 +624,30 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 
 ## 3. Missing-fonts audit (2026-10-19, re-checked 2026-10-20)
 
+**Status 2026-10-23: no font is missing.** The owner added BabaUI, the last one (`MDW/Fonts/Baba UI Regular.ttf`, his
+file, TTSCardMaker b03b9975), after the Windows/Office faces of 2026-10-21 (a88b232). `python -m commands.font_check
+--fonts MDW/Fonts --all .` (AutoCroissant, the fork venv) reads 812 card PSDs against 274 files / 282 faces and reports
+"Every font the cards ask for is in MDW/Fonts." The audit below is the 2026-10-20 state.
+
+**File names (owner, 2026-10-23, b03b9975):** each file in `MDW/Fonts` is named after the font's full name
+(`Cuphead Memphis Medium.ttf`, `Consolas Bold.ttf`); files of one font keep a version or kind suffix
+(`Perpetua Bold 1.00.ttf` / `Perpetua Bold 1.75.ttf`, `EB Garamond Regular (Variable).ttf`). The same commit dropped 3
+byte-identical copies.
+
 **Status 2026-10-20 (later):** 7 PostScript names used by cards are still missing on the dev Mac. The CoreText check
 (`swift /private/tmp/fontexplore/scripts/installed_fonts.swift`) and a scan of the PostScript name inside every
 font file on the Mac (1,780 files, `find_fonts_by_psname.py`) agree.
 
 **Added to `MDW/Fonts/` and installed that day (committed in 54278c1):**
-- `NotoColorEmoji-SVG.otf`: adobe-fonts/noto-emoji-svg 2.100.
-- `consola.ttf`, `consolab.ttf`, `consolai.ttf`, `consolaz.ttf` (Consolas 5.22, four styles) and `cambria.ttc` / `cambriab|i|z.ttf` (Cambria 5.96):
+- `Noto Color Emoji SVG.otf`: adobe-fonts/noto-emoji-svg 2.100.
+- `Consolas.ttf`, `Consolas Bold.ttf`, `Consolas Italic.ttf`, `Consolas Bold Italic.ttf` (Consolas 5.22, four styles) and `Cambria.ttc` /
+  `Cambria Bold.ttf`, `Cambria Italic.ttf`, `Cambria Bold Italic.ttf` (Cambria 5.96):
   - Extracted with macOS `bsdtar` from Microsoft's free PowerPoint Viewer (`PowerPointViewer.exe` → `ppviewer.cab`).
   - Fetched from the Internet Archive copy of the original download.microsoft.com URL; SHA-256 `249473568eba7a1e4f95498acba594e0f42e6581add4dead70c1dfb908a09423`.
   - The cabinet also holds Calibri (already in MDW), Candara, Constantia, Corbel and Meiryo, which no card uses.
 - `MyriadPro-Regular.otf` (2.106): the copy bundled with Photoshop 2023. The Civilization VI copies are byte-identical.
 
-**Still missing** (visible runs):
+**Still missing then** (visible runs; all added since, the last on 2026-10-23):
 
 | Font | Visible runs | Where it could come from |
 |---|---|---|
@@ -644,7 +655,7 @@ font file on the Mac (1,780 files, `find_fonts_by_psname.py`) agree.
 | Pristina | 10 | Office |
 | Papyrus-Regular | 5 | Windows Office version; the Mac's own Papyrus is PostScript `Papyrus` |
 | OCR A Extended | 5 | Office |
-| BabaUI | 4 | Unknown |
+| BabaUI | 4 | Unknown then; the owner's file, added 2026-10-23 (b03b9975) |
 | Elephant | 1 | Office |
 | MyriadArabic | 0 | Adobe Fonts. Apple's private 26-glyph subset was deliberately not added: installed as a user font it could be picked for real Arabic text and show empty boxes |
 
@@ -666,11 +677,11 @@ including `AdobeInvisFont`. **25 PostScript names are used in card text but not 
 | Photoshop bundles it privately (fine in Photoshop, absent elsewhere) | `MyriadPro-Regular` (18): Photoshop 2023 ships `Contents/Required/PDFL/Resource/Fonts/MyriadPro-Regular.otf`; it is also on Adobe Fonts |
 | Adobe Fonts (activate in Creative Cloud; verified listings 2026-10-20) | `Consolas`, `Consolas-Bold`, `Consolas-Italic` (46/46/37: **the whole rulebook**), `Cambria` (1), `JavaneseText` (4: the Croissant cards, Magnum Opus), `MyriadArabic-Regular` (6; only on invisible characters such as a leading U+FEFF, so harmless) |
 | Free download, **installed 2026-10-20** | `NotoColorEmoji-SVG` (1 card + 2 rulebook pages): adobe-fonts/noto-emoji-svg release 2.100, Apache-2.0, in `~/Library/Fonts` and copied to `MDW/Fonts/` (committed in 54278c1) |
-| Microsoft Office for Windows only (not on Adobe Fonts) | `Pristina-Regular` (2), `Elephant-Regular` (1, a single apostrophe), `OCRAExtended` (1). Copy PRISTINA.TTF, ELEPHNT.TTF and OCRAEXT.TTF from `C:\Windows\Fonts` on a PC with Office. `Century` was found and installed on 2026-10-19 |
+| Microsoft Office for Windows only (not on Adobe Fonts) | `Pristina-Regular` (2), `Elephant-Regular` (1, a single apostrophe), `OCRAExtended` (1). Copy PRISTINA.TTF, ELEPHNT.TTF and OCRAEXT.TTF from `C:\Windows\Fonts` on a PC with Office (done 2026-10-21, a88b232; in the repo as `Pristina.ttf`, `Elephant.ttf`, `OCR A Extended.ttf`). `Century` was found and installed on 2026-10-19 |
 | Font Book can download and activate | `BookAntiqua` (1), `CenturyGothic-Bold` (1) |
 | macOS ships it (`/System/Library/Fonts/Supplemental`) | `ArialMT` (4), `ArialNarrow` (1), `ArialNarrow-Bold` (1), `ComicSansMS` (4), `ComicSansMS-Bold` (2), `Impact` (3), `TimesNewRomanPSMT` (7), `MicrosoftSansSerif` (1) |
-| Near-miss | `Papyrus-Regular` (1: Papyrus): macOS's Papyrus.ttc is named `Papyrus`, so Photoshop still reports it missing. `Kung-Fu-Panda` (4): very likely the repo's `KungFuPandaRegular-xYjV.ttf`, whose PostScript name is `Kung Fu Panda`, so it does not satisfy the lookup |
-| Unknown source | `BabaUI` (1: Baba). Nothing by that name online (2026-10-20). It is presumably extracted from the game *Baba Is You*, which isn't in the dev Mac's Steam library. The closest public font is the itch.io "Unofficial BIY font", which has a different name, so Photoshop wouldn't match it |
+| Near-miss | `Papyrus-Regular` (1: Papyrus): macOS's Papyrus.ttc is named `Papyrus`, so Photoshop still reports it missing. `Kung-Fu-Panda` (4): very likely the repo's `Kung Fu Panda Regular.ttf`, whose PostScript name is `Kung Fu Panda`, so it does not satisfy the lookup |
+| Unknown source | `BabaUI` (1: Baba). Nothing by that name online (2026-10-20). It is presumably extracted from the game *Baba Is You*, which isn't in the dev Mac's Steam library. The closest public font is the itch.io "Unofficial BIY font", which has a different name, so Photoshop wouldn't match it. Added 2026-10-23: the owner's own file, `MDW/Fonts/Baba UI Regular.ttf` (b03b9975) |
 
 Recommendations:
 - (a) Before editing rulebook PSDs, activate Consolas through Adobe Fonts, or Photoshop will substitute and reflow.
@@ -700,7 +711,8 @@ author is the commit's GitHub login, else the pusher. The bot's `/fonts` runs th
 (autocroissant-run-and-operate §7). State on 2026-10-21 (`--all` over the checkout, 133 s, 813 PSDs): six faces (BabaUI,
 Elephant-Regular, JavaneseText, MyriadArabic-Regular, OCRAExtended, Pristina-Regular) on 15 cards, 29 visible layers (30
 with Baba's hidden `Name`); the ten Mac-only faces are in `MDW/Fonts` since fb37995 + ec3a6f1 and Papyrus-Regular /
-Kung-Fu-Panda resolve through the aliases, so they no longer appear. Later standardization rules (AutoCroissant
+Kung-Fu-Panda resolve through the aliases, so they no longer appear. State on 2026-10-23 (after TTSCardMaker b03b9975, BabaUI
+added): 812 PSDs against 274 files / 282 faces, nothing missing (7 s with the process pool). Later standardization rules (AutoCroissant
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5) take this Action's shape. **Rule 2, the card check (2026-10-21):**
 `.github/workflows/card-check.yml` runs AutoCroissant's `commands/card_check.py` on every push changing a PSD, `site/Card Edits.json`
 or `Types/` (and by hand with `all`): the pushed PSDs by blob sha, Types/, the icon manifest and the edits file from the pushed tree,
@@ -937,7 +949,8 @@ pipeline bullet written 2026-10-21 against AutoCroissant's uncommitted `commands
 JSX trial copies under `/private/tmp/fontexplore/fx/mig/out/`. §0's module list, §2.4's four website rows (profiles/People, inline editing, Details dropdown, published decks), §0's card-check row and §3's rule 2 written 2026-10-21 against TTSCardMaker a3451c8 and AutoCroissant df4a439. Run the commands from
 `~/Desktop/TTSCardMaker` unless they say otherwise. §2.6 rewritten 2026-10-22 (gate with the bot's data, commit subject, the
 save's Lua, `TTS/checks/`) against tts-save.yml and TTS/checks as committed that day ("TTS save: daily gate also counts the bot's pickle
-pushes", "TTS checks: the audit's checks, re-runnable"). Refresh the
+pushes", "TTS checks: the audit's checks, re-runnable"). §3's 2026-10-23 status, the file-name rule and every `MDW/Fonts` file name
+re-checked 2026-10-23 against TTSCardMaker b03b9975 (`font_check --all`: 812 PSDs, 274 files, 282 faces, 0 missing). Refresh the
 date-stamps whenever you touch this file.
 
 ```bash
