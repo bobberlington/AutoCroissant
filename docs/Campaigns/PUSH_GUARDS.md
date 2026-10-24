@@ -49,7 +49,7 @@ source; ruling 1 overrules them: the PNG is the fork's render, section 17. They 
   Bubble, 12_Reactions2), and 69 of the 115 PSDs still at a stale blob match their PNG (2.4). The guard compares the old and
   new composites before writing anything.
 - **The fix-it bucket is small today.** At origin/main the only safe automatic fix that applies is the Txt2 story sync (6
-  cards at `6e50c3ee`, all synced since: 0 at `6a54b4f6`, R9 in section 6). Every other open issue changes pixels, so it is
+  cards at `6e50c3ee`, all synced since: 0 at `b2168617`, R9 in section 6). Every other open issue changes pixels, so it is
   reported (section 6).
 
 ## 1. Goal and non-goals
@@ -377,18 +377,18 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 |---|---|---|---|---|---|
 | R1 | timing tags in a visible Ability layer are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at 96d61368 | 0: Shadow_Duelist is waived (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"); the 5 several-Ability cards are waived (Q2) |
-| R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at 96d61368 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
+| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at a7d1fe56 | 0: Shadow_Duelist is waived (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"); the 5 several-Ability cards are waived (Q2) |
+| R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at a7d1fe56 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
 | R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
-| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0: no waiver; BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker b03b9975, the owner's file), and `font_check --all` finds nothing missing on 812 PSDs |
+| R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | report, **told in the standards post** (ruling 3, 2026-10-22; font-check.yml tells it in the same channel with its role ping) | cards | 1: Baba (BabaUI) | 0: no waiver; BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker 92b5ae6b, the owner's file), and `font_check --all` finds nothing missing on 812 PSDs |
 | R8 | Single-line composer on visible Ability and Name layers (L10) | report | cards | 0 | 0 |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
 | R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename is built and gated, 0 pixels; `card_standards.AUTO_FIX` adds it once the owner says yes, review 6) | 651 cards | 0 | 0 |
 
 Since 2026-10-23, R9 flags 0 cards: the 6 were synced by `7b48db05` (Clot White, Springtrap) and B2's `5a9e0fcf` (the
-four PoD minions); `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stale.
+four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stale.
 
 **Not rules (decided).**
 - 28 star groups named `stars` or `3 stars` are compliant: the parser reads any case, and a rename is churn.
@@ -406,7 +406,7 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stal
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing).
-- **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker b03b9975).
+- **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker 92b5ae6b).
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
   the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
@@ -1056,7 +1056,7 @@ role ping and the wording are `font_check.discord_payload`'s, unchanged. card-ch
 `test_font_check.test_workflow_shape` pins the secret (`FONT_CHECK_YML` points it at the branch's file until it lands).
 
 **Ruling 3: R7 is told in the guard's post.** `card_standards.rule_fonts` no longer marks R7 comment-only; BabaUI stayed
-waived until the owner added it on 2026-10-23 (TTSCardMaker b03b9975), and no font is waived now. A missing font is therefore told twice in the standards channel: by font-check at once (role ping) and by the
+waived until the owner added it on 2026-10-23 (TTSCardMaker 92b5ae6b), and no font is waived now. A missing font is therefore told twice in the standards channel: by font-check at once (role ping) and by the
 guard after the quiet window (no ping).
 
 **Tests** (fork venv; `CARD_GUARDS_YML` and `FONT_CHECK_YML` at the TTSCardMaker branch's files):
@@ -1173,7 +1173,7 @@ without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_vers
   8-bit PNGs only (all card PNGs are).
 - **Measured** on the 30 latest card PNGs (Photoshop exports, zlib header 78 01: the deflate stored, IDAT as big as the
   raw pixels): 257.2 MB -> 53.1 MB (79.3%, 4.8x), 30 of 30 the same image; 440 of the 830 card-folder PNGs at origin/main
-  96d61368 carry that header.
+  a7d1fe56 carry that header.
 - **The guards** (`card_guards`): every card PNG a push brought by a person (a pair's PNG, a PNG pushed alone, the
   numbered PNGs, a numbered PNG pushed alone: case `numbered`, or in the `png-deleted` entry when the push deleted the
   main PNG: one entry per PSD) is a write of kind `recompress` when it shrinks by more than `RECOMPRESS_MIN` (10%) and
@@ -1187,7 +1187,7 @@ without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_vers
   Discord unchanged. oxipng takes about 4 s a card PNG on the Mac (the Action unmeasured), inside Check.
 - **The batch** (`python -m commands.png_recompress --clone <checkout> [--apply] [--report <json>] [--message <file>]`,
   nothing committed; `--message` writes the commit's text, one `Recompressed` trailer per PNG):
-  run on a sparse copy of origin/main 96d61368 (scratch `followups/png/tc-batch`): 820 card PNGs, 4.47 GB; 686
+  run on a sparse copy of origin/main a7d1fe56 (scratch `followups/png/tc-batch`): 820 card PNGs, 4.47 GB; 686
   recompressed, 4.18 GB -> 1.14 GB (3.04 GB saved, 68% of all card PNGs); 134 kept (under 10% or 64 KiB, 23 MB
   possible); 0 not the same. An independent check (PIL RGBA and raw arrays, mode, size and info of every rewritten file
   against HEAD's blob) found 686 of 686 identical. 25 minutes on the Mac under load.

@@ -17,7 +17,7 @@ card and field, whether a bake works, why not, and what would fix it.
     c5c3f19..dc2bd69 since (03:35-03:38) and is still being built, so these numbers are preliminary.
 - Everything was checked with the bake's own code, dry: nothing was written to either repo (section 6).
 
-**Since (release check, 2026-10-23, fork `cards-20261023`, TTSCardMaker `0bc4c099` after the badges re-run):**
+**Since (release check, 2026-10-23, fork `cards-20261023`, TTSCardMaker `7fd2aa30` after the badges re-run):**
 
 - refused-layers also bakes a title named after the card outside Text (`7176d6f`): the 58 "no Text group" titles plus
   Ms Mowz, Soul Master, Traitor Lord and The Radiance. Name after all pending changes: about **708 / 56** (not 646/118).
@@ -30,7 +30,7 @@ card and field, whether a bake works, why not, and what would fix it.
   the title is also the one visible text layer in the title region named after its own text, as Photoshop names a new
   layer, when nothing else is found (not on rule pages). Papyrus and Sans now read and bake (2.4: 10 left -> 7, Ms Mowz
   baking since `7176d6f`; Name after all pending changes about **710 / 54**); their
-  website edits ask for the printed title, so a dry bake of TTSCardMaker `56011634` finds them redundant (section 4). A
+  website edits ask for the printed title, so a dry bake of TTSCardMaker `2330d7b0` finds them redundant (section 4). A
   real rename bakes through every gate and renames the layer after the new title ('sans.', 'The Great Papyrus!'; 'The
   Greatest Papyrus' reaches the stars: section 5). Knight Lost A Lot and Dark Matter Swordsman have two such layers and
   still refuse, now as "2 layers in the title region named after their text"; the other five left in 2.4 refuse as
@@ -40,7 +40,7 @@ card and field, whether a bake works, why not, and what would fix it.
   each changed part takes the style of what it replaces (`psd_edit.edit_styles`, `splice_text`).
 - The four cards in section 2.1 are in sync since `5a9e0fcf` (B2's badges re-run, which re-set their Name in Photoshop
   as RESUME_2026-10-22 step 4 planned): both copies hold the edited title with its trailing dot. `txt2_repair --check`
-  over all 904 PSDs at `6a54b4f6`: 0 stale stories, 0 style drift.
+  over all 904 PSDs at `b2168617`: 0 stale stories, 0 style drift.
 
 **BUG 2: the Ability FX layers made again (`work/fx-rebuild`, 2026-10-23, not landed):** an ability bake runs
 Effect Layers.jsx's Update all on the new text (`psd_edit._rebuild_fx`, design section 5 step 4): every `Ability FX: ...`
@@ -50,7 +50,7 @@ layer carrying a chart status's style (Monkey D Goofy's `1#1`, Clot Gold's `1 Be
 layer whose style is no chart status's refused (owner 2026-10-21) until the evening's phase 2 (below), which rebuilds
 it in its own style. Measured dry with every gate (gate_fx too:
 each FX layer inside its words' glyph boxes, covering them, the Ability's own pixels) on copies of the frozen corpus
-(the 34 cards with FX layers) and of TTSCardMaker `6a54b4f6` (68, the L7 cards included), five edits each: the
+(the 34 cards with FX layers) and of TTSCardMaker `b2168617` (68, the L7 cards included), five edits each: the
 website's own text (no-op), the layer's own text with the chart's recolouring left out (Update all alone), a word
 before an FX word deleted (moved), " Die." appended, the first FX word removed (scripts and JSON:
 `~/Documents/Tools/wt/bf-fx-scratch/`, `census.py`, `runs/{corpus3,clone3}.json`):
@@ -205,7 +205,7 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       pure-black eye sockets (46 of its 4,263 px) carry no red, so the key (the JSX's too, red channel) leaves them out
       of the badge layer and they print in the gradient's pink. Photoshop's Update all would do the same.
     - Regression, main's 68 FX cards x round 3's 4 edits (`runs/regress.json` against phase 2's): **234 of 258 bake**,
-      the same bakes, refusals and notes; 5 PNGs differ by a few px (Pontiff Sulyvahn's PSD re-saved since, baf89da9;
+      the same bakes, refusals and notes; 5 PNGs differ by a few px (Pontiff Sulyvahn's PSD re-saved since, 8af07bcd;
       Party!, Monkey D Goofy, Flower Of Decay, Freeze Spell: the code before these fixes, e4dde25, bakes them to the same
       pixels as after, so not this change).
     - Held for the owner: a typed plain token beside a card's `:sticker` icons (Palace of Shadow prints `[light]` plain
@@ -277,18 +277,18 @@ bake plans them, in `census-stars-parser/`: Pike Beam's type icon in its Stars g
 | types swap | 687 | 685 planned (not baked) | 1 frame, 1 off the canvas |
 
 The stale Txt2 refusals are the corpus's 6 stale cards (Clot White, Springtrap and the four PoD minions). On origin/main
-all 6 are in sync (`7b48db05`, `5a9e0fcf`; 0 stale at `6a54b4f6`, section 2.1), so that refusal is gone there (their
+all 6 are in sync (`7b48db05`, `5a9e0fcf`; 0 stale at `b2168617`, section 2.1), so that refusal is gone there (their
 stars and types not re-measured).
 
 Of the 172 cards whose stars the parser counts from the PSD, 147 bake a star more and a star fewer, 159 one of the
 two; 665 cards bake both a type added and one removed, 678 one of them. 21 bakes carry a pixel note. No card prints
-its type row as icon tokens ([fire] in header text: 0 on the corpus and on TTSCardMaker `96d61368`), so a token row is
+its type row as icon tokens ([fire] in header text: 0 on the corpus and on TTSCardMaker `a7d1fe56`), so a token row is
 refused (`types: printed as icon tokens`). A bake took 9 s (median; 45 s at most on a loaded Mac), two or three
 whole-card renders of it for `gate_outside`.
 
-**Since (work/bake-verdicts, 2026-10-23 evening, TTSCardMaker `5c88f230`):**
+**Since (work/bake-verdicts, 2026-10-23 evening, TTSCardMaker `85d23666`):**
 
-- Section 4 is settled: the live dispatch e1a491be (18:29) dropped Dark matter, Masked Dedede, Metal General, NME
+- Section 4 is settled: the live dispatch b22f4cc4 (18:29) dropped Dark matter, Masked Dedede, Metal General, NME
   Stock, Star Dream and Zero Override as redundant, baked PoD11ZOMG and refused Papyrus and Sans again (the new reason).
   A dry run without `--pending` now finds only Papyrus and Sans, their verdicts unchanged: no stale verdict is left.
 - 2.24: Green Mage's stat edits are refused as a final verdict (`unsupported-card: hp: the bar 'Hp Dark' lies outside
@@ -368,8 +368,8 @@ What stands out:
   the stars or type icons, and Autopsy Report and Warcraftian Shaman fail the read-back. refused-layers refuses all 20
   earlier, as titles printed by several layers, split or printed twice (2.10, 2.11, 2.12), which is right.
 - **The four refused edits that would have baked** (Metal General, Z.O.M.G., Star Dream, Zero Override; section 4)
-  are settled: the live dispatch e1a491be dropped three as redundant and baked Z.O.M.G. No stale verdict is left (a
-  dry run without `--pending` at `5c88f230`).
+  are settled: the live dispatch b22f4cc4 dropped three as redundant and baked Z.O.M.G. No stale verdict is left (a
+  dry run without `--pending` at `85d23666`).
 
 ## 2. Why cards can't bake, by reason
 
@@ -1160,13 +1160,13 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
 | Masked Dedede | name → 'Masked Dedede' | parity: baseline bad 0.11% mean 3.01 max 136 | refused: parity: baseline bad 0.00% mean 3.07 max 14 | bakes with a pixel note (bad 0.00% mean 2.95 max 14) |
 | Metal General | name → 'Metal General' | overflow: name reaches the stars or type icons | bakes (dry run) | bakes (dry run) |
 | NME Stock | name → 'NME Stock™' | duplicate: numbered PNGs share the PSD: NME_Stock2.png | refused: numbered PNGs share the PSD (NME_Stock2.png) | refused: numbered PNGs share the PSD (NME_Stock2.png) |
-| Papyrus | name → 'The Great Papyrus' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'The Great Papyrus', not Name or the card's name (live, e1a491be); redundant with title-own-text |
+| Papyrus | name → 'The Great Papyrus' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'The Great Papyrus', not Name or the card's name (live, b22f4cc4); redundant with title-own-text |
 | PoD11ZOMG | name → 'Z.O.M.G.' | parity: baseline bad 0.03% mean 1.16 max 46 | bakes (dry run) | bakes (dry run) |
-| Sans | name → 'snas.' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'snas.', not Name or the card's name (live, e1a491be); redundant with title-own-text |
+| Sans | name → 'snas.' | unsupported-card: no readable Text/Name layer | refused: no readable Text/Name layer | refused: title layer named 'snas.', not Name or the card's name (live, b22f4cc4); redundant with title-own-text |
 | Star Dream | name → 'Star Dream' | overflow: name reaches the stars or type icons | bakes (dry run) | bakes (dry run) |
 | Zero Override | name → 'Zero Override' | parity: baseline bad 1.96% mean 1.71 max 127 | bakes (dry run) | bakes (dry run) |
 
-- Metal General, Z.O.M.G., Star Dream and Zero Override: settled by the live dispatch e1a491be (2026-10-23 18:29).
+- Metal General, Z.O.M.G., Star Dream and Zero Override: settled by the live dispatch b22f4cc4 (2026-10-23 18:29).
   Metal General, Star Dream and Zero Override were redundant by then (the Standardize title case, `5a9e0fcf` and
   `7d4bce24`, prints their titles) and Z.O.M.G. baked (its `baked` verdict, psd `9b87525a`, is current). None of the
   four verdicts was final any more (`card_bake.final`), so the schedule would have taken them too: the first three's
@@ -1174,13 +1174,13 @@ committed). "After" is refused-layers on the round-6 fork, with soft parity appl
   `PARITY_FLOOR`, which never counts as final (Z.O.M.G.'s PSD had not changed).
 - Papyrus and Sans ask for the title the card already prints ('The Great Papyrus', 'snas.'). There is nothing to redraw;
   the bot didn't read those layers as the title (their layer names differ from the card's name). title-own-text reads a
-  layer named after its own text: a dry `card_bake` run (`--dry-run --local`, TTSCardMaker `56011634`) finds both
+  layer named after its own text: a dry `card_bake` run (`--dry-run --local`, TTSCardMaker `2330d7b0`) finds both
   redundant and drops the name from their entries. Their refused verdicts are final for the schedule (same PSD, same
   edit), so a dispatched run re-checks them, after both writers have re-read the two titles: `/update_stats
   cards:Papyrus, Sans` and, during the shadow, a card-sync dispatch with `cards` (BUGS_AND_IMPROVEMENTS V6 has the
   order and the commands).
 - Masked Dedede bakes with a pixel note once soft parity lands. NME Stock needs its numbered PNG sorted out (2.2).
-  (e1a491be: both redundant, dropped, as was Dark matter.)
+  (b22f4cc4: both redundant, dropped, as was Dark matter.)
 
 ## 5. Limits that depend on the edit (not unbakeable)
 

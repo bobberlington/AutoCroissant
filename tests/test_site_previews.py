@@ -235,7 +235,7 @@ out([p.renderedHtml(res("baked"), v), p.renderedHtml(res("refused", { reason: "s
 @needs_js
 def test_the_panel_says_previews_are_public_and_takes_a_webp_alone(tmp_path):
     """Before the first press: a previewed edit is public (the run's inputs and the previews branch; the server's
-    contract since TTSCardMaker 7646a3cc). A result listing only the WebP (no full-size PNG published): no Full size."""
+    contract since TTSCardMaker a1274af7). A result listing only the WebP (no full-size PNG published): no Full size."""
     out = node(tmp_path, """
 const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.webp", diff: false };
 const res = { request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state: "baked", result: { fields: { hp: "baked" }, notes: [], base: {}, files: { webp: "preview.webp" } } };
@@ -478,7 +478,7 @@ def test_web_fonts_map_the_psd_fonts(bs, tmp_path, monkeypatch):
     name; since 2026-10-23 no alias or loose match: "Arial-Regular" isn't Arial's ArialMT); never a collection or a file
     over FONT_WEB_MAX; names read once per blob (cached)."""
     files = {p.name: p for p in _fonts()}
-    # the files as named since TTSCardMaker b03b9975 (named as the fonts), or before
+    # the files as named since TTSCardMaker 92b5ae6b (named as the fonts), or before
     want = (("Consolas Bold.ttf", "consolab.ttf"), ("Arial.ttf",), ("Book Antiqua.ttc", "BookAntiqua.ttc"))
     pick = [next((n for n in names if n in files), None) for names in want]
     if None in pick:

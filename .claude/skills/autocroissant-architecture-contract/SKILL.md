@@ -366,7 +366,7 @@ pickle corruption the top-ranked costliest failure class — a corrupt commit re
 machine *by design*. The survival discipline (diff before push, PICKLE commit convention) is owned by
 **autocroissant-change-control**.
 
-**Its successor: merged and deployed off 2026-10-23; the Card sync shadow schedule is on (TTSCardMaker 96d61368);
+**Its successor: merged and deployed off 2026-10-23; the Card sync shadow schedule is on (TTSCardMaker a7d1fe56);
 CARD_SYNC flips at the cutover.** The Card sync Action in TTSCardMaker builds the card data as JSON on that repo's `data`
 branch (docs/Campaigns/DATA_BUILD_ACTION.md); the bot only reads it into `card_data/` and memory (data flow b2). The bot
 side (work/cutover-bot, 7b99438) is on main with `CARD_SYNC = False`. One constant, `CARD_SYNC` in global_config.py,

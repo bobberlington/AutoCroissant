@@ -109,7 +109,7 @@ $P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.
   "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd" --text
 ```
 
-**Annotated output** (The Lich King, re-measured 2026-10-23 at TTSCardMaker 96d61368; excerpted):
+**Annotated output** (The Lich King, re-measured 2026-10-23 at TTSCardMaker a7d1fe56; excerpted):
 
 ```
 PSD: /Users/michaelsrouji/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd
@@ -255,7 +255,7 @@ $P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py \
   "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
 ```
 
-**Annotated output** (Nebulous Precipice, measured 2026-10-23 at TTSCardMaker 96d61368 with `~/.venvs/ac-py314-fork`):
+**Annotated output** (Nebulous Precipice, measured 2026-10-23 at TTSCardMaker a7d1fe56 with `~/.venvs/ac-py314-fork`):
 
 ```
 PSD 1200x1800; TYPE_REGION_RATIO=0.5 -> card_mid_y=900   <- the real imported constant

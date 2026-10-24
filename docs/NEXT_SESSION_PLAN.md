@@ -16,11 +16,11 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - **AutoCroissant** main 5f5fe82; the jetson runs 1bf6892 (deployed 15:52; the two commits after it are tests only).
   52 commands. Pickles: PICKLE a7c310e (05:30): 818 cards, old_stats 446 versions / 354 names.
 - **Fork** `cards` = tag `cards-20261023c` (fa031443, round 10), in the jetson venv (17:02), `~/.venvs/ac-py314-fork` and
-  the three Actions (TTSCardMaker 82a8ba7c). Bad px on the frozen corpus: 605,755 (round 6 base) -> 138,578 (-77%).
-- **TTSCardMaker** main 82a8ba7c. Landed this afternoon: glow font 0.3 em (0fcbcdfe), Energy_Ritual cand A (41e2ddea),
-  Effect Layers.jsx overlay colour (08b1152a), PNG recompression (6a54b4f6) and the one batch pass (56011634: 686 PNGs,
-  4.18 GB -> 1.14 GB, the same pixels, as AutoCroissant with `Recompressed` trailers), TTS save re-pinned (5c88f230),
-  types in any order (6dd5399e), fork pins (2921ecbd, 82a8ba7c).
+  the three Actions (TTSCardMaker b7798bb1). Bad px on the frozen corpus: 605,755 (round 6 base) -> 138,578 (-77%).
+- **TTSCardMaker** main b7798bb1. Landed this afternoon: glow font 0.3 em (b24c3519), Energy_Ritual cand A (e0775de0),
+  Effect Layers.jsx overlay colour (8308103f), PNG recompression (b2168617) and the one batch pass (2330d7b0: 686 PNGs,
+  4.18 GB -> 1.14 GB, the same pixels, as AutoCroissant with `Recompressed` trailers), TTS save re-pinned (85d23666),
+  types in any order (1f9563e2), fork pins (5b68f6d1, b7798bb1).
 - **Push guards:** `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (report from 13:04; dry run 40012619052: 812 cards, 16 told, 0 errors).
 - **Shadow:** card-sync.yml schedule on, `MAIN_COMMIT`/`POSTS` off. The `data` branch exists since 2026-10-23 14:21
   (63bd6603, seeded from the 05:30 PICKLE a7c310e, before the recovery: re-seed in step 3).
@@ -82,7 +82,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 4. Card guards rollout (owner: dry run -> report ~3 days -> on; 30-minute wait kept)
 - [x] Dry run over every card (40012619052, 2026-10-23): 812 cards, 16 told (R1 badge-font tags on Springtrap, Terry
       Hintz, Joel Miller, Future Niiue and more; R6 Nasty_Patty, Shell_Shield; R8 PoD08/09/10/12 Name composer), 0 errors.
-- [x] `CARD_GUARDS=report` since 2026-10-23 13:04 PDT. The batch commit 56011634 ran as "0 cards, 686 left out (bot
+- [x] `CARD_GUARDS=report` since 2026-10-23 13:04 PDT. The batch commit 2330d7b0 ran as "0 cards, 686 left out (bot
       commits)", nothing told.
 - [x] `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (owner: now). Watch the standards channel and the bot commits; R11
       renames stay told (owner). Left in PUSH_GUARDS.md §15: the Environment wait timer and the other items below.
@@ -95,7 +95,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       full suite on the fork venv. psd_parser changed too (round 3's rest): pull, Cython rebuild, restart on the jetson.
 - [ ] Nebulous_Precipice glow: kept `[darkmatter:sticker]` (unattended option C; options A-D in
       `~/std-work-1022/glow/held.json`). A stroked Text group swallows a `:glow` halo (652 of 765 cards stroke it).
-- [ ] e1a491be's new PNG against its PSD (the first live bake).
+- [ ] b22f4cc4's new PNG against its PSD (the first live bake).
 
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
 - [ ] **Round 11** (resumed wf_502b9ebf-b59 with the cap raised to 11): stroke corners (`effects.py _signed_distance`
@@ -210,7 +210,7 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
 - **Answered 2026-10-23 ~17:40** (memory `owner-decisions-2026-10-22-evening`): Nebulous keeps the sticker; R3/R4
   reports stay; rebuilt FX layers keep their own style; off-chart status colours are recoloured to the chart; FX layers
   in no chart style get rebuilt in their own style; every typed stoogedings token (timing tags, types, any token the font
-  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 78798eac: ATK 6, close BUGS D8 after step 1); all stale
+  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 45cf8746: ATK 6, close BUGS D8 after step 1); all stale
   exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
 - **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's

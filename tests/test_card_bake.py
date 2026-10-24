@@ -40,7 +40,7 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
-OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
+OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
@@ -412,6 +412,10 @@ def test_recent_paths_by_push_time(monkeypatch):
     assert cb.recent_paths(cb.CARD_REPO, "c3", now + timedelta(hours=1)) == set() and asked[2:] == ["activity"]
     pushes[1]["before"] = "0" * 40                                                      # a new branch: can't tell
     assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None
+    pushes[1]["before"] = "c1"
+    monkeypatch.setattr(cb, "api", lambda repository, method, path, **kwargs: Reply(body=pushes) if path == "activity"
+                        else Reply(status=422, body={"message": "Sorry, this diff is taking too long to generate."}))
+    assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None                              # a force push: no compare
 
 
 def test_stat_edit_with_creatures_is_refused(github):

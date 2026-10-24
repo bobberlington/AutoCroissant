@@ -59,7 +59,7 @@ Loaded existing old stats from old_stats.pkl
 Loaded 764 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:535); 2026-10-23 (765 on 2026-07-11)
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
-Repo history: 2268 files at 413053c0 (0.3s)            <- refresh_history (repo_history.py:230); 2026-10-23
+Repo history: 2268 files at f219a126 (0.3s)            <- refresh_history (repo_history.py:230); 2026-10-23
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, 0 uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N uploaded = 0 once synced
 ```
 
@@ -382,7 +382,7 @@ N cards changed or new, M unchanged, K moved.
 - **Authors from git (.mailmap, 2bf00e1, 2026-10-23):** git author names go through the card repo's `.mailmap`
   (`global_config.MAILMAP_PATH`): in clones `card_history.mailmap_args` passes head's blob as `-c mailmap.blob=` for `%aN`;
   on the API path `card_edits.Mailmap` is read from the tree once a run. TTSCardMaker's `.mailmap` (74bb56e7, pushed in
-  96d61368) maps "Michael <...>" to MichaelJSr, and the website's `[people] Michael` special case is gone; the site build and
+  a7d1fe56) maps "Michael <...>" to MichaelJSr, and the website's `[people] Michael` special case is gone; the site build and
   card-sync.yml check out `/.mailmap`. One person's several git names show as one; to merge names, edit
   TTSCardMaker/.mailmap, not the bot.
 
@@ -405,7 +405,7 @@ parse it runs once more over what the run read (a second `History: ...` line whe
   "History: 698 versions recovered from the bot's PICKLE commits (553 cards), 171 starts moved earlier; 64 cards gone
   before archiving archived: ...; 42 type misreads merged (the PNG stayed): ...; 12 impossible values set to unknown:
   ...; 32 brought to today's series and type names; 299 carried starts given their commit." plus about 219-236 re-parsed
-  PSDs (the Photoshop batch B2, TTSCardMaker 0bc4c099) and a second History line ("103 carried starts given their commit",
+  PSDs (the Photoshop batch B2, TTSCardMaker 7fd2aa30) and a second History line ("103 carried starts given their commit",
   known noise). old_stats goes from 446 versions / 354 names to about 1,155 / 670.
 - **Gate and undo:** the growth is expected; read it with `diff_stats.py --history` (section 5's gate) before `/push`. To
   undo the recovery, revert that run's PICKLE commit (pickle-only; autocroissant-change-control).
@@ -502,7 +502,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   missing font, the fonts folder count, errors. One run at a time ("A font check is already running").
 - **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (9.8 s wall over the 813 PSDs on 2026-10-21 in a
   process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
-  ttscardmaker-companion §3 on 15 cards, 29 visible layers; on 2026-10-23, TTSCardMaker b03b9975 with Kung-Fu-Panda's rename:
+  ttscardmaker-companion §3 on 15 cards, 29 visible layers; on 2026-10-23, TTSCardMaker 92b5ae6b with Kung-Fu-Panda's rename:
 812 PSDs, 274 files / 282 faces, nothing missing, 7 s), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
@@ -653,7 +653,7 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner), 13 (S7) and 16 (previews); the PSD-edit ledger is
   docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
 
-### Card guards (added 2026-10-22; TTSCardMaker's card-guards.yml Action; landed 2026-10-23 on AutoCroissant main 2ada357 and TTSCardMaker 96d61368, off while `CARD_GUARDS` is unset)
+### Card guards (added 2026-10-22; TTSCardMaker's card-guards.yml Action; landed 2026-10-23 on AutoCroissant main 2ada357 and TTSCardMaker a7d1fe56, off while `CARD_GUARDS` is unset)
 
 The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
@@ -902,7 +902,7 @@ and deployed at 10:36 with `CARD_SYNC = False`. **Off until the cutover**: every
 with it off the bot is byte-identical to the one before this code (the suite, the rehearsal harness and a surface diff of
 every slash text, /help and /website showed no difference).
 
-**Status (2026-10-23):** TTSCardMaker main 96d61368 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT` and
+**Status (2026-10-23):** TTSCardMaker main a7d1fe56 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT` and
 `POSTS` off): that is the shadow start (§14 step 7). At 11:18 no scheduled run had fired yet (GitHub's scheduler runs hours
 late for this repo) and the card repo had no `data` branch. The shadow lasts 3 days from 2026-10-23 10:36 or 10 card
 pushes, whichever is later; its daily check is diff_stats between the `data` tip and the jetson's last PICKLE

@@ -35,7 +35,7 @@ The 05:30 `/push` made PICKLE a7c310e.
   needed TTSCardMaker's font-check.yml and text.js); Cython 11/11; 52 commands.
 - Jetson deployed 10:36: the fork tag installed (`_distance` compiled with gcc, `pip check` clean), `build_ext` 11 .so,
   764 cards, emojis ready.
-- TTSCardMaker main 96d61368: site history and date fixes, `.mailmap` (Michael -> MichaelJSr; the `[people] Michael` case
+- TTSCardMaker main a7d1fe56: site history and date fixes, `.mailmap` (Michael -> MichaelJSr; the `[people] Michael` case
   gone), 5 more first-poster authors, created dates (Pandora 2019-05-01; 0 provisional), Stubborn Queen / Gust of Trees
   `dup_of`, website password sign-in, push guards (`CARD_GUARDS` unset = off), psd-diff, **card-sync.yml's schedule (the
   shadow start, `MAIN_COMMIT`/`POSTS` off)**, all three Actions re-pinned to `cards-20261023`. card-edits.yml re-enabled
@@ -45,16 +45,16 @@ The 05:30 `/push` made PICKLE a7c310e.
 
 - TTSCardMaker f2b2de98: 41 Mario cards to series Mario + subseries <game> (69 Mario cards in all).
 - TTSCardMaker 71ddebec: Card Authors from the first Discord posters (108 lines; manual credits kept), owner-approved.
-- **Batch B2 pushed 07:1x** (TTSCardMaker 0bc4c099, 6 commits): 185 badge cards re-run (sizing, stickers, FX, (Action),
+- **Batch B2 pushed 07:1x** (TTSCardMaker 7fd2aa30, 6 commits): 185 badge cards re-run (sizing, stickers, FX, (Action),
   title case), the rulebook (02 legend, 11_Abilities3/6, 22_Negation), gradient maps restored on Dark Mind Eye and Kel,
   Name case and Tainted bars, A P E X's "(action)" and "(BOT)" badges, Effect Layers.jsx without badge pixels in FX
   layers, and the 24 cards of the owner's rulings (margins via R0, one badge size, re-layouts).
-- Photoshop pass (09:0x): 83728277 (Glitz_Pit, Michael's_Blessing, The_Core, Computer_Virus fixed) and 49cf3b28 (L7
+- Photoshop pass (09:0x): 739c7abb (Glitz_Pit, Michael's_Blessing, The_Core, Computer_Virus fixed) and 0c573ed0 (L7
   effect layers on 13 cards; the rest of the 40 overlay cards were already converted). The glow test: Photoshop draws
   colour glyphs whole, so 0.3 em halos are fine; the installed font was restored.
-- tts-save 7886c573 (1252 links pinned after B2).
+- tts-save d5993597 (1252 links pinned after B2).
 - Discord posts (09:2x-09:3x): card-check, the push guards and changelog never ping; font-check pings the card makers'
-  role in the standards channel (AutoCroissant 9627623 + 65adf90; TTSCardMaker 93b7c55c + 413053c0);
+  role in the standards channel (AutoCroissant 9627623 + 65adf90; TTSCardMaker b212510f + f219a126);
   `DISCORD_FONT_WEBHOOK` deleted.
 
 ## Numbers
@@ -131,10 +131,10 @@ Landed, each with its full suite green and pushed straight to main:
   the 4 stale verdicts were settled), 1bf6892 (a title layer named after its own text: Papyrus, Sans), 0dd3fa7 and
   5f5fe82 (tests: painted known misses instead of Red_Knife's noise; stock-venv fixes). Jetson deploys 12:34, 13:49,
   15:52; fork reinstalls 14:10 and 17:02.
-- **TTSCardMaker** 0fcbcdfe (glow font 0.3 em, share text any case), 41e2ddea (Energy_Ritual cand A), 08b1152a (Effect
-  Layers.jsx overlay colour), 6a54b4f6 (site skips recompressions in Image versions), 56011634 (686 PNGs 4.18 GB ->
-  1.14 GB, pixel-identical, verified twice), 5c88f230 (TTS save re-pinned 4018 links), 6dd5399e (types in any order),
-  2921ecbd and 82a8ba7c (fork pins).
+- **TTSCardMaker** b24c3519 (glow font 0.3 em, share text any case), e0775de0 (Energy_Ritual cand A), 8308103f (Effect
+  Layers.jsx overlay colour), b2168617 (site skips recompressions in Image versions), 2330d7b0 (686 PNGs 4.18 GB ->
+  1.14 GB, pixel-identical, verified twice), 85d23666 (TTS save re-pinned 4018 links), 1f9563e2 (types in any order),
+  5b68f6d1 and b7798bb1 (fork pins).
 - **Fork** tags `cards-20261023b` (round 9: 187,299 -> 174,340) and `cards-20261023c` (round 10: -> 138,578; effect
   noise is one fixed field in document coordinates; styled pass-through groups). Rounds 6-10: -77%.
 - **Switches:** `CARD_GUARDS=report` (13:04). The shadow's first scheduled run made the `data` branch (14:21).

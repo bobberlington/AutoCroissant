@@ -19,7 +19,7 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # templat
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn heart cells
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
-OVERLAY_VIRUS = "83728277^"                                            # Computer Virus with overlay words and image icons only
+OVERLAY_VIRUS = "739c7abb^"                                            # Computer Virus with overlay words and image icons only
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
@@ -97,7 +97,7 @@ def test_text_layers_and_template(records):
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
     assert virus["template"]["name_layer"] == "Name" and "no title layer" not in virus["template"]["deviations"]
-    assert virus["overlays"] == [] and "overlay word layers" not in virus["template"]["deviations"]   # L7 (83728277)
+    assert virus["overlays"] == [] and "overlay word layers" not in virus["template"]["deviations"]   # L7 (739c7abb)
     assert virus["fx"] == ["Names/Ability FX: 3rd: Magician", "Names/Ability FX: 2nd: Puppet", "Names/Ability FX: 1st: Slime"]
     lazarus = records[LAZARUS]
     assert lazarus["template"]["ability_layers"] == ["Laz/Laz/Ability", "Dead Laz/Dead Laz/Ability"]
@@ -108,7 +108,7 @@ def test_text_layers_and_template(records):
 
 
 def test_overlay_words_and_image_icons(clone, index):
-    """Computer Virus before 83728277: its Names words were overlay text layers, its icons images only (no badge run)."""
+    """Computer Virus before 739c7abb: its Names words were overlay text layers, its icons images only (no badge run)."""
     virus = pd.gather(at_rev(clone, OVERLAY_VIRUS, VIRUS), VIRUS, _name(VIRUS), index, pd.clone_types(str(clone)))
     assert virus["icons"] == "images" and virus["fx"] == []
     assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]

@@ -265,7 +265,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    layer's key also takes its colour glyphs' silhouettes where no other glyph inks (`_phrase_mask(badge=True)`: a key
    drawn without colour glyphs, `Options(color_glyphs=False)`, each one its glyf outline, the icon's alpha past 110).
    The style is the chart's (Add), the overlay's (Convert overlays, whose words take the overlay's colour: its first drawn
-   run, 08b1152a) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
+   run, 8308103f) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
    (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a
    styled chart status's style on another phrase (`"styled"`: Goofy's `1#1`, Clot Gold's `1 Become Back Money`, the
    enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again, and since 2026-10-23 any
@@ -333,7 +333,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
    a new layer takes the chart's (below). Text typed into a `"styled"` or `"own"` layer's own
    words (a match holding characters it covered), or a typed copy that joins it, takes the phrase's colour, its first
-   drawn run (08b1152a), but a status word among them keeps the chart's swatch (the owner's 2026-10-23 ruling). A
+   drawn run (8308103f), but a status word among them keeps the chart's swatch (the owner's 2026-10-23 ruling). A
    stroke or shadow alone draws over the words' own fill: a copy of Palace of Shadow's blue "+2 DEF" printed in the
    body's grey and one of Morpho Knight's red "+2/4/6 ATK" in yellow, every gate passing (review 2026-10-23, round 2).
    A copy joining a layer whose letters are in more than one colour refuses (none on main). Gate `gate_fx` checks it
@@ -1024,7 +1024,7 @@ shared with card-edits and card-sync): the icon manifest, the PSD and the PNG (3
 status chart for an ability and the added Types/ icons for a types edit. Fine at hobby volume; a burst of a hundred
 previews an hour would compete with the schedules.
 
-**Measured (2026-10-23, this Mac at load average ~55-66, the Desktop clone at 82a8ba7c then b03b9975, fork
+**Measured (2026-10-23, this Mac at load average ~55-66, the Desktop clone at b7798bb1 then 92b5ae6b, fork
 cards-20261023c):** Mini Doomer hp 5 -> 8 baked in 6-14 s (the same pixels as card_bake's dry run, a test); The
 Freezer's ability `+1 DEF` -> `+2 DEF` in 26 s, coloured as the original; hp 25 refused in 3 s; hp 5 redundant in 2 s;
 stars 0 + hp 8: hp baked, stars refused, 19 s; a publish 1-2 s. On the runner, from card-edits.yml dispatch 40003504861:

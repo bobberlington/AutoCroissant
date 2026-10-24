@@ -218,3 +218,9 @@ counts twice; 17_Death gives points rules, not counts), `used` counts discards; 
    `cards[].end: primary` for `end: field`, report-level `result` for `end`, `team` for `seat`: accept any?
 7. Fewest games before a number shows (3?); per-deck stats for public decks only?
    2026-10-21: no floor, numbers show from the first game (the user); per-deck stats match public decks only (private ones are encrypted).
+
+**Answered 2026-10-24 (the user):** 1 zones per team. 2 the reporter lives inside the Flex Table Control. 5 minions and
+`Auxiliary/Creatures` cards get their own `cards[]` rows. 6 the simulator's names are accepted (`field_card`,
+`end: primary`, `result`, `team`). Also: GitHub logins only; every report public; an admin may confirm on a player's
+behalf and one team's confirmation counts.
+

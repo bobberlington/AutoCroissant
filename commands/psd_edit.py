@@ -1300,7 +1300,7 @@ class FxPlan:
     layer: object
     phrases: list           # its name's phrases ("Frozen#2" keeps its number)
     kind: str               # fx_kind(): "badge", "status", "styled" or "own"
-    fill: Optional[tuple] = None    # "styled", "own": its words' colour, the first drawn run (Effect Layers.jsx 08b1152a)
+    fill: Optional[tuple] = None    # "styled", "own": its words' colour, the first drawn run (Effect Layers.jsx 8308103f)
     box: tuple = ()         # its bbox before the edit
     ranges: list = field(default_factory=list)  # phrase_ranges() of its phrases in the old text
     found: list = field(default_factory=list)   # [(phrase, its phrase_ranges() in the old text)]
@@ -2363,7 +2363,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     status = {i for span_start, span_end, _ in spans for i in range(span_start, span_end)}
     for plan, target in zip(plans, targets):    # typed into a styled phrase's words, or a copy joining it: its colour
         for a, b, joined in [(*span, span not in anchored) for _, _, now, anchored, _ in target for span in now]:
-            if plan.fill is not None and (joined or a < end and start < b):    # (08b1152a); a status word keeps the
+            if plan.fill is not None and (joined or a < end and start < b):    # (8308103f); a status word keeps the
                 for c, d in _stretches([i for i in range(a, b) if i not in status]):   # chart's swatch (owner 2026-10-23)
                     layer.set_span_style(c, d, fill=plan.fill)
     try:
