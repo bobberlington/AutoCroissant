@@ -91,10 +91,12 @@ class Layer:
     ([5, 2, -1, -1], {}, False, "partial"),
     ([10, 10, 10, 10], {}, False, None),                # every digit hidden: the default, no card prints it
     ([-1, -1, -1, -1], {}, False, None),
-    ([7, 2, 3, 20], {}, False, None),                   # out of range without an allowance
+    ([7, 2, 3, 20], {}, False, "partial"),              # out of range without an allowance: that stat unread
     ([7, 2, 3, 20], {}, True, "full"),                  # allow_high_stats (Sonic)
     ([110, 110, 110, 110], {}, True, None),             # three digits: never
-    ([10, 3, 5, 5], {"hidden": ["hp"]}, False, None),   # a drawn-cell row all hidden
+    ([10, 3, 5, 5], {"hidden": ["hp"]}, False, "partial"),      # a drawn-cell row all hidden: that stat unread
+    ([10, 3, 5, 5], {"hidden": ["hp", "def", "atk", "spd"]}, False, None),
+    ([0, -1, -1, -1], {}, False, None),                 # no value above 0 (Tainted Keeper's first blob)
     (None, {"err": "classifier: no star count"}, False, None),
     ([0, 0, 0, 0], {}, False, None),                    # drawn hearts read as nothing (Clot Bone)
     ([6, 9, 9, 10], {"split": ["hp", "atk"]}, False, None),     # two creatures' rows summed (God Tamer)
@@ -102,6 +104,35 @@ class Layer:
 ])
 def test_status(read, extra, allowed, want):
     assert hb.status({"read": read, **extra}, allowed) == want
+
+
+def test_stat_values_unread_per_stat():
+    assert hb.stat_values({"read": [17, 3, 6, 7]}, False) == [None, 3, 6, 7]
+    assert hb.stat_values({"read": [10, 4, 6, 5], "hidden": ["hp"]}, False) == [None, 4, 6, 5]
+    assert hb.stat_values({"read": [5, 2, 5, 5], "split": ["hp"]}, False) is None
+
+
+def test_an_unread_stat_keeps_the_others_read():
+    """Michael: HP read 17 (a layering fixed later) on both blobs, ATK 6 -> 4 on a row that printed it: a nerf, HP from
+    the reading after. Tainted Magdalene: HP hidden, DEF/ATK 4/6 -> 3/5."""
+    readings = [reading(1, B1, [17, 3, 6, 7], "first"), reading(2, B2, [17, 3, 4, 7], "changed", row_px=[0, 0, 11656, 0]),
+                reading(3, B3, [7, 3, 4, 7], "changed", row_px=[5000, 0, 0, 0])]
+    segs = hb.segments(readings, False)
+    assert [(s["from"], s["line"], s.get("change")) for s in segs] == [(1, [7, 3, 6, 7], None), (2, [7, 3, 4, 7], "nerf")]
+    readings = [reading(1, B1, [10, 4, 6, 5], "first", hidden=["hp"]),
+                reading(2, B2, [7, 3, 5, 5], "changed", row_px=[4000, 4000, 4000, 0])]
+    assert [s["line"] for s in hb.segments(readings, False)] == [[7, 4, 6, 5], [7, 3, 5, 5]]
+
+
+def test_a_stat_no_version_read_is_no_line():
+    readings = [reading(1, B1, [17, 3, 6, 7], "first"), reading(2, B2, [18, 3, 6, 7], "changed")]
+    assert hb.lines_of(readings, False) == [] and hb.segments(readings, False) == []
+
+
+def test_a_reading_of_zeros_and_minus_ones_is_unread():
+    """Tainted Keeper's first blob reads 0/-1/-1/-1 (its preview prints 5/4/5/5): no version of its own."""
+    readings = [reading(1, B1, [0, -1, -1, -1], "first"), reading(2, B2, [5, 4, 5, 5], "changed")]
+    assert [(s["from"], s["line"]) for s in hb.segments(readings, False)] == [(1, [5, 4, 5, 5])]
 
 
 def test_bars_that_printed_the_same_are_one_line_the_newest():
@@ -253,6 +284,19 @@ def test_stat_rows_are_each_stats_drawn_layers():
     assert hb.rows_moved(a, b, hb.stat_boxes(psd)) == [20, 0, 0, None]
 
 
+def test_stat_rows_by_the_labels_position():
+    """Groda: its 'def' and 'atk' fills swapped rows, the labels under "Lines" did not; Leshy's 'hp copy' fills and a
+    box over every row."""
+    labels = Layer("Lines", children=[Layer("Hp", "pixel", bbox=(0, 0, 50, 8)), Layer("Def ", "pixel", bbox=(0, 10, 50, 18)),
+                                      Layer("Atk", "pixel", bbox=(0, 20, 50, 28))])
+    psd = Layer("psd", children=[Layer("Stats Bars", children=[
+        Layer("Bars", children=[Layer("def", "pixel", bbox=(0, 20, 50, 28)), Layer("atk", "pixel", bbox=(0, 10, 50, 18)),
+                                Layer("hp copy", "pixel", bbox=(0, 20, 50, 28)), Layer("hp", "pixel", bbox=(0, 0, 50, 8)),
+                                Layer("spd", "pixel", bbox=(0, 30, 50, 38))]),
+        Layer("Layer 8", "pixel", bbox=(0, 0, 50, 38))]), labels])
+    assert hb.stat_boxes(psd) == [[(0, 0, 50, 8)], [(0, 10, 50, 18)], [(0, 20, 50, 28)], [(0, 30, 50, 38)]]
+
+
 def test_summed_rows_that_are_no_overflow_are_split():
     from commands.psd_parser import StatTracker, StatTrackers
 
@@ -327,7 +371,7 @@ def cards(tmp_path):
 
 
 def test_fates_of_the_cards_that_left(cards, monkeypatch):
-    """A new name in the folder is a rename; a card moved in beside the deletion is no rename (Amy Rose's Hammer); a
+    """A new name in the folder is a rename; a card moved in beside the deletion is no rename (Regenerative Shield); a
     move into MDW retires it; an owner-confirmed rename; another card of a live name gets a qualified key; a stray
     copy, a name that only passed through, rule pages and MDW drafts are left out."""
     monkeypatch.setattr(hb, "CONFIRMED", {"Items/Support/2 Stars/Plan.psd": "Tomorrow",
@@ -381,6 +425,23 @@ def test_a_renamed_record_shows_its_own_name_not_the_title_it_shares(cards):
     assert title("NEW name") is None and title("Pandiety", frozenset({"pandiety"})) is None
     assert title("Old Name!") == "Old Name!"
     assert hb._plain("Tomorrow I’ll") == hb._plain("Tomorrow I'll")
+
+
+def test_a_title_another_spelling_of_a_card_has_is_no_title():
+    others = hb._others({"Tainted Esau", "TaintedEsau", "Dark Esau"}, "TaintedEsau", "TaintedEsau")
+    assert hb._plain("Tainted ESAU") in others and hb._plain("Dark Esau") in others
+
+
+def test_build_refuses_without_the_side_files(cards, tmp_path, monkeypatch):
+    """Card Authors.txt at head but its blob not in the clone: no file (it would credit every record by git alone)."""
+    from global_config import AUTHORS_PATH
+    write(cards, AUTHORS_PATH, b"[people]\n[cards]\nGone = zed\n")
+    commit(cards, "alice", 8000)
+    want = blob(b"[people]\n[cards]\nGone = zed\n")
+    monkeypatch.setattr(hb, "_missing", lambda repo, blobs: [b for b in blobs if b == want])
+    out = tmp_path / "out.json"
+    assert hb.build(str(cards), "HEAD", str(tmp_path / "cache.jsonl"), str(out)) == 1 and not out.exists()
+    assert (tmp_path / "missing.txt").read_text() == want + "\n"
 
 
 def test_renamed_cards_are_read_as_one_card():
@@ -458,6 +519,41 @@ def test_versions_before_the_first_only_with_an_earlier_change():
     assert not hb.merge({}, old, data({"A": entry(same)}), ch.GitIndex()).changed() and lines(old) == [(3500, [6, 5, 5, 5])]
 
 
+def test_a_first_version_starting_at_the_change_gets_the_line_before():
+    """Grimmchild: its oldest stored version (or a current card with no history) starts at the change's own commit."""
+    readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(3000, B3, [6, 5, 5, 5], "changed")]
+    old = defaultdict(list, A=[version(3000, B3, [6, 5, 5, 5])])
+    report = hb.merge({}, old, data({"A": entry(readings)}), ch.GitIndex())
+    assert lines(old) == [(1000, [5, 5, 5, 5]), (3000, [6, 5, 5, 5])] and report.added == [("A", 1000, [5, 5, 5, 5])]
+    stats = {"A": version(3000, B3, [6, 5, 5, 5])}
+    old = defaultdict(list)
+    report = hb.merge(stats, old, data({"A": entry(readings)}), ch.GitIndex())
+    assert lines(old) == [(1000, [5, 5, 5, 5])] and ch.start(stats["A"])[0] == 3000 and report.balance == {"buff": 1}
+    assert not report.earlier and not report.later
+
+
+def test_a_start_collapse_carries_into_the_current_card_is_listed():
+    """A corrected version equal to the current card folds into it, which keeps the earlier start: listed."""
+    readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(2000, B2, [6, 5, 5, 5], "changed"),
+                reading(3000, B3, [6, 5, 5, 5], "same")]
+    old = defaultdict(list, A=[version(1000, B1, [5, 5, 5, 5]), version(2000, B2, [6, 5, 5, 9])])
+    stats = {"A": version(3000, B3, [6, 5, 5, 5])}
+    report = hb.merge(stats, old, data({"A": entry(readings)}), ch.GitIndex())
+    assert lines(old) == [(1000, [5, 5, 5, 5])] and ch.start(stats["A"])[0] == 2000
+    assert report.folded == ["A"] and report.earlier == [("A", True)]
+
+
+def test_an_earlier_lifes_tag_keeps_its_place():
+    """A name archived, then a new card under it: the old life's tagged record stays where its start puts it."""
+    gone = version(1000, B1, [5, 5, 5, 5])
+    gone.archived = {"at": 2000.0, "path": PATH, "blob": B1, "commit": None}
+    old = defaultdict(list, A=[gone, version(3000, B3, [6, 5, 5, 5])])
+    stats = {"A": version(4000, B4, [6, 5, 5, 5], ability="Later.")}
+    readings = [reading(3000, B3, [6, 5, 5, 5], "first"), reading(4000, B4, [6, 5, 5, 5])]
+    hb.merge(stats, old, data({"A": entry(readings)}), ch.GitIndex())
+    assert [ch.start(v)[0] for v in old["A"]] == [1000, 3000] and old["A"][0].archived
+
+
 def test_a_carried_start_is_split_and_moved_later():
     """A start recover carried earlier than its reading's segment: the earlier part becomes a copy with that line."""
     readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(3000, B3, [6, 5, 5, 5], "changed")]
@@ -475,6 +571,7 @@ def test_edit_versions_and_the_current_cards_data_are_left_alone():
     report = hb.merge(stats, old, data({"A": entry([reading(1000, B1, [5, 5, 5, 5], "first")])}), ch.GitIndex())
     assert hb._line(edited) == [9, 9, 9, 9] and cdb.record(stats["A"]) == before
     assert report.current == [("A", [8, 8, 8, 8], [5, 5, 5, 5])]
+    assert report.waits() == "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A)."
 
 
 def test_the_current_card_starts_earlier_with_an_earlier_change():
@@ -514,7 +611,7 @@ def test_a_correction_never_adds_a_change_the_stored_history_did_not_count():
                 reading(3000, B3, [2, 5, 4, 5], "changed", row_px=[9000, 9000, 45431, 9000])]
     old = defaultdict(list, A=[version(2000, B2, [2, 5, 4, 5]), version(3000, B3, [2, 5, 4, 5], ability="Later.")])
     report = hb.merge({}, old, data({"A": entry(readings)}), ch.GitIndex())
-    assert lines(old) == [(2000, [2, 5, 4, 5]), (3000, [2, 5, 4, 5])]
+    assert lines(old) == [(1000, [2, 2, 3, 5]), (2000, [2, 5, 4, 5]), (3000, [2, 5, 4, 5])]   # the line before: a copy
     assert report.corrected == [] and [(k[0], k[2], k[3], k[4]) for k in report.kept] == [
         ("A", [2, 5, 4, 5], [2, 5, 0, 5], "adds a change")]
 
@@ -552,8 +649,6 @@ def test_balance_counts_current_cards_and_the_line_names_those_that_differ():
     old["Gone"][1].archived = {"at": 3000.0, "path": PATH, "blob": B2, "commit": None}
     counts, cards = hb.balance({"A": version(2000, B2, [4, 5, 5, 5])}, old)
     assert counts == {"nerf": 1} and cards == 1
-    report = hb.Merged(current=[("A", [4, 5, 5, 5], [5, 5, 5, 5])])
-    assert "1 current card unlike the file (left alone; re-parse it: A)" in report.line()
 
 
 def test_the_merge_twice_and_the_cleanup_after_it_change_nothing():
@@ -651,6 +746,11 @@ def test_merged_waits_runs_once_and_never_half(tmp_path, monkeypatch):
     assert hb.merged(db, ch.GitIndex(), path) == ("Backfill waits for the history recovery.", False)
     db.old_stats["Z"] = [restored()]
     before = cdb.old_stats_text(db.old_stats)
+    stale = deepcopy(db)
+    stale.stats["A"] = version(3000, B3, [9, 9, 9, 9])                       # not re-parsed: waits, unchanged
+    assert hb.merged(stale, ch.GitIndex(), path) == (
+        "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A).", False)
+    assert cdb.old_stats_text(stale.old_stats) == before and not hb.merged_before(stale.stats, stale.old_stats, hb.FILE_ID)
     monkeypatch.setattr(hb, "merge", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     with pytest.raises(RuntimeError):
         hb.merged(db, ch.GitIndex(), path)
@@ -749,7 +849,7 @@ def test_the_archive_in_the_file(committed):
                      ("Tainted Esau", "Dark Esau"), ("Sacrifice", "Erasure"), ("TaintedJacob", "Tainted Jacob"),
                      ("Dogma (item)", "Indoctrination"), ("Auto Croissant (minion)", "Mini Auto Croissant")):
         assert fates[old] == ("renamed", new), old
-    assert fates["Amy Rose's Hammer"][0] == "deleted" and fates["Gilded"][0] == "deleted"
+    assert fates["Amy Rose's Hammer"] == ("renamed", "Piko Piko Hammer") and fates["Gilded"][0] == "deleted"   # git -M
     for name in ("Fire Guardian's Stronghold", "Pandeity Old", "Ech"):
         assert fates[name][0] == "retired", name
     assert "Twin Princes" not in cards and "Pandeity" not in cards and "Soul Master - Copy" not in cards

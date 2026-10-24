@@ -43,7 +43,7 @@ FILE_NAME = "history_backfill.json"
 FILE = join(BOT_CHECKOUT, FILE_NAME)          # what /update_stats merges once
 FILE_ID = "backfill-1"
 MARK = "backfill_id"                          # on the version records and archive tags the merge wrote: merged
-RULES = 2                                     # cache lines read by other rules are read again
+RULES = 3                                     # cache lines read by other rules are read again
 PX_DIFF, PX_SAME = 24, 1000                   # bars print the same: at most PX_SAME pixels moved by more than PX_DIFF
 PX_STAT = 300                                 # and in each stat's own row at most PX_STAT
 OFF_SCALE = 40                                # analytics: a total above it is no buff or nerf
@@ -57,6 +57,8 @@ TEMPLATE = {"hp dark copy": "Spd Dark", "hp dark copy 2": "Atk Dark", "hp dark c
 CONFIRMED = {"Items/Support/2 Stars/Plan_Ahead.psd": "Tomorrow I'll",
              "Items/Heal/1 Stars/Nuts_and_Bolts.psd": "Bolts and Screws",
              "Items/Heal/2 Stars/Pizza.psd": "Pepperoni Pizza"}
+# git -M renames the steps miss (another folder, bytes edited): a6c81145 R098, the same text and stars
+SIMILAR = {"Auxiliary/Items/Amy_Rose's_Hammer.psd": "Items/Equip/3 Stars/Piko_Hammer.psd"}
 KINDS = {"aux item": "item"}                  # a qualified key's kind: "Pizza (item)"
 DRAWN = ("pixel", "smartobject", "group", "type", "shape")   # psd_parser.DRAWN_LAYER_KINDS
 STAT_OF = {"hp": "hp", "def": "def", "atk": "atk", "spd": "spd", "health": "hp"}
@@ -87,6 +89,12 @@ def _missing(repo: str, blobs) -> list:
     wanted = sorted({b for b in blobs if b})
     out = _git(repo, "cat-file", "--batch-check", data="".join(b + "\n" for b in wanted).encode()).decode()
     return [line.split()[0] for line in out.splitlines() if line.endswith(" missing")]
+
+
+def _blobs_at(repo: str, head: str, paths: tuple) -> list:
+    """The blobs of the paths that exist at head."""
+    out = _git(repo, "ls-tree", "-z", head, "--", *paths).decode()
+    return [line.split()[2] for line in out.split("\0") if line]
 
 
 def today(path: str) -> str:
@@ -276,6 +284,8 @@ def _step(hist: History, path: str, live: dict) -> tuple:
         return ("retired", same[0], "same file")
     if path in CONFIRMED:
         return ("renamed", CONFIRMED[path], "confirmed")
+    if path in SIMILAR:
+        return ("renamed", SIMILAR[path], "git -M")
     folder = path_dir(path)
     targets = {r[0] for r in index.renames.values() if r[1] is cut}
     new = [p for p in adds if is_card(p) and path_dir(p) == folder and p not in targets
@@ -299,8 +309,8 @@ def fate(hist: History, path: str, live: dict) -> Fate:
     """
     A gone card's fate from the commit that deleted its last path: retired (moved_to its path in MDW: the commit put
     the file there, or an exact rename did), renamed (renamed_to the live card a chain of renames ends at: exact
-    renames, an owner-confirmed one, or the commit adding as many new card names in that folder as it deleted, paired
-    by name), else deleted.
+    renames, an owner-confirmed one, a git -M one (SIMILAR), or the commit adding as many new card names in that folder
+    as it deleted, paired by name), else deleted.
 
     Args:
         live: {key: live card name}
@@ -401,10 +411,22 @@ def _row_of(name: str) -> Optional[int]:
     return next((STAT_ROW[w] for w in WORDS.findall(name.lower()) if w in STAT_ROW), None)
 
 
+def _span(boxes: list) -> Optional[tuple]:
+    return (min(b[1] for b in boxes), max(b[3] for b in boxes)) if boxes else None
+
+
 def stat_boxes(psd) -> list:
-    """Each stat's own row: [[boxes] for hp, def, atk, spd], from the drawn layers under a "...bars", "...lines" or
-    "...dark..." group named after the stat or sitting in such a stat's group (never text, groups or the canvas)."""
-    out = [[], [], [], []]
+    """
+    Each stat's own row: [[boxes] for hp, def, atk, spd], from the drawn layers under a "...bars", "...lines" or
+    "...dark..." group (never text, groups or the canvas).
+
+    - By position where the row labels tell: a layer in a "...line..." group named after a stat is that stat's label,
+      and its height that stat's band (two or more stats labelled, bands apart). A box goes to the band holding most of
+      its height; a box over several bands to none. Groda's 'def' fill sits on the ATK row; Leshy's 'hp copy' fills
+      on every row.
+    - Else, and for a box in no band, by the name of the layer or its group.
+    """
+    named, labels = [], [[], [], [], []]
     for layer in psd.descendants():
         b = layer.bbox
         if layer.is_group() or layer.kind == "type" or not b or b[2] <= b[0] or b[3] <= b[1]:
@@ -415,10 +437,23 @@ def stat_boxes(psd) -> list:
             cur = getattr(cur, "parent", None)
         if not any(k in n for n in names for k in ("bar", "line", "dark")):
             continue
-        row = _row_of(layer.name)
-        row = row if row is not None else next((r for r in map(_row_of, names[:2]) if r is not None), None)
+        box, own = tuple(int(v) for v in b), _row_of(layer.name)
+        if own is not None and names and "line" in names[0]:
+            labels[own].append(box)
+        named.append((box, own if own is not None else next((r for r in map(_row_of, names[:2]) if r is not None), None)))
+    bands = [_span(boxes) for boxes in labels]
+    known = sorted(band for band in bands if band)
+    if len(known) < 2 or any(x[1] > y[0] for x, y in zip(known, known[1:])):
+        bands = [None] * 4
+    out = [[], [], [], []]
+    for box, row in named:
+        held = [(min(box[3], band[1]) - max(box[1], band[0]), s) for s, band in enumerate(bands) if band]
+        held = [(h, s) for h, s in held if h > 0]
+        if held:
+            h, s = max(held)
+            row = s if 2 * h >= box[3] - box[1] else None
         if row is not None:
-            out[row].append(tuple(int(v) for v in b))
+            out[row].append(box)
     return [sorted(set(boxes)) for boxes in out]
 
 
@@ -593,17 +628,27 @@ def _run_task(task: tuple) -> list:
 # ========================
 # Lines, print runs, segments
 # ========================
-def status(reading: dict, allowed: bool) -> Optional[str]:
-    """"full", "partial" (values and -1s: a bar the card lacks) or None: unread (no reading, a hidden drawn-cell row,
-    summed split rows, a value out of range, the all-default 10/10/10/10, all 0, all -1)."""
+def stat_values(reading: dict, allowed: bool) -> Optional[list]:
+    """Per stat, the value read, or None where that stat is unread (a hidden drawn-cell row, a value out of range);
+    None for an unread reading (no reading, summed split rows, the all-default 10/10/10/10, no value above 0: all 0,
+    all -1, Tainted Keeper's 0/-1/-1/-1), or one with no stat read."""
     line = reading.get("read")
-    if not line or reading.get("err") or reading.get("hidden") or reading.get("split"):
+    if not line or reading.get("err") or reading.get("split"):
         return None
-    if line in ([10, 10, 10, 10], [0, 0, 0, 0]) or all(v == -1 for v in line):
+    if line == [10, 10, 10, 10] or all(v in (0, -1) for v in line):
         return None
-    if any(not isinstance(v, int) or v < -1 or v > (STAT_CAP if allowed else STAT_MAX) for v in line):
+    hidden = {STAT_ROW[h] for h in reading.get("hidden") or [] if h in STAT_ROW}
+    cap = STAT_CAP if allowed else STAT_MAX
+    out = [v if i not in hidden and isinstance(v, int) and -1 <= v <= cap else None for i, v in enumerate(line)]
+    return out if any(v is not None for v in out) else None
+
+
+def status(reading: dict, allowed: bool) -> Optional[str]:
+    """"full", "partial" (a -1: a bar the card lacks; or a stat unread, stat_values) or None: unread."""
+    values = stat_values(reading, allowed)
+    if values is None:
         return None
-    return "partial" if -1 in line else "full"
+    return "partial" if -1 in values or None in values else "full"
 
 
 def kind_of(a: Optional[list], b: list) -> str:
@@ -623,11 +668,12 @@ def row_same(reading: dict, stat: int) -> bool:
 
 def lines_of(readings: list, allowed: bool) -> list:
     """
-    Each version's stat line by the misread rule: (line, creatures) per reading, [] when no version has a line.
+    Each version's stat line by the misread rule: (line, creatures) per reading, [] when some stat no version read.
 
-    - Print runs: consecutive versions whose bars printed the same (the region and every stat's row). A run's line is
-      its newest reading with a line: a reading that changed while nothing printed changed is a misread, and the
-      newest layering is the one the team fixed (Tainted bars, the template rename, Green Mage's bars).
+    - Print runs: consecutive versions whose bars printed the same (the region and every stat's row). A run's value of a
+      stat is its newest reading of that stat: a reading that changed while nothing printed changed is a misread, and
+      the newest layering is the one the team fixed (Tainted bars, the template rename, Green Mage's bars). A stat
+      unread (stat_values: hidden, out of range) is that stat only (Michael's HP 17 keeps its ATK).
     - Per stat, runs whose boundary left that stat's row as printed are one stretch: its value is the first run's with a
       line (a reading that changed only where other rows or art changed is a misread: Tainted Eden's 2023-11-17 ATK and
       SPD). A stretch without a line takes the value before it (the first: the one after).
@@ -638,11 +684,17 @@ def lines_of(readings: list, allowed: bool) -> list:
             runs[len(runs) - 1].append(i)
         else:
             runs.append([i])
-    found = []
+    found = []                                # per run: (each stat's newest value read, the newest creatures) or None
     for run_ in runs:
-        known = [i for i in run_ if status(readings[i], allowed)]
-        newest = readings[known[len(known) - 1]] if known else None
-        found.append((list(newest["read"]), [list(c) for c in newest.get("creatures") or []]) if newest else None)
+        values, creatures = [None] * 4, None
+        for i in reversed(run_):
+            got = stat_values(readings[i], allowed)
+            if got is None:
+                continue
+            if creatures is None:
+                creatures = [list(c) for c in readings[i].get("creatures") or []]
+            values = [v if v is not None else g for v, g in zip(values, got)]
+        found.append((values, creatures) if creatures is not None else None)
     if not any(found):
         return []
     values = [[None] * len(runs) for _ in range(4)]
@@ -654,7 +706,7 @@ def lines_of(readings: list, allowed: bool) -> list:
             else:
                 stretches.append([r])
         for stretch in stretches:
-            first = next((found[r][0][stat] for r in stretch if found[r]), None)
+            first = next((found[r][0][stat] for r in stretch if found[r] and found[r][0][stat] is not None), None)
             for r in stretch:
                 values[stat][r] = first
         for order in (range(len(runs)), reversed(range(len(runs)))):    # unread: the value before, else after
@@ -663,6 +715,8 @@ def lines_of(readings: list, allowed: bool) -> list:
                 if values[stat][r] is None:
                     values[stat][r] = last
                 last = values[stat][r]
+    if any(values[stat][0] is None for stat in range(4)):              # a stat no version read: as no line
+        return []
     out, creatures = [], None
     for r, run_ in enumerate(runs):
         line = [values[stat][r] for stat in range(4)]
@@ -828,6 +882,12 @@ def _plain(text: str) -> str:
     return "".join(ALNUM.findall((text or "").lower()))
 
 
+def _others(names: set, *own: str) -> frozenset:
+    """Every other card's name, _plain: by exact name, so a record keeps no title a differently spelt card has
+    (TaintedEsau's "Tainted ESAU" is Tainted Esau's)."""
+    return frozenset(_plain(n) for n in names if n not in own)
+
+
 def _archive_record(hist: History, name: str, title: Optional[str], last: str, found: Fate, card: dict,
                     live: dict, names: frozenset = frozenset()) -> dict:
     """The archived record of a candidate: today's parse of the deleted bytes, its version from their intro, closed at
@@ -878,6 +938,7 @@ def build(repo: str, head: str, cache_path: str, out: str, workers: int = WORKER
     chains = rename_chains(stat, candidates)
     wanted = [b for line in stat.values() for _, b, _ in line.versions]
     wanted += [hist.deleted_blob(last) for _, _, _, _, last in candidates]
+    wanted += _blobs_at(repo, head_sha, (AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH))    # never built without them
     missing = _missing(repo, wanted)
     if missing:
         where = join(dirname(abspath(cache_path)), "missing.txt")
@@ -995,12 +1056,12 @@ def assemble(hist: History, stat: dict, candidates: list, cache: dict, authors: 
     changes.sort()
     edits_unread.sort()
     records, credits = {}, {}
-    names = frozenset(_plain(n) for n in list(live.values()) + [c[0] for c in candidates] + [c[2].name for c in candidates])
+    exact = set(live.values()) | {c[0] for c in candidates} | {c[2].name for c in candidates}
     for name, title, line, found, last in candidates:
         got = cache["card"].get((hist.deleted_blob(last), last)) or {}
         entry = {"fate": found.kind, "how": found.how, "path": last}
         if got.get("card"):
-            others = names - {_plain(name)}
+            others = _others(exact, name, line.name)
             entry["record"] = _archive_record(hist, name, title, last, found, got["card"], live, others)
         else:
             entry["error"] = got.get("err", "not read")
@@ -1118,16 +1179,19 @@ class Merged:
         b = self.balance
         parts.append(f"stat changes {b['buff'] + b['nerf'] + b['shift']} ({b['buff']} buffs, {b['nerf']} nerfs, "
                      f"{b['shift']} moved) and {b['uncounted']} uncounted, on {self.balance_cards} current cards")
-        if self.current:
-            one = len(set(n for n, *_ in self.current)) == 1
-            parts.append(f"{len(set(n for n, *_ in self.current))} current card{'' if one else 's'} unlike the file "
-                         f"(left alone; re-parse {'it' if one else 'them'}: {names(n for n, *_ in self.current)})")
         parts.append(f"{len(self.archived)} card{'' if len(self.archived) == 1 else 's'} archived ("
                      + ", ".join(f"{fates[k]} {k}" for k in ("renamed", "retired", "deleted") if fates[k]) + ")"
                      + (f", {len(self.retagged)} retagged ({names(n for n, _ in self.retagged)})" if self.retagged else "")
                      + (f", {len(self.paths)} tag paths fixed ({names(n for n, _ in self.paths)})" if self.paths else "")
                      + f"; authors on {self.authors}")
         return "Backfill: " + "; ".join(parts) + "."
+
+    def waits(self) -> Optional[str]:
+        """The line while a current card is unlike the file (not re-parsed): the merge waits for its re-parse."""
+        if not self.current:
+            return None
+        names = ", ".join(sorted({n for n, *_ in self.current}))
+        return f"Backfill waits: {names} unlike the file, not re-parsed yet (/update_stats cards:{names})."
 
 
 def _line(card) -> Optional[list]:
@@ -1215,10 +1279,12 @@ def _copy(card, seg: dict, at: float, commit: Optional[str]) -> CardInfo:
     return out
 
 
-def _move(card, at: float, commit: Optional[str], report: Merged, name: str, current: bool) -> None:
+def _move(card, at: float, commit: Optional[str], report: Optional[Merged], name: str) -> None:
+    """card's start moved to at (report: listed; None: the caller lists it)."""
     info = _info(card)
-    (report.earlier if at < (info.get("from") if info.get("from") is not None else card.timestamp)
-     else report.later).append((name, current))
+    if report is not None:
+        (report.earlier if at < (info.get("from") if info.get("from") is not None else card.timestamp)
+         else report.later).append((name, False))
     info["from"], info["from_commit"], info[MARK] = at, commit, FILE_ID
 
 
@@ -1245,6 +1311,7 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
     chain = [*stored, holder] if holder is not None else stored
     if not chain:
         return
+    held = start(holder)[0] if holder is not None else None
     own, read, loose = {}, set(), set()
     for v in chain:
         at = start(v)[0] or v.timestamp
@@ -1303,7 +1370,8 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
             _set_line(v, {"line": _line(near), "creatures": [[c.hp, c.defense, c.attack, c.speed]
                                                                for c in near.creatures or []]})
             report.neutral.append(name)
-    copies = []
+    copies = []                                                   # a gone name's final tag stays last
+    final = stored[len(stored) - 1] if holder is None and stored and getattr(stored[len(stored) - 1], "archived", None) else None
     for i, v in enumerate(chain):                                 # splits
         if id(v) not in own or _edited(v):
             continue
@@ -1312,7 +1380,7 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
         nxt = chain[i + 1] if i + 1 < len(chain) else None
         b = (start(nxt)[0] or nxt.timestamp) if nxt is not None else \
             ((getattr(v, "archived", None) or {}).get("at") or FAR)
-        if i == 0 and any(seg["from"] < a for seg in segs[1:]):
+        if i == 0 and any(seg["from"] <= a for seg in segs[1:]):
             a = segs[0]["from"]                                   # a change before the first version
         mine, earlier = None, False
         for j, seg in enumerate(segs):
@@ -1332,15 +1400,17 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
             copy = _copy(v, seg, at, commit)
             if j > k and getattr(v, "archived", None):            # the PSD changed after the record's reading
                 copy.archived, v.archived = v.archived, None
+                final = copy if v is final else final
                 report.tags_moved.append(name)
             copies.append(copy)
             report.added.append((name, at, seg["line"]))
         if mine is not None and mine[0] != (start(v)[0] if start(v)[0] is not None else v.timestamp):
-            _move(v, mine[0], mine[1], report, name, v is holder)
-    hist = sorted([v for v in chain if v is not holder] + copies,
-                  key=lambda v: (bool(getattr(v, "archived", None)), start(v)[0] or v.timestamp))
+            _move(v, mine[0], mine[1], None if v is holder else report, name)
+    hist = sorted([v for v in chain if v is not holder] + copies, key=lambda v: (v is final, start(v)[0] or v.timestamp))
     kept, dropped = collapse(hist, holder)
     report.folded += [name] * len(dropped)
+    if holder is not None and start(holder)[0] != held:          # moved here or by collapse's carry
+        (report.earlier if held is None or start(holder)[0] < held else report.later).append((name, True))
     for x, y in zip(kept, kept[1:] + ([holder] if holder is not None else [None])):
         if MARK not in (getattr(x, "version", None) or {}) and MARK not in (getattr(y, "version", None) or {}):
             continue
@@ -1396,6 +1466,7 @@ def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex, authors: Op
         card = from_record(entry["record"])
         old_stats.setdefault(name, []).append(card)
         report.archived.append((name, entry["fate"]))
+    added = {n for n, _ in report.archived}
     for name, entry in sorted(data["cards"].items()):
         if name in stats or name in old_stats:
             merge_card(name, entry, stats, old_stats, index, report, upto)
@@ -1408,6 +1479,8 @@ def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex, authors: Op
         if who and tag.get("author") != who:
             tag["author"] = who
             report.authors_set.append(name)
+        if who and name in added and not getattr(last, "author", None):
+            last.author = who                 # a new record: on the card too (the site reads the tag's, else the card's)
         if tag.get("author"):
             report.authors += 1
     commits_of(stats, old_stats, index)                          # a record made here: its start's commit, as the cleanup would
@@ -1462,8 +1535,8 @@ def load_file(path: str = "") -> Optional[dict]:
 def merged(db, index, path: str = "", authors: Optional[CardAuthors] = None) -> tuple:
     """
     /update_stats' once-merge, on a copy of db's cards and history that goes into db only when it ran through: nothing
-    without the file or the history index; "waits" until recover has run; nothing once a version or tag carries the
-    file's id (merged_before).
+    without the file or the history index; "waits" until recover has run and while a current card is unlike the file
+    (Merged.waits); nothing once a version or tag carries the file's id (merged_before).
 
     Returns:
         (the report line or None, whether db changed)
@@ -1481,6 +1554,8 @@ def merged(db, index, path: str = "", authors: Optional[CardAuthors] = None) -> 
     trial = StatsDatabase()
     trial.stats, trial.old_stats = deepcopy(db.stats), deepcopy(db.old_stats)
     report = merge(trial.stats, trial.old_stats, data, index, authors)
+    if report.waits():                        # merged as one, after the re-parse: never their stale lines counted
+        return (report.waits(), False)
     if not report.changed():
         return (None, False)
     db.stats.clear()
