@@ -6,6 +6,8 @@ with the clone's Types/ names and a synthetic edits file, cards as plain CardInf
 import json
 import re
 import shutil
+from os import environ
+from os.path import expanduser
 from pathlib import Path
 from subprocess import CalledProcessError, run as run_process
 from sys import executable
@@ -482,20 +484,29 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     assert done.returncode == 0, done.stderr
     bad, closure = done.stdout.splitlines()
     assert bad == "[]"
-    assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == set(cc.SPARSE_FILES)   # the yml copies this list
+    modules = {f for f in cc.SPARSE_FILES if f.endswith(".py")}
+    assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == modules   # the yml copies this list
+    assert set(cc.SPARSE_FILES) - modules == {"requirements-cards.txt"}                              # and the card packages
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_check", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-check.yml installs none of these: {sorted(extra)}"
 
 
 def test_workflow_posts_to_the_standards_channel():
-    """card-check.yml: the standards channel's secret, no ping (owner, 2026-10-23); the font channel's secret is deleted."""
-    wf = CLONE / ".github" / "workflows" / "card-check.yml"
+    """card-check.yml: the standards channel's secret, no ping (owner, 2026-10-23); the font channel's secret is deleted. Its
+    bot checkout is SPARSE_FILES, and it installs requirements-cards.txt as the other card workflows do (2026-10-24)."""
+    wf = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-check.yml"
     if not wf.exists():
         pytest.skip(f"no {wf}")
     text = wf.read_text(encoding="utf-8")
     assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "DISCORD_FONT_WEBHOOK" not in text
     assert "discord.com/api/webhooks" not in text and "<@&" not in text
+    yaml = pytest.importorskip("yaml")
+    steps = yaml.safe_load(text)["jobs"]["check"]["steps"]
+    bot = next(s for s in steps if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
+    assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cc.SPARSE_FILES]
+    from test_card_bake import FORK_KEY, fork_install
+    assert fork_install(wf) == FORK_KEY
 
 
 def test_cli_only_and_uncompiled():

@@ -8,6 +8,7 @@ import re
 import shutil
 from io import BytesIO
 from os import environ
+from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
@@ -24,7 +25,8 @@ from conftest import CLONE, REPO, Reply, at_rev, blob_sha_bytes as _sha
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 
-WORKFLOW = Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML") else CLONE / ".github" / "workflows" / "font-check.yml"
+WORKFLOW = (Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML")
+            else Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "font-check.yml")
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
@@ -657,9 +659,10 @@ def _bot_files_in_workflow() -> list:
 
 
 def test_action_shaped_copy_imports_and_prints_help(tmp_path):
-    """Exactly the yaml's files, no config.py: `python -m commands.font_check --help` works and imports no Discord."""
+    """Exactly the yaml's files (the checker's closure and requirements-cards.txt, the card packages it installs since
+    2026-10-24), no config.py: `python -m commands.font_check --help` works and imports no Discord."""
     paths = _bot_files_in_workflow()
-    assert paths == ["commands/font_check.py", "commands/github_api.py", "global_config.py"]
+    assert paths == ["commands/font_check.py", "commands/github_api.py", "global_config.py", "requirements-cards.txt"]
     bot = tmp_path / "bot"
     for rel in paths:
         assert (REPO / rel).is_file(), f"{rel} is checked out by the Action but missing here"
@@ -696,3 +699,5 @@ def test_workflow_shape():
     assert doc["permissions"] == {"contents": "write"}
     names = [step.get("name", "") for step in doc["jobs"]["check"]["steps"]]
     assert names.index("Tell Discord") < names.index("Comment on the commit")   # the Discord message never waits on the comment
+    from test_card_bake import FORK_KEY, fork_install
+    assert fork_install(WORKFLOW) == FORK_KEY                                   # the fork, not stock psd-tools (2026-10-24)

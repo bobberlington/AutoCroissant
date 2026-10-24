@@ -111,20 +111,57 @@ def test_no_visible_change_is_current(tmp_path):
     assert found.outcome == "current" and found.changed_px == 0 and not found.data
 
 
-def test_g2_without_a_composite(tmp_path):
-    new = fixture_psd(tmp_path, card(), "new")
+def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
+    """Owner, 2026-10-24: a PSD saved without Maximize Compatibility (no stored image) gets its PNG anyway: the fork's
+    render merged as always, under the bake's own gates (the baseline, the shape and region), nothing cross-checked
+    ("cross" never measured), unchecked so the guards tell it. A push that moved nothing is current; a new card is made
+    whole; a new PSD beside its PNG is current within the bar of the render, else redrawn where it differs."""
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     new.has_preview = lambda: False
-    found = pe.export(fixture_psd(tmp_path, card(), "old"), new, card())
-    assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2)
-    assert pe.export_new(new).gate == "G2"
+    found = pe.export(old, new, card())
+    assert (found.outcome, found.gate, found.unchecked, found.changed_px) == ("re-exported", "", True, 21 * 21)
+    assert found.numbers["baseline"]["bad_pct"] == 0 and "cross" not in found.numbers and found.numbers["reread"] == []
+    assert np.asarray(pe.open_png(found.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
+    same = fixture_psd(tmp_path, card(), "same")
+    same.has_preview = lambda: False
+    assert pe.export(old, same, card()).outcome == "current"
+    made = pe.export_new(new)
+    assert (made.outcome, made.unchecked, made.writer) == ("re-exported", True, "new") and "cross" not in made.numbers
+    assert pe.export(None, new, card(colour=(0, 255, 0))).outcome == "current"              # beside: the PNG shows it
+    beside = pe.export(None, new, card())                                                  # beside an older PNG
+    assert (beside.outcome, beside.unchecked, beside.changed_px) == ("re-exported", True, 21 * 21) and list(beside.misses) == ["baseline"]
+    assert np.asarray(pe.open_png(beside.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
+    composed = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "composed")
+    assert not pe.export(old, composed, card()).unchecked                                   # with a stored image: checked
 
 
-def test_g2_names_a_16_bit_or_cmyk_psd():
+def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
+    """With no stored image the parser's re-read stands in for the cross-check (the bake's blank render): a text or stat
+    row it reads differently must be drawn with a change, else no PNG (G2_BLANK); past the floor the baseline refuses."""
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    new.has_preview = lambda: False
+    monkeypatch.setattr(pe, "reread", lambda a, b: [("the Ability text", (40, 60, 50, 70))])     # nothing moved there
+    refused = pe.export(old, new, card())
+    assert (refused.outcome, refused.gate, refused.data) == ("refused", "G2", b"")
+    assert refused.why == pe.G2_BLANK.format(what="the Ability text")
+    monkeypatch.setattr(pe, "reread", lambda a, b: [("the Ability text", (12, 12, 20, 20))])     # inside the square
+    assert pe.export(old, new, card()).outcome == "re-exported"
+    monkeypatch.setattr(pe, "reread", lambda a, b: [])
+    _rows_off(monkeypatch, 10)
+    broken = pe.export(old, new, card())
+    assert (broken.outcome, broken.gate) == ("refused", "G6") and broken.why.startswith("PNG not made: the bot cannot draw")
+
+
+def test_g2_still_refuses_a_16_bit_or_cmyk_psd():
+    """Not 8-bit RGB: the fork's render is no export of it, refused as before; an 8-bit RGB PSD with no stored image is
+    rendered (None: no refusal)."""
     from types import SimpleNamespace
     from psd_tools.constants import ColorMode
     assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=16)).why == pe.G2_MODE
     assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.CMYK, depth=8)).why == pe.G2_MODE
-    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=8)).why == pe.G2
+    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=8)) is None
 
 
 def test_g7_size_changed(tmp_path):
@@ -392,7 +429,7 @@ def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
 
 
 def test_every_refusal_says_export_it_in_photoshop():
-    for line in (pe.G2, pe.G2_MODE, pe.G5, pe.G5_IN, pe.G6, pe.G6_BASE, pe.G6_NEW, pe.G6_STALE, pe.G6_UNSEEN, pe.G7):
+    for line in (pe.G2_BLANK, pe.G2_MODE, pe.G5, pe.G5_IN, pe.G6, pe.G6_BASE, pe.G6_NEW, pe.G6_STALE, pe.G6_UNSEEN, pe.G7):
         assert line.startswith("PNG not made: ") and line.endswith("export it in Photoshop"), line
 
 
