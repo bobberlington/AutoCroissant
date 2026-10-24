@@ -217,6 +217,12 @@ then art, template, history): L. 9. `Card Edits.json` retirement (after item 9 m
 8. `stats.pkl` derived from the data files for tier A cards (section 2, option a)?
 9. Duplicates: one data file with `exports`, or one per PNG referencing the original?
 
+**Answered 2026-10-24 (the user):** 2 tier A keeps the original smart object. 3 authors and the ban list stay in their
+two text files. 4 tier C stays PSD-first forever. 5 today's previews are enough (instant mock-up, ~1-minute dry-run
+bake). 6 anyone with push may re-render a drifted card. 7 field cards and status effects are in scope; field cards use
+the items' template. 8 the bot reads a data-native card from its data file, not its PSD. 9 one data file per PSD,
+listing its exports.
+
 ## 11. Known wrong paths (fenced off)
 
 - A backend, accounts or a render server: state outside GitHub, hosting, a second place truth lives.
