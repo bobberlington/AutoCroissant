@@ -408,16 +408,17 @@ const types = { row: [{ name: "light", core: [81, 30, 241, 190], box: [51, 2, 26
 @mock_header
 def test_stars_are_placed_from_the_record(tmp_path):
     """Fewer: the last in reading order erased (glow box), nothing drawn. More: the shown stars stay, a star drawn at the
-    count's new centre (rows of two). A refused count is drawn and says why; no layout for the count, no record or a
-    unit count unlike the stars: in a box."""
+    count's new centre (rows of two). None: all erased. A refused count is drawn and says why; no layout for the count, no
+    record or a unit count unlike the stars: in a box."""
     out = node(tmp_path, HEADER + """
 out([m.starPlan(stars, 2, 1), m.starPlan(stars, 2, 3), m.starPlan(stars, 2, 4), m.starPlan(stars, 2, 6), m.starPlan(null, 2, 3), m.starPlan(stars, 5, 4),
-  m.starPlan({ ...stars, refused: { "*": "the '5 Stars' folder sets them" } }, 2, 3).refused]);""")
-    fewer, more, refused, none, no_record, mismatch, folder = out
+  m.starPlan({ ...stars, refused: { "*": "the '5 Stars' folder sets them" } }, 2, 3).refused, m.starPlan(stars, 2, 0)]);""")
+    fewer, more, refused, none, no_record, mismatch, folder, zero = out
     assert fewer == {"erase": [[936, 14, 1060, 126]], "draw": [], "refused": None, "boxed": False}
     assert more == {"erase": [], "draw": [[993, 116, 1109, 218]], "refused": None, "boxed": False}
     assert refused["refused"] == "a star at (0, 0) would touch 'Name'" and len(refused["draw"]) == 2 and not refused["boxed"]
     assert none["boxed"] and no_record["boxed"] and mismatch["boxed"] and folder == "the '5 Stars' folder sets them"
+    assert zero == {"erase": [[1049, 12, 1173, 124], [936, 14, 1060, 126]], "draw": [], "refused": None, "boxed": False}
 
 
 @needs_js
