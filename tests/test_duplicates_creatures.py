@@ -48,7 +48,14 @@ def _drift(stats: dict, blobs: dict) -> list:
 # ========================
 # Duplicates
 # ========================
-def test_real_duplicates(real_stats, repo_blobs, no_aliases):
+def _committed_edits(clone):
+    """The clone's committed Card Edits.json (dup_of duplicates such as Stubborn_Queen.png need it), or None."""
+    from commands.card_edits import CardEdits
+    out = subprocess.run(["git", "-C", str(clone), "show", f"HEAD:{pa.EDITS_PATH}"], capture_output=True, encoding="utf-8")
+    return CardEdits.parse(out.stdout) if out.returncode == 0 else None
+
+
+def test_real_duplicates(real_stats, repo_blobs, no_aliases, clone):
     drift = _drift(real_stats.stats, repo_blobs)
     if drift:
         pytest.skip(f"clone and stats.pkl out of step ({len(drift)} PSDs, e.g. {drift[0]})")
@@ -56,6 +63,7 @@ def test_real_duplicates(real_stats, repo_blobs, no_aliases):
     expected = {n: (c.duplicate_of, c.display_name) for n, c in real_stats.stats.items() if c.duplicate_of}
     assert len(expected) >= 5, "the pickle should hold the A Snack / Watermelon / ... duplicates"
     tr = _traverser({n: deepcopy(c) for n, c in real_stats.stats.items() if not c.duplicate_of})
+    tr.edits = _committed_edits(clone)
     assert tr._sync_duplicates(Tree(repo_paths)) == len(expected)
     got = {n: (c.duplicate_of, c.display_name) for n, c in tr.db.stats.items() if c.duplicate_of}
     assert got == expected
@@ -66,8 +74,12 @@ def test_real_duplicates(real_stats, repo_blobs, no_aliases):
     assert tr._sync_duplicates(Tree(repo_paths)) == 0                      # second pass: nothing new
     gone = [p for p in repo_paths if not p.endswith("A_Snack3.png")]
     tr.db.seen_cards.clear()
-    assert tr._sync_duplicates(Tree(gone)) == 1 and "A Snack3" not in tr.db.seen_cards     # the prune archives it
-    assert tr.db.stats["A Snack2"].display_name == "A Snack"      # 2 hidden titles, 1 PNG: order unknown
+    if tr.edits is not None:                                    # A Snack2 keeps its own alias ("Breakfast")
+        assert tr._sync_duplicates(Tree(gone)) == 0 and "A Snack3" not in tr.db.seen_cards     # the prune archives it
+        assert tr.db.stats["A Snack2"].display_name == expected["A Snack2"][1]
+    else:
+        assert tr._sync_duplicates(Tree(gone)) == 1 and "A Snack3" not in tr.db.seen_cards
+        assert tr.db.stats["A Snack2"].display_name == "A Snack"  # 2 hidden titles, 1 PNG: order unknown
 
 
 def test_duplicate_rules(no_aliases):
