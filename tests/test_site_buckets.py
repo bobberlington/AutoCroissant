@@ -71,3 +71,15 @@ process.stdout.write(JSON.stringify([I.targetOf(chip("Mario", list("series"))), 
   I.targetOf(box({ k: "author", v: "bobberlington" })), I.targetOf(box({ k: "subseries", v: "Paper Mario", s: "Mario" }))]));""", I=INLINE_JS)
     assert out == [{"key": "series", "value": "Mario", "series": ""}, {"key": "subseries", "value": "Paper Mario", "series": "Mario"},
                    {"key": "author", "value": "bobberlington", "series": ""}, {"key": "subseries", "value": "Paper Mario", "series": "Mario"}]
+
+
+# ---- item 3: the stuck "+" box
+def test_inline_click_away_rules():
+    """A click or tap away closes an inline editor even when no focus moves (a capture pointerdown); "+ stars" opens a
+    fresh slider that turns back into "+ stars" when left at none (focus out, a click away, Esc)."""
+    text = INLINE_JS.read_text(encoding="utf-8")
+    assert re.search(r'document\.addEventListener\("pointerdown", away, true\)', text)
+    assert 'sp.dataset.fresh = ""' in text
+    assert re.search(r'\.star-pick\[data-fresh\]"\) && !e\.target\.contains\(e\.relatedTarget\)\) unfresh\(', text)
+    assert 'row.outerHTML = ghost("stars")' in text
+    assert re.search(r'Escape" && row\.hasAttribute\("data-fresh"\)', text)
