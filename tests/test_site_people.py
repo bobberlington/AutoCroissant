@@ -174,6 +174,47 @@ def test_rater_stats_with_per_person_ratings(bs):
     assert "selfBias" not in rows["Y"] and "powerVsStats" not in rows["Y"]
 
 
+def test_power_only_raters_get_power_bias_and_power_vs_stats(bs):
+    """X power-rates their six cards and no favorability: selfBias power and powerVsStats, no rater (P7: favorability)."""
+    pw, zs = [1, 2, 3, 4, 5, 6], [0.1, 0.25, 0.3, 0.45, 0.5, 0.7]
+    cards = [card(f"c{i}", "X", ratings=[rate(5, scale="power"), rate(pw[i], "X", scale="power", source="website")]) for i in range(6)]
+    rows, _ = rows_of(bs, cards, balance={"cards": {f"c{i}": {"z_total": zs[i], "flags": []} for i in range(6)}})
+    assert rows["X"]["selfBias"] == {"power": -1.5, "powerN": 6} and "rater" not in rows["X"]
+    assert rows["X"]["powerVsStats"] == {"r": round(statistics.correlation(pw, zs), 2), "n": 6}
+
+
+def test_a_noreply_login_rates_and_edits_as_its_row(bs):
+    """A login known only through Chestnut's noreply commits: its ratings and edit fields land on Chestnut's row."""
+    commits = [("a" * 40, T, "Chestnut", "123+JasonBechdolt@users.noreply.github.com", "s", [], [])]
+    row_of = bs.login_rows(commits, {}, {})
+    assert row_of("jasonbechdolt") == "Chestnut" and row_of("nobody") is None
+    cards = [card(f"c{i}", "Chestnut", ratings=[rate(5)]) for i in range(3)]
+    ratings = {bs.card_key(c["key"]): (c["key"], [rate(8, "JasonBechdolt", "2026-10-24", source="website")]) for c in cards}
+    for c in cards:
+        c["ratings"] = []
+    bs.apply_ratings(cards, ratings, [], {}, {}, row_of)
+    assert cards[0]["ratings"][0]["by"] == "Chestnut" and cards[0]["ratings"][0]["login"] == "JasonBechdolt"
+    fields_by = {}
+    edits = {"c0": ({"series": "Mario"}, {"_by": "JasonBechdolt", "_at": "2026-10-20T00:00:00Z"})}
+    bs.edit_batches(None, {}, {}, edits, lambda n: None, lambda k: k, 0, fields_by=fields_by, row_of=row_of)
+    assert fields_by == {"Chestnut": {"series": 1}}
+    for c in cards:
+        c["ratings"].insert(0, rate(5))
+    rows, _ = rows_of(bs, cards, commits, fields_by=fields_by)
+    assert rows["Chestnut"]["selfBias"] == {"fav": 3, "n": 3} and rows["Chestnut"]["editFields"] == [["rating", 3], ["series", 1]]
+
+
+def test_mass_passes_count_card_images_only(bs):
+    """A commit over 21 rulebook pages and one card is no mass pass: the card's revision counts."""
+    v = lambda sha: ((sha, 0, "x", "s"), "p")
+    found = {"a.png": [v("big"), v("up")], **{f"r{i}.png": [v("big"), v(f"up{i}")] for i in range(bs.MASS_PASS + 1)}}
+    by_png = {"a.png": [card("alpha", "A")], **{f"r{i}.png": [card(f"rule{i}", "")] for i in range(bs.MASS_PASS + 1)}}
+    rules = {f"rule{i}" for i in range(bs.MASS_PASS + 1)}
+    assert bs.mass_passes(found) == {"big"} and bs.mass_passes(found, by_png, rules) == set()
+    revs = bs.card_revisions(found, by_png, [commit("big", 2, "B"), commit("up", 1, "A")], {}, {}, skip=rules)
+    assert revs == {"alpha": {"B": 1}}
+
+
 def test_edit_fields_count_every_line(bs):
     """edit_batches without history: a stamp group of 70 cards counts 70 series edits, past the BATCH_LINES cut."""
     edits = {f"card{i}": ({"series": "Mario"}, {"_by": "editor", "_at": "2026-10-20T00:00:00Z"}) for i in range(70)}
