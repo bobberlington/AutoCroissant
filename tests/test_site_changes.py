@@ -1,6 +1,6 @@
 """
 The website's Changes page helpers (TTSCardMaker site/assets/changes.js, in node): the Website edits tab's cap, the
-tab row's focus rule, and where an archived card's PSD went. Loads changes.js from $AC_SITE_SRC (a TTSCardMaker
+tab row's focus rule, and the Archive tab's tags. Loads changes.js from $AC_SITE_SRC (a TTSCardMaker
 checkout) or the clone; skips without it, node, or a changes.js that has them.
 """
 import json
@@ -54,19 +54,33 @@ process.stdout.write(JSON.stringify([ch.keepsTabFocus(el(true, true)), ch.keepsT
     assert out == [True, False, False, False, True]
 
 
-def test_an_archived_card_says_where_its_psd_went(tmp_path):
-    """moved_to (White Palace into MDW/The Morgue): "moved to MDW/The Morgue", not "PSD deleted", in the Archived cards
-    list and the archived event; renamed_to: "renamed to"; neither: "PSD deleted" (AutoCroissant changelog._line)."""
+def test_an_archived_card_has_its_tag(tmp_path):
+    """The Archive tab and the archived event show the tag: moved_to (White Palace into MDW/The Morgue) Retired, its
+    paths in the tip; renamed_to Renamed and "renamed to"; neither Deleted; the build's tag wins over the fields."""
     rows = [{"card": "White Palace", "title": "White Palace", "card_type": "field", "path": "Field/4 Stars/White_Palace.psd",
              "moved_to": "MDW/The Morgue/White_Palace.psd"},
             {"card": "ZOEY!!!!!", "renamed_to": "Z!!!!!", "renamedId": "z"},
-            {"card": "Gone", "path": "Items/Gone.psd"}]
+            {"card": "Gone", "path": "Items/Gone.psd"},
+            {"card": "Tagged", "tag": "deleted", "moved_to": "MDW/x.psd"}]
     out = node(tmp_path, f"""const rows = {json.dumps(rows)};
-const text = html => html.replace(/<[^>]+>/g, "").replace(/\\s+/g, " ");
-process.stdout.write(JSON.stringify([...rows.map(r => text(ch.archivedHtml([r], "o/r"))),
-  ...rows.map(r => text(ch.eventHtml({{ kind: "archived", ...r }})))]));""")
-    palace, zoey, gone, palace_event, _, gone_event = out
-    assert "moved to MDW/The Morgue" in palace and "PSD deleted" not in palace
-    assert "renamed to Z!!!!!" in zoey and "PSD deleted" not in zoey
-    assert "PSD deleted" in gone
-    assert palace_event == "White Palace (moved to MDW/The Morgue)" and gone_event == "Gone (PSD deleted)"
+const text = html => html.replace(/<[^>]+>/g, "").replace(/\\s+/g, " ").trim();
+process.stdout.write(JSON.stringify([...rows.map(r => text(ch.archiveHtml([r], "o/r"))),
+  ...rows.map(r => text(ch.eventHtml({{ kind: "archived", ...r }}))), ch.archiveTagHtml(rows[0])]));""")
+    palace, zoey, gone, tagged, palace_event, _, gone_event, tagged_event, pill = out
+    assert "White Palace Retired" in palace and "PSD deleted" not in palace
+    assert "ZOEY!!!!! Renamed renamed to Z!!!!!" in zoey and "Gone Deleted" in gone and "Tagged Deleted" in tagged
+    assert (palace_event, gone_event, tagged_event) == ("White Palace Retired", "Gone Deleted", "Tagged Deleted")
+    assert 'class="fact arch retired"' in pill and 'data-tip="Field/4 Stars/White_Palace.psd → MDW/The Morgue"' in pill
+
+
+def test_archive_tag_chips_filter(tmp_path):
+    """?tag=retired lists only the retired cards; the chips count every tag; the Changelog tab has no archive panel."""
+    rows = [{"card": "A", "moved_to": "MDW/A.psd"}, {"card": "B", "renamed_to": "C"}, {"card": "D"}, {"card": "E", "moved_to": "MDW/E.psd"}]
+    out = node(tmp_path, f"""const rows = {json.dumps(rows)};
+const html = ch.archiveHtml(rows, "o/r", new URLSearchParams("tag=retired"));
+const chips = [...html.matchAll(/data-value="([^"]+)">([^<]+)<span class="n">(\\d+)/g)].map(m => [m[1], m[2], +m[3]]);
+const names = [...html.matchAll(/<li><b>([^<]+)<\\/b>/g)].map(m => m[1]);
+const log = ch.changelogHtml({{ available: true, days: 180, events: [], archived: rows, repo: "o/r" }}, new URLSearchParams());
+process.stdout.write(JSON.stringify({{ chips, names, on: /class="chip on"[^>]*data-value="retired"/.test(html), log: log.includes("<b>A</b>") }}));""")
+    assert out["chips"] == [["renamed", "Renamed", 1], ["retired", "Retired", 2], ["deleted", "Deleted", 1]]
+    assert out["names"] == ["A", "E"] and out["on"] and not out["log"]

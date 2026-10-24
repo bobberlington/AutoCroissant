@@ -1,12 +1,13 @@
 """
-TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors), site/Card Edits.json (CardEdits) and
-site/Card Creation Dates.json (CardDates), and the file's layout as the website writes it (dump_edits, the edit.js
-editsFile port). No Discord, network or psd-tools.
+TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors), site/Card Edits.json (CardEdits),
+site/Card Creation Dates.json (CardDates) and site/Card Ratings.json (CardRatings), and the layout the website writes
+them in (dump_edits, dump_ratings: the edit.js editsFile and ratingsFile ports). No Discord, network or psd-tools.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date
 from json import dumps as json_dumps, loads as json_loads
+from math import floor
 from re import compile as re_compile, sub
 from typing import Optional
 from unicodedata import combining, normalize
@@ -327,8 +328,69 @@ class CardDates:
         return True
 
 
+@dataclass
+class CardRatings:
+    """
+    TTSCardMaker's site/Card Ratings.json: dated 1-10 ratings per card, oldest first.
+    {"about": ..., "cards": {"Card Name": [{"date", "scale", "value", "by", "source"}]}}; names match like the authors
+    file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` and the website's
+    Rate it (edit.js ratingsFile); read by the website only (never the bot, the card sync or the checks).
+    """
+    cards: dict = field(default_factory=dict)       # normalized card name -> (name as written, [entry])
+
+    SCALES = ("favorability", "power")
+    SOURCES = ("TTS session", "website")
+    KEYS = ("date", "scale", "value", "by", "source")
+    ABOUT = ("Card ratings, 1 to 10. favorability: how much players like the card; power: 1 weak, 5.5 balanced, 10 too "
+             "strong. Keyed by card file name; entries oldest first. by: \"group\" (a TTS session) or a GitHub login. "
+             "Read by the website only.")      # edit.js RATINGS_ABOUT
+
+    @classmethod
+    def valid(cls, entry) -> bool:
+        if not isinstance(entry, dict) or entry.get("scale") not in cls.SCALES or entry.get("source") not in cls.SOURCES:
+            return False
+        value, by = entry.get("value"), entry.get("by")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 1 <= value <= 10:
+            return False
+        if not isinstance(by, str) or not by or len(by) > 100:
+            return False
+        try:
+            return isinstance(entry.get("date"), str) and date.fromisoformat(entry["date"]).isoformat() == entry["date"]
+        except ValueError:
+            return False
+
+    @staticmethod
+    def number(value: float):
+        """One decimal, as JS Math.round(v * 10) / 10; whole values as int (JSON.stringify writes 7, not 7.0)."""
+        value = floor(value * 10 + 0.5) / 10
+        return int(value) if value == int(value) else value
+
+    @classmethod
+    def entry(cls, day: str, scale: str, value: float, by: str, source: str) -> dict:
+        return {"date": day, "scale": scale, "value": cls.number(value), "by": by, "source": source}
+
+    @classmethod
+    def order(cls, entries: list) -> list:
+        """Oldest first: date, then source (TTS sessions first), then by, then scale (edit.js ratingsFile, build_site)."""
+        rank = lambda seq, v: seq.index(v) if v in seq else len(seq)
+        return sorted(entries, key=lambda e: (str(e.get("date", "")), rank(cls.SOURCES, e.get("source")),
+                                              str(e.get("by", "")).lower(), rank(cls.SCALES, e.get("scale"))))
+
+    @classmethod
+    def parse(cls, text: str) -> "CardRatings":
+        """Raises ValueError for a file that isn't JSON; bad entries and non-list values are skipped."""
+        data = json_loads(text)
+        cards = data.get("cards") if isinstance(data, dict) else None
+        ratings = cls()
+        for name, entries in (cards if isinstance(cards, dict) else {}).items():
+            kept = [cls.entry(*(e[k] for k in cls.KEYS)) for e in entries if cls.valid(e)] if isinstance(entries, list) else []
+            if kept:
+                ratings.cards[CardAuthors.key(name)] = (name, kept)
+        return ratings
+
+
 # ========================
-# The file's layout (edit.js editsFile)
+# The files' layout (edit.js editsFile, ratingsFile)
 # ========================
 def _json(value) -> str:
     """JSON.stringify: compact, UTF-8 as is."""
@@ -371,6 +433,19 @@ def dump_edits(data: dict) -> str:
     return "{\n" + rest + '  "cards": {' + (f"\n{body}\n  " if keys else "") + "}\n}\n"
 
 
+def dump_ratings(data: dict) -> str:
+    """
+    Card Ratings.json as edit.js ratingsFile writes it: dump_edits' layout, each card's line its list of entries.
+
+    Args:
+        data: The parsed file
+
+    Returns:
+        The text (with its final newline)
+    """
+    return dump_edits(data)
+
+
 # ========================
 # Module Exports
 # ========================
@@ -379,8 +454,10 @@ __all__ = [
     'CardAuthors',
     'CardDates',
     'CardEdits',
+    'CardRatings',
     'ORDER',
     'PUNCTUATION',
     'as_parsed',
     'dump_edits',
+    'dump_ratings',
 ]

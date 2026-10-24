@@ -422,6 +422,7 @@ PSDs come by range reads (above) or through the git/blobs API (`_download`/`_blo
 file deleted right after parsing; the icon-font manifest `MDW/Fonts/stoogedings-src/stoogedings.json` and the authors/edits
 files (`site/Card Authors.txt`, `site/Card Edits.json`; in `MDW/` before 2026-10-20) through `_repo_text` (cached in memory by blob sha). The offline diagnostics scripts read the manifest
 from the clone. If it is missing, icon tokens still parse by plain names (impossibility-cards-reference §4.1).
+`site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
 ### TTS save (/update_tts_save, added 2026-10-20; the automatic path is a TTSCardMaker Action since the same day)
 
