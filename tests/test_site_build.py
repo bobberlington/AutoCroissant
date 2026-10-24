@@ -106,12 +106,12 @@ def repo(tmp_path):
         "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7.1, "by": "group", "source": "TTS session"}]}}))
     _commit(root, "Ratings", start + 3 * DAY)
 
-    stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3"),
+    stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),
              "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
              "Watermelon2": _card("Watermelon2", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item",
                                   duplicate_of="Watermelon", display_name="Inconspicuous Watermelon")}
     stats["Alpha"].version = {"from": float(t2), "to": None, "cause": "psd"}     # a carried start (no from_commit)
-    palace = _card("White Palace", PALACE, "Field.", t1, card_type="field")
+    palace = _card("White Palace", PALACE, "Field.", t1, card_type="field", series="kirby")     # an old spelling
     palace.archived = {"at": float(t3), "path": PALACE, "commit": c3, "moved_to": "MDW/The Morgue/White_Palace.psd"}
     old = defaultdict(list, {"Alpha": [_card("Alpha", f"{ALPHA}.psd", "Old text.", t1)],
                              "Watermelon": [_card("Watermelon", f"{MELON}.psd", "Heal 1.", t1, card_type="item")],
@@ -363,7 +363,7 @@ def test_ratings_reach_the_cards_and_the_archived_rows(bs, repo, tmp_path, monke
 
 def test_archived_rows_carry_tag_author_created(bs, repo, tmp_path, monkeypatch):
     """White Palace's changelog row: tag retired, author Maker, created the Pacific day of its oldest version; its
-    analytics.json copy (Stats) has only the slim fields."""
+    analytics.json copy (Stats) has only the slim fields, its series spelled as the live cards' ('kirby' -> 'Kirby')."""
     if not hasattr(bs, "ARCHIVED_SLIM"):
         pytest.skip(f"{BUILD_SITE} has no archive tags")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -372,7 +372,7 @@ def test_archived_rows_carry_tag_author_created(bs, repo, tmp_path, monkeypatch)
     row = out["changelog.json"]["archived"][0]
     assert (row["tag"], row["author"], row["created"]) == ("retired", "Maker", day)
     assert out["analytics.json"]["archived"] == [{"card": "White Palace", "title": "White Palace", "tag": "retired", "card_type": "field",
-                                                   "stars": 2, "at": repo["t"][2], "created": day, "author": "Maker"}]
+                                                   "stars": 2, "series": "Kirby", "at": repo["t"][2], "created": day, "author": "Maker"}]
 
 
 def test_archived_author_and_created_precedence(bs):
@@ -394,6 +394,21 @@ def test_archived_author_and_created_precedence(bs):
     del old["Gone"][1].archived["author"]
     old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
     assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
+
+
+def test_archived_series_take_the_live_spelling(bs):
+    """series: the renamed card's, else the old one in a live series' case or through SERIES_ALIASES, else as it was."""
+    if not hasattr(bs, "SERIES_ALIASES"):
+        pytest.skip(f"{BUILD_SITE} keeps the old series")
+
+    def old(series, **tag):
+        card = bs.CardInfo()
+        card.__dict__.update(timestamp=1.7e9, card_type="creature", stars=2, series=series, archived={"at": 1_700_000_100, **tag})
+        return [card]
+    olds = {"A": old("kirby"), "B": old("rotmg"), "C": old("pandas"), "D": old("isaac", renamed_to="New D"), "E": old(None)}
+    live = {"Kirby", "Realm of the Mad God", "Mario"}
+    rows = bs.archived_cards(olds, lambda name: "new-d" if name == "New D" else None, (), series_of=lambda name: "Mario" if name == "New D" else None, live_series=live)
+    assert {r["card"]: r.get("series") for r in rows} == {"A": "Kirby", "B": "Realm of the Mad God", "C": "pandas", "D": "Mario", "E": None}
 
 
 def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):
