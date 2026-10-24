@@ -42,6 +42,8 @@ PANDAMONIUM = ("02e54e182501c45c4483b57756ea083321c5fa73", "be1760ebc808be51e51a
                "85f8030a8b985e0b739a3e3c5000093ce449dd38")                                           # 38c55bd3: the author's PNG
 GREEN_MAGE = ("d17ddacd178eb7353dab252651855da1e2d995f7", "cf9e880710d77ad3b10dfa6690a2a285b5d1b9da",
               "09e2dce6f6ed70454f1e52604015cc41678763ff", "41c2439d09d0eb532995338d2646ed7556b52eac")   # 45cf8746: ATK 6, bars only
+BLOCK_HOPPER = ("923fdc6d0d874beac87904c5fc68f76737ebaf74", "23f5cd1787d1d8d924738b159acfa523f68e5963")  # 0262b237: raw
+BUZZO = ("1b5291a649238a46b19305c3beff46cc8b5b31e4", "c73dbbb392fe7f1c864c8f025ed7665f285bcbbf")         # converted
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
@@ -823,6 +825,35 @@ def test_g2_keeps_the_authors_png_beside_its_psd(clone):
     redrawn = pe.export(None, new, authors)
     assert (redrawn.outcome, redrawn.unchecked) == ("re-exported", True) and redrawn.changed_px > pe.KEPT_PX
     assert psd_edit._within_bar(psd_edit._measure(redrawn.image, authors))
+
+
+@fork
+def test_g2_draws_a_raw_export_raw(clone):
+    """A card exported raw (ICC unconverted, 21 cards) has no vote with no stored image, so G2 drew it converted:
+    Block_Hopper beside its own PNG was redrawn over 51% of the card, and over an old PSD the baseline missed (mean
+    9.14, told) (review of 2026-10-24). Both modes are drawn and the nearer kept: raw, current; a converted card
+    (Buzzo) stays converted; Speed hidden over the old PSD (neither stored) is drawn raw, as with the stored image's
+    vote."""
+    for (psd, png), mode in ((BLOCK_HOPPER, "raw"), (BUZZO, "converted")):
+        new = pe.open_psd(blob(clone, psd))
+        new.has_preview = lambda: False
+        found = pe.export(None, new, pe.open_png(blob(clone, png)))
+        assert (found.outcome, found.icc, found.data, found.numbers.get("kept")) == ("current", mode, b"", None), psd
+        means = found.numbers["icc_means"]
+        assert (means["raw"] < means["converted"]) is (mode == "raw"), means
+    data, png = blob(clone, BLOCK_HOPPER[0]), pe.open_png(blob(clone, BLOCK_HOPPER[1]))
+    found = {}
+    for stored in (True, False):
+        old, new = pe.open_psd(data), pe.open_psd(data)
+        speed = next(l for l in new.descendants() if l.kind == "type" and l.is_visible() and l.name.strip() == "Speed")
+        speed.visible = False
+        new.has_preview = lambda: False
+        if not stored:
+            old.has_preview = lambda: False
+        found[stored] = pe.export(old, new, png)
+        assert (found[stored].outcome, found[stored].icc, found[stored].misses) == ("re-exported", "raw", {}), stored
+        assert pe._within(found[stored].numbers["baseline"]), stored
+    assert np.array_equal(np.asarray(found[True].image), np.asarray(found[False].image))
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

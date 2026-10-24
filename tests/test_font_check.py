@@ -689,12 +689,13 @@ def test_workflow_shape():
     assert "discord.com/api/webhooks" not in text and "<@&" not in text   # no URL, no mention in the yaml
     # the standards channel since 2026-10-22 (owner); the role ping and wording stay font_check.discord_payload's
     assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "secrets.DISCORD_FONT_WEBHOOK" not in text
-    assert '"**/*.psd"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
+    assert '"**/*.psd"' in text and '"**/*.PSD"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
     assert '--repo "$GITHUB_REPOSITORY"' in text and '--after "$GITHUB_SHA"' in text and "--whole-tree" in text and '--before "$BEFORE"' in text
     assert "contents: write" in text and '|| echo "::warning::' in text and "actions/checkout@v7" in text and "actions/cache@v6" in text
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(text)
-    assert doc[True]["push"]["paths"] == ["**/*.psd", "MDW/Fonts/**"]          # PyYAML reads the `on` key as True
+    # PyYAML reads the `on` key as True. Path filters are case-sensitive: an upper-case card too (the guard has no R7)
+    assert doc[True]["push"]["paths"] == ["**/*.psd", "**/*.PSD", "MDW/Fonts/**"]
     assert doc[True]["workflow_dispatch"]["inputs"]["all"]["default"] is False
     assert doc["permissions"] == {"contents": "write"}
     names = [step.get("name", "") for step in doc["jobs"]["check"]["steps"]]

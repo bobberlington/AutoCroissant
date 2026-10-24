@@ -370,6 +370,25 @@ def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
         assert entry["export"]["gate"] == "G5" and entry["told"][0].startswith("PNG not made: the PSD and its old PNG already")
 
 
+def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_path, monkeypatch):
+    """G2 has no G5 to refuse, so over push 1's PSD run 2 drew push 2's square alone and called the PNG current: push
+    1's Base was left out (review of 2026-10-24, Niko). A G2 export takes the burst anchor: both changes drawn."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)        # saved without Maximize Compatibility
+    work = tmp_path / "burst"
+    work.mkdir()
+    one = _dated(root, work, "Bread", card(base=(30, 200, 30)), "2026-10-22T10:00:00Z")                   # Base, square
+    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")  # square
+    out = tmp_path / "out"
+    data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == pe.UNCHECKED
+    assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
+    (write,) = entry["writes"]
+    made = Image.open(out / write["file"])
+    assert int(pe._diff(made, card(base=(30, 200, 30), colour=(0, 255, 0))).max()) == 0
+
+
 def test_png_mismatch_reaches_discord_only_when_switched_on(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
     monkeypatch.setattr(cg, "TELL_PNG_MISMATCH", True)
@@ -566,6 +585,29 @@ def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch):
                      now=lambda: start + timedelta(minutes=40))               # check 10 min, then the 30-minute timer
     assert report["sha"] == "" and report["landed"] == [] and not hub.commits
     assert report["dropped"] == [["Foo", "superseded: a later push touched C/foo.png", "C/foo.png"]]
+
+
+@pytest.mark.parametrize("pushes, files", [(100, 1), (4, 300)])
+def test_a_late_rerun_counts_pushes_from_now(tmp_path, monkeypatch, pushes, files):
+    """A re-run 3 hours after the push: from the push its window held the day's pushes (100, or 300 files) and dropped
+    every write as "too many pushes to tell" (review of 2026-10-24). It counts from now, as before: none in the last
+    30 minutes, the blob check alone."""
+    import commands.card_bake as cb
+    plan = _plan(tmp_path, [("A", "X/A.png", b"bot png", {"X/A.psd": "s1", "X/A.png": "p1"})])
+    hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1")})
+    hub.install(monkeypatch)
+    monkeypatch.setattr(cg, "recent_paths", cb.recent_paths)
+    push = datetime(2026, 10, 24, 9, 0, tzinfo=timezone.utc)
+    activity = [{"timestamp": (push + timedelta(minutes=5 + i)).strftime("%Y-%m-%dT%H:%M:%SZ"), "before": f"{i:040d}",
+                 "after": f"{i + 1:040d}"} for i in range(pushes)]
+
+    def api(repo, method, path, **kwargs):
+        reply = activity if path == "activity" else {"files": [{"filename": f"Y/{i}.png"} for i in range(files)]}
+        return type("Reply", (), {"ok": True, "json": lambda self: reply})()
+    monkeypatch.setattr(cb, "api", api)
+    report = cg.land(plan, quiet_from="2026-10-24T09:00:00Z", rerun=True, sleep=lambda s: None,
+                     now=lambda: push + timedelta(hours=3))
+    assert report["landed"] == ["A"] and report["dropped"] == [] and hub.commits
 
 
 def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):

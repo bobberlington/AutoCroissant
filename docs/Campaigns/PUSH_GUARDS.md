@@ -285,9 +285,11 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   - their next push would be rejected, and a binary PSD or PNG conflict is the worst thing a teammate can meet in GitHub
     Desktop.
 - History (2.4) says a quick PNG follow-up is rare (3 of 613), but the PSD fixes need the window.
-- **A re-run** counts the window from the push (the push event's `repository.pushed_at`, Unix seconds or an ISO time),
-  not from its own Start (the fallback for anything else), so a re-run hours later lands at once on the blob check and
-  `recent_paths` (review 5: it used to wait another 31 minutes). It takes no environment either (`github.run_attempt` is
+- **A re-run** waits from the push (the push event's `repository.pushed_at`, Unix seconds or an ISO time), not from its
+  own Start (the fallback for anything else), so a re-run hours later lands at once (review 5: it used to wait another
+  31 minutes); it counts later pushes from now, as before, on the blob check and `recent_paths` (review of 2026-10-24:
+  counted from the push, a late re-run's window held the day's pushes, and 100 of them or 300 files dropped every write
+  as "too many pushes to tell"; `test_a_late_rerun_counts_pushes_from_now`). It takes no environment either (`github.run_attempt` is
   not 1), so the timer does not hold it again; a re-run of the post job alone reads the check job's first attempt's
   outputs, and its Told before step looks the comment's TOLD mark up itself.
 - After the Card sync cutover the wait disappears (section 11).
@@ -628,7 +630,7 @@ not land.**
 | An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red (its post went out: no failure alert, and no streak mark, so the next failure is told) | a dispatch with `sha` and `cards` |
 | Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak, no ping. The streak is the `card-guards-failure-told` artifact a run leaves when it sent the message or stayed quiet in a told streak: quiet only when the last finished push run left it and is not green (a re-run that passed keeps its first attempt's artifact; review 4: counting red runs hid a push after a red run that had posted its own lines) | re-run the job |
 | A gate refuses | report line, Discord, no write | the author exports in Photoshop, or fixes the PSD |
-| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor | none |
+| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor (G2 always exports against it) | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
@@ -941,7 +943,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
 - `check` exits 1 when it cannot check, and a failed push run tells the standards channel once per failure streak.
 - A re-run edits its comment and does not post twice (the comment's told mark); the steps' shell is run against a fake `gh`
   and `curl` in `test_workflow_posts_once_and_a_rerun_edits_its_comment`.
-- Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made
+- Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made; with no
+  stored image (G2, no G5 to refuse) the export always takes the anchor
   (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
 - R10 and "current, but outside the bar" stay in the comment (`TELL_PNG_MISMATCH`); report mode tells the fixable issues.
 
@@ -1010,7 +1013,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
   warns; a failed edit still hands its id on (`test_workflow_tell_marks_a_comment_of_its_own`).
 - A site build or TTS save that did not start after the bot's commit was told nowhere once the post went out: the comment
   and the post say so (`test_workflow_tells_a_site_build_that_did_not_start`).
-- A re-run counts the quiet window from the push (`test_workflow_a_rerun_counts_the_window_from_the_push`).
+- A re-run waits out the quiet window from the push (`test_workflow_a_rerun_counts_the_window_from_the_push`) and counts
+  later pushes from now (`test_a_late_rerun_counts_pushes_from_now`).
 - `land` refuses a plan not checked with `--mode on` unless `--dry-run` or `--local`: it reads only the plan's mode, then
   exits 2 with nothing written (on the Mac its token is config.py's: `check` then a bare `land` would have committed to
   TTSCardMaker; `test_land_commits_only_an_on_plan`).
@@ -1293,6 +1297,8 @@ deleted, `card_guards.check`/`build_context` take no fonts and the CLI no `--fon
 steps (the 215 MB MDW/Fonts cache). Nothing else in the guards used fonts (guard 1 draws type layers from their stored
 rasters); the bake's own font handling (`card_bake._fonts_dir`, `psd_edit.set_text_layer`'s FontMap, the preview's) is
 unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fonts_are_left_to_font_check` (card_guards).
+font-check.yml's push paths gained `**/*.PSD` (Actions path filters are case-sensitive; the guard's R7 read upper-case
+PSDs too; none on main today; `test_workflow_shape` in test_font_check).
 
 **4. G2 rendered anyway.** `png_export.export`/`export_new` with no stored composite on an 8-bit RGB PSD
 (`_no_composite` now refuses only a PSD that is not 8-bit RGB) go to `_unchecked`:
@@ -1350,7 +1356,21 @@ unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fon
   (default 2026-10-24, owner to confirm):** the guard-1 line "the new PSD drawn against its PNG: bad N%" is gone from the
   comment; the number stays in plan.json (`export.numbers.png_vs_render`), the JSON report, alone. It mostly measured the
   author's own change (`test_a_png_made_without_a_stored_image_is_told_not_refused`);
-- a new card with no PNG: the whole render, each drawn text shown.
+- a new card with no PNG: the whole render, each drawn text shown;
+- the ICC mode (review of 2026-10-24): with no stored image there is no vote (`icc_vote` reads the stored image), so
+  every card was drawn converted, and the 21 raw exports were redrawn beside their own PNG (Block_Hopper 1,480,242 px,
+  51% of the card) or missed their baseline over an old PSD (Block_Hopper, Speed hidden: mean 9.14, told). With no vote
+  and a foreign profile, `_render_voted` draws the card both ways (the old PSD over R against the old PNG's crop; beside,
+  the whole card against the PNG) and keeps the mode nearer it by mean, converted on a tie; no foreign profile, one
+  render. Replayed on all 21 raw cards beside their own PNG, stored image dropped (scratch `py314/fix-r5/raw_beside_all.log`):
+  all drawn raw, 14 current, 6 kept (29-201 px), Pessimism redrawn (4,216 px, max 26 from the author's export: the
+  fork's noise past KEPT_PX, as Pandamonium's); Buzzo (voted converted) stays converted and current. Block_Hopper with
+  Speed hidden and neither PSD stored: raw, baseline mean 0.39, the PNG the stored-vote export's pixel for pixel
+  (`raw_stale_synth.log`). Test: `test_g2_draws_a_raw_export_raw`;
+- a burst (review of 2026-10-24): G2 has no G5 to refuse, so the burst anchor's retry never ran and run 2, checked over
+  push 1's PSD, left push 1's change out (Niko, Name then Speed hidden: the Name still drawn, 19,954 px past 24 levels).
+  A G2 export of a stale card with a burst anchor is made against the anchor, always (refused if the anchor's gates
+  refuse). Test: `test_a_burst_without_a_stored_image_is_made_against_the_anchor` (card_guards).
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
@@ -1371,7 +1391,7 @@ also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_sto
   checked out, output `bot_sha`), the install, Check, Comment, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
   errors), the `card-guards` artifact. It ends at once;
 - `post` (needs check; only with `land=true`; timeout 75): `environment: card-guards-quiet` on a push's first attempt (a
-  dispatch lands at once; a re-run counts from the push), then Work dir, the artifact, Told before (the check's TOLD answer,
+  dispatch lands at once; a re-run waits from the push and counts later pushes from now), then Work dir, the artifact, Told before (the check's TOLD answer,
   or on a re-run of this job alone the comment's mark looked up again: never a second post), AutoCroissant at the check's
   `bot_sha` (main may move during the wait: plan and land come from one bot version), the install, Land (still
   `--quiet-from`: it sleeps only what the timer did not cover, all of it without a timer), Follow up, Tell Discord, the
@@ -1424,7 +1444,7 @@ Land sleeps only what is left of the 30 minutes from the push (`--quiet-from`), 
 3. The environment (the command above), only after step 2 and once every push run checked before step 2 has finished
    (its post job lands with the check's `bot_sha`, main's old Land). Not before: behind the timer main's Land starts
    about 30 minutes after the check ends, and its window counted from `now()` misses a push made during the check (the
-   new Land counts it from `min(now(), mark)`; `test_a_push_during_the_check_still_supersedes`). G9's blob check would
+   new Land counts a first attempt's from `min(now(), mark)`; `test_a_push_during_the_check_still_supersedes`). G9's blob check would
    still drop a content change; only a same-blob touch (a case-only rename) would slip. Until the environment exists the
    post job's runner sleeps out the window, as before 2026-10-24.
 4. Watch the first runs: a cold wheel build (card-preview's 5-minute step), card-sync's one venv, then (after step 3) a

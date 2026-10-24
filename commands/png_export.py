@@ -1,14 +1,15 @@
 """
 Guard 1 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 5): a card PSD pushed without its PNG gets the PNG the
 bake would make (owner, 2026-10-22). The fork renders the changed layers' box of the old and the new PSD
-(psd_edit.render_region, the card's ICC export mode by icc_vote) and the old PNG takes the new render's pixels where it
-differs from the old one (psd_edit.merge_png), gated as the bake is (the baseline's parity, shape, region). Photoshop's
-stored composite is never written: it is only a cross-check that can refuse (the old PNG outside the change, the drawn
-change against Photoshop's own image). A PSD saved without one (no Maximize Compatibility, G2) gets its PNG anyway (owner,
-2026-10-24) under the bake's own gates alone: the baseline, every text and stat row the parser reads differently drawn
-with a change, the merge's shape and region; the Export is `unchecked` and the guards tell "no stored image to
-cross-check". Beside its PNG with at most KEPT_PX px past BESIDE_CUT it keeps the PNG, told (KEPT; default 2026-10-24,
-owner to confirm). A refusal is data (an Export with outcome "refused" and the line card makers read).
+(psd_edit.render_region, the card's ICC export mode by icc_vote, or with no stored image by the nearer render) and the
+old PNG takes the new render's pixels where it differs from the old one (psd_edit.merge_png), gated as the bake is (the
+baseline's parity, shape, region). Photoshop's stored composite is never written: it is only a cross-check that can
+refuse (the old PNG outside the change, the drawn change against Photoshop's own image). A PSD saved without one (no
+Maximize Compatibility, G2) gets its PNG anyway (owner, 2026-10-24) under the bake's own gates alone: the baseline,
+every text and stat row the parser reads differently drawn with a change, the merge's shape and region; the Export is
+`unchecked` and the guards tell "no stored image to cross-check". Beside its PNG with at most KEPT_PX px past
+BESIDE_CUT it keeps the PNG, told (KEPT; default 2026-10-24, owner to confirm). A refusal is data (an Export with
+outcome "refused" and the line card makers read).
 As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
 written and told (Export.misses). A card drawn whole (new, or beside its PNG) is held to the floor per text and stat
 box too, and a text box drawn blank refuses (the bake's blank render). A stale old PNG
@@ -524,6 +525,24 @@ def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict) -> Image.Image:
     return image
 
 
+def _render_voted(psd: PSDImage, box: tuple, icc: bool, vote: Optional[tuple], png: Image.Image,
+                  result: "Export") -> tuple:
+    """
+    (icc, render) of box: with no vote (no stored image) on a card with a foreign profile, drawn both ways and the mode
+    nearer png (mean) kept, ties converted (raw exports: Block_Hopper); else icc's alone.
+
+    Args:
+        png: The PNG over box (the old PNG, or its crop)
+    """
+    render = _render(psd, box, icc, result.numbers)
+    if vote is not None or psd_edit.foreign_profile(psd) is None:
+        return icc, render
+    other = _render(psd, box, not icc, result.numbers)          # no vote: icc is True (export_icc)
+    means = {icc: float(_diff(render, png).mean()), not icc: float(_diff(other, png).mean())}
+    result.numbers["icc_means"] = {"converted": round(means[True], 3), "raw": round(means[False], 3)}
+    return (icc, render) if means[icc] <= means[not icc] else (not icc, other)
+
+
 def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image], composed: Image.Image, icc: bool,
                      old_png: Image.Image, truth: Image.Image) -> np.ndarray:
     """D: where Photoshop's image moved past TOL (the composites in their own values when the profile stayed, else as
@@ -750,23 +769,25 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
     its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render or with
     its bad pixels under PARITY_BAD_MAX and the old render past the bar (a change the fork draws a few levels off:
-    Pandamonium's gradient).
+    Pandamonium's gradient). ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn
+    both ways and the mode nearer the old PNG kept (_render_voted: the 21 raw exports).
     """
     result = Export("current", unchecked=True)
     if old is None:
         return _beside_unchecked(new, old_png, result, numbered)
     result.vote = psd_edit.icc_vote(old, old_png)
     icc = psd_edit.export_icc(old, old_png)
-    result.icc = icc_mode(new, icc)
     result.writer = "photoshop" if photoshop_saved(old, new) else "tool"
     region, records = changed_layers(old, new)
     region = region if region and region[2] > region[0] and region[3] > region[1] else None
     changed = reread(old, new)
     result.numbers.update(records=records, region=list(region) if region else None, reread=[what for what, _ in changed])
     moved = np.zeros((new.height, new.width), bool)
-    if region:
-        base, render = _render(old, region, icc, result.numbers), _render(new, region, icc, result.numbers)
+    if region:                                  # no vote: the old PSD drawn both ways against the old PNG
+        icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result)
+        render = _render(new, region, icc, result.numbers)
         moved[region[1]:region[3], region[0]:region[2]] = _diff(render, base) > TOL
+    result.icc = icc_mode(new, icc)
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
     for what, (x0, y0, x1, y1) in changed:
         if not moved[y0:y1, x0:x1].any():
@@ -801,11 +822,12 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
     """_unchecked for a new PSD beside an existing PNG. No old PSD, so no baseline: the render of the whole card against
     the PNG (png_vs_render) holds the author's change too, so it only finds where the PNG takes the render; it is never a
     drawing miss and never refuses. Up to KEPT_PX px past BESIDE_CUT the PNG is kept (numbers["kept"], told). The gate is
-    every text drawn (_texts_drawn)."""
-    icc = psd_edit.export_icc(new, old_png)
-    result.icc, result.writer = icc_mode(new, icc), "new"
+    every text drawn (_texts_drawn). ICC mode by the nearer render (_render_voted)."""
+    result.vote = psd_edit.icc_vote(new, old_png)
     box = (0, 0, new.width, new.height)
-    render = like_mode(_render(new, box, icc, result.numbers), old_png.mode)
+    icc, render = _render_voted(new, box, psd_edit.export_icc(new, old_png), result.vote, old_png, result)
+    render = like_mode(render, old_png.mode)
+    result.icc, result.writer = icc_mode(new, icc), "new"
     diff = _diff(render, old_png)
     result.numbers.update(region=list(box), png_vs_render=_stats(diff))
     if int(diff.max()) <= BESIDE_CUT:

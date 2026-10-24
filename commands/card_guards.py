@@ -633,9 +633,10 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
-        if found.outcome == "refused" and found.gate in ("G5", "G6") and job.psd_anchor:
+        # a burst: G5/G6 refused, or G2 (no G5 to refuse: the PSD the PNG shows, always)
+        if job.psd_anchor and (found.unchecked or (found.outcome == "refused" and found.gate in ("G5", "G6"))):
             anchored = png_export.export(png_export.open_psd(source.blob(job.psd_anchor)), new, old_png, numbered)
-            if anchored.outcome != "refused":   # the PNG matched the PSD before the burst: its whole change is ours
+            if found.unchecked or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                 found = anchored
                 result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
                                      f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG", False))
@@ -1195,9 +1196,11 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         for _ in range(COMMIT_TRIES if not local else 1):
             tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
             here = Head(tip)
-            # a clone alone has no push times; a dispatch's window would hold its own push. From the push, not now:
-            # the post job starts 30 minutes after the check job ends, and pushes made during the check count too
-            recent = recent_paths(repository, tip.head, min(now(), mark), local) if repository and quiet_from else set()
+            # a clone alone has no push times; a dispatch's window would hold its own push. A first attempt's from the
+            # push, not now: the post job starts 30 minutes after the check job ends, and pushes made during the check
+            # count too. A re-run's from now, as before (from the push, a late one counts the whole day's pushes)
+            recent = (recent_paths(repository, tip.head, now() if rerun else min(now(), mark), local)
+                      if repository and quiet_from else set())
             included, report["dropped"], report["already"] = [], [], []
             for entry in entries:
                 for write in entry["writes"]:
