@@ -344,19 +344,26 @@ def test_status_spans_longest_first_whole_words():
              "frozen in time": pe.StatusColor("Frozen In Time", (0.75, 0.76, 0.95), True),
              "poison": pe.StatusColor("Poison", (0.4, 0.95, 0.3), False)}
     text = "Apply POISON and Frozen in Time, not Frozen. Poisoned ends."
-    spans = [(s, e, c.name) for s, e, c in pe.status_spans(text, chart)]
+    spans = [(s, e, c.name) for s, e, c in pe.status_spans(text, chart, [])]
     assert spans == [(6, 12, "Poison"), (17, 31, "Frozen In Time"), (37, 43, "Frozen")]
     broken = "Inflict Frozen\x03In Time."           # a forced break between its words, as Effect Layers.jsx reads it
-    assert [(s, e, c.name) for s, e, c in pe.status_spans(broken, chart)] == [(8, 22, "Frozen In Time")]
+    assert [(s, e, c.name) for s, e, c in pe.status_spans(broken, chart, [])] == [(8, 22, "Frozen In Time")]
 
 
-def test_status_spans_skip_tokens():
+def test_status_spans_skip_tokens(parser):
     """Review 2026-10-24: "Stuffed" matched inside the token "[stuffed star]" ("[" and "_" are no letters), so the bake set
-    the Stuffed swatch on the icon's characters (shown on a :tint or :sticker one). A [token] holds no status word."""
-    chart = {"stuffed": pe.StatusColor("Stuffed", (0.9, 0.6, 0.2), False)}
+    the Stuffed swatch on the icon's characters (shown on a :tint or :sticker one). What the icon font draws holds no
+    status word; brackets it draws as letters do ("[Blazing]" baked unstyled, where Effect Layers.jsx styles it: review
+    2026-10-24)."""
+    chart = {"stuffed": pe.StatusColor("Stuffed", (0.9, 0.6, 0.2), False),
+             "blazing": pe.StatusColor("Blazing", (1.0, 0.5, 0.0), True)}
     text = "Gain [stuffed star] or [Stuffed_Star:tint], then Stuffed."
     start = text.index("Stuffed.")
-    assert [(s, e, c.name) for s, e, c in pe.status_spans(text, chart)] == [(start, start + 7, "Stuffed")]
+    icons = pe.icon_text(text, parser.icons)
+    assert len(icons) == 2 and [(s, e, c.name) for s, e, c in pe.status_spans(text, chart, icons)] == [(start, start + 7, "Stuffed")]
+    for text in ("Inflict [Blazing].", "Inflict [Blazing, Frozen or Burning]."):
+        assert pe.icon_text(text, parser.icons) == []
+        assert [(s, e, c.name) for s, e, c in pe.status_spans(text, chart, [])] == [(9, 16, "Blazing")]
 
 def test_fx_names_follow_the_jsx():
     assert pe.fx_name("Ability", "Blazing") == "Ability FX: Blazing" and pe.fx_name("Ability", "Frozen In Time", 2) == "Ability FX: Frozen In Time#2"
@@ -371,10 +378,10 @@ def test_new_fx_refuses_a_status_word_the_jsx_cannot_name():
     chart = {"blazing": blazing}
     text = "Inflict 2Blazing, then Blazing."
     with pytest.raises(pe.Refused, match="'2Blazing,': Effect Layers.jsx cannot name") as refused:
-        pe.new_fx(text, pe.status_spans(text, chart), [])
+        pe.new_fx(text, pe.status_spans(text, chart, []), [])
     assert refused.value.code == "unsupported-card"
-    assert pe.new_fx(text, pe.status_spans(text, chart), [(8, 16)]) == [("Blazing", [(23, 30)], blazing)]
-    assert pe.new_fx("Inflict 2Blazing.", pe.status_spans("Inflict 2Blazing.", chart), []) == [("Blazing", [(9, 16)], blazing)]
+    assert pe.new_fx(text, pe.status_spans(text, chart, []), [(8, 16)]) == [("Blazing", [(23, 30)], blazing)]
+    assert pe.new_fx("Inflict 2Blazing.", pe.status_spans("Inflict 2Blazing.", chart, []), []) == [("Blazing", [(9, 16)], blazing)]
 
 
 FIT_CHART = {"frozen": pe.StatusColor("Frozen", (0.6, 1.0, 0.95), True),
@@ -390,7 +397,7 @@ def _status_plan(name: str, old: str) -> pe.FxPlan:
 
 
 def _follow(name: str, old: str, new: str) -> list:
-    return pe.follow_fx(_status_plan(name, old), new, pe.kept_chars(old, new), pe.status_spans(new, FIT_CHART))
+    return pe.follow_fx(_status_plan(name, old), new, pe.kept_chars(old, new), pe.status_spans(new, FIT_CHART, []))
 
 
 def test_numbered_status_fx_follows_its_own_word():
@@ -406,7 +413,7 @@ def test_numbered_status_fx_follows_its_own_word():
     assert _follow("Ability FX: Frozen In Time#1", old, new) == [
         ("Frozen In Time#1", "Frozen In Time#2", [second], [second], "its Frozen In Time is #2 now")]
     fit = FIT_CHART["frozen in time"]
-    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART), [second, third]) == [("Frozen In Time#1", [first], fit)]
+    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART, []), [second, third]) == [("Frozen In Time#1", [first], fit)]
 
 
 def test_status_fx_lands_only_on_its_status_words():
@@ -419,7 +426,7 @@ def test_status_fx_lands_only_on_its_status_words():
     new = old.replace("Frozen.", "Frozen In Time.")
     assert _follow("Ability FX: Frozen", old, new) == gone
     fit, at = FIT_CHART["frozen in time"], new.index("Frozen")
-    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART), []) == [("Frozen In Time", [(at, at + 14)], fit)]
+    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART, []), []) == [("Frozen In Time", [(at, at + 14)], fit)]
     new = old.replace("Frozen.", "Frozen In Time or Frozen.")
     mine = (new.rindex("Frozen"), new.rindex("Frozen") + 6)
     assert _follow("Ability FX: Frozen", old, new) == [("Frozen", "Frozen#2", [mine], [], gone[0][4])]   # typed, not kept
@@ -432,7 +439,7 @@ def test_new_fx_counts_a_word_covered_only_when_held_whole():
     phrase around it, Clot Gold's "1 Become Back Money", or its own layer); one a range overlaps in part refuses, where
     the overlap rule left " In Time" of "Frozen In Time" without a layer."""
     text = "Heal 5 HP, inflict 1T Frozen In Time."
-    spans, at = pe.status_spans(text, FIT_CHART), text.index("Frozen")
+    spans, at = pe.status_spans(text, FIT_CHART, []), text.index("Frozen")
     assert pe.new_fx(text, spans, [(at - 3, at + 14)]) == [] and pe.new_fx(text, spans, [(at, at + 14)]) == []
     with pytest.raises(pe.Refused, match="unsupported-card: 'Frozen In Time' is partly under the FX layer of 'Frozen'") as refused:
         pe.new_fx(text, spans, [(at, at + 6)])
@@ -1407,7 +1414,7 @@ def test_follow_fx_refuses_what_would_move_an_anchored_layer(chart):
     new = old + " Then Frozen."
     with pytest.raises(pe.Refused, match="^unsupported-card: a whole-word 'Frozen' in the ability would move the layer "
                                          "Ability FX: Frozen#1 off the 'Frozen' of '2Frozen'; edit in Photoshop$"):
-        pe.follow_fx(plan, new, pe.kept_chars(old, new), pe.status_spans(new, chart))
+        pe.follow_fx(plan, new, pe.kept_chars(old, new), pe.status_spans(new, chart, []))
 
 
 @text_edit
@@ -1882,9 +1889,9 @@ def test_typed_icons_refuse_where_they_would_print_wrong(clone, parser, chart):
     font would draw plainly ("(abc)"). Each unsupported-card."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit, why in (
-            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay or blending would "
-                                                                      r"change the badge's colours and no badge FX layer "
-                                                                      r"restores them"),
+            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay, blending or "
+                                                                      r"opacity would change the badge's colours and no "
+                                                                      r"badge FX layer restores them"),
             ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
             (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'\(abc\)' would be set in the icon font, which draws no badge")):
         psd = PSDImage.open(_card(clone, rel)[0])
@@ -1905,18 +1912,21 @@ FLAMEBLADE = "Items/Equip/3 Stars/Flameblade.psd"        # 'Ability FX: Attacks 
 def test_typed_icons_refuse_under_any_tint_without_a_badge_layer(clone, parser, chart):
     """Review 2026-10-23: the refusal above counted only an opaque Normal overlay. Soul of Eden's Pin Light blend printed
     a typed (2CD) white on cyan, Ice Staff's two 69% gradients a pale blue one and Holy Mantle's Pin Light a washed [fire],
-    every gate passing: with no badge FX layer to restore them they refuse unsupported-card before anything changes.
+    every gate passing, and The Patients' 78% opacity a dimmed one (review 2026-10-24): with no badge FX layer to restore
+    them they refuse unsupported-card before anything changes.
     Binge Eater, Pin Light with a badge layer, still takes one (the layer names it)."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit in (("Items/Equip/2 Stars/Soul_of_Eden.psd", lambda t: "(2CD) " + t),
                       ("Items/Equip/2 Stars/Ice_Staff.psd", lambda t: "(2CD) " + t),
-                      ("Items/Equip/4 Stars/Holy_Mantle.psd", lambda t: t + " [fire]")):
+                      ("Items/Equip/4 Stars/Holy_Mantle.psd", lambda t: t + " [fire]"),
+                      ("Creatures/Other/3 Stars/The_Patients.psd", lambda t: "(1CD) " + t)):
         psd = PSDImage.open(_card(clone, rel)[0])
         layer = pe.ability_layer(psd)
         before = layer.text
         assert pe._tinted(layer) and not pe._overlaid(layer)
-        with pytest.raises(pe.Refused, match=r"^unsupported-card: .*: the Ability's overlay or blending would change the "
-                                             r"badge's colours and no badge FX layer restores them; edit in Photoshop$"):
+        with pytest.raises(pe.Refused, match=r"^unsupported-card: .*: the Ability's overlay, blending or opacity would "
+                                             r"change the badge's colours and no badge FX layer restores them; edit in "
+                                             r"Photoshop$"):
             pe.set_text_layer(psd, "ability", edit(pe.normalize_ability(before)), fonts, chart, parser=parser)
         assert layer.text == before
     assert not pe._tinted(pe.ability_layer(PSDImage.open(_card(clone, "Auxiliary/Creatures/Mettaton_NEO.psd")[0])))
@@ -1954,7 +1964,7 @@ def test_gate_fx_refuses_a_bare_badge_under_a_tinted_ability(clone):
     fx.parent.remove(fx)
     assert pe.bare_icons(psd, fonts) == Counter({"(1gcd)": 1})
     edit = SimpleNamespace(field="ability", fx_names=[])
-    with pytest.raises(pe.Refused, match=r"^reparse: \(1gcd\): under the Ability's overlay or blending with no badge FX "
+    with pytest.raises(pe.Refused, match=r"^reparse: \(1gcd\): under the Ability's overlay, blending or opacity with no badge FX "
                                          r"layer over it$"):
         pe.gate_fx(psd, [edit], fonts_dir, None, old)
     bomb = PSDImage.open(_card(clone, BLOOD_BOMB)[0])
@@ -2051,6 +2061,98 @@ def test_a_badge_layer_takes_its_icons_red_less_pixels(clone, parser, chart):
         pe.gate_fx(psd, [edit], fonts_dir, chart, old)
     with pytest.raises(pe.Refused, match=r"^reparse: \[undead\]: under the Ability's overlay"):
         pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, chart, old)
+
+def _colour_px(layer, fonts, shape) -> np.ndarray:
+    """The text's pixels (any alpha) in its icon font's own colours: renders with every run filled red, then blue, agree."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    from psd_tools.composite.text.raster import GlyphCache, Options, rasterize
+    model, out = TextModel.from_layer(layer), []
+    for fill in ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)):
+        key = replace(model, runs=tuple(replace(run, style=replace(run.style, fill=fill)) for run in model.runs))
+        rgba, (x0, y0, x1, y1) = rasterize(layout(key, fonts), key.transform, key.antialias, Options(color_glyphs=True),
+                                           GlyphCache())
+        canvas = np.zeros((*shape, 4), np.float32)
+        canvas[int(y0):int(y1), int(x0):int(x1)] = rgba
+        out.append(canvas)
+    return (np.abs(out[0] - out[1]).max(axis=2) < 1e-3) & (out[0][..., 3] > 0)
+
+
+@text_edit
+def test_a_badge_layer_takes_a_colour_icons_see_through_glow(clone, parser, chart):
+    """Reviews 2026-10-24: [support]'s ring has a soft, see-through, red-less glow past its glyf outline (the silhouette
+    stops at alpha 110): the badge layer left it out, and it printed in the overlay's colour (maroon on Mini Doomer, olive
+    on Turtle), every gate passing (they counted ink past alpha 0.5). The layer takes every pixel of its glyphs, the
+    gates every colour-glyph pixel past FAINT_INK: a hole in the glow refuses. A typed "★", which no badge phrase names
+    (Turtle: 2 faint px of its glow left out, the gate refused), is the layer's too."""
+    from psd_tools.composite.text import FontMap
+    from psd_tools.composite.text.geometry import text_geometry
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    fonts = FontMap(dirs=[fonts_dir])
+    for rel, tail in ((MINI_DOOMER, " Gain [support]."), (TURTLE, " Gain 5★."), (TURTLE, " Immune to [support].")):
+        old, psd = PSDImage.open(_card(clone, rel)[0]), PSDImage.open(_card(clone, rel)[0])
+        edit = pe.set_text_layer(psd, "ability", pe.normalize_ability(pe.ability_layer(psd).text) + tail, fonts_dir, chart,
+                                 parser=parser)
+        layer = pe.ability_layer(psd)
+        fx, = [fx for fx in pe.fx_layers(psd, layer) if pe.BADGE_FX.fullmatch(pe.fx_label(layer, fx))]
+        assert fx.name.endswith(" | [support]" if "[" in tail else "(1GCD)") and pe._tinted(layer)
+        shape = (psd.height, psd.width)
+        alpha = pe._on_canvas(layer, shape)[..., 3]
+        colour = _colour_px(layer, fonts, shape) & (alpha > 0)
+        held = pe._on_canvas(fx, shape)[..., 3] > 0
+        assert (colour & (alpha <= 110)).sum() > (1000 if "[" in tail else 100) and not (colour & ~held).any()
+        pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+    geometry = text_geometry(layer, fonts)
+    ring, = [glyph for glyph in geometry["glyphs"] if geometry["text"][glyph["i"]:glyph["end"]] == "[support]"]
+    glow = pe._boxes([ring], 20, shape) & ~pe._boxes([ring], pe.FX_BOX_PAD, shape)
+    ys, xs = (colour & held & (alpha > 20) & (alpha < 120) & glow).nonzero()
+    x0, y0 = fx.bbox[:2]
+    rgba = np.concatenate([fx.numpy("color"), fx.numpy("shape")], axis=2).astype(np.float32)
+    rgba[ys[:6] - y0, xs[:6] - x0] = 0.0        # 6 faint px of Turtle's glow, past the ring's glyph box
+    pe._fx_engine()[6](fx, rgba, tuple(fx.bbox))
+    fx._invalidate_bbox()
+    assert pe.bare_icons(psd, fonts) == Counter({"[support]": 1})
+    with pytest.raises(pe.Refused, match=r"^reparse: 'Ability FX: \(1GCD\) \| \[support\]' leaves 6 px of its badges and "
+                                         r"icons out$"):
+        pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+
+
+@text_edit
+def test_a_status_word_in_lettered_brackets_takes_its_fx_layer(clone, parser, chart):
+    """Review 2026-10-24: status_spans skipped every bracketed run, so "Inflict [Blazing]." baked unstyled where Effect
+    Layers.jsx styles it ("[Blazing]" is no icon: the font draws its letters). Only what the icon font draws is skipped:
+    it takes the swatch and its FX layer, every gate passing."""
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    old, psd = PSDImage.open(_card(clone, HIVE)[0]), PSDImage.open(_card(clone, HIVE)[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text) + " Inflict [Blazing]."
+    edit = pe.set_text_layer(psd, "ability", text, fonts_dir, chart, parser=parser)
+    assert edit.fx_names == ["Ability FX: Blazing"]
+    layer = pe.ability_layer(psd)
+    at = layer.text.index("[Blazing]") + 1
+    fills = pe._char_styles(layer)[0][at:at + len("Blazing")]
+    assert {tuple(round(v, 3) for v in fill) for fill in fills} == {tuple(round(v, 3) for v in chart["blazing"].fill)}
+    pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
+
+
+@text_edit
+def test_apply_jobs_checks_each_typed_icon_is_one_cluster(clone, parser, monkeypatch, tmp_path):
+    """Review 2026-10-24: unshaped_icons runs only given the vocabulary, which apply_jobs passes; nothing failed when it
+    did not. Its parse gate reads a token left in the body font first, so the layout here says a typed [fire] is not one
+    icon-font cluster: the bake refuses, given the parser's vocabulary."""
+    real, seen = pe.unshaped_icons, []
+
+    def unshaped(psd, fonts, vocab):
+        seen.append(vocab)
+        out = real(psd, fonts, vocab)
+        return out + Counter({"[fire]": 1}) if vocab is not None and "[fire]" in pe.ability_layer(psd).text else out
+
+    monkeypatch.setattr(pe, "unshaped_icons", unshaped)
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, HIVE)[0], HIVE)["card"]["ability"])
+    assert "[fire]" not in old
+    with pytest.raises(pe.Refused, match=r"^reparse: \[fire\]: not drawn as one badge or icon$"):
+        _bake(clone, parser, HIVE, {"ability": old + " Gain [fire]."}, tmp_path)
+    assert parser.icons in seen
+
 
 @text_edit
 def test_reparse_reads_a_star_outside_the_icon_font_as_typed(clone, parser, tmp_path):
