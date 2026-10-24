@@ -622,10 +622,14 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 - **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
   font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
   the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
-  gradient badge card it joins the badge layer. Refused: a badge under the Ability's colour or gradient overlay with no
-  badge FX layer (23 cards), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
-  Precipice), a `:glow` token (the fork draws its halo as a block), letters left in the icon font it draws no badge of.
-  An edit keeps the card's own icon spellings ("[dark:sticker]" where the website shows "[dark]").
+  gradient badge card it joins the badge layer, and so does a badge edited by deleting letters ("(1GCD)" made "(1CD)").
+  A typed "★" is set in the icon font (the gold star). Refused: a badge under a tinted Ability (any colour, gradient or
+  pattern overlay, or a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the 18 Pin Light
+  Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Precipice), a `:glow` token (the fork draws its halo as a block), letters left in the icon font it draws no badge of
+  ("(abc)", "(GCD)"), a typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF"
+  made "+3 DEF": the layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
+  the website shows "[dark]").
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
@@ -1060,6 +1064,7 @@ fonts_cache and bake rows; section 12's status, step 1 done and the seed precond
 card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py citation re-pointed at 2ada357.
 2026-10-23 (BUG 2, work/fx-rebuild): section 7's Card bake subsection gains the Ability FX layers bullet (the bake runs Effect Layers.jsx's Update all; unstyled word layers still refuse); no cited line moved.
 2026-10-23 (BUG 2 review, work/fx-rebuild): the Ability FX bullet names the two new refusals (a badge typed as text on a badge card; Goofy's whole-word "1") and the `1#2` rename.
+2026-10-23 (BUG 2 phase 2 review, work/fx-rebuild): the typed badges bullet gains the deleted-letter badge, the typed "★", the tint refusal (any overlay, non-Normal blend), missing glyphs and edits inside own-style FX phrases; no cited line moved.
 
 2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.

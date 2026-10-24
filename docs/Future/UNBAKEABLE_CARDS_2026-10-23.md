@@ -167,6 +167,52 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
     bake on the 9 cards printing a `:sticker` or `:tint` icon (Palace of Shadow, Irithyll, Afraid, Corruption, Error
     Room, Inkhole, Blindness, Elemental World, Dark Bramble) would have redrawn it as the plain icon, every gate
     passing; `keep_tokens` keeps the card's own spelling.
+  - **Phase 2 review (same branch, 2026-10-23 night; origin/main 8983719 merged in):** four silent wrong bakes fixed,
+    each refused or baked right now (dry census with every gate on copies of TTSCardMaker main, fork `cards-20261023c`;
+    scripts, JSON and crops `~/Documents/Tools/wt/bf-fx-r5-scratch/`: `census_bake.py`, `runs/{b,c,r1,r2,regress}.json`,
+    `census.json` for the Ability tints, `bare.py`):
+    - A badge edited by deleting letters ("(1GCD)" -> "(1CD)", "(ENDGT)" -> "(ENDT)", "(BOGT)" -> "(BOT)") kept every
+      character, so it did not count as typed: its badge layer was deleted ("its words left the ability", untrue) and
+      the badge printed as a blank pill under the overlay (Scapular: without its layer's stroke). Any icon-font badge
+      no badge layer names now joins the layer; a badge layer whose badges all left while the icon font still draws
+      something refuses. A new `gate_fx` check (`bare_icons`): under a tinted Ability every icon-font glyph lies under
+      a badge FX layer unless it was bare before the edit. Census: a letter deleted from the first badge on 15 badge
+      cards: **14 of 14 bake** (Morpho Knight n/a), each layer renamed and told ("Ability FX: (1GCD) renamed 'Ability
+      FX: (1CD)': (1GCD) left the ability; (1CD) added"); their no-ops 15 of 15 pixel for pixel. On main all 29 badge
+      layers cover their Abilities' icons (`bare_icons` empty); Blood Bomb's Pin Light `[machine]` is the only bare one.
+    - Typed badges under a tint other than an opaque Normal overlay: the 18 Pin Light Isaac items without a badge layer
+      and Ice Staff (two 69% gradients) printed them washed (white on cyan). Refused now under any enabled colour,
+      gradient or pattern overlay or a non-Normal blend with no badge layer (`_tinted`; 71 tinted Abilities on main: 29
+      with a badge layer, 41 without icons, Blood Bomb). Census on the 19: a badge typed in front and a `[fire]`
+      appended **refuse 38 of 38**; " Die." appended **bakes 19 of 19**.
+    - A typed "★" (the website writes "5★") stayed in the body font, a missing-glyph box, every gate passing; it is set
+      in the icon font as a token now (the gold star; the parse reads `[star]`), a badge layer is cut again when one is
+      typed (it takes every colour glyph), a "★" left in the body font refuses `reparse`, and a typed character its font
+      has no glyph for refuses `font`. Census " Costs 5★." on the 17 typed-icon cards: **11 bake** (the font added on
+      the 4 plain cards), Cat (overlay), Nebulous Precipice (image icons), Party! (overflow) refuse, and PoD11ZOMG,
+      Palace of Shadow and Scapular refused `reparse` (the badge layer kept whole, the star bare) until the recut
+      (4276768): they bake now (probes).
+    - An edit inside an own-style or styled FX phrase (Flameblade's "Attacks inflict 2T" made "3T", Palace of Shadow's
+      "+2 DEF" made "+3 DEF", Mr Krabs' "2T1" made "3T1", Morpho Knight's "+2/4/6 ATK", Computer Virus's "1st: Slime")
+      deleted the layer and its style, told "its words left the ability": refused now (ruling B), and so is Clot Gold's
+      "2T1" made "2T2" (it made a chart-style Become Back Money layer in place of its styled one). Census, the first
+      digit of an own-style phrase raised: **5 of 5 refused** (3 n/a); the phase 2 census's other 6 edits on the 8 cards
+      unchanged (42 of 48 bake, the same notes and PNGs). Removing the phrase whole still deletes the layer, told.
+    - Also: letters a deletion leaves in the icon font ("(1GCD)" -> "(GCD)") refuse; an FX layer phrase the ability
+      lacks ("Frozen In Time #1": a space before "#" is no number to the JSX; it crashed `plan_fx`) refuses. The typed
+      icons census (`runs/c.json`, 5 edits on 17 cards) is unchanged but one: Mini Doomer's "(OYT) [undead]" typed in
+      front now refuses `reparse` ("[undead]: under the Ability's overlay ... no badge FX layer over it"): the skull's
+      pure-black eye sockets (46 of its 4,263 px) carry no red, so the key (the JSX's too, red channel) leaves them out
+      of the badge layer and they print in the gradient's pink. Photoshop's Update all would do the same.
+    - Regression, main's 68 FX cards x round 3's 4 edits (`runs/regress.json` against phase 2's): **234 of 258 bake**,
+      the same bakes, refusals and notes; 5 PNGs differ by a few px (Pontiff Sulyvahn's PSD re-saved since, baf89da9;
+      Party!, Monkey D Goofy, Flower Of Decay, Freeze Spell: the code before these fixes, e4dde25, bakes them to the same
+      pixels as after, so not this change).
+    - Held for the owner: a typed plain token beside a card's `:sticker` icons (Palace of Shadow prints `[light]` plain
+      next to `[light:sticker]`); a website edit that only adds `:sticker`/`:tint` is redundant (the parser reads no
+      variant); the leading space of 15 Abilities (Elmadan's) is dropped by any ability edit (`keep_ends` keeps the blank
+      paragraphs, not the indent, by its test); one bake with the icon font added to a plain card's FontSet opened in
+      Photoshop before landing.
 
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
