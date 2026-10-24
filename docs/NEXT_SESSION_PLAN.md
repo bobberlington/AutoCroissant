@@ -110,12 +110,17 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 7. Bot and bake follow-ups
 - [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
       runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
-      origin/main cc3cd8c merged in). Land it and deploy. q6 (own style kept) answered yes 2026-10-23 ~17:40; Clot Gold
-      baking to confirm.
+      origin/main cc3cd8c merged in). Phase 2 (owner's answers of ~17:40): own-style FX layers rebuilt, typed badges
+      and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Land it
+      after a clean review and deploy (psd_parser.py changed: pull + Cython rebuild + restart on the jetson). q6 (own
+      style kept) answered yes; Clot Gold baking to confirm.
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; unblocked).
-- [ ] With BUG 2 landed: FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs,
-      Palace of Shadow, Fire/Ice Staff, Flameblade) are rebuilt in their own style too (owner 2026-10-23 ~17:40; the
-      2026-10-21 refusal goes): built on `work/fx-rebuild` phase 2.
+- [x] FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow,
+      Fire/Ice Staff, Flameblade) are rebuilt in their own style (owner 2026-10-23 ~17:40): built on `work/fx-rebuild`
+      phase 2 (42 of 48 dry bakes). Also there: every typed stoogedings token set in the font (62 of 85).
+- [ ] Tests drifted from the clone: Green Mage's PSD was fixed (TTSCardMaker 78798eac, ATK 6), so
+      `test_effect_rules_on_styled_rows`, `test_a_bar_outside_the_card_refuses` and
+      `test_a_bar_outside_the_card_is_a_final_refusal` fail on main too: pin Green Mage at `78798eac^` (`at_rev`).
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       rcache wiring in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the
       Photoshop oracle loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).

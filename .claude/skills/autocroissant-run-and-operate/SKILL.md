@@ -613,12 +613,19 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   one renumbered, Standstill's `Frozen In Time#2` -> `#3`; "Frozen" made "Frozen In Time" drops the Frozen layer and
   makes a Frozen In Time one in the chart's style). The report says when a layer is deleted (its words left the text,
   or they are no longer its status: "'Frozen In Time' is no Frozen"), renamed (a phrase dropped or renumbered) or cut
-  again clean. Only an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke, owner 2026-10-21)
-  still refuses the card ("FX layers not in a chart status's style: ..."); edit those in Photoshop and run Effect
-  Layers > Update all. Also refused (review, 2026-10-23): a badge typed as plain text onto a gradient card's badge
-  layer ("'(1CD)' would show on it as plain letters (a typed badge is drawn as one only right after a badge or in
-  place of one)") and, on Monkey D Goofy, a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability
+  again clean. Since 2026-10-23 (owner) an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke,
+  Mr Krabs' `2T`) is rebuilt in its own style too, staying on its own words; a typed word joining such a layer is told
+  ("... also covers the typed 'Smoldering', in its own style"). Refused (review, 2026-10-23): where a layer would move
+  to other words, e.g. on Monkey D Goofy a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability
   would move the layer Ability FX: 1#1 off the '1' of '3T1'"); a "1" typed before its "1" renames the layer `1#2`.
+  The commit line and the website's verdict reason carry the FX notes too.
+- **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
+  font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
+  the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
+  gradient badge card it joins the badge layer. Refused: a badge under the Ability's colour or gradient overlay with no
+  badge FX layer (23 cards), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Precipice), a `:glow` token (the fork draws its halo as a block), letters left in the icon font it draws no badge of.
+  An edit keeps the card's own icon spellings ("[dark:sticker]" where the website shows "[dark]").
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is

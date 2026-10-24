@@ -203,8 +203,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
-   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word or
-   ` FX: ` layers the chart has no style for, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
+   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word
+   layers the chart has no style for, `[type]` tokens on a card with image icons in the ability's gaps), `stat>10` (on
+   the value alone; `allow_high_stats` is the website's business). (` FX: ` layers the chart has no style for were
+   refused until 2026-10-23; they are rebuilt in their own style since.)
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12).
@@ -262,13 +264,14 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    run, 08b1152a) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
    (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a
    styled chart status's style on another phrase (`"styled"`: Goofy's `1#1`, Clot Gold's `1 Become Back Money`, the
-   enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again; any other (`""`: Smoldering's
-   stroke, +2 DEF, Despair...) refuses `unsupported-card` before anything changes ("FX layers not in a chart status's
-   style: ...; edit in Photoshop and run Effect Layers > Update all": the owner's 2026-10-21 rule, kept although since
-   q6 they could be cut again in their own style, a held follow-up), and so does an FX layer that is no pixel layer (none on any card; Photoshop
-   would draw a type layer from its text). Where each layer's phrases land is worked out before the text is set
+   enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again, and since 2026-10-23 any
+   other too, in its own style (`"own"`: Smoldering's stroke, +2 DEF, Despair, Mr Krabs' style-less `2T`...; the
+   owner's ruling of ~17:40, the 2026-10-21 refusal "FX layers not in a chart status's style" gone). Only an FX layer
+   that is no pixel layer (`""`; none on any card; Photoshop would draw a type layer from its text) refuses
+   `unsupported-card` before anything changes. Where each layer's phrases land is worked out before the text is set
    (`follow_fx`): `phrase_ranges` over the new text (a phrase that occurs more often is cut on every occurrence), but a
-   `"styled"` layer, whose style and colour belong to its own words, stays on the characters it covered (`kept_chars`;
+   `"styled"` or `"own"` layer (`ANCHORED`), whose style and colour belong to its own words, stays on the characters it
+   covered (`kept_chars`;
    review 2026-10-23): Goofy's `1#1` is the first "1" of a text with no whole-word "1", so a "1" typed before it renumbers
    the layer (`1#2`, told), a whole-word "1" typed anywhere ("Draw 1 card.") would take the JSX's `1#1` off "3T1" and
    refuses `unsupported-card` ("would leave its 1 for another"), a styled phrase matched inside other words that would
@@ -293,18 +296,22 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    not (`_holds`: the B1 batch's leaked badge pills, std-batch2 FX.md), then it is cut again clean. A phrase gone from the
    text leaves the name (the parser flags a name the text lacks; the report says why: "(1GCD) left the ability", "the
    ability has 1 Frozen In Time now"); a layer with none left is deleted; a non-badge layer whose words now fall in a
-   badge refuses `unsupported-card` (the JSX would cut every badge). A badge layer's phrase the edit typed outside the icon
-   font (a "(1CD)" typed anywhere but right after a badge stays body text) refuses `unsupported-card`: the JSX's cut
-   would lift those letters above the Text group, out of its Color or Gradient Overlay, drawn in the raw white fill
-   (review 2026-10-23: Heavy Mole, Wham Bam Bone, Mini Doomer). A badge the edit typed in the icon font joins the badge
-   layer's name (each badge layer names every badge of its card; the layer draws every colour glyph): PoD11ZOMG's
-   "(2U)" made "(3U)" renames `(1GCD) | (2U) | (2CD)` to `(1GCD) | (2CD) | (3U)`. A
+   badge refuses `unsupported-card` (the JSX would cut every badge). Since 2026-10-23 (owner, ~17:40) a typed badge is
+   always set in the icon font (below), so on a badge card it joins the badge layer as a real badge (Mini Doomer's
+   "Then (BOT)." bakes; the review's refusal of a badge typed as body text, whose letters the JSX's cut would have lifted
+   out of the Ability's overlay, white, only stays as a safety net for text the font draws no badge of). A badge the
+   edit typed in the icon font joins the badge layer's name (each badge layer names every badge of its card; the layer
+   draws every colour glyph): PoD11ZOMG's "(2U)" made "(3U)" renames `(1GCD) | (2U) | (2CD)` to `(1GCD) | (2CD) | (3U)`.
+   A typed word that joins an unnumbered layer whose style is no chart status's for it (an `"own"` or `"styled"` layer,
+   or an L7 `"status"` layer in its old overlay's style: `FxPlan.own_style`) is told: "Ability FX: Smoldering also
+   covers the typed 'Smoldering', in its own style". A
    rebuilt layer keeps its own style, the chart's or not (q6: own style kept, unattended call 2026-10-23, owner to
    confirm; the owner's standing ruling is to give the developers freedom and handle their choices generally): the 8
    L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
-   a new layer takes the chart's (below). Text typed into a `"styled"` layer's own
-   words (a match holding characters it covered) takes the phrase's colour, its first drawn run (08b1152a); a new match
-   keeps the colour of what it replaces. A styled status word no rebuilt layer holds whole (its status's layer on
+   a new layer takes the chart's (below). Text typed into a `"styled"` or `"own"` layer's own
+   words (a match holding characters it covered) takes the phrase's colour, its first drawn run (08b1152a), but a status
+   word among them keeps the chart's swatch (the owner's 2026-10-23 ruling); a new match keeps the colour of what it
+   replaces. A styled status word no rebuilt layer holds whole (its status's layer on
    exactly it, or a `"styled"` phrase around it: Clot Gold's `1 Become Back Money`; one a layer covers in part refuses,
    where counting any overlap left " In Time" without a layer) gets a new one (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
    "2Blazing", beside a whole-word one has no JSX name and refuses `unsupported-card`), cut the same way, the
@@ -326,6 +333,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    name when a phrase left; never an effect block, its blending or opacity (`_fx_rebuilt`, q6), one flag byte per
    hidden overlay; records are paired in file order once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
+   Since 2026-10-23 a face an edit added (`Edit.fonts`: the icon font on a card without it) may join the end of Txt2's
+   FontSet, nothing else there.
    Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
    `TextIndex` is the story's index) and rebuilds the layer's TySh from it on save, so the five titles baked that morning
    (TySh only) reverted when the card was opened (`B.F.B.` -> `B.F.B`). The fork's `set_text`/`set_span_style` now write the
@@ -336,7 +345,26 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
    character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
    that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
-   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). An edit on a layer
+   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). **Typed badges and
+   icons (owner 2026-10-23 ~17:40):** every timing tag and every token the stoogedings font draws that the edit types
+   (`icon_text`: a tag of `badge_tags()` in any letter case, "(1cd)"; a `[token]` the parser's vocabulary knows with a
+   variant the font has, "[Fire:Sticker]", "[warp star]", "[fire:no]"), anywhere in the ability, is set in the icon font
+   at the card's own badge or token style (`icon_style`: its icon-font badges' or tokens' STYLE_KEYS, size, baseline
+   shift, tracking..., the commonest, ties to the one at the body's size, then the first: Pizza's 32 pt, not its odd
+   18.66 pt first badge); a card with none sets it in `ICON_FONT` (added to the layer's and Txt2's FontSets,
+   `Edit.fonts`) at the text's own style, the most common card style (measured on main: 358 of 659 icon-font runs share
+   every key with the text beside them, 442 its size; the templates have none). One the engine set in a badge's own
+   style (typed right after a badge, or a digit changed inside one) keeps it. Text typed after a badge that the font
+   draws no badge of ("(2 points)") takes the body style; letters left in the icon font that it draws no badge of
+   (a badge replaced by "(abc)") refuse `unsupported-card`. A typed badge or token under the Ability's own Color or
+   Gradient Overlay with no badge FX layer to restore its colours refuses `unsupported-card` (23 such cards have no
+   badge today; the 25 with badges all have one). `[type]` tokens refuse only on a card whose type icons are image
+   layers the parser reads into the ability's gaps (`image_icons`: the website's text holds their tokens; Nebulous
+   Precipice is the only one on main), no longer on every card without the icon font. The website's text spells each
+   icon as the parser reads it ("[dark]" for "[dark:sticker]", "[fire]" for "[Fire]" or "★"), so `keep_tokens` spells
+   an icon the edit kept as the layer does (review 2026-10-23: an ability bake on Palace of Shadow, Irithyll, Afraid,
+   Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
+   plain, every gate passing). A badge or token typed in a title stays text (not yet handled). An edit on a layer
    set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs. A fork that
    draws them in colour (round 6) bakes them; where the engine draws one in one colour (an older fork, or SVG it does not
    cover: warning `monochrome_emoji`) the bake refuses `font` unless an opaque overlay effect covers the layer (Mini
@@ -344,7 +372,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
-   replaced (ability compared after the parser's own whitespace rule on both sides); `alt_names` unchanged;
+   replaced (ability compared after the parser's own whitespace rule on both sides, and since 2026-10-23 its tokens as
+   the parser reads them in the icon font on both sides, `canonical_tokens`: a typed "[Fire]" reads back "[fire]";
+   `classify` calls such an edit redundant); `alt_names` unchanged;
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
    every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
@@ -353,9 +383,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
    the new layout): every FX layer inks only inside its phrases' glyph boxes (a badge layer also the icon font's) padded
    by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
-   reaches, one the edit cut holds the Ability's own pixels byte for byte, and a `"styled"` layer's name still reaches
-   the characters of it the edit kept (`Edit.held`, independent of `follow_fx`; a range counts as kept only when every
-   character of it is, `kept_spans`); stray pixels count at any alpha (refused `reparse` naming the layer;
+   reaches, one the edit cut holds the Ability's own pixels byte for byte, and a `"styled"` or `"own"` layer's name
+   still reaches the characters of it the edit kept (`Edit.held`, independent of `follow_fx`; a range counts as kept
+   only when every character of it is, `kept_spans`; `held_words` picks the layers by layer, not name, since a renamed
+   one may take a deleted one's name, review 2026-10-23); stray pixels count at any alpha (refused `reparse` naming the layer;
    `test_fx_gates_refuse_a_wrong_cut` shifts, crops, repaints and fades a rebuilt layer, and `gate_bytes` refuses its
    opacity or name changed). With the chart, `gate_status_words` (review round 3, independent of `follow_fx` and
    `new_fx`): every styled status word of the saved Ability is held whole by an FX layer's `phrase_ranges` (its
@@ -485,6 +516,36 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `gate_status_words`), `test_numbered_status_fx_layers_stay_on_their_words` (Standstill; line 2's PNG is the no-op
   bake's). Merged with origin/main (1bf6892, then cc3cd8c): its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
   declared name.
+  **Phase 2 (2026-10-23 evening, owner's answers of ~17:40, same branch):** (1) FX layers in no chart status's style are
+  rebuilt in their own style (`fx_kind` `"own"`, anchored as `"styled"` ones: they stay on the characters they covered
+  and refuse where Update all would move them); the 2026-10-21 refusal is gone. Census on copies of TTSCardMaker main's
+  8 such cards (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow, Fire Staff, Ice Staff,
+  Flameblade), six edits each with every gate (scripts and JSON `~/Documents/Tools/wt/bf-fx-p2-scratch/`,
+  `census.py`, `runs/b.json`, crops `crops-b/`, fork `cards-20261023c`): 42 of 48 bake, 2 n/a; the website and
+  Update-all no-ops leave 7 of 8 PNGs pixel for pixel (Mr Krabs: 285 px past 24 at the edges of "Become Back Money",
+  its yellow recoloured to the chart's white under its gradient FX layer, the owner's chart rule); a word typed again
+  joins its layer on 5 cards, told; refused: Mr Krabs's whole-word "2T" typed (its `2T` sits in "2T1"), 3 overflows.
+  (2) Every typed timing tag and stoogedings token is set in the icon font at the card's own badge or token style
+  (section 5 step 6); census on 17 cards (badge-layer, icon-font, plain, overlaid and image-icon cards), five edits each
+  (a tag, a lowercase tag, a [type] token, a ":no" and a ":Sticker" variant, a badge and a token in front): 62 of 85
+  bake, each typed icon at its card's icon style (Scapular's 19.96 pt shifted -12.52, Cabbage's tracking 100), the face
+  added on the 3 plain cards that fit, badge layers renamed to name the typed badges (told) or already naming them;
+  refused: Cat (overlay, no badge layer, 5), Nebulous Precipice (image icons, 5), 13 overflows (`runs/c.json`,
+  `crops-c/`); regression on main's 68 FX cards x round 3's 4 edits: 234 of 258 bake, no former bake refused, 51
+  former refusals bake (`runs/regress.json`). (3) `keep_tokens` (found by the census): the website's canonical tokens no longer overwrite the card's
+  `:sticker`/`:tint` spellings (9 cards on main). (4) Review minor items: FX notes in the commit line and the website's
+  verdict reason, `held_words` by layer, the refusal paths tested, a typed word joining a layer of no chart style told,
+  the parser's `#0` read as every occurrence (as the JSX's `splitOccurrence`; the same count as before). Tests:
+  `test_fx_kind_names_how_each_fx_layer_is_made_again`, `test_own_style_fx_layers_are_made_again_in_their_style`,
+  `test_own_style_fx_layer_takes_a_typed_word_in_its_style`, `test_an_own_style_status_word_keeps_the_charts_fill`,
+  `test_held_words_follow_the_layer_not_its_name`, `test_follow_fx_refuses_what_would_move_an_anchored_layer`,
+  `test_ambiguous_fx_layers_refuse`, `test_a_typed_status_word_joining_its_layer_is_told`,
+  `test_a_typed_badge_joins_the_badge_layer`, `test_typed_icons_on_a_card_without_the_icon_font`,
+  `test_typed_icons_refuse_where_they_would_print_wrong`, `test_icon_text_follows_the_fonts_spellings`,
+  `test_icon_style_is_the_cards_commonest`, `test_an_edit_keeps_the_cards_own_token_spellings`,
+  `test_parentheses_typed_after_a_badge_are_body_text`, `test_effect_layer_numbers_read_as_the_jsx`,
+  `test_fx_notes_reach_the_commit_and_the_verdict`. `psd_parser.py` changed (the `#0` read): a jetson deploy rebuilds
+  Cython.
 
 ## 8. Runner
 
@@ -622,10 +683,12 @@ the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes a
 past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
 the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
-carry enabled effects (which one the row shows is ambiguous) and the overlay word or FX layers the chart has no style for (Smoldering,
-+2 DEF, Despair...; since BUG 2, 2026-10-23, also an FX layer whose words would fall in a badge, a styled FX layer whose
-JSX name would move to other words, a badge typed as text onto a badge layer, a styled status word a digit touches beside a
-whole-word one, an FX layer that is no pixel layer), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
+carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (FX
+layers in no chart style were refused too until 2026-10-23: rebuilt in their own style since; since BUG 2, 2026-10-23,
+also an FX layer whose words would fall in a badge, a styled or own-style FX layer whose JSX name would move to other
+words, two FX layers renumbered onto one name, a styled status word a digit touches beside a whole-word one, an FX
+layer that is no pixel layer; since the evening, a badge or token typed under the Ability's overlay with no badge FX
+layer, letters left in the icon font it draws no badge of), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
 `hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
