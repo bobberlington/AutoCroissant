@@ -609,14 +609,16 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
 - **Ability FX layers (BUG 2, branch work/fx-rebuild, not landed):** an ability bake makes the card's `Ability FX: ...`
   layers again as Effect Layers.jsx's Update all does (the gradient cards' badge layers included): each cut in place over
-  its words' new places, its style and place kept. The report says when a layer's words left the text (deleted, or a
-  phrase dropped from its name) or a status layer took the chart's style. Only an FX layer whose style is no chart
-  status's (Fire Staff's Smoldering stroke, owner 2026-10-21) still refuses the card ("ability edit would drop FX layers
-  the chart has no style for"); edit those in Photoshop and run Effect Layers > Update all. Also refused (review,
-  2026-10-23): a badge typed as plain text onto a gradient card's badge layer ("'(1CD)' typed outside the icon font would
-  show on it as plain letters"; the bake sets a typed badge in the icon font only right after another badge) and, on
-  Monkey D Goofy, a whole-word "1" anywhere in the ability ("Ability FX: 1#1 ... would leave its 1 for another"); a "1"
-  typed before its "1" renames the layer `1#2`.
+  its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
+  one renumbered, Standstill's `Frozen In Time#2` -> `#3`; "Frozen" made "Frozen In Time" drops the Frozen layer and
+  makes a Frozen In Time one in the chart's style). The report says when a layer is deleted (its words left the text,
+  or they are no longer its status: "'Frozen In Time' is no Frozen"), renamed (a phrase dropped or renumbered) or cut
+  again clean. Only an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke, owner 2026-10-21)
+  still refuses the card ("FX layers not in a chart status's style: ..."); edit those in Photoshop and run Effect
+  Layers > Update all. Also refused (review, 2026-10-23): a badge typed as plain text onto a gradient card's badge
+  layer ("'(1CD)' would show on it as plain letters (a typed badge is drawn as one only right after a badge or in
+  place of one)") and, on Monkey D Goofy, a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability
+  would move the layer Ability FX: 1#1 off the '1' of '3T1'"); a "1" typed before its "1" renames the layer `1#2`.
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner) and 13 (S7); the PSD-edit ledger is

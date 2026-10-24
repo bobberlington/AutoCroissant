@@ -79,8 +79,10 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
   Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too: the website no-op leaves 22 of
   the corpus's 31 cards identical, the Update-all no-op 23 of 30 (Warcraftian Hunter's refuses `reparse`, its column
   spaces); on main the website no-op leaves 42 of 56 (46 with q6: only these 8 cards were restyled).
-  PoD06Rainbow Bloon's and The Radiance's no-ops refuse `parity` (a render that changes nothing on a box past the bar,
-  section 10); their real edits bake.
+  PoD06Rainbow Bloon's and The Radiance's no-ops refused `parity` (a render that changes nothing on a box past the bar,
+  section 10) in the first census, on the older `ac-py314-fork` venv (`bf-fx-fix-scratch/runs/clone.json`); their real
+  edits bake. On `ac-py314-r9` (`cards-20261023b`) The Radiance's website no-op and Update-all no-op both bake, the PNG
+  pixel-identical (review 2026-10-23; PoD06Rainbow Bloon not re-checked).
 - **Real edits (main):** a moved word bakes on 46 cards (13 have no plain word before an FX word): 22 FX layers kept
   whole, 28 cut again at their new place; " Die." bakes on 57 (Pandamonium overflows); removing the first FX word bakes
   on 58: 48 layers deleted, 8 renamed (`(1GCD) | (2U) | (2CD)` -> `(2U) | (2CD)`). Parity notes only where the card's
@@ -92,13 +94,15 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
   - A layer carrying a chart status's style stays on its own words (`psd_edit.follow_fx`). Goofy's `1#1` is the first
     "1" of a text with no whole-word "1" (the "1" of "3T1"): a whole-word "1" typed anywhere ("Draw 1 card." before or
     after, "Draw 1 of the following", " Then 1.") would take the JSX's `1#1` to it and paint it gold, so the edit is
-    refused ("Ability FX: 1#1: Effect Layers.jsx's '1#1' would leave its 1 for another"); a "1" typed before it renames
+    refused ("a whole-word '1' in the ability would move the layer Ability FX: 1#1 off the '1' of '3T1'"); a "1" typed
+    before it renames
     the layer `1#2` (told; Effect Layers.jsx's Update all in Photoshop cuts `1#2` on the same "1", IoU 1.0); its "1"
     removed deletes the layer, told (Goofy's "first FX word removed" now bakes). Clot Gold's `1 Become Back Money` (in
     "2T1 Become Back Money", no whole word) refuses a whole-word "1 Become Back Money" typed again. gate_fx checks each
     such layer still reaches the characters the edit kept (`Edit.held`).
   - A badge typed outside the icon font (anywhere but right after another badge it stays body text) onto a badge
-    layer's phrase is refused ("'(1CD)' typed outside the icon font would show on it as plain letters"): Update all
+    layer's phrase is refused ("'(1CD)' would show on it as plain letters (a typed badge is drawn as one only right
+    after a badge or in place of one)"): Update all
     would lift those letters above the Text group, out of its overlay, white. A badge typed in the icon font joins the
     badge layer's name (each badge layer names every badge of its card): PoD11ZOMG's "(2U)" made "(3U)" gives
     `(1GCD) | (2CD) | (3U)` (Update all in Photoshop: IoU 1.0).
@@ -110,6 +114,19 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
     the badge cards, 9 overflow, 8 no chart style, Goofy and Clot Gold (above), Miracle Matter, Apex Predator; corpus
     13 of 34. "Draw 1 card. " put in front: main 48 bake, 20 refused (9 overflow, 8 no chart style, Goofy, Miracle
     Matter, Apex Predator); corpus 28 of 34.
+- **Review round 3 (same branch, 2026-10-23):** a status layer lands only on its status's own words, and a numbered
+  one follows its own word, renumbered (`psd_edit.follow_fx`; gate `gate_status_words`). Snow Bunny's "Frozen." made
+  "Frozen In Time." deletes its own-style Frozen layer ("'Frozen In Time' is no Frozen") and makes a Frozen In Time one
+  of the chart's style (before: the Frozen layer re-cut on "Frozen", " In Time" left flat, 28,250 px past 24 against
+  work/land-st); "Unfrozen." deletes it (before: a glow on part of the word). Standstill's "Inflict 2T Frozen In
+  Time." made "Frozen In Time, Frozen In Time." keeps `#2` on line 2 as `#3`, its PNG there the no-op bake's (before:
+  `#2` moved to line 1, line 2's word given the chart's style, untold). Census on main's 68 FX cards (website no-op, a
+  word before an FX word deleted, the first FX phrase typed again, " Die."; 272 dry bakes with every gate, copies of
+  TTSCardMaker main, `~/Documents/Tools/wt/bf-fx-r4-scratch/`, `runs/{old,new}.json`, fork `cards-20261023b`): the
+  same bakes (57, 46, 23, 57), notes, FX layers and PNGs as before the change; only the refusal wording differs.
+  Clot Gold's "2T1" made "2T2" deletes its styled `1 Become Back Money` (told) and makes a chart-style `Become Back
+  Money` directly above Text, where the JSX's Add puts it (the old one sat at the root top; nothing between overlaps,
+  so the pixels match); its hidden overlay type layer `1 Become Back Money` stays, hidden and not reported.
 - **Photoshop cross-check (copies under `~/std-work-1022/fx-1023/`):** Effect Layers.jsx's Update all run in Photoshop on 8
   baked copies (badges moved and renamed, chart words moved, a restyle since dropped, q6) rebuilt the same layers: same boxes, style and
   place, ink IoU 0.955-1.0 (ours 0-132 faint edge pixels more), no differing pixel on the shared ink. Photoshop renders

@@ -263,8 +263,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a
    styled chart status's style on another phrase (`"styled"`: Goofy's `1#1`, Clot Gold's `1 Become Back Money`, the
    enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again; any other (`""`: Smoldering's
-   stroke, +2 DEF, Despair...) refuses `unsupported-card` before anything changes ("ability edit would drop FX layers the
-   chart has no style for", owner 2026-10-21), and so does an FX layer that is no pixel layer (none on any card; Photoshop
+   stroke, +2 DEF, Despair...) refuses `unsupported-card` before anything changes ("FX layers not in a chart status's
+   style: ...; edit in Photoshop and run Effect Layers > Update all": the owner's 2026-10-21 rule, kept although since
+   q6 they could be cut again in their own style, a held follow-up), and so does an FX layer that is no pixel layer (none on any card; Photoshop
    would draw a type layer from its text). Where each layer's phrases land is worked out before the text is set
    (`follow_fx`): `phrase_ranges` over the new text (a phrase that occurs more often is cut on every occurrence), but a
    `"styled"` layer, whose style and colour belong to its own words, stays on the characters it covered (`kept_chars`;
@@ -272,7 +273,16 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    the layer (`1#2`, told), a whole-word "1" typed anywhere ("Draw 1 card.") would take the JSX's `1#1` off "3T1" and
    refuses `unsupported-card` ("would leave its 1 for another"), a styled phrase matched inside other words that would
    spread to a new one refuses too, and a numbered phrase whose occurrence the edit removed leaves (the layer deleted,
-   told). `_rebuild_fx` cuts each in place from the new raster and keeps its record (id, name, flags,
+   told). A `"status"` layer, its own style kept (q6), lands only on its status's own words (`status_spans` of the new
+   text; review 2026-10-23, round 3): never the "Frozen" of "Frozen In Time" or of "Unfrozen" (the JSX's literal rule
+   re-cut Snow Bunny's Frozen layer onto the first word of a typed "Frozen In Time", " In Time" left flat in the swatch
+   colour and no Frozen In Time layer, and onto part of "Unfrozen"): those it leaves ("'Frozen In Time' is no Frozen",
+   the layer deleted when nothing is left), an unnumbered one is renamed by number when a word of its own stays
+   (`Frozen` -> `Frozen#2` in "Frozen In Time or Frozen", the JSX's own form for some occurrences), and a numbered one
+   follows its own word, renumbered, as a styled one does: Standstill's `Frozen In Time#2` (line 2) stays there as
+   `#3` when "Frozen In Time, Frozen In Time." replaces line 1, `#1` follows the word it kept (`#2`), and the typed
+   one gets a new `#1` of the chart's style (the literal names moved `#2` to line 1 and gave line 2's word a new layer
+   of the chart's style, untold). Two layers renumbered onto one name refuse. `_rebuild_fx` cuts each in place from the new raster and keeps its record (id, name, flags,
    opacity, blending, clipping, blocks, place): only rect and channels change, written by the fork's raster writer
    (`TypeLayer._store_raster` on the pixel layer). The key is the engine's layout; on a splice the raster under it is
    Photoshop's for kept glyphs, whose anti-aliasing reaches a pixel past the engine's on some faces (The Radiance's
@@ -294,8 +304,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
    a new layer takes the chart's (below). Text typed into a `"styled"` layer's own
    words (a match holding characters it covered) takes the phrase's colour, its first drawn run (08b1152a); a new match
-   keeps the colour of what it replaces. A styled status word no FX layer covers gets a new one
-   (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
+   keeps the colour of what it replaces. A styled status word no rebuilt layer holds whole (its status's layer on
+   exactly it, or a `"styled"` phrase around it: Clot Gold's `1 Become Back Money`; one a layer covers in part refuses,
+   where counting any overlap left " In Time" without a layer) gets a new one (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
    "2Blazing", beside a whole-word one has no JSX name and refuses `unsupported-card`), cut the same way, the
    chart layer's `lfx2`/`lrFX` deep-copied, a fresh layer id (the seed resource moves past it), directly above the ability's
    top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
@@ -343,9 +354,12 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    the new layout): every FX layer inks only inside its phrases' glyph boxes (a badge layer also the icon font's) padded
    by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
    reaches, one the edit cut holds the Ability's own pixels byte for byte, and a `"styled"` layer's name still reaches
-   the characters of it the edit kept (`Edit.held`, independent of `follow_fx`); stray pixels count at any alpha
-   (refused `reparse` naming the layer; `test_fx_gates_refuse_a_wrong_cut` shifts, crops, repaints and fades a rebuilt
-   layer, and `gate_bytes` refuses its opacity or name changed).
+   the characters of it the edit kept (`Edit.held`, independent of `follow_fx`; a range counts as kept only when every
+   character of it is, `kept_spans`); stray pixels count at any alpha (refused `reparse` naming the layer;
+   `test_fx_gates_refuse_a_wrong_cut` shifts, crops, repaints and fades a rebuilt layer, and `gate_bytes` refuses its
+   opacity or name changed). With the chart, `gate_status_words` (review round 3, independent of `follow_fx` and
+   `new_fx`): every styled status word of the saved Ability is held whole by an FX layer's `phrase_ranges` (its
+   status's layer on exactly it, or another phrase around it), and a status's layer lies on its status's own words only.
    Name: the title layer's read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
@@ -453,7 +467,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   2026-10-21 rule; its FX layer cut again under its own style): Royal Eradicator Main Cannon 2,775 px past 24, Standstill
   2,438, Zero 575, Oryx 44, all within the parity bar; a moved word bakes on all 8, their FX records changing only rect
   and channels. Tests: `test_noop_ability_bake_keeps_an_l7_fx_layers_own_style` (Snow Bunny, PNG pixel-identical),
-  `test_rebuilt_fx_layer_keeps_its_own_style`, `test_gate_bytes_keeps_a_rebuilt_fx_records_style`. Review
+  `test_rebuilt_fx_layer_keeps_its_own_style` (both fail on pre-q6 43a54f9 on its "restyled to the chart's" note);
+  `test_gate_bytes_keeps_a_rebuilt_fx_records_style` pins the rebuilt record's tuple and what may change (the pre-q6
+  gate refused an undeclared effect block or blend change too). Review
   (2026-10-23): Update all's literal rule would move a chart-style layer named by count (`1#1`) or matched inside a word
   to a new whole word, so those follow their kept characters (`follow_fx`) or refuse; a badge typed as body text onto a
   badge layer refuses; census re-run with a phrase typed again and "Draw 1 card." in front (same results otherwise). Effect
@@ -462,7 +478,13 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_ability_bake_moves_the_badge_layer_with_its_badge`, `test_ability_bake_drops_the_fx_layer_of_a_word_it_removes`,
   `test_ability_bake_cuts_a_leaky_fx_layer_again`, `test_goofys_styled_one_is_made_again`, `test_phrase_ranges_follow_the_jsx`;
   after the review (2026-10-23): `test_goofys_one_stays_on_its_one`, `test_a_badge_typed_as_text_refuses_on_a_badge_card`,
-  `test_fx_gates_refuse_a_wrong_cut`, `test_new_fx_refuses_a_status_word_the_jsx_cannot_name`.
+  `test_fx_gates_refuse_a_wrong_cut`, `test_new_fx_refuses_a_status_word_the_jsx_cannot_name`. Review round 3
+  (2026-10-23): a `"status"` layer follows its status's own words (above); `test_numbered_status_fx_follows_its_own_word`,
+  `test_status_fx_lands_only_on_its_status_words`, `test_new_fx_counts_a_word_covered_only_when_held_whole`,
+  `test_kept_spans_need_every_character_kept`, `test_status_fx_layer_leaves_a_longer_status_word` (Snow Bunny, with
+  `gate_status_words`), `test_numbered_status_fx_layers_stay_on_their_words` (Standstill; line 2's PNG is the no-op
+  bake's). Merged with origin/main 1bf6892: its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
+  declared name.
 
 ## 8. Runner
 
@@ -689,7 +711,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
    authors and the TTS save following) — after round 1 (step S9).
 5. **Commit the Mac-only font files to `MDW/Fonts`** (the user's call; licence risk noted), so every runner renders every card.
 6. **Restyle to the chart and hide the overlays**: an ability edit normalizes off-chart status words to the chart's colour
-   and effect and hides the hand-made overlay word layers it replaces (part of S6).
+   and hides the hand-made overlay word layers it replaces (part of S6); the effect is the chart's only on an FX layer it
+   makes (since q6, 2026-10-23, on work/fx-rebuild: an existing FX layer keeps its own style).
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
    aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
    ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`). **Reprinted 2026-10-22** (run

@@ -111,7 +111,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 
 ### 7. Bot and bake follow-ups
 - [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
-      runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch). Land it and deploy; owner to confirm
+      runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
+      origin/main 1bf6892 merged in). Land it and deploy; owner to confirm
       q6 (own style kept, unattended call 2026-10-23: the 8 L7 cards' FX layers keep their overlay's style) and Clot Gold baking.
 - [x] Re-check the 4 stale verdicts (Metal General, Z.O.M.G., Star Dream, Zero Override) without `--pending`: none
       left (work/bake-verdicts). The live dispatch e1a491be re-checked them (none was final: three PSDs had changed, and
