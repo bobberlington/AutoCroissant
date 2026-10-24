@@ -86,6 +86,8 @@ ICON_OVERLAP = 16           # px a typed icon may ink over the layer's other gly
 ICON_HEIGHT = (0.6, 2.2)    # a typed icon at the text's own size: its height over its line's letters' (Holy Blade 0.2)
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
+BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
+                            # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
 BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
@@ -240,7 +242,7 @@ class Edit:
     rebuilt: list = field(default_factory=list)  # (record index, old name, name): an FX layer cut again in place, its own
     #   style kept (Effect Layers.jsx's Update all; owner q6)
     fx_names: list = field(default_factory=list)  # the text layer's FX layers after the edit, bottom to top
-    notes: list = field(default_factory=list)   # for the report: FX layers deleted, renamed or cut again
+    notes: list = field(default_factory=list)   # for the report: FX layers deleted, renamed or cut again; ink_beyond's
     held: list = field(default_factory=list)    # (FX layer name, [(start, end)]): a "styled" or "own" layer's kept words,
     #   which it still covers (gate_fx)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
@@ -270,7 +272,7 @@ class Baked:
     timings: dict           # seconds: open, baseline, render, save, reparse, idempotence
     block_bytes: int = 0    # effect block bytes that moved with a toggle (idea 12) or landed on an FX layer (idea 14)
     fx: list = field(default_factory=list)      # names of the FX layers cut again or made
-    fx_notes: list = field(default_factory=list)  # Edit.notes: FX layers deleted, renamed or cut again
+    fx_notes: list = field(default_factory=list)  # Edit.notes: FX layers deleted, renamed or cut again; ink_beyond's
     icc: bool = True        # export_icc(): rendered converted by the embedded profile (False: the PNG was exported raw)
     rerender: dict = field(default_factory=dict)    # field -> gate_idempotence()'s measurement of its region
     icons: dict = field(default_factory=dict)       # stars / types -> the layout their edit followed (IconPlan.how)
@@ -579,6 +581,11 @@ def glow_halos() -> bool:
     from dataclasses import fields
     from psd_tools.composite.text.svg import Picture
     return "box" in {field.name for field in fields(Picture)}
+
+
+def glow_tokens(text: str) -> list:
+    """The :glow and :darkglow tokens in a text (drawn with a halo: glow_halos)."""
+    return [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
 
 
 def splices() -> bool:
@@ -1169,20 +1176,42 @@ def edit_parts(old: str, new: str, start: int, end: int) -> list:
         if size:
             out.append((lo + a, lo + a + size, start + b, start + b + size, True))
         a0, b0 = a + size, b + size
-    return out
+    for k, (a0, a1, b0, b1, kept) in enumerate(out):     # a deletion slid to whole lines or words (deletion_start)
+        if kept or b1 > b0 or a1 <= a0:
+            continue
+        floor = max([part[1] for part in out[:k] if not part[4]] or [0])
+        shift = a0 - _slide(old, a0, a1, floor)
+        if not shift or k and not out[k - 1][4]:
+            continue
+        out[k] = (a0 - shift, a1 - shift, b0 - shift, b0 - shift, False)
+        if k + 1 < len(out):
+            na0, na1, nb0, nb1, _ = out[k + 1]
+            out[k + 1] = (na0 - shift, na1, nb0 - shift, nb1, True)
+        else:
+            out.append((a1 - shift, a1, b0 - shift, b0, True))
+        if k:
+            pa0, pa1, pb0, pb1, _ = out[k - 1]
+            out[k - 1] = (pa0, pa1 - shift, pb0, pb1 - shift, True)
+    return [part for part in out if part[1] > part[0] or part[3] > part[2]]
 
 
 def splice_text(layer, text: str, parts: list) -> None:
     """
     set_text(keep="runs") one changed part at a time (edit_parts), last first: the engine restyles only what changed, so
     an edit at both ends of an ability leaves the badges and colours between them alone (in one call, everything from
-    the first change to the last would take the first changed character's style).
+    the first change to the last would take the first changed character's style). A part the engine's greedy prefix
+    would run past (deleting "+2 ATK\r" before "+25% SPD" kept "+2" in the deleted line's red: review 2026-10-24) first
+    has its first character made one no text holds, so the engine's prefix stops where the part starts.
     """
     current = layer.text
     for a0, a1, b0, b1, kept in reversed(parts):
         if not kept:
-            current = current[:a0] + text[b0:b1] + current[a1:]
-            layer.set_text(current, keep="runs")
+            nxt = current[:a0] + text[b0:b1] + current[a1:]
+            if a1 - a0 != b1 - b0 and changed_range(current, nxt)[0] > a0 + b1 - b0:
+                mark = next(c for c in "\ufffc\ufffd\u2060\u2061" if c not in current + text)
+                layer.set_text(current[:a0] + mark + current[a0 + (a1 > a0):], keep="runs")
+            layer.set_text(nxt, keep="runs")
+            current = nxt
     layer.set_text(text, keep="runs")           # nothing left but a stale story to bring along
 
 
@@ -1288,6 +1317,46 @@ def changed_range(old: str, new: str) -> tuple:
     while suffix < min(len(old), len(new)) - prefix and old[len(old) - 1 - suffix] == new[len(new) - 1 - suffix]:
         suffix += 1
     return prefix, len(new) - suffix
+
+
+def deletion_start(old: str, new: str, at: int) -> int:
+    """
+    Where a pure deletion starts among the equal windows it could be (changed_range takes the rightmost): _slide's.
+    The kept characters then keep their own runs (review 2026-10-24: deleting Dragon Mount's "+2 ATK" line printed
+    "+2" of "+25% SPD" in its red; a "(2CD) ..." line before a "(1CD) ..." one split the kept badge across two sizes).
+
+    Args:
+        old: The layer's text
+        new: old with one span deleted
+        at: changed_range's start
+
+    Returns:
+        The start in old (and new) of the deleted span
+    """
+    d = len(old) - len(new)
+    if d <= 0 or old[:at] + old[at + d:] != new:
+        return at
+    return _slide(old, at, at + d, 0)
+
+
+def _slide(old: str, a0: int, a1: int, floor: int) -> int:
+    """
+    The start of the deleted old[a0:a1] among the equal windows down to floor: the nearest to a0 that cuts whole
+    paragraphs ("D\r", or "\rD" for the last), else whole words or badges ("(1CD) "), else a0.
+    """
+    d, starts = a1 - a0, [a0]
+    while starts[-1] > floor and old[starts[-1] - 1] == old[starts[-1] - 1 + d]:
+        starts.append(starts[-1] - 1)
+    for cuts in ("\r\x03", " \t\r\x03"):
+        def head(k):
+            return k == 0 or old[k - 1] in cuts
+
+        def tail(k):
+            return k == len(old) or old[k] in cuts
+        for i in starts:
+            if head(i) and head(i + d) or tail(i) and tail(i + d):
+                return i
+    return a0
 
 
 def keep_breaks(old: str, new: str, which: str) -> str:
@@ -2502,6 +2571,66 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] =
     return None
 
 
+def ink_beyond(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
+    """
+    What an ability's new ink past the old text prints on, for a note (the owner bakes it; never silently): its pixels
+    past INK_ALPHA more than BEYOND[0] px outside the old ink's box over a backdrop (the layers drawn below it) whose
+    luminance lies off the backdrop's median under that box by BEYOND[1] levels and by BEYOND[2] more than 95% of the
+    box does (text on busy art: Kingchin's added line on its art told nothing), when BEYOND[3] px or more (review
+    2026-10-24: Deep Focus' added "Die." on its flourish, Holy Card's last line on its panel's torn border, Autopsy
+    Report's off its box; the old ink touches those layers elsewhere, so inks_over passed them; 18 of 503 cards given a
+    line), else inks_over's finding (a layer below the old ink never touched).
+
+    Args:
+        psd: The card, the text set and rasterized
+        layer: The Ability layer
+        before: _on_canvas() of it before the edit
+
+    Returns:
+        Why, or None
+    """
+    pad, levels, margin, least = BEYOND
+    shape = (psd.height, psd.width)
+    after = _on_canvas(layer, shape)
+    was = before[..., 3] > INK_ALPHA * 255
+    ink = (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
+    if not was.any() or not ink.any():
+        return None
+    ys, xs = was.nonzero()
+    old = (max(int(xs.min()) - pad, 0), max(int(ys.min()) - pad, 0), int(xs.max()) + 1 + pad, int(ys.max()) + 1 + pad)
+    fresh = ink.copy()
+    fresh[old[1]:old[3], old[0]:old[2]] = False
+    if not fresh.any():
+        return inks_over(psd, layer, before)
+    ys, xs = fresh.nonzero()
+    x0, y0 = min(old[0], int(xs.min())), min(old[1], int(ys.min()))
+    x1, y1 = min(max(old[2], int(xs.max()) + 1), psd.width), min(max(old[3], int(ys.max()) + 1), psd.height)
+    order = list(psd.descendants())
+    below = {id(other._record) for other in order[:next(i for i, other in enumerate(order) if other._record is layer._record)]}
+    backdrop = _flat(psd.composite(viewport=(x0, y0, x1, y1), ignore_preview=True, apply_icc=False,
+                                   layer_filter=lambda other: other.is_visible() and (other.is_group()
+                                                                                      or id(other._record) in below)))
+    luma = backdrop[..., :3].astype(np.float32).mean(axis=2)
+    under = luma[old[1] - y0:old[3] - y0, old[0] - x0:old[2] - x0]
+    median = float(np.median(under))
+    bar = max(levels, float(np.percentile(np.abs(under - median), 95)) + margin)
+    detail = fresh[y0:y1, x0:x1] & (np.abs(luma - median) > bar)
+    count = int(detail.sum())
+    if count < least:
+        return inks_over(psd, layer, before)
+    best, name = 0, None
+    for other in order:
+        if id(other._record) not in below or other.is_group() or other.kind not in DRAWN_LAYER_KINDS \
+                or not other.is_visible():
+            continue
+        alone = other.composite(viewport=(x0, y0, x1, y1), apply_icc=False)
+        hits = 0 if alone is None else int((detail & (np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255)).sum())
+        if hits >= best and hits:               # the topmost of the most
+            best, name = hits, other.name
+    return f"the new text prints past the old text onto the design below it ({count} px" + \
+        (f", {name!r})" if name else ")")
+
+
 def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
     """
     The layer drawn with its effects and its groups' (the outermost group with effects, composited alone: the other text
@@ -2638,14 +2767,16 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             [dark:sticker] the colour of the one it typed (review 2026-10-24: Salt's purple on its white title); None: psd
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs, glow tokens on a fork without glow_halos,
-            saved pixels in another font than the layer names: drawn_in_font),
+        Edit with the engine's report; raises Refused: unsupported-card (also tab stops), styled-word, font (also
+            one-colour glyphs, saved pixels in another font than the layer names: drawn_in_font),
         overflow (also new text under a layer above it or over a stat bar: covered_ink; a title over a layer below it
         its old ink left alone, inks_over, or on more lines or lower; a typed icon over the other glyphs, typed_icon_fit,
         which refuses unsupported-card for one far from its letters' height); ImportError when the fork
-        edits TySh alone (no story_sync: Photoshop would show the story's old text)
+        edits TySh alone (no story_sync: Photoshop would show the story's old text) or draws no glow halos (glow_halos)
 
-    The text is set one changed part at a time (splice_text), so what the edit keeps keeps its runs. The engine gives
+    The text is set one changed part at a time (splice_text), a deletion cutting whole lines or words (deletion_start),
+    so what the edit keeps keeps its runs; an Ability's new ink past its old text on the design below it is told in
+    the notes (ink_beyond). The engine gives
     inserted text the style of the run before it, so an edit after a colored status word or a badge would take its
     color or icon font: an ability's changed parts take the fill of the text they replace (edit_styles; status words
     give none), words set in the icon font outside what the font draws (icon_text) that text's whole style; every badge
@@ -2688,9 +2819,14 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
+    if "\t" in old_text + text:                  # the engine lays no tab stops: a whole redraw collapses the columns
+        raise Refused("unsupported-card", f"{which}: tab stops (the text engine does not lay them out as Photoshop "
+                                          f"does); edit in Photoshop")     # (Michael's Blessing's arrows, review 2026-10-24)
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
+    if start == end:                            # a deletion: the window that keeps the kept characters' runs
+        start = end = deletion_start(old_text, text, start)
     spans, badges, styled, old_fx, hide, plans, targets, kept, engine = [], [], [], [], [], [], [], [], None
     if which == "name":     # point text has no box: the title must stay on the canvas and off the badges it clears today
         stars, icons, _ = badge_layers(psd, getattr(parser, "all_types", ()))   # root type icons (Fool Eater's)
@@ -2703,9 +2839,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             raise Refused("unsupported-card", "[type] tokens on a card with image icons")
     glows = []
     if icons_too:
-        glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
-        if glows and not glow_halos():          # a stale install of an older pin
-            raise Refused("font", f"{', '.join(glows)}: this psd-tools is older than the pin (no glow halos); reinstall it")
+        glows = glow_tokens(text)
+        if glows and not glow_halos():          # a stale install of an older pin: the runner's, retried (card_bake)
+            raise ImportError(f"{', '.join(glows)}: this psd-tools is older than the pin (no glow halos); reinstall it")
         odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser)) \
             if which == "ability" else None     # the website shows a title's "[fire:]" as its letters, as the card does
         if odd:                                 # typed, or "[fire:no]" made "[fire:]" by deleting letters
@@ -2729,7 +2865,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             stray = sorted({collapse(overlay.text) for overlay in overlays if overlay not in hide})
             if stray:
                 raise Refused("unsupported-card", f"overlay word layers the chart has no style for: {', '.join(stray)}")
-            start, end = _word_bounds(text, start, end)
+            cut = old_text[start:start + len(old_text) - len(text)] if start == end else ""
+            lo, hi = _word_bounds(text, start, end)     # a deletion widens only into a word it cut (Gasoline's kept "If"
+            start = start if cut and not LETTER.match(cut[0]) else lo           # after a deleted line took its colour)
+            end = end if cut and not LETTER.match(cut[-1]) else hi
             spans = status_spans(text, chart, drawn)
             styled = [span for span in spans if span[2].styled]
             plans = plan_fx(layer, old_fx, chart)
@@ -2885,8 +3024,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in old_fx] + [(tuple(overlay.bbox), fx_pad(overlay)) for overlay in hide]
     for overlay in hide:
         overlay.visible = False
+    beyond = ink_beyond(psd, layer, canvas) if which == "ability" else None
     rebuilt, dropped, covered, notes = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets)
                                         if plans else ([], [], [], []))
+    if beyond:                                  # told, not refused (owner 2026-10-23: refuse only gross breakage)
+        notes = [*notes, f"ability: {beyond}; check the card"]
     held = held_words(plans, kept, fx_layers(psd, layer) if plans else [])
     fresh = new_fx(text, styled, covered)
     made = _regenerate_fx(psd, layer, text, fresh, fonts, engine) if fresh else []
@@ -5321,10 +5463,12 @@ __all__ = [
     'canonical_tokens',
     'canonical_type',
     'changed_range',
+    'deletion_start',
     'changed_region',
     'classify',
     'covered_ink',
     'crop_pair',
+    'ink_beyond',
     'inks_over',
     'typed_icon_fit',
     'collapse',

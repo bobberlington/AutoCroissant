@@ -949,6 +949,21 @@ def test_missing_runner_dependency_is_transient(github, monkeypatch):
     assert "_psd" not in entry and entry["hp"] == 8
 
 
+def test_glow_edit_on_an_older_fork_is_transient(github, monkeypatch):
+    """A typed :glow on a runner whose fork predates the halos is the runner's fault: an error and no verdict, so the
+    edit bakes once the fork is reinstalled (a `font` verdict waited for MDW/Fonts to change; review 2026-10-24)."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die. [fire:glow]", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    monkeypatch.setattr(pe, "story_sync", lambda: True)
+    monkeypatch.setattr(pe, "glow_halos", lambda: False)
+    monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: pytest.fail("baked on a fork without glow halos"))
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "## Errors (1)" in text and "predates the pin's glow halos" in text
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and cb.pending() == ["Mini Doomer"]
+
+
 def test_select_and_snapshot(github):
     info = github.commits[github.head]
     snapshot = cb.Snapshot(cb.CARD_REPO, github.head, info, cb._tree(cb.CARD_REPO, info["tree"]["sha"]))

@@ -3229,6 +3229,93 @@ def test_edit_parts_split_an_edit_at_what_it_keeps():
     assert pe.edit_parts("ab", "ab", 2, 2) == [] and pe.edit_parts("abcd", "abd", 2, 2) == [(2, 3, 2, 2, False)]
 
 
+def test_a_deletion_cuts_whole_lines_or_words():
+    """Review 2026-10-24: changed_range's prefix is greedy, so deleting a line whose next starts alike ("+2 ATK" before
+    "+25% SPD") cut " ATK\r+2" and the kept "+2" kept the deleted line's runs. The deletion slides to whole lines, else
+    words or badges, alone (deletion_start) or among an edit's parts (edit_parts)."""
+    def cut(old, new):
+        start, end = pe.changed_range(old, new)
+        start = end = pe.deletion_start(old, new, min(start, end, len(new)))
+        return [(old[a0:a1], new[b0:b1], kept) for a0, a1, b0, b1, kept in pe.edit_parts(old, new, start, end)]
+    assert cut("A\r+2 ATK\r+25% SPD", "A\r+25% SPD") == [("+2 ATK\r", "", False)]
+    assert cut("+2 ATK\r+25% SPD", "+25% SPD") == [("+2 ATK\r", "", False)]
+    assert cut("x a.\rb a.", "x a.") == [("\rb a.", "", False)]                 # the last line: its break before it
+    assert cut("deal (1CD) (2CD) x", "deal (2CD) x") == [("(1CD) ", "", False)]
+    assert cut("Inflict Poison.", "Inflict.") == [(" Poison", "", False)]
+    old, new = "(OFS) Gain.\r(WOF) All use. \rW", "(WOF) All use.\rW"           # with another change after it
+    parts = pe.edit_parts(old, new, *pe.changed_range(old, new))
+    assert [(old[a0:a1], new[b0:b1], kept) for a0, a1, b0, b1, kept in parts] == [
+        ("(OFS) Gain.\r", "", False), ("(WOF) All use.", "(WOF) All use.", True), (" ", "", False)]
+
+
+@text_edit
+def test_a_new_line_on_the_design_below_is_told(clone, parser, chart):
+    """Review 2026-10-24: an Ability's added line printed over what lies below its old text (Deep Focus' flourish, Holy
+    Card's torn panel border, Autopsy Report off its box) with no note; inks_over passed them, the old ink touching
+    those layers elsewhere. It bakes (no gross breakage) with a note; a line added on the plain panel has none."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, told in (("Items/Equip/3 Stars/Deep_Focus.psd", True), ("Items/Equip/2 Stars/Holy_Card.psd", True),
+                      ("Auxiliary/Items/Autopsy_Report.psd", True), ("Auxiliary/Creatures/Mettaton_EX.psd", False)):
+        psd_path = _card(clone, rel)[0]
+        psd = PSDImage.open(psd_path)
+        old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
+        edit = pe.set_text_layer(psd, "ability", old + " Gain 1 HP. Die.", fonts, chart, parser=parser)
+        notes = [note for note in edit.notes if note.startswith("ability: ")]
+        assert bool(notes) == told, (rel, notes)
+        assert all(note.endswith("; check the card") for note in notes)
+
+
+@text_edit
+def test_tab_stops_refuse(clone, parser, chart):
+    """Review 2026-10-24: the engine lays no tab stops, so Michael's Blessing's '->' columns (tabs) collapsed on any edit
+    to its Ability (the splice falls back to a whole redraw), every gate passing. A layer with a tab, or a typed one,
+    refuses before any change."""
+    fonts = str(clone / pe.FONTS_DIR)
+    rel = "N.M.E/Michael's_Blessing.psd"
+    psd_path = _card(clone, rel)[0]
+    psd = PSDImage.open(psd_path)
+    old = pe.ability_layer(psd).text
+    assert "\t" in old
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"]).replace("5 Points", "6 Points")
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: ability: tab stops"):
+        pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
+    assert pe.ability_layer(psd).text == old
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    with pytest.raises(pe.Refused, match=r"^unsupported-card: ability: tab stops"):
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(pe.ability_layer(psd).text) + "\tDie.", fonts, chart,
+                          parser=parser)
+
+
+@text_edit
+def test_deleting_a_line_keeps_the_next_lines_own_style(clone, parser, chart):
+    """Review 2026-10-24: Dragon Mount's "+25% SPD" printed "+2" red after its "+2 ATK" line went, Chef Saltbaker's
+    kept "(2 points)" took the deleted line's blue, and Spamton NEO's kept "(WOF)" split across two badge sizes (the
+    gate refused its letters). Every kept character keeps its own fill and size; the engine's prefix is held to the
+    part (splice_text)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, line in (("Auxiliary/Items/Dragon_Mount.psd", 0), ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", 5),
+                      ("Creatures/Undertale/5 Stars/Spamton_Neo.psd", 0)):
+        psd_path = _card(clone, rel)[0]
+        psd = PSDImage.open(psd_path)
+        layer = pe.ability_layer(psd)
+        old = layer.text
+        fills, _, styles, _ = pe._char_styles(layer)
+        paragraphs = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"]).split("\n")
+        gone = paragraphs[line]
+        a = old.index(gone)
+        b = a + len(gone) + 1
+        keep = [i for i in range(len(old)) if not a <= i < b and old[i] not in " \r\x03"]
+        pe.set_text_layer(psd, "ability", "\n".join(paragraphs[:line] + paragraphs[line + 1:]), fonts, chart,
+                          parser=parser)
+        after = pe.ability_layer(psd)
+        new_fills, _, new_styles, _ = pe._char_styles(after)
+        moved = {i: i - (b - a) * (i >= b) for i in keep}
+        off = [(i, old[i]) for i in keep if after.text[moved[i]] != old[i]
+               or styles[i].get("FontSize") != new_styles[moved[i]].get("FontSize")
+               or max(abs(x - y) for x, y in zip(fills[i], new_fills[moved[i]])) > 0.03]    # a status word's swatch
+        assert off == [], rel
+
+
 @text_edit
 def test_replacing_a_status_word_drops_its_colour(clone, chart):
     path = _card(clone, ASTR)[0]
@@ -4021,15 +4108,16 @@ def test_glow_tokens_bake_as_photoshop_draws_them(clone, parser, chart, tmp_path
 @text_edit
 def test_glow_tokens_refuse_on_an_older_fork(clone, chart, monkeypatch):
     """A psd-tools older than the pin (a stale install: pip keeps one of the same version) draws a glow halo as a solid
-    block: a typed glow refuses before any change; other tokens do not."""
+    block: a typed glow stops before any change, the runner's fault (ImportError: no verdict, retried once the fork is
+    reinstalled; a `font` verdict outlived it, review 2026-10-24); other tokens do not."""
     monkeypatch.setattr(pe, "glow_halos", lambda: False)
     psd = PSDImage.open(_card(clone, HIVE)[0])
     layer = pe.ability_layer(psd)
     old = layer.text
     for token in ("[fire:glow]", "[Fire:DarkGlow]"):
-        with pytest.raises(pe.Refused, match="older than the pin") as refused:
+        with pytest.raises(ImportError, match="older than the pin") as refused:
             pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + f" Deal 1 {token} damage.", str(clone / pe.FONTS_DIR), chart)
-        assert refused.value.code == "font" and token in refused.value.why and layer.text == old
+        assert token in str(refused.value) and layer.text == old
     pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Deal 1 [fire] damage.", str(clone / pe.FONTS_DIR), chart)
 
 

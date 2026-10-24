@@ -756,6 +756,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 raise Transient("this runner has no text engine (psd-tools[text])")
             if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.story_sync():
                 raise Transient("this runner's psd-tools fork predates Txt2 story sync: Photoshop would undo the text")
+            if any(psd_edit.glow_tokens(str(card.jobs[f])) for f in psd_edit.TEXT_FIELDS if f in card.jobs) \
+                    and not psd_edit.glow_halos():
+                raise Transient("this runner's psd-tools predates the pin's glow halos: reinstall it")
             if any(f in psd_edit.ICON_FIELDS for f in card.jobs) and not psd_edit.icon_engine():
                 raise Transient("this runner's psd-tools cannot copy or make layers (the fork's duplicate and fromarray)")
             colors = chart() if "ability" in card.jobs else None
