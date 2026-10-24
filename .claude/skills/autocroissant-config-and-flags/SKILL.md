@@ -472,17 +472,27 @@ autocroissant-run-and-operate §9.
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `SPARSE_FILES` | 12 paths | the import closure card-preview.yml checks out of this repo (a test compares the two) |
+| `SPARSE_FILES` | 13 paths | the import closure card-preview.yml's preview job checks out of this repo (a test compares the two) |
+| `MAX_EDIT` | 16384 bytes | the edit's JSON; past it: an input error |
+| `WEBP_WIDTH`, `WEBP_QUALITY` | 720, 75 | preview.webp: build_site's `IMAGE_SIZES[720]` (the card view's size and quality) |
+| `RETRY` | card_bake's `TRANSIENT` + `blob` | refusal codes reported as `error`, `transient` (try again) |
+
+### commands/card_preview_branch.py (2026-10-23; not compiled; standard library only; the publish job of card-preview.yml)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `SPARSE_FILES` | 3 paths | its import closure (itself, repo_history, global_config): the publish job's checkout |
 | `REQUEST` | `[A-Za-z0-9-]{8,64}` | the client's id: the folder `previews/<request>/` (the workflow's Validate step checks it too) |
-| `MAX_EDIT`, `MAX_CARD` | 16384 bytes, 200 characters | the edit's JSON and the card input; past them: an input error |
-| `WEBP_WIDTH`, `WEBP_QUALITY` | 720, 80 | preview.webp (the site's card view size) |
-| `BRANCH`, `DIR`, `INDEX` | `previews`, `previews`, `index.json` | where publish writes on the card repo |
+| `MAX_CARD` | 200 characters | the card input (longer: an input error); result.json, the index row and the commit message keep it clipped |
+| `BRANCH`, `DIR`, `INDEX` | `previews`, `previews`, `index.json` | where it writes on the card repo |
 | `KEEP`, `DAYS` | 200, 7 days | more previews or an older one: the next publish is a fresh orphan commit... |
 | `KEEP_AFTER`, `DAYS_AFTER` | 150, 6 days | ... keeping the newest this many under this age (so a rewrite comes about daily) |
 | `TRIES` | 5 | publish pushes, each from the branch head then |
+| `IDENTITY` | AutoCroissant | git_commit's `GIT_IDENTITY`, copied (that module imports requests; a test compares them) |
 
-The workflow needs **no secret and no variable**: `GITHUB_TOKEN` (`permissions: contents: write`) reads the card's blobs by
-sha and pushes `previews`; the fork pin and pyoxipng are card-edits.yml's and card-guards.yml's. Nothing in config.py.
+The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card's blobs by sha in the preview job
+(`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job
+only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.py.
 
 ### psd_edit parity and card_bake limits (the bake and the guards)
 
@@ -641,7 +651,7 @@ table with its command before quoting it in the future.
 | git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
 | font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
 | card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
-| card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
+| card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
 | card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
 | global_config env overrides (three: LOCAL_DIR_LOC, HISTORY_CLONE, BOT_CLONE) | `grep -n "environ.get" global_config.py` (5, 13, 14); `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py, plus card_history's `--bot-git` CLI default) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |

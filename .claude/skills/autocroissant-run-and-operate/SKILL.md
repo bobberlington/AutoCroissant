@@ -610,14 +610,16 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
-  (inputs `card`, `edit` JSON, `request` id) and the Action runs `python -m commands.card_preview`: `card_bake.bake_card` on
-  that card alone, with the bake's gates, fonts, chart, vocabulary and fork pin, on the runner, never committing to main.
-  `publish` puts `result.json` (state baked / redundant / refused / error, the bake's reason, notes, base blob shas),
-  `preview.webp` (720 px) and `preview.png` under `previews/<request>/` on the orphan branch `previews`, one commit per run,
+  (inputs `card`, `edit` JSON, `request` id) and the Action's read-only first job runs `python -m commands.card_preview`:
+  `card_bake.bake_card` on that card alone, with the bake's gates, fonts, chart, vocabulary and fork pin, never committing
+  to main. Its second job, the only one that writes, runs `python3 -m commands.card_preview_branch` (standard library, no
+  install) to put `result.json` (state baked / redundant / refused / error, the bake's reason, notes, base blob shas, the
+  edit as sent) and `preview.webp` (720 px) under `previews/<request>/` on the orphan branch `previews`, one commit per run,
   rewritten as one fresh commit past 200 previews or 7 days. No Discord, no secret beyond GITHUB_TOKEN, nothing for the bot
-  to do; a red run is either a bad request (nothing published), a bad edit (published as an input error) or a runner error
-  (published as "try again"). By hand on the Mac, read-only on the clone: `python -m commands.card_preview --card "Mini
-  Doomer" --edit edit.json --out /some/dir --clone ~/Desktop/TTSCardMaker` (stat 14 s, ability 26 s here).
+  to do; previews are public like the repo. A red run is a bad request (nothing published), a bad edit (published as an
+  input error) or a runner error, a failed install too (published as "try again"). By hand on the Mac, read-only on the
+  clone: `python -m commands.card_preview --card "Mini Doomer" --edit edit.json --out /some/dir --clone
+  ~/Desktop/TTSCardMaker` (stat 6-14 s, ability 26 s here; preview.png in the out dir is the full-size render).
 - **Design and status:** EDIT_PIPELINE_DESIGN.md sections 8 (runner), 13 (S7) and 16 (previews); the PSD-edit ledger is
   docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md.
 
@@ -1038,5 +1040,5 @@ splice; the jetson has the fork and fonts_cache); the card guards and card check
 fonts_cache and bake rows; section 12's status, step 1 done and the seed precondition; every main.py, update_bot.py,
 card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py citation re-pointed at 2ada357.
 
-2026-10-23 (previews): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
+2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.
