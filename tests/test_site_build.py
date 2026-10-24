@@ -358,3 +358,18 @@ def test_no_psd_details_flag():
     text = APP_JS.read_text(encoding="utf-8")
     assert '"PSD details"]' not in text and "details: c => !!c.details" not in text
     assert '"has:details": c => !!c.details' in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
+
+
+def test_card_buttons_sit_under_the_image():
+    """Add to deck, Compare and Edit under the card image (owner, 2026-10-24); the info column stays .detail's second child."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    text = APP_JS.read_text(encoding="utf-8")
+    body = text[text.index("function openCard("):]
+    body = body[:body.index("\n}\n")]
+    at = [body.index(s) for s in ('class="image-wrap"', 'class="actions card-actions"', 'data-action="deck-toggle"',
+                                  'data-action="compare-add"', 'data-action="edit-card"', 'data-nav="prev"', "<h2>${esc(c.name)}</h2>")]
+    assert at == sorted(at)
+    assert body.count('data-action="deck-toggle"') == 1
+    wrap = body[body.index('<div class="detail">'):body.index("<h2>")]
+    assert wrap.rstrip().endswith("</div></div>\n      <div>")      # image column closes, then the info column
