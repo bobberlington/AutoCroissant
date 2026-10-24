@@ -19,13 +19,14 @@ from requests import HTTPError
 import commands.font_check as fc
 import commands.github_api as ga
 import global_config
-from conftest import CLONE, REPO, Reply, blob_sha, blob_sha_bytes as _sha
+from conftest import CLONE, REPO, Reply, at_rev, blob_sha_bytes as _sha
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 
 WORKFLOW = Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML") else CLONE / ".github" / "workflows" / "font-check.yml"
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
+BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
 ROLE = "546427268751294475"
 FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual FontSet: the face, Photoshop's two extras
@@ -614,16 +615,18 @@ def test_help_entry():
 # ========================
 # One real card and the Action's sparse copy
 # ========================
-def test_real_card_psd(clone):
-    path = clone / BABA
-    if not path.exists() or blob_sha(path) != BABA_BLOB:
-        pytest.skip(f"{BABA} changed upstream since this test was written")
+def test_real_card_psd(clone, tmp_path):
+    data = at_rev(clone, BABA_REV, BABA)
+    assert _sha(data) == BABA_BLOB
+    path = tmp_path / "Baba.psd"
+    path.write_bytes(data)
     fonts = fc.psd_fonts(str(path))
     assert fonts == {"BabaUI": ["6", "6", "6", "6"], "Domigorgon": ["Ability"]}   # the hidden Name layer (BabaUI) is ignored
-    assert fc.psd_fonts(path.read_bytes()) == fonts
+    assert fc.psd_fonts(data) == fonts
     index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
     assert index.errors == [] and index.files >= 270 and index.resolve("Domigorgon") == "exact"
-    assert fc.check_psd(str(path), index) == {"BabaUI": ["6", "6", "6", "6"]}
+    assert index.resolve("BabaUI") == "exact"                   # Baba UI Regular.ttf, the owner's file (TTSCardMaker b03b9975)
+    assert fc.check_psd(str(path), index) == {}
     assert index.resolve("Papyrus-Regular") == "alias" == index.resolve("Kung-Fu-Panda")   # both FONT_ALIASES targets are exact faces
 
 
