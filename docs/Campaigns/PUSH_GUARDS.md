@@ -318,7 +318,7 @@ one ends "export it in Photoshop").
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
 | G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
-| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text and stat row, G7); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text or stat row the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
+| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text and stat row, G7; beside its PNG no baseline and no pixel refusal, every drawn text shown); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text or stat row the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
@@ -1306,8 +1306,11 @@ unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fon
   new render and nearer it than the old (the render-only half of `png_ahead`; review of 2026-10-24: it was re-exported over
   the author's export, or refused G6);
 - a new PSD beside its PNG: the whole card rendered; current only when no pixel is past BESIDE_CUT, as with a composite
-  (the owner's 2026-10-23 ruling), else the PNG takes the render where it differs past BESIDE_CUT (past the floor: G6),
-  each drawn text layer shown (hiding it changes the render). The parity bar is no pass here: over the whole card it hid
+  (the owner's 2026-10-23 ruling), else the PNG takes the render where it differs past BESIDE_CUT, each drawn text layer
+  shown (hiding it changes the render). The render against the PNG is kept as `png_vs_render` and told as "the new PSD
+  drawn against its PNG: bad N%": it holds the author's change, so it is never a drawing miss and never refuses (review of
+  2026-10-24: it was the "baseline", told as "the old PSD drawn against the old PNG" with a "made with a pixel difference"
+  note, and past 25% a G6 refusal of new art: 52% of a card in `prove_beside_floor.py`); the text check is the gate. The parity bar is no pass here: over the whole card it hid
   real edits (beside their stale PNGs Dirty Bed's Ability, 0.31% bad, Springtrap's Name, 0.21%, Defcon Panda, 0.33%, were
   all within it). The cost: the fork's own noise passes 8 levels beside a PNG that is current (5 of 12 random cards beside
   their own PNG, 51-584 px, max 11-106 levels; scratch `py314/fix/beside_noise.py`), and those pixels are redrawn and told
@@ -1318,7 +1321,9 @@ The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the pla
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
 write did not land ("PNG not made: ..." alone). Tests: `test_g2_renders_anyway_with_the_bakes_own_gates`,
-`test_g2_refuses_a_change_the_render_does_not_show`, `test_g2_still_refuses_a_16_bit_or_cmyk_psd`, the G2 halves of
+`test_g2_refuses_a_change_the_render_does_not_show`, `test_g2_still_refuses_a_16_bit_or_cmyk_psd` (a 16-bit RGB and an
+8-bit CMYK PSD with no stored image refused G2_MODE through `export` with an old PSD, beside its PNG and `export_new`),
+`test_g2_shape_and_region_gates_refuse` (G7), `test_g2_beside_updates_numbered_pngs` (G8 beside), the G2 halves of
 `test_a_png_pushed_before_its_psd_is_current` and `test_a_small_recolour_beside_its_png_is_rendered`, and on real cards
 `test_g2_real_cards_reread_the_parser_and_match_the_checked_png` (Dirty Bed's Ability and Springtrap's Name re-read; the
 PNG the checked export's, pixel for pixel) and `test_g2_refuses_a_text_drawn_blank_on_real_cards` (G2_BLANK through the
@@ -1364,7 +1369,10 @@ repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet` (Land then sleeps 
    pyoxipng out on 3.14 until step 2: no recompression meanwhile; old card_guards still has `--fonts`, which the new
    workflow no longer passes: R7 is simply skipped). With no environment yet the post job starts at once and main's
    Land sleeps to 30 minutes after the push, so its window (`now()` back 30 minutes) is still right.
-2. AutoCroissant `work/py314` to main the same sitting (requirements-cards.txt's new marker re-keys the wheel cache: the
+2. AutoCroissant `work/py314` to main the same sitting, rebased on main first (`git fetch && git rebase origin/main`; it
+   was rebased onto 0c39135 on 2026-10-24, keeping main's pin `cards-20261024` under the branch's header and marker: a
+   rebase that took the branch's side of that line would move every card Action and the bot back to an older fork; check
+   `grep '^psd-tools' requirements-cards.txt` against main before pushing) (requirements-cards.txt's new marker re-keys the wheel cache: the
    next card run builds the six's entry, pyoxipng from its sdist). The guard modules are uncompiled and the bot never
    imports them, but the one-sitting deploy rule stands: pull, `build_ext`, restart on the jetson (nothing else changes
    there: the marker skips pyoxipng on aarch64).

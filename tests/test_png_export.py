@@ -132,7 +132,14 @@ def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     assert (made.outcome, made.unchecked, made.writer) == ("re-exported", True, "new") and "cross" not in made.numbers
     assert pe.export(None, new, card(colour=(0, 255, 0))).outcome == "current"              # beside: the PNG shows it
     beside = pe.export(None, new, card())                                                  # beside an older PNG
-    assert (beside.outcome, beside.unchecked, beside.changed_px) == ("re-exported", True, 21 * 21) and list(beside.misses) == ["baseline"]
+    assert (beside.outcome, beside.unchecked, beside.changed_px) == ("re-exported", True, 21 * 21)
+    assert not beside.misses and "baseline" not in beside.numbers                          # the change is no drawing miss
+    assert beside.numbers["png_vs_render"]["bad_pct"] > 0
+    big = fixture_psd(tmp_path, card(colour=(0, 255, 0), box=(0, 0, 59, 60)), "big", square=(0, 0, 60, 61))
+    big.has_preview = lambda: False                     # new art over 68% of the card: the author's, never a G6
+    large = pe.export(None, big, card())
+    assert (large.outcome, large.gate, large.changed_px) == ("re-exported", "", 60 * 61) and not large.misses
+    assert psd_edit._past_floor(large.numbers["png_vs_render"]) and pe.miss_notes(large) == []
     assert np.asarray(pe.open_png(beside.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
     composed = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "composed")
     assert not pe.export(old, composed, card()).unchecked                                   # with a stored image: checked
@@ -167,14 +174,50 @@ def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     assert (broken.outcome, broken.gate) == ("refused", "G6") and broken.why.startswith("PNG not made: the bot cannot draw")
 
 
-def test_g2_still_refuses_a_16_bit_or_cmyk_psd():
-    """Not 8-bit RGB: the fork's render is no export of it, refused as before; an 8-bit RGB PSD with no stored image is
-    rendered (None: no refusal)."""
+@pytest.mark.parametrize("mode, depth", [("RGB", 16), ("CMYK", 8)])
+def test_g2_still_refuses_a_16_bit_or_cmyk_psd(tmp_path, mode, depth):
+    """Not 8-bit RGB with no stored image: the fork's render is no export of it, refused as before on every path (with
+    an old PSD, beside its PNG, a new card); an 8-bit RGB PSD with no stored image is rendered (None: no refusal)."""
     from types import SimpleNamespace
     from psd_tools.constants import ColorMode
-    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=16)).why == pe.G2_MODE
-    assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.CMYK, depth=8)).why == pe.G2_MODE
     assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=8)) is None
+    psd = PSDImage.new(mode, (60, 90), depth=depth)
+    psd.save(str(tmp_path / "odd.psd"))
+    new = PSDImage.open(str(tmp_path / "odd.psd"))
+    assert (new.color_mode, new.depth) == (getattr(ColorMode, mode), depth)
+    new.has_preview = lambda: False
+    old = fixture_psd(tmp_path, card(), "old")
+    for found in (pe.export(old, new, card()), pe.export(None, new, card()), pe.export_new(new)):
+        assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_MODE)
+
+
+def test_g2_shape_and_region_gates_refuse(tmp_path, monkeypatch):
+    """With no stored image the bake's shape and region gates (G7) still stand on the merged PNG."""
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    new.has_preview = lambda: False
+
+    def refuse(*args):
+        raise psd_edit.Refused("region", "outside the region")
+    monkeypatch.setattr(psd_edit, "gate_region", refuse)
+    assert (lambda f: (f.outcome, f.gate, f.why))(pe.export(old, new, card())) == ("refused", "G7", pe.G7)
+
+
+def test_g2_beside_updates_numbered_pngs(tmp_path):
+    """G8 beside an older PNG with no stored image: a numbered duplicate takes the change when clear of its own title,
+    else is told."""
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    new.has_preview = lambda: False
+    clear, touching = card(), card()
+    ImageDraw.Draw(clear).rectangle((40, 70, 55, 85), fill=(0, 0, 0))
+    ImageDraw.Draw(touching).rectangle((25, 25, 40, 40), fill=(0, 0, 0))
+    found = pe.export(None, new, card(), {"X/A2.png": clear, "X/A3.png": touching})
+    assert found.unchecked and found.outcome == "re-exported" and set(found.numbered) == {"X/A2.png", "X/A3.png"}
+    data, why = found.numbered["X/A2.png"]
+    expected = np.asarray(card(colour=(0, 255, 0))).copy()
+    expected[70:86, 40:56] = 0
+    assert why == "" and np.asarray(pe.open_png(data)).tolist() == expected.tolist()
+    assert found.numbered["X/A3.png"] == (b"", "A3.png not updated: re-export it in Photoshop")
 
 
 def test_g7_size_changed(tmp_path):
@@ -259,7 +302,7 @@ def test_a_small_recolour_beside_its_png_is_rendered(tmp_path):
     new.has_preview = lambda: False
     redrawn = pe.export(None, new, recoloured)
     assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 25)
-    assert "png_ahead" not in redrawn.numbers and pe._within(redrawn.numbers["baseline"])
+    assert "png_ahead" not in redrawn.numbers and pe._within(redrawn.numbers["png_vs_render"])
     assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card()).tolist()
     assert "png_ahead" in pe.export(None, new, card()).numbers                 # no pixel past 8: current, nothing told
 
@@ -633,7 +676,7 @@ def test_g2_real_cards_reread_the_parser_and_match_the_checked_png(clone):
 
 
 def _within_card(found) -> bool:
-    return pe._within(found.numbers["baseline"]) and found.changed_px > 5000
+    return pe._within(found.numbers["png_vs_render"]) and found.changed_px > 5000
 
 
 def _blind(monkeypatch, real):

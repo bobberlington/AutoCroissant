@@ -767,6 +767,8 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}"]
     if "baseline" in numbers:
         parts.append(f"the old PSD drawn against the old PNG: bad {numbers['baseline'].get('bad_pct', 0):.2f}%")
+    if "png_vs_render" in numbers:              # G2 beside: the author's change included, so a measure, not a miss
+        parts.append(f"the new PSD drawn against its PNG: bad {numbers['png_vs_render'].get('bad_pct', 0):.2f}%")
     if "cross" in numbers:
         parts.append(f"against the PSD's own image: bad {numbers['cross'].get('bad_pct', 0):.2f}%, "
                      f"mean {numbers['cross'].get('mean', 0):.2f}")

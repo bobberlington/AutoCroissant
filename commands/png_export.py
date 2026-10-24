@@ -548,7 +548,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD; beside, no
         pixel of it past the parity threshold), or refused
         (why, gate). numbers: records, region, render_s (CPU seconds), composite_px (D), where (D outside R), png_vs_psd,
-        outside (G5), baseline and png_vs_old_psd (G5/G6), cross (G6), png_ahead
+        outside (G5), baseline and png_vs_old_psd (G5/G6), cross (G6), png_ahead; with no stored image reread, and
+        beside png_vs_render (the new PSD drawn against its PNG: where the PNG takes the render, never a refusal)
     """
     result = Export("current")
     if old_png.size != (new.width, new.height) or old_png.mode not in ("RGB", "RGBA"):
@@ -740,8 +741,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
     each text and stat row reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the
     old PNG: past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
-    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, else it takes the render there (the render
-    against it past the floor: G6), every text drawn (_texts_drawn). A PNG pushed before its PSD is current (png_ahead).
+    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, else it takes the render there, every text
+    drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before its PSD is current (png_ahead).
     """
     result = Export("current", unchecked=True)
     if old is None:
@@ -787,20 +788,20 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
 
 
 def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
-    """_unchecked for a new PSD beside an existing PNG (no baseline: the render of the whole card against the PNG)."""
+    """_unchecked for a new PSD beside an existing PNG. No old PSD, so no baseline: the render of the whole card against
+    the PNG (png_vs_render) holds the author's change too, so it only finds where the PNG takes the render; it is never a
+    drawing miss and never refuses. The gate is every text drawn (_texts_drawn)."""
     icc = psd_edit.export_icc(new, old_png)
     result.icc, result.writer = icc_mode(new, icc), "new"
     box = (0, 0, new.width, new.height)
     render = like_mode(_render(new, box, icc, result.numbers), old_png.mode)
     diff = _diff(render, old_png)
-    result.numbers.update(region=list(box), baseline=_stats(diff))
+    result.numbers.update(region=list(box), png_vs_render=_stats(diff))
     # as _beside: past BESIDE_CUT never a silent pass, even within the bar (over the whole card it hides a text edit:
     # Dirty Bed, Springtrap, Defcon Panda); the cost, the fork's own noise redrawn on a current PNG, is told (UNCHECKED)
     if int(diff.max()) <= BESIDE_CUT:
-        result.numbers["png_ahead"] = {"card": result.numbers["baseline"]}
+        result.numbers["png_ahead"] = {"card": result.numbers["png_vs_render"]}
         return result
-    if not _drawn(result, "baseline"):
-        return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
     moved = diff > BESIDE_CUT
     out = np.array(old_png)
     out[moved] = np.asarray(render)[moved]

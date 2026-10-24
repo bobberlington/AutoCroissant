@@ -888,6 +888,10 @@ def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeyp
     assert result.told("report") == [pe.UNCHECKED, "PNG not exported with the PSD: export it in Photoshop"]
     line = cg._guard1_line({"export": {**exported, "numbers": {}, "icc": "as stored"}, "case": "stale"})
     assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "no stored image to cross-check" in line
+    beside = cg._guard1_line({"export": {**exported, "numbers": {"png_vs_render": {"bad_pct": 51.9}}, "icc": "as stored",
+                                         "misses": []}, "case": "beside"})
+    assert "the new PSD drawn against its PNG: bad 51.90%" in beside and "old PSD" not in beside
+    assert "made with a pixel difference" not in beside                    # the author's change, not a drawing miss
 
     out = tmp_path / "plan"
     snack = _entry("Snack", export=dict(exported, numbers={}), told=[pe.UNCHECKED])
