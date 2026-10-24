@@ -188,6 +188,9 @@ def test_apply_ratings(bs):
     cards = [{"key": "Alpha", "id": "alpha"}]
     bs.apply_ratings(cards, {"alpha": ratings["alpha"]}, [], people, by_login)
     assert [e["by"] for e in cards[0]["ratings"]] == [G, "Profile Name"]
+    cards = [{"key": "Kit", "id": "kit"}, {"key": "Kit2", "id": "kit-2", "dup": "kit"}]          # a rated duplicate PNG
+    got = bs.apply_ratings(cards, {"kit2": ("Kit2", [_e("2023-04-28", "power", 5)])}, [], people, {})
+    assert cards[0]["ratings"] == [_e("2023-04-28", "power", 5)] and "ratings" not in cards[1] and got["cards"] == 1
 
 
 def test_rating_now(bs):
