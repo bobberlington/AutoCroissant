@@ -1125,6 +1125,8 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     from importlib.util import find_spec
     if find_spec("scipy") is None:
         pytest.skip("God Tamer's gradient fills need psd-tools[composite] (scipy), as the Action installs")
+    if find_spec("oxipng") is None:
+        pytest.skip("the 16 recompressions need pyoxipng, as the Action installs")
     source = cg.Source(str(clone))
     if not (source.commit("38c55bd3") and source.commit("07589cc7")):
         pytest.skip("the clone lacks the push")
