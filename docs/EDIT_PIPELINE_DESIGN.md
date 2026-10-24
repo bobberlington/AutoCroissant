@@ -642,8 +642,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   refuses `font` before anything changes (`unlettered_icons`: "[fire:]", "[fire: no]", "[Fire.]", "[warp  star]", or
   "[dark:sticker]" made "[dark:]"); census: " Deal 1 [fire:] damage." refuses on the 29 badge cards that get that far.
   Gate `lettered_icons` (in `gate_fx`, measured on the shaped text) refuses icon-font letters an edit adds; none of
-  the 381 icon-font Abilities on main draws any. The parser is left as it is (a Cython module: `_read_icon_tokens`
-  still reads "[fire:]" in the icon font as [fire]), so `gate_reparse` now disagrees with it. (3) Minor: an edit inside
+  the 381 icon-font Abilities on main draws any. The parser now shares the rule (`psd_parser.token_variant`, round 3's
+  rest below). (3) Minor: an edit inside
   a phrase whose letters are in several colours refuses (the fill would make them one, `gate_fx_colours` passing; none
   on main); `status_spans` finds no status word inside a `[token]` ("Stuffed" in "[stuffed star]"; none on main);
   `apply_jobs` edits the ability before the title (Fire Staff's name and ability together refused `bytes`: the title's
@@ -652,6 +652,28 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_token_the_font_draws_as_letters_refuses`, `test_reparse_reads_a_token_with_no_variant_as_typed`,
   `test_gate_fx_refuses_letters_in_the_icon_font`, `test_an_edit_in_a_phrase_in_several_colours_refuses`,
   `test_status_spans_skip_tokens`, `test_an_ability_edit_goes_before_a_title_edit`.
+  **Round 3's rest (2026-10-24 ~01:00, same branch; origin/main 2427a23 merged in):** the parser's `_read_icon_tokens`
+  and `_flag_misplaced_tokens` take a token's variant as the font ligates it (`psd_parser.token_variant`, which
+  `icon_text` and `canonical_tokens` import): "[fire:]" in the icon font reads as typed, an UNKNOWN ICON TOKEN, and
+  is no misplaced token in the body font (no card on main has one: psd_parser is a Cython module, so a deploy
+  rebuilds; no PARSER_VERSION bump, nothing reads differently). Gate `unshaped_icons` (in `gate_fx`, given the
+  vocabulary): each `icon_text` span of the new Ability shapes to one icon-font cluster spanning it, new against the
+  old card; independent of `icon_text`'s rule, which `gate_reparse` and the parser share (0 of the 381 icon-font
+  Abilities on main fail it). A whole ability deleted on an FX card refuses as on any card (`reparse`: ABILITY TEXT
+  NOT FOUND), its FX layers deleted with their words; `_rebuild_fx` refused `styled-word` ("no pixels to cut") before
+  looking at them. One open per PSD per bake: `parse_card(psd=)`, card_bake shares its open of the old PSD with the
+  parse, `classify` and `apply_jobs(psd=)`, which edits a `deepcopy` (as fast as a second open) and reads the old
+  records first; `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Dry census, every
+  gate, copies of TTSCardMaker main, fork `cards-20261023c` (`~/Documents/Tools/wt/scratch/bug2-p3/`: `p2/`,
+  `h/runs/`, `rev3/`): phase 2's runs b 42 of 48, c 62 of 85, regress 234 of 258 (14 n/a), each result as before; the
+  68 cards' no-op and " Die." bakes pixel-identical to the tip before this (136 of 136). The review's cases (322 bakes):
+  Turtle's 91 icons 85 bake (66), `[undead]`/`[feather]` on 8 badge cards 16 of 16 (10), `[ice]` glued at the end 4
+  more, " Deal 1 [fire:] damage." 0 of 11 (11 baked as letters), Snow Bunny's blank ability `reparse` (was
+  `styled-word`); on the 173 tinted badge-layer bakes no opaque icon pixel is outside the badge layer (uncovered.py
+  counts 3 on Turtle's "[Fire:NO]." : the "."'s own edge inside the slash glyph's box), the 29 official cards 0. Tests:
+  `test_parser_reads_a_colon_with_no_variant_as_letters`, `test_reparse_reads_a_token_with_no_variant_as_typed`,
+  `test_gate_fx_refuses_a_token_not_shaped_as_one_icon`, `test_a_blank_ability_on_an_fx_card_refuses_as_blank`,
+  `test_a_bake_opens_each_psd_once`.
 
 ## 8. Runner
 

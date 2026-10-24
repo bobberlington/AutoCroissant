@@ -633,8 +633,9 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   pattern overlay, or a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the 18 Pin Light
   Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
   Precipice), a `:glow` token (the fork draws its halo as a block), letters left in the icon font it draws no badge of
-  ("(abc)", "(GCD)"), a typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF"
-  made "+3 DEF": the layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
+  ("(abc)", "(GCD)"), a token the website shows as an icon but the font prints as letters ("[fire:]", "[Fire.]"), a
+  typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF" made "+3 DEF": the
+  layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]").
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
@@ -1071,6 +1072,7 @@ card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py cit
 2026-10-23 (BUG 2, work/fx-rebuild): section 7's Card bake subsection gains the Ability FX layers bullet (the bake runs Effect Layers.jsx's Update all; unstyled word layers still refuse); no cited line moved.
 2026-10-23 (BUG 2 review, work/fx-rebuild): the Ability FX bullet names the two new refusals (a badge typed as text on a badge card; Goofy's whole-word "1") and the `1#2` rename.
 2026-10-23 (BUG 2 phase 2 review, work/fx-rebuild): the typed badges bullet gains the deleted-letter badge, the typed "★", the tint refusal (any overlay, non-Normal blend), missing glyphs and edits inside own-style FX phrases; no cited line moved.
+2026-10-24 (BUG 2 phase 2 review round 3, work/fx-rebuild): the typed badges bullet gains the "[fire:]" refusal; no cited line moved.
 
 2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.

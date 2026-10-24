@@ -92,7 +92,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       AC `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`). Two review rounds found silent mis-bakes (Goofy's 1#1,
       badges typed as text, status layers spreading), all fixed; q6 decided unattended (rebuilt layers keep their own
       style). Review loop wf_97b6ba0d-096 running at the end: land only after a clean review, merged with origin/main,
-      full suite on the fork venv. Action code only (psd_edit, card_bake): pull on the jetson, no rebuild needed.
+      full suite on the fork venv. psd_parser changed too (round 3's rest): pull, Cython rebuild, restart on the jetson.
 - [ ] Nebulous_Precipice glow: kept `[darkmatter:sticker]` (unattended option C; options A-D in
       `~/std-work-1022/glow/held.json`). A stroked Text group swallows a `:glow` halo (652 of 765 cards stroke it).
 - [ ] e1a491be's new PNG against its PSD (the first live bake).
@@ -126,9 +126,15 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       let 1%), "[fire:]" and any token the website draws as an icon but the font prints as letters refuse `font`
       (`unlettered_icons`; it baked as the letters), gate `lettered_icons`, an edit inside a phrase of several colours
       refuses, no status word inside a `[token]`, the ability edited before the title (Fire Staff's name + ability
-      refused `bytes`). Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
+      refused `bytes`). Round 3's rest (2026-10-24 ~01:00, same branch, origin/main 2427a23 merged in): the parser
+      reads "[fire:]" in the icon font as typed, an UNKNOWN ICON TOKEN (`psd_parser.token_variant`, the rule `icon_text`
+      shares; no card on main has one), gate `unshaped_icons` (each `icon_text` span shapes to one icon-font cluster;
+      0 of 381 icon-font Abilities fail it), a whole ability deleted on an FX card refuses as blank (`reparse`: ABILITY
+      TEXT NOT FOUND, its layers deleted; it said `styled-word`), and a bake opens each PSD once (`parse_card` takes the
+      open PSD, `gate_reparse` the reopened one, `apply_jobs` edits a copy; `test_a_bake_opens_each_psd_once`).
+      Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
-      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
+      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
       that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
       Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's
@@ -139,17 +145,17 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       "[fire] type" -> "fire type": edit_styles keeps the icon font; near() could give the body style), the leading space of
       15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test), a
       retyped token taking the card's commonest icon style (ruling C: Plague's skull 41.17 -> 52.03 pt when swapped),
-      a typed `:sticker`/`:tint` token taking the fill of the text around it, not the card's own token colour (Palace of
-      Shadow's typed `[dark:sticker]` outline dark grey, its own white; its `[light:sticker]` uses the body grey), a badge
-      or token typed in a title staying body text (ruling C says "wherever it is typed"; not handled yet), and whether
-      a chart-style status layer joined by a typed word should be told too (only own-style ones are: Marx "Glued.
+      and whether a chart-style status layer joined by a typed word should be told too (only own-style ones are: Marx "Glued.
       Glued" gives no note; it looks the same as a new layer). Over-cautious refusals, accepted: 6 of the 91 icons typed
       on Turtle (flare pixels past their glyph boxes: light, the 6/7/8 stars, silksong_star), replacing an own-style
-      status word ("2T Smoldering" -> "2T Burning" on Fire Staff), deleting a whole ability on an FX card
-      (`styled-word`, a misleading code). Left on purpose: the parser's
-      `_read_icon_tokens` still reads "[fire:]" in the icon font as [fire] (a Cython module; the bake refuses it before,
-      `gate_reparse` and `lettered_icons` behind); the website's text.js `icon()` still previews it as the icon
-      (TTSCardMaker side). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
+      status word ("2T Smoldering" -> "2T Burning" on Fire Staff). Website track (TTSCardMaker, not edited here): text.js
+      `icon()` still previews "[fire:]" (a colon with an empty variant) as the fire icon, and `norm()` forgives "[Fire.]"
+      or "[warp  star]"; the bake refuses them (`font`), so the editor should treat them as text like the font does.
+      **Open owner items (BUG 2, not implemented):** (1) a badge or token typed in a title stays body text (ruling C says
+      "wherever it is typed"); (2) a typed `:sticker`/`:tint` token takes the fill of the text around it, not the card's
+      own token colour (Palace of Shadow's typed `[dark:sticker]` outline dark grey 0.2, its own white 1.0; the card is
+      itself mixed: its `[light:sticker]` uses the body grey); (3) a badge typed next to an odd-size badge takes that
+      badge's size (in front of Pizza's 18.66 pt first badge, not the card's usual 32 pt). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
       olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any
       ability edit.
       Not this branch's: appended text can run below the card's text panel artwork (the overflow gate checks the
@@ -165,8 +171,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       local clone, 2026-10-23 21:26; passes without it). Then 73dfc3c merged (site tests only: 57 passed).
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       now only its bake half (the data-build half is on main since 4dcf33f, guarded by `tests/test_open_once.py`):
-      after `work/fx-rebuild` lands, `psd_edit.parse_card` takes an open PSD, `gate_reparse` gets bake's `reopened`
-      and card_bake opens the old PSD once (twice per call now; check `classify` leaves the PSD alone); rcache wiring
+      built on `work/fx-rebuild` (2026-10-24: `parse_card` takes an open PSD, `gate_reparse` gets the bake's
+      `reopened`, card_bake opens the old PSD once and `apply_jobs` edits a `deepcopy`); rcache wiring
       in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the Photoshop oracle
       loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).
 - [ ] Extraction campaign: the structural candidate (blank-but-present Ability = no problem: ABILITY_EXCLUSIONS 21 -> 0),
