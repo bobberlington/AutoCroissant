@@ -574,9 +574,9 @@ def test_the_refusals_of_the_replay(clone):
     """Three of the 9 refusals of the 34 replayed commits (PUSH_GUARDS.md 16, rulings): Restrained's old PNG did not
     show its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG); 20 Creature
     Types' header, which Photoshop redrew from a type layer whose stored raster did not change (the composite
-    cross-check refuses what the render cannot see). Defcon Panda's Ability drop shadow, which the fork draws with
-    another edge, refused until the owner's ruling of 2026-10-23: made now, the miss told (at cards-20261023 the
-    cross-check's, 0.63% bad; the baseline's 1.4% at cards-20261022b)."""
+    cross-check refuses what the render cannot see). Defcon Panda's Ability drop shadow, refused until the owner's
+    ruling of 2026-10-23, then made with the miss told; since cards-20261024 (round 12's text diagonals) the fork draws
+    its edge as Photoshop does: made, nothing to tell."""
     for shas, gate, why in ((RESTRAINED, "G5", "PNG not made: the PSD and its old PNG already disagreed where you changed it"),
                             (CREATURE_TYPES, "G6", pe.G6_UNSEEN)):
         old, new, old_png, _ = pair(clone, shas)
@@ -585,8 +585,7 @@ def test_the_refusals_of_the_replay(clone):
         assert not found.data
     old, new, old_png, _ = pair(clone, DEFCON_PANDA)
     found = pe.export(old, new, old_png)
-    assert found.outcome == "re-exported" and found.data and found.misses
-    assert all(not psd_edit._within_bar(m) and m["bad_pct"] <= psd_edit.PARITY_FLOOR for m in found.misses.values())
+    assert found.outcome == "re-exported" and found.data and not found.misses
     # the author's PNG pushed first: Photoshop's image vouches for the change the fork draws otherwise, nothing to tell
     old, new, _, _ = pair(clone, DEFCON_PANDA)
     first = pe.export(old, new, pe.open_png(blob(clone, "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")))
