@@ -18,6 +18,8 @@ CHANGES_JS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
 pytestmark = pytest.mark.skipif(not (CHANGES_JS.is_file() and shutil.which("node")
                                      and "keepsTabFocus" in CHANGES_JS.read_text(encoding="utf-8")),
                                 reason=f"no changes.js with webEdits/keepsTabFocus at {CHANGES_JS}, or no node")
+archive_tags = pytest.mark.skipif(not (CHANGES_JS.is_file() and "archiveTagHtml" in CHANGES_JS.read_text(encoding="utf-8")),
+                                  reason="no archive tags in changes.js")
 
 
 def node(tmp_path, body: str):
@@ -54,6 +56,7 @@ process.stdout.write(JSON.stringify([ch.keepsTabFocus(el(true, true)), ch.keepsT
     assert out == [True, False, False, False, True]
 
 
+@archive_tags
 def test_an_archived_card_has_its_tag(tmp_path):
     """The Archive tab and the archived event show the tag: moved_to (White Palace into MDW/The Morgue) Retired, its
     paths in the tip; renamed_to Renamed and "renamed to"; neither Deleted; the build's tag wins over the fields."""
@@ -73,6 +76,7 @@ process.stdout.write(JSON.stringify([...rows.map(r => text(ch.archiveHtml([r], "
     assert 'class="fact arch retired"' in pill and 'data-tip="Field/4 Stars/White_Palace.psd → MDW/The Morgue"' in pill
 
 
+@archive_tags
 def test_archive_tag_chips_filter(tmp_path):
     """?tag=retired lists only the retired cards; the chips count every tag; the Changelog tab has no archive panel."""
     rows = [{"card": "A", "moved_to": "MDW/A.psd"}, {"card": "B", "renamed_to": "C"}, {"card": "D"}, {"card": "E", "moved_to": "MDW/E.psd"}]

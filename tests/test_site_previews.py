@@ -25,6 +25,14 @@ PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
 BUILD_SITE = SITE / "site" / "build" / "build_site.py"
 FONTS = SITE / "MDW" / "Fonts"
 needs_js = pytest.mark.skipif(not (PREVIEW_JS.is_file() and shutil.which("node")), reason=f"no preview.js at {ASSETS}, or no node")
+
+
+def has(path: Path, word: str) -> bool:
+    return path.is_file() and word in path.read_text(encoding="utf-8")
+
+
+viewer = pytest.mark.skipif(not has(PREVIEW_JS, "tabsHtml"), reason="no image viewer in preview.js")
+mock_header = pytest.mark.skipif(not has(MOCKUP_JS, "starPlan"), reason="no stars or types in mockup.js")
 HOUR = 3600_000
 
 
@@ -246,6 +254,7 @@ out([p.renderedHtml(null, v), p.renderedHtml(null, { ...v, n: 0 }), p.renderedHt
 
 
 @needs_js
+@viewer
 def test_the_viewer_tabs_and_default_tab(tmp_path):
     """Three tabs in a tablist, the mode's selected and the only one in the tab order, New on Rendered. The card page opens
     on Rendered while the newest result is unseen, else Original; the Edit dialog on Mock-up while the form changes the
@@ -263,6 +272,7 @@ out([p.tabsHtml("mockup"), p.tabsHtml("original", { news: true }),
 
 
 @needs_js
+@viewer
 def test_rendered_parts_split_stage_and_caption(tmp_path):
     """The stage holds the preview (a link to the full size), the hidden current image and the diff canvas; the caption the
     head, outcomes, notes and Diff. With Diff on the canvas shows instead of the preview. A state with no image puts its
@@ -360,6 +370,7 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+@mock_header
 def test_what_the_mock_up_redraws(tmp_path):
     """Only fields unlike the PSD; stats above 10 are named, not drawn; stars from and to, types old and new unless only
     reordered. A stat cell lights as the last lit one (the bar's rounded first cell: its colour) and darkens as the first
@@ -394,6 +405,7 @@ const types = { row: [{ name: "light", core: [81, 30, 241, 190], box: [51, 2, 26
 
 
 @needs_js
+@mock_header
 def test_stars_are_placed_from_the_record(tmp_path):
     """Fewer: the last in reading order erased (glow box), nothing drawn. More: the shown stars stay, a star drawn at the
     count's new centre (rows of two). A refused count is drawn and says why; no layout for the count, no record or a
@@ -409,6 +421,7 @@ out([m.starPlan(stars, 2, 1), m.starPlan(stars, 2, 3), m.starPlan(stars, 2, 4), 
 
 
 @needs_js
+@mock_header
 def test_types_close_up_like_the_bake(tmp_path):
     """psd_edit.plan_types' rule on a three-icon row: a removed icon is erased and a new one takes its slot; removing the
     first moves the last into it (the row closes up); a new fourth goes on the row's next spot; a token row, an empty row
@@ -427,6 +440,7 @@ out([P(old, ["fire", "defensive_minion", "wind"]), P(old, ["defensive_minion", "
 
 
 @needs_js
+@mock_header
 def test_fill_box_puts_the_background_back(tmp_path):
     """A blob over a gradient: the box filled from the pixels around it is within a few levels of the gradient; outside
     nothing changes."""
@@ -443,6 +457,7 @@ out([worst, outside]);""")
 
 
 @needs_js
+@mock_header
 def test_mock_note_names_a_refusal(tmp_path):
     """The caption: stars or types in a box (plural), what the bake would refuse and why; nothing about stars or types
     when they were drawn."""

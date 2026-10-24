@@ -268,8 +268,7 @@ const ctx = { render: (t, n) => `R(${t}|${n})`, statBars: c => `<div class="stat
 const p = { id: "g", name: "<Goom>", type: "creature", stars: 3, types: ["fire", "odd_one"], hp: 7, ability: "Burns.", note: "", pending: ["name", "hp"], author: "Chestnut" };
 const html = live.previewHtml(p, new Set(["name", "stats"]), ctx);
 const bare = live.previewHtml({ id: "x", name: "X", type: "creature" }, new Set(["ability"]), { ...ctx, image: () => "" });
-process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), open: live.paneHtml(true), blocks: ["name", "hp", "creatures", "series", "zzz"].map(live.blockOf),
-  viewer: live.paneHtml(false, { viewer: "thumbs/g-720.webp", ar: "360/720" }) }));
+process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), open: live.paneHtml(true), blocks: ["name", "hp", "creatures", "series", "zzz"].map(live.blockOf) }));
 """)
     html = out["html"]
     assert '<h2 class="lp-name lp-changed">&lt;Goom&gt;</h2>' in html
@@ -280,8 +279,17 @@ process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), op
     assert "No ability text." in out["bare"] and "lp-changed" in out["bare"] and "lp-img" not in out["bare"]
     assert 'aria-expanded="false"' in out["pane"] and 'aria-controls="lp-body"' in out["pane"] and 'class="lp-pane open"' in out["open"]
     assert out["blocks"] == ["h2", ".lp-stats", ".lp-stats", ".facts", None]
-    viewer = out["viewer"]                                  # the card image's viewer above the body, outside what paintPreview rewrites
-    assert 'class="iv iv-pane"' in out["viewer"] and "iv-pane" not in out["pane"]
+
+
+def test_the_live_preview_viewer(tmp_path):
+    """The card image's viewer above the body, outside what paintPreview rewrites."""
+    if "iv-pane" not in (ASSETS / "live.js").read_text(encoding="utf-8"):
+        pytest.skip("no image viewer in live.js")
+    out = node(tmp_path, """
+process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: "thumbs/g-720.webp", ar: "360/720" }) }));
+""")
+    viewer = out["viewer"]
+    assert 'class="iv iv-pane"' in viewer and "iv-pane" not in out["pane"]
     assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720.webp"' in viewer and "aspect-ratio:360/720" in viewer
 
 

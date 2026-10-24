@@ -29,6 +29,8 @@ FONT_BUILD = SITE.parent / "MDW" / "Fonts" / "stoogedings-src" / "build_stoogedi
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
                                 reason=f"clone behind: no {TOKENS_JS} (land TTSCardMaker work/token-picker)")
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+names = pytest.mark.skipif(not (TOKENS_JS.is_file() and "suggestNames" in TOKENS_JS.read_text(encoding="utf-8")),
+                           reason="clone behind: no name lists in tokens.js")
 
 ALL = ["tint", "sticker", "glow", "darkglow"]
 
@@ -213,6 +215,7 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
 
 
 @needs_node
+@names
 def test_card_text_fields_take_the_picker(tmp_path):
     """The ability and note fields, in the full Edit form (cards and rulebook pages) and inline, carry data-tokens; the
     series, subseries and author fields (inline, All fields, the profile's "Cards as") the list of known names
@@ -242,6 +245,7 @@ NAMES = [{"value": "Mario", "n": 69, "kind": "series"}, {"value": "Kirby", "n": 
 
 
 @needs_node
+@names
 def test_names_rank_known_series_subseries_and_authors(tmp_path):
     """Empty: own first, then most cards, then by name; typed: same name, prefix, a word's prefix, inside, then a slip;
     a subseries of another series keeps its note; never more than the list's limit."""
@@ -270,6 +274,7 @@ process.stdout.write(JSON.stringify([v("", N), v("mar", N), v("thousand", SUBS),
 
 
 @needs_node
+@names
 def test_a_name_choice_replaces_the_whole_value(tmp_path):
     out = node(tmp_path, """
 const it = P.suggestNames("pap", [{ value: "Paper Mario", n: 5 }])[0];
