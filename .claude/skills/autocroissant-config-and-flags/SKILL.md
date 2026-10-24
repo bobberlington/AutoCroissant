@@ -468,6 +468,7 @@ autocroissant-run-and-operate §9.
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
 | `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
+| `png_export.KEPT` | "PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, ..." | told for a PNG kept beside a new PSD with no stored composite, within the parity bar of the render (default 2026-10-24, owner to confirm; branch work/py314) |
 
 ### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
 

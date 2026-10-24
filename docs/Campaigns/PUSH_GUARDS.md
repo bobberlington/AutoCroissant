@@ -1305,17 +1305,28 @@ unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fon
 - a PNG pushed before its PSD (old PSD): current when, over the pixels the render moved, the PNG is within the bar of the
   new render and nearer it than the old (the render-only half of `png_ahead`; review of 2026-10-24: it was re-exported over
   the author's export, or refused G6);
-- a new PSD beside its PNG: the whole card rendered; current only when no pixel is past BESIDE_CUT, as with a composite
-  (the owner's 2026-10-23 ruling), else the PNG takes the render where it differs past BESIDE_CUT, each drawn text layer
-  shown (hiding it changes the render). The render against the PNG is kept as `png_vs_render` and told as "the new PSD
-  drawn against its PNG: bad N%": it holds the author's change, so it is never a drawing miss and never refuses (review of
-  2026-10-24: it was the "baseline", told as "the old PSD drawn against the old PNG" with a "made with a pixel difference"
-  note, and past 25% a G6 refusal of new art: 52% of a card in `prove_beside_floor.py`); the text check is the gate. The parity bar is no pass here: over the whole card it hid
-  real edits (beside their stale PNGs Dirty Bed's Ability, 0.31% bad, Springtrap's Name, 0.21%, Defcon Panda, 0.33%, were
-  all within it). The cost: the fork's own noise passes 8 levels beside a PNG that is current (5 of 12 random cards beside
-  their own PNG, 51-584 px, max 11-106 levels; scratch `py314/fix/beside_noise.py`), and those pixels are redrawn and told
-  (UNCHECKED). **Owner question:** keep this, or keep such a PNG and tell it instead (the stale cards above would then stay
-  stale, told);
+- a new PSD beside its PNG: the whole card rendered (`png_vs_render`, the render against the PNG); current when no pixel
+  is past BESIDE_CUT, as with a composite (the owner's 2026-10-23 ruling). Past it: **kept within the parity bar, told
+  (default 2026-10-24, owner to confirm)**: the PNG stays as it is, `numbers["kept"]` holds its px past the cut and the
+  post tells `png_export.KEPT` ("PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the
+  PNG in only N px, too little to tell a change from its own drawing noise; if the PNG is out of date, export it in
+  Photoshop") on Discord and as the comment's guard-1 line; nothing written, never redrawn with the fork's noise. With
+  no stored image the fork's noise and a small stale edit look alike: on 12 random cards beside their own PNG
+  (cards-20261024, scratch `py314/final/beside_noise_seed1.log`) 2 pass 8 levels (Sword 56 px, max 11; Defcon Panda
+  33 px, max 17), all within the bar; Dirty Bed's Ability and Springtrap's Name beside their stale PNGs are within it
+  too (tested), as Defcon Panda's change was (0.33%), so they stay stale, told (the cost). `after_window` withdraws the
+  line as it does UNCHECKED's when the author pushed the PNG in the window. Before this default they were redrawn where the render
+  passed 8 levels, the fork's noise included. Past the bar the PNG takes the render where it differs past BESIDE_CUT,
+  each drawn text layer shown (hiding it changes the render): new art, never a drawing miss nor a refusal (review of
+  2026-10-24: it was the "baseline", told as "the old PSD drawn against the old PNG" with a "made with a pixel
+  difference" note, and past 25% a G6 refusal of new art: 52% of a card in `prove_beside_floor.py`); the text check is
+  the gate. Tests: `test_g2_keeps_a_png_beside_within_the_bar_and_tells`, `test_g2_keeps_the_authors_png_beside_its_psd`
+  (Defcon Panda beside the author's PNG, stored image dropped), the beside half of
+  `test_g2_real_cards_reread_the_parser_and_match_the_checked_png` (png_export),
+  `test_a_png_kept_beside_a_psd_without_a_stored_image_is_told` (card_guards). **`png_vs_render` is not posted
+  (default 2026-10-24, owner to confirm):** the guard-1 line "the new PSD drawn against its PNG: bad N%" is gone from the
+  comment; the number stays in plan.json (`export.numbers.png_vs_render`), the JSON report, alone. It mostly measured the
+  author's own change (`test_a_png_made_without_a_stored_image_is_told_not_refused`);
 - a new card with no PNG: the whole render, each drawn text shown.
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with

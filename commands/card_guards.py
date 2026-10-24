@@ -554,12 +554,15 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 
 def _export_dict(found) -> dict:
-    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2)."""
+    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2), or for one
+    kept beside such a PSD (KEPT)."""
+    kept = found.numbers.get("kept") if found.unchecked and found.outcome == "current" else None
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
             "misses": png_export.miss_notes(found),
-            "unchecked": png_export.UNCHECKED if found.unchecked and found.outcome == "re-exported" else ""}
+            "unchecked": png_export.UNCHECKED if found.unchecked and found.outcome == "re-exported" else
+                         png_export.KEPT.format(px=kept) if kept is not None else ""}
 
 
 def _r10_line(job: Job, measured: dict) -> str:
@@ -755,6 +758,8 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
         return ""
     if outcome == "current" and "png_ahead" in found.get("numbers", {}):
         return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
+    if outcome == "current" and found.get("unchecked"):
+        return found["unchecked"]
     if outcome == "current":
         return "PNG still current (the push moved no pixel of the card)"
     if outcome == "refused":
@@ -767,8 +772,7 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}"]
     if "baseline" in numbers:
         parts.append(f"the old PSD drawn against the old PNG: bad {numbers['baseline'].get('bad_pct', 0):.2f}%")
-    if "png_vs_render" in numbers:              # G2 beside: the author's change included, so a measure, not a miss
-        parts.append(f"the new PSD drawn against its PNG: bad {numbers['png_vs_render'].get('bad_pct', 0):.2f}%")
+    # png_vs_render (G2 beside) is plan.json's alone: it measures the author's change (default 2026-10-24, owner to confirm)
     if "cross" in numbers:
         parts.append(f"against the PSD's own image: bad {numbers['cross'].get('bad_pct', 0):.2f}%, "
                      f"mean {numbers['cross'].get('mean', 0):.2f}")

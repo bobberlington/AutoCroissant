@@ -160,9 +160,10 @@ has only the card's own `author`, so the website reads the tag's, else the recor
   pyoxipng marker takes Linux x86_64 at any Python), R7 left to font-check, G2 rendered anyway ("no stored image to
   cross-check"), the quiet window as the environment `card-guards-quiet` (check / post / finish jobs). PUSH_GUARDS.md §20
   has the design, the Mac's cold-install numbers and the landing order.
-- [ ] Owner question (§20.4): a new PSD with no stored image beside its PNG is redrawn past 8 levels even within the
-      bar (else Dirty Bed's, Springtrap's and Defcon Panda's edits pass as current); the fork's noise is then redrawn on
-      some current PNGs (5 of 12 cards, 51-584 px). Keep, or keep such PNGs and only tell them?
+- [ ] Owner to confirm (§20.4, defaults of 2026-10-24): a new PSD with no stored image beside a PNG within the bar of
+      the render keeps the PNG and tells it (`png_export.KEPT`; never redrawn with the fork's noise, so Dirty Bed's and
+      Springtrap's small stale edits stay stale, told); the guard-1 line "the new PSD drawn against its PNG: bad N%" is
+      dropped from the post (plan.json keeps the number).
 - [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
 - [ ] Then the owner creates the environment (§20's `gh api` command; nothing ran it), once the push runs checked before
       AutoCroissant landed have finished (main's old Land behind the timer would miss a push made during the check).

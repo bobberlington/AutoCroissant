@@ -297,14 +297,28 @@ def test_a_small_recolour_beside_its_png_is_rendered(tmp_path):
     ImageDraw.Draw(recoloured).rectangle((40, 60, 44, 64), fill=(200, 30, 50))
     found = pe.export(None, new, recoloured)
     assert found.outcome != "current" and "png_ahead" not in found.numbers
-    # G2 (no stored image): the same rule against the fork's render, though within the parity bar (over the whole card
-    # the bar hides a text edit). Redrawn where it differs past the cut and told (UNCHECKED)
+
+
+def test_g2_keeps_a_png_beside_within_the_bar_and_tells(tmp_path, monkeypatch):
+    """Default 2026-10-24, owner to confirm: with no stored image, a PNG within the bar of the fork's whole-card render
+    but past BESIDE_CUT (the fork's own noise beside a current PNG, or a small stale edit: they look alike) is kept and
+    told (numbers["kept"], KEPT), never redrawn; past the bar it is redrawn where it differs past the cut."""
+    new = fixture_psd(tmp_path, card(), "new")
     new.has_preview = lambda: False
-    redrawn = pe.export(None, new, recoloured)
-    assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 25)
-    assert "png_ahead" not in redrawn.numbers and pe._within(redrawn.numbers["png_vs_render"])
-    assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card()).tolist()
+    monkeypatch.setattr(pe, "_texts_drawn", lambda *a: pytest.fail("checked a PNG it keeps"))
+    noisy = card()
+    ImageDraw.Draw(noisy).rectangle((40, 60, 44, 64), fill=(200, 30, 50))         # 20 levels over 25 px
+    kept = pe.export(None, new, noisy)
+    assert (kept.outcome, kept.unchecked, kept.data, kept.changed_px) == ("current", True, b"", 0)
+    assert kept.numbers["kept"] == 25 and "png_ahead" not in kept.numbers and pe._within(kept.numbers["png_vs_render"])
     assert "png_ahead" in pe.export(None, new, card()).numbers                 # no pixel past 8: current, nothing told
+    monkeypatch.undo()
+    stale = card()
+    ImageDraw.Draw(stale).rectangle((40, 60, 49, 69), fill=(200, 30, 90))          # 60 levels over 100 px: past the bar
+    redrawn = pe.export(None, new, stale)
+    assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 100)
+    assert "kept" not in redrawn.numbers and not pe._within(redrawn.numbers["png_vs_render"])
+    assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card()).tolist()
 
 
 def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved(tmp_path, monkeypatch):
@@ -671,12 +685,9 @@ def test_g2_real_cards_reread_the_parser_and_match_the_checked_png(clone):
         found = pe.export(old, new, old_png)
         assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, what), what
         assert "cross" not in found.numbers and np.array_equal(np.asarray(found.image), np.asarray(checked.image)), what
-        beside = pe.export(None, new, old_png)          # beside its stale PNG: within the bar over the card, still redrawn
-        assert (beside.outcome, beside.unchecked) == ("re-exported", True) and _within_card(beside), what
-
-
-def _within_card(found) -> bool:
-    return pe._within(found.numbers["png_vs_render"]) and found.changed_px > 5000
+        beside = pe.export(None, new, old_png)          # beside its stale PNG, within the bar: kept, told (the cost)
+        assert (beside.outcome, beside.unchecked, beside.data) == ("current", True, b""), what
+        assert pe._within(beside.numbers["png_vs_render"]) and beside.numbers["kept"] > 5000, what
 
 
 def _blind(monkeypatch, real):
@@ -702,7 +713,9 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
     found = pe.export(old, new, old_png)                                  # the Ability drawn as it was
     assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the Ability text"))
     _blind(monkeypatch, real)
-    for found in (pe.export(None, new, old_png), pe.export_new(new)):     # beside the older PNG; a new card
+    older = old_png.copy()                              # past the bar, else kept unchecked (default 2026-10-24)
+    ImageDraw.Draw(older).rectangle((0, 0, 399, 399), fill=(0, 0, 0))
+    for found in (pe.export(None, new, older), pe.export_new(new)):       # beside an older PNG; a new card
         assert (found.outcome, found.gate, found.data) == ("refused", "G2", b"") and found.unchecked
         assert found.why.startswith("PNG not made: the bot draws nothing for the ") and found.why.endswith(pe.EXPORT)
 
@@ -768,6 +781,21 @@ def test_a_new_psd_beside_the_authors_png_is_current(clone, monkeypatch):
         found = pe.export(None, pe.open_psd(blob(clone, psd)), pe.open_png(blob(clone, png)))
         assert (found.outcome, found.data, found.numbers["composite_px"]) == ("current", b"", 0), psd
         assert "png_ahead" in found.numbers
+
+
+@fork
+def test_g2_keeps_the_authors_png_beside_its_psd(clone):
+    """The same with no stored image (default 2026-10-24, owner to confirm): the fork's whole-card render passes 8 levels
+    beside the author's export (Defcon Panda's shadow; Dirty Bed's stays within 8), within the bar, so the PNG is kept and
+    told, not redrawn with the fork's noise."""
+    seen = {}
+    for psd, png in ((DIRTY_BED[1], DIRTY_BED[3]), (DEFCON_PANDA[1], "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")):
+        new = pe.open_psd(blob(clone, psd))
+        new.has_preview = lambda: False
+        kept = pe.export(None, new, pe.open_png(blob(clone, png)))
+        assert (kept.outcome, kept.unchecked, kept.data) == ("current", True, b""), psd
+        seen[psd] = kept.numbers["png_vs_render"]["max"], kept.numbers.get("kept")
+    assert seen[DEFCON_PANDA[1]][0] > pe.BESIDE_CUT and seen[DEFCON_PANDA[1]][1] > 0, seen
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

@@ -873,6 +873,20 @@ def test_a_numbered_png_pushed_in_the_window_withdraws_its_refusal(tmp_path, mon
     assert report["after"]["X/Snack.psd"] == ["Snack2.png was pushed since: the refusal is withdrawn"]
 
 
+def test_a_png_kept_beside_a_psd_without_a_stored_image_is_told():
+    """Default 2026-10-24, owner to confirm: a new PSD with no stored image beside a PNG within the bar of the fork's
+    render keeps the PNG (png_export's numbers["kept"]); the post tells it (KEPT, with the px past the cut) on Discord
+    and as the comment's guard-1 line, nothing written."""
+    exported = cg._export_dict(pe.Export("current", unchecked=True, numbers={"kept": 33, "png_vs_render": {"max": 17}}))
+    line = pe.KEPT.format(px=33)
+    assert exported["unchecked"] == line and line.startswith("PNG kept as it is: ") and " 33 px" in line
+    job = cg.Job("X/Snack.psd", "beside", png="X/Snack.png")
+    result = cg.Result(job, export=exported)
+    assert result.told("on") == [line] and result.told("report") == [line]
+    assert cg._guard1_line({"export": exported, "case": "beside"}) == line
+    assert cg._export_dict(pe.Export("current", numbers={"kept": 33}))["unchecked"] == ""      # checked: never kept
+
+
 def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeypatch):
     """Owner, 2026-10-24 (G2 rendered anyway): a PSD saved without Maximize Compatibility gets the bot's PNG, and the post
     says "no stored image to cross-check" instead of refusing (report mode beside the PNG it would make); the comment's
@@ -890,8 +904,12 @@ def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeyp
     assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "no stored image to cross-check" in line
     beside = cg._guard1_line({"export": {**exported, "numbers": {"png_vs_render": {"bad_pct": 51.9}}, "icc": "as stored",
                                          "misses": []}, "case": "beside"})
-    assert "the new PSD drawn against its PNG: bad 51.90%" in beside and "old PSD" not in beside
-    assert "made with a pixel difference" not in beside                    # the author's change, not a drawing miss
+    assert "old PSD" not in beside and "made with a pixel difference" not in beside    # the author's change, no miss
+    # default 2026-10-24, owner to confirm: the new PSD drawn against its PNG is plan.json's number alone, not posted
+    assert "51.90" not in beside and "the new PSD drawn against its PNG" not in beside
+    drawn = cg._export_dict(pe.Export("re-exported", changed_px=5, unchecked=True,
+                                      numbers={"png_vs_render": {"bad_pct": 51.9}}))
+    assert drawn["numbers"]["png_vs_render"]["bad_pct"] == 51.9
 
     out = tmp_path / "plan"
     snack = _entry("Snack", export=dict(exported, numbers={}), told=[pe.UNCHECKED])
