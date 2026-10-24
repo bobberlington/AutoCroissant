@@ -97,6 +97,11 @@ def repo(tmp_path):
     (root / "MDW/The Morgue").mkdir(parents=True)
     (root / PALACE).rename(root / "MDW/The Morgue/White_Palace.psd")
     c3, t3 = _commit(root, "Standardize", start + 2 * DAY)
+    (root / "site").mkdir()                       # ratings: a commit of no card file (no image version, no edit batch)
+    (root / "site" / "Card Ratings.json").write_text(json.dumps({"cards": {
+        "alpha": [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}],
+        "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7.1, "by": "group", "source": "TTS session"}]}}))
+    _commit(root, "Ratings", start + 3 * DAY)
 
     stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3"),
              "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
@@ -251,7 +256,7 @@ def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, m
     """A duplicate whose Card Edits.json entry sets its ability gets the PSD's history against that text: its own
     text is never listed as an older one, and the original keeps its History."""
     edits = repo["root"] / "site" / "Card Edits.json"
-    edits.parent.mkdir()
+    edits.parent.mkdir(exist_ok=True)
     edits.write_text(json.dumps({"cards": {"Watermelon2": {"ability": "Heal 1."}}}), encoding="utf-8")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     cards = _by_name(out["cards.json"]["cards"])
@@ -340,3 +345,14 @@ def test_the_card_page_has_no_share_full_image_or_psd_button():
         pytest.skip(f"no app.js at {APP_JS}")
     text = APP_JS.read_text(encoding="utf-8")
     assert [s for s in ('data-action="share"', ">Full image<", ">PSD on GitHub<", 'e.key === "s"') if s in text] == []
+
+
+def test_ratings_reach_the_cards_and_the_archived_rows(bs, repo, tmp_path, monkeypatch):
+    """site/Card Ratings.json: Alpha's entries on its card (matched in any case), White Palace's on its archived row."""
+    if not hasattr(bs, "parse_ratings"):
+        pytest.skip(f"{BUILD_SITE} has no ratings")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards = _by_name(out["cards.json"]["cards"])
+    assert cards["Alpha"]["ratings"] == [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}]
+    assert "ratings" not in cards["Watermelon"] and out["cards.json"]["files"]["ratings"] == "site/Card Ratings.json"
+    assert [(r["card"], [e["value"] for e in r.get("ratings", [])]) for r in out["changelog.json"]["archived"]] == [("White Palace", [7.1])]

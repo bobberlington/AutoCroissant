@@ -40,5 +40,7 @@ AUTHORS_PATH    = AUTHORS_PATHS[0]
 EDITS_PATH      = EDITS_PATHS[0]
 CREATED_PATHS   = ("site/Card Creation Dates.json",)   # when each card was made (python -m commands.discord_edits created)
 CREATED_PATH    = CREATED_PATHS[0]
+RATINGS_PATHS   = ("site/Card Ratings.json",)   # card ratings 1-10 (python -m commands.tts_ratings; the website adds entries); the bot never reads it
+RATINGS_PATH    = RATINGS_PATHS[0]
 MAILMAP_PATH    = ".mailmap"                   # git's: one person's several git names as one (%aN; the API path: card_edits.Mailmap)
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save
