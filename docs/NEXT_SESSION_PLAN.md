@@ -163,8 +163,9 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [ ] Owner question (§20.4): a new PSD with no stored image beside its PNG is redrawn past 8 levels even within the
       bar (else Dirty Bed's, Springtrap's and Defcon Panda's edits pass as current); the fork's noise is then redrawn on
       some current PNGs (5 of 12 cards, 51-584 px). Keep, or keep such PNGs and only tell them?
-- [ ] The owner creates the environment (§20's `gh api` command; nothing ran it).
 - [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
+- [ ] Then the owner creates the environment (§20's `gh api` command; nothing ran it), once the push runs checked before
+      AutoCroissant landed have finished (main's old Land behind the timer would miss a push made during the check).
 - [ ] Watch the first runs: a cold wheel build on a runner (pyoxipng's Rust; card-preview's install step has 5 minutes),
       card-sync's one venv, a push's post job waiting in the environment, a dispatch and a re-run taking none.
 

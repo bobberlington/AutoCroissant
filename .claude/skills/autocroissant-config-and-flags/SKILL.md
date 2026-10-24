@@ -515,7 +515,7 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 | `MAIN_COMMIT`, `POSTS` | env in card-sync.yml | `off` during the shadow: Card sync writes only the data branch and posts nothing |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
-| `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it at landing) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
+| `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 

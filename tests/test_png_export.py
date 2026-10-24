@@ -38,6 +38,8 @@ DEFCON_PANDA = ("9ea7b16710613bd532ceb56e09238bf99a86d5e6", "9e8da0ed097e6dd21cc
                 "a558861e09df8606038cf9b3218694a12076b8b8")                                              # 1b4f36a0
 CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3ba4150ffbe9cca3a5f2ced0",
                   "e35deab6a8bdc6d760e73b7363998f6d20c17111")                                            # 100511d3
+GREEN_MAGE = ("d17ddacd178eb7353dab252651855da1e2d995f7", "cf9e880710d77ad3b10dfa6690a2a285b5d1b9da",
+              "09e2dce6f6ed70454f1e52604015cc41678763ff", "41c2439d09d0eb532995338d2646ed7556b52eac")   # 45cf8746: ATK 6, bars only
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
@@ -134,6 +136,17 @@ def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     assert np.asarray(pe.open_png(beside.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
     composed = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "composed")
     assert not pe.export(old, composed, card()).unchecked                                   # with a stored image: checked
+    # G8 on this path too: a numbered duplicate takes the change when clear of its own title, else is told
+    clear, touching = card(), card()
+    ImageDraw.Draw(clear).rectangle((40, 70, 55, 85), fill=(0, 0, 0))
+    ImageDraw.Draw(touching).rectangle((25, 25, 40, 40), fill=(0, 0, 0))
+    found = pe.export(old, new, card(), {"X/A2.png": clear, "X/A3.png": touching})
+    assert found.unchecked and set(found.numbered) == {"X/A2.png", "X/A3.png"}
+    data, why = found.numbered["X/A2.png"]
+    expected = np.asarray(card(colour=(0, 255, 0))).copy()
+    expected[70:86, 40:56] = 0
+    assert why == "" and np.asarray(pe.open_png(data)).tolist() == expected.tolist()
+    assert found.numbered["X/A3.png"] == (b"", "A3.png not updated: re-export it in Photoshop")
 
 
 def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
@@ -649,6 +662,20 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
     for found in (pe.export(None, new, old_png), pe.export_new(new)):     # beside the older PNG; a new card
         assert (found.outcome, found.gate, found.data) == ("refused", "G2", b"") and found.unchecked
         assert found.why.startswith("PNG not made: the bot draws nothing for the ") and found.why.endswith(pe.EXPORT)
+
+
+@fork
+def test_g2_rereads_a_stat_row_on_a_real_card(clone, monkeypatch):
+    """The re-read's stat half: Green Mage's ATK fix changed only stat bars (no type layer), so the atk row is the only
+    re-read entry; drawn as it was, G2_BLANK refuses it."""
+    old, new, old_png, _ = pair(clone, GREEN_MAGE)
+    new.has_preview = lambda: False
+    found = pe.export(old, new, old_png)
+    assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, ["the atk row"])
+    real = pe._render
+    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers: real(old if psd is new else psd, box, icc, numbers))
+    found = pe.export(old, new, old_png)
+    assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the atk row"))
 
 
 @fork

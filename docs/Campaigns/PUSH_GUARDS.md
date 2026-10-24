@@ -161,17 +161,24 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 ## 3. Architecture
 
 ```
- git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (one job; skipped unless vars.CARD_GUARDS is report/on)
+ git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (three jobs since 2026-10-24; check is skipped unless
+                              vars.CARD_GUARDS is report/on, and the others with it)
+ job check (timeout 100; ends at once, no runner waits for the window)
    1 range    before..after: files, renames by blob sha, deletes, the last writer's login per file
    2 fetch    the pushed PSDs (and for stale-PNG cards the old PSD and old PNG) by blob sha, verified
    3 check    commands.card_guards check: guard 1 (png_export) + guard 2 (card_standards) on each card
               -> plan.json (writes, with the blobs they rest on), report.md, comment.md, discord.json, artifacts
-   4 comment  the job summary; one commit comment on `after` (a re-run edits it)
-   5 land     (report/on, something to tell or write) sleep until 30 min after the push, drop writes a newer push touched,
-              then (on) one commit: re-exported PNGs + fixed PSDs, only where the blobs are still as pushed (git_commit);
-              settle the post (after_window): discord-final.json, report-landed.md
+   4 comment  the job summary; one commit comment on `after` (a re-run edits it); the plan for the post job (land=true
+              when report has something to tell or on something to tell or write), the `card-guards` artifact
+ job post (needs check, only with land=true; timeout 75): waits in the environment card-guards-quiet (30-minute wait
+          timer) on a push's first attempt; a dispatch and a re-run take no environment
+   5 land     sleep only what the timer left until 30 min after the push (all of it with no timer), drop writes a push
+              since the push touched, then (on) one commit: re-exported PNGs + fixed PSDs, only where the blobs are still
+              as pushed (git_commit); settle the post (after_window): discord-final.json, report-landed.md
    6 follow   edit the comment ("landed in <sha>", "not landed"); gh workflow run site.yml (and tts-save.yml until Card sync)
-   7 tell     one Discord post (standards channel) when something remains; a failed run: one alert per failure streak
+   7 tell     one Discord post (standards channel) when something remains
+ job finish (needs both; always, unless check was skipped; timeout 10)
+   8 finish   a red run for card errors; a failed run (any job: needs.*.result): one alert per failure streak
 ```
 
 - **Modules (AutoCroissant, Discord-free, no config.py).** Each is runnable as `python -m`, as card_check is.
@@ -298,8 +305,11 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 - It is written in the old PNG's mode, with its colour chunks (`psd_edit.save_png`).
 - The fork draws a type layer from the raster Photoshop stored, so colour badges and Photoshop's text come out as
   Photoshop drew them; the one-colour glyphs are only for text the fork sets itself (the bake's edits), not here.
-- **Photoshop's stored composite is never written.** It is a cross-check that can only refuse (G2, G5, G6), converted the
-  same way: D is where the old and new composites differ past 2 levels.
+- **Photoshop's stored composite is never written.** It is a cross-check that can only refuse (G5, G6), converted the
+  same way: D is where the old and new composites differ past 2 levels. G2 refuses only a PSD that is not 8-bit RGB, or a
+  text or stat row the re-read finds changed that the render does not show (G2_BLANK); an 8-bit RGB PSD with no stored
+  composite is rendered under the bake's own gates and told ("no stored image to cross-check", `unchecked`; owner,
+  2026-10-24, section 20).
 
 **5.2 The gates, per card, in order** (a refusal is final for this push; the reasons are worded for card makers and every
 one ends "export it in Photoshop").
@@ -810,7 +820,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
      old PNG outside R, costs a full render (2.5, 5-14 CPU-s on the Mac) and refuses every card the fork draws otherwise
      anywhere.
 - **Decided 2026-10-24 (decision 5):** the Environment wait timer (4.5) instead of a sleeping runner. The owner creates the
-  environment once, at landing (section 20's command); until then Land sleeps out the window as before.
+  environment once, after both branches land (section 20's command and landing order); until then Land sleeps out the
+  window as before.
 - Per-card standards waivers: `problems_ok` waives no standard since the review (16, change 1). Today it changes nothing (Pix,
   Tainted Lazarus and Twin Emperors report nothing, every issue under a class waiver). A per-rule field (e.g. `standards_ok:
   ["R5"]` in `CardEdits.TYPES`, the editor and build_site) is the owner's call.
@@ -1311,7 +1322,9 @@ write did not land ("PNG not made: ..." alone). Tests: `test_g2_renders_anyway_w
 `test_a_png_pushed_before_its_psd_is_current` and `test_a_small_recolour_beside_its_png_is_rendered`, and on real cards
 `test_g2_real_cards_reread_the_parser_and_match_the_checked_png` (Dirty Bed's Ability and Springtrap's Name re-read; the
 PNG the checked export's, pixel for pixel) and `test_g2_refuses_a_text_drawn_blank_on_real_cards` (G2_BLANK through the
-three paths) (png_export), `test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
+three paths) and `test_g2_rereads_a_stat_row_on_a_real_card` (Green Mage's ATK fix, TTSCardMaker 45cf8746: stat bars only,
+so the atk row is the only re-read entry; G2_BLANK when drawn as it was) (png_export; `test_g2_renders_anyway_with_the_bakes_own_gates`
+also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
 2.1), so no replay measures it.
 
 **5. The quiet window is an environment.** card-guards.yml has three jobs:
@@ -1325,7 +1338,9 @@ three paths) (png_export), `test_a_png_made_without_a_stored_image_is_told_not_r
   `--quiet-from`: it sleeps only what the timer did not cover, all of it without a timer), Follow up, Tell Discord, the
   artifact again (overwrite);
 - `finish` (needs both; always, unless check was skipped): Fail on card errors (the check's `card_errors`), Tell Discord
-  the run failed (any job's failure; a cancel by hand is told apart from a timeout by the attempt's job list: a cancelled
+  the run failed (any job's failure: a step's `failure()` and `cancelled()` see only its own job, so the condition also
+  reads `contains(needs.*.result, 'failure')` and `'cancelled'`; `test_failure_alert_reads_the_needed_jobs` evaluates it
+  against the needed jobs' results. A cancel by hand is told apart from a timeout by the attempt's job list: a cancelled
   job that ran to its timeout, check 100 or post 75 minutes, is a timeout), the streak artifact.
 Every behaviour of the window stays (a refusal withdrawn when the author pushes the PNG, a card pushed again left to the
 later push, the writes that did not land told; a later push counted from the push, section 4.5, pinned by
@@ -1345,15 +1360,20 @@ only; the job takes the environment on pushes alone). Undo: `gh api --method DEL
 repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet` (Land then sleeps out the window again).
 
 **Landing order.**
-1. The environment (the command above): before or with step 2, so the first push run already waits in it (without it, the
-   first runs fall back to Land's sleep, harmless).
-2. TTSCardMaker `work/py314` to main: the workflows work with AutoCroissant main as it is (the old marker only leaves
-   pyoxipng out on 3.14 until step 3: no recompression meanwhile; old card_guards still has `--fonts`, which the new
-   workflow no longer passes: R7 is simply skipped).
-3. AutoCroissant `work/py314` to main the same sitting (requirements-cards.txt's new marker re-keys the wheel cache: the
+1. TTSCardMaker `work/py314` to main: the workflows run with AutoCroissant main as it is (the old marker only leaves
+   pyoxipng out on 3.14 until step 2: no recompression meanwhile; old card_guards still has `--fonts`, which the new
+   workflow no longer passes: R7 is simply skipped). With no environment yet the post job starts at once and main's
+   Land sleeps to 30 minutes after the push, so its window (`now()` back 30 minutes) is still right.
+2. AutoCroissant `work/py314` to main the same sitting (requirements-cards.txt's new marker re-keys the wheel cache: the
    next card run builds the six's entry, pyoxipng from its sdist). The guard modules are uncompiled and the bot never
    imports them, but the one-sitting deploy rule stands: pull, `build_ext`, restart on the jetson (nothing else changes
    there: the marker skips pyoxipng on aarch64).
-4. Watch the first runs: a cold wheel build (card-preview's 5-minute step), card-sync's one venv, a push's post job
-   waiting in the environment.
+3. The environment (the command above), only after step 2 and once every push run checked before step 2 has finished
+   (its post job lands with the check's `bot_sha`, main's old Land). Not before: behind the timer main's Land starts
+   about 30 minutes after the check ends, and its window counted from `now()` misses a push made during the check (the
+   new Land counts it from `min(now(), mark)`; `test_a_push_during_the_check_still_supersedes`). G9's blob check would
+   still drop a content change; only a same-blob touch (a case-only rename) would slip. Until the environment exists the
+   post job's runner sleeps out the window, as before 2026-10-24.
+4. Watch the first runs: a cold wheel build (card-preview's 5-minute step), card-sync's one venv, then (after step 3) a
+   push's post job waiting in the environment.
 

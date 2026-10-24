@@ -486,7 +486,9 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 - **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
-  `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
+  `commands/github_api.py`, `global_config.py`, `requirements-cards.txt` from `bobberlington/AutoCroissant` (since 2026-10-24,
+  branch work/py314: on Python 3.14 it installs requirements-cards.txt, the psd-tools fork's one pin, from the card workflows'
+  wheel cache instead of stock psd-tools), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
   `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
@@ -519,8 +521,9 @@ rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no 
 network, a truncated tree) is one error line.
 
 - **Automatic: TTSCardMaker's `.github/workflows/card-check.yml`.** On a push to main that changes a PSD, `Types/` or `site/Card Edits.json`
-  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
-  requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs AutoCroissant
+  `requirements-cards.txt` (the psd-tools fork's one pin, fonttools, requests, pyoxipng) on Python 3.14 from the card workflows'
+  wheel cache (since 2026-10-24, branch work/py314; stock psd-tools, fonttools and requests before), and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
   on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
@@ -641,7 +644,7 @@ with words the parser reads nowhere and a hidden or rasterized Name layer (kept 
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
 both after a 30-minute quiet window (since 2026-10-24, branch work/py314: the post job waits in the TTSCardMaker
-environment `card-guards-quiet`'s 30-minute timer, created by the owner at landing; no runner sleeps; a PSD saved without
+environment `card-guards-quiet`'s 30-minute timer, created by the owner after both branches land; no runner sleeps; a PSD saved without
 Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post

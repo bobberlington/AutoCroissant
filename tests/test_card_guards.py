@@ -1351,8 +1351,8 @@ def test_workflow_shape(clone):
     assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
     alert = steps["Tell Discord the run failed"]
     # a re-run of a push already told (the comment's mark) never alerts: "one post per push"
-    assert alert["if"] == ("(failure() || cancelled()) && github.event_name == 'push' && needs.post.outputs.posted != 'true' && "
-                           "needs.check.outputs.told != 'true'")
+    assert alert["if"] == ("(failure() || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && "
+                           "github.event_name == 'push' && needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'")
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
     assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.post.result }}"
     assert '{"check": %d, "post": %d}' % (job["timeout-minutes"], post["timeout-minutes"]) in alert["run"]
@@ -1379,6 +1379,51 @@ def test_workflow_shape(clone):
     uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
     assert len(uploads) == 3 and all(s["with"]["overwrite"] is True for s in uploads)
 
+
+
+def _step_if(expr, job_status="success", results=(), **context):
+    """A step's `if` as the runner reads it: failure() and cancelled() see this job's own status only (actions/runner
+    FailureFunction.cs, CancelledFunction.cs; a job starts Succeeded), needs.*.result the needed jobs'. Context paths
+    not given read as null."""
+    tokens = re.findall(r"'[^']*'|contains\(needs\.\*\.result, '\w+'\)|\w+\(\)|[\w.]+|&&|\|\||==|!=|!|[()]|\s+", expr)
+    assert "".join(tokens) == expr, expr
+    python = []
+    for tok in (t for t in tokens if not t.isspace()):
+        if tok.startswith("'"):
+            python.append(repr(tok[1:-1]))
+        elif tok.startswith("contains("):
+            python.append(f"({tok.split(chr(39))[1]!r} in {list(results)!r})")
+        elif tok.endswith("()"):
+            python.append(repr({"failure()": job_status == "failure", "cancelled()": job_status == "cancelled",
+                                "success()": job_status == "success", "always()": True}[tok]))
+        else:
+            python.append({"&&": "and", "||": "or", "!": "not"}.get(tok, tok if tok in ("==", "!=", "(", ")")
+                                                                      else repr(context.get(tok))))
+    return eval(" ".join(python))
+
+
+def test_failure_alert_reads_the_needed_jobs(clone):
+    """The alert is a step of the finish job: its failure() sees only finish's own steps, so a check or post job that
+    failed or timed out must be read from needs.*.result (2026-10-24 review: the run-failed alert never fired)."""
+    alert = _guard_steps(clone)[1]["Tell Discord the run failed"]["if"]
+    push = {"github.event_name": "push"}
+
+    def fires(check, post, job_status="success", **context):
+        return _step_if(alert, job_status, (check, post), **{**push, **context})
+
+    assert fires("failure", "skipped")                  # not checked: the post job never ran
+    assert fires("success", "failure")                  # the post job broke before (or after) its post
+    assert fires("cancelled", "skipped") and fires("success", "cancelled")       # a timeout; the step tells it from a cancel
+    assert fires("success", "skipped", "failure")       # this job's own card-errors step
+    assert not fires("success", "success") and not fires("success", "skipped")   # green, or nothing to land or tell
+    assert not fires("success", "failure", **{"needs.post.outputs.posted": "true"})   # the post went out: it told
+    assert not fires("failure", "skipped", **{"needs.check.outputs.told": "true"})    # a re-run of a told push
+    assert not fires("failure", "skipped", **{"github.event_name": "workflow_dispatch"})
+    # the old condition, read the same way, missed both failures
+    old = ("(failure() || cancelled()) && github.event_name == 'push' && needs.post.outputs.posted != 'true' && "
+           "needs.check.outputs.told != 'true'")
+    assert not _step_if(old, "success", ("failure", "skipped"), **push)
+    assert not _step_if(old, "success", ("success", "failure"), **push)
 
 FAKE_GH = r"""#!/usr/bin/env python3
 import json, os, subprocess, sys
