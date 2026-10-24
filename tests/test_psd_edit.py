@@ -2092,8 +2092,8 @@ def test_a_token_the_font_draws_as_letters_refuses(clone, parser, chart):
 
 @text_edit
 def test_reparse_reads_a_token_with_no_variant_as_typed(clone, parser, tmp_path):
-    """gate_reparse no longer shares the rule: a "[fire:]" in the icon font (typed right after Mini Doomer's (BOT), whose
-    style it takes) reads back as [fire] while the edit's side stays "[fire:]": refused reparse (it passed)."""
+    """A "[fire:]" in the icon font (typed right after Mini Doomer's (BOT), whose style it takes) prints its letters: the
+    parser reads it as typed, an unknown token (it read [fire], as gate_reparse did: it passed). Refused reparse."""
     psd_path = _card(clone, MINI_DOOMER)[0]
     parsed = pe.parse_card(parser, psd_path, MINI_DOOMER)
     psd = PSDImage.open(psd_path)
@@ -2103,7 +2103,7 @@ def test_reparse_reads_a_token_with_no_variant_as_typed(clone, parser, tmp_path)
     assert all(pe._char_styles(layer)[1][i] for i in range(text.index("[fire:]"), text.index(" Die.")))
     path = str(tmp_path / "Mini_Doomer.psd")
     psd.save(path)
-    with pytest.raises(pe.Refused, match="^reparse: fields differ from the expected parse: ability$"):
+    with pytest.raises(pe.Refused, match=r"^reparse: new problems: UNKNOWN ICON TOKEN: \[fire:\]$"):
         pe.gate_reparse(parser, parsed, path, MINI_DOOMER, {"ability": pe.normalize_ability(text)}, PSDImage.open(path))
 
 def test_follow_fx_refuses_an_edit_inside_an_anchored_phrase():
@@ -2139,6 +2139,39 @@ def test_gate_fx_refuses_letters_in_the_icon_font(clone):
     assert pe.lettered_icons(psd, fonts) == Counter("[fire:]")
     with pytest.raises(pe.Refused, match=r"^reparse: ':\[\]efir': the icon font draws them as letters, no badge or icon$"):
         pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old)
+
+
+@text_edit
+def test_gate_fx_refuses_a_token_not_shaped_as_one_icon(clone, parser):
+    """unshaped_icons, the layout's check of icon_text: each badge or token it reads is one icon-font cluster. A "[fire]"
+    typed in The Hive's body font (an edit's style there) is six letters: gate_fx refuses reparse; its badge and token
+    as they are pass."""
+    from psd_tools.composite.text import FontMap
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    fonts = FontMap(dirs=[fonts_dir])
+    old, psd = PSDImage.open(_card(clone, HIVE)[0]), PSDImage.open(_card(clone, HIVE)[0])
+    assert pe.unshaped_icons(old, fonts, parser.icons) == Counter()
+    layer = pe.ability_layer(psd)
+    text = layer.text.replace("onto any", "onto [fire] any")
+    pe.splice_text(layer, text, pe.edit_parts(layer.text, text, *pe.changed_range(layer.text, text)))
+    layer.rasterize(fonts=fonts)
+    assert not any(pe._char_styles(layer)[1][i] for i in range(text.index("[fire]"), text.index(" any")))
+    assert pe.unshaped_icons(psd, fonts, parser.icons) == Counter({"[fire]": 1})
+    pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old)     # no vocabulary: not checked
+    with pytest.raises(pe.Refused, match=r"^reparse: \[fire\]: not drawn as one badge or icon$"):
+        pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old, parser.icons)
+
+
+@text_edit
+def test_a_blank_ability_on_an_fx_card_refuses_as_blank(clone, parser, chart, tmp_path):
+    """Review 2026-10-24: deleting a whole ability on an FX card refused styled-word ('the text layer has no pixels to
+    cut') before looking at its layers, though every one leaves with its words. Each is deleted (told), and the blank
+    ability refuses as on any card: the parser finds no ability text."""
+    psd = PSDImage.open(_card(clone, SNOW_BUNNY)[0])
+    edit = pe.set_text_layer(psd, "ability", "", str(clone / pe.FONTS_DIR), chart, parser=parser)
+    assert edit.dropped == [FROZEN] and edit.fx_names == [] and edit.notes[0].startswith(f"{FROZEN} deleted")
+    with pytest.raises(pe.Refused, match=r"^reparse: new problems: ABILITY TEXT NOT FOUND$"):
+        _bake(clone, parser, SNOW_BUNNY, {"ability": ""}, tmp_path, chart)
 
 
 @text_edit

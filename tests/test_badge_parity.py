@@ -259,6 +259,26 @@ def test_parser_reads_variants_as_the_plain_icon():
     assert card.problems == ["UNKNOWN ICON TOKEN: [fire:glows]", "UNKNOWN ICON TOKEN: [fire:dark glow]"]
 
 
+def test_parser_reads_a_colon_with_no_variant_as_letters():
+    """Review 2026-10-24: the font has no ligature for "[fire:]" (it prints the letters), but ICON_VARIANTS' "" let the
+    parser read it in the icon font as [fire] and call it a misplaced token in the body font. Neither now: an unknown
+    token, as typed (token_variant, the rule psd_edit's icon_text and canonical_tokens share)."""
+    from types import SimpleNamespace
+    from commands.psd_parser import IconVocabulary, PSDParser, token_variant
+    assert [token_variant(t) for t in ("[fire]", "[Fire:Sticker]", "[fire:NO]", "[fire:]", "[fire: no]")] == [
+        "", "sticker", "no", None, None]
+    vocab = IconVocabulary.build(["fire"], [], {"icons": {}})
+    parser = SimpleNamespace(icons=vocab, _covered=PSDParser._covered, _add_problem=PSDParser._add_problem)
+    card = SimpleNamespace(problems=[])
+    text = "[fire:] [Fire:] [fire]"
+    out, icons = PSDParser._read_icon_tokens(parser, text, [(0, len(text))], card)
+    assert out == text and [name for name, _ in icons] == ["fire"]
+    assert card.problems == ["UNKNOWN ICON TOKEN: [fire:]", "UNKNOWN ICON TOKEN: [Fire:]"]
+    card = SimpleNamespace(problems=[])
+    PSDParser._flag_misplaced_tokens(parser, text, [], card)
+    assert card.problems == ["ICON TOKEN NOT IN STOOGEDINGS FONT: [fire]"]
+
+
 def test_font_draws_every_glow(glow_build):
     behind(glow_build)
     icons = json.loads(MANIFEST.read_text())["icons"]

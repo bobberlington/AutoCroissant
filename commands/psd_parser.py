@@ -48,6 +48,16 @@ def name_key(text: str) -> str:
     return "".join(c for c in text.casefold() if c.isalnum())
 
 
+def token_variant(piece: str) -> Optional[str]:
+    """
+    A [token]'s variant as the icon font ligates it, lowercased: "" for "[fire]", "sticker" for "[Fire:Sticker]"; None
+    for one the font draws as its letters: an unknown variant, or a colon with none ("[fire:]").
+    """
+    _, colon, variant = piece[1:len(piece) - 1].partition(":")
+    variant = variant.lower()
+    return variant if variant in ICON_VARIANTS and (variant or not colon) else None
+
+
 def title_text(text: Optional[str]) -> str:
     """A title as printed: no byte-order mark, control characters and runs of whitespace as one space, ends trimmed."""
     return sub(r"[\s\x00-\x1f]+", " ", (text or "").replace("\ufeff", "")).strip()
@@ -769,10 +779,9 @@ class PSDParser:
                 continue
             piece = match.group(0)
             if piece.startswith("["):
-                base, _, variant = piece[1:len(piece) - 1].partition(":")
-                variant = variant.lower()           # the font accepts no spaces around the variant either
-                hit = self.icons.lookup(base)
-                if hit is None or variant not in ICON_VARIANTS:
+                variant = token_variant(piece)      # the font accepts no spaces around the variant either
+                hit = self.icons.lookup(piece[1:len(piece) - 1].partition(":")[0])
+                if hit is None or variant is None:
                     self._add_problem(card, f"UNKNOWN ICON TOKEN: {piece}")
                     continue
                 name, kind = hit
@@ -798,8 +807,7 @@ class PSDParser:
             piece = match.group(0)
             if not piece.startswith("["):
                 continue
-            base, _, variant = piece[1:len(piece) - 1].partition(":")
-            if self.icons.lookup(base) is None or variant.lower() not in ICON_VARIANTS:
+            if self.icons.lookup(piece[1:len(piece) - 1].partition(":")[0]) is None or token_variant(piece) is None:
                 continue
             covered = self._covered(match.start(), match.end(), spans)
             if covered == 0:
@@ -1177,4 +1185,5 @@ __all__ = [
     'named_after_text',
     'stars_from_psd',
     'title_text',
+    'token_variant',
 ]

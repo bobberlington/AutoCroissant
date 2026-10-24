@@ -988,6 +988,38 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     assert commits == [] and "0 with PSD fields" in text
 
 
+@fork_text
+def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
+    """One PSDImage.open per PSD per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
+    classify and apply_jobs (which edits a copy), the saved card's by gate_bytes, the re-parse and the FX gates; the
+    status chart's once. A stat and an ability edit (its FX layer deleted, the parser's every gate run)."""
+    from collections import Counter
+    from hashlib import sha1
+    from os import PathLike
+    from psd_tools import PSDImage
+    files = github.files_at(github.head)
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    seen, inner = Counter(), PSDImage.open.__func__
+
+    def counted(cls, fp, *args, **kwargs):
+        if isinstance(fp, (str, bytes, PathLike)):
+            with open(fp, "rb") as fh:
+                seen[sha1(fh.read()).hexdigest()] += 1
+        else:
+            seen[f"stream {id(fp)}"] += 1
+        return inner(cls, fp, *args, **kwargs)
+    monkeypatch.setattr(PSDImage, "open", classmethod(counted))
+    text, commits = cb.run(card="Mini Doomer")
+    assert len(commits) == 1, text
+    after = github.files_at(github.head)
+    assert seen == Counter({sha1(files[DOOMER]).hexdigest(): 1, sha1(after[DOOMER]).hexdigest(): 1,
+                            sha1(files[pe.STATUS_CHART]).hexdigest(): 1}), text
+
+
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake needs the fork's layer copy API")
 
 

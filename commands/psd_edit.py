@@ -31,9 +31,9 @@ from psd_tools.psd.base import ListElement
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN, ICON_VARIANTS,
+from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key,
-                                 named_after_text, stars_from_psd, title_text)
+                                 named_after_text, stars_from_psd, title_text, token_variant)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import RULEBOOK_DIR
 
@@ -416,7 +416,7 @@ def offline_parser(all_types: list, stars: list, manifest: Optional[dict]) -> PS
     return PSDParser(db.all_types, db, icons)
 
 
-def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
+def parse_card(parser: PSDParser, path: str, rel: str, psd: Optional[PSDImage] = None) -> dict:
     """
     Everything a gate compares: to_dict(), the hidden titles, the validator's problems and the CardInfo itself.
 
@@ -424,11 +424,12 @@ def parse_card(parser: PSDParser, path: str, rel: str) -> dict:
         parser: offline_parser()
         path: The PSD on disk
         rel: Its repo path (the classification comes from the folders)
+        psd: path already open (one open per PSD per bake); None: path is opened
 
     Returns:
         {"card", "alt_names", "validator", "info"}
     """
-    card = parser.parse(path, rel)
+    card = parser.parse(psd if psd is not None else path, rel)
     return {"card": card.to_dict(), "alt_names": card.alt_names, "validator": CardValidator.validate(card), "info": card}
 
 
@@ -750,17 +751,6 @@ def _tinted(layer) -> bool:
 def uses_icon_font(layer) -> bool:
     """Whether any run of the text layer is set in the stoogedings icon font."""
     return icon_font(layer) is not None
-
-
-def token_variant(piece: str) -> Optional[str]:
-    """
-    The variant of a [token] as the icon font ligates it, lowercased: "" for "[fire]", "sticker" for "[Fire:Sticker]";
-    None for one it has no ligature for, drawn as its letters: an unknown variant, or a colon with none ("[fire:]";
-    review 2026-10-24: ICON_VARIANTS' "" is "[fire]"'s, and the parser reads "[fire:]" as it).
-    """
-    _, colon, variant = piece[1:len(piece) - 1].partition(":")
-    variant = variant.lower()
-    return variant if variant in ICON_VARIANTS and (variant or not colon) else None
 
 
 def icon_text(text: str, vocab: Optional[IconVocabulary]) -> list:
@@ -1798,9 +1788,7 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     offset = model.text.find(text)
     if offset < 0:
         raise Refused("styled-word", "the engine's text differs from the layer's")
-    color, shape = layer.numpy("color"), layer.numpy("shape")
-    if color is None or shape is None:
-        raise Refused("styled-word", "the text layer has no pixels to cut")
+    color, shape = layer.numpy("color"), layer.numpy("shape")      # None for a blank text: every layer deleted below
     icons, glyphs = _char_styles(layer)[1], None
     named = {span for plan, target in zip(plans, targets) if plan.kind == "badge" for _, name, now, _, _ in target
              if name for span in now}
@@ -1834,6 +1822,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
             notes.append(f"{old} deleted: {'; '.join(_left(left, True))}")
             continue
         covered += ranges
+        if color is None or shape is None:
+            raise Refused("styled-word", f"{old}: the text layer has no pixels to cut")
         badge = any(icons[i] for a, b in ranges for i in range(a, b))
         if badge and plan.kind != "badge":      # "1#1" once its "1" left: the JSX would cut every badge
             raise Refused("unsupported-card", f"{old}: its words now fall in a badge or token; edit in Photoshop")
@@ -3661,9 +3651,14 @@ def gate_size(old_path: str, new_path: str) -> None:
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
 
-def layer_records(path: str) -> list:
-    """Each layer record's identity-free fingerprint: name, flags, rect, channels, mask, blend and tagged blocks by key."""
-    psd = PSDImage.open(path)
+def layer_records(path) -> list:
+    """
+    Each layer record's identity-free fingerprint: name, flags, rect, channels, mask, blend and tagged blocks by key;
+    path a file, an open PSD (read as opened: no edit on it) or its layer_records() already.
+    """
+    if isinstance(path, list):
+        return path
+    psd = path if isinstance(path, PSDImage) else PSDImage.open(path)
     out = []
     for record in psd._record.layer_and_mask_information.layer_info.layer_records:
         blocks = record.tagged_blocks or {}
@@ -3755,7 +3750,7 @@ def _fx_rebuilt(a: dict, b: dict, old: str, name: str) -> Optional[str]:
     return f"blocks {', '.join(changed)}" if changed else None
 
 
-def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
+def gate_bytes(old_path, new_path, edits: list) -> tuple:
     """
     Compare the layer records of the old and new PSD: only the edited layers change, and only in the fields their
     kind of edit touches (a toggle: exactly one flag byte per toggled digit, plus the effect blocks its Edit declares
@@ -3768,7 +3763,7 @@ def gate_bytes(old_path: str, new_path: str, edits: list) -> tuple:
     a star's copy: the source's record moved, a new id and name; a type icon from Types/: a pixel record carrying the
     reference icon's effect blocks). Records are paired in file order once the FX records declared removed and added
     and the copies and icons declared added are taken out. A refusal over a stars or types edit's record carries its
-    field.
+    field. old_path and new_path: what layer_records() takes (a file, an open PSD, its records).
 
     Returns:
         ([(index, name, changed fields)] in file order ("removed" at the old index, "added" at the new one), differing
@@ -4011,7 +4006,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                     raise Refused("reparse", f"{fx.name!r} is not a visible styled layer directly above {group.name!r}")
             if overlay_words(psd):
                 raise Refused("reparse", "overlay word layers still show over the ability")
-    new = parse_card(parser, new_path, rel)
+    new = parse_card(parser, new_path, rel, psd)     # the reopened PSD: no second open
     expected, got = dict(parsed["card"]), dict(new["card"])
     for name, value in jobs.items():
         if name in STAT_FIELDS or name == "stars":
@@ -4181,8 +4176,28 @@ def lettered_icons(psd: PSDImage, fonts) -> Counter:
                    and "!" <= glyph["ch"] <= "~")
 
 
+def unshaped_icons(psd: PSDImage, fonts, vocab: Optional[IconVocabulary]) -> Counter:
+    """
+    The Ability's icon_text spans (what the icon font should draw as one badge or icon) the layout does not shape as
+    one icon-font cluster spanning all of it, by text: "[fire:]" if icon_text took it (seven letters), a token in the
+    body font. The layout's own check of icon_text's rule (review 2026-10-24: gate_reparse shared it with the parser).
+    """
+    from psd_tools.composite.text.geometry import text_geometry
+    layer = ability_layer(psd)
+    if vocab is None or not uses_icon_font(layer):
+        return Counter()
+    geometry = text_geometry(layer, fonts)
+    out = Counter()
+    for a, b in icon_text(geometry["text"], vocab):
+        mine = [glyph for glyph in geometry["glyphs"] if glyph["i"] < b and a < glyph["end"]]
+        if not mine or any((glyph["i"], glyph["end"]) != (a, b) or not glyph["font"].lower().startswith(ICON_FONT_PREFIX)
+                           for glyph in mine):
+            out[geometry["text"][a:b]] += 1
+    return out
+
+
 def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = None,
-            old: Optional[PSDImage] = None) -> None:
+            old: Optional[PSDImage] = None, vocab: Optional[IconVocabulary] = None) -> None:
     """
     An ability edit's FX layers cover exactly their words in the new text (BUG 2), measured on the saved card with the
     fork's text geometry (text_geometry: each glyph's ink box in the new layout): each FX layer of the Ability inks only
@@ -4194,8 +4209,9 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     edit kept (Edit.held: Goofy's "1#1" on the "1" of "3T1"); with the chart, every styled status word has its FX layer
     (gate_status_words) and, given the old card, a "styled" or "own" layer covers no letter in a colour its words lacked
     (gate_fx_colours); under a tinted Ability no icon-font glyph lacks a badge FX layer over it that lacked none before
-    (bare_icons: Blood Bomb's [machine] was bare already; review 2026-10-23); and the icon font draws no more letters
-    than before (lettered_icons: each typed badge or token one ligature).
+    (bare_icons: Blood Bomb's [machine] was bare already; review 2026-10-23); the icon font draws no more letters
+    than before (lettered_icons: each typed badge or token one ligature); and, given the vocabulary, each badge or
+    token icon_text reads is one icon-font cluster that was not one before (unshaped_icons).
 
     Args:
         psd: The saved PSD, reopened
@@ -4203,6 +4219,7 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
         fonts_dir: MDW/Fonts (the layout's fonts)
         chart: status_fills() (None: the status words are not checked)
         old: The card before the edit (its bare icons may stay bare); None: none may be bare
+        vocab: The parser's IconVocabulary (None: unshaped_icons is not checked)
 
     Raises Refused("reparse") naming the layer.
     """
@@ -4225,6 +4242,9 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     if lettered:
         raise Refused("reparse", f"{''.join(sorted(lettered.elements()))!r}: the icon font draws them as letters, no "
                                  f"badge or icon")
+    unshaped = unshaped_icons(psd, fonts, vocab) - (unshaped_icons(old, fonts, vocab) if old is not None else Counter())
+    if unshaped:
+        raise Refused("reparse", f"{', '.join(sorted(unshaped))}: not drawn as one badge or icon")
 
 
 def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts) -> None:
@@ -4356,7 +4376,7 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-               types_dir: Optional[str] = None) -> Baked:
+               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -4372,6 +4392,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         chart: status_fills() for ability edits
         update_preview: save_psd(); the preview is the old one with the merge's pixels when the fork can store it
         types_dir: The card repo's Types/ folder (its PNGs), for a types edit that makes an icon
+        psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy;
+            None: opened here. With the reopened saved PSD, each PSD is opened once per bake (tests/test_card_bake.py)
 
     Returns:
         Baked; raises Refused (any other exception is the driver's "error"); a refusal of a stars or types edit's own
@@ -4379,7 +4401,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     """
     timings = {}
     start = perf_counter()
-    old, new = PSDImage.open(psd_path), PSDImage.open(psd_path)
+    old = psd if psd is not None else PSDImage.open(psd_path)
+    new, old_records = deepcopy(old), layer_records(old)       # a copy: one open (as fast as a second one)
     png = Image.open(png_path)
     png.load()
     timings["open"] = perf_counter() - start
@@ -4464,14 +4487,14 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
-    records, flag_bytes, block_bytes = gate_bytes(psd_path, new_psd, edits)
+    reopened = PSDImage.open(new_psd)          # the saved PSD's one open: every gate after reads it
+    records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
 
     start = perf_counter()
-    reopened = PSDImage.open(new_psd)
     gate_stories(old, reopened, {edit.story for edit in edits if edit.field in TEXT_FIELDS},
                  [face for edit in edits for face in edit.fonts])
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
-    gate_fx(reopened, edits, fonts_dir, chart, old)
+    gate_fx(reopened, edits, fonts_dir, chart, old, parser.icons)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
     rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc, {field: m["text"] for field, m in parity.items()},
@@ -4566,6 +4589,7 @@ __all__ = [
     'new_fx',
     'no_glyph',
     'layer_records',
+    'lettered_icons',
     'merge_png',
     'merge_preview',
     'miss_notes',
@@ -4608,5 +4632,7 @@ __all__ = [
     'template_row',
     'template_rows',
     'type_row',
+    'unlettered_icons',
+    'unshaped_icons',
     'uses_icon_font',
 ]

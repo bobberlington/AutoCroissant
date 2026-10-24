@@ -675,8 +675,9 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     """
     old_psd = join(folder, "old", basename(card.rel))
     snapshot.fetch(card.psd_sha, old_psd)
-    parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-    classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd), parser)
+    psd = PSDImage.open(old_psd)                # one open for the parse and classify
+    parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
+    classified = psd_edit.classify(parsed, card.fields, psd, parser)
     if classified.jobs or classified.refusals or not classified.redundant:
         return False
     card.redundant = list(classified.redundant)
@@ -734,8 +735,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         snapshot.fetch(card.psd_sha, old_psd)
         snapshot.fetch(card.png_sha, old_png)
 
-        parsed = psd_edit.parse_card(parser, old_psd, card.rel)
-        classified = psd_edit.classify(parsed, card.fields, PSDImage.open(old_psd), parser)
+        psd = PSDImage.open(old_psd)            # one open for the parse, classify and apply_jobs (it edits a copy)
+        parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
+        classified = psd_edit.classify(parsed, card.fields, psd, parser)
         card.jobs, card.redundant = dict(classified.jobs), list(classified.redundant)
         card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
         if len(card.partial) < len(classified.refusals) or (card.partial and not card.jobs and not card.redundant):
@@ -763,7 +765,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             while True:                         # a stars or types refusal leaves the card's other fields to bake
                 try:
                     card.baked = psd_edit.apply_jobs(old_psd, old_png, card.rel, card.jobs, parsed, parser, new_dir,
-                                                     fonts_dir, colors, update_preview=True, types_dir=types_dir)
+                                                     fonts_dir, colors, update_preview=True, types_dir=types_dir,
+                                                     psd=psd)
                     break
                 except Refused as refused:
                     if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
