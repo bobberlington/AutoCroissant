@@ -139,7 +139,8 @@ def test_clone_has_the_live_vocabulary(clone):
 def test_clone_readers_match_the_traversers(clone, monkeypatch):
     """The bot's own readers (/update_stats) over the clone as a tree: the same types, icons and edits as clone_vocabulary/clone_edits."""
     import commands.repo_traverser as rt
-    paths = sorted(p.relative_to(clone).as_posix() for p in clone.rglob("*") if p.is_file() and ".git" not in p.parts)
+    tracked = run_process(["git", "-C", str(clone), "ls-files", "-z"], capture_output=True, check=True).stdout
+    paths = sorted(p for p in tracked.decode().split("\0") if p and (clone / p).is_file())   # no ignored .DS_Store
     traverser = rt.RepositoryTraverser(cc.StatsDatabase())
     traverser.tree = {"tree": [{"path": p, "type": "blob", "sha": p} for p in paths]}
     traverser.shas = {p: p for p in paths}
