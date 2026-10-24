@@ -21,7 +21,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
   Effect Layers.jsx overlay colour (08b1152a), PNG recompression (6a54b4f6) and the one batch pass (56011634: 686 PNGs,
   4.18 GB -> 1.14 GB, the same pixels, as AutoCroissant with `Recompressed` trailers), TTS save re-pinned (5c88f230),
   types in any order (6dd5399e), fork pins (2921ecbd, 82a8ba7c).
-- **Push guards:** `CARD_GUARDS=report` since 2026-10-23 13:04 PDT (dry run 40012619052: 812 cards, 16 told, 0 errors).
+- **Push guards:** `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (report from 13:04; dry run 40012619052: 812 cards, 16 told, 0 errors).
 - **Shadow:** card-sync.yml schedule on, `MAIN_COMMIT`/`POSTS` off. The `data` branch exists since 2026-10-23 14:21
   (63bd6603, seeded from the 05:30 PICKLE a7c310e, before the recovery: re-seed in step 3).
 - **Website:** 772 cards, every one with a created date (0 provisional; the 48 rulebook pages have none by design);
@@ -81,8 +81,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       Hintz, Joel Miller, Future Niiue and more; R6 Nasty_Patty, Shell_Shield; R8 PoD08/09/10/12 Name composer), 0 errors.
 - [x] `CARD_GUARDS=report` since 2026-10-23 13:04 PDT. The batch commit 56011634 ran as "0 cards, 686 left out (bot
       commits)", nothing told.
-- [ ] Watch the standards channel to ~2026-10-26 (no ping; font-check keeps its ping). Then `CARD_GUARDS=on`, after the
-      owner items in PUSH_GUARDS.md §15 (R3/R4 kept as reports, the Environment wait timer, ...).
+- [x] `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (owner: now). Watch the standards channel and the bot commits; R11
+      renames stay told (owner). Left in PUSH_GUARDS.md §15: the Environment wait timer and the other items below.
 
 ### 5. Follow-ups still open at the end
 - [ ] **BUG 2** (the bake rebuilds `Ability FX:` layers instead of refusing 18-20 gradient badge cards; BUGS D7):
@@ -147,16 +147,13 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
 
 ## Waiting on the owner (report these; do not ask unless told)
 
-- **Unattended calls of 2026-10-23 to confirm:** R3/R4 kept as reports for real issues (Shadow_Duelist waived as an
-  `ABILITY_EXCLUSIONS` card); Nebulous_Precipice keeps `[darkmatter:sticker]`; BUG 2's q6 (rebuilt FX layers keep their
-  own style) and Clot Gold baking; the PNG recompression thresholds (10%, 64 KiB: ours); round 11 run past the old cap.
-- **New questions:** Green Mage's ATK (prints 6, the bot reads 10 from an off-canvas bar; BUGS D8); Morpho Knight's type
-  swap recolours the new icon with the old one's effects (as designed); typing a badge as plain text on the gradient
-  badge cards now refuses; the 2026-10-21 rule that recolours off-chart status words still changes 4 L7 cards on a
-  website-text no-op (within the bar); re-exporting the 18 stale cards in Photoshop.
+- **Answered 2026-10-23 ~17:40** (memory `owner-decisions-2026-10-22-evening`): Nebulous keeps the sticker; R3/R4
+  reports stay; rebuilt FX layers keep their own style; off-chart status colours are recoloured to the chart; FX layers
+  in no chart style get rebuilt in their own style; every typed stoogedings token (timing tags, types, any token the font
+  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD gets fixed; all stale
+  exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
-- **Push guards** (PUSH_GUARDS.md §15): `CARD_GUARDS=on` after ~3 days of reports; the GitHub Environment wait timer;
-  R11's exact-name rename (fix or keep telling); whether the guard should leave R7 to font-check; the fork render's
+- **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's
   refusals; Photoshop's image for a PNG pushed before its PSD; G2 (no Maximize Compatibility refuses); the "outside R"
   parity method; the login fallback and the commit link in the post.
 - **History decisions left by the audit** (DATA_BUILD_ACTION.md §7.4): high stats kept by an allowance (Sonic 23, Pix, Twin
