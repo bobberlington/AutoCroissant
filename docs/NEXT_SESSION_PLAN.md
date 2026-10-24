@@ -167,7 +167,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
 - [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6, pinned in requirements-cards.txt): text
       diagonals, rulebook corners, inner glow, B11, fast open, render hotspots, wide strokes. Frozen corpus
-      corpus-ed58b187: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
+      corpus-b89ce169: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
       ~1.7x and PSD opens ~3.2x faster. B11's trade: Toriel's Ability 0.18% -> 4.19% bad when re-drawn (net gain over
       3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). Next fork work: the `:glow`/`:darkglow` halo (owner
       2026-10-24), then a tag.
@@ -264,6 +264,10 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       Sans after step 2).
 
 ### 8. Website, TTS and Discord follow-ups
+- [ ] Refusal wording at the source: psd_edit `plan_stars` / `plan_types` refusals carry internal words ("the '5 Stars'
+      folder sets them (moving the card is ledger S9)", layer boxes such as "at (12, 40, 60, 88)"). The website maps them
+      to plain words (preview.js `PLAIN_WHY`, 2026-10-24); reword them in psd_edit after BUG 2 lands, and keep
+      `PLAIN_WHY` in step. psd_parser also reads `[fire:]` as `[fire]`, though the font prints it as letters.
 - [ ] The cards to open in Photoshop: five in `~/Documents/Tools/psd-research/std-batch2/b1_final/LANDED.md` (batch 1)
       and five in `std-batch2/LANDED_B2.md` (02_Abbreviations, 22_Negation, Palace_of_Shadow, Jack-In-The-Box_Zombie,
       Dark_Mind_Eye).

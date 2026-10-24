@@ -281,6 +281,18 @@ process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), op
     assert out["blocks"] == ["h2", ".lp-stats", ".lp-stats", ".facts", None]
 
 
+def test_the_live_preview_viewer(tmp_path):
+    """The card image's viewer above the body, outside what paintPreview rewrites."""
+    if "iv-pane" not in (ASSETS / "live.js").read_text(encoding="utf-8"):
+        pytest.skip("no image viewer in live.js")
+    out = node(tmp_path, """
+process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: "thumbs/g-720.webp", ar: "360/720" }) }));
+""")
+    viewer = out["viewer"]
+    assert 'class="iv iv-pane"' in viewer and "iv-pane" not in out["pane"]
+    assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720.webp"' in viewer and "aspect-ratio:360/720" in viewer
+
+
 # ---- stars.js
 def test_the_stars_slider(tmp_path):
     out = node(tmp_path, """

@@ -593,9 +593,9 @@ Website (`site/`):
 - Rulebook tab (`#/rules`): every page image + text, a search box ("Search the rulebook…"), a "Timing tags" glossary (21
   badges with their tooltips, old ones last; section 2) and the "Constructed ban list" section; each page has an Edit button.
 - Cards tab: kinds Creatures, Items, Field cards, Minions, N.M.E. items, Auxiliary items, Status effects (buffs +
-  debuffs), Auxiliary creatures; flags incl. "Unused status effects", "Duplicates", "Edited on the website", "PSD details"; banned cards
+  debuffs), Auxiliary creatures; flags incl. "Unused status effects", "Duplicates", "Edited on the website"; banned cards
   get a "Banned" flag in the deck builder. Search uses the bot's syntax plus `total`, `name~`, `subseries~`, `!` on any
-  term, `is:unparsed`, `has:history`, `has:problems`, `has:alias`, `has:details`. Timing tags in ability text render as
+  term, `is:unparsed`, `has:history`, `has:problems`, `has:alias`. Timing tags in ability text render as
   colored badges with a tooltip when `tagInfo` knows them (anything else, such as "(OPT)" or "(2 points)", stays plain
   text); `[type]` tokens render as icons.
 - Deck builder (`#/deck`, shared hands at `d/#/deck/<code>`): section 5.2.

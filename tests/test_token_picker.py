@@ -29,6 +29,9 @@ FONT_BUILD = SITE.parent / "MDW" / "Fonts" / "stoogedings-src" / "build_stoogedi
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
                                 reason=f"clone behind: no {TOKENS_JS} (land TTSCardMaker work/token-picker)")
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+LETTERS = TEXT_JS.is_file() and "splitToken" in TEXT_JS.read_text(encoding="utf-8")   # variants the font lacks are letters
+names = pytest.mark.skipif(not (TOKENS_JS.is_file() and "suggestNames" in TOKENS_JS.read_text(encoding="utf-8")),
+                           reason="clone behind: no name lists in tokens.js")
 
 ALL = ["tint", "sticker", "glow", "darkglow"]
 
@@ -204,39 +207,108 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
   choose("x (1c) y", 5, "(1CD)"), choose("Immune to [fiand ice", 13, "[fire]"), choose("Heal 2 (1HP", 9, "(1CD)"),
   choose("Deal 3 [fire damage", 8, "[field]"), choose("[fragile equip] x", 8, "[fragile equip]"), choose("[fi:glow]", 3, "[fire]"),
   choose("[fi:glow]", 3, "[field]"), choose("[fire:glow] x", 8, "[fire:darkglow]"), choose("[fire:glow]", 5, "[fire:tint]"),
-  choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]")].map(r => r && [r.text, r.caret])));""")
-    assert out == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
-                   ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
-                   ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
-                   ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
-                   ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
+  choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]"), choose("[fi:] x", 3, "[fire]"),
+  choose("[fi:glows]", 3, "[fire]")].map(r => r && [r.text, r.caret])));""")
+    assert out[:19] == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
+                        ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
+                        ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
+                        ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
+                        ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
+    if LETTERS:
+        assert out[19:] == [["[fire] x", 6], ["[fire]", 6]]                # never "[fire:]": letters in the font
 
 
 @needs_node
+@names
 def test_card_text_fields_take_the_picker(tmp_path):
-    """The ability and note fields, in the full Edit form (cards and rulebook pages) and inline, carry data-tokens."""
+    """The ability and note fields, in the full Edit form (cards and rulebook pages) and inline, carry data-tokens; the
+    series, subseries and author fields (inline, All fields, the profile's "Cards as") the list of known names
+    (data-suggest), with no native datalist."""
     script = tmp_path / "inline.mjs"
     script.write_text(f"const I = await import({json.dumps(INLINE_JS.as_uri())});\n"
-                      "process.stdout.write(JSON.stringify(['ability', 'note', 'series', 'name'].map(f => I.control(f, 'x'))));\n",
+                      "process.stdout.write(JSON.stringify(['ability', 'note', 'series', 'name', 'subseries', 'author'].map(f => I.control(f, 'x', false, 'Mario'))));\n",
                       encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
-    assert ["data-tokens" in html for html in json.loads(done.stdout)] == [True, True, False, False]
-    fields = re.findall(r'<textarea id="ef-(ability|note)"[^>]*>', EDIT_JS.read_text(encoding="utf-8"))
+    html = json.loads(done.stdout)
+    assert ["data-tokens" in h for h in html] == [True, True, False, False, False, False]
+    assert ["data-suggest" in h for h in html] == [False, False, True, False, True, True]
+    assert 'data-suggest="subseries"' in html[4] and 'data-series="Mario"' in html[4] and not any("list=" in h for h in html)
+    edit = EDIT_JS.read_text(encoding="utf-8")
+    fields = re.findall(r'<textarea id="ef-(ability|note)"[^>]*>', edit)
     assert sorted(fields) == ["ability", "ability", "note", "note"]
-    assert all("data-tokens" in tag for tag in re.findall(r'<textarea id="ef-(?:ability|note)"[^>]*>', EDIT_JS.read_text(encoding="utf-8")))
+    assert all("data-tokens" in tag for tag in re.findall(r'<textarea id="ef-(?:ability|note)"[^>]*>', edit))
+    assert not re.search(r'<datalist id="dl-(series|subseries|people)"', edit)
+    for f in ("ef-series", "ef-subseries", "ef-author", "pf-author"):
+        assert re.search(rf'<input id="{f}" data-suggest="', edit), f
+
+
+NAMES = [{"value": "Mario", "n": 69, "kind": "series"}, {"value": "Kirby", "n": 12, "kind": "series"},
+         {"value": "Marvel", "n": 3, "kind": "series"}, {"value": "Omori", "n": 3, "kind": "series"},
+         {"value": "Animal Crossing", "n": 3, "kind": "series"}, {"value": "Smash", "n": 0, "kind": "series"}]
+
+
+@needs_node
+@names
+def test_names_rank_known_series_subseries_and_authors(tmp_path):
+    """Empty: own first, then most cards, then by name; typed: same name, prefix, a word's prefix, inside, then a slip;
+    a subseries of another series keeps its note; never more than the list's limit."""
+    subs = [{"value": "Paper Mario: The Thousand-Year Door", "n": 52, "kind": "subseries", "series": "Mario", "own": False,
+             "note": "Mario · 52 cards"},
+            {"value": "Super Mario 64", "n": 3, "kind": "subseries", "series": "Mario", "own": False, "note": "Mario · 3 cards"},
+            {"value": "Dream Land", "n": 1, "kind": "subseries", "series": "Kirby", "own": True, "note": "1 card"}]
+    many = [{"value": f"Name {i:03}", "n": 1} for i in range(300)]
+    out = node(tmp_path, f"""
+const N = {json.dumps(NAMES)}, SUBS = {json.dumps(subs)}, MANY = {json.dumps(many)};
+const v = (q, e) => P.suggestNames(q, e).map(r => r.value);
+process.stdout.write(JSON.stringify([v("", N), v("mar", N), v("thousand", SUBS), v("mraio", N), v("", SUBS),
+  P.suggestNames("pap", SUBS)[0], v("o", N), v("ari", N), P.suggestNames("", MANY).length, v("crossing", N)]));""")
+    assert out[0] == ["Mario", "Kirby", "Animal Crossing", "Marvel", "Omori", "Smash"]
+    assert out[1] == ["Mario", "Marvel"]
+    assert out[2] == ["Paper Mario: The Thousand-Year Door"]
+    assert out[3] == ["Mario"]
+    assert out[4] == ["Dream Land", "Paper Mario: The Thousand-Year Door", "Super Mario 64"]
+    assert out[5] == {"token": "Paper Mario: The Thousand-Year Door", "label": "Paper Mario: The Thousand-Year Door",
+                      "kind": "subseries", "note": "Mario · 52 cards", "plain": True,
+                      "value": "Paper Mario: The Thousand-Year Door", "series": "Mario"}
+    assert out[6] == ["Omori"]
+    assert out[7] == ["Mario"]
+    assert out[8] == 120
+    assert out[9] == ["Animal Crossing"]
+
+
+@needs_node
+@names
+def test_a_slip_ranks_the_closest_whole_name_first(tmp_path):
+    """'omari' starts one edit from both Mario and Omori: Omori, one edit from the whole name, comes first."""
+    out = node(tmp_path, f"""
+const N = {json.dumps(NAMES)};
+process.stdout.write(JSON.stringify(["omari", "maria"].map(q => P.suggestNames(q, N).map(r => r.value))));""")
+    assert out == [["Omori", "Mario"], ["Mario"]]
+
+
+@needs_node
+@names
+def test_a_name_choice_replaces_the_whole_value(tmp_path):
+    out = node(tmp_path, """
+const it = P.suggestNames("pap", [{ value: "Paper Mario", n: 5 }])[0];
+process.stdout.write(JSON.stringify([P.applyChoice("Pap", { type: "name", start: 0, end: 3, close: 3 }, it),
+  P.applyChoice("paper mar", { type: "name", start: 0, end: 9, close: 9 }, { token: "Paper Mario" })].map(r => [r.text, r.caret])));""")
+    assert out == [["Paper Mario", 11], ["Paper Mario", 11]]
 
 
 @needs_node
 def test_text_js_draws_variants_with_their_images(tmp_path):
     """[x:tint] a text-colour mask, [x:sticker] the outline mask under the icon, [x:glow]/[x:darkglow] their pictures
-    sized by cards.json iconVariants; without a variant image (an older build) the plain icon, as the parser reads it."""
+    sized by cards.json iconVariants; without a variant image (an older build) the plain icon, as the parser reads it.
+    A variant the font lacks ([fire:], [fire:glows], [fire: glow]) is letters, as on the card."""
     out = node(tmp_path, """
 const r = T.makeRenderer({ cards: [], icons: ICONS, variants: REACH });
 const old = T.makeRenderer({ cards: [], icons: { fire: { file: "icons/fire.webp", name: "fire", kind: "type" } } });
 const html = v => r.render(`a [fire:${v}] b`);
 process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker"), glow: html("Glow"), dark: html("darkglow"),
-  no: html("no"), plain: r.render("a [fire] b"), unknown: html("glows"), spaced: [html(" glow"), html("no ")],
+  no: html("no"), plain: r.render("a [fire] b"), unknown: [html("glows"), html(""), html("glow:x")],
+  spaced: [html(" glow"), html("no ")], none: ["fire:", "fire:constructor", "fire::glow"].map(t => r.icon(t)),
   quiet: r.icon("fire:glow", { tip: false }),
   old: ["tint", "sticker", "glow", "darkglow"].map(v => old.render(`a [fire:${v}] b`) === old.render("a [fire] b")) }));""")
     assert re.search(r'<span class="tokm" role="img" aria-label="fire \(text colour\)" style="-webkit-mask-image:url\(&quot;'
@@ -248,8 +320,12 @@ process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker
     assert '<img class="tokv" src="icons/fire.glow.webp" alt="fire (white glow)" style="--r:0.3021" data-tip="fire (white glow)">' in out["glow"]
     assert 'src="icons/fire.darkglow.webp"' in out["dark"] and "black glow" in out["dark"]
     assert '<span class="tok-no"><img class="tok" src="icons/fire.webp"' in out["no"]
-    assert out["unknown"] == out["plain"]
-    assert out["spaced"] == [out["plain"]] * 2                                   # no spaces around it, as in the font
+    if LETTERS:
+        assert out["unknown"] == ["a [fire:glows] b", "a [fire:] b", "a [fire:glow:x] b"]   # letters, as the font
+        assert out["spaced"] == ["a [fire: glow] b", "a [fire:no ] b"]           # no spaces around it, as in the font
+        assert out["none"] == [None] * 3
+    else:                                                                        # before round 3: the plain icon
+        assert out["unknown"][0] == out["plain"] and out["spaced"] == [out["plain"]] * 2
     assert "data-tip" not in out["quiet"]
     assert out["old"] == [True] * 4
 

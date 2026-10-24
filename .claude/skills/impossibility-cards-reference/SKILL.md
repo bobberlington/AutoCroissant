@@ -675,6 +675,7 @@ excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 Spaces around an operator are fine (`hp > 5`, `type == creature`, `created >= 2025`; 2026-10-23, as the website's
 search). `created` is the card's `site/Card Creation Dates.json` date, or its first upload when the file misses it or
 is later (`CardDates.created`, the website's rule); it is in `/export_cards` and `/update_metadata`'s view too.
+`site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
 Numeric-queryable columns: hp, def, atk, spd, stars. String-queryable: type, subtype, series,
 subseries, author, path, ability, types (the list is stringified, so `types~undead` works). `prep_dataframes`

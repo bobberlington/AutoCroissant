@@ -1,17 +1,19 @@
 """
 The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline: the same site from the
 bot's pickles and from the card sync's db/ (CARD_DATA_DIR, load_card_data: the shadow's comparison in small), the current
-text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, Pacific
-contribution months. Loads
+text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
+author and created, image revisions (Stats), Pacific contribution months, the person stats. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
+import inspect
 import json
 import shutil
 import subprocess
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from os import environ
 from os.path import expanduser
 from pathlib import Path
@@ -25,6 +27,8 @@ from conftest import CLONE
 BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 APP_JS = BUILD_SITE.parents[1] / "assets" / "app.js"
+BALANCE_JS = BUILD_SITE.parents[1] / "assets" / "balance.js"
+ROUND3 = (BUILD_SITE.parents[1] / "assets" / "insights.js").is_file()    # round 3's site (2026-10-24)
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -97,13 +101,18 @@ def repo(tmp_path):
     (root / "MDW/The Morgue").mkdir(parents=True)
     (root / PALACE).rename(root / "MDW/The Morgue/White_Palace.psd")
     c3, t3 = _commit(root, "Standardize", start + 2 * DAY)
+    (root / "site").mkdir()                       # ratings: a commit of no card file (no image version, no edit batch)
+    (root / "site" / "Card Ratings.json").write_text(json.dumps({"cards": {
+        "alpha": [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}],
+        "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7.1, "by": "group", "source": "TTS session"}]}}))
+    _commit(root, "Ratings", start + 3 * DAY)
 
-    stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3"),
+    stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),
              "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
              "Watermelon2": _card("Watermelon2", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item",
                                   duplicate_of="Watermelon", display_name="Inconspicuous Watermelon")}
     stats["Alpha"].version = {"from": float(t2), "to": None, "cause": "psd"}     # a carried start (no from_commit)
-    palace = _card("White Palace", PALACE, "Field.", t1, card_type="field")
+    palace = _card("White Palace", PALACE, "Field.", t1, card_type="field", series="kirby")     # an old spelling
     palace.archived = {"at": float(t3), "path": PALACE, "commit": c3, "moved_to": "MDW/The Morgue/White_Palace.psd"}
     old = defaultdict(list, {"Alpha": [_card("Alpha", f"{ALPHA}.psd", "Old text.", t1)],
                              "Watermelon": [_card("Watermelon", f"{MELON}.psd", "Heal 1.", t1, card_type="item")],
@@ -251,7 +260,7 @@ def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, m
     """A duplicate whose Card Edits.json entry sets its ability gets the PSD's history against that text: its own
     text is never listed as an older one, and the original keeps its History."""
     edits = repo["root"] / "site" / "Card Edits.json"
-    edits.parent.mkdir()
+    edits.parent.mkdir(exist_ok=True)
     edits.write_text(json.dumps({"cards": {"Watermelon2": {"ability": "Heal 1."}}}), encoding="utf-8")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     cards = _by_name(out["cards.json"]["cards"])
@@ -334,9 +343,245 @@ def test_the_editor_writes_no_types_edit_that_only_reorders(tmp_path):
     assert [(o["set"], o["unset"]) for o in json.loads(done.stdout)] == [({}, []), ({"types": ["light", "wind"]}, []), ({}, ["types"])]
 
 
+def test_the_dist_pager_keeps_focus_at_its_ends(tmp_path):
+    """app.js distPage: › to the last page disables the focused button; focus moves to ‹ (a browser would drop it to
+    <body>), and with neither left, to the panel."""
+    if not APP_JS.is_file() or shutil.which("node") is None:
+        pytest.skip(f"no app.js at {APP_JS}, or no node")
+    text = APP_JS.read_text(encoding="utf-8")
+    if "function distPage(" not in text:
+        pytest.skip("no paged distributions")
+    body = text[text.index("function distPage("):]
+    body = body[:body.index("\n}\n") + 3]
+    script = tmp_path / "pager.mjs"
+    script.write_text("""
+const document = { body: { tag: "body" } };
+document.activeElement = document.body;
+const el = (o = {}) => Object.defineProperties({ dataset: {}, focus() { document.activeElement = this; } }, Object.getOwnPropertyDescriptors(o));
+const button = step => { let off = false; return el({ dataset: { step: String(step) }, label: step > 0 ? "next" : "prev",
+  get disabled() { return off; }, set disabled(v) { off = v; if (v && document.activeElement === this) document.activeElement = document.body; } }); };
+const btns = [button(-1), button(1)], panel = el({ label: "panel", dataset: { pages: "0,1", cur: "0", stat: "atk" } });
+btns[0].disabled = true;
+const $ = () => ({}), $$ = sel => sel === ".dist-pager button" ? btns : [], S = { distPage: {} };
+%s
+const seen = [];
+btns[1].focus(); distPage(panel, 1); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+distPage(panel, -1); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+panel.dataset.pages = "0"; panel.dataset.cur = "0"; btns[1].disabled = false; btns[1].focus();
+distPage(panel, 0); seen.push([String(panel.dataset.cur), document.activeElement.label]);
+console.log(JSON.stringify(seen));
+""" % body, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [["1", "prev"], ["0", "next"], ["0", "panel"]]
+
+
 def test_the_card_page_has_no_share_full_image_or_psd_button():
     """Gone at the owner's ask (2026-10-23): the card page's Share (and its s key), Full image and PSD on GitHub."""
     if not APP_JS.is_file():
         pytest.skip(f"no app.js at {APP_JS}")
     text = APP_JS.read_text(encoding="utf-8")
     assert [s for s in ('data-action="share"', ">Full image<", ">PSD on GitHub<", 'e.key === "s"') if s in text] == []
+
+
+def test_ratings_reach_the_cards_and_the_archived_rows(bs, repo, tmp_path, monkeypatch):
+    """site/Card Ratings.json: Alpha's entries on its card (matched in any case), White Palace's on its archived row."""
+    if not hasattr(bs, "parse_ratings"):
+        pytest.skip(f"{BUILD_SITE} has no ratings")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards = _by_name(out["cards.json"]["cards"])
+    assert cards["Alpha"]["ratings"] == [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}]
+    assert "ratings" not in cards["Watermelon"] and out["cards.json"]["files"]["ratings"] == "site/Card Ratings.json"
+    assert [(r["card"], [e["value"] for e in r.get("ratings", [])]) for r in out["changelog.json"]["archived"]] == [("White Palace", [7.1])]
+
+
+def test_archived_rows_carry_tag_author_created(bs, repo, tmp_path, monkeypatch):
+    """White Palace's changelog row: tag retired, author Maker, created the Pacific day of its oldest version; its
+    analytics.json copy (Stats) has only the slim fields, its series spelled as the live cards' ('kirby' -> 'Kirby')."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    t1 = repo["t"][0]
+    day = datetime.fromtimestamp(t1, bs.analytics.ZONE).strftime("%Y-%m-%d")
+    row = out["changelog.json"]["archived"][0]
+    assert (row["tag"], row["author"], row["created"]) == ("retired", "Maker", day)
+    assert out["analytics.json"]["archived"] == [{"card": "White Palace", "title": "White Palace", "tag": "retired", "card_type": "field",
+                                                   "stars": 2, "series": "Kirby", "at": repo["t"][2], "created": day, "author": "Maker"}]
+
+
+def test_archived_author_and_created_precedence(bs):
+    """author: Card Authors.txt's credit > the tag's (backfill) > the last version's, shown through [people]; created:
+    the last version's created date, else the Pacific day of its oldest version (its version record's start)."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+
+    def v(ts, **kw):
+        card = bs.CardInfo()
+        card.__dict__.update(timestamp=float(ts), card_type="creature", stars=2, author="Last", **kw)
+        return card
+    start = 1_700_000_000
+    old = {"Gone": [v(start + 9 * DAY, version={"from": float(start)}), v(start + 20 * DAY, archived={"at": start + 30 * DAY, "author": "Tagged"})]}
+    rows = lambda **kw: bs.archived_cards(old, lambda name: None, (), **kw)[0]
+    day = datetime.fromtimestamp(start, bs.analytics.ZONE).strftime("%Y-%m-%d")
+    assert (rows()["author"], rows()["created"], rows()["tag"]) == ("Tagged", day, "deleted")
+    assert rows(credited={"gone": "Listed"}, people={"listed": "Shown"})["author"] == "Shown"
+    del old["Gone"][1].archived["author"]
+    old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
+    assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
+
+
+def test_archived_series_take_the_live_spelling(bs):
+    """series: the renamed card's, else the old one in a live series' case or through SERIES_ALIASES, else as it was."""
+    if not hasattr(bs, "SERIES_ALIASES"):
+        pytest.skip(f"{BUILD_SITE} keeps the old series")
+
+    def old(series, **tag):
+        card = bs.CardInfo()
+        card.__dict__.update(timestamp=1.7e9, card_type="creature", stars=2, series=series, archived={"at": 1_700_000_100, **tag})
+        return [card]
+    olds = {"A": old("kirby"), "B": old("rotmg"), "C": old("pandas"), "D": old("isaac", renamed_to="New D"), "E": old(None)}
+    live = {"Kirby", "Realm of the Mad God", "Mario"}
+    rows = bs.archived_cards(olds, lambda name: "new-d" if name == "New D" else None, (), series_of=lambda name: "Mario" if name == "New D" else None, live_series=live)
+    assert {r["card"]: r.get("series") for r in rows} == {"A": "Kirby", "B": "Realm of the Mad God", "C": "pandas", "D": "Mario", "E": None}
+
+
+def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):
+    """'Pizza (item)' (title Pizza) isn't credited with the live creature Pizza's Card Authors.txt line; a title no live
+    card has still finds its line."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+    card = bs.CardInfo()
+    card.__dict__.update(timestamp=1.7e9, card_type="item", stars=2, author="Last", display_name="Pizza",
+                         archived={"at": 1_700_000_100, "author": "Chestnut", "renamed_to": "Pepperoni Pizza"})
+    old, credited = {"Pizza (item)": [card]}, {"pizza": "Croissant", "pepperoni pizza": "Chestnut"}
+    live = lambda name: {"Pizza": "pizza", "Pepperoni Pizza": "pepperoni-pizza"}.get(name)
+    assert bs.archived_cards(old, live, (), credited=credited)[0]["author"] == "Chestnut"
+    assert bs.archived_cards(old, lambda name: None, (), credited=credited)[0]["author"] == "Croissant"
+
+
+def test_a_renamed_card_keeps_the_credit_of_the_card_it_became(bs):
+    """Meta Mato -> Maxim Tomato: the new name's Card Authors.txt line, else the old name's, else the live card's
+    author, before the tag's and the last version's."""
+    if "author_of" not in inspect.signature(bs.archived_cards).parameters:
+        pytest.skip(f"{BUILD_SITE} credits renamed cards by their old name")
+    card = bs.CardInfo()
+    card.__dict__.update(timestamp=1.7e9, card_type="item", stars=2, author="MichaelJSr",
+                         archived={"at": 1_700_000_100, "renamed_to": "Maxim Tomato", "backfill": True})
+    old = {"Meta Mato": [card]}
+    live = lambda name: "maxim-tomato" if name == "Maxim Tomato" else None
+    rows = lambda credited, *of: bs.archived_cards(old, live, (), credited=credited, **({"author_of": of[0]} if of else {}))[0]["author"]
+    assert rows({"maxim tomato": "Chestnut"}) == "Chestnut"
+    assert rows({"maxim tomato": "Chestnut", "meta mato": "Croissant"}) == "Chestnut"
+    assert rows({}, lambda name: "Croissant") == "Croissant"
+    assert rows({"meta mato": "Listed"}, lambda name: "Croissant") == "Listed"
+    assert rows({}) == "MichaelJSr"
+    assert bs.archived_cards(old, lambda name: None, (), credited={"maxim tomato": "Chestnut"})[0]["author"] == "MichaelJSr"
+
+
+def test_revisions_leave_out_uploads_and_mass_passes(bs, repo, tmp_path, monkeypatch):
+    """analytics.json revisions: Alpha's two image changes after its upload by Maker, nothing for Watermelon. The helper:
+    a commit in more than MASS_PASS cards' versions is left out; a bot commit credits its Edit-by logins (not a discord:
+    name), one without trailers nobody; every id of the PNG but skip's gets the counts; no history: None."""
+    if not hasattr(bs, "card_revisions"):
+        pytest.skip(f"{BUILD_SITE} has no revisions")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards = _by_name(out["cards.json"]["cards"])
+    assert out["analytics.json"]["revisions"] == {"available": True, "mass": bs.MASS_PASS, "cards": {cards["Alpha"]["id"]: {"Maker": 2}}}
+
+    row = lambda sha, name, editors=(): (sha, 0, name, f"{name.lower()}@example.com", "s", [], list(editors))
+    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice", "discord:carl"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
+               row("up", "Maker")]
+    v = lambda sha: ((sha, 0, "x", "s"), "p")
+    found = {f"m{i}.png": [v("mass"), v("up")] for i in range(bs.MASS_PASS + 1)}
+    found["a.png"] = [v("bot"), v("bare"), v("bob"), v("mass"), v("up")]
+    by_png = {"a.png": [{"id": "a"}, {"id": "a2"}, {"id": "page"}], **{p: [{"id": p}] for p in found if p != "a.png"}}
+    got = bs.card_revisions(found, by_png, commits, {"alice": "Alice"}, {}, skip={"page"})
+    assert got == {"a": {"Alice": 1, "Bob": 1}, "a2": {"Alice": 1, "Bob": 1}}
+    assert bs.card_revisions(None, by_png, None, {}, {}) is None
+
+
+def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
+    """Maker's row: Alpha's PNG changed in c2 and c3 (self 2), White Palace archived (Retired, without path or commit),
+    Alpha's strength."""
+    if not hasattr(bs, "person_extras"):
+        pytest.skip(f"{BUILD_SITE} has no person stats")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
+    assert (maker["revisions"]["self"], maker["revisions"]["others"]) == (2, 0)
+    assert [(r["card"], r["tag"]) for r in maker["archived"]] == [("White Palace", "retired")]
+    assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
+    assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
+
+
+def test_contributions_get_edits_by_field_and_ratings(bs, repo, tmp_path, monkeypatch):
+    """main() feeds contributions() the ratings and every edit batch of all time: Maker's row counts an old Card
+    Edits.json note, one Card Authors.txt line (not the lines of the commit that made the file) and a website rating,
+    and has others' ratings of Alpha (P4)."""
+    if not hasattr(bs, "person_extras"):
+        pytest.skip(f"{BUILD_SITE} has no person stats")
+    root, start = repo["root"], repo["t"][0] - REBASED
+    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Alpha": {"note": "Checked.", "_by": "Maker",
+                                                                                     "_at": "2025-01-01T00:00:00Z"}}}))
+    _commit(root, "Website edit: Alpha", start - 400 * DAY)                    # older than CHANGELOG_DAYS
+    authors = root / "site" / "Card Authors.txt"
+    authors.write_text("[cards]\nAlpha = Maker\n")
+    _commit(root, "Card authors file", start + 4 * DAY)
+    authors.write_text("[cards]\nAlpha = Maker\nWatermelon = Maker\n")
+    _commit(root, "Credit Watermelon", start + 5 * DAY)
+    ratings = root / "site" / "Card Ratings.json"
+    data = json.loads(ratings.read_text())
+    data["cards"]["Watermelon"] = [{"date": "2026-10-20", "scale": "favorability", "value": 8, "by": "Maker", "source": "website"}]
+    ratings.write_text(json.dumps(data))
+    _commit(root, "Website rating", start + 6 * DAY)
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
+    assert dict(maker["editFields"]) == {"note": 1, "author": 1, "rating": 1}
+    assert maker["ratings"]["powerN"] == 1 and maker["ratings"]["power"] == 5.5
+
+
+def test_the_cards_page_has_a_banned_flag():
+    """The person page's banned link filters the Cards tab with flags=banned."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    if "styleOf" not in (APP_JS.parent / "profile.js").read_text(encoding="utf-8"):
+        pytest.skip("no round 3 person pages")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '["banned", "Banned (constructed)"]' in text and "banned: c => !!c._banned" in text
+
+
+def test_long_history_notes_are_gone():
+    """Dropped at the owner's ask (2026-10-24): the notes under Image versions and Recorded changes."""
+    if not APP_JS.is_file() or not BALANCE_JS.is_file():
+        pytest.skip(f"no site assets beside {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
+    assert "Each commit that changed the image" not in APP_JS.read_text(encoding="utf-8")
+    assert "From the bot's card history" not in BALANCE_JS.read_text(encoding="utf-8")
+
+
+def test_no_psd_details_flag():
+    """The Cards tab's "PSD details" chip and the search term has:details are gone (owner, 2026-10-24)."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '"PSD details"]' not in text and "details: c => !!c.details" not in text
+    assert "has:details" not in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
+
+
+def test_card_buttons_sit_under_the_image():
+    """Add to deck, Compare and Edit under the card image (owner, 2026-10-24); the info column stays .detail's second child."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
+    text = APP_JS.read_text(encoding="utf-8")
+    body = text[text.index("function openCard("):]
+    body = body[:body.index("\n}\n")]
+    at = [body.index(s) for s in ('class="image-wrap"', 'class="actions card-actions"', 'data-action="deck-toggle"',
+                                  'data-action="compare-add"', 'data-action="edit-card"', 'data-nav="prev"', "<h2>${esc(c.name)}</h2>")]
+    assert at == sorted(at)
+    assert body.count('data-action="deck-toggle"') == 1
+    wrap = body[body.index('<div class="detail">'):body.index("<h2>")]
+    assert wrap.rstrip().endswith("</div></div>\n      <div>")      # image column closes, then the info column

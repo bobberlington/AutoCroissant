@@ -25,6 +25,14 @@ PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
 BUILD_SITE = SITE / "site" / "build" / "build_site.py"
 FONTS = SITE / "MDW" / "Fonts"
 needs_js = pytest.mark.skipif(not (PREVIEW_JS.is_file() and shutil.which("node")), reason=f"no preview.js at {ASSETS}, or no node")
+
+
+def has(path: Path, word: str) -> bool:
+    return path.is_file() and word in path.read_text(encoding="utf-8")
+
+
+viewer = pytest.mark.skipif(not has(PREVIEW_JS, "tabsHtml"), reason="no image viewer in preview.js")
+mock_header = pytest.mark.skipif(not has(MOCKUP_JS, "starPlan"), reason="no stars or types in mockup.js")
 HOUR = 3600_000
 
 
@@ -246,6 +254,48 @@ out([p.renderedHtml(null, v), p.renderedHtml(null, { ...v, n: 0 }), p.renderedHt
 
 
 @needs_js
+@viewer
+def test_the_viewer_tabs_and_default_tab(tmp_path):
+    """Three tabs in a tablist, the mode's selected and the only one in the tab order, New on Rendered. The card page opens
+    on Rendered while the newest result is unseen, else Original; the Edit dialog on Mock-up while the form changes the
+    image, else Original."""
+    out = node(tmp_path, """
+const e = (state, seen = false) => ({ request: "req-00001", at: 0, hash: "h", state, seen });
+out([p.tabsHtml("mockup"), p.tabsHtml("original", { news: true }),
+  [[1, e("baked")], [1, e("baked", true)], [0, e("refused")], [1, e("running")], [1, null], [0, null]].map(([n, entry]) => [p.defaultMode({ where: "card", n, entry }), p.defaultMode({ where: "form", n, entry })])]);""")
+    tabs, news, modes = out
+    assert 'role="tablist" aria-label="Card image"' in tabs and tabs.count('role="tab"') == 3
+    assert [t for t in ("Original", "Mock-up", "Rendered") if t in tabs] == ["Original", "Mock-up", "Rendered"]
+    assert 'data-iv-tab="mockup" aria-selected="true" tabindex="0"' in tabs and tabs.count('tabindex="-1"') == 2 and "New" not in tabs
+    assert 'data-iv-tab="original" aria-selected="true"' in news and news.index("New") > news.index('data-iv-tab="rendered"')
+    assert modes == [["rendered", "mockup"], ["original", "mockup"], ["rendered", "original"], ["original", "mockup"], ["original", "mockup"], ["original", "original"]]
+
+
+@needs_js
+@viewer
+def test_rendered_parts_split_stage_and_caption(tmp_path):
+    """The stage holds the preview (a link to the full size), the hidden current image and the diff canvas; the caption the
+    head, outcomes, notes and Diff. With Diff on the canvas shows instead of the preview. A state with no image puts its
+    words over the dimmed original. renderedHtml is the two together."""
+    out = node(tmp_path, """
+const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.webp", diff: false };
+const e = (state, extra = {}) => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state, result: { fields: { hp: state }, notes: ["n1"], base: {}, files: {}, ...extra } });
+const parts = [p.renderedParts(e("baked"), v), p.renderedParts(e("baked"), { ...v, diff: true }), p.renderedParts({ ...e("running"), result: undefined }, v),
+  p.renderedParts(null, v), p.renderedParts(e("refused", { reason: "no" }), v), p.renderedParts(e("expired"), v)];
+out([parts, p.renderedHtml(e("baked"), v) === parts[0].stage + parts[0].caption]);""")
+    (baked, diff, running, none, refused, expired), joined = out
+    assert baked["dim"] is False and 'data-pv-img="preview"' in baked["stage"] and 'href="https://r/p.png"' in baked["stage"]
+    assert '<img src="thumbs/ab-720.webp" alt="" crossorigin="anonymous" data-pv-img="current" hidden>' in baked["stage"]
+    assert "<canvas data-pv-diff" in baked["stage"] and "hidden></canvas>" in baked["stage"] and "pv-state" not in baked["stage"]
+    assert all(s in baked["caption"] for s in ("pv-state", "HP baked", "<li>n1</li>", 'data-pv="diff"')) and "data-pv-img" not in baked["caption"]
+    assert 'title="Full size" hidden>' in diff["stage"] and "hidden></canvas>" not in diff["stage"] and "data-pv-changed" in diff["caption"]
+    assert running["dim"] and "Baking a preview" in running["stage"] and "pv-spin" in running["stage"] and "1 to 3 minutes" in running["caption"]
+    assert none["dim"] and "Not previewed yet" in none["stage"] and "Anyone can see a previewed edit" in none["caption"]
+    assert refused["dim"] and "The bake would refuse this" in refused["stage"] and "data-pv-img" not in refused["stage"] + refused["caption"]
+    assert expired["dim"] and "Preview expired" in expired["stage"] and joined is True
+
+
+@needs_js
 def test_the_diff_marks_changed_pixels(tmp_path):
     """Changed pixels red, the rest the current image dimmed; the share of changed pixels."""
     out = node(tmp_path, """
@@ -320,25 +370,155 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "splitToken"), reason="mockup.js draws every variant as its icon")
+def test_a_variant_the_font_lacks_is_text(tmp_path):
+    """[fire:] and [fire:glows] print as letters (no ligature), so the mock-up draws them as text."""
+    out = node(tmp_path, """
+const icons = { fire: { file: "icons/fire.webp" } };
+out(m.tokenize("[fire:] [fire:glows] [Fire:Glow] [fire:NO]", icons).flat(2));""")
+    assert out == [{"text": "[fire:]"}, {"text": "[fire:glows]"}, {"icon": "icons/fire.webp", "name": "Fire", "no": False},
+                   {"icon": "icons/fire.webp", "name": "fire", "no": True}]
+
+
+@needs_js
+@mock_header
 def test_what_the_mock_up_redraws(tmp_path):
-    """Only fields unlike the PSD; stats above 10, stars and types are named, not drawn. A stat cell lights as the last lit
-    one (the bar's rounded first cell: its colour) and darkens as the first dark one (none or the rounded last: a shade).
-    Bars only where the template has them and the details call the stats "template"."""
+    """Only fields unlike the PSD; stats above 10 are named, not drawn; stars from and to, types old and new unless only
+    reordered. A stat cell lights as the last lit one (the bar's rounded first cell: its colour) and darkens as the first
+    dark one (none or the rounded last: a shade). Bars only where the template has them and the details call the stats
+    "template"."""
     out = node(tmp_path, """
 const psd = { name: "A", ability: "Text", hp: 5, def: 2, atk: 3, spd: 9, stars: 2, types: ["wind", "light"] };
 const c = m.changes({ name: " A ", ability: "New", hp: 8, def: 12, atk: 3, spd: 10, stars: 3, types: ["light", "wind"] }, psd);
+const t = m.changes({ types: ["fire", "Wind"] }, psd);
 const card = { hp: 5, def: 2, atk: 3, spd: 9 };
 out([c, m.cellPlan(5, 8), m.cellPlan(1, 3), m.cellPlan(10, 8), m.cellPlan(9, 8), m.cellPlan(5, 3),
   m.barRows("tall", 720, 1440, card, { stats: { hp: "template", def: "template", atk: "template", spd: "template" } }).map(r => [r.k, r.box.map(Math.round)]),
   m.barRows("tall", 720, 1440, card, { stats: { hp: "pixel" } }).length, m.barRows("square", 720, 720, card, null).length,
-  [m.shapeOf(1200, 2400), m.shapeOf(1200, 1800), m.shapeOf(1200, 1200), m.shapeOf(1080, 1920)]]);""")
-    assert out[0] == {"name": None, "ability": "New", "stats": {"hp": [5, 8], "spd": [9, 10]}, "skipped": ["DEF", "stars"]}
+  [m.shapeOf(1200, 2400), m.shapeOf(1200, 1800), m.shapeOf(1200, 1200), m.shapeOf(1080, 1920)], t.types]);""")
+    assert out[0] == {"name": None, "ability": "New", "stats": {"hp": [5, 8], "spd": [9, 10]}, "stars": [2, 3], "types": None, "skipped": ["DEF"]}
+    assert out.pop() == [["wind", "light"], ["fire", "Wind"]]
     assert out[1] == [{"cell": 5, "as": 4}, {"cell": 6, "as": 4}, {"cell": 7, "as": 4}]
     assert out[2] == [{"cell": 1, "as": "lit"}, {"cell": 2, "as": "lit"}]
     assert out[3] == [{"cell": 8, "as": "dark"}, {"cell": 9, "as": "dark"}] and out[4] == [{"cell": 8, "as": "dark"}]
     assert out[5] == [{"cell": 3, "as": 5}, {"cell": 4, "as": 5}]
     assert out[6] == [["hp", [216, 720, 704, 770]], ["def", [216, 796, 704, 846]], ["atk", [216, 871, 704, 922]], ["spd", [216, 947, 704, 997]]]
     assert out[7:] == [0, 0, ["tall", "item", "square", ""]]
+
+
+# Mini Doomer's header (psd_details, 2026-10-24): two stars, rows of two past them; three type icons and the row's spots
+HEADER = """
+const stars = { units: [{ core: [1049, 13, 1165, 115], box: [1049, 12, 1173, 124] }, { core: [936, 15, 1052, 117], box: [936, 14, 1060, 126] }], icon: "warpstar",
+  at: { 1: [[1107, 64]], 2: [[1107, 64], [994, 66]], 3: [[1107, 64], [994, 66], [1051, 167]], 4: [[1107, 64], [994, 66], [1107, 167], [994, 167]] }, refused: { 4: "a star at (0, 0) would touch 'Name'" } };
+const types = { row: [{ name: "light", core: [81, 30, 241, 190], box: [51, 2, 269, 219] }, { name: "defensive_minion", core: [0, 223, 170, 341], box: [0, 223, 170, 341] },
+  { name: "wind", core: [214, 208, 356, 356], box: [214, 208, 356, 356] }], spots: { 4: [[414, 208, 556, 356]], 5: [[414, 208, 556, 356], [614, 208, 756, 356]] }, fixed: [], tokens: false, refused: null };
+"""
+
+
+@needs_js
+@mock_header
+def test_stars_are_placed_from_the_record(tmp_path):
+    """Fewer: the last in reading order erased (glow box), nothing drawn. More: the shown stars stay, a star drawn at the
+    count's new centre (rows of two). None: all erased. A refused count is drawn and says why; no layout for the count, no
+    record or a unit count unlike the stars: in a box."""
+    out = node(tmp_path, HEADER + """
+out([m.starPlan(stars, 2, 1), m.starPlan(stars, 2, 3), m.starPlan(stars, 2, 4), m.starPlan(stars, 2, 6), m.starPlan(null, 2, 3), m.starPlan(stars, 5, 4),
+  m.starPlan({ ...stars, refused: { "*": "the '5 Stars' folder sets them" } }, 2, 3).refused, m.starPlan(stars, 2, 0)]);""")
+    fewer, more, refused, none, no_record, mismatch, folder, zero = out
+    assert fewer == {"erase": [[936, 14, 1060, 126]], "draw": [], "refused": None, "boxed": False}
+    assert more == {"erase": [], "draw": [[993, 116, 1109, 218]], "refused": None, "boxed": False}
+    assert refused["refused"] == "a star at (0, 0) would touch 'Name'" and len(refused["draw"]) == 2 and not refused["boxed"]
+    assert none["boxed"] and no_record["boxed"] and mismatch["boxed"] and folder == "the '5 Stars' folder sets them"
+    assert zero == {"erase": [[1049, 12, 1173, 124], [936, 14, 1060, 126]], "draw": [], "refused": None, "boxed": False}
+
+
+@needs_js
+@mock_header
+def test_types_close_up_like_the_bake(tmp_path):
+    """psd_edit.plan_types' rule on a three-icon row: a removed icon is erased and a new one takes its slot; removing the
+    first moves the last into it (the row closes up); a new fourth goes on the row's next spot; a token row, an empty row
+    or no spots: boxed; an icon the bake can't take off refuses."""
+    out = node(tmp_path, HEADER + """
+const P = (o, n, t = types) => m.typePlan(t, o, n), old = ["light", "defensive_minion", "wind"];
+out([P(old, ["fire", "defensive_minion", "wind"]), P(old, ["defensive_minion", "wind"]), P(old, [...old, "fire"]), P(old, [...old, "fire", "ice", "dark"]),
+  P(old, ["fire"], { ...types, tokens: true, refused: "printed as icon tokens in 'Types'" }), P([], ["fire"], { ...types, row: [] }),
+  P(old, ["wind"], { ...types, fixed: [["light", "'Frame' is a frame round the card"]] }).refused]);""")
+    swap, close, add, too_many, tokens, empty, fixed = out
+    assert swap == {"erase": [[51, 2, 269, 219]], "draw": [{"name": "fire", "core": [81, 30, 241, 190]}], "refused": None, "boxed": False}
+    assert close["erase"] == [[51, 2, 269, 219], [214, 208, 356, 356]] and close["draw"] == [{"name": "wind", "core": [81, 30, 241, 190]}]
+    assert add == {"erase": [], "draw": [{"name": "fire", "core": [414, 208, 556, 356]}], "refused": None, "boxed": False}
+    assert too_many["boxed"] and tokens == {"erase": [], "draw": [], "refused": "printed as icon tokens in 'Types'", "boxed": True}
+    assert empty["boxed"] and "line a new one up" in empty["refused"] and fixed == "'Frame' is a frame round the card, not an icon to take off"
+
+
+@needs_js
+@mock_header
+def test_fill_box_puts_the_background_back(tmp_path):
+    """A blob over a gradient: the box filled from the pixels around it is within a few levels of the gradient; outside
+    nothing changes."""
+    out = node(tmp_path, PAINT + """
+const clean = new Uint8ClampedArray(img);
+for (let y = 100; y < 140; y++) for (let x = 80; x < 130; x++) put(x, y, 250);
+const before = new Uint8ClampedArray(img);
+m.fillBox(img, W, H, [80, 100, 130, 140], { pad: 3 });
+let worst = 0, outside = 0;
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, inBox = x >= 80 && x < 130 && y >= 100 && y < 140;
+  if (inBox) worst = Math.max(worst, Math.abs(img[i] - clean[i])); else outside = Math.max(outside, Math.abs(img[i] - before[i])); }
+out([worst, outside]);""")
+    assert out[0] <= 2 and out[1] == 0
+
+
+@needs_js
+@mock_header
+def test_mock_note_names_a_refusal(tmp_path):
+    """The caption: stars or types in a box (plural), what the bake would refuse and why; nothing about stars or types
+    when they were drawn."""
+    out = node(tmp_path, """
+const base = { drawn: [], skipped: [], boxed: [], over: [], refused: [], fonts: {}, standIn: [] };
+out([p.mockNote({ ...base, boxed: ["stars"], refused: [["stars", "the '5 Stars' folder sets them"]] }), p.mockNote({ ...base, boxed: ["text"] }),
+  p.mockNote({ ...base, drawn: ["stars", "types"] }), p.mockNote({ ...base, boxed: ["types", "name"], skipped: ["DEF"] })]);""")
+    assert out[0] == "Stars in a box: their places on the image weren't found. The bake would refuse the stars: the card's folder sets them."
+    assert out[1] == "Text in a box: its place on the image wasn't found." and out[2] == ""
+    assert out[3] == "Types and name in a box: their places on the image weren't found. Not drawn: DEF."
+
+
+@needs_js
+@mock_header
+def test_refusals_in_plain_words(tmp_path):
+    """The bake's refusal text (psd_edit, verbatim) reads plainly in the captions: no ledger codes, layer boxes or field
+    prefixes."""
+    out = node(tmp_path, """
+const base = { drawn: [], skipped: [], boxed: [], over: [], refused: [], fonts: {}, standIn: [] };
+const whys = ["the '3 Stars' folder sets them (moving the card is ledger S9)", "'Fire' is a group, not an icon to take off",
+  "a star at (1, 2, 3, 4) would touch 'Text'", "printed as icon tokens in 'Ability': edit them in Photoshop",
+  "the parser counts 3, the Stars group draws 4 (stars in the header text)", "types: odd (see ledger T3)", ""];
+const v = { card: { name: "A" }, n: 1, hash: "h", now: 0, images: [], current: "", scopes: "repo" };
+const res = { state: "refused", at: 0, edit: { stars: 3 }, hash: "h", result: { state: "refused", reason: "unsupported-card: stars: " + whys[0], fields: {} } };
+out([whys.map(p.plainWhy), p.mockNote({ ...base, refused: [["stars", whys[0]]] }), p.renderedParts(res, v).caption]);""")
+    assert out[0] == ["the card's folder sets them", "one can't be taken off", "there's no room for them",
+                      "they're typed in the text: edit them in Photoshop", "some are in the header text", "odd",
+                      "no reason given"]
+    assert out[1] == "The bake would refuse the stars: the card's folder sets them."
+    assert "ledger" not in out[2] and "The bake would refuse the stars: the card&#39;s folder sets them.</p>" in out[2]
+
+
+@needs_js
+@pytest.mark.skipif(not has(PREVIEW_JS, "plainNote"), reason="no plain Rendered captions in preview.js")
+def test_rendered_captions_in_plain_words(tmp_path):
+    """The Rendered tab says a refused stars or types edit as the Mock-up does: the refused reason and a baked preview's
+    "<field> not baked: <code>: <why>" note (card_preview.notes_of) show no refusal codes or ledger codes; other reasons
+    and notes lose ledger codes only."""
+    out = node(tmp_path, """
+const why = "stars: the '5 Stars' folder sets them (moving the card is ledger S9)";
+const v = { card: { name: "A" }, n: 1, hash: "h", now: 0, images: [], current: "", scopes: "repo" };
+const at = (state, result) => p.renderedParts({ state, at: 0, edit: { name: "B", stars: 6 }, hash: "h", result }, v).caption;
+out([at("refused", { reason: "unsupported-card: " + why + "; unsupported-card: types: 'field' is a frame round the card, not an icon to take off" }),
+  at("baked", { notes: ["stars not baked: unsupported-card: " + why, "FX layers: Ability FX: Blazing (see ledger F2)"], fields: { name: "baked", stars: "refused" } }),
+  p.plainReason("parity: Name: effects unreadable (ledger P1)")]);""")
+    assert "The bake would refuse the stars: the card&#39;s folder sets them. The bake would refuse the types: one can&#39;t be taken off.</p>" in out[0]
+    assert "<li>The stars weren&#39;t baked: the card&#39;s folder sets them.</li>" in out[1] and "<li>FX layers: Ability FX: Blazing</li>" in out[1]
+    assert all("unsupported-card" not in x and "ledger" not in x for x in out[:2])
+    assert out[2] == "parity: Name: effects unreadable"
 
 
 @needs_js

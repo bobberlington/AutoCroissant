@@ -351,6 +351,16 @@ console.log(JSON.stringify(res));""")
     assert {v: flat for v, (_, flat) in site.items()} == {v: "non-fire" if v == "no" else "fire" for v in ICON_VARIANTS if v}
 
 
+def test_site_variants_are_the_parsers():
+    """The site's variants (text.js VARIANT_NAMES, tokens.js VARIANTS) are psd_parser's, less the colon-free ""."""
+    from commands.psd_parser import ICON_VARIANTS
+    want = set(ICON_VARIANTS) - {""}
+    names = re.search(r"export const VARIANT_NAMES = \{([^}]*)\}", TEXT_JS.read_text()).group(1)
+    assert set(re.findall(r"(\w+):", names)) == want
+    picker = re.search(r"export const VARIANTS = \[([^\]]*)\]", (TEXT_JS.parent / "tokens.js").read_text()).group(1)
+    assert set(re.findall(r'"(\w+)"', picker)) == want
+
+
 def test_site_previews_flatten_variants(glow_build):
     from importlib.util import module_from_spec, spec_from_file_location
     import sys
