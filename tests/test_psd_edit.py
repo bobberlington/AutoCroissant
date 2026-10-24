@@ -343,6 +343,8 @@ def test_status_spans_longest_first_whole_words():
     text = "Apply POISON and Frozen in Time, not Frozen. Poisoned ends."
     spans = [(s, e, c.name) for s, e, c in pe.status_spans(text, chart)]
     assert spans == [(6, 12, "Poison"), (17, 31, "Frozen In Time"), (37, 43, "Frozen")]
+    broken = "Inflict Frozen\x03In Time."           # a forced break between its words, as Effect Layers.jsx reads it
+    assert [(s, e, c.name) for s, e, c in pe.status_spans(broken, chart)] == [(8, 22, "Frozen In Time")]
 
 
 def test_fx_names_follow_the_jsx():
@@ -362,6 +364,77 @@ def test_new_fx_refuses_a_status_word_the_jsx_cannot_name():
     assert refused.value.code == "unsupported-card"
     assert pe.new_fx(text, pe.status_spans(text, chart), [(8, 16)]) == [("Blazing", [(23, 30)], blazing)]
     assert pe.new_fx("Inflict 2Blazing.", pe.status_spans("Inflict 2Blazing.", chart), []) == [("Blazing", [(9, 16)], blazing)]
+
+
+FIT_CHART = {"frozen": pe.StatusColor("Frozen", (0.6, 1.0, 0.95), True),
+             "frozen in time": pe.StatusColor("Frozen In Time", (0.75, 0.76, 0.95), True)}
+
+
+def _status_plan(name: str, old: str) -> pe.FxPlan:
+    """A "status" FxPlan as plan_fx makes it, from an FX layer's name and the old text (no PSD)."""
+    phrases = [phrase.strip() for phrase in name.split(pe.FX_TAG, 1)[1].split("|")]
+    status = pe.collapse(pe._numbered(phrases[0])[0]).lower()
+    return pe.FxPlan(SimpleNamespace(name=name), phrases, "status", None, (0, 0, 1, 1), pe.phrase_ranges(old, phrases),
+                     [(phrase, pe.phrase_ranges(old, [phrase])) for phrase in phrases], status)
+
+
+def _follow(name: str, old: str, new: str) -> list:
+    return pe.follow_fx(_status_plan(name, old), new, pe.kept_chars(old, new), pe.status_spans(new, FIT_CHART))
+
+
+def test_numbered_status_fx_follows_its_own_word():
+    """Review (q6): Standstill's 'Frozen In Time#1' and '#2' keep their own style, so each stays on its own word, as a
+    "styled" layer does: "Inflict 2T Frozen In Time." made "Frozen In Time, Frozen In Time." renumbers #2 (line 2, not
+    edited) to #3 and #1 to the occurrence it kept; the new one gets a chart-style layer (new_fx). The JSX's literal
+    names would move #2 up to line 1 and give line 2's word the chart's style."""
+    old = "Inflict 2T Frozen In Time.\rOnly inflicts 1T Frozen In Time to 5 star or higher creatures."
+    new = old.replace("Inflict 2T Frozen In Time.", "Frozen In Time, Frozen In Time.")
+    first, second, third = pe.phrase_ranges(new, ["Frozen In Time"])
+    assert _follow("Ability FX: Frozen In Time#2", old, new) == [
+        ("Frozen In Time#2", "Frozen In Time#3", [third], [third], "its Frozen In Time is #3 now")]
+    assert _follow("Ability FX: Frozen In Time#1", old, new) == [
+        ("Frozen In Time#1", "Frozen In Time#2", [second], [second], "its Frozen In Time is #2 now")]
+    fit = FIT_CHART["frozen in time"]
+    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART), [second, third]) == [("Frozen In Time#1", [first], fit)]
+
+
+def test_status_fx_lands_only_on_its_status_words():
+    """Review: a status layer re-cut wherever the JSX's phrase lands took the "Frozen" of "Frozen In Time" (Snow Bunny's
+    "Frozen." made "Frozen In Time.": no Frozen In Time layer, " In Time" left flat) or of "Unfrozen" (a glow on part of
+    a word). It lands on its status's own words only: gone from the first ("'Frozen In Time' is no Frozen") so new_fx
+    makes the Frozen In Time layer; renamed "Frozen#2" when a Frozen of its own stays; gone from "Unfrozen"."""
+    old = "Heal 5 HP, inflict 1T Frozen."
+    gone = [("Frozen", None, [], [], "'Frozen In Time' is no Frozen")]
+    new = old.replace("Frozen.", "Frozen In Time.")
+    assert _follow("Ability FX: Frozen", old, new) == gone
+    fit, at = FIT_CHART["frozen in time"], new.index("Frozen")
+    assert pe.new_fx(new, pe.status_spans(new, FIT_CHART), []) == [("Frozen In Time", [(at, at + 14)], fit)]
+    new = old.replace("Frozen.", "Frozen In Time or Frozen.")
+    mine = (new.rindex("Frozen"), new.rindex("Frozen") + 6)
+    assert _follow("Ability FX: Frozen", old, new) == [("Frozen", "Frozen#2", [mine], [], gone[0][4])]   # typed, not kept
+    assert _follow("Ability FX: Frozen", old, old.replace("Frozen.", "Unfrozen.")) == [
+        ("Frozen", None, [], [], "'Unfrozen' is no Frozen")]
+
+
+def test_new_fx_counts_a_word_covered_only_when_held_whole():
+    """Review: a styled status word counts as covered only when a rebuilt layer's range holds all of it (a "styled"
+    phrase around it, Clot Gold's "1 Become Back Money", or its own layer); one a range overlaps in part refuses, where
+    the overlap rule left " In Time" of "Frozen In Time" without a layer."""
+    text = "Heal 5 HP, inflict 1T Frozen In Time."
+    spans, at = pe.status_spans(text, FIT_CHART), text.index("Frozen")
+    assert pe.new_fx(text, spans, [(at - 3, at + 14)]) == [] and pe.new_fx(text, spans, [(at, at + 14)]) == []
+    with pytest.raises(pe.Refused, match="unsupported-card: 'Frozen In Time' is partly under the FX layer of 'Frozen'") as refused:
+        pe.new_fx(text, spans, [(at, at + 6)])
+    assert refused.value.code == "unsupported-card"
+
+
+def test_kept_spans_need_every_character_kept():
+    """Review: a range counts as kept (held, _kept) only when every character of it is, in a row: "Gold" retyped "Goxd"
+    keeps its ends, not the word."""
+    kept = pe.kept_chars("Clot Gold", "Clot Goxd")
+    assert pe.kept_spans([(0, 4), (5, 9)], kept) == [(0, 4)]
+    plan = pe.FxPlan(None, ["Gold"], "styled", None, (0, 0, 1, 1), [(5, 9)])
+    assert not pe._kept(plan, [(5, 9)], None, kept)
 
 
 def test_gate_bytes_pairs_fx_records(monkeypatch):
@@ -401,7 +474,9 @@ def test_gate_bytes_pairs_fx_records(monkeypatch):
 
 def test_gate_bytes_keeps_a_rebuilt_fx_records_style(monkeypatch):
     """Owner q6: an FX layer cut again keeps its own style. Its record may change rect and channels (and its unicode name
-    when renamed); an effect block, its blending or opacity changed refuses, whatever the chart says."""
+    when renamed); an effect block, its blending or opacity changed refuses, whatever the chart says. This pins the
+    rebuilt record's (index, old name, name) and what may change (the pre-q6 gate refused these too); the q6 guards are
+    test_noop_ability_bake_keeps_an_l7_fx_layers_own_style and test_rebuilt_fx_layer_keeps_its_own_style."""
     frozen = "Ability FX: Frozen"
     own = [(b"lfx2", b"own-glow"), (b"luni", b"Frozen")]
     files = {"old": [_record("Ability"), _record(frozen, blocks=own)],
@@ -1267,7 +1342,7 @@ def test_phrase_ranges_follow_the_jsx():
 def test_ability_edit_refuses_fx_layers_the_chart_has_no_style_for(clone, parser, chart, tmp_path):
     """Morpho Knight's badge layer is made again now (BUG 2), but its Burning, +2/4/6 ATK and Smoldering layers carry
     strokes the chart has no style for (owner 2026-10-21): an ability edit refuses (unsupported-card) before anything
-    changes, with or without the chart, and bakes nothing."""
+    changes, with or without the chart, and bakes nothing; the refusal says why, not that the bake would drop them."""
     psd_path = _card(clone, MORPHO)[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
@@ -1275,12 +1350,12 @@ def test_ability_edit_refuses_fx_layers_the_chart_has_no_style_for(clone, parser
     with pytest.raises(pe.Refused) as refused:
         pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), chart)
     assert refused.value.code == "unsupported-card" and refused.value.why == (
-        "ability edit would drop FX layers the chart has no style for: Ability FX: Burning, Ability FX: +2/4/6 ATK, "
-        "Ability FX: Smoldering; edit in Photoshop")
+        "FX layers not in a chart status's style: Ability FX: Burning, Ability FX: +2/4/6 ATK, Ability FX: Smoldering; "
+        "edit in Photoshop and run Effect Layers > Update all")
     with pytest.raises(pe.Refused, match="status word layers over the ability"):
         pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), None)
     assert layer.text == text and [f.name for f in pe.fx_layers(psd, layer)] == fx
-    with pytest.raises(pe.Refused, match="no style for"):
+    with pytest.raises(pe.Refused, match="not in a chart status's style"):
         _bake(clone, parser, MORPHO, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
     assert not list(tmp_path.iterdir())
 
@@ -1318,7 +1393,7 @@ def test_noop_ability_bake_keeps_the_badge_layer(clone, parser, chart, tmp_path)
     kept = pe.kept_chars(layer.text, layer.text)
     assert pe._kept(plans[0], plans[0].ranges, None, kept) and not pe._kept(plans[0], plans[0].ranges, tuple(layer.bbox), kept)
     rebuilt, dropped, covered, notes = pe._rebuild_fx(psd, layer, layer.text, plans, tuple(layer.bbox), kept, fonts,
-                                                      pe._fx_engine())
+                                                      pe._fx_engine(), [pe.follow_fx(plans[0], layer.text, kept)])
     assert rebuilt == [(old, "Ability FX: (BOT)")] and dropped == notes == []
     assert covered == [(layer.text.index("(BOT)"), layer.text.index("(BOT)") + 5)]
     assert tuple(old.bbox) == box and np.array_equal(_raster(old, box), before)
@@ -1398,6 +1473,60 @@ def test_rebuilt_fx_layer_keeps_its_own_style(clone, parser, chart, tmp_path):
 
 
 @text_edit
+def test_status_fx_layer_leaves_a_longer_status_word(clone, parser, chart, tmp_path):
+    """Review: Snow Bunny's "inflict 1T Frozen." made "inflict 1T Frozen In Time." bakes with its 'Ability FX: Frozen'
+    (its own style) deleted, told, and a new 'Ability FX: Frozen In Time' of the chart's style over the whole words (the
+    Frozen layer re-cut on "Frozen" left " In Time" flat). gate_status_words refuses a Frozen layer left on them, and
+    the words without a layer."""
+    psd_path = _card(clone, SNOW_BUNNY)[0]
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, SNOW_BUNNY)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, SNOW_BUNNY, {"ability": text.replace("Frozen.", "Frozen In Time.")}, tmp_path, chart)
+    edit, = baked.edits
+    assert (edit.dropped, [name for name, _ in edit.fx], edit.rebuilt) == ([FROZEN], ["Ability FX: Frozen In Time"], [])
+    assert baked.fx_notes == ["Ability FX: Frozen deleted: 'Frozen In Time' is no Frozen"]
+    saved = PSDImage.open(baked.psd_path)
+    pe.gate_status_words(saved, chart)
+    fx, = pe.fx_layers(saved, pe.ability_layer(saved))
+    fx.name = FROZEN
+    with pytest.raises(pe.Refused, match="'Ability FX: Frozen' covers 'Frozen In Time', no Frozen of its own") as refused:
+        pe.gate_status_words(saved, chart)
+    assert refused.value.code == "reparse"
+    fx.parent.remove(fx)
+    with pytest.raises(pe.Refused, match="'Frozen In Time' has no FX layer of its own"):
+        pe.gate_status_words(saved, chart)
+
+
+STANDSTILL = "Items/Infliction/4 Stars/Standstill.psd"   # 'Frozen In Time#1' and '#2' (L7), each its own style
+
+
+@text_edit
+def test_numbered_status_fx_layers_stay_on_their_words(clone, parser, chart, tmp_path):
+    """Review (q6): Standstill's "Inflict 2T Frozen In Time." made "Frozen In Time, Frozen In Time.": its '#2' (line 2,
+    not edited) stays on its word, renamed '#3', its pixels and the PNG there unchanged; '#1' follows the word it kept,
+    renamed '#2'; the typed one gets a new '#1' of the chart's style. Told, every gate passing. Line 2's PNG is the
+    no-op bake's (its word takes the chart's fill either way, the 2026-10-21 rule; the JSX's literal names gave it a
+    layer of the chart's style)."""
+    psd_path, png_path = _card(clone, STANDSTILL)
+    old = PSDImage.open(psd_path)
+    before = {fx.layer_id: (fx.name, tuple(fx.bbox)) for fx in pe.fx_layers(old, pe.ability_layer(old))}
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, STANDSTILL)["card"]["ability"])
+    jobs = {"ability": text.replace("Inflict 2T Frozen In Time.", "Frozen In Time, Frozen In Time.")}
+    parsed, baked = _bake(clone, parser, STANDSTILL, jobs, tmp_path, chart)
+    fit = "Ability FX: Frozen In Time"
+    assert baked.fx_notes == [f"{fit}#1 renamed '{fit}#2': its Frozen In Time is #2 now",
+                              f"{fit}#2 renamed '{fit}#3': its Frozen In Time is #3 now"]
+    saved = PSDImage.open(baked.psd_path)
+    after = {fx.layer_id: (fx.name, tuple(fx.bbox)) for fx in pe.fx_layers(saved, pe.ability_layer(saved))}
+    line2 = [i for i, (name, _) in before.items() if name == f"{fit}#2"][0]
+    assert after[line2] == (f"{fit}#3", before[line2][1]) and baked.edits[0].fx_names == [f"{fit}#{n}" for n in (1, 2, 3)]
+    assert [name for name, _ in baked.edits[0].fx] == [f"{fit}#1"]
+    x0, y0, x1, y1 = before[line2][1]
+    crop = lambda path: np.asarray(Image.open(path).convert("RGBA"))[y0:y1, x0:x1]
+    (tmp_path / "noop").mkdir()
+    assert np.array_equal(crop(_noop(clone, parser, chart, STANDSTILL, tmp_path / "noop")[2].png_path), crop(baked.png_path))
+
+
+@text_edit
 def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
     """BUG 2 review: the gates on a rebuilt FX layer refuse a wrong one. Mini Doomer's "(BOT)" moved by an edit, then its
     FX layer shifted, cut short, or not the Ability's pixels: gate_fx refuses (reparse), and for a faint stripe away
@@ -1440,7 +1569,8 @@ def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
         assert refused.value.code == "reparse"
     with pytest.raises(pe.Refused, match=r"'Ability FX: \(BOT\)' inks \d+ px outside"):
         pe.gate_fx(tampered("faint"), [replace(baked.edits[0], rebuilt=[])], fonts)
-    for how, why in (("opacity", "changed .*blend"), ("renamed", "is not the declared rebuild: name")):
+    renamed = r"renamed 'Ability FX: \(TOP\)', not 'Ability FX: \(BOT\)'"     # gate_bytes' name check fires first
+    for how, why in (("opacity", "changed .*blend"), ("renamed", renamed)):
         path = tmp_path / f"{how}.psd"
         tampered(how).save(str(path))
         with pytest.raises(pe.Refused, match=why) as refused:
@@ -1499,7 +1629,7 @@ def test_ability_bake_cuts_a_leaky_fx_layer_again(clone, parser, chart, tmp_path
     out = tmp_path / "out"
     out.mkdir()
     parsed, baked = _bake(clone, parser, rel, {"ability": text}, out, chart, paths=paths)
-    assert baked.fx_notes == ["Ability FX: Infected cut again: it held pixels its words do not (a badge's, std-batch2 FX.md)"]
+    assert baked.fx_notes == ["Ability FX: Infected cut again: it held pixels outside its words"]
     saved = PSDImage.open(baked.psd_path)
     after, = pe.fx_layers(saved, pe.ability_layer(saved))
     assert after.layer_id == before.layer_id and _ink(after, saved).sum() < 0.3 * _ink(before, old).sum()
@@ -1535,7 +1665,8 @@ def test_goofys_one_stays_on_its_one(clone, parser, chart, tmp_path):
         psd = PSDImage.open(psd_path)
         layer = pe.ability_layer(psd)
         before = layer.text
-        with pytest.raises(pe.Refused, match="1#1: Effect Layers.jsx's '1#1' would leave its 1 for another") as refused:
+        with pytest.raises(pe.Refused, match="unsupported-card: a whole-word '1' in the ability would move the layer Ability "
+                                             "FX: 1#1 off the '1' of '3T1'; edit in Photoshop$") as refused:
             pe.set_text_layer(psd, "ability", text, fonts, chart)
         assert refused.value.code == "unsupported-card" and layer.text == before
     parsed, baked = _bake(clone, parser, GOOFY, {"ability": old.replace("3T2", "3T1")}, tmp_path, chart)
@@ -1564,7 +1695,8 @@ def test_a_badge_typed_as_text_refuses_on_a_badge_card(clone, chart):
     The same badge typed in the icon font (replacing one) bakes, and the badge layer names it (PoD11ZOMG below)."""
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     text = pe.normalize_ability(pe.ability_layer(psd).text) + " Then (BOT)."
-    with pytest.raises(pe.Refused, match=r"Ability FX: \(BOT\): '\(BOT\)' typed outside the icon font") as refused:
+    with pytest.raises(pe.Refused, match=r"Ability FX: \(BOT\): '\(BOT\)' would show on it as plain letters \(a typed "
+                                         r"badge is drawn as one only right after a badge or in place of one\)") as refused:
         pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
     assert refused.value.code == "unsupported-card"
 
@@ -1765,14 +1897,14 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
 
 @text_edit
 def test_fx_layer_without_a_chart_style_refuses(clone, chart):
-    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28): the edit would drop it and the chart has no
-    style to make it again."""
+    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28): its stroke is no chart status's style,
+    so an ability edit refuses (the owner's 2026-10-21 rule)."""
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_card(clone, FIRE_STAFF)[0])
     layer = pe.ability_layer(psd)
     text = layer.text
     assert [fx.name for fx in pe.fx_layers(psd, layer)] == ["Ability FX: Smoldering"]
-    with pytest.raises(pe.Refused, match="ability edit would drop FX layers the chart has no style for: Ability FX: Smoldering") as refused:
+    with pytest.raises(pe.Refused, match="FX layers not in a chart status's style: Ability FX: Smoldering;") as refused:
         pe.set_text_layer(psd, "ability", text + " Die.", fonts, chart)
     assert refused.value.code == "unsupported-card" and pe.ability_layer(psd).text == text
     with pytest.raises(pe.Refused, match="status word layers over the ability"):
