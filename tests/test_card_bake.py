@@ -1303,15 +1303,23 @@ def fork_install(path) -> str:
     text = path.read_text(encoding="utf-8")
     pins = re.findall(r"^\s*PSD_TOOLS_REF: (\S+)", text, re.M)
     assert len(pins) == 1, f"{path.name}: the pin in one place"
+    assert re.fullmatch(r"cards-\d{8}[a-z]*", pins[0]), f"{path.name}: a tag, never a branch"
     assert re.findall(r"MichaelJSr/psd-tools@([^\s\"]+)", text) == ["$PSD_TOOLS_REF"], f"{path.name}: one fork URL, the pin's"
     yaml = pytest.importorskip("yaml")
     steps = [step for job in yaml.safe_load(text)["jobs"].values() for step in job["steps"]]
     python = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
     assert python["id"] == "python" and str(python["with"]["python-version"]).split()[-1] == "3.12"   # the output's (the last)
-    restore = next(s for s in steps if s.get("uses", "").startswith("actions/cache/restore@") and s["with"]["path"] == FORK_WHEELS)
+    first = next(i for i, s in enumerate(steps)
+                 if s.get("uses", "").startswith("actions/cache/restore@") and s["with"]["path"] == FORK_WHEELS)
+    restore = steps[first]
     assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
     install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
     run = steps[install]["run"]
+    assert first < install
+    if "if" in restore:                     # card-sync's: restored only for a bake, as Bake's `if` and the venv's BAKE say
+        bake = next(s for s in steps if s.get("id") == "bake")
+        assert restore["if"] == bake["if"].replace("steps.venv.outcome == 'success' && ", "")
+        assert "inputs.bake != 'none' && " in steps[install]["env"]["BAKE"]     # any letter case, as the `if`s compare
     assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
     assert re.search(r'pip"? wheel -q -w ~/\.cache/psd-tools-wheels requests "psd-tools\[composite,text\] @ '
                      r'git\+https://github\.com/MichaelJSr/psd-tools@\$PSD_TOOLS_REF"$', run, re.M)
