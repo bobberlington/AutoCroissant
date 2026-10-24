@@ -244,7 +244,9 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   only on a leading byte-order-mark run (ignored). Only BabaUI (`Baba.psd`) was still missing, and the user deferred it.
 - **2026-10-23: done.** The owner added BabaUI (`MDW/Fonts/Baba UI Regular.ttf`, his file, TTSCardMaker b03b9975), so no font is
   missing: `font_check --all` over the clone reads 812 card PSDs against 274 files / 282 faces and finds nothing. R7's BabaUI
-  waiver is gone. The same commit named every font file after the font's full name.
+  waiver is gone. The same commit named every font file after the font's full name. The same day the owner had the aliases
+  deleted ("change the fonts to the exact ones"): `Papyrus.ttf` is `Papyrus-Regular` already, and `Kung Fu Panda Regular.ttf`
+  is renamed to PostScript `Kung-Fu-Panda` (TTSCardMaker work/kfp-name 2493651e), so every font resolves by its exact name.
 
 ### L14. Stars
 - Creatures, items, field cards: stars are the `N Stars` folder, so a stars edit moves PSD + PNG (aliases, `old_stats`, authors and the

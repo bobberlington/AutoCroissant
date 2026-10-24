@@ -680,7 +680,7 @@ including `AdobeInvisFont`. **25 PostScript names are used in card text but not 
 | Microsoft Office for Windows only (not on Adobe Fonts) | `Pristina-Regular` (2), `Elephant-Regular` (1, a single apostrophe), `OCRAExtended` (1). Copy PRISTINA.TTF, ELEPHNT.TTF and OCRAEXT.TTF from `C:\Windows\Fonts` on a PC with Office (done 2026-10-21, a88b232; in the repo as `Pristina.ttf`, `Elephant.ttf`, `OCR A Extended.ttf`). `Century` was found and installed on 2026-10-19 |
 | Font Book can download and activate | `BookAntiqua` (1), `CenturyGothic-Bold` (1) |
 | macOS ships it (`/System/Library/Fonts/Supplemental`) | `ArialMT` (4), `ArialNarrow` (1), `ArialNarrow-Bold` (1), `ComicSansMS` (4), `ComicSansMS-Bold` (2), `Impact` (3), `TimesNewRomanPSMT` (7), `MicrosoftSansSerif` (1) |
-| Near-miss | `Papyrus-Regular` (1: Papyrus): macOS's Papyrus.ttc is named `Papyrus`, so Photoshop still reports it missing. `Kung-Fu-Panda` (4): very likely the repo's `Kung Fu Panda Regular.ttf`, whose PostScript name is `Kung Fu Panda`, so it does not satisfy the lookup |
+| Near-miss | `Papyrus-Regular` (1: Papyrus): macOS's Papyrus.ttc is named `Papyrus`, so Photoshop still reports it missing. `Kung-Fu-Panda` (4): very likely the repo's `Kung Fu Panda Regular.ttf`, whose PostScript name is `Kung Fu Panda`, so it does not satisfy the lookup. 2026-10-23: renamed to `Kung-Fu-Panda` (work/kfp-name 2493651e), and the Windows `Papyrus.ttf` is `Papyrus-Regular`, so both resolve exactly and the aliases are gone |
 | Unknown source | `BabaUI` (1: Baba). Nothing by that name online (2026-10-20). It is presumably extracted from the game *Baba Is You*, which isn't in the dev Mac's Steam library. The closest public font is the itch.io "Unofficial BIY font", which has a different name, so Photoshop wouldn't match it. Added 2026-10-23: the owner's own file, `MDW/Fonts/Baba UI Regular.ttf` (b03b9975) |
 
 Recommendations:
@@ -699,8 +699,8 @@ the push changed come by blob sha through the API, the fonts folder is a sparse 
 files come from `bobberlington/AutoCroissant` (`font_check.py`, `github_api.py`, `global_config.py`; pip `psd-tools
 fonttools requests`). It reads the visible type layers' StyleRun fonts (plus the Normal sheet's default when no run covers
 the text; an empty layer asks for nothing; hidden layers are ignored) and resolves them against the PostScript names (name
-ID 6, else 4, else 1, as FreeType reports them: `Kung Fu Panda` -> KungFuPanda) of every top-level font file, exact or loose (casefolded alphanumerics, `-Regular` stripped), with `FONT_ALIASES` (AutoCroissant
-global_config.py: Papyrus-Regular -> Papyrus, Kung-Fu-Panda -> KungFuPanda). Findings exit 0 and go to the job summary, then,
+ID 6, else 4, else 1, as FreeType reports them: `Kung Fu Panda` -> KungFuPanda) of every top-level font file, exactly
+(no aliases or loose matches since 2026-10-23, owner: "change the fonts to the exact ones and delete the aliases"). Findings exit 0 and go to the job summary, then,
 when the repo secret `DISCORD_STANDARDS_WEBHOOK` is set (the standards channel since the owner's ruling of 2026-10-22;
 `DISCORD_FONT_WEBHOOK`, the font channel, before, now deleted; the URL is in no file), one Discord
 message, then a comment on the
@@ -711,8 +711,10 @@ author is the commit's GitHub login, else the pusher. The bot's `/fonts` runs th
 (autocroissant-run-and-operate §7). State on 2026-10-21 (`--all` over the checkout, 133 s, 813 PSDs): six faces (BabaUI,
 Elephant-Regular, JavaneseText, MyriadArabic-Regular, OCRAExtended, Pristina-Regular) on 15 cards, 29 visible layers (30
 with Baba's hidden `Name`); the ten Mac-only faces are in `MDW/Fonts` since fb37995 + ec3a6f1 and Papyrus-Regular /
-Kung-Fu-Panda resolve through the aliases, so they no longer appear. State on 2026-10-23 (after TTSCardMaker b03b9975, BabaUI
-added): 812 PSDs against 274 files / 282 faces, nothing missing (7 s with the process pool). Later standardization rules (AutoCroissant
+Kung-Fu-Panda resolved through aliases until 2026-10-23. State on 2026-10-23 (TTSCardMaker b03b9975, BabaUI added, plus
+work/kfp-name 2493651e: `Kung Fu Panda Regular.ttf` renamed to PostScript `Kung-Fu-Panda`, the name the 4 cards ask for;
+`Papyrus.ttf` is `Papyrus-Regular` already): exact names only, 812 PSDs against 274 files / 282 faces, nothing missing
+(7 s with the process pool). Later standardization rules (AutoCroissant
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5) take this Action's shape. **Rule 2, the card check (2026-10-21):**
 `.github/workflows/card-check.yml` runs AutoCroissant's `commands/card_check.py` on every push changing a PSD, `site/Card Edits.json`
 or `Types/` (and by hand with `all`): the pushed PSDs by blob sha, Types/, the icon manifest and the edits file from the pushed tree,

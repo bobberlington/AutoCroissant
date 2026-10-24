@@ -406,7 +406,7 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `6a54b4f6`: 0 stal
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing).
-  BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker b03b9975); no font is waived now.
+- **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker b03b9975).
 - **Per-card waivers:** none yet (open point, section 15). The design put them in `site/Card Edits.json` `problems_ok` with
   the rule's code (`STD R5`), but `problems_ok` is a bool that the owner approved for parser problems only; it waives no
   standard.
