@@ -73,6 +73,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       `/update_stats` "already current", `/query` the goldens, the next push on the site/save/Discord within one interval).
       `ACTIONS_TOKEN` is already in the jetson's config.py.
 - [ ] **Step 9:** the Changes page's Changelog and Database edits tabs fed by `data/changelog.json`.
+- [ ] **Owner, 2026-10-23 ~18:30 (DATA_BUILD_ACTION §16 item 7):** bake verdicts move from Card Edits.json to
+      `db/verdicts.json` on `data`, and bake/guard events (`baked`, `bake-refused`, `guard-png`, `guard-fix`) join the
+      changelog. Build after BUG 2 lands, with steps 7-9.
 - [ ] **Step 10, within a day of clean runs:** retire the pickles, psd_details.json and `/push`. The owner tells
       bobberlington first.
 
@@ -162,7 +165,7 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
 - **Answered 2026-10-23 ~17:40** (memory `owner-decisions-2026-10-22-evening`): Nebulous keeps the sticker; R3/R4
   reports stay; rebuilt FX layers keep their own style; off-chart status colours are recoloured to the chart; FX layers
   in no chart style get rebuilt in their own style; every typed stoogedings token (timing tags, types, any token the font
-  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD gets fixed; all stale
+  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 78798eac: ATK 6, close BUGS D8 after step 1); all stale
   exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
 - **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's
