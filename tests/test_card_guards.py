@@ -1196,7 +1196,8 @@ def _workflow(clone) -> Path:
 
 def test_workflow_shape(clone):
     """card-guards.yml: push on PSDs and PNGs behind CARD_GUARDS, dry dispatches by default, a run per push, the bot's
-    commits skipped, the sparse list = SPARSE_FILES, the fork pin shared with card-edits.yml, secrets by name only, no ping."""
+    commits skipped, the sparse list = SPARSE_FILES, the fork pin and its wheel cache shared with card-edits.yml,
+    card-sync.yml and card-preview.yml, secrets by name only, no ping."""
     yaml = pytest.importorskip("yaml")
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
@@ -1217,11 +1218,10 @@ def test_workflow_shape(clone):
     assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
     cards = next(s for s in steps if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
-    pin = re.search(r"psd-tools@([\w.-]+)\"", text).group(1)
+    from test_card_bake import FORK_WORKFLOWS, fork_install
+    others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
+    assert len({fork_install(p) for p in [path, *others]}) == 1                 # one pin, one cache entry for the four
     assert re.search(r"pip install [^\n]*pyoxipng==[\d.]+ ", text)          # the lossless PNG recompression (png_export)
-    edits = path.parent / "card-edits.yml"
-    if edits.exists():
-        assert re.search(r"psd-tools@([\w.-]+)\"", edits.read_text(encoding="utf-8")).group(1) == pin
     names = [s.get("name") for s in steps]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
         < names.index("Comment on the commit") < names.index("Land") < names.index("Follow up") < names.index("Tell Discord") \
