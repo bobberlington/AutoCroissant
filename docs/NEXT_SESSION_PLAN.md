@@ -113,14 +113,21 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 7. Bot and bake follow-ups
 - [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
       runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
-      origin/main cc3cd8c merged in). Phase 2 (owner's answers of ~17:40): own-style FX layers rebuilt, typed badges
-      and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
+      origin/main merged in each round, last 73dfc3c). Phase 2 (owner's answers of ~17:40): own-style FX layers
+      rebuilt, typed badges and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
       review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
       layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
       a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Round 2
       (same branch, origin/main be280e6, then 73dfc3c, merged in): a typed copy joining an own-style layer takes its words' colour (Palace of Shadow's "+2 DEF"
       printed grey), gate `gate_fx_colours`; a moved own-style phrase and letters glued onto one refuse; the parser's
-      `#0` change reverted. Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
+      `#0` change reverted. Round 3 (2026-10-24, same branch): a badge layer takes its colour glyphs' red-less pixels
+      (a typed `[undead]`'s eyes printed in the overlay's colour), `gate_fx` and `bare_icons` let no icon pixel out (they
+      let 1%), "[fire:]" and any token the website draws as an icon but the font prints as letters refuse `font`
+      (`unlettered_icons`; it baked as the letters), gate `lettered_icons`, an edit inside a phrase of several colours
+      refuses, no status word inside a `[token]`, the ability edited before the title (Fire Staff's name + ability
+      refused `bytes`). Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
+      (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`,
+      Oct 23 21:26; fails on the tip before the fixes too). Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
       that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
       Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's
@@ -130,7 +137,20 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       picker offers these edits), words typed in place of a badge or icon refused (Pizza's "(1CD)" -> "Once:", Gasoline's
       "[fire] type" -> "fire type": edit_styles keeps the icon font; near() could give the body style), the leading space of
       15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test), a
-      retyped token taking the card's commonest icon style (ruling C: Plague's skull 41.17 -> 52.03 pt when swapped).
+      retyped token taking the card's commonest icon style (ruling C: Plague's skull 41.17 -> 52.03 pt when swapped),
+      a typed `:sticker`/`:tint` token taking the fill of the text around it, not the card's own token colour (Palace of
+      Shadow's typed `[dark:sticker]` outline dark grey, its own white; its `[light:sticker]` uses the body grey), a badge
+      or token typed in a title staying body text (ruling C says "wherever it is typed"; not handled yet), and whether
+      a chart-style status layer joined by a typed word should be told too (only own-style ones are: Marx "Glued.
+      Glued" gives no note; it looks the same as a new layer). Over-cautious refusals, accepted: 6 of the 91 icons typed
+      on Turtle (flare pixels past their glyph boxes: light, the 6/7/8 stars, silksong_star), replacing an own-style
+      status word ("2T Smoldering" -> "2T Burning" on Fire Staff), deleting a whole ability on an FX card
+      (`styled-word`, a misleading code). Left on purpose: the parser's
+      `_read_icon_tokens` still reads "[fire:]" in the icon font as [fire] (a Cython module; the bake refuses it before,
+      `gate_reparse` and `lettered_icons` behind); the website's text.js `icon()` still previews it as the icon
+      (TTSCardMaker side). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
+      olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any
+      ability edit.
       Not this branch's: appended text can run below the card's text panel artwork (the overflow gate checks the
       engine's box and the canvas: Autopsy Report with " Costs 5★ and [fire:tint]." adds a third line under the panel).
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; unblocked).

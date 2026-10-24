@@ -240,6 +240,27 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       Gasoline's "[fire] type" -> "fire type", The Hive, Mini Doomer's "(BOT)" -> "Start:"); a variant-only token edit
       is dropped as redundant (`:glow` too), the token picker offering it; a retyped token takes the card's commonest
       icon style (ruling C).
+  - **Phase 2 review, round 3 (same branch, 2026-10-24; origin/main 73dfc3c, unmoved):** two silent wrong bakes fixed
+    (dry census with every gate on copies of TTSCardMaker 7dcc36fd, fork `cards-20261023c`;
+    `~/Documents/Tools/wt/bf-fx-r6-scratch/`: `census_bake.py`, `runs/{new,base,turtle,ice,front}.json`, `base/` the
+    branch tip before the fixes):
+    - A typed token's red-less pixels (an `[undead]`'s black eye sockets and jaw, a `[feather]`'s green) stayed out of
+      the badge layer, cut with the red key, and printed in the overlay's colour: glowing yellow eyes on Heavy Mole (39
+      opaque px), a green bar in Turtle's skull, every gate passing (1% of a glyph was let through). The badge layer
+      takes its colour glyphs' silhouettes too, and `gate_fx`/`bare_icons` let no icon pixel out. On the 31 badge-layer
+      cards: a typed `[undead]` and `[feather]` **bake on 26 of 31 each** (21 and 18 before, every one of them with
+      2-39 such px; 5 n/a: 3 overflows, Miracle Matter, Apex Predator), with none left; the no-op and a typed `[fire]`
+      unchanged (same results and PNGs). Every manifest icon typed on Turtle: **85 of 91 bake** (66 before); `light`,
+      `lightshadow`, `6star`, `7star`, `8star` and `silksong_star` refuse as before (flare pixels past their glyph
+      boxes). `[ice]` glued after the final "." now bakes on Mini Doomer, Palace of Shadow, Scapular and PoD11ZOMG, Mini
+      Doomer's "[ice:no] and [Fire:Sticker]" and its "(OYT) [undead]" typed in front too (both refused before).
+    - "[fire:]" (a colon, no variant) counted as an icon: set in the icon font it printed the letters, cut white into
+      a badge layer, read back as [fire], the editor showing the icon. A token the website draws as an icon and the
+      font as letters ("[fire:]", "[fire: no]", "[Fire.]", "[warp  star]", "[dark:sticker]" made "[dark:]") refuses
+      `font` now: " Deal 1 [fire:] damage." **refuses on 29 of 29** badge cards that get that far. Gate
+      `lettered_icons` refuses icon-font letters an edit adds (none of main's 381 icon-font Abilities draws any).
+    - Also: an edit inside a phrase in several colours refuses (none on main); no status word inside a `[token]`; the
+      ability is edited before the title (Fire Staff's name + ability bakes, refused `bytes` before).
 
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
