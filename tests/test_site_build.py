@@ -25,6 +25,7 @@ from conftest import CLONE
 BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 APP_JS = BUILD_SITE.parents[1] / "assets" / "app.js"
+BALANCE_JS = BUILD_SITE.parents[1] / "assets" / "balance.js"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -340,3 +341,11 @@ def test_the_card_page_has_no_share_full_image_or_psd_button():
         pytest.skip(f"no app.js at {APP_JS}")
     text = APP_JS.read_text(encoding="utf-8")
     assert [s for s in ('data-action="share"', ">Full image<", ">PSD on GitHub<", 'e.key === "s"') if s in text] == []
+
+
+def test_long_history_notes_are_gone():
+    """Dropped at the owner's ask (2026-10-24): the notes under Image versions and Recorded changes."""
+    if not APP_JS.is_file() or not BALANCE_JS.is_file():
+        pytest.skip(f"no site assets beside {APP_JS}")
+    assert "Each commit that changed the image" not in APP_JS.read_text(encoding="utf-8")
+    assert "From the bot's card history" not in BALANCE_JS.read_text(encoding="utf-8")
