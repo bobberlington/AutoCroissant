@@ -208,7 +208,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       Owner rulings 2026-10-24 (origin/main c249eba merged, fork `cards-20261024`, venv `~/.venvs/ac-py314-r12`): title
       tokens in the icon font (26 of 66 sampled titles bake; tinted ones refuse), typed `:sticker`/`:tint` in its kind's
       colour, new badges at the commonest size (EDIT_PIPELINE_DESIGN section 7, BUG 2 block). Owner to rule: a timing
-      badge typed in a title (refuses now). Still refused: `:glow`/`:darkglow` until the fork's halo fix lands.
+      badge typed in a title (refuses now). Still refused: `:glow`/`:darkglow` until the fork's halo fix lands. Full suite on
+      the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed.
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
