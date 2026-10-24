@@ -153,7 +153,7 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
 - **Answered 2026-10-23 ~17:40** (memory `owner-decisions-2026-10-22-evening`): Nebulous keeps the sticker; R3/R4
   reports stay; rebuilt FX layers keep their own style; off-chart status colours are recoloured to the chart; FX layers
   in no chart style get rebuilt in their own style; every typed stoogedings token (timing tags, types, any token the font
-  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD gets fixed; all stale
+  draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 78798eac: ATK 6, close BUGS D8 after step 1); all stale
   exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
 - **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's
