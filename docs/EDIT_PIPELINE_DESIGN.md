@@ -416,8 +416,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
    plain, every gate passing). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
    title's own size and colour (`icon_style` of the title, else the run the engine gives it), under the same gates:
-   glows refuse `font` (`unlettered_icons` does not: the website shows a title's "[fire:]" as its letters, as the card
-   does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly
+   glows bake since the fork's `cards-20261024b` (they refused `font` before), `unlettered_icons` does not run (the
+   website shows a title's "[fire:]" as its letters, as the card does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly
    gradient overlays; also a Satin, Inner Glow or Inner Shadow, and a group's overlays: The Radiance, Captain Spaceboy)
    refuses `unsupported-card`, words typed after a title's token take the title's style (`title_styles`), and `gate_fx` runs `bare_icons`,
    `see_through_icons`, `lettered_icons` and `unshaped_icons` on the title (`titles`, `_gate_icons`). A stroke, shadow,
@@ -805,6 +805,23 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_gate_pairs_checks_each_pairings_filter_and_place`, `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
   `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
   `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
+  **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`; `scratch/bug2-p6/`):** the fork draws
+  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (the `font` refusal stays only
+  for a fork without the halos, `glow_halos`: a stale install). A stroked Text group strokes the halo into a black disc,
+  Photoshop's look: Photoshop's own Nebulous Precipice with `[darkmatter:glow]` (`~/std-work-1022/glow/run`) against
+  the fork's re-render, 0.47% of the token window past 24 levels (max 75); moved by an edit, 0.52% of the disc. Two
+  gates changed for them: off the canvas counts ink past `INK_ALPHA` only (`_ink_off_canvas`; Red Knife's halo tail
+  at alpha 0.03, Salt's title at 0.16 refused), and for glow edits `inks_over` and the stat-bar check count the
+  changed ink of the layer's outermost group with effects (`_effect_ink`): Salt's title disc covers 'Layer 19'
+  (MISS), which the title's own ink missed. Under a badge FX layer a glow refuses `see_through_icons`, under a tint
+  as any typed icon. Census of every card (in memory): " Gain [fire:glow]." sets on 516 of 791 Abilities (" Gain
+  [fire]." 536: 20 more run off the canvas, the wider glyph wrapping onto another line), " [ice:darkglow]" on 120 of
+  812 titles (" [fire]" 200: 31 more reach the stars or type icons, 49 more cover a layer below, the disc); the other
+  edits unchanged on the new fork (two overlap counts moved by 1-8 px). Dry bakes of 58 typed glows (plain, own
+  stroke, stroked group, badge, tinted, titles): 27 bake, crops looked at. Tests:
+  `test_glow_tokens_bake_as_photoshop_draws_them`, `test_glow_tokens_refuse_on_an_older_fork`,
+  `test_a_faint_halo_past_the_canvas_is_no_overflow`, `test_a_glow_disc_over_a_layer_below_the_title_refuses`; each
+  fails on the code before.
 
 ## 8. Runner
 

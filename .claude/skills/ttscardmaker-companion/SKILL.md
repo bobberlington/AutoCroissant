@@ -387,9 +387,9 @@ tests/test_badge_parity.py):
 - `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
   `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
-- **Bakes refuse glow tokens.** The psd-tools fork draws an OT-SVG glyph as its `glyf` outline: the halo's is the whole
-  halo (traced at alpha 0.5/255), a solid block under an overlay. `psd_edit.set_text` refuses ("font") a text with
-  `:glow` or `:darkglow`; edit those cards in Photoshop.
+- **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
+  the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a badge FX layer
+  or a tint a glow refuses as any see-through icon; a fork without the halos (`psd_edit.glow_halos`) refuses `font`.
 
 ## 2. The card-browser website
 

@@ -209,7 +209,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       Owner rulings 2026-10-24 (origin/main c249eba merged, fork `cards-20261024`, venv `~/.venvs/ac-py314-r12`): title
       tokens in the icon font (26 of 66 sampled titles bake; tinted ones refuse), typed `:sticker`/`:tint` in its kind's
       colour, new badges at the commonest size (EDIT_PIPELINE_DESIGN section 7, BUG 2 block). Owner to rule: a timing
-      badge typed in a title (refuses now). Still refused: `:glow`/`:darkglow` until the fork's halo fix lands. Full suite on
+      badge typed in a title (refuses now). `:glow`/`:darkglow` bake since the pin `cards-20261024b` (see below). Full suite on
       the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed. Review fixes (group overlays tint a title, title
       stickers read the card before the bake, blank end breaks, words after a title token, `[fire:]` in a title,
       `covered_ink` design layers, lazy renders in a RenderCache with `gate_pairs`; EDIT_PIPELINE_DESIGN section 7):
@@ -220,7 +220,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped). Review fixes 3
       (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
       line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
-      render: 1756 passed, 13 skipped, 0 failed.
+      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`): typed
+      `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed.
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
@@ -240,8 +241,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       status word ("2T Smoldering" -> "2T Burning" on Fire Staff). Website track (TTSCardMaker, not edited here): text.js
       `icon()` still previews "[fire:]" (a colon with an empty variant) as the fire icon, and `norm()` forgives "[Fire.]"
       or "[warp  star]"; the bake refuses them (`font`), so the editor should treat them as text like the font does.
-      **Open owner items (BUG 2):** a timing badge typed in a title (refuses; owner to rule) and `:glow`/`:darkglow`
-      (refused until the fork's halo fix lands). The 2026-10-24 rulings (title tokens in the icon font, a typed
+      **Open owner items (BUG 2):** a timing badge typed in a title (refuses; owner to rule). `:glow`/`:darkglow` bake
+      since the pin `cards-20261024b` (EDIT_PIPELINE_DESIGN section 7, glow tokens). The 2026-10-24 rulings (title tokens in the icon font, a typed
       `:sticker`/`:tint` in its kind's colour, new badges at the commonest size) are implemented (37dd00e, 73ceff3). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
       olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any
       ability edit.
