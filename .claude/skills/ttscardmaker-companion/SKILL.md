@@ -700,7 +700,8 @@ Full notes: TTSCardMaker `site/NOTES.md` §19; user docs: `site/README.md` Editi
   Needs numpy, opencv-python-headless and fonttools (the font build's requirements; `site/build/requirements.txt`
   includes them and site.yml sparse-checks out the script on that branch, and hashes it into the image cache's key);
   without them, one warning and the plain icon for every variant, never a failed build. text.js reads a variant
-  exactly (no spaces around it, as the font and parser): `[fire: glow]`, `[fire: no]` are the plain icon.
+  exactly (`splitToken`, also the mock-up's): one the font has no ligature for (`[fire:]`, `[fire:glows]`,
+  `[fire: glow]`) is letters, as on the card (2026-10-24; the parser still reads `[fire:]` as `[fire]`).
 - **Tests:** AutoCroissant `tests/test_token_picker.py` (8; `AC_SITE_SRC` points it at a checkout; skips while the clone
   has no `tokens.js`; covers kept text after the caret, kept variants, typos, use order, 7-character tags); `tests/test_badge_parity.py::test_site_reads_variants_as_the_plain_icon` now covers data
   without pictures. Browser check: WebKit (WKWebView, offscreen) driven by
