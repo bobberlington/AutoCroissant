@@ -457,8 +457,8 @@ def _fonts():
 
 
 def test_the_build_reads_font_names_as_font_check(bs):
-    """Every font file in MDW/Fonts: the build's reader (no fontTools) gives font_check.face_names' PostScript and loose
-    names, collections face by face."""
+    """Every font file in MDW/Fonts: the build's reader (no fontTools) gives font_check.face_names' PostScript names,
+    collections face by face."""
     differ = []
     for path in _fonts():
         data = path.read_bytes()
@@ -474,8 +474,9 @@ def test_the_build_reads_font_names_as_font_check(bs):
 
 
 def test_web_fonts_map_the_psd_fonts(bs, tmp_path, monkeypatch):
-    """data/fonts.json: a PSD font name to its MDW/Fonts file as font_check resolves it (exact PostScript name, an alias,
-    a loose match without -Regular); never a collection or a file over FONT_WEB_MAX; names read once per blob (cached)."""
+    """data/fonts.json: a PSD font name to its MDW/Fonts file as font_check decides it (a face with exactly that PostScript
+    name; since 2026-10-23 no alias or loose match: "Arial-Regular" isn't Arial's ArialMT); never a collection or a file
+    over FONT_WEB_MAX; names read once per blob (cached)."""
     files = {p.name: p for p in _fonts()}
     # the files as named since TTSCardMaker b03b9975 (named as the fonts), or before
     want = (("Consolas Bold.ttf", "consolab.ttf"), ("Arial.ttf",), ("Book Antiqua.ttc", "BookAntiqua.ttc"))
@@ -492,21 +493,36 @@ def test_web_fonts_map_the_psd_fonts(bs, tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "REPO", str(repo))
     monkeypatch.setattr(bs, "CACHE", str(tmp_path / "cache"))
     faces = {name: bs.font_faces((repo / "MDW" / "Fonts" / name).read_bytes()) for name in pick}
-    consolas, arial, antiqua = faces[bold][0][0], faces[plain][0][0], faces[ttc][0][0]
-    names = {consolas, f"{arial}-Regular", antiqua, "NoSuchFont"}
+    consolas, arial, antiqua = faces[bold][0], faces[plain][0], faces[ttc][0]
+    names = {consolas, arial, f"{arial}-Regular", antiqua, "NoSuchFont"}
     first = bs.web_fonts(tree, names)
     assert first == {consolas: {"file": f"MDW/Fonts/{bold}", "bytes": files[bold].stat().st_size},
-                     f"{arial}-Regular": {"file": f"MDW/Fonts/{plain}", "bytes": files[plain].stat().st_size}}
+                     arial: {"file": f"MDW/Fonts/{plain}", "bytes": files[plain].stat().st_size}}
     monkeypatch.setattr(bs, "font_bytes", lambda path: (_ for _ in ()).throw(AssertionError(f"read {path} again")))
     assert bs.web_fonts(tree, names) == first      # from site/.cache/fonts.json
     monkeypatch.setattr(bs, "FONT_WEB_MAX", 10)
     assert bs.web_fonts(tree, names) == {}
-    monkeypatch.setattr(bs, "FONT_WEB_MAX", 8 * 1024 * 1024)
-    assert set(bs.web_fonts(tree, {"Papyrus-Regular"})) == set()          # an alias to a face not in this folder
-    assert bs.FONT_ALIASES == {"Papyrus-Regular": "Papyrus", "Kung-Fu-Panda": "KungFuPanda"}
+    assert not hasattr(bs, "FONT_ALIASES")            # gone with the bot's (font_check: exact names only)
 
 
-def test_font_aliases_are_the_bots(bs):
-    """The build resolves names with the bot's FONT_ALIASES (a copy: change both)."""
-    from global_config import FONT_ALIASES
-    assert bs.FONT_ALIASES == FONT_ALIASES
+def test_the_build_supplies_a_font_as_font_check_does(bs):
+    """The build's rule is font_check's FontIndex.supplies: the same names supplied, for every MDW/Fonts file."""
+    from commands.font_check import FontIndex
+    files = _fonts()
+    index = FontIndex()
+    names = set()
+    for path in files:
+        try:
+            faces = face_names(path.read_bytes())
+        except Exception:                          # noqa: BLE001 - unreadable: neither offers it
+            continue
+        index.add(faces)
+        names.update(faces)
+    probes = sorted(names) + [f"{n}-Regular" for n in sorted(names)[:20]] + ["NoSuchFont"]
+    bs_names = set()
+    for path in files:
+        try:
+            bs_names.update(n for n in bs.font_faces(path.read_bytes()) if n)
+        except ValueError:
+            pass
+    assert {n for n in probes if n in bs_names} == {n for n in probes if index.supplies(n)}
