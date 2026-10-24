@@ -153,6 +153,13 @@ def test_ratings_use_each_raters_latest_and_leave_out_their_own(bs):
     assert rows["A"]["editFields"] == [["rating", 1]]
 
 
+def test_least_liked_is_below_every_most_liked(bs):
+    """A card rated as a most liked one isn't least liked (a tie split by id): 7.1, 7.1, 7.1, 6 -> worst 6 only."""
+    cards = [card(i, "A", ratings=[rate(v)]) for i, v in (("a1", 7.1), ("a2", 7.1), ("a3", 7.1), ("a4", 6))]
+    r = rows_of(bs, cards)[0]["A"]["ratings"]
+    assert (r["best"], r["worst"]) == ([["a1", 7.1], ["a2", 7.1]], [["a4", 6]])
+
+
 def test_rater_stats_hide_without_per_person_ratings(bs):
     cards = [card(f"a{i}", "A", ratings=[rate(i + 1), rate(i + 2, scale="power")]) for i in range(6)]
     rows, _ = rows_of(bs, cards, balance={"cards": {f"a{i}": {"z_total": i / 10, "flags": []} for i in range(6)}})
