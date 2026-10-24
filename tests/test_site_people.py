@@ -226,7 +226,8 @@ out({ s });
 
 
 def test_ranks_share_ties(tmp_path):
-    """Competition ranking among the rows with a value; strength needs power.n >= 5, words per ability 5 abilities."""
+    """Competition ranking among the rows with a value, two or more (B alone has edits); strength needs power.n >= 5,
+    words per ability 5 abilities."""
     out = node(tmp_path, """
 const people = [{ key: "A", cards: 5, commits: 2, edits: 0, power: { n: 5, z: 0.2 } }, { key: "B", cards: 5, commits: 3, edits: 1, power: { n: 4, z: 1 } },
   { key: "C", cards: 3, commits: 3, edits: 0, power: { n: 6, z: 0.5 } }];
@@ -234,7 +235,7 @@ const words = new Map([["A", { words: 20, n: 5 }], ["B", { words: 30, n: 4 }], [
 out(people.map(p => pf.ranksOf(p, people, words)));
 """)
     assert out == [[["cards", 1, 3], ["card commits", 3, 3], ["strength", 2, 2], ["words per ability", 2, 2]],
-                   [["cards", 1, 3], ["card commits", 1, 3], ["edits", 1, 1]],
+                   [["cards", 1, 3], ["card commits", 1, 3]],
                    [["cards", 3, 3], ["card commits", 1, 3], ["strength", 1, 2], ["words per ability", 1, 2]]]
 
 
