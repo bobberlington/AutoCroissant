@@ -27,6 +27,7 @@ BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 APP_JS = BUILD_SITE.parents[1] / "assets" / "app.js"
 BALANCE_JS = BUILD_SITE.parents[1] / "assets" / "balance.js"
+ROUND3 = (BUILD_SITE.parents[1] / "assets" / "insights.js").is_file()    # round 3's site (2026-10-24)
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -444,23 +445,29 @@ def test_long_history_notes_are_gone():
     """Dropped at the owner's ask (2026-10-24): the notes under Image versions and Recorded changes."""
     if not APP_JS.is_file() or not BALANCE_JS.is_file():
         pytest.skip(f"no site assets beside {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
     assert "Each commit that changed the image" not in APP_JS.read_text(encoding="utf-8")
     assert "From the bot's card history" not in BALANCE_JS.read_text(encoding="utf-8")
 
 
 def test_no_psd_details_flag():
-    """The Cards tab's "PSD details" chip is gone (owner, 2026-10-24); the search term has:details stays."""
+    """The Cards tab's "PSD details" chip and the search term has:details are gone (owner, 2026-10-24)."""
     if not APP_JS.is_file():
         pytest.skip(f"no app.js at {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
     text = APP_JS.read_text(encoding="utf-8")
     assert '"PSD details"]' not in text and "details: c => !!c.details" not in text
-    assert '"has:details": c => !!c.details' in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
+    assert "has:details" not in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
 
 
 def test_card_buttons_sit_under_the_image():
     """Add to deck, Compare and Edit under the card image (owner, 2026-10-24); the info column stays .detail's second child."""
     if not APP_JS.is_file():
         pytest.skip(f"no app.js at {APP_JS}")
+    if not ROUND3:
+        pytest.skip("no round 3 site")
     text = APP_JS.read_text(encoding="utf-8")
     body = text[text.index("function openCard("):]
     body = body[:body.index("\n}\n")]
