@@ -37,7 +37,7 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
     ("Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd", {"R2"}, set()),
     ("Items/Equip/2 Stars/Fire_Staff.psd", set(), {"R5"}),
-    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4", "R7"}),
+    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4"}),         # R7 (BabaUI) was waived until its file came (b03b9975)
     ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2", "R3"}),
 )
 
@@ -121,14 +121,25 @@ def test_wording(clone, context):
 
 
 def test_r7_is_told_in_the_standards_post(clone, context, monkeypatch):
-    """Fonts are told in the standards channel too (owner, 2026-10-22); BabaUI stays waived (L13)."""
+    """Fonts are told in the standards channel too (owner, 2026-10-22), none waived: BabaUI's waiver went when the owner
+    added its file (TTSCardMaker b03b9975)."""
+    from commands.font_check import FontIndex, _font_files, face_names
     rel = "Creatures/Other/5 Stars/Baba.psd"
-    (font,) = [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"]
-    assert font.items == ("BabaUI",) and font.discord and font.waived and font not in cs.reported([font])
-    monkeypatch.setattr(cs, "check_psd", lambda psd, fonts: {"BabaUI": ["Hp"], "ComicSansMS": ["Ability"]})
+    assert [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"] == []   # BabaUI and Domigorgon resolve
+    without = FontIndex()                                   # MDW/Fonts less the files with a BabaUI face
+    for path in _font_files(str(clone / "MDW/Fonts")):
+        faces = face_names(Path(path).read_bytes())
+        if "BabaUI" not in faces:
+            without.add(faces)
+    assert without.files < context.fonts.files and not without.supplies("BabaUI")
+    lacking = cs.Context(context.types, without, context.chart, context.story_sync)
+    (font,) = [i for i in cs.check(_open(clone, rel), rel, lacking) if i.code == "R7"]
+    assert font.items == ("BabaUI",) and font.discord and not font.waived and cs.reported([font]) == [font]
+    assert font.line() == "font BabaUI not in MDW/Fonts"
+    monkeypatch.setattr(cs, "check_psd", lambda psd, fonts: {"Wingdings-Regular": ["Hp"], "Webdings": ["Ability"]})   # neither is in MDW/Fonts
     (font,) = [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"]
     assert font.discord and not font.waived and cs.reported([font]) == [font]
-    assert font.line() == "fonts BabaUI and ComicSansMS not in MDW/Fonts"
+    assert font.line() == "fonts Webdings and Wingdings-Regular not in MDW/Fonts"
 
 
 def test_without_the_chart_every_overlay_is_told(clone, context):

@@ -33,7 +33,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key, named_after_text,
                                  stars_from_psd, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
-from global_config import FONT_ALIASES, RULEBOOK_DIR
+from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -1595,7 +1595,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
     styles = edit_styles(layer, parts, chart) if which == "ability" else []
-    fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
+    fonts = FontMap(dirs=[fonts_dir])
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
         from psd_tools.composite.text import capture

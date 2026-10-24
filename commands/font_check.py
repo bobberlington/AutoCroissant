@@ -46,7 +46,7 @@ from psd_tools import PSDImage
 import commands.github_api as github_api
 import global_config                            # CARD_SYNC, read at call time (the cutover switch)
 from commands.github_api import api_url, blob_sha, fetch_tree, fetch_verified, get_with_retry, token_from_env
-from global_config import CARD_BRANCH, CARD_REPO, DETAILS_JSON, FONT_ALIASES, FONT_DIRS_ENV, FONTS_CACHE, LOCAL_DIR_LOC
+from global_config import CARD_BRANCH, CARD_REPO, DETAILS_JSON, FONT_DIRS_ENV, FONTS_CACHE, LOCAL_DIR_LOC
 
 # ========================
 # Configuration
@@ -75,17 +75,6 @@ _cache_lock = Lock()                        # one cache refresh at a time (the b
 # ========================
 # Font names
 # ========================
-def norm(name: str) -> str:
-    """Casefolded alphanumerics: the key of a loose match."""
-    return sub(r"[^a-z0-9]", "", name.casefold())
-
-
-def loose_keys(name: str) -> tuple:
-    """norm(name) and, when it differs, norm of the name without its -Regular suffix."""
-    keys = (norm(name), norm(sub(r"-?Regular$", "", name)))
-    return keys if keys[1] != keys[0] else keys[:1]
-
-
 def ps_name(name: str) -> str:
     """A name as FreeType (the fork's reader) reports PostScript names: ASCII 33-126 without []{}()<>/%."""
     return sub(r"[^!-~]|[\[\]{}()<>/%]", "", name)
@@ -93,19 +82,14 @@ def ps_name(name: str) -> str:
 
 def face_names(data: bytes) -> list:
     """
-    One [PostScript name, [loose names]] per face of a font file (.ttc/.otc hold several, in index order).
-
-    The PostScript name is name ID 6, else 4 (full name), else 1 (family), as FreeType would report it ("Kung Fu Panda"
-    -> KungFuPanda); the loose names add the raw name and family + subfamily.
+    The PostScript name of each face of a font file (.ttc/.otc hold several, in index order): name ID 6, else 4 (full
+    name), else 1 (family), as FreeType would report it ("Kung Fu Panda" -> KungFuPanda).
     """
     fonts = TTCollection(BytesIO(data), lazy=True).fonts if data[:4] == b"ttcf" else [TTFont(BytesIO(data), lazy=True)]
     out = []
     for font in fonts:
         table = font["name"]
-        raw = next((n for n in (table.getDebugName(i) for i in (6, 4, 1)) if n), "")
-        ps = ps_name(raw)
-        family = (table.getDebugName(1) or "") + (table.getDebugName(2) or "")
-        out.append([ps, list(dict.fromkeys(n for n in (ps, raw, family) if n))])
+        out.append(ps_name(next((n for n in (table.getDebugName(i) for i in (6, 4, 1)) if n), "")))
     return out
 
 
@@ -116,11 +100,10 @@ def _font_files(directory: str) -> list:
 
 
 class FontIndex:
-    """The faces a fonts folder supplies, by exact PostScript name and by loose key; resolve() answers for one name."""
+    """The faces a fonts folder supplies, by PostScript name; supplies() answers for one name."""
 
     def __init__(self, directory: str = ""):
-        self.exact: set = set()
-        self.loose: set = set()
+        self.names: set = set()
         self.files = 0
         self.faces = 0
         self.errors: list = []                  # "file: why" for fonts fontTools can't read
@@ -135,21 +118,12 @@ class FontIndex:
     def add(self, faces: list) -> None:
         """Index one file's faces (face_names' output, also what the bot's cache holds)."""
         self.files += 1
-        for ps, loose in faces:
-            self.faces += 1
-            if ps:
-                self.exact.add(ps)
-            for name in loose:
-                self.loose.add(norm(name))
+        self.faces += len(faces)
+        self.names.update(ps for ps in faces if ps)
 
-    def resolve(self, name: str) -> Optional[str]:
-        """How name resolves: "exact", "alias" (FONT_ALIASES), "loose", or None when no face matches."""
-        target = FONT_ALIASES.get(name, name)
-        if target in self.exact:
-            return "exact" if target == name else "alias"
-        if any(key in self.loose for key in loose_keys(target)):
-            return "loose"
-        return None
+    def supplies(self, name: str) -> bool:
+        """A face has exactly this PostScript name."""
+        return name in self.names
 
 
 # ========================
@@ -233,7 +207,7 @@ def check_psd(psd, index: FontIndex) -> dict:
     Returns:
         {missing font: [layer names]}
     """
-    return {font: layers for font, layers in psd_fonts(psd).items() if index.resolve(font) is None}
+    return {font: layers for font, layers in psd_fonts(psd).items() if not index.supplies(font)}
 
 
 # ========================
@@ -390,7 +364,7 @@ def is_card_psd(path: str) -> bool:
 def _record(report: Report, index: FontIndex, path: str, author: str, fonts: dict) -> None:
     """Count one read PSD and list it when a font it asks for is not in the index."""
     report.checked += 1
-    missing = {font: layers for font, layers in fonts.items() if index.resolve(font) is None}
+    missing = {font: layers for font, layers in fonts.items() if not index.supplies(font)}
     if missing:
         report.cards.append(Card(path, author, missing))
 
@@ -817,6 +791,8 @@ def _load_cache(path: str) -> dict:
             with open(path, encoding="utf-8") as fh:
                 data = load(fh)
             if isinstance(data, dict) and isinstance(data.get("fonts"), dict) and isinstance(data.get("psds"), dict):
+                data["fonts"] = {sha: faces for sha, faces in data["fonts"].items()   # [name, loose names] faces (until
+                                 if isinstance(faces, str) or all(isinstance(f, str) for f in faces)}   # 2026-10-23): read again
                 return data
         except (OSError, ValueError):
             pass                                # a corrupt cache is rebuilt
@@ -1078,10 +1054,8 @@ __all__ = [
     'is_card_psd',
     'layer_fonts',
     'local_fonts',
-    'loose_keys',
     'main',
     'markdown',
-    'norm',
     'ps_name',
     'psd_fonts',
     'pushed_files',
