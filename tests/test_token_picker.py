@@ -275,6 +275,16 @@ process.stdout.write(JSON.stringify([v("", N), v("mar", N), v("thousand", SUBS),
 
 @needs_node
 @names
+def test_a_slip_ranks_the_closest_whole_name_first(tmp_path):
+    """'omari' starts one edit from both Mario and Omori: Omori, one edit from the whole name, comes first."""
+    out = node(tmp_path, f"""
+const N = {json.dumps(NAMES)};
+process.stdout.write(JSON.stringify(["omari", "maria"].map(q => P.suggestNames(q, N).map(r => r.value))));""")
+    assert out == [["Omori", "Mario"], ["Mario"]]
+
+
+@needs_node
+@names
 def test_a_name_choice_replaces_the_whole_value(tmp_path):
     out = node(tmp_path, """
 const it = P.suggestNames("pap", [{ value: "Paper Mario", n: 5 }])[0];
