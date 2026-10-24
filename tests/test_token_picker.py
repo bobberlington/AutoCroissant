@@ -62,13 +62,16 @@ def node(tmp_path: Path, body: str):
 
 @needs_node
 def test_the_open_token_at_the_caret(tmp_path):
-    """An unclosed "[" (a name, maybe "name:variant") or "(" (a tag's start) before the caret, on its line only."""
+    """An unclosed "[" (a name, maybe "name:variant") or "(" (a tag's start) before the caret, on its line only; the
+    choice ends at the caret, or past the rest of a token the caret is inside when its "]" or ")" follows."""
     out = node(tmp_path, """
 const cases = [["Deal 2 ["], ["Deal 2 [fi"], ["[fire:gl"], ["[dark m"], ["[fire] and"], ["[fi\\nre"], ["[fire (1"],
   ["(1"], ["(1cd"], ["(O"], ["(o"], ["(see below)", 4], ["(See below"], ["(1 per turn"], ["Heal [fi] now", 8],
-  ["[" + "a".repeat(53)], ["[fire:2"], ["Heal [fi now", 8]];
+  ["[" + "a".repeat(53)], ["[fire:2"], ["Heal [fi now", 8], ["To [fiand ice", 6], ["(1HP", 2], ["[fragile equip] x", 8],
+  ["[fi:glow]", 3], ["[fire:gl] x", 8], ["[fire:gl x]", 8], ["(-1/2GCD"], ["(-1/2GCD) y", 7], ["[fi and [fire]", 3]];
 process.stdout.write(JSON.stringify(cases.map(([t, c]) => at(t, c))));""")
-    pick = lambda o: o and {k: o[k] for k in ("type", "start", "end", "close", "base", "variant", "text") if k in o}
+    pick = lambda o: o and {k: o[k] for k in ("type", "start", "end", "close", "base", "variant", "text", "tail")
+                            if k in o and (k != "tail" or o[k])}
     assert [pick(o) for o in out] == [
         {"type": "icon", "start": 7, "end": 8, "close": 8, "base": "", "variant": None},
         {"type": "icon", "start": 7, "end": 10, "close": 10, "base": "fi", "variant": None},
@@ -87,18 +90,31 @@ process.stdout.write(JSON.stringify(cases.map(([t, c]) => at(t, c))));""")
         {"type": "icon", "start": 5, "end": 8, "close": 9, "base": "fi", "variant": None},   # its "]" follows
         None,                                                    # longer than any token
         None,                                                    # a variant is letters
-        {"type": "icon", "start": 5, "end": 8, "close": 8, "base": "fi", "variant": None}]
+        {"type": "icon", "start": 5, "end": 8, "close": 8, "base": "fi", "variant": None},   # no "]": the words stay
+        {"type": "icon", "start": 3, "end": 6, "close": 6, "base": "fi", "variant": None},   # "and ice" stays
+        {"type": "tag", "start": 0, "end": 2, "close": 2, "text": "1"},                      # "HP" stays
+        {"type": "icon", "start": 0, "end": 8, "close": 15, "base": "fragile", "variant": None},   # inside a spaced token
+        {"type": "icon", "start": 0, "end": 3, "close": 9, "base": "fi", "variant": None, "tail": ":glow]"},
+        {"type": "icon", "start": 0, "end": 8, "close": 9, "base": "fire", "variant": "gl"},
+        {"type": "icon", "start": 0, "end": 8, "close": 8, "base": "fire", "variant": "gl"},  # a variant is letters
+        {"type": "tag", "start": 0, "end": 8, "close": 8, "text": "-1/2GCD"},                # 7 characters, text.js TAG's most
+        {"type": "tag", "start": 0, "end": 7, "close": 9, "text": "-1/2GC"},
+        {"type": "icon", "start": 0, "end": 3, "close": 3, "base": "fi", "variant": None}]   # the next "[" is another token
 
 
 @needs_node
 def test_icons_rank_by_name_then_alias(tmp_path):
-    """Name prefix, alias prefix, then (2+ letters) inside a name or alias; types before stars; case, spaces, _ and -
+    """Name prefix, alias prefix, then (2+ letters) inside a name or alias, then (3+ letters, nothing else) one slip
+    away (two from 6 letters); types before stars, then the most used in the cards, then by name; case, spaces, _ and -
     ignored; an exact name or alias first with its variants right after it; nothing for "(See below"."""
     out = node(tmp_path, """
-const rows = P.suggest(at("Burn ["), V);
+const rows = P.suggest(at("Burn ["), V), used = P.vocabulary(ICONS, ["Burn [fire] and [Fire:glow].", "[field]", "[ice]"]);
+const by = (v, text) => P.suggest(at(text), v).map(i => i.token);
 process.stdout.write(JSON.stringify({ all: rows.map(i => i.token), first: rows[0], fi: tokens("[fi"), FI: tokens("[F-i"),
   fire: tokens("[fire"), barn: tokens("[barn"), drawn: tokens("[drawn"), one: tokens("[a"), darkm: tokens("[dark m"),
-  yin: tokens("[Yin_Yang"), none: tokens("[zz"), see: tokens("(See below") }));""")
+  yin: tokens("[Yin_Yang"), none: tokens("[zz"), see: tokens("(See below"), uses: used.map(e => [e.name, e.uses]),
+  usedFi: by(used, "[fi"), usedAll: by(used, "[").slice(0, 3), fier: tokens("[fier"), firre: tokens("[firre"),
+  drak: tokens("[drak"), poorly: tokens("[the poorly drwan bar"), xyz: tokens("[xyz"), fireq: tokens("[firex") }));""")
     assert out["all"] == ["[dark]", "[darkmatter]", "[field]", "[fire]", "[fragile equip]",
                           "[6star]", "[star]", "[the_poorly_drawn_barnstar]", "[yinyangultra]"]
     assert out["first"] == {"token": "[dark]", "label": "dark", "kind": "type", "variant": "", "note": "",
@@ -112,6 +128,13 @@ process.stdout.write(JSON.stringify({ all: rows.map(i => i.token), first: rows[0
     assert out["yin"][0] == "[yinyangultra]" and out["yin"][1:] == [f"[yinyangultra:{v}]" for v in
                                                                    ("tint", "sticker", "no", "glow", "darkglow")]
     assert out["none"] == out["see"] == []
+    assert dict(out["uses"])["fire"] == 2 and dict(out["uses"])["field"] == 1 and dict(out["uses"])["dark"] == 0
+    assert out["usedFi"] == ["[fire]", "[field]"]                                # the most used first
+    assert out["usedAll"] == ["[fire]", "[field]", "[dark]"]
+    assert out["fier"] == ["[field]", "[fire]"]                                  # a slip: fie(l)d, fi(er)
+    assert out["firre"] == ["[fire]"] and out["drak"] == ["[dark]", "[darkmatter]"]
+    assert out["poorly"] == ["[the_poorly_drawn_barnstar]"]                      # two slips from 6 letters
+    assert out["xyz"] == [] and out["fireq"] == ["[fire]"]                       # "firex": fire, one too many
 
 
 @needs_node
@@ -152,7 +175,7 @@ def test_timing_tags(tmp_path):
 const rows = P.suggest(at("Heal 2 (1"), V);
 process.stdout.write(JSON.stringify({ tags: P.TAGS, one: rows.map(i => i.token), first: rows[0], pg: tokens("(1pg"),
   act: tokens("(ACT"), o: tokens("(O"), old: tokens("(E2"), see: tokens("(See below"), only: tokens("(only once"),
-  words: tokens("(1 per turn") }));""")
+  words: tokens("(1 per turn"), long: tokens("(-1/2GCD"), longer: tokens("(-1/2GCDX") }));""")
     if FONT_BUILD.is_file():
         assert set(out["tags"]) == font_tags()
     assert len(out["tags"]) == len(set(out["tags"])) == 341
@@ -164,22 +187,29 @@ process.stdout.write(JSON.stringify({ tags: P.TAGS, one: rows.map(i => i.token),
     assert out["act"] == ["(Action)"]
     assert out["o"] == ["(OYT)", "(OFS)", "(OS)", "(OD)"]
     assert out["old"] == ["(E2T)", "(E2GT)"]
-    assert out["see"] == out["only"] == out["words"] == []
+    assert out["see"] == out["only"] == out["words"] == out["longer"] == []
+    assert out["long"] == ["(-1/2GCD)"]                                          # the longest tags, fully typed
 
 
 @needs_node
 def test_a_choice_replaces_the_partial_token(tmp_path):
-    """The canonical token in place of what was typed, its own "]" or ")" in place of one already there, the rest of the
-    word at the caret replaced too; the caret just past it."""
+    """The canonical token in place of what was typed; inside a token whose "]" or ")" follows, in place of all of it
+    (a plain icon keeping the ":variant" after the caret); words after the caret stay; the caret just past it."""
     out = node(tmp_path, """
 const choose = (text, caret, token) => { const o = at(text, caret), item = P.suggest(o, V).find(i => i.token === token);
   return item ? P.applyChoice(text, o, item) : null; };
 process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose("Heal [fi] now", 8, "[fire]"),
   choose("Heal [fi]", 8, "[fire]"), choose("Heal [firx] now", 8, "[fire]"), choose("[fire:g]", 7, "[fire:glow]"),
   choose("[Dark M", 7, "[darkmatter]"), choose("x (1) y", 4, "(1CD)"), choose("x (1", 4, "(1CD)"),
-  choose("x (1c) y", 5, "(1CD)")].map(r => r && [r.text, r.caret])));""")
+  choose("x (1c) y", 5, "(1CD)"), choose("Immune to [fiand ice", 13, "[fire]"), choose("Heal 2 (1HP", 9, "(1CD)"),
+  choose("Deal 3 [fire damage", 8, "[field]"), choose("[fragile equip] x", 8, "[fragile equip]"), choose("[fi:glow]", 3, "[fire]"),
+  choose("[fi:glow]", 3, "[field]"), choose("[fire:glow] x", 8, "[fire:darkglow]"), choose("[fire:glow]", 5, "[fire:tint]"),
+  choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]")].map(r => r && [r.text, r.caret])));""")
     assert out == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
-                   ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7]]
+                   ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
+                   ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
+                   ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
+                   ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
 
 
 @needs_node
@@ -206,7 +236,8 @@ const r = T.makeRenderer({ cards: [], icons: ICONS, variants: REACH });
 const old = T.makeRenderer({ cards: [], icons: { fire: { file: "icons/fire.webp", name: "fire", kind: "type" } } });
 const html = v => r.render(`a [fire:${v}] b`);
 process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker"), glow: html("Glow"), dark: html("darkglow"),
-  no: html("no"), plain: r.render("a [fire] b"), unknown: html("glows"), quiet: r.icon("fire:glow", { tip: false }),
+  no: html("no"), plain: r.render("a [fire] b"), unknown: html("glows"), spaced: [html(" glow"), html("no ")],
+  quiet: r.icon("fire:glow", { tip: false }),
   old: ["tint", "sticker", "glow", "darkglow"].map(v => old.render(`a [fire:${v}] b`) === old.render("a [fire] b")) }));""")
     assert re.search(r'<span class="tokm" role="img" aria-label="fire \(text colour\)" style="-webkit-mask-image:url\(&quot;'
                      r'icons/fire\.tint\.webp&quot;\);mask-image:url\(&quot;icons/fire\.tint\.webp&quot;\)" data-tip="fire \(text colour\)">'
@@ -218,6 +249,7 @@ process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker
     assert 'src="icons/fire.darkglow.webp"' in out["dark"] and "black glow" in out["dark"]
     assert '<span class="tok-no"><img class="tok" src="icons/fire.webp"' in out["no"]
     assert out["unknown"] == out["plain"]
+    assert out["spaced"] == [out["plain"]] * 2                                   # no spaces around it, as in the font
     assert "data-tip" not in out["quiet"]
     assert out["old"] == [True] * 4
 
