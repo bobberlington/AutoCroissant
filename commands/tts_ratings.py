@@ -5,8 +5,9 @@ The TTS sessions' card ratings into TTSCardMaker's site/Card Ratings.json (card_
         [--review PREFIX] [--dry-run]
 
 --raw is the parse of TS_Save_3, 8 and 10 (cards placed on the rating boards, matched to card names). Each board has
-five category labels (3DText) at x positions; a card's value is piecewise linear in its x: label i (0-4) -> 2i+1.5, the
-midpoint between labels i and i+1 -> 2i+2.5, past the end labels the same half-band, clamped to 1-10, one decimal.
+five category labels (3DText) at x positions; a card's value is piecewise linear in its x: the midpoint between labels
+i and i+1 -> 2i+2.5 (label i about 2i+1.5, exactly when centred), past the end labels the same half-band, clamped to
+1-10, one decimal.
 Every entry is a group one ("by": "group", "source": "TTS session"), dated the session's evening. Skipped: TS_Save_3's
 joke "Double Pain" column, the Forbidden Tier, TS_Save_10 power placements left where TS_Save_8 had them.
 Re-running replaces the sessions' group entries and keeps every other one (idempotent). It also writes a review table
@@ -232,14 +233,15 @@ def review(entries: list, report: dict, authors: Optional[CardAuthors] = None, k
         out.writerow([card, kind, stars, author, *[_cell(by_card[card].get(c)) for c in cols], matched, note])
 
     md = ["# Card ratings from the TTS sessions: review", "",
-          "Rule: each board has five category labels at x positions. Label i (0-4) maps to 2i+1.5, the midpoint "
-          "between labels i and i+1 to 2i+2.5; past the end labels the same half-band; clamped to 1-10, one decimal. "
+          "Rule: each board has five category labels (0-4) at x positions. The midpoint between labels i and i+1 "
+          "maps to 2i+2.5 (label i about 2i+1.5, exactly when centred); past the end labels the same half-band; "
+          "clamped to 1-10, one decimal. "
           "A value's category: 1-2.4 / 2.5-4.4 / 4.5-6.4 / 6.5-8.4 / 8.5-10 (tierOf). All entries are group ones "
           "(\"by\": \"group\", \"source\": \"TTS session\").", "",
           "| Board | Scale | " + " | ".join(f"label {i}" for i in range(5)) + " |", "|---|---|---|---|---|---|---|"]
     for board, xs in LABELS.items():
         scale = SCALE_OF[board]
-        md.append(f"| {board} | {scale} | " + " | ".join(f"{CATEGORIES[scale][i]} x {x} -> {2 * i + 1.5}"
+        md.append(f"| {board} | {scale} | " + " | ".join(f"{CATEGORIES[scale][i]} x {x} -> {score(x, xs)[1]}"
                                                            for i, x in enumerate(xs)) + " |")
     md += ["", f"**{report['entries']} entries for {report['cards']} cards** "
                f"({sum(1 for c in by_card if next(iter(by_card[c].values()))['archived'])} archived). "

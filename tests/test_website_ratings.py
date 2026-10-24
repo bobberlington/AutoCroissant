@@ -80,6 +80,15 @@ def test_score_bands():
     assert [tr.tier_of(v) for v in (1, 2.4, 2.5, 4.5, 6.5, 8.4, 8.5, 10)] == [0, 0, 1, 2, 3, 3, 4, 4]
 
 
+def test_review_prints_the_labels_values():
+    """The review's label table prints score() at each label, not 2i+1.5 (3.4 and 7.6 on the centre board)."""
+    report = {"entries": 0, "cards": 0, "carried": [], "clamped": 0, "unmatched": [], "per": {}, "dropped": [], "forbidden": [], "skipped": {}}
+    md = tr.review([], report)[1]
+    row = next(line for line in md.splitlines() if line.startswith("| centre |"))
+    assert [float(v.split(" |")[0]) for v in row.split("-> ")[1:]] == [tr.score(x, tr.LABELS["centre"])[1] for x in tr.LABELS["centre"]]
+    assert "-> 3.4 |" in row and "-> 7.6 |" in row and "about 2i+1.5" in md
+
+
 def test_favorability_columns():
     """The reversi columns (37.72 + 4.567 per column) on the upper board."""
     got = [tr.score(37.72 + 4.567 * (c - 1), tr.LABELS["like-top"]) for c in range(1, 9)]
