@@ -197,6 +197,10 @@ text a player can see.
 5. Where does the checker live (TTSCardMaker `site/build/` or the rules skill's `scripts/`), and is a failing Action
    acceptable while the baseline still has rows?
 
+**Answered 2026-10-24 (the user):** 2 V1: a joke, the page keeps it (the checker stops flagging it). 3 M1: "Smoldering"
+(already the file name). 4 C4: status effects deal damage/heal and tick in phase 4 (page 09 is right; page 19 gets
+reworded). 5 the checker lives in the rules skill's scripts, run by hand, and reports only until its baseline is clean.
+
 ## 9. Provenance (2026-10-20, read-only)
 
 | Fact | Command |

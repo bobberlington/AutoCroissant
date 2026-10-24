@@ -260,3 +260,9 @@ and batched commits for publishing reports and scripts (collaborators only, §4)
    `site/scripts/`? The former matches the pipeline's two-kinds-of-edits rule; the latter diffs better.
 7. Minions and `Auxiliary/Creatures` cards in reports: per-card rows (they go to the graveyard, 15 Minions) or
    folded into their parent? (The home's open question 5; one answer for both.)
+
+**Answered 2026-10-24 (the user):** 1 the team writes the rulings; unruled items stay by hand indefinitely. 2 no
+multiplayer for now: the browser simulator is single-player testing only. 3 GitHub logins only; all reports public; an
+admin may confirm for a player; one team's confirmation counts. 4 inside the Flex Table Control. 5 Constructed's shop
+is the whole level (cards in either hand included). 6 one script file per card under `site/scripts/`. 7 own rows.
+

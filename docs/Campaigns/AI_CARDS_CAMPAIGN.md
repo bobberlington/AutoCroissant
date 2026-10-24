@@ -207,6 +207,8 @@ a separate table, never the real card statistics.
   bot to that branch while drafting.
   2026-10-21: neither: the sandbox repo has its own bot (D1).
 
+**2026-10-24 (the user):** stays parked; the iron-out and Q3's budget come later.
+
 ## 6. Order
 
 Phase 0 and 1 need nothing from Task 3 and can run now on the Mac. Phase 2 no longer waits for the fork's text engine: it is in
