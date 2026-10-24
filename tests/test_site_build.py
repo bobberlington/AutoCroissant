@@ -1,8 +1,8 @@
 """
 The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline: the same site from the
 bot's pickles and from the card sync's db/ (CARD_DATA_DIR, load_card_data: the shadow's comparison in small), the current
-text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, Pacific
-contribution months. Loads
+text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
+author and created, image revisions (Stats), Pacific contribution months. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from os import environ
 from os.path import expanduser
 from pathlib import Path
@@ -356,3 +357,60 @@ def test_ratings_reach_the_cards_and_the_archived_rows(bs, repo, tmp_path, monke
     assert cards["Alpha"]["ratings"] == [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}]
     assert "ratings" not in cards["Watermelon"] and out["cards.json"]["files"]["ratings"] == "site/Card Ratings.json"
     assert [(r["card"], [e["value"] for e in r.get("ratings", [])]) for r in out["changelog.json"]["archived"]] == [("White Palace", [7.1])]
+
+
+def test_archived_rows_carry_tag_author_created(bs, repo, tmp_path, monkeypatch):
+    """White Palace's changelog row: tag retired, author Maker, created the Pacific day of its oldest version; its
+    analytics.json copy (Stats) has only the slim fields."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    t1 = repo["t"][0]
+    day = datetime.fromtimestamp(t1, bs.analytics.ZONE).strftime("%Y-%m-%d")
+    row = out["changelog.json"]["archived"][0]
+    assert (row["tag"], row["author"], row["created"]) == ("retired", "Maker", day)
+    assert out["analytics.json"]["archived"] == [{"card": "White Palace", "title": "White Palace", "tag": "retired", "card_type": "field",
+                                                   "stars": 2, "at": repo["t"][2], "created": day, "author": "Maker"}]
+
+
+def test_archived_author_and_created_precedence(bs):
+    """author: Card Authors.txt's credit > the tag's (backfill) > the last version's, shown through [people]; created:
+    the last version's created date, else the Pacific day of its oldest version (its version record's start)."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+
+    def v(ts, **kw):
+        card = bs.CardInfo()
+        card.__dict__.update(timestamp=float(ts), card_type="creature", stars=2, author="Last", **kw)
+        return card
+    start = 1_700_000_000
+    old = {"Gone": [v(start + 9 * DAY, version={"from": float(start)}), v(start + 20 * DAY, archived={"at": start + 30 * DAY, "author": "Tagged"})]}
+    rows = lambda **kw: bs.archived_cards(old, lambda name: None, (), **kw)[0]
+    day = datetime.fromtimestamp(start, bs.analytics.ZONE).strftime("%Y-%m-%d")
+    assert (rows()["author"], rows()["created"], rows()["tag"]) == ("Tagged", day, "deleted")
+    assert rows(credited={"gone": "Listed"}, people={"listed": "Shown"})["author"] == "Shown"
+    del old["Gone"][1].archived["author"]
+    old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
+    assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
+
+
+def test_revisions_leave_out_uploads_and_mass_passes(bs, repo, tmp_path, monkeypatch):
+    """analytics.json revisions: Alpha's two image changes after its upload by Maker, nothing for Watermelon. The helper:
+    a commit in more than MASS_PASS cards' versions is left out; a bot commit credits its Edit-by logins (not a discord:
+    name), one without trailers nobody; every id of the PNG but skip's gets the counts; no history: None."""
+    if not hasattr(bs, "card_revisions"):
+        pytest.skip(f"{BUILD_SITE} has no revisions")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards = _by_name(out["cards.json"]["cards"])
+    assert out["analytics.json"]["revisions"] == {"available": True, "mass": bs.MASS_PASS, "cards": {cards["Alpha"]["id"]: {"Maker": 2}}}
+
+    row = lambda sha, name, editors=(): (sha, 0, name, f"{name.lower()}@example.com", "s", [], list(editors))
+    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice", "discord:carl"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
+               row("up", "Maker")]
+    v = lambda sha: ((sha, 0, "x", "s"), "p")
+    found = {f"m{i}.png": [v("mass"), v("up")] for i in range(bs.MASS_PASS + 1)}
+    found["a.png"] = [v("bot"), v("bare"), v("bob"), v("mass"), v("up")]
+    by_png = {"a.png": [{"id": "a"}, {"id": "a2"}, {"id": "page"}], **{p: [{"id": p}] for p in found if p != "a.png"}}
+    got = bs.card_revisions(found, by_png, commits, {"alice": "Alice"}, {}, skip={"page"})
+    assert got == {"a": {"Alice": 1, "Bob": 1}, "a2": {"Alice": 1, "Bob": 1}}
+    assert bs.card_revisions(None, by_png, None, {}, {}) is None
