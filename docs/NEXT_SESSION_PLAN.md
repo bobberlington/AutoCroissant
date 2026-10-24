@@ -115,7 +115,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
       origin/main cc3cd8c merged in). Phase 2 (owner's answers of ~17:40): own-style FX layers rebuilt, typed badges
       and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
-      review fixes (same branch, origin/main 8983719 merged in): a badge edited by deleting letters keeps its badge
+      review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
       layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
       a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Land it
       after a clean review and deploy (psd_parser.py changed: pull + Cython rebuild + restart on the jetson). q6 (own
@@ -128,13 +128,9 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [x] FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow,
       Fire/Ice Staff, Flameblade) are rebuilt in their own style (owner 2026-10-23 ~17:40): built on `work/fx-rebuild`
       phase 2 (42 of 48 dry bakes). Also there: every typed stoogedings token set in the font (62 of 85).
-- [ ] Tests drifted from the clone (fail on main too; the full suite on `work/fx-rebuild` 2026-10-23 evening: 5 failed,
-      1421 passed, 13 skipped, all 5 these; a 6th since TTSCardMaker baf89da9 re-saved Shell_Shock:
-      `test_baseline_falls_back_when_the_png_disagrees_with_the_preview`): Green Mage's PSD was fixed (TTSCardMaker 78798eac, ATK 6), so
-      `test_effect_rules_on_styled_rows`, `test_a_bar_outside_the_card_refuses` and
-      `test_a_bar_outside_the_card_is_a_final_refusal` fail: pin Green Mage at `78798eac^` (`at_rev`); Baba's font was
-      added (b03b9975), so `test_rules_on_real_cards[Baba]` and `test_r7_is_told_in_the_standards_post` (R7) fail:
-      pin Baba or MDW/Fonts at `b03b9975^`.
+- [x] Tests drifted from the clone: closed by origin/main 3bb3ede (Green Mage and Shell_Shock pinned) and 03cd785
+      (BabaUI in the repo, R7 waiver gone). Full suite on `work/fx-rebuild` after merging 8cbb211 (2026-10-23 night,
+      fork venv `ac-py314-fork`): 1481 passed, 12 skipped, 0 failed.
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       rcache wiring in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the
       Photoshop oracle loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).

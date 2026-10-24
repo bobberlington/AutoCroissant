@@ -570,7 +570,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_parentheses_typed_after_a_badge_are_body_text`, `test_effect_layer_numbers_read_as_the_jsx`,
   `test_fx_notes_reach_the_commit_and_the_verdict`. `psd_parser.py` changed (the `#0` read): a jetson deploy rebuilds
   Cython.
-  **Phase 2 review (2026-10-23 night, same branch; origin/main 8983719 merged in):** four silent wrong bakes, each
+  **Phase 2 review (2026-10-23 night, same branch; origin/main 8983719, then 8cbb211, merged in):** four silent wrong bakes, each
   refused or baked right now (section 5 step 4 and the typed-icons paragraph; UNBAKEABLE BUG 2 block for the census,
   `~/Documents/Tools/wt/bf-fx-r5-scratch/`): a badge edited by deleting letters joins its badge layer (it was deleted:
   a blank pill), with gate `gate_fx`'s `bare_icons` behind it; a typed badge under any tint (Pin Light, a 69% gradient)

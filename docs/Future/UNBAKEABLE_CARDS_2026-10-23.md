@@ -167,7 +167,7 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
     bake on the 9 cards printing a `:sticker` or `:tint` icon (Palace of Shadow, Irithyll, Afraid, Corruption, Error
     Room, Inkhole, Blindness, Elemental World, Dark Bramble) would have redrawn it as the plain icon, every gate
     passing; `keep_tokens` keeps the card's own spelling.
-  - **Phase 2 review (same branch, 2026-10-23 night; origin/main 8983719 merged in):** four silent wrong bakes fixed,
+  - **Phase 2 review (same branch, 2026-10-23 night; origin/main 8983719, then 8cbb211, merged in):** four silent wrong bakes fixed,
     each refused or baked right now (dry census with every gate on copies of TTSCardMaker main, fork `cards-20261023c`;
     scripts, JSON and crops `~/Documents/Tools/wt/bf-fx-r5-scratch/`: `census_bake.py`, `runs/{b,c,r1,r2,regress}.json`,
     `census.json` for the Ability tints, `bare.py`):
