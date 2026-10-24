@@ -92,7 +92,7 @@ const pages = k => st.distPages(st.countValues(cards, k));
 const html = chart(render(cards, null).top, "dist"), opened = chart(render(cards, null, "", { distPage: { atk: 1 } }).top, "dist");
 const panel = (h, k) => h.match(new RegExp(`<div class="dist-panel" data-stat="${k}"[\\\\s\\\\S]*?(?=<div class="dist-panel"|</div></div><div class="view-table")`))[0];
 const pageOf = (h, k, p) => panel(h, k).match(new RegExp(`<div class="dist-page" data-page="${p}"[^>]*>([\\\\s\\\\S]*?)</svg>`));
-const labels = svg => [...svg.matchAll(/<text x="[^"]+" y="(?:164|162)" text-anchor="middle">([^<]*)</g)].map(m => m[1]);
+const labels = svg => [...svg.matchAll(/<text x="[^"]+" y="176" text-anchor="middle">([^<]*)</g)].map(m => m[1]);
 const topTick = svg => [...svg.matchAll(/text-anchor="end">([^<]*)</g)].map(m => m[1]).pop();
 out({ pages: ["hp", "atk", "spd"].map(pages), pager: ["hp", "def", "atk", "spd"].map(k => panel(html, k).includes("dist-pager")),
   p0: labels(pageOf(html, "spd", 0)[1]), atk1: labels(pageOf(html, "atk", 1)[1]),
@@ -108,7 +108,19 @@ out({ pages: ["hp", "atk", "spd"].map(pages), pager: ["hp", "def", "atk", "spd"]
     assert len(set(out["ticks"])) == 1 and out["hidden"]
     assert out["values"] == [str(v) for v in range(11)] + ["12", "20", "35"]
     assert out["opened"] == ["11–20", False, True]
-    assert out["lone"] == ["1"] and not out["p0vals"] and len(out["tops"]) == 1 and out["tops"][0] <= 144 - 3   # a lone card shows
+    assert out["lone"] == ["1"] and not out["p0vals"] and len(out["tops"]) == 1 and out["tops"][0] <= 158 - 3   # a lone card shows
+
+
+def test_stat_labels_clear_the_top_tick(tmp_path):
+    """The stat's label (HP, ATK...) sits right above its chart: the highest y-axis number (11 px text) starts inside
+    the chart, not over the label."""
+    out = node(tmp_path, """
+const cards = fixture().filter(c => c.type === "creature");
+cards[0].atk = 12;
+const svgs = chart(render(cards, null).top, "dist").match(/<svg[\\s\\S]*?<\\/svg>/g);
+out(svgs.map(svg => Math.min(...[...svg.matchAll(/<text x="[^"]+" y="([-\\d.]+)" text-anchor="end">/g)].map(m => +m[1]))));
+""")
+    assert len(out) == 5 and all(y >= 11 for y in out), out
 
 
 def test_item_types_read_as_in_the_rulebook(tmp_path):

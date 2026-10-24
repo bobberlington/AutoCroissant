@@ -327,6 +327,16 @@ def test_panels_hide_and_empty_states(tmp_path):
     assert "Edited: author 3 · parser notes checked 1" in new
 
 
+def test_activity_labels_clear_the_top_tick(tmp_path):
+    """Each activity row's label sits right above its columns: the highest y-axis number (11 px text) starts inside
+    the chart, not over the label."""
+    out = node(tmp_path, """
+const html = pf.activityHtml({ months: [["2024-01", 3, 1, 2], ["2024-03", 9, 0, 4]] });
+out(html.match(/<svg[\\s\\S]*?<\\/svg>/g).map(svg => Math.min(...[...svg.matchAll(/<text x="[^"]+" y="([-\\d.]+)" text-anchor="end">/g)].map(m => +m[1]))));
+""")
+    assert len(out) == 3 and all(y >= 11 for y in out), out
+
+
 def test_balance_shows_the_biggest_swing(tmp_path):
     """P1's biggest swing: its card, the signed change and month, beside the newest rows."""
     out = node(tmp_path, """
