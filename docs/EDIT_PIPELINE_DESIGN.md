@@ -379,11 +379,17 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    website writes as "5★": review 2026-10-23, it stayed in the body font, a missing-glyph box, every gate passing),
    anywhere in the ability, is set in the icon font
    at the card's own badge or token style (`icon_style`: its icon-font badges' or tokens' STYLE_KEYS, size, baseline
-   shift, tracking..., the commonest, ties to the one at the body's size, then the first: Pizza's 32 pt, not its odd
-   18.66 pt first badge); a card with none sets it in `ICON_FONT` (added to the layer's and Txt2's FontSets,
+   shift, tracking..., at their commonest size, ties to the body's size, then the first; of those the commonest style:
+   Pizza's 32 pt, not its odd 18.66 pt first badge, owner 2026-10-24); a card with none sets it in `ICON_FONT` (added to the layer's and Txt2's FontSets,
    `Edit.fonts`) at the text's own style, the most common card style (measured on main: 358 of 659 icon-font runs share
-   every key with the text beside them, 442 its size; the templates have none). One the engine set in a badge's own
-   style (typed right after a badge, or a digit changed inside one) keeps it. Text typed after a badge that the font
+   every key with the text beside them, 442 its size; the templates have none). An old badge or token edited in place
+   (a digit changed inside it: the new one holding most of its kept characters) keeps its own style; one typed right
+   after a badge, which the engine gives that badge's style, takes the card's (owner 2026-10-24: Pizza's (2U) typed
+   after its 18.66 pt (1GCD) stayed 18.66 pt; 57 cards on main have badges in two sizes). A typed `:sticker` or
+   `:tint` (drawn in the text's colour) takes the colour of its kind on the card (`variant_fill`, owner 2026-10-24):
+   the same icon's first (Palace of Shadow's [dark:sticker] white on its white first line, its [light:sticker] the
+   body's grey), the edited text's before the other text's; none on the card: the surrounding text's, as before; its
+   kind in as many of one colour as of another (a [fire:sticker] on Palace) refuses `unsupported-card`. Text typed after a badge that the font
    draws no badge of ("(2 points)") takes the body style; letters left in the icon font that it draws no badge of
    (a badge replaced by "(abc)", or one cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
    `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font has no glyph
@@ -407,7 +413,15 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    icon as the parser reads it ("[dark]" for "[dark:sticker]", "[fire]" for "[Fire]" or "★"), so `keep_tokens` spells
    an icon the edit kept as the layer does (review 2026-10-23: an ability bake on Palace of Shadow, Irithyll, Afraid,
    Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
-   plain, every gate passing). A badge or token typed in a title stays text (not yet handled). An edit on a layer
+   plain, every gate passing). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
+   title's own size and colour (`icon_style` of the title, else the run the engine gives it), under the same gates:
+   glows and `unlettered_icons` refuse `font`, a title under an overlay, blend, opacity or clipped layer (`_tinted`:
+   367 of 728 titles on main, mostly gradient overlays) refuses `unsupported-card`, and `gate_fx` runs `bare_icons`,
+   `see_through_icons`, `lettered_icons` and `unshaped_icons` on the title (`titles`, `_gate_icons`). A stroke, shadow,
+   glow or bevel draws round the icon as Photoshop does. A timing badge typed there refuses `unsupported-card` (the
+   ruling names tokens; the website shows a title as plain words): owner to rule. The parser reads a title's icons
+   as its name (`title_layers`), not as a header's types or stars: the re-parse read Bench's "[fire]" as a fire type
+   (no title on main uses the icon font, so nothing reads differently; psd_parser is a Cython module). An edit on a layer
    set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs. A fork that
    draws them in colour (round 6) bakes them; where the engine draws one in one colour (an older fork, or SVG it does not
    cover: warning `monochrome_emoji`) the bake refuses `font` unless an opaque overlay effect covers the layer (Mini
@@ -710,6 +724,25 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_gate_untouched`,
   `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; `test_a_bake_opens_each_psd_once` asserts the bake
   landed; the plain-card test moved to Koro-Sensei (on Papyrus the token now runs under the spaghetti).
+  **Owner rulings 2026-10-24 (same branch; origin/main c249eba merged in: psd-tools `cards-20261024`, round 12):**
+  phase 3's sample and cases re-measured on the new fork first (`~/Documents/Tools/wt/scratch/bug2-p4/`, venv
+  `~/.venvs/ac-py314-r12`): 50 cards x 4 edits the same as on `cards-20261023d` result for result (105 baked, 50 n/a,
+  31 overflow, 14 unsupported-card), the 43 named cases as phase 3 reported, each bake's PNG 0 px past 24 against its
+  PSD's render. (1) A token typed in the title is set in the icon font at the title's size and colour under the
+  ability's gates (section 5 step 6); the parser reads a title's icons as its name, not a header's types or stars (813
+  of 813 cards parse the same). Census, 66 titles of every effect mix x 3 edits: 26 cards bake (51 bakes: strokes,
+  shadows, glows, bevels, off gradients), each typed token in the icon font at its title's size; 57 refuse under a
+  tinted title, 38 overflow, 3 `region` (Skeleton Mate, any title edit), 5 split titles. (2) A typed `:sticker` or
+  `:tint` takes its kind's colour on the card (`variant_fill`). Census, 12 cards x 5 edits: 54 bake, Palace of
+  Shadow's [dark:sticker] white (it was grey), its [light:sticker] and :tints grey, its [fire:sticker] refused (a
+  tie); 5 overflow. (3) A new badge or token takes the commonest size (`icon_style`; one edited in place keeps its
+  own). Census, 18 two-size cards x 3 edits (a (2U) after and before the odd badge, a [fire] after it): 49 bake, every
+  typed badge at the card's commonest badge size and token at its token size (16 of 16 typed right after the odd
+  badge took the odd size before); Pizza refuses (its clipped Multiply `Layer 12`), Clock overflows. Tests:
+  `test_icon_style_takes_the_commonest_size_first`, `test_a_typed_badge_takes_the_cards_usual_badge_size`,
+  `test_variant_fill_takes_its_kinds_colour`, `test_a_typed_sticker_takes_the_colour_of_its_kind`,
+  `test_a_token_typed_in_the_title_is_set_in_the_icon_font`, `test_gate_fx_checks_a_title_edits_icons`; each fails with
+  its fix taken out (`mut-*/`).
 
 ## 8. Runner
 
