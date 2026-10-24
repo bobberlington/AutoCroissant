@@ -1300,8 +1300,8 @@ def test_details_flags_are_refilled_on_a_changed_tree(github, monkeypatch):
     import commands.psd_details as pd
 
     class Everything:
-        def resolve(self, name):
-            return "exact"
+        def supplies(self, name):
+            return True
     monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
     _run()
     doomer = _file_sha(github, DOOMER)
@@ -1317,8 +1317,8 @@ def test_truncated_tree_saves_the_details_prunes_none(github, psds, monkeypatch)
     import commands.psd_details as pd
 
     class Everything:
-        def resolve(self, name):
-            return "exact"
+        def supplies(self, name):
+            return True
     monkeypatch.setattr(pd, "font_index", lambda repository, tree=None: None)
     _run()
     doomer, freezer = _file_sha(github, DOOMER), _file_sha(github, FREEZER)

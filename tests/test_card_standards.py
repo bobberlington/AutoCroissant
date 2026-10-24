@@ -129,9 +129,9 @@ def test_r7_is_told_in_the_standards_post(clone, context, monkeypatch):
     without = FontIndex()                                   # MDW/Fonts less the files with a BabaUI face
     for path in _font_files(str(clone / "MDW/Fonts")):
         faces = face_names(Path(path).read_bytes())
-        if "BabaUI" not in {ps for ps, _ in faces}:
+        if "BabaUI" not in faces:
             without.add(faces)
-    assert without.files < context.fonts.files and without.resolve("BabaUI") is None
+    assert without.files < context.fonts.files and not without.supplies("BabaUI")
     lacking = cs.Context(context.types, without, context.chart, context.story_sync)
     (font,) = [i for i in cs.check(_open(clone, rel), rel, lacking) if i.code == "R7"]
     assert font.items == ("BabaUI",) and font.discord and not font.waived and cs.reported([font]) == [font]

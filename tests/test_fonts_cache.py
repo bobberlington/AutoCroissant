@@ -106,7 +106,7 @@ def test_first_fill_then_a_304(fake, font_bytes, tmp_path):
     assert fake.lists() == [None, saved["etag"]] and fake.blobs() == 2            # conditional: a 304, no download
     assert (second.requests, second.downloaded, second.files, second.tree) == (1, 0, first.files, first.tree)
     index = fc.FontIndex(second.directory)
-    assert (index.files, index.resolve("CacheFixture-B")) == (2, "exact")
+    assert index.files == 2 and index.supplies("CacheFixture-B")
 
 
 def test_a_changed_tree_downloads_only_new_blobs(fake, font_bytes, tmp_path):
@@ -189,7 +189,7 @@ def test_a_case_only_rename_keeps_the_file(fake, font_bytes, tmp_path):
     result = fc.refresh_cache("o/r", directory="cache")
     assert (result.failed, result.complete, result.removed) == ({}, True, 0 if (tmp_path / "CACHE").exists() else 1)
     assert sorted(p.name for p in (tmp_path / "cache").iterdir()) == [fc.MANIFEST, "B.ttf", "a.ttf"]
-    assert fc.FontIndex(result.directory).resolve("CacheFixture-A") == "exact"
+    assert fc.FontIndex(result.directory).supplies("CacheFixture-A")
     assert (tmp_path / "cache" / "a.ttf").read_bytes() == font_bytes["CacheFixture-A"]
 
 
@@ -315,7 +315,7 @@ def test_find_fonts_prefers_the_override_then_the_checkout(fake, monkeypatch, tm
 # ========================
 def test_details_index_from_the_cache(fake, no_checkout, capsys):
     index = pd.font_index("o/r", "cache")
-    assert index is not None and index.files == 2 and index.resolve("CacheFixture-A") == "exact"
+    assert index is not None and index.files == 2 and index.supplies("CacheFixture-A")
     fake.listing_status = 404
     stale = pd.font_index("o/r", "cache")                                       # the listing failed: the cache stands
     assert stale is not None and stale.files == 2 and "MDW/Fonts listing" in capsys.readouterr().out
