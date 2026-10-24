@@ -42,6 +42,12 @@ PANDAMONIUM = ("02e54e182501c45c4483b57756ea083321c5fa73", "be1760ebc808be51e51a
                "85f8030a8b985e0b739a3e3c5000093ce449dd38")                                           # 38c55bd3: the author's PNG
 GREEN_MAGE = ("d17ddacd178eb7353dab252651855da1e2d995f7", "cf9e880710d77ad3b10dfa6690a2a285b5d1b9da",
               "09e2dce6f6ed70454f1e52604015cc41678763ff", "41c2439d09d0eb532995338d2646ed7556b52eac")   # 45cf8746: ATK 6, bars only
+THIN_MAN = ("eb2b78e1f1b3948e38b8c091515845a68226102d", "8603c0ca93be42722dbe7459a664ec9258df7340",
+            "c97731e5d1d510a92640873280e5c31aedd98b69")                                                 # 59956ce4: atk markers
+DOGMA = ("389d8d8d2b37aaa81e7da0928dadea3d8a1030cf", "2811461496e61a4896ca74f6db958099a70294d2",
+         "d5438e166a74bd24744b0aa509bed51b0541f591")                                                    # 5a9e0fcf: TySh only
+SANS = ("97b51c821e8057f1c1a00991172484ee3b30887b", "da0f33d4551435e71a7bd3a64a6f3f5fefa5fa15",
+        "6df87ab1668293459015269541c448e4dd3235d9")                                                     # 1b4f36a0: stale push
 BLOCK_HOPPER = ("923fdc6d0d874beac87904c5fc68f76737ebaf74", "23f5cd1787d1d8d924738b159acfa523f68e5963")  # 0262b237: raw
 BUZZO = ("1b5291a649238a46b19305c3beff46cc8b5b31e4", "c73dbbb392fe7f1c864c8f025ed7665f285bcbbf")         # converted
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
@@ -730,17 +736,23 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
 
 
 @fork
-def test_g2_rereads_a_stat_row_on_a_real_card(clone, monkeypatch):
-    """The re-read's stat half: Green Mage's ATK fix changed only stat bars (no type layer), so the atk row is the only
-    re-read entry; drawn as it was, G2_BLANK refuses it."""
-    old, new, old_png, _ = pair(clone, GREEN_MAGE)
-    new.has_preview = lambda: False
-    found = pe.export(old, new, old_png)
-    assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, ["the atk row"])
-    real = pe._render
-    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers: real(old if psd is new else psd, box, icc, numbers))
-    found = pe.export(old, new, old_png)
-    assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the atk row"))
+def test_g2_rereads_only_texts_whose_record_changed(clone):
+    """The re-read demands a drawn change only of a text whose record changed (review 2026-10-24): stat digits come from
+    marker layers that draw nothing (The Thin Man's 'Atk Dark/8' hidden, '7' shown) and a TySh-only edit draws nothing
+    new (Dogma's title case), so both are current, as on the checked path. Green Mage's ATK fix (bars only) and Sans
+    pushed stale (its Ability and a def marker) are drawn as the checked path draws them."""
+    for shas in (THIN_MAN, DOGMA):
+        old, new, old_png, _ = pair(clone, shas)
+        new.has_preview = lambda: False
+        found = pe.export(old, new, old_png)
+        assert (found.outcome, found.unchecked, found.data, found.numbers["reread"]) == ("current", True, b"", []), shas
+    for shas, what in ((GREEN_MAGE, []), (SANS, ["the Ability text"])):
+        old, new, old_png, _ = pair(clone, shas)
+        checked = pe.export(old, new, old_png)
+        new.has_preview = lambda: False
+        found = pe.export(old, new, old_png)
+        assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, what), shas
+        assert np.array_equal(np.asarray(found.image), np.asarray(checked.image)), shas
 
 
 @fork

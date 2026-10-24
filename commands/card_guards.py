@@ -633,9 +633,16 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
-        # a burst: G5/G6 refused, or G2 (no G5 to refuse: the PSD the PNG shows, always)
-        if job.psd_anchor and (found.unchecked or (found.outcome == "refused" and found.gate in ("G5", "G6"))):
-            anchored = png_export.export(png_export.open_psd(source.blob(job.psd_anchor)), new, old_png, numbered)
+        # a burst: G5/G6 refused, or G2 (no G5 to refuse) when the old PNG shows the anchor rather than the old PSD (not
+        # a PNG pushed before its PSD)
+        anchor = None
+        retry = found.outcome == "refused" and found.gate in ("G5", "G6")
+        if job.psd_anchor and old is not None and (found.unchecked or retry):
+            anchor = png_export.open_psd(source.blob(job.psd_anchor))
+            if found.unchecked and not png_export.shows(old_png, anchor, old):
+                anchor = None
+        if anchor is not None:
+            anchored = png_export.export(anchor, new, old_png, numbered)
             if found.unchecked or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                 found = anchored
                 result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "

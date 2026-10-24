@@ -6,8 +6,8 @@ old PNG takes the new render's pixels where it differs from the old one (psd_edi
 baseline's parity, shape, region). Photoshop's stored composite is never written: it is only a cross-check that can
 refuse (the old PNG outside the change, the drawn change against Photoshop's own image). A PSD saved without one (no
 Maximize Compatibility, G2) gets its PNG anyway (owner, 2026-10-24) under the bake's own gates alone: the baseline,
-every text and stat row the parser reads differently drawn with a change, the merge's shape and region; the Export is
-`unchecked` and the guards tell "no stored image to cross-check". Beside its PNG with at most KEPT_PX px past
+every text the parser reads differently (its record changed) drawn with a change, the merge's shape and region; the
+Export is `unchecked` and the guards tell "no stored image to cross-check". Beside its PNG with at most KEPT_PX px past
 BESIDE_CUT it keeps the PNG, told (KEPT; default 2026-10-24, owner to confirm). A refusal is data (an Export with
 outcome "refused" and the line card makers read).
 As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
@@ -18,7 +18,8 @@ draw those.
 
     export(old_psd, new_psd, old_png, numbered) -> Export   a PSD pushed without its PNG (gates G2-G8); old None: a new
                                                              PSD beside an existing PNG
-    reread(old_psd, new_psd) -> [(what, box)]                the texts and stat rows the parser reads differently
+    shows(png, psd, other) -> bool                           the PNG shows psd rather than other (G2's burst anchor)
+    reread(old_psd, new_psd) -> [(what, box)]                the texts the parser reads differently, records changed
     export_new(new_psd) -> Export                            a new PSD with no PNG (5.5)
     png_check(psd, png) -> dict                              R10: a PNG against its PSD's composite
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
@@ -434,6 +435,10 @@ def fingerprints(psd: PSDImage) -> dict:
     return out
 
 
+def _changed_ids(before: dict, after: dict) -> set:
+    return {key for key in set(before) | set(after) if before.get(key, (None,))[0] != after.get(key, (None,))[0]}
+
+
 def changed_layers(old: PSDImage, new: PSDImage) -> tuple:
     """
     The union box of the layer records that differ (each padded by its effects' reach, in both PSDs), and how many.
@@ -442,7 +447,7 @@ def changed_layers(old: PSDImage, new: PSDImage) -> tuple:
         (box or None when no record changed, number of changed records)
     """
     before, after = fingerprints(old), fingerprints(new)
-    ids = {key for key in set(before) | set(after) if before.get(key, (None,))[0] != after.get(key, (None,))[0]}
+    ids = _changed_ids(before, after)
     if not ids:
         return None, 0
     by_id: dict = {}
@@ -712,27 +717,25 @@ def _type_layers(psd: PSDImage) -> dict:
 
 def reread(old: PSDImage, new: PSDImage) -> list:
     """
-    What the parser reads differently in the pushed PSD (the bake's read-back, here for a push): each type layer whose
-    drawn text changed (new, edited, shown or hidden) and each stat row whose visible digits changed.
+    What the parser reads differently in the pushed PSD that must draw a change (the bake's read-back, here for a push):
+    each type layer whose drawn text changed (new, edited, shown or hidden) and whose record changed past the VOLATILE
+    blocks. A text edit in TySh alone (Dogma's title case under an all-caps style) draws nothing new; stat rows are left
+    out, their digits read from marker layers that draw nothing (The Thin Man's 'Atk Dark/8' hidden, review 2026-10-24).
 
     Returns:
         [(what, box)] with the box padded as changed_layers pads, clipped to the canvas
     """
     out = []
     before, after = _type_layers(old), _type_layers(new)
+    prints = fingerprints(old), fingerprints(new)
+    records = _changed_ids(*prints)
     for key in sorted(set(before) | set(after)):
         was, now = before.get(key), after.get(key)
         seen = [(t[1] if t and t[2] else "") for t in (was, now)]
-        if seen[0] == seen[1]:
+        if seen[0] == seen[1] or (key not in records and key in prints[0] and key in prints[1]):
             continue
         name, _, _, bbox = now if now and now[2] else was
         out.append((f"the {name} text", bbox))
-    rows_old, rows_new = stat_rows(old), stat_rows(new)
-    for stat in rows_new:
-        for n, (_, digits, bbox) in enumerate(rows_new[stat]):
-            then = rows_old.get(stat, [])
-            if bbox and (n >= len(then) or then[n][1] != digits):
-                out.append((f"the {stat} row" + (f" {n + 1}" if len(rows_new[stat]) > 1 else ""), bbox))
     boxes = []
     for what, (x0, y0, x1, y1) in out:
         box = (max(0, x0 - FX_EXTRA), max(0, y0 - FX_EXTRA), min(new.width, x1 + FX_EXTRA), min(new.height, y1 + FX_EXTRA))
@@ -763,8 +766,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     """
     G2 rendered anyway (owner, 2026-10-24): a PSD saved without Maximize Compatibility has no stored image, so nothing is
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
-    each text and stat row reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the
-    old PNG: past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
+    each text reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the old PNG:
+    past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
     the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) up to KEPT_PX past it, else it
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
     its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render or with
@@ -816,6 +819,25 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
+
+
+def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
+    """
+    Whether the PNG shows psd rather than other (G2's burst anchor against the PSD before the push): both drawn over
+    changed_layers(other, psd)'s box, as the PNG was exported; where the renders differ the PNG is within the bar of psd's
+    and nearer it (mean). False when they draw the same.
+    """
+    region, _ = changed_layers(other, psd)
+    if not region or region[2] <= region[0] or region[3] <= region[1]:
+        return False
+    scratch, crop = Export("current"), png.crop(region)
+    icc, mine = _render_voted(psd, region, psd_edit.export_icc(psd, png), psd_edit.icc_vote(psd, png), crop, scratch)
+    theirs = _render(other, region, icc, scratch.numbers)
+    moved = _diff(mine, theirs) > TOL
+    if not moved.any():
+        return False
+    near, far = _stats(_diff(mine, crop)[moved]), _stats(_diff(theirs, crop)[moved])
+    return _within(near) and near["mean"] < far["mean"]
 
 
 def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
@@ -993,6 +1015,7 @@ __all__ = [
     'png_check',
     'recompress',
     'reread',
+    'shows',
     'same_png',
     'worth',
     'xmp',

@@ -389,6 +389,37 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     assert int(pe._diff(made, card(base=(30, 200, 30), colour=(0, 255, 0))).max()) == 0
 
 
+@pytest.mark.parametrize("dot", [False, True])
+def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, monkeypatch, dot):
+    """Push A the PNG of v2 alone, B the PSD v2, C the PSD v3 (no stored image), within the burst window: the anchor is
+    v1 (the PSD at A) but the PNG shows v2, so G2 draws v3 over v2 as the checked path does. Over the anchor it refused
+    G6 (the square recoloured) or called a 4-px dot current, nothing told (review of 2026-10-24)."""
+    root, base, alice, bot = cards
+    work = tmp_path / "burst"
+    work.mkdir()
+    v2, v3 = card(base=(30, 200, 30)), card(base=(30, 200, 30), colour=(0, 255, 0))
+    if dot:
+        v3 = card(base=(30, 200, 30))
+        ImageDraw.Draw(v3).rectangle((12, 12, 13, 13), fill=(255, 255, 0))
+    _png(root, f"{FOLDER}/Bread.png", v2)
+    env = {**os.environ, "GIT_AUTHOR_DATE": "2026-10-22T10:00:00Z", "GIT_COMMITTER_DATE": "2026-10-22T10:00:00Z"}
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-am", "PNG first"], check=True, env=env)
+    one = _dated(root, work, "Bread", v2, "2026-10-22T10:05:00Z")
+    two = _dated(root, work, "Bread", v3, "2026-10-22T10:10:00Z")
+    source = cg.Source(str(root))
+    (job,) = cg.plan_jobs(source, one, two, "actor")[0]
+    assert job.case == "stale" and job.psd_anchor                     # the anchor is v1: not what the PNG shows
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+    out = tmp_path / "out"
+    data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["changed_px"] == (4 if dot else 441)
+    assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
+    assert not any(line.startswith("PNG not made") for line in entry["told"])
+    (write,) = entry["writes"]
+    assert int(pe._diff(Image.open(out / write["file"]), v3).max()) == 0
+
+
 def test_png_mismatch_reaches_discord_only_when_switched_on(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
     monkeypatch.setattr(cg, "TELL_PNG_MISMATCH", True)

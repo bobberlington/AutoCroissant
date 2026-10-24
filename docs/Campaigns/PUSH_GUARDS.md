@@ -309,7 +309,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   Photoshop drew them; the one-colour glyphs are only for text the fork sets itself (the bake's edits), not here.
 - **Photoshop's stored composite is never written.** It is a cross-check that can only refuse (G5, G6), converted the
   same way: D is where the old and new composites differ past 2 levels. G2 refuses only a PSD that is not 8-bit RGB, or a
-  text or stat row the re-read finds changed that the render does not show (G2_BLANK); an 8-bit RGB PSD with no stored
+  text the re-read finds changed (its record too) that the render does not show (G2_BLANK); an 8-bit RGB PSD with no stored
   composite is rendered under the bake's own gates and told ("no stored image to cross-check", `unchecked`; owner,
   2026-10-24, section 20).
 
@@ -320,7 +320,7 @@ one ends "export it in Photoshop").
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
 | G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
-| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text and stat row, G7; beside its PNG no baseline and no pixel refusal, every drawn text shown); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text or stat row the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
+| G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text whose record changed, G7; beside its PNG no baseline and no pixel refusal, every drawn text shown); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
@@ -630,7 +630,7 @@ not land.**
 | An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red (its post went out: no failure alert, and no streak mark, so the next failure is told) | a dispatch with `sha` and `cards` |
 | Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak, no ping. The streak is the `card-guards-failure-told` artifact a run leaves when it sent the message or stayed quiet in a told streak: quiet only when the last finished push run left it and is not green (a re-run that passed keeps its first attempt's artifact; review 4: counting red runs hid a push after a red run that had posted its own lines) | re-run the job |
 | A gate refuses | report line, Discord, no write | the author exports in Photoshop, or fixes the PSD |
-| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor (G2 always exports against it) | none |
+| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor (G2 exports against it when the old PNG shows it) | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
@@ -642,7 +642,7 @@ not land.**
 | The author pushes the PNG first and the PSD a few minutes later | the PSD's push is a stale case whose PNG already shows the PSD: "PNG already shows the pushed PSD", nothing written (review 6) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
 | The fork pin missing or broken | `--help` fails before any card: red, nothing posted | fix the pin; card-edits.yml shares it |
-| A PSD saved without Maximize Compatibility | since 2026-10-24 the PNG is made under the bake's own gates and the post says "no stored image to cross-check" (G2, section 20); a changed text or stat row the render does not show still refuses; guard 2 runs as ever | save with it on, or look the PNG over |
+| A PSD saved without Maximize Compatibility | since 2026-10-24 the PNG is made under the bake's own gates and the post says "no stored image to cross-check" (G2, section 20); a changed text the render does not show still refuses; guard 2 runs as ever | save with it on, or look the PNG over |
 | A PSD written by a script without updating the composite | the render shows the new layers, the stale composite does not: G6 (b) refuses past the floor (a hidden title: the whole change disagrees); since 2026-10-23 a smaller disagreement is made and told (section 18) | export in Photoshop |
 | The fork draws a changed area otherwise than Photoshop (a layer effect such as a drop shadow's edge, an outer glow, a gradient overlay) | since 2026-10-23 the PNG is made and the miss told in the comment and the bot commit ("made with a pixel difference ..."); past 25% bad G6 (a) or (b) refuses: no PNG, "export it in Photoshop" (section 18) | a fork fix; export in Photoshop when the miss shows |
 | A wrong re-export that passed the gates | visible on the site; the commit lists it | `git revert` of the bot commit (PNGs only), then a fix |
@@ -944,7 +944,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
 - A re-run edits its comment and does not post twice (the comment's told mark); the steps' shell is run against a fake `gh`
   and `curl` in `test_workflow_posts_once_and_a_rerun_edits_its_comment`.
 - Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made; with no
-  stored image (G2, no G5 to refuse) the export always takes the anchor
+  stored image (G2, no G5 to refuse) the export takes the anchor when the old PNG shows it, not the PSD before the push
   (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
 - R10 and "current, but outside the bar" stay in the comment (`TELL_PNG_MISMATCH`); report mode tells the fixable issues.
 
@@ -1303,8 +1303,8 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
 **4. G2 rendered anyway.** `png_export.export`/`export_new` with no stored composite on an 8-bit RGB PSD
 (`_no_composite` now refuses only a PSD that is not 8-bit RGB) go to `_unchecked`:
 - an old PSD: the changed layers' box rendered for both (as ever), the bake's baseline (the old PSD drawn against the old PNG:
-  past the floor G6, a miss told), the **re-read** (`png_export.reread`: every type layer whose drawn text changed and every
-  stat row whose visible digits changed must show a change in the render, else "PNG not made: the bot draws nothing for
+  past the floor G6, a miss told), the **re-read** (`png_export.reread`: every type layer whose drawn text changed and whose
+  record changed past the VOLATILE blocks must show a change in the render, else "PNG not made: the bot draws nothing for
   {what} (and the PSD has no stored image to check it against); export it in Photoshop", the bake's blank render), the delta
   merge, `gate_shape` and `gate_region` (G7); the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
   Photoshop's image;
@@ -1369,8 +1369,25 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   (`raw_stale_synth.log`). Test: `test_g2_draws_a_raw_export_raw`;
 - a burst (review of 2026-10-24): G2 has no G5 to refuse, so the burst anchor's retry never ran and run 2, checked over
   push 1's PSD, left push 1's change out (Niko, Name then Speed hidden: the Name still drawn, 19,954 px past 24 levels).
-  A G2 export of a stale card with a burst anchor is made against the anchor, always (refused if the anchor's gates
+  A G2 export of a stale card with a burst anchor was made against the anchor, always (refused if the anchor's gates
   refuse). Test: `test_a_burst_without_a_stored_image_is_made_against_the_anchor` (card_guards).
+  Round 6 of the review (2026-10-24): only when the old PNG shows the anchor rather than the PSD before the push
+  (`png_export.shows`: both drawn over `changed_layers(old, anchor)`'s box, the PNG within the bar of the anchor's render
+  where the two differ and nearer it by mean). A PNG pushed before its PSD shows the PSD before the push: over the anchor
+  G2 refused G6 (a square recoloured, baseline 91.8% bad) or called the PNG current with a 4-px change missing, nothing
+  told. On the 34 replayed commits with no stored image (scratch `py314/fix-r6/shows_real.jsonl`): the author's export
+  (PNG first) never shows the anchor (34 of 34 keep the export over the PSD before the push), the PNG at the parent shows
+  it on 33 (Restrained's old PNG never showed its old PSD: G5 on the checked path). Test:
+  `test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor` (card_guards; both scenarios, v3 drawn);
+- the re-read's misfires (round 6, 2026-10-24): the full-history replay (711 PSD modifications, each with and without
+  the stored image; scratch `py314/adv-r6/replay_all_g2.*`) found G2_BLANK on 6 pushes the checked path calls current
+  or re-exports. Stat digits are read from marker layers that draw nothing (The Thin Man 59956ce4: 'Atk Dark/8' hidden,
+  '7' shown, bbox empty; Tainted Eden and Tainted Isaac 7d4bce24; Sans 1b4f36a0's def marker refused its whole PNG), and
+  a TySh-only text edit draws nothing new (Tainted Lost and Dogma 5a9e0fcf, title case under an all-caps style:
+  `changed_layers` (None, 0)). The stat half is gone and a text counts only when its record changed; with nothing to
+  re-read and nothing moved the PNG is current, as on the checked path. Re-run (scratch `py314/fix-r6/replay_all_g2.*`): no
+  G2_BLANK anywhere; only those 6 verdicts moved (5 current, Sans re-exported, the checked PNG pixel for pixel). Test: `test_g2_rereads_only_texts_whose_record_changed` (The Thin Man and
+  Dogma current; Green Mage and Sans re-exported, the checked PNG pixel for pixel);
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
@@ -1381,8 +1398,7 @@ write did not land ("PNG not made: ..." alone). Tests: `test_g2_renders_anyway_w
 `test_a_png_pushed_before_its_psd_is_current` and `test_a_small_recolour_beside_its_png_is_rendered`, and on real cards
 `test_g2_real_cards_reread_the_parser_and_match_the_checked_png` (Dirty Bed's Ability and Springtrap's Name re-read; the
 PNG the checked export's, pixel for pixel) and `test_g2_refuses_a_text_drawn_blank_on_real_cards` (G2_BLANK through the
-three paths) and `test_g2_rereads_a_stat_row_on_a_real_card` (Green Mage's ATK fix, TTSCardMaker 45cf8746: stat bars only,
-so the atk row is the only re-read entry; G2_BLANK when drawn as it was) (png_export; `test_g2_renders_anyway_with_the_bakes_own_gates`
+three paths) and `test_g2_rereads_only_texts_whose_record_changed` (png_export; `test_g2_renders_anyway_with_the_bakes_own_gates`
 also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
 2.1), so no replay measures it.
 
