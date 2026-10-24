@@ -361,24 +361,98 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 @needs_js
 def test_what_the_mock_up_redraws(tmp_path):
-    """Only fields unlike the PSD; stats above 10, stars and types are named, not drawn. A stat cell lights as the last lit
-    one (the bar's rounded first cell: its colour) and darkens as the first dark one (none or the rounded last: a shade).
-    Bars only where the template has them and the details call the stats "template"."""
+    """Only fields unlike the PSD; stats above 10 are named, not drawn; stars from and to, types old and new unless only
+    reordered. A stat cell lights as the last lit one (the bar's rounded first cell: its colour) and darkens as the first
+    dark one (none or the rounded last: a shade). Bars only where the template has them and the details call the stats
+    "template"."""
     out = node(tmp_path, """
 const psd = { name: "A", ability: "Text", hp: 5, def: 2, atk: 3, spd: 9, stars: 2, types: ["wind", "light"] };
 const c = m.changes({ name: " A ", ability: "New", hp: 8, def: 12, atk: 3, spd: 10, stars: 3, types: ["light", "wind"] }, psd);
+const t = m.changes({ types: ["fire", "Wind"] }, psd);
 const card = { hp: 5, def: 2, atk: 3, spd: 9 };
 out([c, m.cellPlan(5, 8), m.cellPlan(1, 3), m.cellPlan(10, 8), m.cellPlan(9, 8), m.cellPlan(5, 3),
   m.barRows("tall", 720, 1440, card, { stats: { hp: "template", def: "template", atk: "template", spd: "template" } }).map(r => [r.k, r.box.map(Math.round)]),
   m.barRows("tall", 720, 1440, card, { stats: { hp: "pixel" } }).length, m.barRows("square", 720, 720, card, null).length,
-  [m.shapeOf(1200, 2400), m.shapeOf(1200, 1800), m.shapeOf(1200, 1200), m.shapeOf(1080, 1920)]]);""")
-    assert out[0] == {"name": None, "ability": "New", "stats": {"hp": [5, 8], "spd": [9, 10]}, "skipped": ["DEF", "stars"]}
+  [m.shapeOf(1200, 2400), m.shapeOf(1200, 1800), m.shapeOf(1200, 1200), m.shapeOf(1080, 1920)], t.types]);""")
+    assert out[0] == {"name": None, "ability": "New", "stats": {"hp": [5, 8], "spd": [9, 10]}, "stars": [2, 3], "types": None, "skipped": ["DEF"]}
+    assert out.pop() == [["wind", "light"], ["fire", "Wind"]]
     assert out[1] == [{"cell": 5, "as": 4}, {"cell": 6, "as": 4}, {"cell": 7, "as": 4}]
     assert out[2] == [{"cell": 1, "as": "lit"}, {"cell": 2, "as": "lit"}]
     assert out[3] == [{"cell": 8, "as": "dark"}, {"cell": 9, "as": "dark"}] and out[4] == [{"cell": 8, "as": "dark"}]
     assert out[5] == [{"cell": 3, "as": 5}, {"cell": 4, "as": 5}]
     assert out[6] == [["hp", [216, 720, 704, 770]], ["def", [216, 796, 704, 846]], ["atk", [216, 871, 704, 922]], ["spd", [216, 947, 704, 997]]]
     assert out[7:] == [0, 0, ["tall", "item", "square", ""]]
+
+
+# Mini Doomer's header (psd_details, 2026-10-24): two stars, rows of two past them; three type icons and the row's spots
+HEADER = """
+const stars = { units: [{ core: [1049, 13, 1165, 115], box: [1049, 12, 1173, 124] }, { core: [936, 15, 1052, 117], box: [936, 14, 1060, 126] }], icon: "warpstar",
+  at: { 1: [[1107, 64]], 2: [[1107, 64], [994, 66]], 3: [[1107, 64], [994, 66], [1051, 167]], 4: [[1107, 64], [994, 66], [1107, 167], [994, 167]] }, refused: { 4: "a star at (0, 0) would touch 'Name'" } };
+const types = { row: [{ name: "light", core: [81, 30, 241, 190], box: [51, 2, 269, 219] }, { name: "defensive_minion", core: [0, 223, 170, 341], box: [0, 223, 170, 341] },
+  { name: "wind", core: [214, 208, 356, 356], box: [214, 208, 356, 356] }], spots: { 4: [[414, 208, 556, 356]], 5: [[414, 208, 556, 356], [614, 208, 756, 356]] }, fixed: [], tokens: false, refused: null };
+"""
+
+
+@needs_js
+def test_stars_are_placed_from_the_record(tmp_path):
+    """Fewer: the last in reading order erased (glow box), nothing drawn. More: the shown stars stay, a star drawn at the
+    count's new centre (rows of two). A refused count is drawn and says why; no layout for the count, no record or a
+    unit count unlike the stars: in a box."""
+    out = node(tmp_path, HEADER + """
+out([m.starPlan(stars, 2, 1), m.starPlan(stars, 2, 3), m.starPlan(stars, 2, 4), m.starPlan(stars, 2, 6), m.starPlan(null, 2, 3), m.starPlan(stars, 5, 4),
+  m.starPlan({ ...stars, refused: { "*": "the '5 Stars' folder sets them" } }, 2, 3).refused]);""")
+    fewer, more, refused, none, no_record, mismatch, folder = out
+    assert fewer == {"erase": [[936, 14, 1060, 126]], "draw": [], "refused": None, "boxed": False}
+    assert more == {"erase": [], "draw": [[993, 116, 1109, 218]], "refused": None, "boxed": False}
+    assert refused["refused"] == "a star at (0, 0) would touch 'Name'" and len(refused["draw"]) == 2 and not refused["boxed"]
+    assert none["boxed"] and no_record["boxed"] and mismatch["boxed"] and folder == "the '5 Stars' folder sets them"
+
+
+@needs_js
+def test_types_close_up_like_the_bake(tmp_path):
+    """psd_edit.plan_types' rule on a three-icon row: a removed icon is erased and a new one takes its slot; removing the
+    first moves the last into it (the row closes up); a new fourth goes on the row's next spot; a token row, an empty row
+    or no spots: boxed; an icon the bake can't take off refuses."""
+    out = node(tmp_path, HEADER + """
+const P = (o, n, t = types) => m.typePlan(t, o, n), old = ["light", "defensive_minion", "wind"];
+out([P(old, ["fire", "defensive_minion", "wind"]), P(old, ["defensive_minion", "wind"]), P(old, [...old, "fire"]), P(old, [...old, "fire", "ice", "dark"]),
+  P(old, ["fire"], { ...types, tokens: true, refused: "printed as icon tokens in 'Types'" }), P([], ["fire"], { ...types, row: [] }),
+  P(old, ["wind"], { ...types, fixed: [["light", "'Frame' is a frame round the card"]] }).refused]);""")
+    swap, close, add, too_many, tokens, empty, fixed = out
+    assert swap == {"erase": [[51, 2, 269, 219]], "draw": [{"name": "fire", "core": [81, 30, 241, 190]}], "refused": None, "boxed": False}
+    assert close["erase"] == [[51, 2, 269, 219], [214, 208, 356, 356]] and close["draw"] == [{"name": "wind", "core": [81, 30, 241, 190]}]
+    assert add == {"erase": [], "draw": [{"name": "fire", "core": [414, 208, 556, 356]}], "refused": None, "boxed": False}
+    assert too_many["boxed"] and tokens == {"erase": [], "draw": [], "refused": "printed as icon tokens in 'Types'", "boxed": True}
+    assert empty["boxed"] and "line a new one up" in empty["refused"] and fixed == "'Frame' is a frame round the card, not an icon to take off"
+
+
+@needs_js
+def test_fill_box_puts_the_background_back(tmp_path):
+    """A blob over a gradient: the box filled from the pixels around it is within a few levels of the gradient; outside
+    nothing changes."""
+    out = node(tmp_path, PAINT + """
+const clean = new Uint8ClampedArray(img);
+for (let y = 100; y < 140; y++) for (let x = 80; x < 130; x++) put(x, y, 250);
+const before = new Uint8ClampedArray(img);
+m.fillBox(img, W, H, [80, 100, 130, 140], { pad: 3 });
+let worst = 0, outside = 0;
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, inBox = x >= 80 && x < 130 && y >= 100 && y < 140;
+  if (inBox) worst = Math.max(worst, Math.abs(img[i] - clean[i])); else outside = Math.max(outside, Math.abs(img[i] - before[i])); }
+out([worst, outside]);""")
+    assert out[0] <= 2 and out[1] == 0
+
+
+@needs_js
+def test_mock_note_names_a_refusal(tmp_path):
+    """The caption: stars or types in a box (plural), what the bake would refuse and why; nothing about stars or types
+    when they were drawn."""
+    out = node(tmp_path, """
+const base = { drawn: [], skipped: [], boxed: [], over: [], refused: [], fonts: {}, standIn: [] };
+out([p.mockNote({ ...base, boxed: ["stars"], refused: [["stars", "the '5 Stars' folder sets them"]] }), p.mockNote({ ...base, boxed: ["text"] }),
+  p.mockNote({ ...base, drawn: ["stars", "types"] }), p.mockNote({ ...base, boxed: ["types", "name"], skipped: ["DEF"] })]);""")
+    assert out[0] == "Stars in a box: their places on the image weren't found. The bake would refuse the stars: the '5 Stars' folder sets them."
+    assert out[1] == "Text in a box: its place on the image wasn't found." and out[2] == ""
+    assert out[3] == "Types and name in a box: their places on the image weren't found. Not drawn: DEF."
 
 
 @needs_js
