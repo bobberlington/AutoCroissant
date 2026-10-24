@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC, CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, FONT_ALIASES, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC, CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -200,7 +200,6 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, card_data, query_card, type_emojis |
 | `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (card_data, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
 | `MAILMAP_PATH` (2026-10-23) | `".mailmap"` | the card repo's git mailmap (one person's git names as one): `card_history.mailmap_args` passes head's blob to `git log` for `%aN`; the API path reads it from the tree once a run (`card_edits.Mailmap`) |
-| `FONT_ALIASES` (2026-10-21) | `{"Papyrus-Regular": "Papyrus", "Kung-Fu-Panda": "KungFuPanda"}` | the Windows PostScript names of two faces MDW/Fonts holds under other names (the targets are the faces' FreeType-style names, `Kung Fu Panda` -> `KungFuPanda`), so the fork's FontMap (commands/psd_edit.py, where the dict lived until 2026-10-21) and the font check (commands/font_check.py) count them as present; here because both importers load from a sparse Action checkout without the rest of the bot (stdlib-only file) |
 | `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's tts-save.yml Action, which passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
@@ -520,6 +519,27 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 `card-preview.yml` (2026-10-23, website previews) reads none of these: no secret beyond `GITHUB_TOKEN`, no variable, no
 Discord. Its branch `previews` is data, not a setting: it is rewritten by the workflow and never merged.
 
+### The psd-tools fork pin: `PSD_TOOLS_REF` (2026-10-23)
+
+The fork's tag is the top-level env `PSD_TOOLS_REF` of card-edits.yml, card-guards.yml, card-sync.yml and
+card-preview.yml, once in each (`cards-20261023d`, round 11, on 2026-10-23). The fork and its dependencies install
+offline from wheels in the Actions cache (path `~/.cache/psd-tools-wheels`, key
+`psd-tools-<tag>-<OS>-<arch>-py<Python>`, one entry for the four). The first run after a new tag or a new runner Python
+builds them (`pip wheel`, the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of
+the 29-35 s install). The wheels freeze numpy, scipy, Pillow and the rest at that first build; a new tag refreshes them
+(for a bad dependency release under the same tag, delete the entry: step 1's `gh cache delete`).
+
+Re-pin:
+1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a name's first wheels;
+   delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
+2. Change `PSD_TOOLS_REF` in the four workflows (one line each) in one commit. Nothing to clear: a new tag is a new
+   key, and GitHub drops an entry unused for 7 days.
+3. Run the shape tests against that checkout: `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml
+   AC_SITE_SRC=<checkout>` with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (the four pins must
+   match and be a `cards-YYYYMMDD[letter]` tag; `test_card_bake.fork_install` checks each workflow's install).
+4. The jetson's venv and the dev Mac's: autocroissant-run-and-operate ("When the psd-tools fork tag moves") and
+   autocroissant-build-and-env.
+
 ### setup.py (lines 8-49) — Cython build configuration
 
 | Constant | Meaning |
@@ -649,7 +669,7 @@ table with its command before quoting it in the future.
 | GIT_TOKEN consumers/rate-limit prints | `grep -rn "GIT_TOKEN" commands/ main.py` (defined once in github_api.py) |
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
 | git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
-| font_check constants and the shared alias table | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" global_config.py commands/` (defined once, imported by psd_edit and font_check) |
+| font_check constants (no alias table since 2026-10-23) | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" .` (no output) |
 | card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
 | card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
 | card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
@@ -675,6 +695,10 @@ When any command's output disagrees with this file, the repo wins: update the ta
 2026-10-21 (later): `FONT_ALIASES` moved from commands/psd_edit.py:47 to global_config.py:26 (32 lines now) and commands/font_check.py's
 constants catalogued; no flag or default changed. Review the same day: main.py citations re-pointed after the /fonts block (:278-285, lazy
 font_check import; `fonttools` added to requirements.txt).
+
+2026-10-23: `FONT_ALIASES` deleted (owner: "change the fonts to the exact ones and delete the aliases"): `Papyrus-Regular` is
+MDW/Fonts/Papyrus.ttf's own PostScript name and Kung Fu Panda Regular.ttf was renamed `Kung-Fu-Panda` (TTSCardMaker work/kfp-name
+2493651e); font_check matches PostScript names exactly, the fork's FontMap gets no aliases.
 
 2026-10-21 (audit fixes): the commit path of tts_save.py and card_bake.py folded into commands/git_commit.py (its table above; `GIT_TOKEN`
 row and the tts_save table re-pointed); font_check gained `COMMITS_PAGE`, `POOL_MIN`, `POOL_CHUNK` and takes the Action token through

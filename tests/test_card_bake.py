@@ -36,7 +36,8 @@ from golden_cards import VOCAB  # noqa: E402
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
-GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # its stat bars lie below the canvas
+GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
+OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
@@ -760,11 +761,13 @@ def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, tmp_path):
 
 @fork
 def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
-    """Green Mage's stat bars lie below its canvas: a stat edit is refused with the reason as a final verdict (the run
-    passes, the schedule leaves it), never an `error` that fails the run (a ValueError from the empty render, 2026-10-23).
-    Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same run."""
+    """Green Mage before its fix (OFF_CANVAS_MAGE): its stat bars lay below its canvas, so a stat edit is refused with the
+    reason as a final verdict (the run passes, the schedule leaves it), never an `error` that fails the run (a ValueError
+    from the empty render, 2026-10-23). Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same
+    run. Then the live card (the fix) lands: the refusal is pending again (its PSD changed) and the edit bakes."""
     files = github.files_at(github.head)
-    files.update(_card_files(clone, GREEN_MAGE))
+    png = GREEN_MAGE[:len(GREEN_MAGE) - 4] + ".png"
+    files.update({GREEN_MAGE: at_rev(clone, OFF_CANVAS_MAGE, GREEN_MAGE), png: at_rev(clone, OFF_CANVAS_MAGE, png)})
     files.update(_card_files(clone, PURE_VESSEL))
     files[cb.EDITS_PATHS[0]] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
                                        "Pure Vessel": {"hp": 3, "note": "checked", "_by": "web", "_at": AT}})
@@ -782,6 +785,15 @@ def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
     assert verdicts["Green Mage"]["reason"].startswith("unsupported-card: hp: the bar 'Hp Dark' lies outside the card (digit masks ")
     assert verdicts["Pure Vessel"]["state"] == "baked" and verdicts["Pure Vessel"]["reason"] == "hp 7 -> 3"
     assert after[GREEN_MAGE] == files[GREEN_MAGE] and after[PURE_VESSEL] != files[PURE_VESSEL] and cb.pending() == []
+    after.update(_card_files(clone, GREEN_MAGE))
+    github.commit(after, "owner", "Green Mage: stat bars on the card")
+    assert cb.pending() == ["Green Mage"]
+    report = cb.run_report()
+    mage = next(card for card in report.cards if card.name == "Green Mage")
+    assert mage.refusal is None and mage.baked.reparse["card"]["hp"] == 3 and mage.commit == report.commit
+    assert cb.failure(report) == "" and cb.pending() == [], report.text
+    assert "\n- Green Mage: hp 7 -> 3\n" in github.commits[report.commit]["message"]
+    assert github.files_at(github.head)[GREEN_MAGE] != after[GREEN_MAGE] and "Green Mage" not in _edits_at(github)["cards"]
 
 
 def test_transient_errors_write_no_verdict(github, monkeypatch):
@@ -1274,6 +1286,50 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     assert not extra, f"card-edits.yml installs none of these: {sorted(extra)}"    # a stray pandas/discord fails here, not in the Action
 
 
+FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml")   # one pin, one wheel cache entry
+FORK_WHEELS = "~/.cache/psd-tools-wheels"
+FORK_KEY = "psd-tools-${{ env.PSD_TOOLS_REF }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}"
+
+
+def fork_install(path) -> str:
+    """
+    A workflow's psd-tools fork install, as the four share it: the pin once (env PSD_TOOLS_REF); the fork's and its
+    dependencies' wheels restored by pin, Python and runner, built only on a miss, installed offline (the fork is 1.25.0,
+    as upstream's PyPI wheel an index would prefer), saved only after they installed.
+
+    Returns:
+        The pin.
+    """
+    text = path.read_text(encoding="utf-8")
+    pins = re.findall(r"^\s*PSD_TOOLS_REF: (\S+)", text, re.M)
+    assert len(pins) == 1, f"{path.name}: the pin in one place"
+    assert re.fullmatch(r"cards-\d{8}[a-z]*", pins[0]), f"{path.name}: a tag, never a branch"
+    assert re.findall(r"MichaelJSr/psd-tools@([^\s\"]+)", text) == ["$PSD_TOOLS_REF"], f"{path.name}: one fork URL, the pin's"
+    yaml = pytest.importorskip("yaml")
+    steps = [step for job in yaml.safe_load(text)["jobs"].values() for step in job["steps"]]
+    python = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
+    assert python["id"] == "python" and str(python["with"]["python-version"]).split()[-1] == "3.12"   # the output's (the last)
+    first = next(i for i, s in enumerate(steps)
+                 if s.get("uses", "").startswith("actions/cache/restore@") and s["with"]["path"] == FORK_WHEELS)
+    restore = steps[first]
+    assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
+    install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
+    run = steps[install]["run"]
+    assert first < install
+    if "if" in restore:                     # card-sync's: restored only for a bake, as Bake's `if` and the venv's BAKE say
+        bake = next(s for s in steps if s.get("id") == "bake")
+        assert restore["if"] == bake["if"].replace("steps.venv.outcome == 'success' && ", "")
+        assert "inputs.bake != 'none' && " in steps[install]["env"]["BAKE"]     # any letter case, as the `if`s compare
+    assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
+    assert re.search(r'pip"? wheel -q -w ~/\.cache/psd-tools-wheels requests "psd-tools\[composite,text\] @ '
+                     r'git\+https://github\.com/MichaelJSr/psd-tools@\$PSD_TOOLS_REF"$', run, re.M)
+    assert re.search(r'pip"? install -q --no-index -f ~/\.cache/psd-tools-wheels requests "psd-tools\[composite,text\]"$', run, re.M)
+    save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
+    assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
+    assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
+    return pins[0]
+
+
 def test_workflow_shape():
     """card-edits.yml: live every 30 minutes behind the pending gate, dispatch with dry_run on by default, never on the
     pipeline's own commits, one scheduled bake at a time in its own group (a running bake is never cancelled; sharing
@@ -1286,6 +1342,7 @@ def test_workflow_shape():
     assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
     assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text and '[ "$EVENT" = schedule ] && args+=(--pending)' in text
     assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
+    assert fork_install(WORKFLOW)                                                   # card-guards' test compares the four
     grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
     report = cb.Report("o/r", "h" * 40, False, "w")
     card = cb.Card("X", "x", {"hp": 1})

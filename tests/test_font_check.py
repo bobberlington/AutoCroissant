@@ -19,13 +19,14 @@ from requests import HTTPError
 import commands.font_check as fc
 import commands.github_api as ga
 import global_config
-from conftest import CLONE, REPO, Reply, blob_sha, blob_sha_bytes as _sha
+from conftest import CLONE, REPO, Reply, at_rev, blob_sha_bytes as _sha
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 
 WORKFLOW = Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML") else CLONE / ".github" / "workflows" / "font-check.yml"
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
+BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
 ROLE = "546427268751294475"
 FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual FontSet: the face, Photoshop's two extras
@@ -99,33 +100,24 @@ def index(fonts_dir):
 # ========================
 # Names and the index
 # ========================
-def test_norm_and_loose_keys():
-    assert fc.norm("Kung Fu Panda") == "kungfupanda" == fc.norm("Kung-Fu-Panda")
-    assert fc.loose_keys("Papyrus-Regular") == ("papyrusregular", "papyrus")
-    assert fc.loose_keys("PristinaRegular") == ("pristinaregular", "pristina")
-    assert fc.loose_keys("Elephant") == ("elephant",)
-
-
 def test_index_reads_every_face(index):
     assert (index.files, index.faces, index.errors) == (3, 4, [])
-    assert index.exact == {"PsdToolsFixture-TT", "PsdToolsFixture-CFF", "FixtureCollection-A", "FixtureCollection-B"}
-    assert index.resolve("FixtureCollection-B") == "exact"          # the .ttc's face at index 1
-    assert {"psdtoolsfixturett", "psdtoolsfixturecff", "fixturecollectionb"} <= index.loose
+    assert index.names == {"PsdToolsFixture-TT", "PsdToolsFixture-CFF", "FixtureCollection-A", "FixtureCollection-B"}
+    assert index.supplies("FixtureCollection-B")                    # the .ttc's face at index 1
 
 
 def test_face_names_and_fallbacks(fonts_dir):
     faces = fc.face_names((fonts_dir / "Pair.ttc").read_bytes())
-    assert faces == [["FixtureCollection-A", ["FixtureCollection-A", "Fixture CollectionA"]],
-                     ["FixtureCollection-B", ["FixtureCollection-B", "Fixture CollectionB"]]]
+    assert faces == ["FixtureCollection-A", "FixtureCollection-B"]
     font = TTFont(str(fonts_dir / "PsdToolsFixture-TT.ttf"))
     font["name"].removeNames(nameID=6)
     buf = BytesIO()
     font.save(buf)
-    assert fc.face_names(buf.getvalue())[0][0] == "PSDToolsFixture"             # no ID 6 or 4: the family, FreeType-style
+    assert fc.face_names(buf.getvalue()) == ["PSDToolsFixture"]                 # no ID 6 or 4: the family, FreeType-style
     font["name"].setName("Full Name Here", 4, 3, 1, 0x409)
     buf = BytesIO()
     font.save(buf)
-    assert fc.face_names(buf.getvalue())[0][0] == "FullNameHere"                # ID 4 before ID 1, as FreeType reports it
+    assert fc.face_names(buf.getvalue()) == ["FullNameHere"]                    # ID 4 before ID 1, as FreeType reports it
 
 
 def test_ps_name_is_freetypes(tmp_path):
@@ -134,24 +126,19 @@ def test_ps_name_is_freetypes(tmp_path):
     assert fc.ps_name("x[y](z){w}<v>/u%t") == "xyzwvut" and fc.ps_name("Caf\u00e9 \u00df") == "Caf"
     assert fc.ps_name("#$&'*,:;=?@^`|") == "#$&'*,:;=?@^`|"
     path = build_font(str(tmp_path / "kfp.ttf"), "Kung Fu Panda", "Kung Fu Panda", "Regular")
-    assert fc.face_names(Path(path).read_bytes()) == [["KungFuPanda", ["KungFuPanda", "Kung Fu Panda", "Kung Fu PandaRegular"]]]
+    assert fc.face_names(Path(path).read_bytes()) == ["KungFuPanda"]
     index = fc.FontIndex(str(tmp_path))
-    assert index.resolve("KungFuPanda") == "exact" and index.resolve("Kung-Fu-Panda") == "alias"   # the FONT_ALIASES target is exact
+    assert index.supplies("KungFuPanda") and not index.supplies("Kung-Fu-Panda")   # no aliases (owner, 2026-10-23)
 
 
-def test_resolve_loose_regular_and_alias(index, monkeypatch):
-    assert index.resolve("PsdToolsFixture-TT") == "exact"
-    assert index.resolve("PsdToolsFixture-TT-Regular") == "loose"              # -Regular stripped
-    assert index.resolve("psd tools fixture cff") == "loose"                    # family + style, any case or punctuation
-    assert index.resolve("JavaneseText") is None
-    monkeypatch.setattr(fc, "FONT_ALIASES", {"Windows-Name": "PsdToolsFixture-CFF", "Dead-Alias": "Nothing"})
-    assert index.resolve("Windows-Name") == "alias" and index.resolve("Dead-Alias") is None
-
-
-def test_alias_table_is_shared():
-    import commands.psd_edit as pe
-    assert fc.FONT_ALIASES is global_config.FONT_ALIASES is pe.FONT_ALIASES
-    assert global_config.FONT_ALIASES == {"Papyrus-Regular": "Papyrus", "Kung-Fu-Panda": "KungFuPanda"}
+def test_supplies_is_an_exact_name(index):
+    """The face's PostScript name exactly: no loose match or alias since the owner's "change the fonts to the exact
+    ones and delete the aliases" (2026-10-23)."""
+    assert index.supplies("PsdToolsFixture-TT")
+    assert not index.supplies("PsdToolsFixture-TT-Regular")         # loosely, -Regular stripped, until 2026-10-23
+    assert not index.supplies("psd tools fixture cff")              # loosely, family + style, until 2026-10-23
+    assert not index.supplies("psdtoolsfixture-tt") and not index.supplies("JavaneseText")
+    assert not hasattr(global_config, "FONT_ALIASES")
 
 
 def test_unreadable_font_is_an_error_not_a_crash(tmp_path):
@@ -580,6 +567,14 @@ def test_save_cache_failure_keeps_the_old_file(tmp_path):
     assert fc._load_cache(str(cache)) == {"fonts": {}, "psds": {}} and not (tmp_path / "font_names.json.tmp").exists()
 
 
+def test_load_cache_drops_faces_with_loose_names(tmp_path):
+    """Font entries cached as [name, loose names] (until 2026-10-23) are read again; names, errors and PSDs stay."""
+    cache = tmp_path / "font_names.json"
+    fc._save_cache(str(cache), {"fonts": {"old": [["A", ["A", "a"]]], "new": ["A", "B"], "bad": "no font"},
+                                "psds": {"p": {"A": ["Name"]}}})
+    assert fc._load_cache(str(cache)) == {"fonts": {"new": ["A", "B"], "bad": "no font"}, "psds": {"p": {"A": ["Name"]}}}
+
+
 def test_check_repo_fonts_replies(monkeypatch):
     import commands.query_card as qc
     import commands.utils as utils
@@ -614,17 +609,19 @@ def test_help_entry():
 # ========================
 # One real card and the Action's sparse copy
 # ========================
-def test_real_card_psd(clone):
-    path = clone / BABA
-    if not path.exists() or blob_sha(path) != BABA_BLOB:
-        pytest.skip(f"{BABA} changed upstream since this test was written")
+def test_real_card_psd(clone, tmp_path):
+    data = at_rev(clone, BABA_REV, BABA)
+    assert _sha(data) == BABA_BLOB
+    path = tmp_path / "Baba.psd"
+    path.write_bytes(data)
     fonts = fc.psd_fonts(str(path))
     assert fonts == {"BabaUI": ["6", "6", "6", "6"], "Domigorgon": ["Ability"]}   # the hidden Name layer (BabaUI) is ignored
-    assert fc.psd_fonts(path.read_bytes()) == fonts
+    assert fc.psd_fonts(data) == fonts
     index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
-    assert index.errors == [] and index.files >= 270 and index.resolve("Domigorgon") == "exact"
-    assert fc.check_psd(str(path), index) == {"BabaUI": ["6", "6", "6", "6"]}
-    assert index.resolve("Papyrus-Regular") == "alias" == index.resolve("Kung-Fu-Panda")   # both FONT_ALIASES targets are exact faces
+    assert index.errors == [] and index.files >= 270 and index.supplies("Domigorgon")
+    assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker b03b9975)
+    assert fc.check_psd(str(path), index) == {}
+    assert index.supplies("Papyrus-Regular")                    # Papyrus.ttf (the Windows face), no alias since 2026-10-23
 
 
 def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):

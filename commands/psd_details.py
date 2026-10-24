@@ -143,7 +143,7 @@ def _fonts(texts: list, index: Optional[FontIndex]) -> dict:
                 out.setdefault(name, {"layers": [], "supplied": None})["layers"].append(layer_path(layer))
     if index is not None:
         for name, entry in out.items():
-            entry["supplied"] = index.resolve(name) is not None
+            entry["supplied"] = index.supplies(name)
     return out
 
 
@@ -328,7 +328,7 @@ def mark_supplied(record: dict, index: FontIndex) -> bool:
     changed = False
     if isinstance(fonts, dict):
         for name, entry in fonts.items():
-            supplied = index.resolve(name) is not None
+            supplied = index.supplies(name)
             if isinstance(entry, dict) and entry.get("supplied") is not supplied:
                 entry["supplied"] = supplied
                 changed = True
