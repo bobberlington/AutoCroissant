@@ -50,6 +50,12 @@ SANS = ("97b51c821e8057f1c1a00991172484ee3b30887b", "da0f33d4551435e71a7bd3a64a6
         "6df87ab1668293459015269541c448e4dd3235d9")                                                     # 1b4f36a0: stale push
 BLOCK_HOPPER = ("923fdc6d0d874beac87904c5fc68f76737ebaf74", "23f5cd1787d1d8d924738b159acfa523f68e5963")  # 0262b237: raw
 BUZZO = ("1b5291a649238a46b19305c3beff46cc8b5b31e4", "c73dbbb392fe7f1c864c8f025ed7665f285bcbbf")         # converted
+CREDIT_CARD = ("1a8fad1238acc6a27aff13f4d063a2f5a7476247", "f28d8f754971f1c04b81f47f17af2ae5bf50ad1f",
+               "ab309e65d9ab5856bf3771d62c615ef7381871c3", "d65db67b7cca128aa100695dfac003ad873565eb")  # 5a9e0fcf
+TAINTED_JACOB = ("c211fca23ed832ed3dee34ccf9fad32d44aa504e", "16a49559c70775d6adbeabe440e0ad7e2602a55a",
+                 "b3e0dab8f5f8f001527c9ddf60a2c7d2cef81eef", "6b78b2b4540e06944043b4ef30a6f1c399e03e1f")  # 6c67b1fa
+COVERED = (("3f8e622fe59e7158234b85b8bbf3f9826a65d57a", "638584800e46ebd9dafc67f665b2a8d97ef18920"),  # Wolfgang (5a9e0fcf)
+           ("703fad1daade38cf3d388783624a064be94a28e2", "9f50d035fd2cd1f3e1f2d78f7713de0c46b46c40"))  # Doctor Zomboss
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
@@ -172,13 +178,21 @@ def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     new.has_preview = lambda: False
-    monkeypatch.setattr(pe, "reread", lambda a, b: [("the Ability text", (40, 60, 50, 70))])     # nothing moved there
+    def reads(box, name="Square"):
+        return lambda a, b: [("the Ability text", box, b, next(l for l in b.descendants() if l.name == name))]
+    monkeypatch.setattr(pe, "_rereads", reads((40, 60, 50, 70)))                 # nothing moved there, nothing above
     refused = pe.export(old, new, card())
     assert (refused.outcome, refused.gate, refused.data) == ("refused", "G2", b"")
     assert refused.why == pe.G2_BLANK.format(what="the Ability text")
-    monkeypatch.setattr(pe, "reread", lambda a, b: [("the Ability text", (12, 12, 20, 20))])     # inside the square
+    monkeypatch.setattr(pe, "_rereads", reads((12, 12, 20, 20)))                 # inside the square
     assert pe.export(old, new, card()).outcome == "re-exported"
-    monkeypatch.setattr(pe, "reread", lambda a, b: [])
+    # a layer under the art (Wolfgang's Name): drawn with the layers above it hidden, so no blank render
+    same = fixture_psd(tmp_path, card(), "same")
+    same.has_preview = lambda: False
+    monkeypatch.setattr(pe, "_rereads", reads((12, 12, 20, 20), "Base"))
+    covered = pe.export(old, same, card())
+    assert (covered.outcome, covered.gate) == ("current", "") and all(l.visible for l in same.descendants())
+    monkeypatch.setattr(pe, "_rereads", lambda a, b: [])
     _rows_off(monkeypatch, 10)
     broken = pe.export(old, new, card())
     assert (broken.outcome, broken.gate) == ("refused", "G6") and broken.why.startswith("PNG not made: the bot cannot draw")
@@ -843,7 +857,7 @@ def test_g2_keeps_the_authors_png_beside_its_psd(clone):
 def test_g2_draws_a_raw_export_raw(clone):
     """A card exported raw (ICC unconverted, 21 cards) has no vote with no stored image, so G2 drew it converted:
     Block_Hopper beside its own PNG was redrawn over 51% of the card, and over an old PSD the baseline missed (mean
-    9.14, told) (review of 2026-10-24). Both modes are drawn and the nearer kept: raw, current; a converted card
+    9.14, told) (review of 2026-10-24). Both modes are drawn and voted as icc_vote votes: raw, current; a converted card
     (Buzzo) stays converted; Speed hidden over the old PSD (neither stored) is drawn raw, as with the stored image's
     vote."""
     for (psd, png), mode in ((BLOCK_HOPPER, "raw"), (BUZZO, "converted")):
@@ -851,8 +865,8 @@ def test_g2_draws_a_raw_export_raw(clone):
         new.has_preview = lambda: False
         found = pe.export(None, new, pe.open_png(blob(clone, png)))
         assert (found.outcome, found.icc, found.data, found.numbers.get("kept")) == ("current", mode, b"", None), psd
-        means = found.numbers["icc_means"]
-        assert (means["raw"] < means["converted"]) is (mode == "raw"), means
+        vote = found.numbers["icc_vote"]
+        assert vote["px"] >= psd_edit.ICC_MIN_PX and (vote["raw"] >= psd_edit.ICC_RAW_VOTE) is (mode == "raw"), vote
     data, png = blob(clone, BLOCK_HOPPER[0]), pe.open_png(blob(clone, BLOCK_HOPPER[1]))
     found = {}
     for stored in (True, False):
@@ -866,6 +880,58 @@ def test_g2_draws_a_raw_export_raw(clone):
         assert (found[stored].outcome, found[stored].icc, found[stored].misses) == ("re-exported", "raw", {}), stored
         assert pe._within(found[stored].numbers["baseline"]), stored
     assert np.array_equal(np.asarray(found[True].image), np.asarray(found[False].image))
+
+
+@fork
+def test_g2_votes_the_icc_mode_as_icc_vote_does(clone):
+    """Tainted_Jacob 6c67b1fa pushed stale with neither PSD stored: the two modes' means over the change were a near tie
+    (0.647 converted, 0.646 raw), so it was drawn raw, 1,132 px past 24 levels from the author's export (review of
+    2026-10-24). No evidence in the box (no pixel the modes set ICC_MOVED apart), so the whole old card votes:
+    converted, the checked export pixel for pixel."""
+    old, new, old_png, truth = pair(clone, TAINTED_JACOB)
+    checked = pe.export(old, new, old_png)
+    old.has_preview = new.has_preview = lambda: False
+    found = pe.export(old, new, old_png)
+    assert (found.outcome, found.icc, checked.icc) == ("re-exported", "converted", "converted")
+    assert found.numbers["icc_vote"]["px"] < psd_edit.ICC_MIN_PX <= found.numbers["icc_vote_card"]["px"], found.numbers
+    assert np.array_equal(np.asarray(found.image), np.asarray(checked.image))
+    assert int((pe._diff(found.image, truth) > psd_edit.PARITY_THRESH).sum()) == 0
+
+
+@fork
+def test_shows_the_anchor_the_png_shows(clone):
+    """The burst anchor (review of 2026-10-24): the PNG before Credit_Card's 5a9e0fcf shows the PSD before it (near:
+    bad 11.9%, mean 8.7, the fork's text without the preview's blends; far: mean 160), with and without stored images;
+    the author's export shows the PSD after it, never before. Pandamonium's author's export shows its own PSD though the
+    fork draws the gradient Ability up to 9 levels off (mean 6.2)."""
+    for stored in (True, False):
+        v1, v2 = pe.open_psd(blob(clone, CREDIT_CARD[0])), pe.open_psd(blob(clone, CREDIT_CARD[1]))
+        if not stored:
+            v1.has_preview = v2.has_preview = lambda: False
+        before, authors = pe.open_png(blob(clone, CREDIT_CARD[2])), pe.open_png(blob(clone, CREDIT_CARD[3]))
+        assert pe.shows(before, v1, v2) and not pe.shows(authors, v1, v2) and pe.shows(authors, v2, v1), stored
+    v1, v2, authors, _ = pair(clone, PANDAMONIUM)
+    v1.has_preview = v2.has_preview = lambda: False
+    assert pe.shows(authors, v2, v1) and not pe.shows(authors, v1, v2)
+
+
+@fork
+def test_g2_a_text_under_the_art_is_no_blank_render(clone):
+    """Wolfgang's Name under a smart object and Doctor Zomboss's second Name under 'Layer 2': Photoshop draws none of
+    either, so hiding it moves no pixel, and G2 refused both new cards and beside a stale PNG (G2_BLANK) where the
+    checked path makes them (review of 2026-10-24). With the layers above hidden the text draws: made as with a stored
+    image."""
+    for psd, png in COVERED:
+        checked = pe.export_new(pe.open_psd(blob(clone, psd)))
+        new = pe.open_psd(blob(clone, psd))
+        new.has_preview = lambda: False
+        made = pe.export_new(new)
+        assert (checked.outcome, made.outcome) == ("re-exported", "re-exported"), (psd, made.why)
+        assert np.array_equal(np.asarray(made.image), np.asarray(checked.image)), psd
+        stale = pe.open_png(blob(clone, png)).copy()
+        ImageDraw.Draw(stale).rectangle((600, 300, 619, 319), fill=(0, 0, 0))     # 400 px: past KEPT_PX
+        beside = pe.export(None, new, stale)
+        assert beside.outcome == "re-exported", (psd, beside.why)
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

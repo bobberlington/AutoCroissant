@@ -323,7 +323,7 @@ one ends "export it in Photoshop").
 | G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text whose record changed, G7; beside its PNG no baseline and no pixel refusal, every drawn text shown); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
-| G5 | the old PNG | (a G5 or G6 refusal is retried once against the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
+| G5 | the old PNG | (the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; when the old PNG shows it rather than the PSD before the push, `png_export.shows`, the export is made against it, its refusal kept; else a G5 or G6 refusal is retried once against it; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
 | G6 | the bot's drawing | (a) the bake's parity gate: the fork's render of the old PSD over R matches the old PNG within the bar; (b) the cross-check: wherever the render or Photoshop's image moved (F and D), the new PNG matches the new composite within the bar; F empty while D is not: refused. Since 2026-10-23 (a) and (b) refuse only past the floor (more than 25% bad); a miss of the bar under it is written and told (section 18). D outside every changed layer that disagrees still refuses | (a) "PNG not made: the bot cannot draw this part of the card as its old PNG shows it (1.4% of pixels differ); export it in Photoshop"; (b) "PNG not made: the bot's drawing of your change does not match the PSD's own image (...)"; D outside every changed layer: "PNG not made: the PSD's own image changed where the bot sees no layer change; export it in Photoshop"; a tool save whose composite is stale: "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in Photoshop with Maximize Compatibility, or export it in Photoshop" |
 | G8 | numbered PNGs | per numbered file, the delta transfer's condition (5.4) | "A_Snack2.png not updated: re-export it in Photoshop" (the base PNG still lands) |
 | G9 | quiet | at land, no later push touched the PSD or PNG, and their blobs at the head are still the pushed ones | none: dropped as superseded, and the newer push's run decides |
@@ -630,7 +630,7 @@ not land.**
 | An unreadable PSD, a failed download, a crashed composite | the card's error told on Discord ("PNG not made" when it needed one) and in the comment; the others go on; check exits 0 so the post and the other writes still go out, then "Fail on card errors" turns the run red (its post went out: no failure alert, and no streak mark, so the next failure is told) | a dispatch with `sha` and `cards` |
 | Not checked (the clone lacks the commit, the API is down) | exit 1, red run; "Tell Discord the run failed": one message to the standards channel per failure streak, no ping. The streak is the `card-guards-failure-told` artifact a run leaves when it sent the message or stayed quiet in a told streak: quiet only when the last finished push run left it and is not green (a re-run that passed keeps its first attempt's artifact; review 4: counting red runs hid a push after a red run that had posted its own lines) | re-run the job |
 | A gate refuses | report line, Discord, no write | the author exports in Photoshop, or fixes the PSD |
-| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it, and G5 retries against the burst anchor (G2 exports against it when the old PNG shows it) | none |
+| The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it: the export is made against the burst anchor when the old PNG shows it, else a G5/G6 refusal retries against it | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
@@ -943,9 +943,9 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
 - `check` exits 1 when it cannot check, and a failed push run tells the standards channel once per failure streak.
 - A re-run edits its comment and does not post twice (the comment's told mark); the steps' shell is run against a fake `gh`
   and `curl` in `test_workflow_posts_once_and_a_rerun_edits_its_comment`.
-- Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made; with no
-  stored image (G2, no G5 to refuse) the export takes the anchor when the old PNG shows it, not the PSD before the push
-  (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
+- Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made; since
+  2026-10-24 (section 20) the export takes the anchor whenever the old PNG shows it, not the PSD before the push, with or
+  without a stored image (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
 - R10 and "current, but outside the bar" stay in the comment (`TELL_PNG_MISMATCH`); report mode tells the fixable issues.
 
 **Review fixes, third pass (2026-10-22):**
@@ -1361,12 +1361,21 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   every card was drawn converted, and the 21 raw exports were redrawn beside their own PNG (Block_Hopper 1,480,242 px,
   51% of the card) or missed their baseline over an old PSD (Block_Hopper, Speed hidden: mean 9.14, told). With no vote
   and a foreign profile, `_render_voted` draws the card both ways (the old PSD over R against the old PNG's crop; beside,
-  the whole card against the PNG) and keeps the mode nearer it by mean, converted on a tie; no foreign profile, one
-  render. Replayed on all 21 raw cards beside their own PNG, stored image dropped (scratch `py314/fix-r5/raw_beside_all.log`):
+  the whole card against the PNG) and votes as `icc_vote` does (round 7, `_icc_evidence`): over the pixels the two
+  modes draw `ICC_MOVED` or more apart where one of them is within `ICC_MOVED` of the PNG, raw with `ICC_MIN_PX` such
+  pixels and an `ICC_RAW_VOTE` share nearer raw, else converted; over an old PSD a box without that evidence votes over
+  the whole old card first (`numbers["icc_vote"]`, `["icc_vote_card"]`). It kept the mode nearer by mean until round 7,
+  which a near tie flipped: Tainted_Jacob 6c67b1fa (neither PSD stored: means 0.647 converted, 0.646 raw, no pixel the
+  modes set 4 apart in the box) was drawn raw, 1,132 px past 24 levels from the author's export, and beside the
+  pre-edit PNG Stranger 5a9e0fcf (893 px) and The_Forbidden_One 6d59c949 (1,004 px), where the modes differ only over
+  the author's change, which neither shows. Now all three converted, 0 px past 24 (scratch `py314/fix-r7/`
+  `e2e_jacob.log`, `stranger.log`, `forbidden_one.log`; the G2b replay `replay.jsonl`: only Tainted_Jacob's two rows
+  moved). No foreign profile, one render. Replayed on all 21 raw cards beside their own PNG, stored image dropped (scratch `py314/fix-r5/raw_beside_all.log`):
   all drawn raw, 14 current, 6 kept (29-201 px), Pessimism redrawn (4,216 px, max 26 from the author's export: the
   fork's noise past KEPT_PX, as Pandamonium's); Buzzo (voted converted) stays converted and current. Block_Hopper with
   Speed hidden and neither PSD stored: raw, baseline mean 0.39, the PNG the stored-vote export's pixel for pixel
-  (`raw_stale_synth.log`). Test: `test_g2_draws_a_raw_export_raw`;
+  (`raw_stale_synth.log`). Round 7 re-run (`py314/fix-r7/raw_beside_all.log`): the 21 verdicts and modes as before.
+  Tests: `test_g2_draws_a_raw_export_raw`, `test_g2_votes_the_icc_mode_as_icc_vote_does` (Tainted_Jacob);
 - a burst (review of 2026-10-24): G2 has no G5 to refuse, so the burst anchor's retry never ran and run 2, checked over
   push 1's PSD, left push 1's change out (Niko, Name then Speed hidden: the Name still drawn, 19,954 px past 24 levels).
   A G2 export of a stale card with a burst anchor was made against the anchor, always (refused if the anchor's gates
@@ -1378,7 +1387,37 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   told. On the 34 replayed commits with no stored image (scratch `py314/fix-r6/shows_real.jsonl`): the author's export
   (PNG first) never shows the anchor (34 of 34 keep the export over the PSD before the push), the PNG at the parent shows
   it on 33 (Restrained's old PNG never showed its old PSD: G5 on the checked path). Test:
-  `test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor` (card_guards; both scenarios, v3 drawn);
+  `test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor` (card_guards; both scenarios, v3 drawn).
+  Round 7 (2026-10-24): **the anchor decides on the checked path too, and `shows` holds the PNG to the floor.**
+  (a) `shows` asked the PNG to be within the bar of the anchor's render, and the fork draws some changes a few levels
+  off or text without the preview's blends, so the PNG before a change was not read as showing its own PSD: Credit_Card
+  5a9e0fcf (near bad 11.9%, mean 8.7; far mean 160), Dark_Ritual (0.93%, 0.70), Little_Guy (3.93%, 1.92), Pandamonium's
+  own export (mean 6.2, max 9), and a G2 burst wrote the PNG without push 1's change, told only UNCHECKED (Credit_Card
+  25,478 px past 24 levels over push 1's change). Now: nearer the anchor's render by mean and **not past the floor**
+  (`psd_edit._past_floor`). Over all 711 history modifications (scratch `py314/fix-r7/shows_all.*`, against
+  `rr-g2-real-1/replay.jsonl`): the author's export of v2 never shows v1 (693 of 693 in all three stored-image
+  variants); the parent PNG is read as showing v1 on 683/682/682 of 704 (pp/pb/bb; 681/680/679 before); left: Spinni
+  8af07bcd (the fork draws v1's box 67.8% bad against its PNG, v2's within 1.8) and 22_Negation 100511d3 with v2's
+  stored image dropped (the fork then draws v1 and v2 the same there). The 34 replayed commits (`shows_both.jsonl`):
+  the author's export shows v2 on 34, v1 on none; the parent PNG v1 on 33 (Restrained), v2 on none.
+  (b) On the checked path the anchor was tried only after a G5/G6 refusal, and `export` returns current before G5 when
+  push 2 moved nothing, while G5's bar over the card hides a small push-1 change. Now `card_guards._run` asks `shows`
+  for every stale job with an anchor: when the old PNG shows it the anchored verdict is taken, a refusal too; else a
+  checked G5/G6 refusal is retried as before (kept unless it refuses). The 251 real consecutive pairs as bursts
+  (`py314/fix-r7/burst.*`, `burst_diff.txt`; push 1 superseded, the parent PNG left): every checked burst but The_Puppet
+  (its PNG stale: G5, not shown) now takes the anchor; the 8 that ended "current" with push 1 missing (Tainted_Lost
+  31,509 px past 24, Grimora 48,693, Dogma 67,079, The_Thin_Man 23,267, Tainted_Isaac, Tainted_Eden, Springtrap) are
+  re-exported at 0 px past 24 from the author's export where there is one (Tainted_Eden over push 1's change: 82.0% bad
+  before, 2.8% now), Clot_White refused G6 over the anchor (told, where it was silently current); the 20 re-exported
+  without push 1 (Sweetheart 1,619, Kyle 1,263, Arachnophobia 954, ...) land at 0, YIIK_Panda at 6,668 (8,064 before);
+  four G5 refusals became G6 over the anchor (The_Freezer twice, Greenpath, Infected_Crossroads: the fork's drawing),
+  Stubborn_King and Utica_Stock_Exchange stay G5. The PNG-first scenario (S2) keeps every checked verdict. End to end through `card_guards.check`
+  (`e2e_credit_card.log`, `e2e_dark_ritual.log`, `e2e_little_guy.log`, `e2e_tainted_lost.log`, `e2e_tainted_isaac.log`,
+  `burst_e2e.log`, `burst_nudge.log`): anchored with its note on every path; over push 1's change Credit_Card 0 px past
+  24 in all three variants, Dark_Ritual 0/0/16, Little_Guy 155/155/1,532 (checked, composite dropped, no stored image;
+  the last two the fork's drawing without the stored images). Tests: `test_shows_the_anchor_the_png_shows` (Credit_Card
+  both ways, with and without stored images; Pandamonium's export), `test_a_checked_burst_whose_last_push_moved_nothing_keeps_the_first`,
+  `test_a_g2_burst_keeps_the_anchors_refusal` (an anchored G7 stays a refusal, never the export over push 1's PSD);
 - the re-read's misfires (round 6, 2026-10-24): the full-history replay (711 PSD modifications, each with and without
   the stored image; scratch `py314/adv-r6/replay_all_g2.*`) found G2_BLANK on 6 pushes the checked path calls current
   or re-exports. Stat digits are read from marker layers that draw nothing (The Thin Man 59956ce4: 'Atk Dark/8' hidden,
@@ -1388,6 +1427,16 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   re-read and nothing moved the PNG is current, as on the checked path. Re-run (scratch `py314/fix-r6/replay_all_g2.*`): no
   G2_BLANK anywhere; only those 6 verdicts moved (5 current, Sans re-exported, the checked PNG pixel for pixel). Test: `test_g2_rereads_only_texts_whose_record_changed` (The Thin Man and
   Dogma current; Green Mage and Sans re-exported, the checked PNG pixel for pixel);
+- a text under the art (round 7, 2026-10-24): a visible text layer that the art covers (Wolfgang's Name under a smart
+  object, Doctor Zomboss's second Name under 'Layer 2') moves no pixel when hidden, as in Photoshop, and G2_BLANK refused
+  it on all three paths where the checked path makes the PNG or calls it current. Before G2_BLANK, `_covered` hides every
+  visible layer drawn above the text (not its groups) and hides the text: when that moves the render the fork draws it
+  and the art covers it, so it is no blank render (`_texts_drawn`, and `_unchecked`'s re-read through `_rereads`, which
+  keeps each text's layer). Every other card at the clone's HEAD as a G2 new card (`py314/fix-r7/newcards.jsonl`): 407
+  of 407 made (Wolfgang and Doctor Zomboss 0 px past 24 from their PNGs; 405 before); beside a PNG stale over 400 px
+  both re-exported (`covered_beside.log`); Wolfgang's covered Name retitled: current, as checked (`wolfgang_stale.log`).
+  The blank render on real cards still refuses (`test_g2_refuses_a_text_drawn_blank_on_real_cards`). Tests:
+  `test_g2_a_text_under_the_art_is_no_blank_render`, the covered case of `test_g2_refuses_a_change_the_render_does_not_show`;
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the

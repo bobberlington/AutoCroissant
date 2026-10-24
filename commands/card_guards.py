@@ -633,20 +633,19 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
-        # a burst: G5/G6 refused, or G2 (no G5 to refuse) when the old PNG shows the anchor rather than the old PSD (not
-        # a PNG pushed before its PSD)
-        anchor = None
-        retry = found.outcome == "refused" and found.gate in ("G5", "G6")
-        if job.psd_anchor and old is not None and (found.unchecked or retry):
+        # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
+        # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
+        # a G5/G6 refusal retried, the anchored export kept unless it refuses
+        if job.psd_anchor and old is not None:
             anchor = png_export.open_psd(source.blob(job.psd_anchor))
-            if found.unchecked and not png_export.shows(old_png, anchor, old):
-                anchor = None
-        if anchor is not None:
-            anchored = png_export.export(anchor, new, old_png, numbered)
-            if found.unchecked or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
-                found = anchored
-                result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
-                                     f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG", False))
+            shown = png_export.shows(old_png, anchor, old)
+            if shown or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
+                anchored = png_export.export(anchor, new, old_png, numbered)
+                if shown or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
+                    found = anchored
+                    result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
+                                         f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG",
+                                         False))
         result.export = _export_dict(found)
         stale = found.numbers.get("png_vs_psd", {})
         if found.outcome == "current" and stale.get("px") and not psd_edit._within_bar(stale):

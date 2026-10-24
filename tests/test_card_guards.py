@@ -389,6 +389,56 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     assert int(pe._diff(made, card(base=(30, 200, 30), colour=(0, 255, 0))).max()) == 0
 
 
+def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
+    """A G2 burst whose anchored export refuses keeps the refusal, never the export over push 1's PSD, which calls the
+    PNG current with push 1's Base change left out, nothing told (review of 2026-10-24)."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+    real = pe.psd_edit.gate_region
+
+    def gate(old_png, merged, region):              # the anchored region (push 1's Base: the whole card) refuses
+        if (region[2] - region[0]) * (region[3] - region[1]) > 21 * 21:
+            raise pe.psd_edit.Refused("region", "test")
+        return real(old_png, merged, region)
+    monkeypatch.setattr(pe.psd_edit, "gate_region", gate)
+    work = tmp_path / "burst"
+    work.mkdir()
+    one = _dated(root, work, "Bread", card(base=(30, 200, 30)), "2026-10-22T10:00:00Z")
+    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")
+    data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
+    (entry,) = data["cards"]
+    assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G7"), entry["export"]
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
+
+
+def test_a_checked_burst_whose_last_push_moved_nothing_keeps_the_first(cards, tmp_path):
+    """Push 1 a 4-px dot, push 2 a layer record that draws nothing (the square grown by a column of the base colour),
+    stored images kept: over push 1's PSD the PNG was "current" (G5's bar hides 4 px), push 1's dot lost, nothing told
+    (review of 2026-10-24: Tainted Lost, Grimora, Dogma). The old PNG shows the anchor (png_export.shows), so the anchor
+    decides: the dot drawn."""
+    root, base, alice, bot = cards
+    work = tmp_path / "burst"
+    work.mkdir()
+    dotted = card(colour=(0, 255, 0))
+    ImageDraw.Draw(dotted).rectangle((12, 12, 13, 13), fill=(255, 255, 0))
+    one = _dated(root, work, "Bread", dotted, "2026-10-22T10:00:00Z")
+    fixture_psd(work, dotted, "grown", square=(10, 10, 32, 31))
+    shutil.copy(work / "grown.psd", root / f"{FOLDER}/Bread.psd")
+    env = {**os.environ, "GIT_AUTHOR_DATE": "2026-10-22T10:10:00Z", "GIT_COMMITTER_DATE": "2026-10-22T10:10:00Z"}
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-am", "grown"], check=True, env=env)
+    two = _git(root, "rev-parse", "HEAD")
+    source = cg.Source(str(root))
+    old, new = (pe.open_psd(source.blob(source.tree(c)[f"{FOLDER}/Bread.psd"][1])) for c in (one, two))
+    assert pe.export(old, new, card(colour=(0, 255, 0))).outcome == "current"       # over push 1's PSD: the dot lost
+    out = tmp_path / "out"
+    data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    assert (entry["export"]["outcome"], entry["export"]["changed_px"]) == ("re-exported", 4), entry["export"]
+    assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
+    (write,) = entry["writes"]
+    assert int(pe._diff(Image.open(out / write["file"]), dotted).max()) == 0
+
+
 @pytest.mark.parametrize("dot", [False, True])
 def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, monkeypatch, dot):
     """Push A the PNG of v2 alone, B the PSD v2, C the PSD v3 (no stored image), within the burst window: the anchor is
