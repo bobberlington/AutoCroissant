@@ -2989,6 +2989,38 @@ def test_covered_ink_weighs_layers_over_the_old_ink_anywhere(clone):
 
 
 @text_edit
+def test_a_glow_disc_on_a_stat_bar_refuses(clone, parser, chart, monkeypatch):
+    """A typed glow's group effects (a stroked group's disc, Photoshop's look) count on the stat bars: covered_ink takes
+    their changed ink with the text's (1ed822c). One pixel of it in a Mini Doomer bar the old text missed refuses, the
+    text's own ink clear of it; with none there the edit sets."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    stat, rows = next((stat, rows) for stat, rows in stat_rows(psd).items() if rows and rows[0][2] is not None)
+    x0, y0, x1, y1 = clip(rows[0][2], psd.width, psd.height)
+    spot = ((y0 + y1) // 2, (x0 + x1) // 2)
+    layer = pe.ability_layer(psd)
+    canvas = pe._on_canvas(layer, (psd.height, psd.width))
+    after, before = np.zeros_like(canvas), np.zeros_like(canvas)
+    after[spot] = 255
+    assert pe.covered_ink(psd, layer, canvas, []) is None and pe.covered_ink(psd, layer, canvas, [], (before, before)) is None
+    assert pe.covered_ink(psd, layer, canvas, [], (after, before)) == f"the new text runs over the {stat} bar (1 px)"
+    old = pe.normalize_ability(layer.text)
+    for disc in (True, False):
+        def halo(psd, layer):
+            out = np.zeros((psd.height, psd.width, 4), np.uint8)
+            if disc and "[fire:glow]" in layer.text:
+                out[spot] = 255
+            return out
+        monkeypatch.setattr(pe, "_effect_ink", halo)
+        psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+        if disc:
+            with pytest.raises(pe.Refused, match=rf"^overflow: ability: the new text runs over the {stat} bar \(1 px\)"):
+                pe.set_text_layer(psd, "ability", old + " Gain [fire:glow].", fonts, chart, parser=parser)
+        else:
+            pe.set_text_layer(psd, "ability", old + " Gain [fire:glow].", fonts, chart, parser=parser)
+
+
+@text_edit
 def test_apply_jobs_checks_its_copy(clone, parser, chart, monkeypatch, tmp_path):
     """Review 2026-10-24: apply_jobs edits a copy, which a plain deepcopy makes without Lorian's smart filters. Its
     pairings are checked first (gate_pairs); a copy that renders unlike the card after them refuses too (gate_copy, on a
@@ -3252,11 +3284,13 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
 def test_status_words_are_normalized_to_the_chart(clone, chart, tmp_path):
     """The chart is the authority (design 14 q6): a status word the edit leaves alone takes its swatch too (a grey Poison turns
     the chart's green), and an edit touching a styled word no longer refuses (round 1's styled-word)."""
+    from psd_tools.composite.text import FontMap
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_plain(clone, tmp_path)[0])
     layer = pe.ability_layer(psd)
     layer.set_text("Inflict Poison. Die.", keep="runs")
     layer.set_span_style(8, 14, fill=(0.5, 0.5, 0.5))
+    layer.rasterize(fonts=FontMap(dirs=[fonts]))     # its pixels the text's (drawn_in_font)
     pe.set_text_layer(psd, "ability", "Inflict Poison. Live.", fonts, chart)
     green = tuple(round(v, 3) for v in chart["poison"].fill)
     fills = _fills(pe.ability_layer(psd))
@@ -4025,6 +4059,31 @@ def test_a_glow_disc_over_a_layer_below_the_title_refuses(clone, parser, chart):
                 pe.set_text_layer(psd, "name", title, fonts, chart, "Salt", parser=parser)
         else:
             pe.set_text_layer(psd, "name", title, fonts, chart, "Salt", parser=parser)
+
+
+SWAPPED_FONTS = {"Items/Equip/3 Stars/Shiny_Knife.psd": "OMORI_GAME2",    # its title's pixels in the other Omori font
+                 "Auxiliary/Minions/Dark_Tentacle.psd": "OMORI_GAME"}
+
+
+@text_edit
+def test_a_title_drawn_in_another_font_refuses(clone, parser, chart):
+    """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other: an edit
+    reprinted every letter in the other typeface, every gate passing (review 2026-10-24). drawn_in_font refuses before
+    any change; their Abilities and another Omori title still set."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, font in SWAPPED_FONTS.items():
+        psd = PSDImage.open(_card(clone, rel)[0])
+        card = Path(rel).stem.replace("_", " ")
+        layer = pe.name_layer(psd, card)
+        old = layer.text
+        with pytest.raises(pe.Refused, match=rf"^font: name: its saved pixels are not drawn in the font it names "
+                                             rf"\({font}; \d+% alike\); re-save it in Photoshop$") as refused:
+            pe.set_text_layer(psd, "name", old + "s", fonts, chart, card, parser=parser)
+        assert refused.value.code == "font" and layer.text == old
+        ability = pe.ability_layer(psd)
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(ability.text) + " Gain 1 HP.", fonts, chart, parser=parser)
+    psd = PSDImage.open(_card(clone, RED_KNIFE)[0])     # OMORI_GAME2, drawn in it
+    pe.set_text_layer(psd, "name", "Red Knifes", fonts, chart, "Red Knife", parser=parser)
 
 
 @text_edit

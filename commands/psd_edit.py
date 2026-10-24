@@ -84,6 +84,8 @@ ICON_FONT = "stoogedings-Regular"                   # the icon font's PostScript
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 ICON_OVERLAP = 16           # px a typed icon may ink over the layer's other glyphs (typed_icon_fit; 0 on 140 of 145 titles)
 ICON_HEIGHT = (0.6, 2.2)    # a typed icon at the text's own size: its height over its line's letters' (Holy Blade 0.2)
+FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
+                            # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
 BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
@@ -2583,6 +2585,33 @@ def typed_icon_fit(layer, typed: list, sized: set, fonts) -> Optional[tuple]:
     return None
 
 
+def drawn_in_font(layer, fonts, shape: tuple) -> Optional[str]:
+    """
+    Whether the layer's saved pixels are drawn in the fonts it names: its whole redraw by the engine against them, ink
+    past INK_ALPHA, IoU at least FONT_IOU_MIN. Dull Knife's title names OMORI_GAME2 but Photoshop drew it in OMORI_GAME:
+    an edit reprinted every letter in the other typeface, every gate passing (review 2026-10-24). Raises
+    MissingFontError.
+
+    Returns:
+        Why not, or None
+    """
+    from psd_tools.composite.text import render
+    from psd_tools.composite.text.model import TextModel
+    result = render(layer, fonts=fonts)
+    redraw = np.zeros(shape, bool)
+    x0, y0, x1, y1 = clip(result.bbox, shape[1], shape[0])
+    if x1 > x0 and y1 > y0:
+        bx, by = result.bbox[:2]
+        redraw[y0:y1, x0:x1] = result.rgba[y0 - by:y1 - by, x0 - bx:x1 - bx, 3] > INK_ALPHA
+    saved = _on_canvas(layer, shape)[..., 3] > INK_ALPHA * 255
+    union = int((redraw | saved).sum())
+    iou = int((redraw & saved).sum()) / union if union else 1.0
+    if iou >= FONT_IOU_MIN:
+        return None
+    names = sorted({run.style.font for run in TextModel.from_layer(layer).runs if run.style.font})
+    return f"its saved pixels are not drawn in the font it names ({', '.join(names)}; {iou:.0%} alike)"
+
+
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None) -> Edit:
@@ -2609,7 +2638,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             [dark:sticker] the colour of the one it typed (review 2026-10-24: Salt's purple on its white title); None: psd
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs, glow tokens on a fork without glow_halos),
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs, glow tokens on a fork without glow_halos,
+            saved pixels in another font than the layer names: drawn_in_font),
         overflow (also new text under a layer above it or over a stat bar: covered_ink; a title over a layer below it
         its old ink left alone, inks_over, or on more lines or lower; a typed icon over the other glyphs, typed_icon_fit,
         which refuses unsupported-card for one far from its letters' height); ImportError when the fork
@@ -2738,6 +2768,12 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                                              f"title's look ({tint}) would recolour the typed {thing}")
                                           + "; edit in Photoshop")
     fonts = FontMap(dirs=[fonts_dir])
+    try:                                        # the edit would reprint its letters in the named font
+        alien = drawn_in_font(layer, fonts, (psd.height, psd.width))
+    except MissingFontError as error:
+        raise Refused("font", str(error))
+    if alien:
+        raise Refused("font", f"{which}: {alien}; re-save it in Photoshop")
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
         from psd_tools.composite.text import capture

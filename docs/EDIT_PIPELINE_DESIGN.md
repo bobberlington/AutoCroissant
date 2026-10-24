@@ -230,8 +230,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    badge layer (PoD06Rainbow_Bloon's ability). The fewest pixels one of those 117 replaced is 2,287, so the no-change
    rule refuses none of them. **What the floor lets through, told** (review, 2026-10-23): a stat row drawn 8 px off is
    8.5-9.7% bad (Mini_Doomer, Lich_King; 3 px: 12.8-17.5%), a title 3 px off 19.8-25.9% (The_Freezer, Mini_Doomer,
-   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font or a missing inline badge
-   was not measured; they should come out at or under a blank box. Not caught: a blank ability whose edit also changes
+   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font passes it, as the baseline
+   is Photoshop's saved pixels and no gate redraws them: set_text_layer refuses `font` first when a layer's whole redraw
+   overlaps its saved ink under FONT_IOU_MIN 0.3 (drawn_in_font; review 2026-10-24: Dull/Shiny Knife, Dark Tentacle and
+   Snow Angel's titles drawn in the other Omori font, 0.12-0.15; the next of 1,453 layers 0.40). A missing inline badge
+   was not measured; it should come out at or under a blank box. Not caught: a blank ability whose edit also changes
    overlay words or FX layers (the merge replaces their pixels), or a new render blank while the old one draws. Tighter
    options are the owner's: a mean ceiling (blank boxes: mean 17.7-32.5; the unbakeable list's misses: at most 7.39,
    Dark_Bramble's title) or the floor counted over inked pixels only.
