@@ -1947,6 +1947,20 @@ def test_a_typed_star_is_set_in_the_icon_font(clone, parser, chart):
 
 
 @text_edit
+def test_a_typed_star_is_cut_into_the_badge_layer(clone, parser, chart):
+    """A badge layer takes every colour glyph whatever its name, so a "★" typed far from Scapular's (BOGT) (Pin Light)
+    cuts it again: kept whole (none of its glyphs redrawn), the star printed in the blend's colours and gate_fx's
+    bare_icons refused it (PoD11ZOMG, Palace of Shadow, Scapular in the review census)."""
+    from psd_tools.composite.text import FontMap
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, "Items/Support/3 Stars/Scapular.psd")[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text) + " Costs 5★."
+    edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
+    assert [name for _, _, name in edit.rebuilt] == ["Ability FX: (BOGT)"]
+    assert pe.bare_icons(psd, FontMap(dirs=[fonts], aliases=pe.FONT_ALIASES)) == Counter()
+
+
+@text_edit
 def test_reparse_reads_a_star_outside_the_icon_font_as_typed(clone, parser, tmp_path):
     """gate_reparse reads a typed "★" as [star] on the edit's side only: a "★" left in the body font (a box on the card)
     reads back as "★" and refuses reparse (read as [star] on both sides, it passed: review 2026-10-23)."""

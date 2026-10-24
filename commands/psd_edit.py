@@ -1699,7 +1699,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     occurrence; a "styled" or "own" layer's stays on its words, a "status" layer's on its status's own words), its record kept
     (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change. A layer whose words were not redrawn keeps its record whole
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
-    clean). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
+    clean; a badge layer is cut again whenever the edit types something the icon font draws, which it takes whatever
+    its name: a "★" typed far from its badges). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
     renamed); a layer with none left is deleted. A badge layer names every icon-font badge or token no badge layer
     names, typed or edited by deleting letters ("(1GCD)" made "(1CD)": deleted, the layer left a blank pill under the
     overlay; review 2026-10-23) (it draws every colour glyph, and each card's names them all); one with none left while
@@ -1734,9 +1735,10 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     icons, glyphs = _char_styles(layer)[1], None
     named = {span for plan, target in zip(plans, targets) if plan.kind == "badge" for _, name, now, _, _ in target
              if name for span in now}
-    blank = " \t\r\x03"
+    blank, kept_now = " \t\r\x03", set(kept)
     typed = [m.span() for m in TYPED.finditer(text) if m.span() not in named     # unnamed: typed, or edited by deleting
              and all(icons[i] for i in range(*m.span()) if text[i] not in blank)]    # letters ("(1GCD)" -> "(1CD)")
+    drawn = any(icons[i] and i not in kept_now for i in range(len(text)) if text[i] not in blank)   # a typed "★" too
     rebuilt, deleted, covered, notes = [], [], [], []
     for plan, target in zip(plans, targets):
         fx, old = plan.layer, plan.layer.name
@@ -1775,7 +1777,7 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
             raise Refused("styled-word", f"{old}: its words have no pixels")
         names += added
         name = old if names == plan.phrases else layer.name + FX_TAG + FX_SEP.join(names)
-        if name == old and _kept(plan, ranges, band, kept):
+        if name == old and _kept(plan, ranges, band, kept) and not (plan.kind == "badge" and drawn):
             if _holds(fx, mask, layer):
                 continue
             notes.append(f"{old} cut again: it held pixels outside its words")
