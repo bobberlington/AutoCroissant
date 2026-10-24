@@ -68,6 +68,7 @@ TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"te
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
+WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
 GLOWS = ("glow", "darkglow")  # token variants whose halo the fork draws as its glyf outline: a solid block, not a soft glow
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
@@ -751,13 +752,23 @@ def uses_icon_font(layer) -> bool:
     return icon_font(layer) is not None
 
 
+def token_variant(piece: str) -> Optional[str]:
+    """
+    The variant of a [token] as the icon font ligates it, lowercased: "" for "[fire]", "sticker" for "[Fire:Sticker]";
+    None for one it has no ligature for, drawn as its letters: an unknown variant, or a colon with none ("[fire:]";
+    review 2026-10-24: ICON_VARIANTS' "" is "[fire]"'s, and the parser reads "[fire:]" as it).
+    """
+    _, colon, variant = piece[1:len(piece) - 1].partition(":")
+    variant = variant.lower()
+    return variant if variant in ICON_VARIANTS and (variant or not colon) else None
+
+
 def icon_text(text: str, vocab: Optional[IconVocabulary]) -> list:
     """
     [(start, end)] of the text the stoogedings font draws as a badge or an icon, as its GSUB ligates it: a timing tag
     in parentheses (badge_tags(), any letter case: "(1cd)" is (1CD)) and a [token] the vocabulary knows with a variant
-    the font has ("[Fire:Sticker]", "[warp star]", "[fire:no]"; the parser's _read_icon_tokens reads the same ones)
-    and an icon character it maps ("★", the gold star; the website writes "5★"); every [token] and icon character when
-    vocab is None.
+    the font has (token_variant: "[Fire:Sticker]", "[warp star]", "[fire:no]", not "[fire:]") and an icon character it
+    maps ("★", the gold star; the website writes "5★"); every [token] and icon character when vocab is None.
     """
     out = [match.span() for match in PAREN.finditer(text) if match.group(1).lower() in BADGE_KEYS]
     for match in ICON_SCAN_PATTERN.finditer(text):
@@ -767,8 +778,7 @@ def icon_text(text: str, vocab: Optional[IconVocabulary]) -> list:
             if name and (vocab is None or vocab.lookup(name) is not None):
                 out.append(match.span())
             continue
-        base, _, variant = piece[1:-1].partition(":")
-        if vocab is None or (vocab.lookup(base) is not None and variant.lower() in ICON_VARIANTS):
+        if vocab is None or (vocab.lookup(piece[1:-1].partition(":")[0]) is not None and token_variant(piece) is not None):
             out.append(match.span())
     return sorted(out)
 
@@ -777,19 +787,35 @@ def canonical_tokens(text: Optional[str], vocab: Optional[IconVocabulary], chars
     """
     The text with each [token] the vocabulary knows as the parser reads it in the icon font (_read_icon_tokens):
     "[Fire:Sticker]" -> "[fire]", "[warp star]" -> "[warpstar]", "[fire:NO]" -> "[fire:no]", and with chars each icon
-    character too ("★" -> "[star]"); unknown ones as typed.
+    character too ("★" -> "[star]"); unknown ones, and spellings the font draws as letters ("[fire:]"), as typed.
     """
     def one(match) -> str:
         piece = match.group(0)
         if not piece.startswith("["):
             name = vocab.codepoints.get(piece) if vocab is not None and chars else None
             return f"[{name}]" if name and vocab.lookup(name) is not None else piece
-        base, _, variant = piece[1:-1].partition(":")
-        hit = vocab.lookup(base) if vocab is not None else None
-        if hit is None or variant.lower() not in ICON_VARIANTS:
+        hit = vocab.lookup(piece[1:-1].partition(":")[0]) if vocab is not None else None
+        variant = token_variant(piece)
+        if hit is None or variant is None:
             return piece
-        return f"[{hit[0]}:no]" if variant.lower() == "no" else f"[{hit[0]}]"
+        return f"[{hit[0]}:no]" if variant == "no" else f"[{hit[0]}]"
     return ICON_SCAN_PATTERN.sub(one, text or "")
+
+
+def unlettered_icons(text: str, parser: Optional[PSDParser]) -> list:
+    """
+    The [tokens] of text the website draws as an icon that the icon font prints as letters: text.js's icon() takes the
+    base before the first colon, norm()ed (WEB_NORM), as any icon's name or alias whatever the variant, where the font
+    ligates only exact spellings (icon_text): "[fire:]", "[fire: no]", "[fire.]", "[warp  star]", a Types/ icon the
+    font lacks. Review 2026-10-24: "[fire:]" baked as the letters while the editor showed the fire icon.
+    """
+    vocab = getattr(parser, "icons", None)
+    if vocab is None:
+        return []
+    known = {WEB_NORM.sub("", name.lower()) for name in (*vocab.tokens, *parser.all_types)}
+    drawn = set(icon_text(text, vocab))
+    return [match.group(0) for match in TOKEN.finditer(text) if match.span() not in drawn
+            and WEB_NORM.sub("", match.group(0)[1:-1].split(":")[0].lower()) in known]
 
 
 def keep_tokens(layer, new: str, vocab: Optional[IconVocabulary]) -> str:
@@ -918,7 +944,8 @@ def status_fills(chart: PSDImage) -> dict:
 def status_spans(text: str, chart: dict) -> list:
     """
     Every status name in a text, longest names first so "Frozen In Time" is not read as "Frozen"; blanks or forced
-    breaks between its words, as Effect Layers.jsx's phraseRanges.
+    breaks between its words, as Effect Layers.jsx's phraseRanges; none inside a [token] ("[stuffed star]" is an icon,
+    not the Stuffed status: its swatch showed on a :tint or :sticker one; review 2026-10-24).
 
     Args:
         text: Ability text
@@ -927,14 +954,14 @@ def status_spans(text: str, chart: dict) -> list:
     Returns:
         [(start, end, StatusColor)] sorted by start, non-overlapping
     """
-    taken = []
+    taken = [(*match.span(), None) for match in TOKEN.finditer(text)]
     for key in sorted(chart, key=len, reverse=True):
         words = r"[\s\x03]+".join(escape(word) for word in chart[key].name.split())
         pattern = re_compile(r"(?<![A-Za-z])" + words + r"(?![A-Za-z])", IGNORECASE)
         for match in pattern.finditer(text):
             if not any(match.start() < end and start < match.end() for start, end, _ in taken):
                 taken.append((match.start(), match.end(), chart[key]))
-    return sorted(taken, key=lambda span: span[0])
+    return sorted((span for span in taken if span[2] is not None), key=lambda span: span[0])
 
 
 def body_fill(layer, chart: dict) -> Optional[tuple]:
@@ -1559,12 +1586,16 @@ def _fx_engine() -> tuple:
     return TextModel, layout, rasterize, Options, GlyphCache, PixelLayer, store
 
 
-def _key_ink(model, fills, layer, fonts, engine: tuple) -> np.ndarray:
-    """A key copy of the layer's text, runs refilled by fills(run) -> [(start, end, fill)]: where its red channel reaches."""
+def _key_ink(model, fills, layer, fonts, engine: tuple, colour: bool = True) -> np.ndarray:
+    """
+    A key copy of the layer's text, runs refilled by fills(run) -> [(start, end, fill)]: where its red channel reaches.
+    colour False draws each colour glyph as its outline's silhouette in its run's fill (the font's glyf: the icon's
+    alpha past 110 of 255), not in its SVG colours.
+    """
     _, layout, rasterize, Options, GlyphCache = engine[:5]
     runs = [replace(run, start=a, end=b, style=replace(run.style, fill=fill)) for run in model.runs for a, b, fill in fills(run)]
     key = replace(model, runs=tuple(runs))
-    rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(), GlyphCache(),
+    rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(color_glyphs=colour), GlyphCache(),
                            max_alloc_bytes=layer._psd._max_alloc_bytes)
     x0, y0, x1, y1 = (int(v) for v in bbox)
     lx0, ly0, lx1, ly1 = layer.bbox
@@ -1592,15 +1623,19 @@ def _dilate(mask: np.ndarray) -> np.ndarray:
     return out
 
 
-def _phrase_mask(layer, model, ranges: list, glyphs: Optional[np.ndarray], fonts, engine: tuple) -> np.ndarray:
+def _phrase_mask(layer, model, ranges: list, glyphs: Optional[np.ndarray], fonts, engine: tuple,
+                 badge: bool = False) -> np.ndarray:
     """
     Where the layer's text inks under ranges (indices into the engine's text, TextModel.text), over the layer's bbox:
     Effect Layers.jsx's key copy (those runs white, every other black) laid out and rasterized again; a fill changes
     nothing in the layout. The icon font's colour glyphs keep their SVG colours in any key, so glyphs, an all-black key's
     ink, takes them out (the JSX's fix for badge pixels in FX layers, 11faa634); None for a badge layer, which takes every
-    one of them on purpose, as the JSX's does. The raster may be Photoshop's (a splice keeps it), whose anti-aliasing
-    reaches a pixel past the engine's on some faces (Perpetua): the mask takes the raster's ink one pixel around the
-    key's that is no other glyph's (the complement key's, grown a pixel), as the JSX's key, drawn by Photoshop, does.
+    one of them on purpose, as the JSX's does. A badge layer (badge) also takes its colour glyphs' silhouettes no other
+    glyph inks: the red key leaves their red-less pixels out (an [undead] skull's black eyes, a [feather]'s green), which
+    then print in the Ability's overlay colour (review 2026-10-24). The raster may be Photoshop's (a splice keeps it),
+    whose anti-aliasing reaches a pixel past the engine's on some faces (Perpetua): the mask takes the raster's ink one
+    pixel around the key's that is no other glyph's (the complement key's, grown a pixel), as the JSX's key, drawn by
+    Photoshop, does.
     """
     def fills(white, black):
         def split(run):
@@ -1614,6 +1649,9 @@ def _phrase_mask(layer, model, ranges: list, glyphs: Optional[np.ndarray], fonts
     if glyphs is not None:
         mask &= ~glyphs
         rest |= glyphs
+    if badge:
+        rest |= _key_ink(model, fills(KEY_BLACK, KEY_WHITE), layer, fonts, engine, colour=False)
+        mask |= _key_ink(model, fills(KEY_WHITE, KEY_BLACK), layer, fonts, engine, colour=False) & ~rest
     rest &= ~mask
     ink = layer.numpy("shape")[..., 0] > 0
     return mask | (_dilate(mask) & ink & ~_dilate(rest))
@@ -1802,7 +1840,7 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
         if not badge and any(icons) and glyphs is None:
             glyphs = _key_ink(model, lambda run: [(run.start, run.end, KEY_BLACK)], layer, fonts, engine)
         mask = _phrase_mask(layer, model, [(a + offset, b + offset) for a, b in ranges], None if badge else glyphs,
-                            fonts, engine)
+                            fonts, engine, badge)
         cut = _cut(layer, mask, color, shape)
         if cut is None:
             raise Refused("styled-word", f"{old}: its words have no pixels")
@@ -2249,6 +2287,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
         if glows:
             raise Refused("font", f"{', '.join(glows)}: this psd-tools draws a glow halo as a solid block; edit in Photoshop")
+        odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser))
+        if odd:                                 # typed, or "[fire:no]" made "[fire:]" by deleting letters
+            raise Refused("font", f"{', '.join(odd)}: the website shows an icon, but the icon font has no such spelling "
+                                  f"and would print its letters; type the token as the token picker writes it")
         drawn = icon_text(text, vocab)          # what the icon font draws (owner 2026-10-23: a typed one is set in it)
         looks = {kind: icon_style(layer, kind, vocab) for kind in (True, False)}   # badge, token
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)
@@ -2278,6 +2320,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 if joined and plan.mixed:       # which colour the typed copy takes can't be told
                     raise Refused("unsupported-card", f"{plan.layer.name}: its words are in more than one colour, so "
                                                       f"the typed {joined[0]!r} has none of its own; edit in Photoshop")
+                inside = [text[a:b] for _, _, now, _, _ in target for a, b in now if a < end and start < b]
+                if inside and plan.mixed:       # the fill below would paint every letter of it one colour
+                    raise Refused("unsupported-card", f"{plan.layer.name}: its words are in more than one colour, which "
+                                                      f"the edit in {inside[0]!r} would make one; edit in Photoshop")
             if styled or old_fx or hide:
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
@@ -4086,8 +4132,9 @@ def gate_fx_colours(psd: PSDImage, old: PSDImage, chart: dict) -> None:
 def bare_icons(psd: PSDImage, fonts) -> Counter:
     """
     The icon-font glyphs of a tinted Ability (_tinted: an overlay at any opacity, a blend other than Normal) that no
-    visible badge FX layer covers (FX_COVER of the Ability's ink in the glyph's text_geometry box, other glyphs' boxes
-    left out), by what they draw, lowercased ("(1cd)"): their colours are the overlay's or the blend's, not the font's.
+    visible badge FX layer covers (every pixel of the Ability's ink in the glyph's text_geometry box, other glyphs'
+    boxes left out: one left out prints in the overlay's colour, an [undead] skull's glowing eyes; review 2026-10-24),
+    by what they draw, lowercased ("(1cd)"): their colours are the overlay's or the blend's, not the font's.
     Empty for an Ability that is not tinted. Independent of _rebuild_fx (review 2026-10-23: Turtle's "(1GCD)" made
     "(1CD)" lost its badge layer, a blank pill under the Color Overlay, every other gate passing).
 
@@ -4113,10 +4160,25 @@ def bare_icons(psd: PSDImage, fonts) -> Counter:
     others = ~_boxes([glyph for glyph in glyphs if not glyph["font"].lower().startswith(ICON_FONT_PREFIX)], 1, shape)
     out = Counter()
     for glyph in icon:
-        want = ink & _boxes([glyph], 0, shape) & others
-        if (cover & want).sum() < FX_COVER * want.sum():
+        if (ink & _boxes([glyph], 0, shape) & others & ~cover).any():
             out[geometry["text"][glyph["i"]:glyph["end"]].strip().lower() or glyph["ch"]] += 1
     return out
+
+
+def lettered_icons(psd: PSDImage, fonts) -> Counter:
+    """
+    What the Ability's icon font draws as letters, by character: an icon-font glyph the shaper made of one printable
+    ASCII character, no ligature (the font's GSUB makes each badge and token it knows one cluster, "★" is no ASCII;
+    "[fire:]" stays seven letters). Independent of icon_text, whose rule let "[fire:]" in while the re-parse read it
+    back as [fire] (review 2026-10-24).
+    """
+    from psd_tools.composite.text.geometry import text_geometry
+    layer = ability_layer(psd)
+    if not uses_icon_font(layer):
+        return Counter()
+    return Counter(glyph["ch"] for glyph in text_geometry(layer, fonts)["glyphs"]
+                   if glyph["font"].lower().startswith(ICON_FONT_PREFIX) and glyph["end"] - glyph["i"] == 1
+                   and "!" <= glyph["ch"] <= "~")
 
 
 def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = None,
@@ -4127,12 +4189,13 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     (any alpha) inside the boxes of its phrases' glyphs (phrase_ranges over the new text), and a badge layer also the
     icon font's, which Effect Layers.jsx's cut takes on purpose, padded by FX_BOX_PAD; it covers FX_COVER of the
     Ability's ink in its words' boxes that no other glyph's box reaches (a word layer's words: not the icon font's colour
-    glyphs, which the cut leaves out); one the edit cut (rebuilt or made) holds the Ability's own pixels byte for byte;
-    and a "styled" layer's name still reaches the words of it the edit kept (Edit.held: Goofy's "1#1" on the "1" of
-    "3T1"); with the chart, every styled status word has its FX layer (gate_status_words) and, given the old card, a
-    "styled" or "own" layer covers no letter in a colour its words lacked (gate_fx_colours); and under a tinted Ability
-    no icon-font glyph lacks a badge FX layer over it that lacked none before (bare_icons: Blood Bomb's [machine] was
-    bare already; review 2026-10-23).
+    glyphs, which the cut leaves out), a badge layer every such pixel of its badges and icons; one the edit cut (rebuilt
+    or made) holds the Ability's own pixels byte for byte; and a "styled" layer's name still reaches the words of it the
+    edit kept (Edit.held: Goofy's "1#1" on the "1" of "3T1"); with the chart, every styled status word has its FX layer
+    (gate_status_words) and, given the old card, a "styled" or "own" layer covers no letter in a colour its words lacked
+    (gate_fx_colours); under a tinted Ability no icon-font glyph lacks a badge FX layer over it that lacked none before
+    (bare_icons: Blood Bomb's [machine] was bare already; review 2026-10-23); and the icon font draws no more letters
+    than before (lettered_icons: each typed badge or token one ligature).
 
     Args:
         psd: The saved PSD, reopened
@@ -4158,6 +4221,10 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     if bare:
         raise Refused("reparse", f"{', '.join(sorted(bare))}: under the Ability's overlay or blending with no badge FX "
                                  f"layer over it")
+    lettered = lettered_icons(psd, fonts) - (lettered_icons(old, fonts) if old is not None else Counter())
+    if lettered:
+        raise Refused("reparse", f"{''.join(sorted(lettered.elements()))!r}: the icon font draws them as letters, no "
+                                 f"badge or icon")
 
 
 def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts) -> None:
@@ -4192,6 +4259,9 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts) -> None:
         want = ink & _boxes(need, 0, shape) & ~_boxes(others, 1, shape)
         if (drawn & want).sum() < FX_COVER * want.sum():
             raise Refused("reparse", f"{fx.name!r} covers {int((drawn & want).sum())} of its words' {int(want.sum())} px")
+        bare = int((want & _boxes([glyphs[k] for k in mine if icon[k]], 0, shape) & ~drawn).sum()) if badge else 0
+        if bare:                                # each left to the Ability's look: a skull's eyes glow yellow
+            raise Refused("reparse", f"{fx.name!r} leaves {bare} px of its badges and icons out")
         if fx.name in cut:
             held = ours[..., 3] > 0
             if not np.array_equal(ours[held], base[held]):
@@ -4322,10 +4392,12 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     if drift:                                   # Photoshop shows the story's styles, not the layer's
         raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
 
-    # stars and types first (a title edit then clears the new stars), text next: an ability's FX records shift the digits'
-    # record indices; the icon edits' indices are read once all are in (index_icons)
+    # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
+    # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
+    # all are in (index_icons)
     before, edits, shown = record_map(new), [], None
-    for name, value in sorted(jobs.items(), key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS)):
+    for name, value in sorted(jobs.items(),
+                              key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
         if name in ICON_FIELDS:
             try:
                 plan = plan_stars(new, parsed, value, parser) if name == "stars" else plan_types(new, parsed, value, parser)
