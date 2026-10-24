@@ -633,16 +633,22 @@ Full notes: TTSCardMaker `site/NOTES.md` §19; user docs: `site/README.md` Editi
   pages) and inline (`.inline-ability`, `.inline-note`), marked `data-tokens`.
 - **What it suggests** (`tokens.js`, pure helpers `openToken`, `suggest`, `applyChoice`, `vocabulary`): after `[`, the
   icons by `norm` (the site's lenient key, §1.6): exact name or alias, name prefix, alias prefix, then inside a name
-  or alias (2+ letters); types before stars; an exact name is followed by its variants. After `name:`, `VARIANTS`
-  (= the bot's `ICON_VARIANTS`: tint, sticker, no, glow, darkglow). After `(`, the font's 341 badge tags
-  (`badge_tags`, the cards' own first, the rulebook's old ones last) starting with what was typed; text that starts in
-  lower case or holds a space never opens it ("(see below)"). Accepting writes the canonical `[name]`,
-  `[name:variant]` or `(TAG)` over what was typed and any `]`/`)` already there.
+  or alias (2+ letters), and only when none of those match (3+ letters) a typo's (a start one edit away, two from 6
+  letters: `[fier` → fire, field); types before stars, then the most used in the cards' text, then by name; an exact
+  name is followed by its variants. After `name:`, `VARIANTS` (= the bot's `ICON_VARIANTS`: tint, sticker, no, glow,
+  darkglow). After `(`, the font's 341 badge tags (`badge_tags`, the cards' own first, the rulebook's old ones last;
+  up to 7 characters, `(-1/2GCD)`) starting with what was typed; text that starts in lower case or holds a space
+  never opens it ("(see below)"); "(Only once)" opens at "(O" and closes at "(On". Accepting writes the canonical
+  `[name]`, `[name:variant]` or `(TAG)` over what was typed; text after the caret stays (`[fi|and ice` → `[fire]and
+  ice`) unless the caret is inside a token closed by `]`/`)` on the line, which is replaced whole, a plain icon
+  keeping its `:variant` (`[fi|re:glow]` → `[fire:glow]`). Until the 2026-10-23 review the rest of the word after the
+  caret was replaced too, even with no `]` (it deleted words).
 - **Keys:** ↑ ↓, Enter or Tab accept, Esc closes the list only (a capture listener stops it, so inline editing's Esc
   and the dialog's come on the next press); click or tap accepts (mousedown prevented: the field and the phone
   keyboard keep the focus); `execCommand("insertText")` keeps undo and fires the `input` the live preview listens to.
-  ARIA: listbox/option rows, `aria-expanded`, `aria-controls`, `aria-activedescendant` on the field, a live count; the
-  list sits inside the field's `[role=dialog]`.
+  ARIA: listbox/option rows, `aria-autocomplete="list"`, `aria-expanded`, `aria-controls` (while open),
+  `aria-activedescendant` on the field (no `role=combobox`: it would hide a textarea's textbox role), a live count;
+  the list sits inside the field's `[role=dialog]`. IME: no refresh while composing; keyCode 229 never accepts.
 - **Variant pictures** (`build_site.py`): `build_icons` calls `variant_art`, which draws each with the font build's
   `icon_art` (the per-icon part of `build_stoogedings.build()` moved into a function the font build calls too; the font
   rebuilt byte-identical). tint and sticker take the text colour in the font, so their pictures are white masks
@@ -651,10 +657,11 @@ Full notes: TTSCardMaker `site/NOTES.md` §19; user docs: `site/README.md` Editi
   0.3021 = GLOW_SIZE/HEIGHT, whole pixels at 96 px), with negative margins above and below, as the font's halo spills
   past the line. Cached by blob + a hash of the build script and tint mode; cold 12 s for 91 icons, warm 0.1 s.
   Needs numpy, opencv-python-headless and fonttools (the font build's requirements; `site/build/requirements.txt`
-  includes them and site.yml sparse-checks out the script on that branch); without them, one warning and the plain
-  icon for every variant, never a failed build.
+  includes them and site.yml sparse-checks out the script on that branch, and hashes it into the image cache's key);
+  without them, one warning and the plain icon for every variant, never a failed build. text.js reads a variant
+  exactly (no spaces around it, as the font and parser): `[fire: glow]`, `[fire: no]` are the plain icon.
 - **Tests:** AutoCroissant `tests/test_token_picker.py` (8; `AC_SITE_SRC` points it at a checkout; skips while the clone
-  has no `tokens.js`); `tests/test_badge_parity.py::test_site_reads_variants_as_the_plain_icon` now covers data
+  has no `tokens.js`; covers kept text after the caret, kept variants, typos, use order, 7-character tags); `tests/test_badge_parity.py::test_site_reads_variants_as_the_plain_icon` now covers data
   without pictures. Browser check: WebKit (WKWebView, offscreen) driven by
   `~/Documents/Tools/wt/scratch/picker/browser/shoot.swift`; screenshots in `.../picker/shots/`. **The harness hides
   IndexedDB on purpose:** WebKit wraps CryptoKeys stored there (the site's sealed sign-in) with a login-keychain
@@ -978,7 +985,7 @@ JSX trial copies under `/private/tmp/fontexplore/fx/mig/out/`. §0's module list
 save's Lua, `TTS/checks/`) against tts-save.yml and TTS/checks as committed that day ("TTS save: daily gate also counts the bot's pickle
 pushes", "TTS checks: the audit's checks, re-runnable"). §2.7 and the token-picker notes in §1.6, §1.8, §2.1, §2.3
 and §2.4 written 2026-10-23 against branch work/token-picker of both repos (TTSCardMaker on c94a4a89, AutoCroissant on
-cc3cd8c); §1.8's merge line checked the same day (3539dc83 and cf2a394 on both mains). Refresh the
+d9ebf7c), and re-checked after that evening's review fixes; §1.8's merge line checked the same day (3539dc83 and cf2a394 on both mains). Refresh the
 date-stamps whenever you touch this file.
 
 ```bash
