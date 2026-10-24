@@ -149,3 +149,15 @@ for (let ts = 1704000000; ts < 1735700000; ts += 1777) if (H.dayOf(ts) !== ref(t
 process.stdout.write(JSON.stringify({{ bad: bad.slice(0, 5), n: bad.length }}));
 """, "Europe/Berlin")
     assert out["n"] == 0, out
+
+
+def test_a_dialog_closes_onto_a_drawn_view():
+    """route() closes a card without a redraw only while the view under it is current: nothing still loading (data that
+    came while the dialog was open), the theme unchanged; Stats fills its sections under a dialog (S.renderedHash)."""
+    app = (ASSETS / "app.js").read_text(encoding="utf-8")
+    close = re.search(r"^  if \(hash === S\.renderedHash && !modal\.hidden(.*)\{ closeModal\(\);", app, re.M)
+    assert close and "viewSig() === S.viewSig" in close[1] and '!$(".loading", view)' in close[1]
+    sig = re.search(r"^function viewSig\(\) \{(.*)\}$", app, re.M)
+    assert sig and "dataset.theme" in sig[1]
+    stats = app[app.index("function renderStatsView"):app.index("function distPage")]
+    assert "parseHash(S.renderedHash)" in stats and 'parseHash().name === "stats"' not in stats
