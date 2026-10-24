@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ import commands.card_data as cd
 import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
-from conftest import REPO, blob_sha_bytes
+from conftest import CLONE, REPO, blob_sha_bytes
 from golden_cards import VOCAB, golden_file
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
@@ -61,16 +62,48 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     assert modules == {f for f in cd.SPARSE_FILES if f.endswith(".py")}                   # card-sync.yml copies this list
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_data, commands.card_history, commands.changelog, commands.psd_details", bot)
-    assert not extra - ALLOWED_IMPORTS, f"requirements-card-data.txt installs none of these: {sorted(extra - ALLOWED_IMPORTS)}"
+    assert not extra - ALLOWED_IMPORTS, f"requirements-cards.txt installs none of these: {sorted(extra - ALLOWED_IMPORTS)}"
 
 
-def test_requirements_pin_and_not_ignored():
-    lines = [x.strip() for x in (REPO / "requirements-card-data.txt").read_text(encoding="utf-8").splitlines()
-             if x.strip() and not x.startswith("#")]
-    assert lines == ["psd-tools==1.25.0", "fonttools", "requests"]
-    status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--ignored", "requirements-card-data.txt"],
-                            capture_output=True, text=True).stdout
-    assert not status.startswith("!!"), "requirements-card-data.txt is gitignored (*.txt): .gitignore needs its ! line"
+def _requirements(name: str) -> list:
+    return [x.strip() for x in (REPO / name).read_text(encoding="utf-8").splitlines() if x.strip() and not x.startswith("#")]
+
+
+def test_requirements_layers_and_pin():
+    """requirements-cards.txt: the card stack (CARD_PACKAGES) with the fork's one pin, pyoxipng only where 9.1.1 has a
+    wheel (the Actions' 3.12 yes; the jetson's and the Mac's 3.14 no); requirements.txt and requirements-dev.txt layer on
+    it; none of the three gitignored (*.txt)."""
+    from test_card_bake import CARD_PACKAGES, card_pin
+    requirement = pytest.importorskip("packaging.requirements").Requirement
+    cards = [requirement(x) for x in _requirements("requirements-cards.txt")]
+    assert [r.name for r in cards] == list(CARD_PACKAGES)
+    assert cards[0].url == f"git+https://github.com/MichaelJSr/psd-tools@{card_pin()}" and cards[0].extras == {"composite", "text"}
+    assert [str(r) for r in cards[1:3]] == ["fonttools", "requests"]
+    oxipng = cards[3]
+    assert str(oxipng.specifier) == "==9.1.1"
+    linux = {"sys_platform": "linux", "platform_system": "Linux", "platform_python_implementation": "CPython"}
+    for machine, python, wheel in (("x86_64", "3.12", True), ("aarch64", "3.13", True), ("aarch64", "3.14", False),
+                                   ("x86_64", "3.14", False), ("armv7l", "3.12", False)):
+        assert oxipng.marker.evaluate({**linux, "platform_machine": machine, "python_version": python}) is wheel, (machine, python)
+    mac = {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "arm64"}
+    assert oxipng.marker.evaluate({**mac, "python_version": "3.13"}) and not oxipng.marker.evaluate({**mac, "python_version": "3.14"})
+    assert _requirements("requirements.txt")[0] == "-r requirements-cards.txt"
+    assert _requirements("requirements-dev.txt")[0] == "-r requirements.txt"
+    assert not (REPO / "requirements-card-data.txt").exists()
+    for name in ("requirements-cards.txt", "requirements.txt", "requirements-dev.txt"):
+        status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--ignored", name], capture_output=True, text=True).stdout
+        assert not status.startswith("!!"), f"{name} is gitignored (*.txt): .gitignore needs its ! line"
+
+
+def test_card_sync_checks_out_sparse_files():
+    """card-sync.yml's builder checkout is exactly SPARSE_FILES (the copy test above runs on that list)."""
+    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout)")
+    yaml = pytest.importorskip("yaml")
+    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["sync"]["steps"]
+    bot = next(s for s in steps if s.get("with", {}).get("path") == "bot")
+    assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cd.SPARSE_FILES]
 
 
 def test_build_modules_stay_uncompiled_and_off_discord():

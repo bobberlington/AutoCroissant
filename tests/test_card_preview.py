@@ -457,10 +457,11 @@ def _workflow() -> tuple:
 
 def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
-    preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; the fork pin shared with
-    card-edits.yml) hands its out dir to the publish job (contents: write; card_preview_branch.SPARSE_FILES; the runner's
-    python3, no setup-python or pip; no --png), 15 minutes between them; no secret but GITHUB_TOKEN (the Preview step's
-    REST reads), no Discord, and no input expanded inside a shell script (only in env)."""
+    preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; card-edits.yml's install of
+    requirements-cards.txt and its cache entry) hands its out dir to the publish job (contents: write;
+    card_preview_branch.SPARSE_FILES; the runner's python3, no setup-python or pip; no --png), 15 minutes between them;
+    no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
+    (only in env)."""
     text, doc = _workflow()
     on = doc[True]
     assert list(on) == ["workflow_dispatch"]
@@ -488,11 +489,11 @@ def test_workflow_shape():
         assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
     install = re.findall(r"pip install [^\n]+", text)
     edits = WORKFLOWS / "card-edits.yml"
-    pin = fork_install(WORKFLOWS / "card-preview.yml")
+    key = fork_install(WORKFLOWS / "card-preview.yml")
     assert len(install) == 1 and "--no-index" in install[0]                       # the fork from its cached wheels
     if edits.exists():
-        assert re.findall(r"pip install [^\n]+", edits.read_text(encoding="utf-8")) == install       # the bake's install, pin and all
-        assert fork_install(edits) == pin
+        assert re.findall(r"pip install [^\n]+", edits.read_text(encoding="utf-8")) == install       # the bake's install
+        assert fork_install(edits) == key                                          # and its cache entry
     assert not [s for s in publish["steps"] if "setup-python" in s.get("uses", "") or "pip " in s.get("run", "")]
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
@@ -539,7 +540,7 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     code = "import sys, commands.card_preview; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
-    extra = third_party_imports("import commands.card_preview", bot) - ALLOWED_IMPORTS - {"oxipng"}
+    extra = third_party_imports("import commands.card_preview", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-preview.yml installs none of these: {sorted(extra)}"
     assert set(br.SPARSE_FILES) <= set(cp.SPARSE_FILES)
 

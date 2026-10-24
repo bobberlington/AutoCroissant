@@ -519,26 +519,34 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 `card-preview.yml` (2026-10-23, website previews) reads none of these: no secret beyond `GITHUB_TOKEN`, no variable, no
 Discord. Its branch `previews` is data, not a setting: it is rewritten by the workflow and never merged.
 
-### The psd-tools fork pin: `PSD_TOOLS_REF` (2026-10-23)
+### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23)
 
-The fork's tag is the top-level env `PSD_TOOLS_REF` of card-edits.yml, card-guards.yml, card-sync.yml and
-card-preview.yml, once in each (`cards-20261023d`, round 11, on 2026-10-23). The fork and its dependencies install
-offline from wheels in the Actions cache (path `~/.cache/psd-tools-wheels`, key
-`psd-tools-<tag>-<OS>-<arch>-py<Python>`, one entry for the four). The first run after a new tag or a new runner Python
-builds them (`pip wheel`, the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of
-the 29-35 s install). The wheels freeze numpy, scipy, Pillow and the rest at that first build; a new tag refreshes them
-(for a bad dependency release under the same tag, delete the entry: step 1's `gh cache delete`).
+The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
+(`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261023d`, round 11, fonttools,
+requests, `pyoxipng==9.1.1` only where it has a wheel: CPython 3.9-3.13; skipped on the Mac's and the jetson's 3.14).
+`requirements.txt` (the bot) starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`.
+card-edits.yml, card-guards.yml, card-sync.yml (both its venvs) and card-preview.yml check the file out of AutoCroissant
+and install it offline from wheels in the Actions cache (path `~/.cache/card-wheels`, key
+`cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for card-edits, card-guards and
+card-preview on 3.12; card-sync's names both its Pythons, `-py<3.14.x>-py<3.12.x>`). The first run after a change to
+the file or a new runner Python builds them (`pip wheel -r`, the fork's C extensions) and saves them; later runs skip the
+git clone and the build (~25 s of the 29-35 s install). The install goes by name (a copy of the file without the URL,
+`sed 's/ @ [^;]*//'`): pip builds a URL line from git again, offline or not. The wheels freeze numpy, scipy, Pillow and
+the rest at that first build; any edit of the file refreshes them (for a bad dependency release, delete the entry:
+step 1's `gh cache delete`).
 
 Re-pin:
-1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a name's first wheels;
+1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first wheels;
    delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
-2. Change `PSD_TOOLS_REF` in the four workflows (one line each) in one commit. Nothing to clear: a new tag is a new
-   key, and GitHub drops an entry unused for 7 days.
-3. Run the shape tests against that checkout: `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml
-   AC_SITE_SRC=<checkout>` with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (the four pins must
-   match and be a `cards-YYYYMMDD[letter]` tag; `test_card_bake.fork_install` checks each workflow's install).
-4. The jetson's venv and the dev Mac's: autocroissant-run-and-operate ("When the psd-tools fork tag moves") and
-   autocroissant-build-and-env.
+2. Change the tag in `requirements-cards.txt` (one line) and commit it to AutoCroissant main. The workflows need nothing:
+   they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days).
+3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers) and,
+   against a TTSCardMaker checkout, `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml AC_SITE_SRC=<checkout>`
+   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`test_card_bake.fork_install` checks each
+   workflow's install: no pin of its own, the file's wheels).
+4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
+   (a plain `pip install -r` keeps the old commit: the fork's version is 1.25.0 at every tag; autocroissant-run-and-operate,
+   "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 ### setup.py (lines 8-49) — Cython build configuration
 

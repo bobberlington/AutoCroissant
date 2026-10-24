@@ -19,7 +19,8 @@ and a replay are the same command. land re-reads the branch head, drops a card w
 push touched (card_bake.recent_paths), and makes one commit (git_commit.commit_files; --local: in a clone, nothing
 pushed). The guards' own commits and the bake's, the save's and Card sync's are skipped (the AutoCroissant author or
 github-actions; a path a person also changed in the range is still guarded). No Discord or config imports (the token:
-config through github_api, else GITHUB_TOKEN); SPARSE_FILES is the import closure card-guards.yml checks out.
+config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.yml checks out: the import closure and
+requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -56,7 +57,8 @@ from global_config import CARD_REPO, ICON_MANIFEST_PATH
 SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/card_standards.py", "commands/txt2_repair.py",
                 "commands/psd_diff.py", "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
                 "commands/psd_parser.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
-                "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py")
+                "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
+                "requirements-cards.txt")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)

@@ -126,11 +126,12 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
   (054b5933) run then.
 - **Push main and deploy in one sitting**: if origin/main has new code at 05:30 and the jetson does not, `/push` rebases
   the new `.py` files in next to stale `.so` files and the next restart fails at import.
-- **When the psd-tools fork tag moves**, reinstall it in the venv:
-  `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>"`
-  (gcc compiles `_distance`), then `~/venvs/autocroissant/bin/pip check`. Today: tag `cards-20261023` = ecc4b773,
-  installed 2026-10-23 10:36 (it still reports version 1.25.0; `pip freeze | grep psd` shows the commit). The Actions pin
-  the same tag (autocroissant-change-control, class (a)).
+- **When the psd-tools fork tag moves** (its one pin: `requirements-cards.txt`, which `requirements.txt` includes),
+  reinstall it in the venv after the pull: `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps
+  "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`), then `~/venvs/autocroissant/bin/pip check`.
+  A plain `pip install -r requirements.txt` keeps the old commit: the fork always reports version 1.25.0, so pip calls
+  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261023` = ecc4b773,
+  installed 2026-10-23 10:36. The Actions install the same file (autocroissant-change-control, class (a)).
 Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push from the box with
 `SSH_AUTH_SOCK=/run/autocroissant/ssh-agent.sock git push`. Memory: jetson-server.
 

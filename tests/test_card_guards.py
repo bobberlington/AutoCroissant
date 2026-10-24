@@ -1163,7 +1163,9 @@ def test_action_shaped_copy(tmp_path):
     assert done.returncode == 0, done.stderr
     bad, closure = done.stdout.splitlines()
     assert bad == "[]"
-    assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == set(cg.SPARSE_FILES)
+    modules = {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))}
+    assert modules == {f for f in cg.SPARSE_FILES if f.endswith(".py")}
+    assert "requirements-cards.txt" in cg.SPARSE_FILES                         # what the Action installs
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
@@ -1188,16 +1190,18 @@ def test_guard_modules_stay_uncompiled():
 
 
 def _workflow(clone) -> Path:
-    path = WORKFLOW or (clone / ".github" / "workflows" / "card-guards.yml")
+    site = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(clone)))       # a TTSCardMaker checkout
+    path = WORKFLOW or (site / ".github" / "workflows" / "card-guards.yml")
     if not path.exists():
-        pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file)")
+        pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file, or AC_SITE_SRC to the checkout)")
     return path
 
 
 def test_workflow_shape(clone):
     """card-guards.yml: push on PSDs and PNGs behind CARD_GUARDS, dry dispatches by default, a run per push, the bot's
-    commits skipped, the sparse list = SPARSE_FILES, the fork pin and its wheel cache shared with card-edits.yml,
-    card-sync.yml and card-preview.yml, secrets by name only, no ping."""
+    commits skipped, the sparse list = SPARSE_FILES, requirements-cards.txt's install (the fork's one pin) as card-edits.yml,
+    card-sync.yml and card-preview.yml have it, its wheel cache entry card-edits' and card-preview's, secrets by name only,
+    no ping."""
     yaml = pytest.importorskip("yaml")
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
@@ -1218,10 +1222,11 @@ def test_workflow_shape(clone):
     assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
     cards = next(s for s in steps if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
-    from test_card_bake import FORK_WORKFLOWS, fork_install
+    from test_card_bake import FORK_KEY, FORK_WORKFLOWS, SYNC_KEY, fork_install
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
-    assert len({fork_install(p) for p in [path, *others]}) == 1                 # one pin, one cache entry for the four
-    assert re.search(r"pip install [^\n]*pyoxipng==[\d.]+ ", text)          # the lossless PNG recompression (png_export)
+    keys = {p.name: fork_install(p) for p in [path, *others]}                  # one pin: requirements-cards.txt's
+    assert keys == {name: SYNC_KEY if name == "card-sync.yml" else FORK_KEY for name in keys}    # one entry on 3.12
+    assert "pyoxipng==" in (REPO / "requirements-cards.txt").read_text(encoding="utf-8")   # png_export's recompression
     names = [s.get("name") for s in steps]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
         < names.index("Comment on the commit") < names.index("Land") < names.index("Follow up") < names.index("Tell Discord") \

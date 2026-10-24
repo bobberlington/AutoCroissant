@@ -1,0 +1,8 @@
+# The card code's packages: what the bot (requirements.txt) and the card Actions (card-edits, card-guards, card-sync,
+# card-preview: they key their wheel cache on this file) install. The one place to re-pin the psd-tools fork.
+psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261023d
+fonttools
+requests
+# Only where 9.1.1 has a wheel (CPython 3.9-3.13; macOS x86_64/arm64, Linux x86_64/aarch64, Windows x86/x64): never a
+# Rust build. Skipped on Python 3.14 (the Mac, the jetson); png_export runs without it.
+pyoxipng==9.1.1 ; platform_python_implementation == "CPython" and python_version >= "3.9" and python_version < "3.14" and ((sys_platform == "darwin" and (platform_machine == "x86_64" or platform_machine == "arm64")) or (sys_platform == "linux" and (platform_machine == "x86_64" or platform_machine == "aarch64")) or (sys_platform == "win32" and platform_machine != "ARM64"))

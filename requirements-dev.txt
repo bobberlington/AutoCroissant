@@ -1,3 +1,4 @@
+-r requirements.txt
 pytest
 pyyaml
-pyoxipng
+pyobjc-framework-Vision ; sys_platform == "darwin"
