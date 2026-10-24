@@ -24,6 +24,7 @@ from conftest import CLONE
 
 BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
+APP_JS = BUILD_SITE.parents[1] / "assets" / "app.js"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -331,3 +332,11 @@ def test_the_editor_writes_no_types_edit_that_only_reorders(tmp_path):
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
     assert [(o["set"], o["unset"]) for o in json.loads(done.stdout)] == [({}, []), ({"types": ["light", "wind"]}, []), ({}, ["types"])]
+
+
+def test_the_card_page_has_no_share_full_image_or_psd_button():
+    """Gone at the owner's ask (2026-10-23): the card page's Share (and its s key), Full image and PSD on GitHub."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert [s for s in ('data-action="share"', ">Full image<", ">PSD on GitHub<", 'e.key === "s"') if s in text] == []
