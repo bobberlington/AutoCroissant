@@ -181,7 +181,7 @@ def test_apply_ratings(bs):
     people, by_login = {"somelogin": "Some Person"}, {}
     got = bs.apply_ratings(cards, ratings, archived, people, by_login)
     assert got == {"entries": 5, "cards": 2, "archived": 1, "unmatched": ["Nobody"]}
-    assert cards[0]["ratings"] == [_e("2023-04-28", "power", 5), _e("2025-04-28", "power", 6, "Some Person", "website")]
+    assert cards[0]["ratings"] == [_e("2023-04-28", "power", 5), {**_e("2025-04-28", "power", 6, "Some Person", "website"), "login": "somelogin"}]
     assert cards[1]["ratings"] == [_e("2023-04-28", "favorability", 3), _e("2025-03-02", "power", 7)]
     assert archived[0]["ratings"] == [_e("2023-04-28", "power", 5.5)] and "ratings" not in archived[1]
     by_login = {"somelogin": {"login": "somelogin", "author": "Profile Name"}}
@@ -273,3 +273,14 @@ process.stdout.write(JSON.stringify({{
     assert got["empty"] == "" and "Not rated yet." in got["editing"] and 'data-action="rate-add"' in got["editing"]
     assert "<h3>Ratings</h3>" in got["block"] and "All ratings" in got["block"] and "rate-add" not in got["block"]
     assert "2025" in got["day"]
+
+
+def test_a_re_rating_counts_its_rater_once(tmp_path):
+    """An unpublished entry ("you") with rater = the person's published name replaces their earlier one (edit.js applyOp)."""
+    entries = [_e("2025-04-28", "power", 7), _e("2026-10-20", "power", 3, "tester", "website"),
+               {**_e("2026-10-24", "power", 9, "you", "website"), "rater": "tester", "_staged": True}]
+    got = _node(tmp_path, f"""
+const list = {json.dumps(entries)};
+process.stdout.write(JSON.stringify([m.current(list, "power"), m.current(list, "power", {{ day: "2026-10-21" }}), m.current(list.slice(0, 2), "power")]));""", RATINGS_JS)
+    assert got == [{"value": 8, "raters": 2, "date": "2026-10-24"}, {"value": 5, "raters": 2, "date": "2026-10-20"},
+                   {"value": 5, "raters": 2, "date": "2026-10-20"}]
