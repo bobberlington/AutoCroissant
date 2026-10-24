@@ -49,3 +49,25 @@ def test_item_type_is_a_select():
     text = EDIT_JS.read_text(encoding="utf-8")
     assert '<select id="ef-subtype">' in text
     assert "dl-sub\"" not in text and 'id="ef-subtype" list=' not in text
+
+
+# ---- item 18: drops
+def test_drop_targets_take_dragenter_too():
+    """Safari and Firefox drop only on an element that cancelled dragenter (Chrome is lenient); the tile drags, not its
+    picture; the dragged ids are kept in memory, not only in dataTransfer."""
+    text = INLINE_JS.read_text(encoding="utf-8")
+    assert re.search(r'addEventListener\("dragenter", onDragOver\)', text)
+    assert re.search(r'querySelector\("img"\)\?\.setAttribute\("draggable", "false"\)', text)
+    assert "dragged = dragIds(" in text
+
+
+@needs_node
+def test_target_of_a_chip_and_a_box(tmp_path):
+    out = node(tmp_path, """
+const list = (drop, series) => ({ dataset: series == null ? { drop } : { drop, series } });
+const chip = (value, l) => ({ dataset: { value }, closest: () => l });
+const box = d => ({ dataset: { pin: "0", ...d } });
+process.stdout.write(JSON.stringify([I.targetOf(chip("Mario", list("series"))), I.targetOf(chip("Paper Mario", list("subseries", "Mario"))),
+  I.targetOf(box({ k: "author", v: "bobberlington" })), I.targetOf(box({ k: "subseries", v: "Paper Mario", s: "Mario" }))]));""", I=INLINE_JS)
+    assert out == [{"key": "series", "value": "Mario", "series": ""}, {"key": "subseries", "value": "Paper Mario", "series": "Mario"},
+                   {"key": "author", "value": "bobberlington", "series": ""}, {"key": "subseries", "value": "Paper Mario", "series": "Mario"}]
