@@ -388,7 +388,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    after its 18.66 pt (1GCD) stayed 18.66 pt; 57 cards on main have badges in two sizes). A typed `:sticker` or
    `:tint` (drawn in the text's colour) takes the colour of its kind on the card (`variant_fill`, owner 2026-10-24):
    the same icon's first (Palace of Shadow's [dark:sticker] white on its white first line, its [light:sticker] the
-   body's grey), the edited text's before the other text's; none on the card: the surrounding text's, as before; its
+   body's grey), the edited text's before the other text's (the other read off the card before the bake: a title
+   edit after the Ability's sees none the Ability typed); none on the card: the surrounding text's, as before; its
    kind in as many of one colour as of another (a [fire:sticker] on Palace) refuses `unsupported-card`. Text typed after a badge that the font
    draws no badge of ("(2 points)") takes the body style; letters left in the icon font that it draws no badge of
    (a badge replaced by "(abc)", or one cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
@@ -415,8 +416,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
    plain, every gate passing). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
    title's own size and colour (`icon_style` of the title, else the run the engine gives it), under the same gates:
-   glows and `unlettered_icons` refuse `font`, a title under an overlay, blend, opacity or clipped layer (`_tinted`:
-   367 of 728 titles on main, mostly gradient overlays) refuses `unsupported-card`, and `gate_fx` runs `bare_icons`,
+   glows refuse `font` (`unlettered_icons` does not: the website shows a title's "[fire:]" as its letters, as the card
+   does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly
+   gradient overlays; also a Satin, Inner Glow or Inner Shadow, and a group's overlays: The Radiance, Captain Spaceboy)
+   refuses `unsupported-card`, words typed after a title's token take the title's style (`title_styles`), and `gate_fx` runs `bare_icons`,
    `see_through_icons`, `lettered_icons` and `unshaped_icons` on the title (`titles`, `_gate_icons`). A stroke, shadow,
    glow or bevel draws round the icon as Photoshop does. A timing badge typed there refuses `unsupported-card` (the
    ruling names tokens; the website shows a title as plain words): owner to rule. The parser reads a title's icons
@@ -717,7 +720,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   0.049; opaque ones 0.02 at most); `gate_fx` refuses a new one. `apply_jobs` edits `edit_copy(old)`: the fork pairs
   smart filters by id() of the record, which a plain deepcopy kept from the source, so the copy rendered Lorian,
   Dragon_Mount, Defcon_Panda and 71 more without them and the PNG took that inside the regions (stat bakes silently);
-  `gate_copy` renders the copy against the card before any edit. `gate_untouched` leaves out every edit's region, the
+  `gate_copy` renders the copy against the card (since the review fixes below: `gate_pairs` first, the render only on
+  a card with smart filters). `gate_untouched` leaves out every edit's region, the
   stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
   new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
   reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
@@ -743,6 +747,28 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_variant_fill_takes_its_kinds_colour`, `test_a_typed_sticker_takes_the_colour_of_its_kind`,
   `test_a_token_typed_in_the_title_is_set_in_the_icon_font`, `test_gate_fx_checks_a_title_edits_icons`; each fails with
   its fix taken out (`mut-*/`).
+  **Review fixes 2026-10-24 (same branch, r12 venv; `scratch/bug2-p4/fix5/`):** `_tinted` counts a group's Color,
+  Gradient or Pattern Overlay, Satin, Inner Glow or Inner Shadow (a [fire] in The Radiance's or Captain Spaceboy's title
+  baked as a one-colour silhouette; Butterfly's own Inner Glow now refuses too). A typed `:sticker`/`:tint` reads the
+  other text layer's colours off the card before the bake (`set_text_layer(original=)`: Salt's, Glitz Pit's and Basic
+  Shield's title stickers took the Ability's typed one's colour; now the title's). `keep_breaks` pairs only breaks
+  between the old text's characters ("Old Foxy\r" + " [fire]" set the token on a new line; 23 titles end in a break).
+  Words typed after a title's token take the title's run style (`title_styles`; "Bench [fire] II" refused). A title's
+  "[fire:]" stays letters in its own font. `covered_ink`: layers already over the old text are the design, and
+  together may cover as much of the new as of the old (Leshy "Leshys", DooPliss "Dooplisss" bake; "Lesh" refuses, 512
+  px more under the art; Papyrus still refuses). `apply_jobs` renders the card whole only once an edit is made, in one
+  fork `RenderCache`; the copy's smart-object pairings are checked without a render (`gate_pairs`), and `gate_copy`
+  renders a fresh copy, uncached, only on a card with smart filters (80 of 813), after the edits. Measured under load average
+  ~30: Pure Vessel hp 9.3 s -> 5.9 s (3 full renders -> 2), its refused long ability 5.7 s -> 0.6 s (no render), Mini
+  Doomer and Lorian (smart filters) about the same. `PSD_RCACHE_VERIFY=1` over the bake tests: no mismatch but the
+  deliberately unpaired copy (the cache keys leave pairings out, which is why `gate_pairs` runs first). Reviewer's
+  cases re-run (`fix5/rsb/logs`): every title sticker or tint typed beside an Ability one takes the title's colour;
+  nothing else changed. Tests: `test_a_token_under_a_groups_overlay_refuses`,
+  `test_a_title_sticker_takes_the_titles_colour_beside_a_typed_ability_one`,
+  `test_a_title_edit_keeps_its_blank_last_paragraph_off_the_new_words`,
+  `test_words_typed_after_a_title_token_take_the_titles_style`, `test_apply_jobs_runs_the_title_icon_checks`,
+  `test_apply_jobs_checks_its_copy`, `test_a_bake_renders_the_card_only_once_an_edit_is_made`, Leshy and DooPliss in
+  `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; each fails with its fix taken out (`fix5/mut.py`).
 
 ## 8. Runner
 

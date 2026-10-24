@@ -209,7 +209,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       tokens in the icon font (26 of 66 sampled titles bake; tinted ones refuse), typed `:sticker`/`:tint` in its kind's
       colour, new badges at the commonest size (EDIT_PIPELINE_DESIGN section 7, BUG 2 block). Owner to rule: a timing
       badge typed in a title (refuses now). Still refused: `:glow`/`:darkglow` until the fork's halo fix lands. Full suite on
-      the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed.
+      the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed. Review fixes (group overlays tint a title, title
+      stickers read the card before the bake, blank end breaks, words after a title token, `[fire:]` in a title,
+      `covered_ink` design layers, lazy renders in a RenderCache with `gate_pairs`; EDIT_PIPELINE_DESIGN section 7):
+      1649 passed, 13 skipped, 3 failed (`test_site_changes`, `test_site_previews`, `test_token_picker`: they fail on
+      b9f0be4 too, against the TTSCardMaker clone's site at 5edf655c, in flight elsewhere).
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
