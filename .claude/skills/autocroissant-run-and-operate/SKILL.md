@@ -56,7 +56,7 @@ Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
 Loaded existing old stats from old_stats.pkl
-Loaded 764 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:536); 2026-10-23 (765 on 2026-07-11)
+Loaded 764 cards and 48 rulebook entries               <- prep_dataframes (query_card.py:535); 2026-10-23 (765 on 2026-07-11)
 Stats database initialized.
 Loading aliases from aliases.pkl                       <- init_query (1 GitHub tree API call follows)
 Repo history: 2268 files at 413053c0 (0.3s)            <- refresh_history (repo_history.py:230); 2026-10-23
@@ -81,7 +81,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | `sweep_temp_psds` (card_runner.py:103; 2026-10-22, c0fc117) | Deletes mkstemp `tmp*.psd` files (`TEMP_PSD`) older than 1 h (`TEMP_AGE`) in the temp dir, left by a cut-off run (the jetson had 56, 1.1 GB, on 2026-10-22), under `card_runner.bake_lock` | Prints `Removed N stale temp PSDs (X MB) from <dir>` only when it deleted something; never touches a file of a running update or bake |
 | `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
 | `init_psd` (psd_analyzer.py:326) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
-| `init_query` (query_card.py:1000) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
+| `init_query` (query_card.py:991) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
 | `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 
@@ -1043,3 +1043,5 @@ card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py cit
 
 2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.
+
+2026-10-23 (unbatch): query_card.py citations re-pointed (prep_dataframes, init_query) after /query_ability went back to one message per card.
