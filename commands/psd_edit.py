@@ -35,7 +35,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key,
                                  named_after_text, stars_from_psd, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
-from global_config import FONT_ALIASES, RULEBOOK_DIR
+from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -2248,7 +2248,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         raise Refused("unsupported-card", f"{', '.join(text[a:b] for a, b in typed)}: the Ability's overlay or blending "
                                           f"would change the badge's colours and no badge FX layer restores them; edit "
                                           f"in Photoshop")
-    fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
+    fonts = FontMap(dirs=[fonts_dir])
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
         from psd_tools.composite.text import capture
@@ -4079,7 +4079,7 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     if chart:
         gate_status_words(psd, chart)
     from psd_tools.composite.text import FontMap
-    fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
+    fonts = FontMap(dirs=[fonts_dir])
     edit = next((e for e in edits if e.field == "ability" and e.fx_names), None)
     if edit is not None:
         _gate_fx_layers(psd, edit, fonts)

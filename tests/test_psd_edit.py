@@ -42,8 +42,10 @@ MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, 
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"                  # a GradientOverlay on one digit per row (Atk: on hidden 6)
 SPD_ROW = (359, 1577, 1174, 1663)                                  # its spd row, padded by the Stats Bars stroke
-GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"          # atk 10: no digit visible, hidden 7 styled (the from-10 move);
-#   its four bars lie below the canvas (the printed cells are pixel layers)
+GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"          # fixed 2026-10-23: atk 6, its bars on the canvas
+OFF_CANVAS_MAGE = "78798eac^"   # Green Mage before its bars moved onto the card (atk 10: no digit visible, hidden 7 styled)
+SHELL_SHOCK = "Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd"
+MISMATCHED_SHOCK = "baf89da9^"  # Shell_Shock before its re-save: its PNG another session's than its preview
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"   # digit masks start on the canvas and reach past it
 AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 10 with 6, 8 and 9 styled: ambiguous
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
@@ -928,11 +930,12 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     assert pe.parse_card(parser, hidden, CANNON)["card"]["atk"] == 2
 
 
-def test_effect_rules_on_styled_rows(clone):
+def test_effect_rules_on_styled_rows(clone, tmp_path):
     """Idea 12's rule on real rows: Mettaton atk 7 -> 8 moves nothing (7 is unstyled; the hidden styled 6 stays); 7 -> 6 keeps 6's
-    own effect; hp 5 -> 10 moves nothing (5 keeps its block, hidden) and 10 -> 3 then takes it from 5; Green Mage atk 10 -> 4 takes
-    the one hidden styled digit's (7) (its row's toggle: set_stat refuses its bars, below the canvas); Azamoth the Forgotten
-    King's hp (10; 6, 8 and 9 styled) refuses as ambiguous."""
+    own effect; hp 5 -> 10 moves nothing (5 keeps its block, hidden) and 10 -> 3 then takes it from 5; Green Mage before its fix
+    (OFF_CANVAS_MAGE) atk 10 -> 4 takes the one hidden styled digit's (7) (its row's toggle: set_stat refuses its bars, below the
+    canvas); the live Green Mage (atk 6, its 6 styled) 6 -> 4 takes 6's; Azamoth the Forgotten King's hp (10; 6, 8 and 9 styled)
+    refuses as ambiguous."""
     path = _card(clone, METTATON)[0]
     parsed = {"card": {"hp": 5, "atk": 7}}
     psd = PSDImage.open(path)
@@ -954,22 +957,28 @@ def test_effect_rules_on_styled_rows(clone):
     assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX")]                 # a gradient tiles nothing: no fxrp trade
     assert [layer.name for layer in edit.layers] == ["3", "5"]
     assert row.visible == [3] and pe._enabled_effects(row.digits["3"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["5"]) == []
-    green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
+    green = PSDImage.open(_at(clone, tmp_path, OFF_CANVAS_MAGE, GREEN_MAGE)[0])
     row = pe.template_rows(green, "atk")[0]
     changed, moves, _ = pe._toggle_row(row, 4, "atk")
     assert [layer.name for layer in changed] == ["4", "7"] and [bytes(key) for _, _, key in moves] == [b"lfx2", b"lrFX"]
     assert pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["7"]) == []
+    green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
+    edit = pe.set_stat(green, {"card": {"atk": 6}}, "atk", 4)
+    row = pe.template_rows(green, "atk")[0]
+    assert [layer.name for layer in edit.layers] == ["4", "6"] and [bytes(key) for _, _, key in edit.moves] == [b"lfx2", b"lrFX"]
+    assert row.visible == [4] and pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["6"]) == []
     with pytest.raises(pe.Refused, match="6, 8, 9") as refused:
         pe.set_stat(PSDImage.open(_card(clone, AZAMOTH_KING)[0]), {"card": {"hp": 10}}, "hp", 3)
     assert refused.value.code == "unsupported-card"
 
 
-def test_a_bar_outside_the_card_refuses(clone):
-    """Green Mage's four bars lie below its 2400 px canvas (the printed cells are pixel layers): a toggle there would change
-    nothing on the card, so every stat refuses `unsupported-card` before a layer changes (it was a ValueError from the empty
-    render region: an `error` that failed the run). Pure Vessel's masks start on the canvas and reach past it: it toggles (its
-    bake: test_card_bake's test_a_bar_outside_the_card_is_a_final_refusal)."""
-    path = _card(clone, GREEN_MAGE)[0]
+def test_a_bar_outside_the_card_refuses(clone, tmp_path):
+    """Green Mage before its fix (OFF_CANVAS_MAGE): its four bars lay below its 2400 px canvas (the printed cells were pixel
+    layers): a toggle there would change nothing on the card, so every stat refuses `unsupported-card` before a layer changes
+    (it was a ValueError from the empty render region: an `error` that failed the run). The live card's bars are on the canvas:
+    every stat toggles. Pure Vessel's masks start on the canvas and reach past it: it toggles (its bake: test_card_bake's
+    test_a_bar_outside_the_card_is_a_final_refusal)."""
+    path = _at(clone, tmp_path, OFF_CANVAS_MAGE, GREEN_MAGE)[0]
     parsed = {"card": {"hp": 7, "def": 4, "atk": 10, "spd": 7}}
     for stat, value in (("hp", 3), ("def", 5), ("atk", 6), ("spd", 10)):
         psd = PSDImage.open(path)
@@ -978,6 +987,11 @@ def test_a_bar_outside_the_card_refuses(clone):
                                              r"card \(digit masks \(960, \d+, 1773, \d+\) on the 1200x2400 canvas\)"):
             pe.set_stat(psd, parsed, stat, value)
         assert [layer.visible for layer in pe.template_rows(psd, stat)[0].digits.values()] == before
+    parsed = {"card": {"hp": 7, "def": 4, "atk": 6, "spd": 7}}
+    for stat, value in (("hp", 3), ("def", 5), ("atk", 4), ("spd", 10)):
+        psd = PSDImage.open(_card(clone, GREEN_MAGE)[0])
+        x0, y0, x1, y1 = pe.set_stat(psd, parsed, stat, value).region
+        assert 0 <= x0 < x1 <= psd.width and 0 <= y0 < y1 <= psd.height
     pure = PSDImage.open(_card(clone, PURE_VESSEL)[0])
     edit = pe.set_stat(pure, {"card": {"hp": 7}}, "hp", 3)
     x0, y0, x1, y1 = edit.region
@@ -1479,7 +1493,7 @@ def test_noop_ability_bake_keeps_the_badge_layer(clone, parser, chart, tmp_path)
     old, = pe.fx_layers(psd, layer)
     box, before = tuple(old.bbox), _raster(old, old.bbox)
     plans = pe.plan_fx(layer, [old], chart)
-    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)], aliases=pe.FONT_ALIASES)
+    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)])
     kept = pe.kept_chars(layer.text, layer.text)
     assert pe._kept(plans[0], plans[0].ranges, None, kept) and not pe._kept(plans[0], plans[0].ranges, tuple(layer.bbox), kept)
     rebuilt, dropped, covered, notes = pe._rebuild_fx(psd, layer, layer.text, plans, tuple(layer.bbox), kept, fonts,
@@ -1892,7 +1906,7 @@ def test_gate_fx_refuses_a_bare_badge_under_a_tinted_ability(clone):
     Blood Bomb's [machine] (Pin Light, no badge layer) was bare before the edit: it may stay so, not become so."""
     from psd_tools.composite.text import FontMap
     fonts_dir = str(clone / pe.FONTS_DIR)
-    fonts = FontMap(dirs=[fonts_dir], aliases=pe.FONT_ALIASES)
+    fonts = FontMap(dirs=[fonts_dir])
     old = PSDImage.open(_card(clone, TURTLE)[0])
     assert pe.bare_icons(old, fonts) == Counter()
     psd = PSDImage.open(_card(clone, TURTLE)[0])
@@ -1957,7 +1971,7 @@ def test_a_typed_star_is_cut_into_the_badge_layer(clone, parser, chart):
     text = pe.normalize_ability(pe.ability_layer(psd).text) + " Costs 5★."
     edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
     assert [name for _, _, name in edit.rebuilt] == ["Ability FX: (BOGT)"]
-    assert pe.bare_icons(psd, FontMap(dirs=[fonts], aliases=pe.FONT_ALIASES)) == Counter()
+    assert pe.bare_icons(psd, FontMap(dirs=[fonts])) == Counter()
 
 
 @text_edit
@@ -2657,18 +2671,20 @@ def test_an_edited_layer_goes_on_in_the_gamma(clone):
 
 
 @text_engine
-def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone):
-    """Shell_Shock's Ability: its preview shows the edge straight, its PNG (another session's) in the text gamma.
-    The preview's blend misses the bar and baseline() takes the gamma's instead."""
-    psd_path, png_path = _card(clone, "Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd")
-    psd, png = PSDImage.open(psd_path), Image.open(png_path).convert("RGBA")
-    layer = pe.ability_layer(psd)
-    region = pe._pad(tuple(layer.bbox), fx_pad(layer), psd)
-    icc = pe.export_icc(psd, png)
-    assert not pe._within_bar(pe._measure(pe.render_region(psd, region, icc), png.crop(region)))
-    render, measured = pe.baseline(psd, png, region, icc)
-    assert measured["text"] == "gamma" and pe._within_bar(measured)
-    assert np.array_equal(np.asarray(render), np.asarray(pe.render_region(psd, region, icc, "gamma")))
+def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone, tmp_path):
+    """Shell_Shock's Ability before its re-save (MISMATCHED_SHOCK): its preview shows the edge straight, its PNG (another
+    session's) in the text gamma. The preview's blend misses the bar and baseline() takes the gamma's instead. The live card
+    (re-saved, its PNG re-exported) agrees with its preview: baseline() keeps the preview's."""
+    for (psd_path, png_path), text in ((_at(clone, tmp_path, MISMATCHED_SHOCK, SHELL_SHOCK), "gamma"),
+                                       (_card(clone, SHELL_SHOCK), "preview")):
+        psd, png = PSDImage.open(psd_path), Image.open(png_path).convert("RGBA")
+        layer = pe.ability_layer(psd)
+        region = pe._pad(tuple(layer.bbox), fx_pad(layer), psd)
+        icc = pe.export_icc(psd, png)
+        assert pe._within_bar(pe._measure(pe.render_region(psd, region, icc), png.crop(region))) == (text == "preview")
+        render, measured = pe.baseline(psd, png, region, icc)
+        assert measured["text"] == text and pe._within_bar(measured)
+        assert np.array_equal(np.asarray(render), np.asarray(pe.render_region(psd, region, icc, text)))
 
 
 # ========================

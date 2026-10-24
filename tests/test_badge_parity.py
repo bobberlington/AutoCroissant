@@ -4,7 +4,8 @@ hold the same tags (companion skill §1.2, "three places"); std batch copies may
 is the same tag since the font's CASE lookup (2026-10-22): "(action)" draws and shows the (Action) badge. Reads the card
 repo clone; skips without it or node, when the clone is behind the walk, or while the walk is still exact-case.
 Token variants too (2026-10-23): the variants the font draws ([fire:glow], [fire:darkglow]...) are the parser's
-ICON_VARIANTS, and the parser and the website read all but :no as the plain icon.
+ICON_VARIANTS, and the parser reads all but :no as the plain icon; so does the website without variant images (an older
+build; with them it draws each variant, tests/test_token_picker.py).
 """
 import ast
 import json
@@ -317,6 +318,7 @@ def test_token_limit_fits_every_icon():
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 def test_site_reads_variants_as_the_plain_icon(tmp_path):
+    """Icons without variant images (cards.json before the token picker): every variant but :no is the plain icon."""
     from commands.psd_parser import ICON_VARIANTS
     shutil.copy(TEXT_JS, tmp_path / "text.mjs")
     out = node(tmp_path, f"""import {{ makeRenderer, plain }} from "./text.mjs";

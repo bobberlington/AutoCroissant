@@ -188,7 +188,7 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
 - **To tell him:** BUGS D4's owner notes (a card back after a deletion gap keeps its first start); the `_bot` field
   (schema addition); 4 cards keep their hidden-layer text (they print it as visible layers); the Website edits cap of
   100; per-field credit on 14 entries; Computer Virus left flagged.
-- **Older items:** BabaUI font (Baba.psd); Photoshop-authored fixtures (a bevel texture, a smart object with a painted
+- **Older items:** Photoshop-authored fixtures (a bevel texture, a smart object with a painted
   filter mask); the live TTS check (a teammate takes a card back out of another colour's zone; a mod-cached player sees an
   updated card); inline-editing extras (stars, token picker, tag completion, type palette, rulebook text); campaign
   questions (16 simulator Q1-7, 17 game reports Q1/2/5/6, 19 rulebook P0 frame and C/U/M/T/G/S, 22 web editor Q2-9); the

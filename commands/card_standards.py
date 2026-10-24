@@ -49,7 +49,6 @@ WAIVED = {                                      # the owner's class waivers (sec
     "R3 excluded": {"why": "in the parser's ABILITY_EXCLUSIONS: prints no ability (2026-10-23)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
-    "R7": {"fonts": {"BabaUI"}, "why": "BabaUI is deferred by the owner (L13)"},
 }
 
 
@@ -279,10 +278,7 @@ def rule_fonts(psd: PSDImage, fonts: FontIndex) -> Optional[Issue]:
     if not missing:
         return None
     names = tuple(sorted(missing))
-    issue = Issue("R7", f"font{'s' if len(names) > 1 else ''} {_list(names)} not in MDW/Fonts", names)
-    if set(names) <= WAIVED["R7"]["fonts"]:
-        issue.waived = WAIVED["R7"]["why"]
-    return issue
+    return Issue("R7", f"font{'s' if len(names) > 1 else ''} {_list(names)} not in MDW/Fonts", names)
 
 
 def rule_composer(psd: PSDImage) -> Optional[Issue]:

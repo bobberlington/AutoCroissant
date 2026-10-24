@@ -478,8 +478,8 @@ Two ways to run it:
 commands/font_check.py (uncompiled; stock psd-tools + fontTools, no Discord or config imports; fontTools is in requirements.txt since
 2026-10-21 and main.py imports the module lazily inside /fonts, so the bot starts without it) lists the PostScript names
 a card's visible type layers ask for and which of them `MDW/Fonts` in the card repo does not supply. Hidden layers are
-ignored; `FONT_ALIASES` (global_config.py) and a loose match (casefolded alphanumerics, `-Regular` stripped) count as
-present. It reports and never rejects: a missing font is a message to a person, not a revert.
+ignored; a font counts as present only when a face has exactly its PostScript name (no aliases or loose matches since
+2026-10-23, owner). It reports and never rejects: a missing font is a message to a person, not a revert.
 
 - **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
@@ -500,7 +500,8 @@ present. It reports and never rejects: a missing font is a message to a person, 
   missing font, the fonts folder count, errors. One run at a time ("A font check is already running").
 - **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (9.8 s wall over the 813 PSDs on 2026-10-21 in a
   process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
-  ttscardmaker-companion §3 on 15 cards, 29 visible layers), `--psd <files>`, `--json <out>`,
+  ttscardmaker-companion §3 on 15 cards, 29 visible layers; on 2026-10-23, TTSCardMaker b03b9975 with Kung-Fu-Panda's rename:
+812 PSDs, 274 files / 282 faces, nothing missing, 7 s), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
 ### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is TTSCardMaker's card-check.yml Action, on TTSCardMaker main)
