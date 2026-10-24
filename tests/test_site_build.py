@@ -349,3 +349,12 @@ def test_long_history_notes_are_gone():
         pytest.skip(f"no site assets beside {APP_JS}")
     assert "Each commit that changed the image" not in APP_JS.read_text(encoding="utf-8")
     assert "From the bot's card history" not in BALANCE_JS.read_text(encoding="utf-8")
+
+
+def test_no_psd_details_flag():
+    """The Cards tab's "PSD details" chip is gone (owner, 2026-10-24); the search term has:details stays."""
+    if not APP_JS.is_file():
+        pytest.skip(f"no app.js at {APP_JS}")
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '"PSD details"]' not in text and "details: c => !!c.details" not in text
+    assert '"has:details": c => !!c.details' in (APP_JS.parent / "search.js").read_text(encoding="utf-8")
