@@ -25,8 +25,10 @@ ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no titl
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
 PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                    # its title layer is named after its own text
 GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"                  # a rule page: its heading too
+LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: every count refused
+FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
-        "overlays", "template", "tree")
+        "overlays", "template", "header", "tree")
 
 
 # ========================
@@ -105,6 +107,30 @@ def test_text_layers_and_template(records):
     assert lazarus["template"]["deviations"] == ["several visible Ability layers", "ability layer outside Text", "stat bars drawn",
                                                  "icons as images"]
     assert [e[:3] for e in lazarus["tree"]] == [["images", "group", True], ["Laz", "group", True], ["Dead Laz", "group", True]]
+
+
+def test_header_boxes(records, clone):
+    """The mock-up's header: Mini Doomer's two stars in reading order, rows of two past them, no count refused; its three
+    type icons in slot order with spots carrying the row on (a second row for eight); the bake's refusals and a card
+    without a Stars group."""
+    stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
+    assert [u["core"] for u in stars["units"]] == [[1049, 13, 1165, 115], [936, 15, 1052, 117]] and stars["icon"] == "warpstar"
+    assert stars["at"]["2"] == [[1107, 64], [994, 66]] and stars["at"]["3"] == [[1107, 64], [994, 66], [1051, 167]]
+    assert stars["at"]["6"][4:] == [[1107, 269], [994, 269]] and sorted(stars["at"], key=int) == [str(n) for n in range(1, 11)]
+    assert stars["refused"] == {}
+    assert [t["name"] for t in types["row"]] == ["light", "defensive_minion", "wind"] and types["tokens"] is False
+    assert types["spots"]["4"] == [[414, 208, 556, 356]] and [len(types["row"]) + len(types["spots"][n]) for n in types["spots"]] == [4, 5, 6, 7, 8]
+    assert types["spots"]["8"][0] == [81, 378, 241, 538] and types["fixed"] == [] and types["refused"] is None
+    vocab = pd.clone_types(str(clone))
+    for rel in (LICH_KING, FREEZER):
+        if not (clone / rel).exists():
+            pytest.skip(f"{rel} not in the clone")
+    lich = pd.gather(str(clone / LICH_KING), LICH_KING, "The Lich King", None, vocab)["header"]
+    assert list(lich["stars"]["refused"]) == ["*"] and "folder sets them" in lich["stars"]["refused"]["*"]
+    assert "6" not in lich["stars"]["at"] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
+    freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
+    assert freezer["stars"] is None and [t["name"] for t in freezer["types"]["row"]] == ["field"]
+    assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)
 
 
 def test_overlay_words_and_image_icons(clone, index):
