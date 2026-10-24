@@ -370,6 +370,16 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+def test_a_variant_the_font_lacks_is_text(tmp_path):
+    """[fire:] and [fire:glows] print as letters (no ligature), so the mock-up draws them as text."""
+    out = node(tmp_path, """
+const icons = { fire: { file: "icons/fire.webp" } };
+out(m.tokenize("[fire:] [fire:glows] [Fire:Glow] [fire:NO]", icons).flat(2));""")
+    assert out == [{"text": "[fire:]"}, {"text": "[fire:glows]"}, {"icon": "icons/fire.webp", "name": "Fire", "no": False},
+                   {"icon": "icons/fire.webp", "name": "fire", "no": True}]
+
+
+@needs_js
 @mock_header
 def test_what_the_mock_up_redraws(tmp_path):
     """Only fields unlike the PSD; stats above 10 are named, not drawn; stars from and to, types old and new unless only

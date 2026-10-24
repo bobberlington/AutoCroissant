@@ -206,12 +206,14 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
   choose("x (1c) y", 5, "(1CD)"), choose("Immune to [fiand ice", 13, "[fire]"), choose("Heal 2 (1HP", 9, "(1CD)"),
   choose("Deal 3 [fire damage", 8, "[field]"), choose("[fragile equip] x", 8, "[fragile equip]"), choose("[fi:glow]", 3, "[fire]"),
   choose("[fi:glow]", 3, "[field]"), choose("[fire:glow] x", 8, "[fire:darkglow]"), choose("[fire:glow]", 5, "[fire:tint]"),
-  choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]")].map(r => r && [r.text, r.caret])));""")
+  choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]"), choose("[fi:] x", 3, "[fire]"),
+  choose("[fi:glows]", 3, "[fire]")].map(r => r && [r.text, r.caret])));""")
     assert out == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
                    ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
                    ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
                    ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
-                   ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
+                   ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17],
+                   ["[fire] x", 6], ["[fire]", 6]]                       # never "[fire:]": letters in the font
 
 
 @needs_node
@@ -296,13 +298,15 @@ process.stdout.write(JSON.stringify([P.applyChoice("Pap", { type: "name", start:
 @needs_node
 def test_text_js_draws_variants_with_their_images(tmp_path):
     """[x:tint] a text-colour mask, [x:sticker] the outline mask under the icon, [x:glow]/[x:darkglow] their pictures
-    sized by cards.json iconVariants; without a variant image (an older build) the plain icon, as the parser reads it."""
+    sized by cards.json iconVariants; without a variant image (an older build) the plain icon, as the parser reads it.
+    A variant the font lacks ([fire:], [fire:glows], [fire: glow]) is letters, as on the card."""
     out = node(tmp_path, """
 const r = T.makeRenderer({ cards: [], icons: ICONS, variants: REACH });
 const old = T.makeRenderer({ cards: [], icons: { fire: { file: "icons/fire.webp", name: "fire", kind: "type" } } });
 const html = v => r.render(`a [fire:${v}] b`);
 process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker"), glow: html("Glow"), dark: html("darkglow"),
-  no: html("no"), plain: r.render("a [fire] b"), unknown: html("glows"), spaced: [html(" glow"), html("no ")],
+  no: html("no"), plain: r.render("a [fire] b"), unknown: [html("glows"), html(""), html("glow:x")],
+  spaced: [html(" glow"), html("no ")], none: ["fire:", "fire:constructor", "fire::glow"].map(t => r.icon(t)),
   quiet: r.icon("fire:glow", { tip: false }),
   old: ["tint", "sticker", "glow", "darkglow"].map(v => old.render(`a [fire:${v}] b`) === old.render("a [fire] b")) }));""")
     assert re.search(r'<span class="tokm" role="img" aria-label="fire \(text colour\)" style="-webkit-mask-image:url\(&quot;'
@@ -314,8 +318,9 @@ process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker
     assert '<img class="tokv" src="icons/fire.glow.webp" alt="fire (white glow)" style="--r:0.3021" data-tip="fire (white glow)">' in out["glow"]
     assert 'src="icons/fire.darkglow.webp"' in out["dark"] and "black glow" in out["dark"]
     assert '<span class="tok-no"><img class="tok" src="icons/fire.webp"' in out["no"]
-    assert out["unknown"] == out["plain"]
-    assert out["spaced"] == [out["plain"]] * 2                                   # no spaces around it, as in the font
+    assert out["unknown"] == ["a [fire:glows] b", "a [fire:] b", "a [fire:glow:x] b"]   # letters, as the font
+    assert out["spaced"] == ["a [fire: glow] b", "a [fire:no ] b"]               # no spaces around it, as in the font
+    assert out["none"] == [None] * 3
     assert "data-tip" not in out["quiet"]
     assert out["old"] == [True] * 4
 
