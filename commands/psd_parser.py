@@ -581,10 +581,10 @@ class PSDParser:
 
         text = sub(r"[\s\x03]+", " ", base.engine_dict["Editor"]["Text"].value).lower()
         for word in words.split("|"):
-            occurrence = fullmatch(r"(.*\S)#(\d+)", word.strip())     # "Frozen#2": the 2nd Frozen
+            occurrence = fullmatch(r"(.*\S)#(\d+)", word.strip())     # "Frozen#2": the 2nd Frozen; "#0" every one
             phrase = sub(r"\s+", " ", occurrence.group(1) if occurrence else word.strip()).lower()
-            nth = max(int(occurrence.group(2)), 1) if occurrence else 1
-            if phrase and self._occurrences(text, phrase) < nth:
+            nth = int(occurrence.group(2)) if occurrence else 0        # as Effect Layers.jsx's splitOccurrence
+            if phrase and self._occurrences(text, phrase) < max(nth, 1):
                 self._add_problem(card, f"EFFECT LAYER WORDS NOT IN TEXT: {layer.name}")
                 return
         coverage = self._pixel_coverage(layer, base)

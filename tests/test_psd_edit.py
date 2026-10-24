@@ -1308,25 +1308,38 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
 
 
-def test_kept_fx_lists_the_fx_layers_without_a_chart_style(chart):
-    """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6), but one the chart has no
-    style for: badge or token runs (none), a styled chart status, another word needs a chart status's style on its layer
-    (Monkey D Goofy's "1#1" under Become Back Money's gradient); Smoldering's stroke, +2/4/6 ATK's, refuse (owner
-    2026-10-21), and so does any FX layer that is no pixel layer (Photoshop would draw a type layer from its text)."""
+def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
+    """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6): badge or token runs
+    (none), a styled chart status, another word under a chart status's style (Monkey D Goofy's "1#1" under Become Back
+    Money's gradient), and since 2026-10-23 one in a style no chart status has, or none ("own": Smoldering's stroke,
+    +2/4/6 ATK's; the owner's ruling, the 2026-10-21 refusal gone). Only an FX layer that is no pixel layer refuses
+    (Photoshop would draw a type layer from its text)."""
     base = SimpleNamespace(name="Ability")
     names = ["Ability FX: (1CD) | (3U) | (OYT) | (ENDT)", "Ability FX: [fire]", "Ability FX: Blazing", "Ability FX: Frozen#2",
              "Ability FX: Smoldering", "Ability FX: +2/4/6 ATK", "Ability FX: 1#1"]
     fx = [SimpleNamespace(name=name, kind="pixel") for name in names]
     assert [pe.fx_label(base, layer) for layer in fx] == ["(1CD) | (3U) | (OYT) | (ENDT)", "[fire]", "Blazing", "Frozen",
                                                            "Smoldering", "+2/4/6 ATK", "1"]
-    assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["badge", "badge", "status", "status", "", "", ""]
-    assert pe.kept_fx(fx, base, chart) == names[4:]
-    assert pe.kept_fx(fx, base, None) == names[2:]
+    assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["badge", "badge", "status", "status", "own", "own", "own"]
+    assert [pe.fx_kind(layer, base, None) for layer in fx] == ["badge", "badge"] + ["own"] * 5
     goofy = SimpleNamespace(name="Ability FX: 1#1", kind="pixel", tagged_blocks=chart["become back money"].blocks)
-    assert pe.fx_kind(goofy, base, chart) == "styled" and pe.kept_fx([goofy], base, chart) == []
+    assert pe.fx_kind(goofy, base, chart) == "styled" and set(pe.ANCHORED) == {"styled", "own"}
     typed = [SimpleNamespace(name=name, kind="type") for name in names[:4]]
-    assert [pe.fx_kind(layer, base, chart) for layer in typed] == [""] * 4 and pe.kept_fx(typed, base, chart) == names[:4]
+    assert [pe.fx_kind(layer, base, chart) for layer in typed] == [""] * 4
     assert pe.fx_phrases(base, fx[0]) == ["(1CD)", "(3U)", "(OYT)", "(ENDT)"] and pe.fx_phrases(base, fx[3]) == ["Frozen#2"]
+
+
+def test_effect_layer_numbers_read_as_the_jsx(parser):
+    """"#0" is every occurrence, as Effect Layers.jsx's splitOccurrence reads it and _numbered too; the parser's EFFECT
+    LAYER WORDS NOT IN TEXT reads it so (it read it as the first: the same count today, review 2026-10-23)."""
+    text = "Inflict Frozen and Frozen."
+    assert pe._numbered("Frozen#0") == ("Frozen", 0) and pe.phrase_ranges(text, ["Frozen#0"]) == pe.phrase_ranges(text, ["Frozen"])
+    base = SimpleNamespace(name="Ability", bbox=(0, 0, 100, 100), engine_dict={"Editor": {"Text": SimpleNamespace(value=text)}})
+    for name, missing in (("Frozen#0", False), ("Frozen#2", False), ("Frozen#3", True), ("Blazing#0", True), ("Blazing", True)):
+        card = SimpleNamespace(problems=[])
+        parser._check_effect_layer(SimpleNamespace(name="Ability FX: " + name, bbox=(0, 0, 9, 9), is_visible=lambda: True),
+                                   [base], card)
+        assert card.problems == ([f"EFFECT LAYER WORDS NOT IN TEXT: Ability FX: {name}"] if missing else []), name
 
 
 def test_phrase_ranges_follow_the_jsx():
@@ -1340,26 +1353,100 @@ def test_phrase_ranges_follow_the_jsx():
     assert pe.phrase_ranges("Blazingly", ["Blazing"]) == [(0, 7)]
 
 
+def test_held_words_follow_the_layer_not_its_name():
+    """Edit.held (review 2026-10-23) by layer: an "own" or "styled" layer renamed onto a deleted one's old name ("2T#2" ->
+    "2T#1" once the first "2T" left) is still held to the words it kept (compared by name, it passed for the deleted
+    one and gate_fx left it unchecked); a deleted layer and a badge layer are not held."""
+    gone, moved, badge = (SimpleNamespace(name=name) for name in ("Ability FX: 2T#1", "Ability FX: 2T#1", "Ability FX: (1CD)"))
+    plans = [pe.FxPlan(gone, ["2T#1"], "own", ranges=[(8, 10)]), pe.FxPlan(moved, ["2T#2"], "own", ranges=[(20, 22)]),
+             pe.FxPlan(badge, ["(1CD)"], "badge", ranges=[(0, 5)])]
+    kept = [-1 if 8 <= i < 12 else i - 4 * (i >= 12) for i in range(30)]
+    assert pe.held_words(plans, kept, [moved, badge]) == [("Ability FX: 2T#1", [(16, 18)])]
+
+
+def test_follow_fx_refuses_what_would_move_an_anchored_layer(chart):
+    """An "own" or "styled" phrase found only inside other words (Mr Krabs' "2T" of "2T1"): a new such match typed would
+    join the layer under Update all, and a whole word typed would take the JSX's match off its own: both refuse
+    unsupported-card; its own match kept bakes. A numbered status layer on a status word a digit touches ("2Frozen")
+    refuses a whole-word one typed, which would take its "#1"."""
+    old = "Inflict 2T1 Become Back Money."
+    plan = pe.FxPlan(SimpleNamespace(name="Ability FX: 2T"), ["2T"], "own", ranges=[(8, 10)], found=[("2T", [(8, 10)])])
+    for new, why in ((old + " Then 2T3 Poison.", "the '2T' of '2T3' would join the layer Ability FX: 2T; edit in Photoshop"),
+                     (old + " Then 2T.", "a whole-word '2T' in the ability would move the layer Ability FX: 2T off the "
+                                         "'2T' of '2T1'; edit in Photoshop")):
+        with pytest.raises(pe.Refused) as refused:
+            pe.follow_fx(plan, new, pe.kept_chars(old, new))
+        assert (refused.value.code, refused.value.why) == ("unsupported-card", why)
+    assert pe.follow_fx(plan, old + " Die.", pe.kept_chars(old, old + " Die."))[0] == ("2T", "2T", [(8, 10)], [(8, 10)], "")
+    old = "Inflict 2Frozen."
+    plan = pe.FxPlan(SimpleNamespace(name="Ability FX: Frozen#1"), ["Frozen#1"], "status", ranges=[(9, 15)],
+                     found=[("Frozen#1", [(9, 15)])], status="frozen")
+    new = old + " Then Frozen."
+    with pytest.raises(pe.Refused, match="^unsupported-card: a whole-word 'Frozen' in the ability would move the layer "
+                                         "Ability FX: Frozen#1 off the 'Frozen' of '2Frozen'; edit in Photoshop$"):
+        pe.follow_fx(plan, new, pe.kept_chars(old, new), pe.status_spans(new, chart))
+
+
 @text_edit
-def test_ability_edit_refuses_fx_layers_the_chart_has_no_style_for(clone, parser, chart, tmp_path):
-    """Morpho Knight's badge layer is made again now (BUG 2), but its Burning, +2/4/6 ATK and Smoldering layers carry
-    strokes the chart has no style for (owner 2026-10-21): an ability edit refuses (unsupported-card) before anything
-    changes, with or without the chart, and bakes nothing; the refusal says why, not that the bake would drop them."""
+def test_ambiguous_fx_layers_refuse(clone, chart):
+    """The refusals no card reaches today, on Morpho Knight and Mini Doomer altered in memory: an FX layer whose words
+    now fall in a badge (an own layer named "CD", the letters of its "(1CD)": the JSX would cut every badge into it), two
+    FX layers that would end with one name (+2/4/6 ATK renamed a second Smoldering), and an FX layer that is no pixel
+    layer (a type layer named like one: Photoshop would draw it from its text). Each unsupported-card."""
+    fonts = str(clone / pe.FONTS_DIR)
+
+    def morpho(rename: dict):
+        psd = PSDImage.open(_card(clone, MORPHO)[0])
+        layer = pe.ability_layer(psd)
+        for fx in pe.fx_layers(psd, layer):
+            fx.name = rename.get(fx.name, fx.name)
+        return psd, pe.normalize_ability(layer.text) + " Die."
+
+    for rename, why in (({"Ability FX: Burning": "Ability FX: CD"}, "Ability FX: CD: its words now fall in a badge or token"),
+                        ({"Ability FX: +2/4/6 ATK": "Ability FX: Smoldering"},
+                         "two FX layers would be named Ability FX: Smoldering")):
+        psd, text = morpho(rename)
+        with pytest.raises(pe.Refused, match="^unsupported-card: " + why + "; edit in Photoshop$"):
+            pe.set_text_layer(psd, "ability", text, fonts, chart)
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    pe.name_layer(psd).name = "Ability FX: Die"
+    layer = pe.ability_layer(psd)
+    with pytest.raises(pe.Refused, match="^unsupported-card: FX layers that are no pixel layers: Ability FX: Die; edit in "
+                                         "Photoshop$"):
+        pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text) + " Die.", fonts, chart)
+
+
+@text_edit
+def test_a_typed_status_word_joining_its_layer_is_told(clone, chart):
+    """Snow Bunny's own-style 'Ability FX: Frozen' (q6) covers every Frozen of its text, as Update all cuts it: a typed
+    Frozen joins it, drawn in that layer's style rather than the chart's, and the report says so (review 2026-10-23)."""
+    psd = PSDImage.open(_card(clone, SNOW_BUNNY)[0])
+    layer = pe.ability_layer(psd)
+    edit = pe.set_text_layer(psd, "ability", layer.text.replace("Heal 5 HP.", "Heal 5 HP, Frozen."),
+                             str(clone / pe.FONTS_DIR), chart)
+    assert edit.fx_names == [FROZEN] and edit.fx == [] and edit.notes == [f"{FROZEN} also covers the typed 'Frozen', in its own style"]
+
+
+@text_edit
+def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart, tmp_path):
+    """Owner 2026-10-23: FX layers in no chart status's style are rebuilt in their own style, as the others (the 2026-10-21
+    refusal went). Morpho Knight's Burning, +2/4/6 ATK and Smoldering strokes bake an appended sentence through every
+    gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer. Without the
+    chart the card still refuses (its FX words can't be told apart)."""
     psd_path = _card(clone, MORPHO)[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
-    text, fx = layer.text, [f.name for f in pe.fx_layers(psd, layer)]
-    with pytest.raises(pe.Refused) as refused:
-        pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), chart)
-    assert refused.value.code == "unsupported-card" and refused.value.why == (
-        "FX layers not in a chart status's style: Ability FX: Burning, Ability FX: +2/4/6 ATK, Ability FX: Smoldering; "
-        "edit in Photoshop and run Effect Layers > Update all")
+    text, fx = pe.normalize_ability(layer.text), [f.name for f in pe.fx_layers(psd, layer)]
+    assert [pe.fx_kind(f, layer, chart) for f in pe.fx_layers(psd, layer)] == ["badge", "own", "status", "own", "own"]
     with pytest.raises(pe.Refused, match="status word layers over the ability"):
-        pe.set_text_layer(psd, "ability", pe.normalize_ability(text) + " Die.", str(clone / pe.FONTS_DIR), None)
-    assert layer.text == text and [f.name for f in pe.fx_layers(psd, layer)] == fx
-    with pytest.raises(pe.Refused, match="not in a chart status's style"):
-        _bake(clone, parser, MORPHO, {"ability": pe.normalize_ability(text) + " Die."}, tmp_path, chart)
-    assert not list(tmp_path.iterdir())
+        pe.set_text_layer(psd, "ability", text + " Die.", str(clone / pe.FONTS_DIR), None)
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, MORPHO)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, MORPHO, {"ability": old + " Die."}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.fx_names == fx and edit.fx == [] and edit.dropped == [] and baked.block_bytes == 0
+    for name in fx:
+        assert _style(baked.psd_path, name) == _style(psd_path, name)
+    assert all(fields in (["channels", "rect"],) for _, name, fields in baked.records if name in fx)
 
 
 def _noop(clone, parser, chart, rel, tmp_path):
@@ -1691,16 +1778,115 @@ def test_goofys_one_stays_on_its_one(clone, parser, chart, tmp_path):
 
 
 @text_edit
-def test_a_badge_typed_as_text_refuses_on_a_badge_card(clone, chart):
-    """BUG 2 review: a badge the edit types outside the icon font (not right after a badge) is plain letters; on a badge
-    card its FX layer would lift them out of the Ability's overlay, drawn white: refused before anything is saved.
-    The same badge typed in the icon font (replacing one) bakes, and the badge layer names it (PoD11ZOMG below)."""
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
-    text = pe.normalize_ability(pe.ability_layer(psd).text) + " Then (BOT)."
-    with pytest.raises(pe.Refused, match=r"Ability FX: \(BOT\): '\(BOT\)' would show on it as plain letters \(a typed "
-                                         r"badge is drawn as one only right after a badge or in place of one\)") as refused:
-        pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
-    assert refused.value.code == "unsupported-card"
+def test_a_typed_badge_joins_the_badge_layer(clone, parser, chart, tmp_path):
+    """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style
+    (Mini Doomer's 50 pt (BOT)); on a badge card it joins the badge layer as a real badge (review 2026-10-23 refused it:
+    typed as body text the JSX's cut would have lifted its letters out of the gradient, white). Every gate passes; the
+    parser reads it back."""
+    psd_path = _card(clone, MINI_DOOMER)[0]
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Then (bot)."}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.fx_names == ["Ability FX: (BOT)"] and baked.fx == ["Ability FX: (BOT)"] and edit.fonts == []
+    assert baked.reparse["card"]["ability"].endswith("(BOT) Die. Then (bot).") and baked.reparse["validator"] == []
+    runs = _runs(pe.ability_layer(PSDImage.open(baked.psd_path)))
+    assert [run[:3] for run in runs if run[1] == pe.ICON_FONT] == [("(BOT)", pe.ICON_FONT, 50.0), ("(bot)", pe.ICON_FONT, 50.0)]
+
+
+@text_edit
+def test_typed_icons_on_a_card_without_the_icon_font(clone, parser, chart, tmp_path):
+    """A card whose Ability has no badge or token (Mettaton NEO): a typed timing tag and [type] token are set in the icon
+    font at the text's own style, the most common card style, the face added to the layer's and Txt2's FontSets
+    (Edit.fonts; gate_stories lets only a declared face in). The re-parse reads "[Fire]" as [fire], as the website
+    draws it. Without the parser's types the old rule stands: a layer without the icon font counts as one with image
+    icons."""
+    rel = "Auxiliary/Creatures/Mettaton_NEO.psd"
+    psd_path = _card(clone, rel)[0]
+    psd = PSDImage.open(psd_path)
+    assert not pe.uses_icon_font(pe.ability_layer(psd)) and pe.image_icons(psd, parser) == []
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
+    with pytest.raises(pe.Refused, match="image icons"):
+        pe.set_text_layer(psd, "ability", old + " (1CD) Deal 1 [Fire] damage.", str(clone / pe.FONTS_DIR), chart)
+    parsed, baked = _bake(clone, parser, rel, {"ability": old + " (1CD) Deal 1 [Fire] damage."}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.fonts == [pe.ICON_FONT] and baked.reparse["card"]["ability"].endswith("(1CD) Deal 1 [fire] damage.")
+    saved = PSDImage.open(baked.psd_path)
+    runs = _runs(pe.ability_layer(saved))
+    body = runs[0][1:3]
+    assert [run[:3] for run in runs if run[1] == pe.ICON_FONT] == [("(1CD)", pe.ICON_FONT, body[1]), ("[Fire]", pe.ICON_FONT, body[1])]
+    with pytest.raises(pe.Refused, match="Txt2 FontSet gained stoogedings-Regular: no edit added them") as refused:
+        pe.gate_stories(PSDImage.open(psd_path), saved, {edit.story})
+    assert refused.value.code == "bytes" and pe.gate_stories(PSDImage.open(psd_path), saved, {edit.story}, edit.fonts) == [edit.story]
+
+
+@text_edit
+def test_typed_icons_refuse_where_they_would_print_wrong(clone, parser, chart):
+    """Before anything changes: a badge typed under the Ability's colour or gradient overlay with no badge FX layer to
+    restore its colours (Cat), a [type] token on a card whose type icons are image layers in the ability's gaps
+    (Nebulous Precipice's darkmatter: the website's text holds their tokens), and a badge replaced by letters the icon
+    font would draw plainly ("(abc)"). Each unsupported-card."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, edit, why in (
+            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"\(1CD\): the Ability's overlay would paint over the "
+                                                                      r"badge's colours and no badge FX layer restores them"),
+            ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
+            (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'abc' would be set in the icon font, which draws no badge")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        layer = pe.ability_layer(psd)
+        before = layer.text
+        with pytest.raises(pe.Refused, match=why) as refused:
+            pe.set_text_layer(psd, "ability", edit(pe.normalize_ability(before)), fonts, chart, parser=parser)
+        assert refused.value.code == "unsupported-card"
+        assert layer.text == before or rel == MINI_DOOMER          # the stray letters are found once the text is set
+
+
+def test_icon_text_follows_the_fonts_spellings(parser):
+    """What the stoogedings font draws (its GSUB): timing tags of badge_tags() in any case, tokens the vocabulary knows
+    with a variant the font has; not "(2 points)", "[fire: no]" (no space by the variant) or "[foo]". canonical_tokens
+    reads them as the parser does in the icon font, and classify calls "[Fire]" for "[fire]" redundant."""
+    text = "(1cd)(Action)(2 points) [Fire:Sticker] [fire: no] [foo] [warp star] [fire:NO] (2/3GCD)"
+    assert [text[a:b] for a, b in pe.icon_text(text, parser.icons)] == [
+        "(1cd)", "(Action)", "[Fire:Sticker]", "[warp star]", "[fire:NO]", "(2/3GCD)"]
+    assert [text[a:b] for a, b in pe.icon_text(text, None)][2:7] == ["[Fire:Sticker]", "[fire: no]", "[foo]", "[warp star]", "[fire:NO]"]
+    assert pe.canonical_tokens(text, parser.icons) == "(1cd)(Action)(2 points) [fire] [fire: no] [foo] [warpstar] [fire:no] (2/3GCD)"
+    parsed = {"card": {"ability": "Deal 1 [fire] damage."}}
+    assert pe.classify(parsed, {"ability": "Deal 1 [Fire] damage."}, parser=parser).redundant == ["ability"]
+    assert pe.classify(parsed, {"ability": "Deal 1 [Fire] damage."}).jobs == {"ability": "Deal 1 [Fire] damage."}
+    assert len(pe.BADGE_TAGS) == 341 and pe.BADGE_KEYS["action"] == "Action"
+
+
+@text_edit
+def test_an_edit_keeps_the_cards_own_token_spellings(clone, parser, chart, tmp_path):
+    """The parser reads Palace of Shadow's "[dark:sticker]" and "[light:sticker]" as "[dark]" and "[light]", the website
+    sends those back, and setting them as given redrew both stickers as plain icons, every gate passing (review
+    2026-10-23: 9 cards on main print a :sticker or :tint). keep_tokens spells a kept icon as the layer does; a token
+    the edit types stays as typed. Through every gate the PSD keeps both stickers and the parse reads the same."""
+    rel = "Field/4 Stars/Palace_of_Shadow.psd"
+    psd_path = _card(clone, rel)[0]
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
+    assert old.startswith("[dark]: +2 DEF") and "[light] creature" in old
+    layer = pe.ability_layer(PSDImage.open(psd_path))
+    assert pe.keep_tokens(layer, old.replace("\n", "\r") + " [dark] Die.", parser.icons).endswith("[light:sticker] creature with "
+        "over 50% of its HP to summon the Shadow Queen in its place. [dark] Die.")
+    assert pe.keep_tokens(layer, "[dark]", None) == "[dark]"
+    parsed, baked = _bake(clone, parser, rel, {"ability": old + " Die."}, tmp_path, chart)
+    text = pe.ability_layer(PSDImage.open(baked.psd_path)).text
+    assert text.startswith("[dark:sticker]: +2 DEF") and "[light:sticker] creature" in text and baked.fx == []
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == old + " Die."
+
+
+def test_icon_style_is_the_cards_commonest(clone, parser, tmp_path):
+    """A typed badge takes the card's commonest badge style: Pizza's first badge is 18.66 pt with a baseline shift, its two
+    others 32 pt (COLOURED), so 32; a tie goes to the body text's size, then the first (Morpho Knight's tracking 0 and 500,
+    two each: 0). None on a layer without the icon font (Mettaton NEO)."""
+    pizza = pe.ability_layer(PSDImage.open(_at(clone, tmp_path, COLOURED, PIZZA)[0]))
+    style = pe.icon_style(pizza, True, parser.icons)
+    assert style["Font"] == pe.ICON_FONT and pe._canon(style["FontSize"]) == 32.0 and pe._canon(style["BaselineShift"]) == 0.0
+    assert pe._canon(pe.icon_style(pizza, False, parser.icons)) == pe._canon(style)    # no token: its badges' style
+    morpho = pe.ability_layer(PSDImage.open(_card(clone, MORPHO)[0]))
+    assert pe._canon(pe.icon_style(morpho, True, parser.icons)["Tracking"]) == 0
+    neo = pe.ability_layer(PSDImage.open(_card(clone, "Auxiliary/Creatures/Mettaton_NEO.psd")[0]))
+    assert pe.icon_style(neo, True, parser.icons) is None
 
 
 @text_edit
@@ -1787,6 +1973,22 @@ def test_an_edit_at_both_ends_keeps_the_badges_between(clone, chart, tmp_path):
     assert [r[0] for r in runs if r[1] == icon] == ["(OFS)", "(1PG)(OYT)", "[undead]"]
     assert [r[1] for r in runs if ", always" in r[0]] == ["FrizQuadrataStd"] or \
         [r[1][:7] for r in runs if ", always" in r[0]] == ["FrizQua"]
+
+
+@text_edit
+def test_parentheses_typed_after_a_badge_are_body_text(clone, chart, tmp_path):
+    """The engine gives text typed right after a badge the badge's style; only what the icon font draws stays in it
+    (icon_text): Pizza's "(1CD)(2U)" keeps both badges, "(1CD)(2 points)" sets "(2 points)" in the body font (it stayed
+    in the icon font, drawn as its plain letters, while any parenthesis counted as a badge)."""
+    pizza = _at(clone, tmp_path, COLOURED, PIZZA)[0]
+    for typed, check in (("(2U)", lambda runs: runs[2][:2] == ("(1CD)(2U)", pe.ICON_FONT)),
+                         ("(2 points)", lambda runs: runs[2][:2] == ("(1CD)", pe.ICON_FONT)
+                          and runs[3][0].startswith("(2 points) Can") and runs[3][1] == "Domigorgon")):
+        psd = PSDImage.open(pizza)
+        pe.set_text_layer(psd, "ability", pe.ability_layer(psd).text.replace("(1CD) Can", f"(1CD){typed} Can", 1),
+                          str(clone / pe.FONTS_DIR), chart)
+        runs = _runs(pe.ability_layer(psd))
+        assert check(runs), (typed, runs)
 
 
 @text_edit
@@ -1897,20 +2099,41 @@ def test_overlay_word_layer_without_a_chart_style_refuses(clone, chart):
         pe.set_text_layer(psd, "ability", text + " Die.", fonts, None)
 
 
+SMOLDERING = "Ability FX: Smoldering"
+
+
 @text_edit
-def test_fx_layer_without_a_chart_style_refuses(clone, chart):
-    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28): its stroke is no chart status's style,
-    so an ability edit refuses (the owner's 2026-10-21 rule)."""
-    fonts = str(clone / pe.FONTS_DIR)
+def test_own_style_fx_layer_takes_a_typed_word_in_its_style(clone, parser, chart, tmp_path):
+    """L7 made Fire Staff's overlay an "Ability FX: Smoldering" layer (49cf3b28) with a stroke no chart status has: since
+    2026-10-23 (owner) an ability edit rebuilds it in that style. A typed Smoldering joins it, as Effect Layers.jsx's
+    Update all cuts every whole-word match, and the report says the typed word takes the layer's own style; its
+    style bytes stay, the stroke on both words, every gate passing."""
+    psd_path = _card(clone, FIRE_STAFF)[0]
+    old = pe.normalize_ability(pe.parse_card(parser, psd_path, FIRE_STAFF)["card"]["ability"])
+    assert old == "Attacks inflict 2T Smoldering."
+    parsed, baked = _bake(clone, parser, FIRE_STAFF, {"ability": "Smoldering: 2T Smoldering."}, tmp_path, chart)
+    edit, = baked.edits
+    assert edit.fx_names == [SMOLDERING] and edit.fx == [] and _style(baked.psd_path, SMOLDERING) == _style(psd_path, SMOLDERING)
+    assert baked.fx_notes == [f"{SMOLDERING} also covers the typed 'Smoldering', in its own style"]
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(saved)
+    fx, = pe.fx_layers(saved, layer)
+    assert len(pe.phrase_ranges(layer.text, pe.fx_phrases(layer, fx))) == 2 and edit.held == [(SMOLDERING, [(15, 25)])]
+
+
+@text_edit
+def test_an_own_style_status_word_keeps_the_charts_fill(clone, chart):
+    """An edit beside an own-style layer's words gives them the phrase's colour (its first drawn run, 08b1152a), but a
+    status word among them keeps the chart's swatch (the owner's 2026-10-23 ruling: off-chart status colours go to the
+    chart): Fire Staff's Smoldering painted green before the edit comes out the chart's orange."""
     psd = PSDImage.open(_card(clone, FIRE_STAFF)[0])
     layer = pe.ability_layer(psd)
-    text = layer.text
-    assert [fx.name for fx in pe.fx_layers(psd, layer)] == ["Ability FX: Smoldering"]
-    with pytest.raises(pe.Refused, match="FX layers not in a chart status's style: Ability FX: Smoldering;") as refused:
-        pe.set_text_layer(psd, "ability", text + " Die.", fonts, chart)
-    assert refused.value.code == "unsupported-card" and pe.ability_layer(psd).text == text
-    with pytest.raises(pe.Refused, match="status word layers over the ability"):
-        pe.set_text_layer(psd, "ability", text + " Die.", fonts, None)
+    start = layer.text.index("Smoldering")
+    layer.set_span_style(start, start + len("Smoldering"), fill=(0.0, 1.0, 0.0))
+    pe.set_text_layer(psd, "ability", layer.text.replace("Smoldering.", "Smoldering!"), str(clone / pe.FONTS_DIR), chart)
+    rounded = lambda fill: tuple(round(v, 3) for v in fill)
+    fills = pe._char_styles(pe.ability_layer(psd))[0]
+    assert [rounded(f) for f in fills[start:start + len("Smoldering")]] == [rounded(chart["smoldering"].fill)] * len("Smoldering")
 
 
 @text_edit
@@ -2081,7 +2304,7 @@ def test_spliced_ability_bake_changes_only_the_edited_line(clone, parser, chart,
 @text_edit
 def test_too_long_ability_refuses_overflow(clone, chart, tmp_path):
     psd = PSDImage.open(_plain(clone, tmp_path)[0])
-    text = pe.normalize_ability(pe.ability_layer(psd).text)
+    text = pe.normalize_ability(pe.ability_layer(psd).text).replace("(BOT) ", "")   # typed (BOT)s refuse first: no badge layer
     with pytest.raises(pe.Refused) as refused:
         pe.set_text_layer(psd, "ability", " ".join([text] * 4), str(clone / pe.FONTS_DIR), chart)
     assert refused.value.code == "overflow"
@@ -2213,8 +2436,8 @@ def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, 
     new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
     real = pe.set_text_layer
 
-    def stretched(psd, which, text, fonts_dir, chart=None, card="", own_text=True):
-        edit = real(psd, which, text, fonts_dir, chart, card, own_text)
+    def stretched(psd, which, text, fonts_dir, chart=None, card="", own_text=True, parser=None):
+        edit = real(psd, which, text, fonts_dir, chart, card, own_text, parser)
         if which == "ability":
             edit.region = pe.union_box([edit.region, pe.name_layer(psd, card).bbox])
         return edit

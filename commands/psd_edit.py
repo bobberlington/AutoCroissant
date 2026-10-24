@@ -31,9 +31,9 @@ from psd_tools.psd.base import ListElement
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TITLE_REGION_RATIO,
-                                 TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key, named_after_text,
-                                 stars_from_psd, title_text)
+from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN, ICON_VARIANTS,
+                                 TITLE_REGION_RATIO, TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key,
+                                 named_after_text, stars_from_psd, title_text)
 from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import FONT_ALIASES, RULEBOOK_DIR
 
@@ -75,12 +75,15 @@ STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Lead
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
               "BaselineDirection", "Tsume", "StyleRunAlignment", "Language", "NoBreak")   # edit_styles copies these
 TYPED = re_compile(r"\([^()\r\x03]*\)|\[[^\[\]\r\x03]*\]")   # a badge or token as typed: "(1CD)", "[fire]"
+PAREN = re_compile(r"\(([^()\r\n\x03]{1,12})\)")    # a timing tag candidate: "(1CD)"
+ICON_FONT = "stoogedings-Regular"                   # the icon font's PostScript name (every card's FontSet entry)
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
 BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)", "[fire]": badge and token runs
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
 KEY_WHITE, KEY_BLACK = (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
 FX_SEP = " | "              # Effect Layers.jsx's SEP between an FX layer's phrases
+ANCHORED = ("styled", "own")   # FX layers whose style is their own words': they stay on the characters they covered
 ALNUM = re_compile(r"[A-Za-z0-9]")                  # phrase_ranges' whole-word boundary (the JSX's)
 FX_BOX_PAD = 3              # px gate_fx lets an FX layer ink past its words' glyph boxes (edges, a badge's pill)
 FX_COVER = 0.99             # share of its words' own ink (no other glyph's box) an FX layer must cover (gate_fx)
@@ -112,6 +115,23 @@ CARD_WIDTH = 1200
 PLACED = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2, Tag.PLACED_LAYER1, Tag.PLACED_LAYER2)
 MOVE_BLOCKS = {bytes(key) for key in (*PLACED, Tag.REFERENCE_POINT)}    # a moved layer's record: its transform, anchor
 COPY_BLOCKS = MOVE_BLOCKS | {bytes(Tag.LAYER_ID), bytes(Tag.UNICODE_LAYER_NAME)}   # a copy's: those, its id and name
+
+
+def badge_tags() -> list:
+    """Every timing tag the stoogedings font draws as a badge: TTSCardMaker build_stoogedings.badge_tags(), mirrored."""
+    nums, firsts = "123456789X", ["-1", *"0123456789", "X"]
+    tags = ["OYT", "AAT", "BOT", "ENDT", "BOGT", "ENDGT", "OFS", "OS", "OD", "WOF", "Action"]
+    for n in nums:                              # the old system (rule pages)
+        tags += [f"{n}PT", f"E{n}T", f"FTE{n}T", f"{n}PGT", f"E{n}GT", f"{n}PG"]
+    for n in nums:                              # cooldowns and uses (2026-10-21)
+        tags += [f"{n}CD", f"{n}GCD", f"{n}U"]
+    for cd in ("CD", "GCD"):
+        tags += [f"{a}/{b}{cd}" for a in firsts for b in nums]
+    return tags
+
+
+BADGE_TAGS = tuple(badge_tags())
+BADGE_KEYS = {tag.lower(): tag for tag in BADGE_TAGS}   # the font matches any letter case (TTSCardMaker 6e50c3ee)
 
 
 # ========================
@@ -209,9 +229,10 @@ class Edit:
     #   style kept (Effect Layers.jsx's Update all; owner q6)
     fx_names: list = field(default_factory=list)  # the text layer's FX layers after the edit, bottom to top
     notes: list = field(default_factory=list)   # for the report: FX layers deleted, renamed or cut again
-    held: list = field(default_factory=list)    # (FX layer name, [(start, end)]): a "styled" layer's words the edit kept,
+    held: list = field(default_factory=list)    # (FX layer name, [(start, end)]): a "styled" or "own" layer's kept words,
     #   which it still covers (gate_fx)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
+    fonts: list = field(default_factory=list)   # faces it added to the document's FontSets (ICON_FONT on a plain card)
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
     renamed: Optional[str] = None  # a title layer named after its text: its new name, the new title (as Photoshop does)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
@@ -704,6 +725,120 @@ def uses_icon_font(layer) -> bool:
     return icon_font(layer) is not None
 
 
+def icon_text(text: str, vocab: Optional[IconVocabulary]) -> list:
+    """
+    [(start, end)] of the text the stoogedings font draws as a badge or an icon, as its GSUB ligates it: a timing tag
+    in parentheses (badge_tags(), any letter case: "(1cd)" is (1CD)) and a [token] the vocabulary knows with a variant
+    the font has ("[Fire:Sticker]", "[warp star]", "[fire:no]"; the parser's _read_icon_tokens reads the same ones);
+    every [token] when vocab is None.
+    """
+    out = [match.span() for match in PAREN.finditer(text) if match.group(1).lower() in BADGE_KEYS]
+    for match in TOKEN.finditer(text):
+        base, _, variant = match.group(0)[1:-1].partition(":")
+        if vocab is None or (vocab.lookup(base) is not None and variant.lower() in ICON_VARIANTS):
+            out.append(match.span())
+    return sorted(out)
+
+
+def canonical_tokens(text: Optional[str], vocab: Optional[IconVocabulary]) -> str:
+    """
+    The text with each [token] the vocabulary knows as the parser reads it in the icon font (_read_icon_tokens):
+    "[Fire:Sticker]" -> "[fire]", "[warp star]" -> "[warpstar]", "[fire:NO]" -> "[fire:no]"; unknown ones as typed.
+    """
+    def one(match) -> str:
+        base, _, variant = match.group(0)[1:-1].partition(":")
+        hit = vocab.lookup(base) if vocab is not None else None
+        if hit is None or variant.lower() not in ICON_VARIANTS:
+            return match.group(0)
+        return f"[{hit[0]}:no]" if variant.lower() == "no" else f"[{hit[0]}]"
+    return TOKEN.sub(one, text or "")
+
+
+def keep_tokens(layer, new: str, vocab: Optional[IconVocabulary]) -> str:
+    """
+    The new text with the layer's own spelling of each icon it prints where the edit kept it. The parser reads an icon
+    set in the icon font as its canonical token ("[dark:sticker]", "[Fire]", "★" -> "[dark]", "[fire]", "[star]";
+    psd_parser._read_icon_tokens) and the website shows and sends that, so setting the website's text as given would
+    redraw Palace of Shadow's stickers as plain icons (review 2026-10-23). A token the edit typed stays as typed.
+
+    Args:
+        layer: The text layer, before the edit
+        new: The text to set (breaks already the layer's: keep_breaks, keep_ends)
+        vocab: The parser's IconVocabulary; None: new as given
+
+    Returns:
+        new, each old icon whose canonical token the diff pairs with one in new spelt as the layer spells it
+    """
+    old = layer.text
+    if vocab is None:
+        return new
+    icons = _char_styles(layer)[1]
+    out, spots, last, size = [], [], 0, 0
+    for match in ICON_SCAN_PATTERN.finditer(old):
+        a, b = match.span()
+        piece = match.group(0)
+        if not all(icons[i] for i in range(a, b)):
+            continue
+        if piece.startswith("["):
+            token = canonical_tokens(piece, vocab)
+        else:
+            name = vocab.codepoints.get(piece)
+            token = f"[{name}]" if name and vocab.lookup(name) else piece
+        if token == piece:
+            continue
+        out.append(old[last:a])
+        size += a - last
+        spots.append((size, size + len(token), piece))
+        out.append(token)
+        size += len(token)
+        last = b
+    if not spots:
+        return new
+    seen = "".join(out) + old[last:]
+    back = []
+    for i, j, n in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
+        back += [(j + start - i, j + end - i, piece) for start, end, piece in spots if i <= start and end <= i + n]
+    for start, end, piece in sorted(back, reverse=True):
+        new = new[:start] + piece + new[end:]
+    return new
+
+
+def icon_style(layer, badge: bool, vocab: Optional[IconVocabulary]) -> Optional[dict]:
+    """
+    The style a typed badge or token takes (owner 2026-10-23): the layer's own icon-font badges' or tokens' STYLE_KEYS
+    (size, baseline shift, tracking, ...; the other kind's when it has none of this kind), the commonest, ties going to
+    the one at the body text's commonest size, then to the first. None when no badge or token of the layer is set in
+    the icon font: the caller sets it in ICON_FONT at the text's own style, the most common card style (measured on
+    main 2026-10-23: 358 of 659 icon-font runs share every key with the text beside them, 442 its size; the templates
+    have none). Before the text changes.
+    """
+    text = layer.text
+    _, icons, styles, _ = _char_styles(layer)
+    found = [(text[a] == "(", styles[a]) for a, b in icon_text(text, vocab)
+             if styles[a] and all(icons[i] for i in range(a, b))]
+    pool = [style for kind, style in found if kind == badge] or [style for _, style in found]
+    if not pool:
+        return None
+    body = Counter(_canon(styles[i].get("FontSize")) for i in range(len(text))
+                   if not icons[i] and styles[i] and text[i] not in " \t\r\x03").most_common(1)
+    count = Counter(_canon(style) for style in pool)
+    best = max(pool, key=lambda style: (count[_canon(style)], bool(body) and _canon(style.get("FontSize")) == body[0][0]))
+    return deepcopy(best)
+
+
+def image_icons(psd: PSDImage, parser: PSDParser) -> list:
+    """
+    The type icon image layers the parser reads into the ability's gaps (PSDParser._process_layer: named after a Types/
+    icon, visible, with pixels, its top at or below the midline, under no stat row): on such a card the website's
+    ability holds their [type] tokens, which a text edit would type a second time.
+    """
+    mid = int(psd.height * TYPE_REGION_RATIO)
+    return [layer for layer in psd.descendants()
+            if not (EFFECT_LAYER_TAG in layer.name and not layer.is_group()) and not _is_text_layer(layer)
+            and not parser._is_stat_layer(layer) and layer.name.lower() in parser.all_types and layer.is_visible()
+            and layer.has_pixels() and layer.bbox[1] >= mid]
+
+
 def run_fills(layer) -> list:
     """[(start, end, RGB 0..1 or None)] over the layer's text, str indices."""
     out = []
@@ -1081,8 +1216,9 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.redundant.append(name)
             else:
                 out.jobs[name] = value
-        elif name == "ability":
-            if normalize_ability(card.get("ability")) == normalize_ability(value):
+        elif name == "ability":                 # [Fire] for [fire] prints the same icon: redundant
+            vocab = getattr(parser, "icons", None)
+            if normalize_ability(canonical_tokens(card.get("ability"), vocab)) == normalize_ability(canonical_tokens(value, vocab)):
                 out.redundant.append(name)
             else:
                 out.jobs[name] = value
@@ -1108,12 +1244,13 @@ class FxPlan:
     """An FX layer of the edited ability, read before the text changes (plan_fx)."""
     layer: object
     phrases: list           # its name's phrases ("Frozen#2" keeps its number)
-    kind: str               # fx_kind(): "badge", "status" or "styled"
-    fill: Optional[tuple] = None    # "styled": its words' colour, the first drawn run (Effect Layers.jsx 08b1152a)
+    kind: str               # fx_kind(): "badge", "status", "styled" or "own"
+    fill: Optional[tuple] = None    # "styled", "own": its words' colour, the first drawn run (Effect Layers.jsx 08b1152a)
     box: tuple = ()         # its bbox before the edit
     ranges: list = field(default_factory=list)  # phrase_ranges() of its phrases in the old text
     found: list = field(default_factory=list)   # [(phrase, its phrase_ranges() in the old text)]
     status: str = ""        # "status": its chart status, lowercased (status_fills' key)
+    own_style: bool = False  # its style is no chart status's for its words ("own", "styled"; a "status" layer's of L7)
 
 
 def fx_name(base: str, status: str, nth: int = 0) -> str:
@@ -1217,8 +1354,9 @@ def fx_kind(fx, base, chart: Optional[dict]) -> str:
     """
     How an ability edit makes an FX layer again (each keeps its own style, owner q6): "badge" (badge and token runs,
     queue A's gradient cards: none), "status" (a styled chart status), "styled" (another phrase under a styled chart
-    status's style: Monkey D Goofy's "1#1"); "" when the chart has no style for it (Smoldering's stroke) or it is no
-    pixel layer (Photoshop draws a type layer from its text): refused.
+    status's style: Monkey D Goofy's "1#1"), "own" (a style no chart status has, or none: Smoldering's stroke, Mr
+    Krabs' "2T"; rebuilt in it since 2026-10-23, the owner's ruling); "" when it is no pixel layer (Photoshop draws a
+    type layer from its text): refused.
     """
     if getattr(fx, "kind", None) != "pixel":
         return ""
@@ -1229,12 +1367,7 @@ def fx_kind(fx, base, chart: Optional[dict]) -> str:
     if len(names) == 1 and getattr((chart or {}).get(next(iter(names))), "styled", False):
         return "status"
     key = _style_key(getattr(fx, "tagged_blocks", None))
-    return "styled" if key and any(key == _style_key(status.blocks) for status in styled) else ""
-
-
-def kept_fx(old_fx: list, base, chart: Optional[dict]) -> list:
-    """The names of the FX layers an ability edit cannot make again: the chart has no style for them (fx_kind "")."""
-    return [fx.name for fx in old_fx if not fx_kind(fx, base, chart)]
+    return "styled" if key and any(key == _style_key(status.blocks) for status in styled) else "own"
 
 
 def plan_fx(base, old_fx: list, chart: dict) -> list:
@@ -1244,13 +1377,14 @@ def plan_fx(base, old_fx: list, chart: dict) -> list:
     for fx in old_fx:
         kind, phrases = fx_kind(fx, base, chart), fx_phrases(base, fx)
         fill = None
-        if kind == "styled":
+        if kind in ANCHORED:
             drawn = [i for a, b in phrase_ranges(base.text, phrases) for i in range(a, b) if fills[i] is not None]
             seen = [i for i in drawn if base.text[i] not in " \t\r\x03"] or drawn
             fill = fills[seen[0]] if seen else None
         found = [(phrase, phrase_ranges(base.text, [phrase])) for phrase in phrases]
         status = collapse(_numbered(phrases[0])[0]).lower() if kind == "status" else ""
-        out.append(FxPlan(fx, phrases, kind, fill, tuple(fx.bbox), phrase_ranges(base.text, phrases), found, status))
+        own = kind in ANCHORED or (kind == "status" and _style_key(fx.tagged_blocks) != _style_key(chart[status].blocks))
+        out.append(FxPlan(fx, phrases, kind, fill, tuple(fx.bbox), phrase_ranges(base.text, phrases), found, status, own))
     return out
 
 
@@ -1276,8 +1410,9 @@ def _word_at(text: str, span: tuple, spans: list = ()) -> str:
 def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
     """
     Where an FX layer's phrases land in the new text, before it is set: phrase_ranges() over it, as Effect Layers.jsx's
-    Update all, but a layer whose style is its own words' stays on them. A "styled" layer (its own words under its own
-    colour: Goofy's "1#1") stays on the characters it covered: a numbered phrase follows its occurrence, renumbered
+    Update all, but a layer whose style is its own words' stays on them. A "styled" or "own" layer (its own words
+    under its own colour: Goofy's "1#1"; Fire Staff's stroked Smoldering) stays on the characters it covered: a
+    numbered phrase follows its occurrence, renumbered
     ("1#1" -> "1#2" when a "1" is typed before it), and leaves with it; a phrase whose kept occurrence its name no
     longer reaches (a whole-word "1" typed: the JSX's "1#1" leaves the "1" of "3T1" for it) or that would spread to part
     of another word refuses unsupported-card. A "status" layer (its own style, owner q6) lands only on its status's own
@@ -1310,7 +1445,7 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
         images = _images(was, kept, found)
         why = "" if now else f"the ability has {len(every)} {words} now" if nth and every else f"{phrase} left the ability"
         name = (f"{words}#{every.index(now[0]) + 1}" if nth else phrase) if now else None
-        if plan.kind == "styled":
+        if plan.kind in ANCHORED:
             for span in images:
                 if span not in every:
                     raise moving(words, span)
@@ -1483,6 +1618,16 @@ def _kept(plan: FxPlan, ranges: list, band: Optional[tuple], kept: list) -> bool
     return len(moved) == len(plan.ranges) and sorted(moved) == sorted(ranges)
 
 
+def held_words(plans: list, kept: list, alive: list) -> list:
+    """
+    Edit.held: (its name now, kept_spans() of its old ranges) per "styled" or "own" FX layer the rebuild left in the
+    card (alive: the FX layers after it). By layer, not name: a renamed layer may take a deleted one's name ("2T#2"
+    -> "2T#1" when the first "2T" left).
+    """
+    ids = {id(fx) for fx in alive}
+    return [(plan.layer.name, kept_spans(plan.ranges, kept)) for plan in plans if plan.kind in ANCHORED and id(plan.layer) in ids]
+
+
 def _holds(fx, mask: np.ndarray, layer) -> bool:
     """Whether every pixel of an FX layer lies on its words' mask grown a pixel (no leaked badge, the B1 batch's L7b)."""
     alpha = _alpha(fx)
@@ -1512,15 +1657,16 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     """
     Effect Layers.jsx's Update all after an ability edit: each FX layer cut again in place from the new raster under its
     phrases' key (follow_fx: phrase_ranges over the new text, so a phrase that occurs more often is cut on every
-    occurrence; a "styled" layer's stays on its words, a "status" layer's on its status's own words), its record kept
+    occurrence; a "styled" or "own" layer's stays on its words, a "status" layer's on its status's own words), its record kept
     (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change. A layer whose words were not redrawn keeps its record whole
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
     clean). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
     renamed); a layer with none left is deleted. A badge layer names the badges the edit typed that no badge layer
     names (it draws every colour glyph, and each card's names them all); one whose phrase the edit typed outside the
-    icon font refuses unsupported-card (the JSX would lift the letters, white, out of the Ability's overlay). Every
-    layer keeps its own style, the chart's or not (owner q6, unattended call 2026-10-23): only a new one takes the
-    chart's (_regenerate_fx).
+    icon font refuses unsupported-card (the JSX would lift the letters, white, out of the Ability's overlay; set_text_layer
+    sets every typed badge in it, so only text the font draws no badge of). Every layer keeps its own style, the chart's
+    or not (owner q6, unattended call 2026-10-23): only a new one takes the chart's (_regenerate_fx); a typed word that
+    joins a layer whose style is no chart status's for it (FxPlan.own_style) is told.
 
     Args:
         psd: The card
@@ -1596,6 +1742,10 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
             whys = _left(left) + [why for _, still, _, _, why in target if still and why]
             whys += [f"{', '.join(added)} added"] if added else []
             notes.append(f"{old} renamed {name!r}: {'; '.join(whys)}")
+        joined = list(dict.fromkeys(text[a:b] for _, still, now, anchored, _ in target if still and plan.own_style
+                                    for a, b in now if (a, b) not in anchored))
+        if joined:                              # the typed word takes this layer's style, not the chart's (q6)
+            notes.append(f"{name} also covers the typed {', '.join(map(repr, joined))}, in its own style")
         rebuilt.append((fx, old))
     return rebuilt, deleted, covered, notes
 
@@ -1925,7 +2075,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                   card: str = "", own_text: bool = True) -> Edit:
+                   card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -1941,6 +2091,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
         card: The card's name (file stem), for name_layer
         own_text: name_layer's (False on a rule page: _own_text)
+        parser: offline_parser(): its icon vocabulary says which typed [tokens] the icon font draws (icon_text) and its
+            types which image icons the parser reads into the ability (image_icons); None: every [token], and a layer
+            without the icon font counts as one with image icons
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
@@ -1949,23 +2102,28 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     The text is set one changed part at a time (splice_text), so what the edit keeps keeps its runs. The engine gives
     inserted text the style of the run before it, so an edit after a colored status word or a badge would take its
     color or icon font: an ability's changed parts take the fill of the text they replace (edit_styles; status words
-    give none), words set in the icon font outside a typed badge or token that text's whole style, then every status
+    give none), words set in the icon font outside what the font draws (icon_text) that text's whole style; every badge
+    or token the edit types is set in the icon font at the card's own badge or token style (icon_style; owner
+    2026-10-23), on a card with none at the text's own style (ICON_FONT added, Edit.fonts), the layer's own spellings
+    of the icons it kept staying (keep_tokens: "[dark:sticker]", where the website sends "[dark]"); then every status
     word in the text takes its swatch (the chart is the authority, an off-swatch word is normalized). The "<Ability> FX:
     ..." layers are then made again as Effect Layers.jsx's Update all makes them (BUG 2, _rebuild_fx): each cut in place
     from the new raster over its phrases' new places, its record, place and own style kept (owner q6: never restyled to
-    the chart's); a phrase gone from the text leaves the name, a layer with none left goes; a "styled" layer stays on
-    its own words (follow_fx: Goofy's "1#1" renumbered, or refused when its name would reach another "1"), a
+    the chart's); a phrase gone from the text leaves the name, a layer with none left goes; a "styled" or "own" layer
+    stays on its own words (follow_fx: Goofy's "1#1" renumbered, or refused when its name would reach another "1"), a
     "status" layer on its status's own words (a numbered one on its own word, renumbered: Standstill's "Frozen In
     Time#2"; never the "Frozen" of "Frozen In Time"); a badge typed outside the icon font onto a badge layer's phrase
     refuses. A styled status word no FX layer holds whole gets one (idea 14, new_fx: "Blazing", "Frozen#2" when only
     that one; one a layer covers in part refuses), its glyph pixels cut under a
     copy of the chart layer's effect blocks, directly above the layer's top-level group as Effect Layers.jsx's Add
-    places it; text the edit typed into a "styled" layer's own words takes that phrase's colour (the first drawn run,
-    as the JSX's overlay conversion). A hand-made overlay word layer over the ability (Gasoline's "Blazing") is hidden
-    when it names a styled chart status, the FX layer standing in for it; one naming anything else refuses
-    (unsupported-card), and so does an FX layer the chart has no style for (fx_kind ""; Fire Staff's Smoldering
-    stroke) or that is no pixel layer, before anything changes. styled-word now means only that this psd-tools cannot
-    cut glyph pixels or make a pixel layer, or that an FX layer's words have no pixels.
+    places it; text the edit typed into a "styled" or "own" layer's own words takes that phrase's colour (the first
+    drawn run, as the JSX's overlay conversion), a status word among them keeping the chart's. A hand-made overlay word
+    layer over the ability (Gasoline's "Blazing") is hidden when it names a styled chart status, the FX layer standing
+    in for it; one naming anything else refuses (unsupported-card), and so does an FX layer that is no pixel layer, a
+    typed badge or token under the Ability's overlay with no badge FX layer, a [type] token on a card with image icons
+    in its gaps (image_icons), before anything changes. An FX layer in no chart status's style (Fire Staff's Smoldering
+    stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that this psd-tools cannot cut glyph
+    pixels or make a pixel layer, or that an FX layer's words have no pixels.
     """
     from psd_tools.composite.text import FontMap, MissingFontError
     if not story_sync():
@@ -1975,6 +2133,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     own = which == "name" and own_text_title(layer, card)
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
+    if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
+        text = keep_tokens(layer, text, getattr(parser, "icons", None))
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
@@ -1982,28 +2142,24 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if which == "name":     # point text has no box: the title must stay on the canvas and off the badges it clears today
         stars, icons, _ = badge_layers(psd)
         badges = [badge for badge in stars + icons if not _touches(layer, badge)]
-    tokens = []
+    vocab, drawn, looks, faces = getattr(parser, "icons", None), [], {}, []
     if which == "ability":
-        icons = icon_font(layer)
-        if TOKEN.search(text) and icons is None:
+        images = icon_font(layer) is None if parser is None else bool(image_icons(psd, parser))
+        if TOKEN.search(text) and images:
             raise Refused("unsupported-card", "[type] tokens on a card with image icons")
         glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
         if glows:
             raise Refused("font", f"{', '.join(glows)}: this psd-tools draws a glow halo as a solid block; edit in Photoshop")
-        # a token the edit typed takes the run before it: set it in the icon font, as the old ones are
-        tokens = [match.span() for match in TOKEN.finditer(text) if match.start() < end and match.end() > start]
+        drawn = icon_text(text, vocab)          # what the icon font draws (owner 2026-10-23: a typed one is set in it)
+        looks = {kind: icon_style(layer, kind, vocab) for kind in (True, False)}   # badge, token
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)
         if not chart:
             if old_fx or overlays:
                 raise Refused("unsupported-card", "status word layers over the ability")
         else:
-            odd = [fx.name for fx in old_fx if fx.kind != "pixel"]
+            odd = [fx.name for fx in old_fx if not fx_kind(fx, layer, chart)]
             if odd:
                 raise Refused("unsupported-card", f"FX layers that are no pixel layers: {', '.join(odd)}; edit in Photoshop")
-            words = kept_fx(old_fx, layer, chart)
-            if words:
-                raise Refused("unsupported-card", f"FX layers not in a chart status's style: {', '.join(words)}; edit in "
-                                                  f"Photoshop and run Effect Layers > Update all")
             hide = [overlay for overlay in overlays if getattr(chart.get(collapse(overlay.text).lower()), "styled", False)]
             stray = sorted({collapse(overlay.text) for overlay in overlays if overlay not in hide})
             if stray:
@@ -2018,6 +2174,12 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
     styles = edit_styles(layer, parts, chart) if which == "ability" else []
+    changed = [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0]
+    typed = [(a, b) for a, b in drawn if any(a < b1 and b0 < b for b0, b1 in changed)]     # badges and tokens it types
+    if typed and _overlaid(layer) and not any(BADGE_FX.fullmatch(fx_label(layer, fx)) for fx in old_fx):
+        raise Refused("unsupported-card", f"{', '.join(text[a:b] for a, b in typed)}: the Ability's overlay would paint "
+                                          f"over the badge's colours and no badge FX layer restores them; edit in "
+                                          f"Photoshop")
     fonts = FontMap(dirs=[fonts_dir], aliases=FONT_ALIASES)
     before = None
     if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
@@ -2027,20 +2189,34 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         except MissingFontError as error:
             raise Refused("font", str(error))
     splice_text(layer, text, parts)
+    glyphs = {i for a, b in drawn for i in range(a, b)}
     if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
-        now, typed = _char_styles(layer)[1], {i for m in TYPED.finditer(text) for i in range(*m.span())}
+        now = _char_styles(layer)[1]
         for part_start, part_end, fill, like in styles:
-            for a, b in _stretches([i for i in range(part_start, part_end) if like and now[i] and i not in typed]):
+            for a, b in _stretches([i for i in range(part_start, part_end) if like and now[i] and i not in glyphs]):
                 layer.set_span_style(a, b, **like)
             layer.set_span_style(part_start, part_end, fill=fill)
+    now = _char_styles(layer)[1]
+    for a, b in typed:  # in the icon font at the card's badge or token style; one the engine set in a badge's own stays
+        if not all(now[i] for i in range(a, b)):
+            look = looks[text[a] == "("]
+            if look is None:                    # no badge or token on the card: at the text's own style
+                layer.add_font(ICON_FONT)
+                look, faces = {"Font": ICON_FONT}, [ICON_FONT]
+            layer.set_span_style(a, b, **look)
+    now = _char_styles(layer)[1]
+    stray = [text[i] for b0, b1 in changed for i in range(b0, b1) if now[i] and i not in glyphs and text[i] not in " \t\r\x03"]
+    if stray:           # typed letters the icon font would draw as plain letters (replacing a badge)
+        raise Refused("unsupported-card", f"{''.join(stray)!r} would be set in the icon font, which draws no badge or "
+                                          f"icon of it; edit in Photoshop")
     for span_start, span_end, color in spans:
         layer.set_span_style(span_start, span_end, fill=color.fill)
-    for token_start, token_end in tokens:
-        layer.set_span_style(token_start, token_end, Font=icons)
+    status = {i for span_start, span_end, _ in spans for i in range(span_start, span_end)}
     for plan, target in zip(plans, targets):    # typed into a styled phrase's own words: its colour (08b1152a)
         for a, b in [span for *_, anchored, _ in target for span in anchored] if plan.fill is not None else []:
-            if a < end and start < b:
-                layer.set_span_style(a, b, fill=plan.fill)
+            if a < end and start < b:           # a status word keeps the chart's swatch (owner 2026-10-23)
+                for c, d in _stretches([i for i in range(a, b) if i not in status]):
+                    layer.set_span_style(c, d, fill=plan.fill)
     try:
         report = layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
     except MissingFontError as error:
@@ -2065,8 +2241,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         overlay.visible = False
     rebuilt, dropped, covered, notes = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets)
                                         if plans else ([], [], [], []))
-    held = [(plan.layer.name, kept_spans(plan.ranges, kept))
-            for plan in plans if plan.kind == "styled" and plan.layer.name not in dropped]
+    held = held_words(plans, kept, fx_layers(psd, layer) if plans else [])
     fresh = new_fx(text, styled, covered)
     made = _regenerate_fx(psd, layer, text, fresh, fonts, engine) if fresh else []
     fx_names = [fx.name for fx in fx_layers(psd, layer)] if which == "ability" else []
@@ -2082,7 +2257,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
-                fx_names=fx_names, notes=notes, held=held,
+                fx_names=fx_names, notes=notes, held=held, fonts=faces,
                 renamed=layer.name if own else None)
 
 
@@ -3555,17 +3730,34 @@ def _document_blocks(psd: PSDImage) -> dict:
     return {bytes(key): block.tobytes() for key, block in (psd._record.layer_and_mask_information.tagged_blocks or {}).items()}
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
+def _story_fonts(root) -> Optional[list]:
+    """The document's Txt2 FontSet (its Resources list), or None."""
+    _, _, _, _, _, spelling = _story_list(root)
+    node = root
+    for key in STORY_STYLE_KEYS[spelling]["fonts"]:
+        node = node.get(key) if hasattr(node, "get") else None
+    return node if isinstance(node, (list, ListElement)) else None
+
+
+def _story_font_name(entry, spelling: int) -> str:
+    for key in STORY_STYLE_KEYS[spelling]["font"]:
+        entry = entry[key]
+    return str(getattr(entry, "value", entry))
+
+
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
     layer keeps its TextIndex and its story holds its layer's text and styles (story_style_drift), only the edited
-    layers' stories changed, and the rest of Txt2 and every other document-wide block are the old bytes.
+    layers' stories changed, and the rest of Txt2 and every other document-wide block are the old bytes, but the
+    faces the edits added at the end of Txt2's FontSet (Edit.fonts: a badge typed on a card without the icon font).
 
     Args:
         old: The card as opened
         new: The saved card, reopened
         edited: TextIndex of each layer whose story may change (taken before the edit)
+        fonts: The faces the edits added (Edit.fonts)
 
     Returns:
         The changed stories' indices, sorted; raises Refused("bytes")
@@ -3593,9 +3785,21 @@ def gate_stories(old: PSDImage, new: PSDImage, edited) -> list:
     beyond = sorted(set(changed) - set(edited))
     if beyond:
         raise Refused("bytes", f"Txt2 stories {beyond} changed: no edit there")
+    root_a, root_b = _txt2(old), _txt2(new)
+    faces_a, faces_b = _story_fonts(root_a), _story_fonts(root_b)
+    if faces_a is not None and faces_b is not None and len(faces_b) > len(faces_a):
+        spelling = _story_list(root_b)[5]
+        added = [_story_font_name(entry, spelling) for entry in list(faces_b)[len(faces_a):]]
+        if sorted(added) != sorted(set(added)) or not set(added) <= set(fonts):
+            raise Refused("bytes", f"Txt2 FontSet gained {', '.join(added)}: no edit added them")
+        root_b = deepcopy(root_b)               # the rest compared without them
+        objects_b, _, items_b, _, _, _ = _story_list(root_b)
+        trimmed = _story_fonts(root_b)
+        while len(trimmed) > len(faces_a):
+            trimmed.pop()
     rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
             + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
-            for root, objects, items in ((_txt2(old), objects_a, items_a), (_txt2(new), objects_b, items_b))]
+            for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
     if rest[0] != rest[1]:
         raise Refused("bytes", "Txt2 changed outside its stories")
     drift = story_style_drift(new)
@@ -3652,8 +3856,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             expected[name] = value
         elif name == "types":                   # in any order: the parser lists them in layer order
             expected[name] = got.get(name) if same_types(parser, got.get(name), value) else value
-        elif name == "ability":
-            expected["ability"], got["ability"] = normalize_ability(value), normalize_ability(got.get("ability"))
+        elif name == "ability":                 # a typed token as the parser reads it in the icon font ([Fire] -> [fire])
+            expected["ability"], got["ability"] = (normalize_ability(canonical_tokens(text, parser.icons))
+                                                   for text in (value, got.get("ability")))
         elif name == "name":                    # the new title is read back below
             expected.pop("display_name", None)
             got.pop("display_name", None)
@@ -3937,7 +4142,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed)))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     after = record_map(new)
@@ -3992,7 +4197,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     start = perf_counter()
     reopened = PSDImage.open(new_psd)
-    gate_stories(old, reopened, {edit.story for edit in edits if edit.field in TEXT_FIELDS})
+    gate_stories(old, reopened, {edit.story for edit in edits if edit.field in TEXT_FIELDS},
+                 [face for edit in edits for face in edit.fonts])
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits)
     gate_fx(reopened, edits, fonts_dir, chart)
     timings["reparse"] = perf_counter() - start
@@ -4034,11 +4240,17 @@ __all__ = [
     'TEXT_BLENDS',
     'TEXT_FIELDS',
     'TemplateRow',
+    'ANCHORED',
+    'BADGE_KEYS',
+    'BADGE_TAGS',
+    'ICON_FONT',
     'ability_layer',
+    'badge_tags',
     'apply_jobs',
     'artifacts',
     'baseline',
     'body_fill',
+    'canonical_tokens',
     'canonical_type',
     'changed_range',
     'changed_region',
@@ -4068,11 +4280,15 @@ __all__ = [
     'icc_vote',
     'icon_engine',
     'icon_font',
+    'icon_style',
+    'icon_text',
+    'keep_tokens',
+    'image_icons',
     'index_icons',
     'keep_breaks',
     'keep_ends',
     'kept_chars',
-    'kept_fx',
+    'held_words',
     'kept_spans',
     'new_fx',
     'layer_records',

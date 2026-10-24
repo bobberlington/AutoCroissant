@@ -16,7 +16,6 @@ No Discord, network or config.
 from dataclasses import dataclass, field
 from os import makedirs
 from os.path import basename, getsize, join
-from re import compile as re_compile
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import Optional
@@ -27,7 +26,7 @@ from psd_tools.constants import Tag
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.font_check import FontIndex, _get, _value, check_psd
-from commands.psd_edit import Refused
+from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
 from commands.psd_regions import overlay_words
 from global_config import RULEBOOK_DIR
@@ -35,22 +34,6 @@ from global_config import RULEBOOK_DIR
 # ========================
 # Configuration
 # ========================
-def badge_tags() -> list:
-    """Every timing tag the stoogedings font draws as a badge: TTSCardMaker build_stoogedings.badge_tags(), mirrored."""
-    nums, firsts = "123456789X", ["-1", *"0123456789", "X"]
-    tags = ["OYT", "AAT", "BOT", "ENDT", "BOGT", "ENDGT", "OFS", "OS", "OD", "WOF", "Action"]
-    for n in nums:                              # the old system (rule pages)
-        tags += [f"{n}PT", f"E{n}T", f"FTE{n}T", f"{n}PGT", f"E{n}GT", f"{n}PG"]
-    for n in nums:                              # cooldowns and uses (2026-10-21)
-        tags += [f"{n}CD", f"{n}GCD", f"{n}U"]
-    for cd in ("CD", "GCD"):
-        tags += [f"{a}/{b}{cd}" for a in firsts for b in nums]
-    return tags
-
-
-BADGE_TAGS = tuple(badge_tags())
-BADGE_KEYS = {tag.lower(): tag for tag in BADGE_TAGS}   # the font matches any letter case (TTSCardMaker 6e50c3ee)
-PAREN = re_compile(r"\(([^()\r\n\x03]{1,12})\)")
 SCOPE = ("creature", "aux creature", "minion", "item", "aux item", "nme")   # the ledger's 651
 STARS_KINDS = ("minion", "aux item", "nme")     # stars drawn from a Stars group (L14)
 EXACT = {"ability": "Ability", "name": "Name"}  # R11: Text/Ability, Text/Name
