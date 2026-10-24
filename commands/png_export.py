@@ -7,7 +7,8 @@ stored composite is never written: it is only a cross-check that can refuse (the
 change against Photoshop's own image). A PSD saved without one (no Maximize Compatibility, G2) gets its PNG anyway (owner,
 2026-10-24) under the bake's own gates alone: the baseline, every text and stat row the parser reads differently drawn
 with a change, the merge's shape and region; the Export is `unchecked` and the guards tell "no stored image to
-cross-check". Beside its PNG within the bar it keeps the PNG, told (KEPT; default 2026-10-24, owner to confirm). A refusal is data (an Export with outcome "refused" and the line card makers read).
+cross-check". Beside its PNG with at most KEPT_PX px past BESIDE_CUT it keeps the PNG, told (KEPT; default 2026-10-24,
+owner to confirm). A refusal is data (an Export with outcome "refused" and the line card makers read).
 As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
 written and told (Export.misses). A card drawn whole (new, or beside its PNG) is held to the floor per text and stat
 box too, and a text box drawn blank refuses (the bake's blank render). A stale old PNG
@@ -53,6 +54,7 @@ from commands.psd_regions import fx_pad, stat_rows
 # ========================
 TOL = 2                                         # |diff| a pixel may show and still be unchanged (ICC rounding)
 BESIDE_CUT = 8                                  # new PSD beside its PNG: within this, the PNG is current (owner)
+KEPT_PX = 300                                   # G2 beside: px past BESIDE_CUT up to which the PNG is kept, told (fork noise)
 VOLATILE = (b"shmd", b"SoLd", b"PlLd", b"TySh", b"lnsr")   # blocks Photoshop rewrites on every save (2.2)
 DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
@@ -60,7 +62,7 @@ OUTCOMES = ("re-exported", "current", "refused", "error")
 EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
 UNCHECKED = "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"   # told
 KEPT = ("PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, "
-        "too little to tell a change from its own drawing noise; if the PNG is out of date, " + EXPORT)   # told
+        "which may be its own drawing noise; if the PNG is out of date, " + EXPORT)   # told
 G2_BLANK = "PNG not made: the bot draws nothing for {what} (and the PSD has no stored image to check it against); " + EXPORT
 G2_MODE = "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; " + EXPORT
 G5 = "PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); " + EXPORT
@@ -552,7 +554,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         (why, gate). numbers: records, region, render_s (CPU seconds), composite_px (D), where (D outside R), png_vs_psd,
         outside (G5), baseline and png_vs_old_psd (G5/G6), cross (G6), png_ahead; with no stored image reread, and
         beside png_vs_render (the new PSD drawn against its PNG: where the PNG takes the render, never a refusal) and
-        kept (within the bar: the PNG kept, its px past BESIDE_CUT)
+        kept (at most KEPT_PX: the PNG kept, its px past BESIDE_CUT)
     """
     result = Export("current")
     if old_png.size != (new.width, new.height) or old_png.mode not in ("RGB", "RGBA"):
@@ -744,9 +746,11 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
     each text and stat row reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the
     old PNG: past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
-    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) within the bar, else it takes
-    the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before its
-    PSD is current (png_ahead).
+    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) up to KEPT_PX past it, else it
+    takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
+    its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render or with
+    its bad pixels under PARITY_BAD_MAX and the old render past the bar (a change the fork draws a few levels off:
+    Pandamonium's gradient).
     """
     result = Export("current", unchecked=True)
     if old is None:
@@ -771,9 +775,11 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
         return result
     crop = old_png.crop(region)
     # the PNG already shows the pushed PSD (pushed before it): over F nearer the new render than the old, within the bar
+    # of it, or its bad pixels under the bar with the old render past it (a stale PNG is within the bar of the old)
     changed_box = moved[region[1]:region[3], region[0]:region[2]]
     to_new, to_old = _stats(_diff(render, crop)[changed_box]), _stats(_diff(base, crop)[changed_box])
-    if _within(to_new) and to_new["mean"] < to_old["mean"]:
+    shown = _within(to_new) or (to_new["bad_pct"] <= psd_edit.PARITY_BAD_MAX and not _within(to_old))
+    if shown and to_new["mean"] < to_old["mean"]:
         result.numbers["png_ahead"] = {"new": to_new, "old": to_old}
         return result
     result.numbers["baseline"] = _stats(_diff(base, crop))
@@ -794,8 +800,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
 def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
     """_unchecked for a new PSD beside an existing PNG. No old PSD, so no baseline: the render of the whole card against
     the PNG (png_vs_render) holds the author's change too, so it only finds where the PNG takes the render; it is never a
-    drawing miss and never refuses. Within the bar the PNG is kept (numbers["kept"], told). The gate is every text
-    drawn (_texts_drawn)."""
+    drawing miss and never refuses. Up to KEPT_PX px past BESIDE_CUT the PNG is kept (numbers["kept"], told). The gate is
+    every text drawn (_texts_drawn)."""
     icc = psd_edit.export_icc(new, old_png)
     result.icc, result.writer = icc_mode(new, icc), "new"
     box = (0, 0, new.width, new.height)
@@ -806,9 +812,9 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
         result.numbers["png_ahead"] = {"card": result.numbers["png_vs_render"]}
         return result
     moved = diff > BESIDE_CUT
-    # default 2026-10-24, owner to confirm: within the bar, kept and told (KEPT), never redrawn with the fork's noise;
-    # a small stale edit stays too (Dirty Bed, Springtrap, Defcon Panda), told the same
-    if _within(result.numbers["png_vs_render"]):
+    # default 2026-10-24, owner to confirm: a few hundred px, the fork's noise, kept and told (KEPT); past it redrawn
+    # (the replayed stale edits, 1,684 px and up, land within the bar of the author's export)
+    if int(moved.sum()) <= KEPT_PX:
         result.numbers["kept"] = int(moved.sum())
         return result
     out = np.array(old_png)
@@ -925,6 +931,7 @@ __all__ = [
     'DILATE',
     'Export',
     'KEPT',
+    'KEPT_PX',
     'OUTCOMES',
     'TOL',
     'UNCHECKED',

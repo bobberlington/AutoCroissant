@@ -38,6 +38,8 @@ DEFCON_PANDA = ("9ea7b16710613bd532ceb56e09238bf99a86d5e6", "9e8da0ed097e6dd21cc
                 "a558861e09df8606038cf9b3218694a12076b8b8")                                              # 1b4f36a0
 CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3ba4150ffbe9cca3a5f2ced0",
                   "e35deab6a8bdc6d760e73b7363998f6d20c17111")                                            # 100511d3
+PANDAMONIUM = ("02e54e182501c45c4483b57756ea083321c5fa73", "be1760ebc808be51e51a88853a77b66d33cd43fe",
+               "85f8030a8b985e0b739a3e3c5000093ce449dd38")                                           # 38c55bd3: the author's PNG
 GREEN_MAGE = ("d17ddacd178eb7353dab252651855da1e2d995f7", "cf9e880710d77ad3b10dfa6690a2a285b5d1b9da",
               "09e2dce6f6ed70454f1e52604015cc41678763ff", "41c2439d09d0eb532995338d2646ed7556b52eac")   # 45cf8746: ATK 6, bars only
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
@@ -299,26 +301,28 @@ def test_a_small_recolour_beside_its_png_is_rendered(tmp_path):
     assert found.outcome != "current" and "png_ahead" not in found.numbers
 
 
-def test_g2_keeps_a_png_beside_within_the_bar_and_tells(tmp_path, monkeypatch):
-    """Default 2026-10-24, owner to confirm: with no stored image, a PNG within the bar of the fork's whole-card render
-    but past BESIDE_CUT (the fork's own noise beside a current PNG, or a small stale edit: they look alike) is kept and
-    told (numbers["kept"], KEPT), never redrawn; past the bar it is redrawn where it differs past the cut."""
-    new = fixture_psd(tmp_path, card(), "new")
+def test_g2_keeps_a_png_beside_up_to_kept_px_and_tells(tmp_path, monkeypatch):
+    """Default 2026-10-24, owner to confirm: with no stored image, a PNG at most KEPT_PX px past BESIDE_CUT of the fork's
+    whole-card render (its own noise beside a current PNG) is kept and told (numbers["kept"], KEPT), never redrawn; past
+    KEPT_PX it is redrawn where it differs past the cut, within the bar or not (review of 2026-10-24: the whole-card bar
+    kept real edits of up to 13,496 px stale)."""
+    new = fixture_psd(tmp_path, card(size=(300, 400)), "new")
     new.has_preview = lambda: False
     monkeypatch.setattr(pe, "_texts_drawn", lambda *a: pytest.fail("checked a PNG it keeps"))
-    noisy = card()
+    noisy = card(size=(300, 400))
     ImageDraw.Draw(noisy).rectangle((40, 60, 44, 64), fill=(200, 30, 50))         # 20 levels over 25 px
     kept = pe.export(None, new, noisy)
     assert (kept.outcome, kept.unchecked, kept.data, kept.changed_px) == ("current", True, b"", 0)
-    assert kept.numbers["kept"] == 25 and "png_ahead" not in kept.numbers and pe._within(kept.numbers["png_vs_render"])
-    assert "png_ahead" in pe.export(None, new, card()).numbers                 # no pixel past 8: current, nothing told
+    assert kept.numbers["kept"] == 25 and "png_ahead" not in kept.numbers
+    assert "png_ahead" in pe.export(None, new, card(size=(300, 400))).numbers  # no pixel past 8: current, nothing told
     monkeypatch.undo()
-    stale = card()
-    ImageDraw.Draw(stale).rectangle((40, 60, 49, 69), fill=(200, 30, 90))          # 60 levels over 100 px: past the bar
-    redrawn = pe.export(None, new, stale)
-    assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 100)
-    assert "kept" not in redrawn.numbers and not pe._within(redrawn.numbers["png_vs_render"])
-    assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card()).tolist()
+    for levels in (20, 60):                             # 800 px: within the bar (20 levels), past it (60)
+        stale = card(size=(300, 400))
+        ImageDraw.Draw(stale).rectangle((40, 60, 59, 99), fill=(200, 30, 30 + levels))
+        redrawn = pe.export(None, new, stale)
+        assert (redrawn.outcome, redrawn.unchecked, redrawn.changed_px) == ("re-exported", True, 800), levels
+        assert "kept" not in redrawn.numbers and pe._within(redrawn.numbers["png_vs_render"]) == (levels == 20)
+        assert np.asarray(pe.open_png(redrawn.data)).tolist() == np.asarray(card(size=(300, 400))).tolist(), levels
 
 
 def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_moved(tmp_path, monkeypatch):
@@ -677,17 +681,20 @@ def test_a_bot_bake_is_drawn(clone):
 @fork
 def test_g2_real_cards_reread_the_parser_and_match_the_checked_png(clone):
     """G2 on real pushes (no stored image): the parser's re-read finds the change (Dirty Bed's Ability, Springtrap's
-    Name), and the PNG made is the checked export's, pixel for pixel (the composite only ever cross-checks)."""
+    Name), and the PNG made is the checked export's, pixel for pixel (the composite only ever cross-checks). Beside its
+    stale PNG (thousands of px past BESIDE_CUT, within the whole-card bar) the PSD is redrawn within the bar of the
+    author's export, never kept stale (review of 2026-10-24)."""
     for shas, what in ((DIRTY_BED, ["the Ability text"]), (SPRINGTRAP, ["the Name text"])):
-        old, new, old_png, _ = pair(clone, shas)
+        old, new, old_png, truth = pair(clone, shas)
         checked = pe.export(old, new, old_png)
         new.has_preview = lambda: False
         found = pe.export(old, new, old_png)
         assert (found.outcome, found.unchecked, found.numbers["reread"]) == ("re-exported", True, what), what
         assert "cross" not in found.numbers and np.array_equal(np.asarray(found.image), np.asarray(checked.image)), what
-        beside = pe.export(None, new, old_png)          # beside its stale PNG, within the bar: kept, told (the cost)
-        assert (beside.outcome, beside.unchecked, beside.data) == ("current", True, b""), what
-        assert pe._within(beside.numbers["png_vs_render"]) and beside.numbers["kept"] > 5000, what
+        beside = pe.export(None, new, old_png)
+        assert (beside.outcome, beside.unchecked) == ("re-exported", True) and "kept" not in beside.numbers, what
+        assert pe._within(beside.numbers["png_vs_render"]) and beside.changed_px > pe.KEPT_PX, what
+        assert psd_edit._within_bar(psd_edit._measure(beside.image, truth)), what
 
 
 def _blind(monkeypatch, real):
@@ -713,7 +720,7 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
     found = pe.export(old, new, old_png)                                  # the Ability drawn as it was
     assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the Ability text"))
     _blind(monkeypatch, real)
-    older = old_png.copy()                              # past the bar, else kept unchecked (default 2026-10-24)
+    older = old_png.copy()                              # past KEPT_PX, else kept unchecked (default 2026-10-24)
     ImageDraw.Draw(older).rectangle((0, 0, 399, 399), fill=(0, 0, 0))
     for found in (pe.export(None, new, older), pe.export_new(new)):       # beside an older PNG; a new card
         assert (found.outcome, found.gate, found.data) == ("refused", "G2", b"") and found.unchecked
@@ -784,10 +791,25 @@ def test_a_new_psd_beside_the_authors_png_is_current(clone, monkeypatch):
 
 
 @fork
+def test_a_png_pushed_before_its_psd_with_no_stored_image_is_current(clone):
+    """Pandamonium 38c55bd3 with the author's export pushed first and the new PSD's stored image dropped (G2): the fork
+    draws its gradient Ability up to 9 levels off (mean 3.15 over F, no bad pixel), the old render 82% bad, so the PNG
+    is current (png_ahead), as on the checked path; it was re-exported over the author's export with a false miss note
+    (review of 2026-10-24)."""
+    old, new, authors, _ = pair(clone, PANDAMONIUM)
+    new.has_preview = lambda: False
+    found = pe.export(old, new, authors)
+    assert (found.outcome, found.unchecked, found.data, found.misses) == ("current", True, b"", {})
+    ahead = found.numbers["png_ahead"]
+    assert not pe._within(ahead["new"]) and ahead["new"]["bad_pct"] == 0 and not pe._within(ahead["old"]), ahead
+
+
+@fork
 def test_g2_keeps_the_authors_png_beside_its_psd(clone):
     """The same with no stored image (default 2026-10-24, owner to confirm): the fork's whole-card render passes 8 levels
-    beside the author's export (Defcon Panda's shadow; Dirty Bed's stays within 8), within the bar, so the PNG is kept and
-    told, not redrawn with the fork's noise."""
+    beside the author's export over a few px (Defcon Panda's shadow, 33; Dirty Bed's stays within 8), so the PNG is kept
+    and told, not redrawn with the fork's noise. Past KEPT_PX (Pandamonium's gradient, 1,589 px) it is redrawn, within
+    the bar of the author's export."""
     seen = {}
     for psd, png in ((DIRTY_BED[1], DIRTY_BED[3]), (DEFCON_PANDA[1], "60bc9b5a4e2b271dc1c74e8eaad3ce6ef626c482")):
         new = pe.open_psd(blob(clone, psd))
@@ -795,7 +817,12 @@ def test_g2_keeps_the_authors_png_beside_its_psd(clone):
         kept = pe.export(None, new, pe.open_png(blob(clone, png)))
         assert (kept.outcome, kept.unchecked, kept.data) == ("current", True, b""), psd
         seen[psd] = kept.numbers["png_vs_render"]["max"], kept.numbers.get("kept")
-    assert seen[DEFCON_PANDA[1]][0] > pe.BESIDE_CUT and seen[DEFCON_PANDA[1]][1] > 0, seen
+    assert seen[DEFCON_PANDA[1]][0] > pe.BESIDE_CUT and 0 < seen[DEFCON_PANDA[1]][1] <= pe.KEPT_PX, seen
+    new, authors = pe.open_psd(blob(clone, PANDAMONIUM[1])), pe.open_png(blob(clone, PANDAMONIUM[2]))
+    new.has_preview = lambda: False
+    redrawn = pe.export(None, new, authors)
+    assert (redrawn.outcome, redrawn.unchecked) == ("re-exported", True) and redrawn.changed_px > pe.KEPT_PX
+    assert psd_edit._within_bar(psd_edit._measure(redrawn.image, authors))
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

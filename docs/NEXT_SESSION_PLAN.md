@@ -160,10 +160,13 @@ has only the card's own `author`, so the website reads the tag's, else the recor
   pyoxipng marker takes Linux x86_64 at any Python), R7 left to font-check, G2 rendered anyway ("no stored image to
   cross-check"), the quiet window as the environment `card-guards-quiet` (check / post / finish jobs). PUSH_GUARDS.md §20
   has the design, the Mac's cold-install numbers and the landing order.
-- [ ] Owner to confirm (§20.4, defaults of 2026-10-24): a new PSD with no stored image beside a PNG within the bar of
-      the render keeps the PNG and tells it (`png_export.KEPT`; never redrawn with the fork's noise, so Dirty Bed's and
-      Springtrap's small stale edits stay stale, told); the guard-1 line "the new PSD drawn against its PNG: bad N%" is
-      dropped from the post (plan.json keeps the number).
+- [ ] Owner to confirm (§20.4, defaults of 2026-10-24): a new PSD with no stored image beside a PNG at most 300 px
+      past 8 levels of the render keeps the PNG and tells it (`png_export.KEPT`/`KEPT_PX`: the fork's noise; past it
+      redrawn: the 34-commit replay's stale edits, 1,684 px and up, land within the bar of the author's export, and
+      three current PNGs noisier than 300 px are rewritten needlessly; a stale edit of 300 px or less stays, told); the
+      guard-1 line "the new PSD drawn against its PNG: bad N%" is dropped from the post (plan.json keeps the number).
+- [ ] Undoing the environment: only with no push run waiting (`gh run list ... --status waiting`); a DELETE fails
+      every post job waiting in it (§20).
 - [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
 - [ ] Then the owner creates the environment (§20's `gh api` command; nothing ran it), once the push runs checked before
       AutoCroissant landed have finished (main's old Land behind the timer would miss a push made during the check).

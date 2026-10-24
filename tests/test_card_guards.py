@@ -874,8 +874,8 @@ def test_a_numbered_png_pushed_in_the_window_withdraws_its_refusal(tmp_path, mon
 
 
 def test_a_png_kept_beside_a_psd_without_a_stored_image_is_told():
-    """Default 2026-10-24, owner to confirm: a new PSD with no stored image beside a PNG within the bar of the fork's
-    render keeps the PNG (png_export's numbers["kept"]); the post tells it (KEPT, with the px past the cut) on Discord
+    """Default 2026-10-24, owner to confirm: a new PSD with no stored image beside a PNG at most KEPT_PX px past
+    BESIDE_CUT of the fork's render keeps the PNG (png_export's numbers["kept"]); the post tells it (KEPT, with the px past the cut) on Discord
     and as the comment's guard-1 line, nothing written."""
     exported = cg._export_dict(pe.Export("current", unchecked=True, numbers={"kept": 33, "png_vs_render": {"max": 17}}))
     line = pe.KEPT.format(px=33)
