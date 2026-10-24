@@ -590,7 +590,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_typed_star_is_set_in_the_icon_font`, `test_a_typed_star_is_cut_into_the_badge_layer`,
   `test_reparse_reads_a_star_outside_the_icon_font_as_typed`, `test_follow_fx_refuses_an_edit_inside_an_anchored_phrase`,
   `test_an_edit_inside_an_own_style_phrase_refuses`, `test_an_fx_phrase_the_ability_lacks_refuses`.
-  **Phase 2 review, round 2 (2026-10-23 night, same branch):** a typed copy joining an `"own"` or `"styled"` layer kept
+  **Phase 2 review, round 2 (2026-10-23 night, same branch; origin/main be280e6 merged in):** a typed copy joining an `"own"` or `"styled"` layer kept
   the body's fill, which its stroke or shadow alone draws over (Palace of Shadow's blue "+2 DEF" copied grey, Morpho
   Knight's red "+2/4/6 ATK" yellow, every gate passing): it takes the phrase's colour, and gate `gate_fx_colours`
   checks each such layer covers letters only of its words' old colours; a moved own-style phrase (deleted and typed
