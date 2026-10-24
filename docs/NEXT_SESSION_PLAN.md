@@ -116,8 +116,11 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       Palace of Shadow, Fire/Ice Staff, Flameblade) could be rebuilt in their own style too (the 2026-10-21 rule refuses
       them): owner.
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
-      rcache wiring in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the
-      Photoshop oracle loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).
+      now only its bake half (the data-build half is on main since 4dcf33f, guarded by `tests/test_open_once.py`):
+      after `work/fx-rebuild` lands, `psd_edit.parse_card` takes an open PSD, `gate_reparse` gets bake's `reopened`
+      and card_bake opens the old PSD once (twice per call now; check `classify` leaves the PSD alone); rcache wiring
+      in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the Photoshop oracle
+      loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).
 - [ ] Extraction campaign: the structural candidate (blank-but-present Ability = no problem: ABILITY_EXCLUSIONS 21 -> 0),
       the gap-type validator, idea 14 (orphaned-FX validator), S9 (star moves move PSD + PNG), fix-on-push for 0-pixel
       classes, Task 3c (effect layers on pushes), L11 rest, L15 class D renderer.
