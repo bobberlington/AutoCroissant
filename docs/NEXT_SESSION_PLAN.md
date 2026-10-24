@@ -131,7 +131,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       shares; no card on main has one), gate `unshaped_icons` (each `icon_text` span shapes to one icon-font cluster;
       0 of 381 icon-font Abilities fail it), a whole ability deleted on an FX card refuses as blank (`reparse`: ABILITY
       TEXT NOT FOUND, its layers deleted; it said `styled-word`), and a bake opens each PSD once (`parse_card` takes the
-      open PSD, `gate_reparse` the reopened one, `apply_jobs` edits a copy; `test_a_bake_opens_each_psd_once`).
+      open PSD, `gate_reparse` the reopened one, `apply_jobs` edits a copy; `test_a_bake_opens_each_psd_once`); full suite after it (4563194): 1550 passed, 12 skipped, 0 failed.
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
