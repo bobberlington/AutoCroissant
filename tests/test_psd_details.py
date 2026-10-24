@@ -126,7 +126,7 @@ def test_header_boxes(records, clone):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
     lich = pd.gather(str(clone / LICH_KING), LICH_KING, "The Lich King", None, vocab)["header"]
-    assert list(lich["stars"]["refused"]) == ["*"] and "folder sets them" in lich["stars"]["refused"]["*"]
+    assert list(lich["stars"]["refused"]) == ["*"] and lich["stars"]["refused"]["*"].endswith("folder sets them")
     assert "6" not in lich["stars"]["at"] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
     freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
     assert freezer["stars"] is None and [t["name"] for t in freezer["types"]["row"]] == ["field"]

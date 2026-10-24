@@ -339,7 +339,7 @@ def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
             at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, _icon_parser(vocab)), container, types, size)
             continue
         except Refused as e:
-            refused[str(n)] = sub(r"^stars: ", "", e.why)
+            refused[str(n)] = sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", e.why)   # no ledger codes
         if plain and n <= len(order):
             at[str(n)] = [_ints(unit.centre) for unit in order[:n]]
         elif plain:
