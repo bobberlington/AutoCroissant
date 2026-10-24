@@ -279,6 +279,17 @@ def test_panels_hide_and_empty_states(tmp_path):
     assert "Edited: author 3 · parser notes checked 1" in new
 
 
+def test_balance_shows_the_biggest_swing(tmp_path):
+    """P1's biggest swing: its card, the signed change and month, beside the newest rows."""
+    out = node(tmp_path, """
+const x = { byId: new Map([["big", { id: "big", name: "Big" }]]), month: ts => `M${ts}` };
+const rows = ["a", "b", "c", "d", "e"].map((id, i) => [id, "buff", 1, 200 + i]);
+const html = pf.balancePanelHtml({ bal: { buff: 3, nerf: 3, shift: 0, madeBuff: 0, madeNerf: 0, swing: ["big", -9, 100], recent: rows } }, x);
+out({ text: text(html), html });
+""")
+    assert "Biggest swing: Big −9 · M100" in out["text"] and 'data-card="big"' in out["html"]
+
+
 def test_archived_tags(tmp_path):
     """renamed_to / moved_to / neither: Renamed with "renamed to" its card, Retired, Deleted; the years it lived."""
     out = node(tmp_path, """

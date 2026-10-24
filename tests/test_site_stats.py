@@ -84,7 +84,7 @@ def an():
 
 def test_distributions_page_only_past_ten(tmp_path):
     """0-10 always; a pager only on a stat with values past 10 (ATK 12: 11-20; SPD 20 and 35: 11-20, 31-40); one y
-    scale per stat; the table lists 0-10 and each higher value, no "21+"; ctx.distPage opens a page."""
+    scale per stat, a non-zero column at least 3 px and counts over pages above 0; the table lists 0-10 and each higher value, no "21+"; ctx.distPage opens a page."""
     out = node(tmp_path, """
 const cards = fixture().filter(c => c.type === "creature");
 cards[0].atk = 12; cards[1].spd = 20; cards[2].spd = 35;
@@ -98,7 +98,9 @@ out({ pages: ["hp", "atk", "spd"].map(pages), pager: ["hp", "def", "atk", "spd"]
   p0: labels(pageOf(html, "spd", 0)[1]), atk1: labels(pageOf(html, "atk", 1)[1]),
   ticks: [0, 1, 3].map(p => topTick(pageOf(html, "spd", p)[1])), hidden: pageOf(html, "atk", 1)[0].includes("hidden"),
   values: rows(html.split('class="view-table"')[1]).map(r => r[0]),
-  opened: [panel(opened, "atk").match(/dist-range">([^<]*)/)[1], pageOf(opened, "atk", 1)[0].includes("hidden"), pageOf(opened, "atk", 0)[0].includes("hidden")] });
+  opened: [panel(opened, "atk").match(/dist-range">([^<]*)/)[1], pageOf(opened, "atk", 1)[0].includes("hidden"), pageOf(opened, "atk", 0)[0].includes("hidden")],
+  lone: [...pageOf(html, "atk", 1)[1].matchAll(/<text class="val"[^>]*>([^<]*)</g)].map(m => m[1]), p0vals: pageOf(html, "spd", 0)[1].includes('class="val"'),
+  tops: [...pageOf(html, "atk", 1)[1].matchAll(/class="mark" d="M[^Q]*Q[\\d.]+,([\\d.]+)/g)].map(m => +m[1]) });
 """)
     assert out["pages"] == [[0], [0, 1], [0, 1, 3]]
     assert out["pager"] == [False, False, True, True]
@@ -106,6 +108,7 @@ out({ pages: ["hp", "atk", "spd"].map(pages), pager: ["hp", "def", "atk", "spd"]
     assert len(set(out["ticks"])) == 1 and out["hidden"]
     assert out["values"] == [str(v) for v in range(11)] + ["12", "20", "35"]
     assert out["opened"] == ["11–20", False, True]
+    assert out["lone"] == ["1"] and not out["p0vals"] and len(out["tops"]) == 1 and out["tops"][0] <= 144 - 3   # a lone card shows
 
 
 def test_cooldown_update_is_gone(tmp_path, an):
