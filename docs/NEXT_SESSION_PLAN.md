@@ -117,13 +117,22 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
       review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
       layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
-      a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Land it
-      after a clean review and deploy (psd_parser.py changed: pull + Cython rebuild + restart on the jetson). q6 (own
+      a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Round 2
+      (same branch): a typed copy joining an own-style layer takes its words' colour (Palace of Shadow's "+2 DEF"
+      printed grey), gate `gate_fx_colours`; a moved own-style phrase and letters glued onto one refuse; the parser's
+      `#0` change reverted. Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
       that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
-      Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow), a token's
-      `:sticker`/`:tint` variant typed on the website counted redundant (the parser reads none), the leading space of
-      15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test).
+      Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's
+      `[dark:sticker]` prints `[dark]` too: keep_tokens can't pair moved text), a token's `:sticker`/`:tint`/`:glow`
+      variant typed on the website counted redundant (classify compares canonical_tokens, which fold the variants: the
+      edit leaves Card Edits.json with no bake and no verdict, a `:glow` one too, which should refuse `font`; the token
+      picker offers these edits), words typed in place of a badge or icon refused (Pizza's "(1CD)" -> "Once:", Gasoline's
+      "[fire] type" -> "fire type": edit_styles keeps the icon font; near() could give the body style), the leading space of
+      15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test), a
+      retyped token taking the card's commonest icon style (ruling C: Plague's skull 41.17 -> 52.03 pt when swapped).
+      Not this branch's: appended text can run below the card's text panel artwork (the overflow gate checks the
+      engine's box and the canvas: Autopsy Report with " Costs 5★ and [fire:tint]." adds a third line under the panel).
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; unblocked).
 - [x] FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow,
       Fire/Ice Staff, Flameblade) are rebuilt in their own style (owner 2026-10-23 ~17:40): built on `work/fx-rebuild`

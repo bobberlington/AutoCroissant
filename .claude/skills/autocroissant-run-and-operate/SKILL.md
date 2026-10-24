@@ -616,9 +616,12 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   or they are no longer its status: "'Frozen In Time' is no Frozen"), renamed (a phrase dropped or renumbered) or cut
   again clean. Since 2026-10-23 (owner) an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke,
   Mr Krabs' `2T`) is rebuilt in its own style too, staying on its own words; a typed word joining such a layer is told
-  ("... also covers the typed 'Smoldering', in its own style"). Refused (review, 2026-10-23): where a layer would move
-  to other words, e.g. on Monkey D Goofy a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability
-  would move the layer Ability FX: 1#1 off the '1' of '3T1'"); a "1" typed before its "1" renames the layer `1#2`.
+  ("... also covers the typed 'Smoldering', in its own style"; "moved to" when its old words left) and takes the
+  phrase's colour (a stroke alone shows the fill). Refused (review, 2026-10-23): where a layer would move to other
+  words, e.g. on Monkey D Goofy a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability would move
+  the layer Ability FX: 1#1 off the '1' of '3T1'"), an own-style phrase deleted and typed elsewhere (Palace of Shadow's
+  "+2 DEF" moved) or glued into a longer word ("Despair" made "Despairing"); a "1" typed before its "1" renames the
+  layer `1#2`.
   The commit line and the website's verdict reason carry the FX notes too.
 - **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
   font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at

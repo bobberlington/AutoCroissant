@@ -213,6 +213,33 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       variant); the leading space of 15 Abilities (Elmadan's) is dropped by any ability edit (`keep_ends` keeps the blank
       paragraphs, not the indent, by its test); one bake with the icon font added to a plain card's FontSet opened in
       Photoshop before landing.
+  - **Phase 2 review, round 2 (same branch, 2026-10-23 night):** one silent wrong bake fixed and two refusals added
+    (dry census with every gate on copies of TTSCardMaker main's 18 cards with an own-style FX layer, fork
+    `cards-20261023c`; `~/Documents/Tools/wt/fxr3-scratch/`: `census_bake.py`, `runs/{own,glued}.json`, crops `crops/`):
+    - A typed copy of an own-style phrase joined its layer (Update all) but kept the body's fill, which a stroke or
+      shadow alone draws over: Palace of Shadow's "Allies get +2 DEF." printed its copy grey (the phrase is blue under
+      a Stroke), Morpho Knight's typed "+2/4/6 ATK" yellow (red under a Drop Shadow and Stroke), every gate passing. It
+      takes the phrase's colour now (refused when the layer's letters are in more than one colour: none on main), and
+      a new `gate_fx` check (`gate_fx_colours`) refuses an own-style layer over letters of a colour its words lacked.
+      Census, the first FX phrase typed again: the same 12 bakes and 6 refusals; Palace's copy now blue.
+    - An own-style phrase deleted and typed elsewhere (Palace's "+2 DEF" moved, or its "[dark]: +2 DEF" line moved to
+      the end) moved the layer onto the typed copy, grey, told "also covers": refused now (the layer stays on the
+      characters it covered). Census, the first FX phrase deleted and typed at the end: 12 bake (where difflib keeps
+      the moved word the layer follows it; the L7 status layers whose words left are told "moved to the typed ..."), 4
+      refuse as moved (The Watcher, Computer Virus, Mr Krabs, Palace of Shadow), 2 overflow.
+    - Letters glued on where a word of an own-style phrase ended ("Despair" made "Despairing": "ing" plain beside the
+      styled half, untold): refused. Census, "ing" glued onto the first FX phrase: 9 refuse (8 as half a word, among
+      them Clot Gold's "Moneying" and Goofy's "3T1ing"; Morpho Knight as a move), 9 bake (the 8 status layers drop
+      their word, told; Mr Krabs' "2T" of "2T1" ended no word).
+    - The other edits on the 18 cards (no-op, a plain word deleted, " Die." appended, the first FX phrase dropped)
+      give the same results and notes as before; PNGs as the branch head's (probes on Goofy and The Watcher).
+    - Also: the FX notes reach a partial bake's refused verdict; the bake's icon vocabulary keeps only the manifest's
+      icons (no change on main: every Types/ name is in it); the parser's `#0` change reverted (no Cython rebuild).
+    - Held: a moved line's `[dark:sticker]` prints `[dark]` (keep_tokens can't pair moved text; the sticker question);
+      words typed in place of a badge or icon refuse (edit_styles keeps the icon font: Pizza's "(1CD)" -> "Once:",
+      Gasoline's "[fire] type" -> "fire type", The Hive, Mini Doomer's "(BOT)" -> "Start:"); a variant-only token edit
+      is dropped as redundant (`:glow` too), the token picker offering it; a retyped token takes the card's commonest
+      icon style (ruling C).
 
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured

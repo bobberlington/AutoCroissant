@@ -315,17 +315,25 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    ambiguous; deleted, their style was lost and the report said "its words left the ability"), and so does Clot
    Gold's "2T1" made "2T2" (its styled `1 Become Back Money` was deleted, told, and a chart-style one made); an FX
    layer phrase the ability lacks before the edit ("Frozen In Time #1", a space before "#": no number to the JSX)
-   refuses too (none on main; it crashed `plan_fx`).
+   refuses too (none on main; it crashed `plan_fx`). So does an `"own"` or `"styled"` phrase the edit deletes and
+   types again elsewhere (Palace of Shadow's "+2 DEF" moved, or its whole line: the layer would leave every character
+   it covered for typed ones; review 2026-10-23, round 2) and one the edit glues letters onto where a word of it ended
+   (The Watcher's "Despair" made "Despairing": "ing" printed plain beside the styled half; Goofy's "3T1" made "3T10").
    A typed word that joins an unnumbered layer whose style is no chart status's for it (an `"own"` or `"styled"` layer,
    or an L7 `"status"` layer in its old overlay's style: `FxPlan.own_style`) is told: "Ability FX: Smoldering also
-   covers the typed 'Smoldering', in its own style". A
+   covers the typed 'Smoldering', in its own style", or "moved to the typed 'Blazing'" when none of the layer's old
+   words stayed (Doctor Zomboss's Blazing swapped with Frostbite). A
    rebuilt layer keeps its own style, the chart's or not (q6: own style kept, unattended call 2026-10-23, owner to
    confirm; the owner's standing ruling is to give the developers freedom and handle their choices generally): the 8
    L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
    a new layer takes the chart's (below). Text typed into a `"styled"` or `"own"` layer's own
-   words (a match holding characters it covered) takes the phrase's colour, its first drawn run (08b1152a), but a status
-   word among them keeps the chart's swatch (the owner's 2026-10-23 ruling); a new match keeps the colour of what it
-   replaces. A styled status word no rebuilt layer holds whole (its status's layer on
+   words (a match holding characters it covered), or a typed copy that joins it, takes the phrase's colour, its first
+   drawn run (08b1152a), but a status word among them keeps the chart's swatch (the owner's 2026-10-23 ruling). A
+   stroke or shadow alone draws over the words' own fill: a copy of Palace of Shadow's blue "+2 DEF" printed in the
+   body's grey and one of Morpho Knight's red "+2/4/6 ATK" in yellow, every gate passing (review 2026-10-23, round 2).
+   A copy joining a layer whose letters are in more than one colour refuses (none on main). Gate `gate_fx` checks it
+   independently (`gate_fx_colours`): each `"own"` or `"styled"` layer, matched by layer id, covers letters (status
+   words apart) of only the colours its words had before the edit. A styled status word no rebuilt layer holds whole (its status's layer on
    exactly it, or a `"styled"` phrase around it: Clot Gold's `1 Become Back Money`; one a layer covers in part refuses,
    where counting any overlap left " In Time" without a layer) gets a new one (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
    "2Blazing", beside a whole-word one has no JSX name and refuses `unsupported-card`), cut the same way, the
@@ -538,7 +546,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_status_fx_lands_only_on_its_status_words`, `test_new_fx_counts_a_word_covered_only_when_held_whole`,
   `test_kept_spans_need_every_character_kept`, `test_status_fx_layer_leaves_a_longer_status_word` (Snow Bunny, with
   `gate_status_words`), `test_numbered_status_fx_layers_stay_on_their_words` (Standstill; line 2's PNG is the no-op
-  bake's). Merged with origin/main (1bf6892, then cc3cd8c): its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
+  bake's). Merged with origin/main (1bf6892, then cc3cd8c; later merges in the phase 2 paragraphs): its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
   declared name.
   **Phase 2 (2026-10-23 evening, owner's answers of ~17:40, same branch):** (1) FX layers in no chart status's style are
   rebuilt in their own style (`fx_kind` `"own"`, anchored as `"styled"` ones: they stay on the characters they covered
@@ -559,7 +567,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   former refusals bake (`runs/regress.json`). (3) `keep_tokens` (found by the census): the website's canonical tokens no longer overwrite the card's
   `:sticker`/`:tint` spellings (9 cards on main). (4) Review minor items: FX notes in the commit line and the website's
   verdict reason, `held_words` by layer, the refusal paths tested, a typed word joining a layer of no chart style told,
-  the parser's `#0` read as every occurrence (as the JSX's `splitOccurrence`; the same count as before). Tests:
+  `_numbered`'s `#0` read as every occurrence (as the JSX's `splitOccurrence`; the parser counts it as before). Tests:
   `test_fx_kind_names_how_each_fx_layer_is_made_again`, `test_own_style_fx_layers_are_made_again_in_their_style`,
   `test_own_style_fx_layer_takes_a_typed_word_in_its_style`, `test_an_own_style_status_word_keeps_the_charts_fill`,
   `test_held_words_follow_the_layer_not_its_name`, `test_follow_fx_refuses_what_would_move_an_anchored_layer`,
@@ -568,8 +576,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_typed_icons_refuse_where_they_would_print_wrong`, `test_icon_text_follows_the_fonts_spellings`,
   `test_icon_style_is_the_cards_commonest`, `test_an_edit_keeps_the_cards_own_token_spellings`,
   `test_parentheses_typed_after_a_badge_are_body_text`, `test_effect_layer_numbers_read_as_the_jsx`,
-  `test_fx_notes_reach_the_commit_and_the_verdict`. `psd_parser.py` changed (the `#0` read): a jetson deploy rebuilds
-  Cython.
+  `test_fx_notes_reach_the_commit_and_the_verdict`. The parser's `#0` change was reverted in review round 2 (it counted
+  the same as `max(n, 1)` and made `psd_parser.py` a changed Cython module): no Cython rebuild.
   **Phase 2 review (2026-10-23 night, same branch; origin/main 8983719, then 8cbb211, merged in):** four silent wrong bakes, each
   refused or baked right now (section 5 step 4 and the typed-icons paragraph; UNBAKEABLE BUG 2 block for the census,
   `~/Documents/Tools/wt/bf-fx-r5-scratch/`): a badge edited by deleting letters joins its badge layer (it was deleted:
@@ -582,6 +590,23 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_typed_star_is_set_in_the_icon_font`, `test_a_typed_star_is_cut_into_the_badge_layer`,
   `test_reparse_reads_a_star_outside_the_icon_font_as_typed`, `test_follow_fx_refuses_an_edit_inside_an_anchored_phrase`,
   `test_an_edit_inside_an_own_style_phrase_refuses`, `test_an_fx_phrase_the_ability_lacks_refuses`.
+  **Phase 2 review, round 2 (2026-10-23 night, same branch):** a typed copy joining an `"own"` or `"styled"` layer kept
+  the body's fill, which its stroke or shadow alone draws over (Palace of Shadow's blue "+2 DEF" copied grey, Morpho
+  Knight's red "+2/4/6 ATK" yellow, every gate passing): it takes the phrase's colour, and gate `gate_fx_colours`
+  checks each such layer covers letters only of its words' old colours; a moved own-style phrase (deleted and typed
+  elsewhere: the layer jumped to the typed copy, against "stay on the characters it covered") and letters glued on
+  where a word of one ended ("Despair" made "Despairing", Clot Gold's "Money" made "Moneying", Goofy's "3T1" made
+  "3T10": half a word styled, untold) refuse; a status layer whose old words all
+  left is told "moved to the typed ..." (it said "also covers"); the FX notes reach a partial bake's refused verdict;
+  the bake's icon vocabulary keeps only the manifest's icons (a Types/ icon the font lacks would print its letters in
+  the icon font and read back as the token); the parser's `#0` change reverted (no Cython rebuild). Census on main's 18 cards with an own-style layer, 7 edits
+  each (UNBAKEABLE BUG 2 block, `~/Documents/Tools/wt/fxr3-scratch/`): the former edits' results and notes unchanged
+  (Palace's typed copy now blue); a moved phrase refuses on 4, glued letters on 9. Tests:
+  `test_a_typed_copy_of_an_own_style_phrase_takes_its_colour`, `test_a_typed_copy_of_a_phrase_in_several_colours_refuses`,
+  `test_a_moved_own_style_phrase_refuses`, `test_letters_glued_onto_an_own_style_phrase_refuse`,
+  `test_a_status_layer_moved_to_a_typed_word_is_told_so`, `test_gate_fx_refuses_an_own_style_layer_over_a_new_colour`,
+  `test_the_bakes_vocabulary_knows_only_the_fonts_icons`, `test_rebuild_fx_refuses_a_badge_in_plain_letters`,
+  `test_fx_notes_reach_a_partial_verdict`.
 
 ## 8. Runner
 
