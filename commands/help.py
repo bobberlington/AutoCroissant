@@ -47,8 +47,8 @@ card_commands = {
                                                   "versions (archived cards too). The reply says which version and its date; the current card posts its "
                                                   "image of that day, an older version its data and an Image button (default: the current card)",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
-    "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions. One match posts its image; "
-                                                   "more are listed as name and image link, 10 per message.\n"
+    "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images, "
+                                                   "one message per card.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
                                                    "- howmany: If True, only returns the count instead of the cards (default: False)",
     "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook entries for text matching <search_text>. "

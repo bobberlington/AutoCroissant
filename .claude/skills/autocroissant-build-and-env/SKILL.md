@@ -54,7 +54,7 @@ committed (53db8ee).
 | GitPython | The bot's self-update commands (`/push`, `/pull`, `/update`), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
 | numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
-| pandas | The card query engine's DataFrames: `commands/query_card.py:9`, `commands/psd_analyzer.py:13`. |
+| pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools | The PSD parser (`commands/psd_parser.py:11`). Stock 1.25.0 from PyPI is enough for the bot; the fork (section 4) adds the text engine the bake, the push guards and range reads need. |
 | PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:130, :140` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build and its requirements-card-data.txt need no PyGithub). |
@@ -319,3 +319,5 @@ list, not the bot's.
 `cards-20261023`, gcc for `_distance`); bounds checks and wraparound on since 9919a14 (the `boundscheck=False` row
 folded into history, ba27fb7); 11 of 38 modules compiled, the uncompiled list extended; suite 1346 tests;
 import citations re-pointed at 2ada357.
+
+2026-10-23 (unbatch): pandas' query_card.py import re-pointed (:13).

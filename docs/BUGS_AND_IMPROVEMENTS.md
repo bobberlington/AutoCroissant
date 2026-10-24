@@ -24,7 +24,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   (10.23); B7 (10.24); C5 (10.25); psd_analyzer split and the compiled shallow-path crash (10.27); network and speed
   (10.28).
 - 2026-10-21: B10, atomic and locked card pickle saves (10.29); the 0.1 s queue tick and /query_ability's grouped
-  output (10.30).
+  output (10.30; the grouping reverted 2026-10-23: Discord previews only a few images per message).
 - 2026-10-21 optimization pass 2: /query_ability's single-result hole (one card without a PNG answered `content=None`,
   which Discord dropped; it posts the name now) and the /fonts lazy-import shadowing; one commit path for the bake and
   the TTS save (`commands/git_commit.py`); the font check parses in a process pool (813 PSDs 98 s -> 9.8 s). Report:
@@ -177,8 +177,9 @@ One pass over every module, measured before and after, with no behavior change u
 - **Docs:** done 2026-10-20: help.py and the describe strings match all 50 commands (10.20); skill line references
   re-mapped after the split (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py`).
 - **Owner decisions, done 2026-10-21 (10.30):** the queue tick is 0.1 s (reply latency up to ~100 ms per hop instead
-  of ~1 s; reminders keep their 1 s heartbeat; idle 1.3 ms CPU/s), and /query_ability lists name and image link 10 per
-  message instead of one message per result (one match keeps its image preview). Tests: `tests/test_query_output.py`.
+  of ~1 s; reminders keep their 1 s heartbeat; idle 1.3 ms CPU/s), and /query_ability listed name and image link 10 per
+  message instead of one message per result until 2026-10-23, when the owner went back to one message per card (Discord
+  previews only a few images per message). Tests: `tests/test_query_output.py`.
 
 - **Pass 2 (the edit pipeline, font check, site badges), done 2026-10-21:** audits and numbers in
   `docs/Finished/optimization-pass-2-2026-10-21/`. One commit path (`commands/git_commit.py`: API blob/tree/commit, SSH

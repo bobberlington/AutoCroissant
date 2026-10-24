@@ -523,7 +523,7 @@ blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if 
 changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
 if committed since the newest stored timestamp; otherwise they just get their sha recorded.
 `force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:59), the same as the slash command (main.py:383);
+is `update_stats(force_update=False)` (repo_traverser.py:63), the same as the slash command (main.py:417);
 before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
 file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
 the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
@@ -627,19 +627,19 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:35`, singleton `card_repo` at :796) maintains
+`CardRepository` (`commands/query_card.py:42`, singleton `card_repo` at :990) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :62-103). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :72-115). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
 Lookup normalizes to `name.replace(' ', '_').lower() + '.png'` and fuzzy-matches with difflib
-`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:29;
+`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:32;
 runtime-settable via `/set_ratio`, resets on restart — see autocroissant-config-and-flags).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options
-(:81-102). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
+(`_add_file_to_registry` :163-180). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
 these instead" list when the hit is ambiguous. Duplicated basenames in the repo today: active.png,
 cardback.png, equip.png, field.png, fragile equip.png, nme.png, panda.png (mostly card-vs-Types
 icon collisions).
@@ -653,10 +653,10 @@ lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.
 parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
 names), and before that `/alias` refuses to change an aliases.pkl alias.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:218-304)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:307-375)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
-:315-334): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
+:508-535): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 rulebook pages split into a separate `rulebook_dff`, and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
@@ -694,15 +694,15 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:341-353). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:377-389). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
-8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:244) — approximately word-bounded,
+8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:358) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:355-379). 48 pages today.
-10. One result posts its image URL (a preview, via `get_card_url`); several are listed as `<name> — <url>` lines,
-    10 per message (`RESULTS_PER_MESSAGE`, query_card.py:30; since 2026-10-21, one message per result before);
-    `howmany:True` returns just the count; `limit` caps output (main.py:291-304).
+   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:391-415). 48 pages today.
+10. Each result posts its image URL alone, one message per card (a preview, via `get_card_url`; its name when the PNG
+    is not in the tree). From 2026-10-21 to 2026-10-23 they were listed as `<name> — <url>` lines, 10 per message;
+    `howmany:True` returns just the count; `limit` caps output (main.py:313-328).
 
 ## 8. When NOT to use this skill
 
@@ -780,3 +780,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-22 (data build): the traversal's citations (EXCLUDE_FOLDERS, the type list, the commit lookup, the history rule, `_update_old_stats_paths`) re-pointed to the uncompiled commands/card_data.py; `_update_old_stats_paths` noted as legacy-mode only. The db/ JSON schemas (`version`, the manifest, the changelog events) are in docs/Campaigns/DATA_BUILD_ACTION.md section 8 until the cutover.
 
 2026-10-23 (docs drift): §4's worked injection example moved to Nebulous Precipice; The Lich King noted as a font-token card since TTSCardMaker 1c24dd48.
+
+2026-10-23 (unbatch): §7.2 gotcha 10: /query_ability posts one message per card again; §7's citations and §6's force_update defaults re-pointed.

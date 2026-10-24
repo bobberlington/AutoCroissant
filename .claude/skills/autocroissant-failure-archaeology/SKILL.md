@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -759,7 +759,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   two saving threads). `.gitignore` ignores `*.pkl.tmp`. Parser gate: 813 cards, 0 differences.
 - **Status**: done 2026-10-21 (uncommitted when written).
 
-### 10.30 Queue tick 0.1 s; /query_ability lists cards 10 per message (owner decisions, 2026-10-21)
+### 10.30 Queue tick 0.1 s; /query_ability listed cards 10 per message (owner decisions, 2026-10-21; the listing reverted 2026-10-23)
 
 - **Symptom**: a reply waited for the next 1 s drain (502 ms mean, ~99% of /query's bot-side time, 10.28), and
   /query_ability sent one message per matching card (85 on average, max 763) through the one dispatch loop.
@@ -772,7 +772,10 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   the PNG is not in the tree: `get_card_url` returned None and the content=None message was dropped by Discord); more as
   `<name> — <url>` lines, `RESULTS_PER_MESSAGE` = 10 per message through `queue_long_message`.
   Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image, alone or listed).
-- **Status**: done 2026-10-21 (uncommitted when written).
+- **Status**: done 2026-10-21 (uncommitted when written). The listing was reverted 2026-10-23 (owner: "discord has a
+  limit on the number of images it shows per message", so a 10-link message previewed only a few cards): one message
+  per card again, its image URL alone, its name when the PNG is not in the tree; `RESULTS_PER_MESSAGE` deleted. The
+  0.1 s tick stays. Do not re-batch image links; a big result set is capped by `limit` and the website link.
 
 ### 10.31 Deleted PSDs archived, not deleted (was B8, 2026-10-22)
 
@@ -847,7 +850,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
 | Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 59 (since 2026-10-22); `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
-| Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock\|^RESULTS_PER_MESSAGE" commands/query_card.py` (31, 30); `grep -n "tasks.loop" main.py` (847 at 1 s; 853, 866, 878 at 0.1 s) |
+| Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock" commands/query_card.py` (33; `RESULTS_PER_MESSAGE` gone since 2026-10-23); `grep -n "tasks.loop" main.py` (926 at 1 s; 932, 945, 957 at 0.1 s) |
 
 2026-10-20 (later): the optimization-pass reports moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`
 (`docs/Finished/optimization-pass-2026-10-20/`); its scripts to `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`.
@@ -865,3 +868,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-21 (details): repo_traverser.py citations re-pointed by the old-to-new line map (+3 from :60, +4 from :367, +13 from :407, +16 from :513, +19 from :524: the `psd_details` attributes, the gather hook and the details load/save in update_stats); update_bot.py +1 from :24; global_config.py +1 from :11.
 
 2026-10-22 (data build): the traverser's code moved to the uncompiled commands/card_data.py; the Entry 10 fix citations and the re-verification greps re-pointed (history is kept as it was).
+
+2026-10-23 (unbatch): entry 10.30's /query_ability listing reverted to one message per card; the 10.29-10.30 re-verification row re-pointed.

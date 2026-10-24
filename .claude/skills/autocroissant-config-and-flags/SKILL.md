@@ -276,7 +276,7 @@ extraction" goal). Their semantics and the validation rules live in
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
 Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:999) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+(query_card.py:990) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -519,6 +519,27 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 `card-preview.yml` (2026-10-23, website previews) reads none of these: no secret beyond `GITHUB_TOKEN`, no variable, no
 Discord. Its branch `previews` is data, not a setting: it is rewritten by the workflow and never merged.
 
+### The psd-tools fork pin: `PSD_TOOLS_REF` (2026-10-23)
+
+The fork's tag is the top-level env `PSD_TOOLS_REF` of card-edits.yml, card-guards.yml, card-sync.yml and
+card-preview.yml, once in each (`cards-20261023d`, round 11, on 2026-10-23). The fork and its dependencies install
+offline from wheels in the Actions cache (path `~/.cache/psd-tools-wheels`, key
+`psd-tools-<tag>-<OS>-<arch>-py<Python>`, one entry for the four). The first run after a new tag or a new runner Python
+builds them (`pip wheel`, the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of
+the 29-35 s install). The wheels freeze numpy, scipy, Pillow and the rest at that first build; a new tag refreshes them
+(for a bad dependency release under the same tag, delete the entry: step 1's `gh cache delete`).
+
+Re-pin:
+1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a name's first wheels;
+   delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
+2. Change `PSD_TOOLS_REF` in the four workflows (one line each) in one commit. Nothing to clear: a new tag is a new
+   key, and GitHub drops an entry unused for 7 days.
+3. Run the shape tests against that checkout: `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml
+   AC_SITE_SRC=<checkout>` with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (the four pins must
+   match and be a `cards-YYYYMMDD[letter]` tag; `test_card_bake.fork_install` checks each workflow's install).
+4. The jetson's venv and the dev Mac's: autocroissant-run-and-operate ("When the psd-tools fork tag moves") and
+   autocroissant-build-and-env.
+
 ### setup.py (lines 8-49) — Cython build configuration
 
 | Constant | Meaning |
@@ -545,8 +566,8 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 
 | Slash command | Mutates (verified location) | After restart becomes |
 |---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (`set_match_ratio`, query_card.py:954-972; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:974-997) | `"MichaelJSr/TTSCardMaker"` — always |
+| `/set_ratio` | `card_repo.match_ratio` (`set_match_ratio`, query_card.py:945-963; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
+| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:965-988) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`, `ACTIONS_TOKEN`,
 `browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
@@ -711,3 +732,5 @@ lazy fetch, one .mailmap blob, full clone); ICON_VARIANTS has six values on main
 wraparound on; card_runner's TEMP_PSD/TEMP_AGE and the fonts fallback (fonts_cache); new tables for card_sync, the push
 guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 lacks_admin sites (the conditional
 /update_stats gate); every main.py, query_card.py, card_data.py, psd_parser.py and psd_analyzer.py citation re-pointed.
+
+2026-10-23 (unbatch): query_card.py citations re-pointed (card_repo, set_match_ratio, set_repository) after /query_ability went back to one message per card.

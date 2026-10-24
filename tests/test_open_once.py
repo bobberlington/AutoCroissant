@@ -1,0 +1,113 @@
+"""One PSDImage.open per card PSD: the parse and psd_details share it in /update_stats, the data build and the card
+check (two opens were most of a re-parse's CPU), and the shared open reads as two separate opens do."""
+import json
+import pickle
+from collections import Counter
+from datetime import datetime, timezone
+from hashlib import sha1
+from os import PathLike
+
+import pytest
+from psd_tools import PSDImage
+
+import commands.card_check as cc
+import commands.card_data as cd
+import commands.card_db as cdb
+import commands.psd_details as pd
+from commands.card_models import card_name
+from commands.psd_parser import CardValidator
+from golden_cards import parser as golden_parser
+from test_card_data import _build, cards  # noqa: F401
+from test_range_reads import needs_ranges, ranged  # noqa: F401
+from test_update_stats import DOOMER, FREEZER, _run, github, psds  # noqa: F401
+
+SAME = (DOOMER,                                                             # the identity cards: golden oddities
+        "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",           # font tokens
+        "Creatures/Kirby/3 Stars/Computer_Virus.psd",                      # no stats; title from a root Name layer
+        "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",          # STATS TOO HIGH; title in 3 layers
+        "Items/Heal/2 Stars/A_Snack.psd",                                  # hidden titles
+        "N.M.E/Termination_Shock.psd",                                     # drawn stars
+        "Auxiliary/Rulebook/20_Creature_Types.psd")                        # a rule page
+
+
+def _key(data: bytes) -> str:
+    return sha1(data).hexdigest()
+
+
+@pytest.fixture
+def opens(monkeypatch):
+    """PSDImage.open calls by the opened file's bytes (a path or a BytesIO)."""
+    seen: Counter = Counter()
+    inner = PSDImage.open.__func__
+
+    def counted(cls, fp, *args, **kwargs):
+        if isinstance(fp, (str, bytes, PathLike)):
+            with open(fp, "rb") as fh:
+                seen[_key(fh.read())] += 1
+        elif hasattr(fp, "getvalue"):
+            seen[_key(fp.getvalue())] += 1
+        else:
+            seen[f"stream {id(fp)}"] += 1
+        return inner(cls, fp, *args, **kwargs)
+    monkeypatch.setattr(PSDImage, "open", classmethod(counted))
+    return seen
+
+
+@pytest.fixture
+def gathered(monkeypatch):
+    """The repo paths psd_details.gather ran for (so a count of 1 is the shared open, not a skipped gather)."""
+    paths = []
+    inner = pd.gather
+
+    def gather(psd, rel, *args, **kwargs):
+        paths.append(rel)
+        return inner(psd, rel, *args, **kwargs)
+    monkeypatch.setattr(pd, "gather", gather)
+    return paths
+
+
+def test_update_stats_opens_each_psd_once(github, psds, opens, gathered):
+    problems, _ = _run(force_update=True)
+    assert problems == [] and sorted(gathered) == sorted([DOOMER, FREEZER])
+    assert opens == Counter({_key(psds[DOOMER]): 1, _key(psds[FREEZER]): 1})
+
+
+@needs_ranges
+def test_range_reads_open_each_psd_once(ranged, github, opens, gathered):
+    problems, _ = _run()
+    assert problems == [] and sorted(gathered) == sorted([DOOMER, FREEZER])
+    assert sorted(opens.values()) == [1, 1] and all(key.startswith("stream") for key in opens)    # a RangeReader each
+
+
+def test_the_build_opens_each_psd_once(cards, opens, gathered):
+    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert sorted(gathered) == sorted([DOOMER, FREEZER])
+    assert opens == Counter({_key(cards.psds[DOOMER]): 1, _key(cards.psds[FREEZER]): 1})
+
+
+def test_the_card_check_opens_each_psd_once(clone, opens):
+    assert cc.check_files([str(clone / DOOMER)]).checked == 1
+    assert opens == Counter({_key((clone / DOOMER).read_bytes()): 1})
+
+
+class _Frozen(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 10, 23, tzinfo=timezone.utc)
+
+
+def test_one_open_reads_as_two(clone, monkeypatch):
+    """The build's shared open gives the card (pickle, db/ line, notes) and details record that two opens of the file give."""
+    monkeypatch.setattr(pd, "datetime", _Frozen)
+    psd_parser = golden_parser()
+    build = cd.CardBuild(psd_parser.db, report=lambda text: None, progress=lambda count: None, legacy=False)
+    build.parser = psd_parser
+    for rel in SAME:
+        path, name = str(clone / rel), card_name(rel)
+        card = build._parse(path, rel, name, rel)
+        alone = psd_parser.parse(path, rel)
+        assert pickle.dumps(card) == pickle.dumps(alone), rel
+        assert cdb.stats_text({name: card}) == cdb.stats_text({name: alone}), rel
+        assert CardValidator.validate(card) == CardValidator.validate(alone), rel
+        record = pd.gather(path, rel, name, None, psd_parser.db.all_types)
+        assert json.dumps(build.details.pop(rel)) == json.dumps(record), rel

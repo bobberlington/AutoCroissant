@@ -32,7 +32,7 @@ import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
-from test_card_bake import ALLOWED_IMPORTS, third_party_imports  # noqa: E402
+from test_card_bake import ALLOWED_IMPORTS, fork_install, third_party_imports  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
@@ -488,9 +488,11 @@ def test_workflow_shape():
         assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
     install = re.findall(r"pip install [^\n]+", text)
     edits = WORKFLOWS / "card-edits.yml"
-    assert len(install) == 1 and "psd-tools[composite,text] @ git+" in install[0]
+    pin = fork_install(WORKFLOWS / "card-preview.yml")
+    assert len(install) == 1 and "--no-index" in install[0]                       # the fork from its cached wheels
     if edits.exists():
         assert re.findall(r"pip install [^\n]+", edits.read_text(encoding="utf-8")) == install       # the bake's install, pin and all
+        assert fork_install(edits) == pin
     assert not [s for s in publish["steps"] if "setup-python" in s.get("uses", "") or "pip " in s.get("run", "")]
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
