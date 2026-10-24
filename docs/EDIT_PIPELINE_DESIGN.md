@@ -809,8 +809,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
   `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
   **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`; `scratch/bug2-p6/`):** the fork draws
-  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (the `font` refusal stays only
-  for a fork without the halos, `glow_halos`: a stale install). A stroked Text group strokes the halo into a black disc,
+  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (a fork without the halos,
+  `glow_halos`, a stale install: an ImportError and card_bake's `Transient`, no verdict; it was a lasting `font` one). A stroked Text group strokes the halo into a black disc,
   Photoshop's look: Photoshop's own Nebulous Precipice with `[darkmatter:glow]` (`~/std-work-1022/glow/run`) against
   the fork's re-render, 0.47% of the token window past 24 levels (max 75); moved by an edit, 0.52% of the disc. Two
   gates changed for them: off the canvas counts ink past `INK_ALPHA` only (`_ink_off_canvas`; Red Knife's halo tail
@@ -825,6 +825,20 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_glow_tokens_bake_as_photoshop_draws_them`, `test_glow_tokens_refuse_on_an_older_fork`,
   `test_a_faint_halo_past_the_canvas_is_no_overflow`, `test_a_glow_disc_over_a_layer_below_the_title_refuses`; each
   fails on the code before.
+  **Review fixes 4 (2026-10-24, `scratch/bug2-p6/fix-2/`):** deleting a line whose next starts alike kept the deleted
+  line's runs on the kept characters (changed_range's prefix is greedy: Dragon Mount's "+25% SPD" printed "+2" red,
+  Chef Saltbaker's kept "(2 points)" blue, a kept badge split across two sizes and refused as letters), on main too:
+  a deletion now slides to whole lines, else words or badges (`deletion_start`, and each deletion part in
+  `edit_parts`), `splice_text` holds the engine's prefix to the part, and a deletion widens into a word only when it
+  cut one (Gasoline's kept "If"). In-memory census of every one-paragraph deletion (`delfill.py`): kept characters off
+  their own fill or size 224 -> 24, the 24 all status words given the chart's swatch (`delpar.py`: the `lettered_icons`
+  and "would be set in the icon font" refusals of such deletions 36 -> 0). An
+  Ability's new line printed past the old text onto the design below (Deep Focus' flourish, Holy Card's torn border,
+  Autopsy Report off its box) is told in the notes, not refused (`ink_beyond`; 18 of 503 cards given a line).
+  A text layer with tab stops refuses `unsupported-card` (the engine lays none: Michael's Blessing's arrows collapsed).
+  A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
+  Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
+  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_refuse`, `test_glow_edit_on_an_older_fork_is_transient`.
 
 ## 8. Runner
 

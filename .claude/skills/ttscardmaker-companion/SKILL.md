@@ -389,7 +389,8 @@ tests/test_badge_parity.py):
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
 - **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
   the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a badge FX layer
-  or a tint a glow refuses as any see-through icon; a fork without the halos (`psd_edit.glow_halos`) refuses `font`.
+  or a tint a glow refuses as any see-through icon; on a fork without the halos (`psd_edit.glow_halos`) it is a
+  runner error (no verdict; retried once the fork is reinstalled).
 
 ## 2. The card-browser website
 

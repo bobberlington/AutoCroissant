@@ -170,8 +170,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       diagonals, rulebook corners, inner glow, B11, fast open, render hotspots, wide strokes. Frozen corpus
       corpus-b89ce169: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
       ~1.7x and PSD opens ~3.2x faster. B11's trade: Toriel's Ability 0.18% -> 4.19% bad when re-drawn (net gain over
-      3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). Next fork work: the `:glow`/`:darkglow` halo (owner
-      2026-10-24), then a tag.
+      3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). The `:glow`/`:darkglow` halo (owner 2026-10-24): done,
+      `cards-20261024b`.
 - [ ] **Round 11** (resumed wf_502b9ebf-b59 with the cap raised to 11): stroke corners (`effects.py _signed_distance`
       `near = 0.5 - alpha` overstates a quarter-covered corner pixel by ~0.25 px; 3,103 px on 291 cards; needs Photoshop
       fixtures) and The_Spire's Name (vibrance). Bar ~2,770 px. If it integrates and audits clean: tag
@@ -221,10 +221,18 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
       line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
       render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`): typed
-      `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed.
+      `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed. 02015ac: a title or
+      Ability whose saved pixels are in another font than it names refuses `font` (`drawn_in_font`, IoU under
+      FONT_IOU_MIN 0.3: the four Omori titles Dull Knife, Shiny Knife, Dark Tentacle, Snow Angel): 1761 passed, 13
+      skipped, 0 failed. Review fixes 4 (EDIT_PIPELINE_DESIGN section 7): a deleted line or word cut whole (the next
+      line kept the deleted one's colour; on main too), an Ability's new line on the design below told in the notes
+      (`ink_beyond`), tab stops refused, a glow on a stale fork a runner error (no `font` verdict): 1766 passed, 13
+      skipped, 0 failed.
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
-      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
+      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart; first reinstall
+      the fork on the jetson, `pip install --force-reinstall` of `requirements-cards.txt`'s `cards-20261024b`: the
+      jetson has `cards-20261023`, which draws no glow halos). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
       that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
       Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's

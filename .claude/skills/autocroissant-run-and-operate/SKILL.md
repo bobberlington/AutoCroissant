@@ -638,7 +638,13 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF" made "+3 DEF": the
   layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
-  Photoshop draws it; a stale install of an older fork refuses `font`).
+  Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
+  fork is reinstalled). Also refused: a title or Ability whose saved pixels are in another font than the layer names
+  (`font`, `drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles; re-save in
+  Photoshop) and a text layer with tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
+  deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
+  printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
+  below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
