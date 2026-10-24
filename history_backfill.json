@@ -189,6 +189,8 @@
 "Zero Two's Revenge": {"fate": "retired", "how": "exact", "path": "Creatures/Kirby/6 Stars/Zero_Two's_Revenge.psd", "record": {"ability": null, "allow_high_stats": false, "alt_names": null, "archived": {"at": 1756361507.0, "backfill_id": "backfill-1", "blob": "d907efa9b0ac0b32f103e8ce7fd79b7ab2229110", "commit": "b3d1e7c2988c290d80dea9c9a92d86bcf5c1245a", "moved_to": "MDW/Unfinished/6 Stars/Zero_Two's_Revenge.psd", "path": "Creatures/Kirby/6 Stars/Zero_Two's_Revenge.psd"}, "author": null, "blob_sha": "d907efa9b0ac0b32f103e8ce7fd79b7ab2229110", "card_type": "creature", "created": null, "creatures": null, "display_name": null, "duplicate_of": null, "hidden": false, "name": "Zero Two's Revenge", "note": null, "parsed_values": null, "parser_version": 2, "path": "Creatures/Kirby/6 Stars/Zero_Two's_Revenge.psd", "problems": ["MISSPELT TYPE: undread", "NO ABILITY LAYER"], "problems_ok": false, "series": "kirby", "stars": 6, "stats": {"attack": 1, "defense": 1, "hp": 1, "speed": 1}, "subseries": null, "subtype": null, "timestamp": 1742206135.0, "types": ["darkmatter"], "version": {"backfill_id": "backfill-1", "cause": "psd", "from": 1742206135.0, "from_commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "legacy": false, "png_commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "to": 1756361507.0, "to_commit": "b3d1e7c2988c290d80dea9c9a92d86bcf5c1245a"}}}
 }
 },
+"blind": [
+],
 "cards": {
 "ABBI": {"allowed_high": false, "paths": ["Creatures/Omori/5 Stars/ABBI.psd"], "readings": [
 {"at": 1699236921.0, "blob": "0bc071de8dbb507edad9838ba40dc530fa9ea1ea", "commit": "553d8fdafa316af337add67fa7d3e2e8a34ad0ec", "how": "parser", "path": "Creatures/Omori/5 Stars/ABBI.psd", "print": "first", "read": [8, 3, 4, 4], "stars": 5, "type": "creature"},
@@ -1082,24 +1084,23 @@
 {"blob": "7eae2d4d616bdf45d307e1471c09aa9fe3d8007c", "change": "partial", "commit": "2ffc3fe486c5a9697c94d38b0551e9359e192310", "creatures": [], "from": 1742635329.0, "line": [2, 0, -1, -1], "path": "Auxiliary/Minions/Earth_Totem.psd"}
 ]},
 "Ech": {"allowed_high": true, "paths": ["Creatures/Other/5 Stars/Ech.psd"], "readings": [
-{"at": 1728014620.0, "blob": "d9f6f37c643e81950fb9bd8c0291ff0a6e7608a0", "commit": "d31b26b902c583a742cac3c1d3ff764f61270d9b", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "first", "read": [2, 2, 2, 1], "stars": 5, "type": "creature"},
+{"at": 1728014620.0, "blob": "d9f6f37c643e81950fb9bd8c0291ff0a6e7608a0", "commit": "d31b26b902c583a742cac3c1d3ff764f61270d9b", "how": "by hand", "parser_read": [2, 2, 2, 1], "path": "Creatures/Other/5 Stars/Ech.psd", "print": "first", "read": [2, 2, 2, 4], "stars": 5, "type": "creature"},
 {"at": 1728017420.0, "blob": "99ea8617407af0cd7346c8810da1063e43851fe7", "commit": "01499676c010de3c0dc28ba3ce534ad655c010ec", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "changed", "px": 34468, "read": [-1, -1, -1, -1], "row_px": [2452, 2789, 2408, 24651], "stars": 5, "type": "creature"},
 {"at": 1736919634.0, "blob": "e463f24ca2196dea6b704657e73906bb1894b3da", "commit": "bad64921b3597c7c4efb701cf82cac8a4977fe3d", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 2, 2, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1740464851.0, "blob": "0a256462081fcb36100d7e145ed67d7c281c6472", "commit": "21d17ff95e76ba4046cd12c38006656ce45cd775", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 2, 2, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1741564729.0, "blob": "239165e9f775ab34a8c6437981ffdad471bed248", "commit": "3cbe582d9cd61b89198eb0e0bbf196ba6ed94e13", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "changed", "px": 4556, "read": [2, 2, 3, 5], "row_px": [0, 0, 4556, 0], "stars": 5, "type": "creature"},
 {"at": 1742270000.0, "blob": "47c6dc49b48e3662658fe4c04b8357f08b37dfe6", "commit": "8d26074831409def2c7a6444072303960e632b27", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 2, 3, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
-{"at": 1742636015.0, "blob": "0bab8846a301583e7f67b13fe76c5b2f33eb7984", "commit": "c5ab897deddcfbdf723b40cee48166234248fcc4", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "changed", "px": 18224, "read": [2, 5, 0, 5], "row_px": [0, 13668, 4556, 0], "stars": 5, "type": "creature"},
-{"at": 1746344469.0, "blob": "923cf2a049bb1e8ac0bb482f008488e02601ca31", "commit": "8787020c08c71d0d980f6709ad4b95ff1e124e7b", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 5, 0, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
+{"at": 1742636015.0, "blob": "0bab8846a301583e7f67b13fe76c5b2f33eb7984", "commit": "c5ab897deddcfbdf723b40cee48166234248fcc4", "how": "by hand", "parser_read": [2, 5, 0, 5], "path": "Creatures/Other/5 Stars/Ech.psd", "print": "changed", "px": 18224, "read": [2, 5, 4, 5], "row_px": [0, 13668, 4556, 0], "stars": 5, "type": "creature"},
+{"at": 1746344469.0, "blob": "923cf2a049bb1e8ac0bb482f008488e02601ca31", "commit": "8787020c08c71d0d980f6709ad4b95ff1e124e7b", "how": "by hand", "parser_read": [2, 5, 0, 5], "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 5, 4, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1756373360.0, "blob": "d7f52c641ee161a9963f5977ec1461f0a962f461", "commit": "8d844d28f8bf6eafbba473fee102adc2f4a5cb4a", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "changed", "px": 181399, "read": [2, 5, 4, 5], "row_px": [45446, 45274, 45431, 45248], "stars": 5, "type": "creature"},
 {"at": 1756705526.0, "blob": "32fa642b495bcbb77eb2817955cb605cf07d27fe", "commit": "d05931e93cd2b7939743e5e39019376248819146", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 5, 4, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1768457872.0, "blob": "9629548d174358b3321ea22c68ec972f9ecae630", "commit": "a6f6dd8faefd53603ad1c2c3ab8d6886e3b92ee0", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 5, 4, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"},
 {"at": 1769819036.0, "blob": "3cda5b940eb2f7154f7e9f7074b44bf95b0a200c", "commit": "5e6fcc81ba7bbc3889f29d184117363493039401", "how": "parser", "path": "Creatures/Other/5 Stars/Ech.psd", "print": "same", "px": 0, "read": [2, 5, 4, 5], "row_px": [0, 0, 0, 0], "stars": 5, "type": "creature"}
 ], "segments": [
-{"blob": "d9f6f37c643e81950fb9bd8c0291ff0a6e7608a0", "commit": "d31b26b902c583a742cac3c1d3ff764f61270d9b", "creatures": [], "from": 1728014620.0, "line": [2, 2, 2, 1], "path": "Creatures/Other/5 Stars/Ech.psd"},
+{"blob": "d9f6f37c643e81950fb9bd8c0291ff0a6e7608a0", "commit": "d31b26b902c583a742cac3c1d3ff764f61270d9b", "creatures": [], "from": 1728014620.0, "line": [2, 2, 2, 4], "path": "Creatures/Other/5 Stars/Ech.psd"},
 {"blob": "99ea8617407af0cd7346c8810da1063e43851fe7", "change": "buff", "commit": "01499676c010de3c0dc28ba3ce534ad655c010ec", "creatures": [], "from": 1728017420.0, "line": [2, 2, 2, 5], "path": "Creatures/Other/5 Stars/Ech.psd"},
 {"blob": "239165e9f775ab34a8c6437981ffdad471bed248", "change": "buff", "commit": "3cbe582d9cd61b89198eb0e0bbf196ba6ed94e13", "creatures": [], "from": 1741564729.0, "line": [2, 2, 3, 5], "path": "Creatures/Other/5 Stars/Ech.psd"},
-{"blob": "0bab8846a301583e7f67b13fe76c5b2f33eb7984", "change": "shift", "commit": "c5ab897deddcfbdf723b40cee48166234248fcc4", "creatures": [], "from": 1742636015.0, "line": [2, 5, 0, 5], "path": "Creatures/Other/5 Stars/Ech.psd"},
-{"blob": "d7f52c641ee161a9963f5977ec1461f0a962f461", "change": "buff", "commit": "8d844d28f8bf6eafbba473fee102adc2f4a5cb4a", "creatures": [], "from": 1756373360.0, "line": [2, 5, 4, 5], "path": "Creatures/Other/5 Stars/Ech.psd"}
+{"blob": "0bab8846a301583e7f67b13fe76c5b2f33eb7984", "change": "buff", "commit": "c5ab897deddcfbdf723b40cee48166234248fcc4", "creatures": [], "from": 1742636015.0, "line": [2, 5, 4, 5], "path": "Creatures/Other/5 Stars/Ech.psd"}
 ]},
 "Electro Probe": {"allowed_high": false, "paths": ["Auxiliary/Minions/Electro_Probe.psd"], "readings": [
 {"at": 1756796728.0, "blob": "e5d1a1b2fc4ef10e46a5559bf6853dee2473f90b", "commit": "d64fc8d4ec85e64c8ca0a837571ca9766085b4f2", "how": "parser", "path": "Auxiliary/Minions/Electro_Probe.psd", "print": "first", "read": [2, 4, 5, 5], "stars": 2, "type": "minion"}
@@ -1444,15 +1445,15 @@
 ]},
 "Grimora": {"allowed_high": false, "paths": ["Creatures/Other/3 Stars/Grimora.psd"], "readings": [
 {"at": 1699239877.0, "blob": "3efbbe354ea0105fc05d1c9acaff688f6dc1b6a3", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "first", "read": [-1, -1, -1, -1], "stars": 3, "type": "creature"},
-{"at": 1699418991.0, "blob": "3df48ea0eb2fc2203871562fd14ec5d417ee958b", "commit": "c4162ce856d3b9771f046a6e4df6d88872b05397", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "stars": 3, "type": "creature"},
-{"at": 1700303696.0, "blob": "a18de433004685e20c6c1ed7e981d1f5d9139d6d", "commit": "d2fb00956c86d114b90f00da42c01f53f460b42c", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1734500727.0, "blob": "a009f99e6b36704e76a01a73ea2188801cc13099", "commit": "79bf379d3035327d93557539ac512cc0bd3907d4", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1741760724.0, "blob": "aec4e726196fc1c71e946b57181fb745fb060b2d", "commit": "ebf4a7dfa1fadde5a43f49e757992f58d0b64e13", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1742206135.0, "blob": "625e84db2e507741059783b45b836534394955b8", "commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1768457872.0, "blob": "b78bb6f65972f6014187c80471309dde2a20bcf5", "commit": "a6f6dd8faefd53603ad1c2c3ab8d6886e3b92ee0", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1769818661.0, "blob": "c9d9bbba57eb50619e22d1ccf655e4ebab8d638d", "commit": "72774d193b0a6a92a932c4b1943442e10c963d6a", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1792648670.0, "blob": "9a28efb6063fc0bfd1e939705848c0589d80157a", "commit": "09131c6703ccfdc94bd19ac64a38335b71ba0fb1", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"},
-{"at": 1792757740.0, "blob": "1dfbb89751b3e163a756d9ce71001befdad35db5", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "stars": 3, "type": "creature"}
+{"at": 1699418991.0, "blob": "3df48ea0eb2fc2203871562fd14ec5d417ee958b", "commit": "c4162ce856d3b9771f046a6e4df6d88872b05397", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "changed", "px": 4071, "read": [-1, -1, -1, -1], "row_px": [642, 32, 857, 1365], "stars": 3, "type": "creature"},
+{"at": 1700303696.0, "blob": "a18de433004685e20c6c1ed7e981d1f5d9139d6d", "commit": "d2fb00956c86d114b90f00da42c01f53f460b42c", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1734500727.0, "blob": "a009f99e6b36704e76a01a73ea2188801cc13099", "commit": "79bf379d3035327d93557539ac512cc0bd3907d4", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1741760724.0, "blob": "aec4e726196fc1c71e946b57181fb745fb060b2d", "commit": "ebf4a7dfa1fadde5a43f49e757992f58d0b64e13", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "changed", "px": 5738, "read": [5, 2, 6, 5], "row_px": [0, 4375, 32, 0], "stars": 3, "type": "creature"},
+{"at": 1742206135.0, "blob": "625e84db2e507741059783b45b836534394955b8", "commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1768457872.0, "blob": "b78bb6f65972f6014187c80471309dde2a20bcf5", "commit": "a6f6dd8faefd53603ad1c2c3ab8d6886e3b92ee0", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1769818661.0, "blob": "c9d9bbba57eb50619e22d1ccf655e4ebab8d638d", "commit": "72774d193b0a6a92a932c4b1943442e10c963d6a", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1792648670.0, "blob": "9a28efb6063fc0bfd1e939705848c0589d80157a", "commit": "09131c6703ccfdc94bd19ac64a38335b71ba0fb1", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"},
+{"at": 1792757740.0, "blob": "1dfbb89751b3e163a756d9ce71001befdad35db5", "commit": "5a9e0fcf60e424f02656d61f31aed79bfdc49ad3", "how": "parser", "path": "Creatures/Other/3 Stars/Grimora.psd", "print": "same", "px": 0, "read": [5, 2, 6, 5], "row_px": [0, 0, 0, 0], "stars": 3, "type": "creature"}
 ], "segments": [
 {"blob": "3efbbe354ea0105fc05d1c9acaff688f6dc1b6a3", "commit": "74da0c9ee02df63f6021334f09504acde630fc3d", "creatures": [], "from": 1699239877.0, "line": [5, 2, 6, 5], "path": "Creatures/Other/3 Stars/Grimora.psd"}
 ]},
@@ -3490,11 +3491,11 @@
 ]},
 "Skeleton Mate": {"allowed_high": false, "paths": ["Auxiliary/Minions/Skeleton_Mate.psd", "Auxillary/Minions/Skeleton_Mate.psd"], "readings": [
 {"at": 1699231761.0, "blob": "98a86f6891f04b833a4ae8cc8dbdebf701dc89e7", "commit": "cc009a473f761936e4ece9e4d596b293ba231828", "how": "parser", "path": "Auxillary/Minions/Skeleton_Mate.psd", "print": "first", "read": [-1, -1, -1, -1], "stars": 1, "type": "minion"},
-{"at": 1741493178.0, "blob": "b13e4d6467bb00cb0d04c0b9c2017340bc4e33cd", "commit": "d9dca4cc058804df11606948627674ec598a0713", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "stars": 1, "type": "minion"},
-{"at": 1742206135.0, "blob": "c257c6a59e11f3392e8793b2d0b939a288b1fc30", "commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "stars": 1, "type": "minion"},
-{"at": 1742637066.0, "blob": "276bdf5230535b25f64f7432c19639e3fac4e5e1", "commit": "fa0306061db46508de90bb3d2793c7a441b35551", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "stars": 1, "type": "minion"},
-{"at": 1745903832.0, "blob": "a8a0cb0694ab3c8b4d7f7f4cf3e2e3c3e87b246c", "commit": "95cce70a9a443bbadb8b19f61922939cdcd042d0", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [2, 1, 7, 3], "stars": 1, "type": "minion"},
-{"at": 1769817286.0, "blob": "ed31f918bc6b9eebf19263f3cf3a5e3e50965490", "commit": "3dc366d15e327ba6cc319c209c905f953a68cc5d", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [2, 1, 7, 3], "stars": 1, "type": "minion"}
+{"at": 1741493178.0, "blob": "b13e4d6467bb00cb0d04c0b9c2017340bc4e33cd", "commit": "d9dca4cc058804df11606948627674ec598a0713", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "row_px": [0, 0, 0, 0], "stars": 1, "type": "minion"},
+{"at": 1742206135.0, "blob": "c257c6a59e11f3392e8793b2d0b939a288b1fc30", "commit": "a0fcf23765b629354e6d88ae732ca2891f90e75e", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "row_px": [0, 0, 0, 0], "stars": 1, "type": "minion"},
+{"at": 1742637066.0, "blob": "276bdf5230535b25f64f7432c19639e3fac4e5e1", "commit": "fa0306061db46508de90bb3d2793c7a441b35551", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [-1, -1, -1, -1], "row_px": [0, 0, 0, 0], "stars": 1, "type": "minion"},
+{"at": 1745903832.0, "blob": "a8a0cb0694ab3c8b4d7f7f4cf3e2e3c3e87b246c", "commit": "95cce70a9a443bbadb8b19f61922939cdcd042d0", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [2, 1, 7, 3], "row_px": [0, 0, 0, 0], "stars": 1, "type": "minion"},
+{"at": 1769817286.0, "blob": "ed31f918bc6b9eebf19263f3cf3a5e3e50965490", "commit": "3dc366d15e327ba6cc319c209c905f953a68cc5d", "how": "parser", "path": "Auxiliary/Minions/Skeleton_Mate.psd", "print": "same", "px": 0, "read": [2, 1, 7, 3], "row_px": [0, 0, 0, 0], "stars": 1, "type": "minion"}
 ], "segments": [
 {"blob": "98a86f6891f04b833a4ae8cc8dbdebf701dc89e7", "commit": "cc009a473f761936e4ece9e4d596b293ba231828", "creatures": [], "from": 1699231761.0, "line": [2, 1, 7, 3], "path": "Auxillary/Minions/Skeleton_Mate.psd"}
 ]},
@@ -5014,7 +5015,7 @@
 ["2023-11-24", "Stay", [6, 7, 5, 4], [6, 4, 5, 4], "nerf"],
 ["2023-11-24", "Tainted Eden", [7, 3, 4, 4], [6, 3, 6, 4], "buff"],
 ["2023-12-02", "The Watcher", [5, 3, 4, 4], [5, 4, 5, 4], "buff"],
-["2024-10-03", "Ech", [2, 2, 2, 1], [2, 2, 2, 5], "buff"],
+["2024-10-03", "Ech", [2, 2, 2, 4], [2, 2, 2, 5], "buff"],
 ["2024-12-17", "Halberd Reactor", [5, 10, 5, 4], [5, 10, 5, 3], "nerf"],
 ["2024-12-17", "Lost Kin", [5, 3, 6, 6], [6, 3, 6, 6], "buff"],
 ["2024-12-17", "Markoth", [5, 5, 6, 5], [5, 4, 6, 5], "nerf"],
@@ -5072,7 +5073,7 @@
 ["2025-03-22", "Air Totem", [2, 0, 0, 5], [2, 0, -1, -1], "partial"],
 ["2025-03-22", "Crystal Bits", [3, 0, 0, 5], [3, 0, -1, -1], "partial"],
 ["2025-03-22", "Earth Totem", [2, 0, 0, 5], [2, 0, -1, -1], "partial"],
-["2025-03-22", "Ech", [2, 2, 3, 5], [2, 5, 0, 5], "shift"],
+["2025-03-22", "Ech", [2, 2, 3, 5], [2, 5, 4, 5], "buff"],
 ["2025-03-22", "Fire Totem", [2, 0, 0, 5], [2, 0, -1, -1], "partial"],
 ["2025-03-22", "Regenerative Shield", [3, 0, 0, 4], [3, 0, -1, -1], "partial"],
 ["2025-03-22", "Water Totem", [2, 0, 0, 5], [2, 0, -1, -1], "partial"],
@@ -5080,37 +5081,39 @@
 ["2025-08-27", "Necrodeus", [7, 5, 6, 5], [7, 4, 6, 5], "nerf"],
 ["2025-08-27", "Star Dream", [10, 6, 3, 6], [10, 4, 3, 6], "nerf"],
 ["2025-08-27", "Toriel", [7, 4, 4, 5], [7, 4, 5, 5], "buff"],
-["2025-08-28", "Ech", [2, 5, 0, 5], [2, 5, 4, 5], "buff"],
 ["2025-08-28", "Marx", [6, 4, 8, 7], [7, 4, 8, 7], "buff"],
 ["2025-08-29", "Groda", [8, 4, 6, 3], [8, 4, 5, 3], "nerf"],
 ["2025-10-30", "Kyle", [8, 6, 4, 4], [7, 7, 7, 7], "buff"]
 ],
 "id": "backfill-1",
-"made": {"bot_head": "f89ddf40fcf620df71d31dc2839cb49fa52de2c9", "card_head": "efcf17d2003f5dad30150e8760ba50dfd4b29184", "card_head_at": 1792809291.0, "cards": 448, "full": 2825, "misread pairs": 13, "parser": 2, "partial": 33, "px": 1000, "px_row": 300, "readings": 2946, "rules": 3, "split": 15, "template": 27, "template agrees": 16, "unread": 88},
+"made": {"bot_head": "f3e2018f4dfefb1acf8d2671b387738a824878de", "card_head": "efcf17d2003f5dad30150e8760ba50dfd4b29184", "card_head_at": 1792809291.0, "cards": 448, "full": 2825, "misread pairs": 13, "parser": 2, "partial": 33, "px": 1000, "px_row": 300, "readings": 2946, "rules": 4, "split": 15, "template": 27, "template agrees": 16, "unread": 88},
+"printed": {"Grimora": [5, 4, 6, 5], "The Thin Man": [8, 4, 7, 4]},
 "unread_edits": [
+["2023-11-07", "Grimora", "3efbbe35", "3df48ea0", {"atk": 857, "hp": 642, "spd": 1365}, [5, 2, 6, 5]],
 ["2023-11-17", "Shef Saltbaker", "7264d07f", "571d942b", {"atk": 3773, "hp": 4949}, [8, 4, 6, 6]],
 ["2023-11-17", "Tainted Beathany", "7d5e017f", "ca93ced0", {"def": 3378, "hp": 3894}, [7, 4, 4, 5]],
 ["2023-11-17", "Tainted Eden", "e683a926", "704da0ea", {"def": 4661, "hp": 5095}, [7, 3, 4, 4]],
 ["2023-11-17", "Tainted Eve", "48b9e282", "d7d01d5e", {"def": 3182, "hp": 36721}, [10, 0, 4, 6]],
 ["2023-11-17", "Tainted Isaac", "98992290", "7a923578", {"def": 3865, "hp": 32417}, [6, 3, 5, 5]],
 ["2023-11-17", "Tainted Lost", "aa5baf8c", "c6672265", {"atk": 17640, "hp": 9945, "spd": 17640}, [1, 0, 5, 5]],
-["2023-11-24", "Chef Saltbaker", "b10a1ad2", "147e9bcf", {"atk": 7547}, [8, 4, 6, 6]],
-["2023-11-24", "Clot Bone", "94aad031", "4d262729", {"atk": 1026}, [2, 2, 3, 5]],
+["2023-11-24", "Chef Saltbaker", "b10a1ad2", "147e9bcf", {"atk": 7547}, [8, 4, 6, 6], "confirmed: 2023-11-24 Chef Saltbaker: -2 ATK"],
+["2023-11-24", "Clot Bone", "94aad031", "4d262729", {"atk": 1026}, [2, 2, 3, 5], "confirmed: 2023-11-24 bone clot -1 atk"],
 ["2024-10-03", "Traitor Lord", "42d380b9", "074de42f", {"spd": 318}, [6, 5, 8, 6]],
 ["2025-02-07", "Slugcat", "23a0fb5f", "9dfd6b7b", {"def": 4457}, [4, 2, 4, 4]],
-["2025-02-21", "Chef Saltbaker", "147e9bcf", "8fbc4186", {"atk": 7547, "hp": 5015}, [8, 4, 6, 6]],
-["2025-02-21", "Clot Bone", "4d262729", "a8fa72bc", {"atk": 1032}, [2, 2, 3, 5]],
+["2025-02-21", "Chef Saltbaker", "147e9bcf", "8fbc4186", {"atk": 7547, "hp": 5015}, [8, 4, 6, 6], "confirmed: 2025-02-22 Salt baker: +1 hp bar (ATK back to 6)"],
+["2025-02-21", "Clot Bone", "4d262729", "a8fa72bc", {"atk": 1032}, [2, 2, 3, 5], "confirmed: 2025-02-22 bone clot: -1 atk"],
 ["2025-02-21", "Militron", "c826423d", "4de42696", {"atk": 741, "spd": 774}, [7, 5, 7, 5]],
-["2025-02-21", "Slugcat", "9dfd6b7b", "89116889", {"hp": 1864, "spd": 1864}, [4, 2, 4, 4]],
+["2025-02-21", "Slugcat", "9dfd6b7b", "89116889", {"hp": 1864, "spd": 1864}, [4, 2, 4, 4], "confirmed: 2025-02-22 Slugcat: +1 bar HP, +1 SPD"],
 ["2025-02-24", "Air Totem", "f396ca99", "96abf20b", {"hp": 369}, [2, 0, 0, 5]],
-["2025-03-01", "Clot Bone", "a8fa72bc", "8e0c2096", {"atk": 1032, "def": 1032}, [2, 2, 3, 5]],
-["2025-03-01", "God Tamer", "f6db5a56", "268310ce", {"atk": 3375, "hp": 3645, "spd": 6750}, [3, 4, 4, 6]],
+["2025-03-01", "Clot Bone", "a8fa72bc", "8e0c2096", {"atk": 1032, "def": 1032}, [2, 2, 3, 5], "confirmed: 2025-03-01 Bone Clot: -1 ATK, +1 DEF"],
+["2025-03-01", "God Tamer", "f6db5a56", "268310ce", {"atk": 3375, "hp": 3645, "spd": 6750}, [3, 4, 4, 6], "confirmed: 2025-03-02 God Tamer: Tamer: +1 bar HP, +1 SPD... Beast: +1SPD, +1 ATK"],
 ["2025-03-01", "PoD04Zebra Bloon", "ee7bcf35", "ec62620a", {"atk": 5641}, [3, 2, 6, 5]],
 ["2025-03-01", "Tainted Bethany", "81c7a474", "e0d0fc58", {"hp": 351}, [7, 4, 5, 5]],
 ["2025-03-08", "Godskin Apostle", "8c4bb507", "1ef4250c", {"def": 476}, [5, 2, 5, 5]],
-["2025-03-09", "Chef Saltbaker", "8fbc4186", "9a56ad2b", {"hp": 5015}, [8, 4, 6, 6]],
+["2025-03-09", "Chef Saltbaker", "8fbc4186", "9a56ad2b", {"hp": 5015}, [8, 4, 6, 6], "confirmed: 2025-03-09 Salt baker: -1 HP"],
 ["2025-03-09", "The Kestrel", "1178e76f", "447f09f1", {"atk": 711, "def": 944, "hp": 382}, [7, 6, 3, 6]],
-["2025-03-09", "The Thin Man", "2b098443", "65a844e1", {"atk": 5474}, [8, 4, 8, 4]],
+["2025-03-09", "The Thin Man", "2b098443", "65a844e1", {"atk": 5474}, [8, 4, 8, 4], "confirmed: 2025-03-09 Thin Man: -1 ATK"],
+["2025-03-11", "Grimora", "a009f99e", "aec4e726", {"def": 4375}, [5, 2, 6, 5], "confirmed: 2025-03-12 Grimora: +2 DEF"],
 ["2025-03-17", "Artemis Missiles", "eb4fcc59", "eb6d31f3", {"atk": 752, "hp": 409}, [2, 0, 3, 6]],
 ["2025-03-17", "Burst Laser II", "04b4945d", "92656aed", {"atk": 752, "hp": 409}, [2, 0, 2, 6]],
 ["2025-03-17", "Heavy Ion", "63d9ce46", "50b8332d", {"atk": 752, "hp": 409}, [2, 0, 0, 6]],
