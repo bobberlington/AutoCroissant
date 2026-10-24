@@ -165,7 +165,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [ ] b22f4cc4's new PNG against its PSD (the first live bake).
 
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
-- [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6, pinned in requirements-cards.txt): text
+- [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6; the pin is `cards-20261024b` = a651cd08 since
+      2026-10-24, glow halos, on work/fx-rebuild): text
       diagonals, rulebook corners, inner glow, B11, fast open, render hotspots, wide strokes. Frozen corpus
       corpus-b89ce169: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
       ~1.7x and PSD opens ~3.2x faster. B11's trade: Toriel's Ability 0.18% -> 4.19% bad when re-drawn (net gain over
