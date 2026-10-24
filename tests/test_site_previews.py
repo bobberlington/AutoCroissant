@@ -173,6 +173,19 @@ out([p.renderedHtml(res("baked"), v), p.renderedHtml(res("refused", { reason: "s
 
 
 @needs_js
+def test_the_panel_says_previews_are_public_and_takes_a_webp_alone(tmp_path):
+    """Before the first press: a previewed edit is public (the run's inputs and the previews branch; the server's
+    contract since TTSCardMaker 7646a3cc). A result listing only the WebP (no full-size PNG published): no Full size."""
+    out = node(tmp_path, """
+const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.webp", diff: false };
+const res = { request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state: "baked", result: { fields: { hp: "baked" }, notes: [], base: {}, files: { webp: "preview.webp" } } };
+out([p.renderedHtml(null, v), p.renderedHtml(null, { ...v, n: 0 }), p.renderedHtml(res, v)]);""")
+    first, nothing, webp = out
+    assert "Anyone can see a previewed edit" in first and "Anyone" not in nothing
+    assert 'href="https://r/p.webp"' in webp and "Full size</a>" not in webp
+
+
+@needs_js
 def test_the_diff_marks_changed_pixels(tmp_path):
     """Changed pixels red, the rest the current image dimmed; the share of changed pixels."""
     out = node(tmp_path, """
@@ -330,9 +343,12 @@ def test_web_fonts_map_the_psd_fonts(bs, tmp_path, monkeypatch):
     """data/fonts.json: a PSD font name to its MDW/Fonts file as font_check resolves it (exact PostScript name, an alias,
     a loose match without -Regular); never a collection or a file over FONT_WEB_MAX; names read once per blob (cached)."""
     files = {p.name: p for p in _fonts()}
-    pick = [n for n in ("consolab.ttf", "Arial.ttf", "BookAntiqua.ttc") if n in files]
-    if len(pick) < 3:
-        pytest.skip("MDW/Fonts lacks consolab.ttf, Arial.ttf or BookAntiqua.ttc")
+    # the files as named since TTSCardMaker b03b9975 (named as the fonts), or before
+    want = (("Consolas Bold.ttf", "consolab.ttf"), ("Arial.ttf",), ("Book Antiqua.ttc", "BookAntiqua.ttc"))
+    pick = [next((n for n in names if n in files), None) for names in want]
+    if None in pick:
+        pytest.skip("MDW/Fonts lacks Consolas Bold, Arial or Book Antiqua")
+    bold, plain, ttc = pick
     repo = tmp_path / "repo"
     (repo / "MDW" / "Fonts").mkdir(parents=True)
     tree = {}
@@ -342,11 +358,11 @@ def test_web_fonts_map_the_psd_fonts(bs, tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "REPO", str(repo))
     monkeypatch.setattr(bs, "CACHE", str(tmp_path / "cache"))
     faces = {name: bs.font_faces((repo / "MDW" / "Fonts" / name).read_bytes()) for name in pick}
-    consolas, arial, antiqua = faces["consolab.ttf"][0][0], faces["Arial.ttf"][0][0], faces["BookAntiqua.ttc"][0][0]
+    consolas, arial, antiqua = faces[bold][0][0], faces[plain][0][0], faces[ttc][0][0]
     names = {consolas, f"{arial}-Regular", antiqua, "NoSuchFont"}
     first = bs.web_fonts(tree, names)
-    assert first == {consolas: {"file": "MDW/Fonts/consolab.ttf", "bytes": files["consolab.ttf"].stat().st_size},
-                     f"{arial}-Regular": {"file": "MDW/Fonts/Arial.ttf", "bytes": files["Arial.ttf"].stat().st_size}}
+    assert first == {consolas: {"file": f"MDW/Fonts/{bold}", "bytes": files[bold].stat().st_size},
+                     f"{arial}-Regular": {"file": f"MDW/Fonts/{plain}", "bytes": files[plain].stat().st_size}}
     monkeypatch.setattr(bs, "font_bytes", lambda path: (_ for _ in ()).throw(AssertionError(f"read {path} again")))
     assert bs.web_fonts(tree, names) == first      # from site/.cache/fonts.json
     monkeypatch.setattr(bs, "FONT_WEB_MAX", 10)

@@ -320,3 +320,37 @@ process.stdout.write(JSON.stringify({ first, t, swapped, back, chips, html, word
     assert "No type matches “zz”" in out["html"] and 'type="search"' in out["html"] and "1 type: fire" in out["html"]
     assert out["words"] == ["No types", "2 types: defensive minion, fire"]
     assert 'alt="fire"' in out["row"] and ">nope<" in out["row"]
+
+
+def test_the_palette_takes_the_token_picker_s_search(tmp_path):
+    """pickerSearch: the token picker's suggest() as the palette's search (the switch once tokens.js is on main): asked
+    for a plain icon of the typed text in the picker's whole vocabulary (read at each search), its plain type rows kept
+    (no stars, no variants, none the palette lacks), in its order."""
+    out = node(tmp_path, ICONS + """
+const asked = [], all = [{ name: "fire" }, { name: "star3" }];
+let reads = 0;
+const suggest = (open, v) => { asked.push([open, v.length]); return [
+  { token: "[water]", kind: "type", variant: "" }, { token: "[star3]", kind: "star", variant: "" }, { token: "[fire:glow]", kind: "type", variant: "glow" },
+  { token: "[fire]", kind: "type", variant: "" }, { token: "[gone]", kind: "type", variant: "" }]; };
+const search = palette.pickerSearch(suggest, () => { reads++; return all; });
+const got = names(search(vocab, "wa"));
+palette.useSearch(search);
+const ordered = names(palette.paletteOrder(vocab, [], "wa")), none = names(palette.paletteOrder(vocab, ["ice"], ""));
+palette.useSearch(null);
+process.stdout.write(JSON.stringify({ got, asked, reads, ordered, none }));
+""")
+    assert out["got"] == ["water", "fire"] and out["ordered"] == ["water", "fire"]
+    assert out["asked"][0] == [{"type": "icon", "base": "wa", "variant": None}, 2] and out["reads"] == 2
+    assert out["none"][0] == "ice" and len(out["none"]) == 6           # no query: the palette's own order, not the search
+
+
+@pytest.mark.skipif(not (ASSETS / "tokens.js").is_file(), reason=f"no tokens.js (the token picker) in {ASSETS}")
+def test_the_palette_with_the_real_token_picker(tmp_path):
+    """With tokens.js on the site: its ranking through pickerSearch finds types by prefix and with a slip."""
+    out = node(tmp_path, ICONS + f"""
+const tokens = await import({json.dumps((ASSETS / "tokens.js").as_uri())});
+const search = palette.pickerSearch(tokens.suggest, () => tokens.vocabulary(icons, ["[fire] [fire] [field]"]));
+process.stdout.write(JSON.stringify({{ fi: names(search(vocab, "fi")), frie: names(search(vocab, "frie")), wet: names(search(vocab, "wet")) }}));
+""")
+    assert out["fi"] == ["fire", "field"]                               # the most used first
+    assert out["frie"][0] == "fire" and out["wet"][0] == "water"
