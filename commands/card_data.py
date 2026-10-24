@@ -1141,15 +1141,15 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
         build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
     if line:
         build.report(line)
+    problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
     backfill, merged = None, False
-    try:                                            # once, after recover (history_backfill.json; dead code after)
-        from commands.history_backfill import merged as backfill_merged
+    try:                                            # once, after recover and this run's authors (history_backfill.json;
+        from commands.history_backfill import merged as backfill_merged     # dead code after)
         backfill, merged = backfill_merged(db, index)
     except Exception as e:                          # noqa: BLE001 - never stops an update
         backfill = f"Backfill skipped ({type(e).__name__}: {e})."
     if backfill:
         build.report(backfill)
-    problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
 
     gone, backfilled = db.prune_clean_cards(at) if can_prune(build) else ([], [])
     if gone or backfilled:

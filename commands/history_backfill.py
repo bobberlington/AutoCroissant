@@ -3,10 +3,10 @@ One-time stat history backfill and archive completion (docs/NEXT_SESSION_PLAN.md
 its merge has run in production: delete this module, history_backfill.json, its call in card_data.update() and
 tests/test_history_backfill.py.
 
-- build (the Mac, by hand): every stat-card PSD version in the card repo's git read by today's parser, the stat bars of
-  consecutive versions compared on the PSDs' stored previews (a reading that changed while the bars printed the same is
+- build (the Mac, by hand): every stat-card PSD version in the card repo's git read by today's parser, each stat's row
+  of consecutive versions compared on the PSDs' stored previews (a stat that changed while its row printed the same is
   a misread, never a change), the cards that left the card folders with their fate and author; one reviewable file.
-- merged (/update_stats, once, after recover): that file into old_stats, on a trial copy.
+- merged (/update_stats, once, after recover and the traversal): that file into old_stats, on a trial copy.
 - rehearse: the same merge on copies of the pickles.
 
 CLI (copies only, the fork venv):
@@ -43,8 +43,9 @@ FILE_NAME = "history_backfill.json"
 FILE = join(BOT_CHECKOUT, FILE_NAME)          # what /update_stats merges once
 FILE_ID = "backfill-1"
 MARK = "backfill_id"                          # on the version records and archive tags the merge wrote: merged
-RULES = 1                                     # cache lines read by other rules are read again
+RULES = 2                                     # cache lines read by other rules are read again
 PX_DIFF, PX_SAME = 24, 1000                   # bars print the same: at most PX_SAME pixels moved by more than PX_DIFF
+PX_STAT = 300                                 # and in each stat's own row at most PX_STAT
 OFF_SCALE = 40                                # analytics: a total above it is no buff or nerf
 STAT_PATH = re_compile(r"^(Creatures|Aux[il]+ary/(Minions|Creatures))/")
 CARD_TOPS = ("Creatures", "Items", "Field", "N.M.E", "Auxiliary", "Auxillary")
@@ -59,6 +60,9 @@ CONFIRMED = {"Items/Support/2 Stars/Plan_Ahead.psd": "Tomorrow I'll",
 KINDS = {"aux item": "item"}                  # a qualified key's kind: "Pizza (item)"
 DRAWN = ("pixel", "smartobject", "group", "type", "shape")   # psd_parser.DRAWN_LAYER_KINDS
 STAT_OF = {"hp": "hp", "def": "def", "atk": "atk", "spd": "spd", "health": "hp"}
+STATS = ("hp", "def", "atk", "spd")
+STAT_ROW = {"hp": 0, "health": 0, "def": 1, "defense": 1, "atk": 2, "attack": 2, "spd": 3, "speed": 3}
+WORDS, ALNUM = re_compile(r"[a-z]+"), re_compile(r"[a-z0-9]+")
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 WORKERS = 4
 FAR = 9e12                                    # an open end
@@ -393,6 +397,46 @@ def bar_boxes(psd) -> list:
     return sorted({tuple(int(v) for v in b) for b in out if b and b[2] > b[0] and b[3] > b[1]})
 
 
+def _row_of(name: str) -> Optional[int]:
+    return next((STAT_ROW[w] for w in WORDS.findall(name.lower()) if w in STAT_ROW), None)
+
+
+def stat_boxes(psd) -> list:
+    """Each stat's own row: [[boxes] for hp, def, atk, spd], from the drawn layers under a "...bars", "...lines" or
+    "...dark..." group named after the stat or sitting in such a stat's group (never text, groups or the canvas)."""
+    out = [[], [], [], []]
+    for layer in psd.descendants():
+        b = layer.bbox
+        if layer.is_group() or layer.kind == "type" or not b or b[2] <= b[0] or b[3] <= b[1]:
+            continue
+        names, cur = [], layer.parent
+        while len(names) < 3 and cur is not None and cur is not psd and hasattr(cur, "name"):
+            names.append(cur.name.lower())
+            cur = getattr(cur, "parent", None)
+        if not any(k in n for n in names for k in ("bar", "line", "dark")):
+            continue
+        row = _row_of(layer.name)
+        row = row if row is not None else next((r for r in map(_row_of, names[:2]) if r is not None), None)
+        if row is not None:
+            out[row].append(tuple(int(v) for v in b))
+    return [sorted(set(boxes)) for boxes in out]
+
+
+def rows_moved(a, b, rows: list, offset: tuple = (0, 0)) -> list:
+    """Per stat, the pixels of its row's boxes (both versions') that moved by more than PX_DIFF; None for a stat with
+    no boxes. offset: the images' top left on the canvas."""
+    import numpy as np
+    moved = np.abs(a - b).max(axis=2) > PX_DIFF
+    out = []
+    for boxes in rows:
+        mask = np.zeros(moved.shape, dtype=bool)
+        for x0, y0, x1, y1 in boxes:
+            x0, y0, x1, y1 = x0 - offset[0], y0 - offset[1], x1 - offset[0], y1 - offset[1]
+            mask[max(0, y0):max(0, y1), max(0, x0):max(0, x1)] = True
+        out.append(int((moved & mask).sum()) if boxes else None)
+    return out
+
+
 def _preview(psd):
     import numpy as np
     try:
@@ -430,11 +474,50 @@ def _render(psd, box: tuple):
     return np.asarray(img.convert("RGB")).astype(np.int16)
 
 
+def _keep_trackers(parser) -> None:
+    """parser's stat trackers of its last parse in parser.trackers (split_rows reads them)."""
+    if getattr(parser, "_keeps", False):
+        return
+    process = parser._process_stats
+
+    def keep(card, trackers):
+        parser.trackers = trackers
+        return process(card, trackers)
+    parser._process_stats, parser._keeps, parser.trackers = keep, True, None
+
+
+def split_rows(trackers, card) -> list:
+    """Stats whose value adds up rows that are no overflow (no row a full 10): two creatures' bars summed (God Tamer's
+    Beast and Tamer, as an older parser summed Twin Emperors). Never on a card the parser split into creatures."""
+    if trackers is None or card.creatures:
+        return []
+    out = []
+    for name, tracker in (("hp", trackers.hp), ("def", trackers.defense), ("atk", trackers.attack),
+                          ("spd", trackers.speed)):
+        groups: dict = {}
+        for row in tracker.rows.values():
+            if row.items:
+                groups.setdefault(row.group, []).append(tracker._row_value(row.items))
+        parts = []
+        for found in groups.values():
+            if len(found) > 1 and all(per_cell for _, per_cell in found):
+                parts.append(max(v for v, _ in found))
+            else:
+                parts += [v for v, _ in found]
+        parts = [p for p in parts if p > 0]
+        if len(parts) > 1 and max(parts) < 10:
+            out.append(name)
+    return out
+
+
 def read_psd(parser, psd, path: str) -> dict:
     """One version's reading: line [hp, def, atk, spd] (creature 1's), creatures, how it was read, hidden drawn rows,
-    card type and stars, the bars' boxes."""
+    summed split rows, card type and stars, the bars' boxes and each stat row's."""
     how = "template" if template(psd) else "parser"
-    out = {"how": how, "hidden": hidden_rows(parser, psd), "boxes": [list(b) for b in bar_boxes(psd)]}
+    out = {"how": how, "hidden": hidden_rows(parser, psd), "boxes": [list(b) for b in bar_boxes(psd)],
+           "rows": [[list(b) for b in boxes] for boxes in stat_boxes(psd)]}
+    _keep_trackers(parser)
+    parser.trackers = None
     try:
         card = parser.parse(psd, today(path))
     except ValueError as e:                   # a folder the classifier refuses
@@ -442,26 +525,26 @@ def read_psd(parser, psd, path: str) -> dict:
     s = card.stats
     out.update({"read": [s.hp, s.defense, s.attack, s.speed] if s is not None else None,
                 "creatures": [[c.hp, c.defense, c.attack, c.speed] for c in card.creatures or []],
-                "type": card.card_type, "stars": card.stars})
+                "split": split_rows(parser.trackers, card), "type": card.card_type, "stars": card.stars})
     return out
 
 
 def _task_lineage(repo: str, items: list, have_reads: set, have_pairs: set) -> list:
     """A worker's lineage: cache lines for the readings and print pairs not cached (each version opened at most once,
     the one before it again only when a pair needs it)."""
-    out, prev = [], None                      # prev: (blob, psd or None when not opened, preview, boxes)
+    out, prev = [], None                      # prev: (blob, psd or None when not opened, preview, boxes, rows)
     for blob, path in items:
         want_read = (blob, path) not in have_reads
         want_pair = prev is not None and (prev[0], blob) not in have_pairs
         if not want_read and not want_pair:
-            prev = (blob, None, None, None)
+            prev = (blob, None, None, None, None)
             continue
         t = time()
         try:
             if want_pair and prev[1] is None:
                 old = _open(repo, prev[0])
                 template(old)
-                prev = (prev[0], old, _preview(old), bar_boxes(old))
+                prev = (prev[0], old, _preview(old), bar_boxes(old), stat_boxes(old))
             psd = _open(repo, blob)
             reading = read_psd(_PARSER, psd, path)
             image = _preview(psd)
@@ -474,14 +557,20 @@ def _task_lineage(repo: str, items: list, have_reads: set, have_pairs: set) -> l
             out.append({"kind": "read", "blob": blob, "path": path, "rules": RULES, "s": round(time() - t, 2), **reading})
         if want_pair:
             boxes = [tuple(b) for b in reading["boxes"]] + [tuple(b) for b in prev[3]]
-            a, b, how = prev[2], image, "preview"
+            rows = [[tuple(b) for b in mine] + list(theirs) for mine, theirs in zip(reading["rows"], prev[4])]
+            boxes += [b for row in rows for b in row]
+            a, b, how, offset = prev[2], image, "preview", (0, 0)
             if a is None or b is None:        # no stored preview: that region rendered from the layers
                 box = _region(boxes, (psd.height, psd.width))
                 a, b, how = (_render(prev[1], box), _render(psd, box), "render") if box else (None, None, "render")
-            px = (0 if how == "render" and a is None else
-                  bars_moved(a, b, [] if how == "render" else boxes))
-            out.append({"kind": "pair", "a": prev[0], "b": blob, "rules": RULES, "px": px, "how": how})
-        prev = (blob, psd, image, reading["boxes"])
+                offset = box[:2] if box else (0, 0)
+            if how == "render" and a is None:
+                px, per = 0, [None] * 4
+            else:
+                px = bars_moved(a, b, [(0, 0, a.shape[1], a.shape[0])] if how == "render" else boxes)
+                per = rows_moved(a, b, rows, offset) if px is not None else [None] * 4
+            out.append({"kind": "pair", "a": prev[0], "b": blob, "rules": RULES, "px": px, "rows": per, "how": how})
+        prev = (blob, psd, image, reading["boxes"], [[tuple(b) for b in row] for row in reading["rows"]])
     return out
 
 
@@ -506,11 +595,11 @@ def _run_task(task: tuple) -> list:
 # ========================
 def status(reading: dict, allowed: bool) -> Optional[str]:
     """"full", "partial" (values and -1s: a bar the card lacks) or None: unread (no reading, a hidden drawn-cell row,
-    a value out of range, the all-default 10/10/10/10, all -1)."""
+    summed split rows, a value out of range, the all-default 10/10/10/10, all 0, all -1)."""
     line = reading.get("read")
-    if not line or reading.get("err") or reading.get("hidden"):
+    if not line or reading.get("err") or reading.get("hidden") or reading.get("split"):
         return None
-    if line == [10, 10, 10, 10] or all(v == -1 for v in line):
+    if line in ([10, 10, 10, 10], [0, 0, 0, 0]) or all(v == -1 for v in line):
         return None
     if any(not isinstance(v, int) or v < -1 or v > (STAT_CAP if allowed else STAT_MAX) for v in line):
         return None
@@ -526,18 +615,22 @@ def kind_of(a: Optional[list], b: list) -> str:
     return "buff" if sum(b) > sum(a) else "nerf" if sum(b) < sum(a) else "shift"
 
 
-def segments(readings: list, allowed: bool) -> list:
+def row_same(reading: dict, stat: int) -> bool:
+    """Whether stat's own row printed the same as in the version before (unknown: no)."""
+    rows = reading.get("row_px") or []
+    return stat < len(rows) and rows[stat] is not None and rows[stat] <= PX_STAT
+
+
+def lines_of(readings: list, allowed: bool) -> list:
     """
-    The stat line over time (the misread rule): consecutive versions whose bars printed the same are one print run,
-    whose line is its newest reading with a line; a run without one takes the line before it (the first: the one after
-    it). Consecutive runs with the same line are one segment; each later segment is a change, dated at its first
-    version. So a line changes only where the PSD's printed bars changed.
+    Each version's stat line by the misread rule: (line, creatures) per reading, [] when no version has a line.
 
-    Args:
-        readings: [{at, commit, blob, path, read, creatures, print, ...}] oldest first
-
-    Returns:
-        [{from, commit, blob, path, line, creatures, change?}]
+    - Print runs: consecutive versions whose bars printed the same (the region and every stat's row). A run's line is
+      its newest reading with a line: a reading that changed while nothing printed changed is a misread, and the
+      newest layering is the one the team fixed (Tainted bars, the template rename, Green Mage's bars).
+    - Per stat, runs whose boundary left that stat's row as printed are one stretch: its value is the first run's with a
+      line (a reading that changed only where other rows or art changed is a misread: Tainted Eden's 2023-11-17 ATK and
+      SPD). A stretch without a line takes the value before it (the first: the one after).
     """
     runs: list = []
     for i, reading in enumerate(readings):
@@ -545,25 +638,62 @@ def segments(readings: list, allowed: bool) -> list:
             runs[len(runs) - 1].append(i)
         else:
             runs.append([i])
-    lines = []
+    found = []
     for run_ in runs:
         known = [i for i in run_ if status(readings[i], allowed)]
-        lines.append((readings[known[len(known) - 1]]["read"], readings[known[len(known) - 1]].get("creatures") or [])
-                     if known else None)
-    first = next((x for x in lines if x is not None), None)
-    if first is None:
+        newest = readings[known[len(known) - 1]] if known else None
+        found.append((list(newest["read"]), [list(c) for c in newest.get("creatures") or []]) if newest else None)
+    if not any(found):
         return []
+    values = [[None] * len(runs) for _ in range(4)]
+    for stat in range(4):
+        stretches: list = []
+        for r, run_ in enumerate(runs):
+            if r and row_same(readings[run_[0]], stat):
+                stretches[len(stretches) - 1].append(r)
+            else:
+                stretches.append([r])
+        for stretch in stretches:
+            first = next((found[r][0][stat] for r in stretch if found[r]), None)
+            for r in stretch:
+                values[stat][r] = first
+        for order in (range(len(runs)), reversed(range(len(runs)))):    # unread: the value before, else after
+            last = None
+            for r in order:
+                if values[stat][r] is None:
+                    values[stat][r] = last
+                last = values[stat][r]
+    out, creatures = [], None
+    for r, run_ in enumerate(runs):
+        line = [values[stat][r] for stat in range(4)]
+        creatures = found[r][1] if found[r] else creatures
+        if creatures is None:
+            creatures = next((f[1] for f in found if f), [])
+        mine = [list(c) for c in creatures]
+        if mine:
+            mine[0] = list(line)
+        out += [(line, mine)] * len(run_)
+    return out
+
+
+def segments(readings: list, allowed: bool, lines: Optional[list] = None) -> list:
+    """
+    The stat line over time (lines_of, or the lines given): consecutive versions with the same line are one segment;
+    each later segment is a change, dated at its first version. So a stat changes only where its printed row changed.
+
+    Args:
+        readings: [{at, commit, blob, path, read, creatures, print, row_px, ...}] oldest first
+
+    Returns:
+        [{from, commit, blob, path, line, creatures, change?}]
+    """
+    lines = lines_of(readings, allowed) if lines is None else lines
     segs: list = []
-    prev = None
-    for run_, found in zip(runs, lines):
-        use = found or prev or first
-        prev = use
-        line, creatures = use
+    for r, (line, creatures) in zip(readings, lines):
         if segs and segs[len(segs) - 1]["line"] == line:
-            if found:
+            if creatures:
                 segs[len(segs) - 1]["creatures"] = creatures
             continue
-        r = readings[run_[0]]
         seg = {"from": r["at"], "commit": r["commit"], "blob": r["blob"], "path": r["path"], "line": line,
                "creatures": creatures}
         if segs:
@@ -612,11 +742,14 @@ def _print_of(cache: dict, prev: Optional[dict], reading: dict) -> tuple:
     """(verdict, px) of a version against the one before it."""
     if prev is None or prev.get("err"):
         return ("first", None)
+    if prev["blob"] == reading["blob"]:       # the same bytes under a new name (a rename chain)
+        return ("same", 0)
     pair = cache["pair"].get((prev["blob"], reading["blob"]))
     if pair is None or pair.get("px") is None:
         return ("resized" if pair is not None else "unknown", None)
     pre = "rendered-" if pair.get("how") == "render" else ""
-    return (pre + ("same" if pair["px"] <= PX_SAME else "changed"), pair["px"])
+    same = pair["px"] <= PX_SAME and all(px is None or px <= PX_STAT for px in pair.get("rows") or [])
+    return (pre + ("same" if same else "changed"), pair["px"])
 
 
 def readings_of(line: Lineage, cache: dict) -> list:
@@ -628,7 +761,10 @@ def readings_of(line: Lineage, cache: dict) -> list:
              "how": rec.get("how", "parser"), "print": verdict}
         if px is not None and verdict != "first":
             r["px"] = px
-        for k in ("creatures", "hidden", "err", "type", "stars"):
+            pair = cache["pair"].get((prev["blob"], blob)) or {}
+            if pair.get("rows") and any(v is not None for v in pair["rows"]):
+                r["row_px"] = pair["rows"]
+        for k in ("creatures", "hidden", "split", "err", "type", "stars"):
             if rec.get(k):
                 r[k] = rec[k]
         if verdict == "rendered-same":
@@ -687,15 +823,25 @@ def archive_candidates(hist: History, mains: dict, others: list) -> list:
     return out
 
 
+def _plain(text: str) -> str:
+    """A title compared: any case, quote style and punctuation alike ("Tomorrow I’ll" is "Tomorrow I'll")."""
+    return "".join(ALNUM.findall((text or "").lower()))
+
+
 def _archive_record(hist: History, name: str, title: Optional[str], last: str, found: Fate, card: dict,
-                    live: dict) -> dict:
+                    live: dict, names: frozenset = frozenset()) -> dict:
     """The archived record of a candidate: today's parse of the deleted bytes, its version from their intro, closed at
-    the tag; the tag dated as date_archive would (so later cleanups leave it)."""
+    the tag; the tag dated as date_archive would (so later cleanups leave it). Its printed title only when no other
+    card has it (names: every other card name, _plain) and it is not the card it was renamed to (a qualified key keeps
+    its plain name)."""
     index = hist.index
     info = from_record(card)
     info.name = name
     if title:
         info.display_name = title
+    elif info.display_name and (_plain(info.display_name) in names or found.kind == "renamed"
+                                and _plain(info.display_name) == _plain(found.target)):
+        info.display_name = None              # a title another card has (the card it became): shown by its own name
     blob = hist.deleted_blob(last)
     intro = index.blob_since(blob, last) or index.blob_intro(blob)
     info.blob_sha, info.path = blob, last
@@ -729,6 +875,7 @@ def build(repo: str, head: str, cache_path: str, out: str, workers: int = WORKER
     for name, title, line, found, last in candidates:
         if title and any(is_stat(p) for p in line.paths):
             stat[name] = Lineage(name, line.paths, title, False, line.versions)
+    chains = rename_chains(stat, candidates)
     wanted = [b for line in stat.values() for _, b, _ in line.versions]
     wanted += [hist.deleted_blob(last) for _, _, _, _, last in candidates]
     missing = _missing(repo, wanted)
@@ -742,8 +889,9 @@ def build(repo: str, head: str, cache_path: str, out: str, workers: int = WORKER
         return 1
     cache = _load_cache(cache_path)
     tasks = []
-    for line in stat.values():
+    for line in list(stat.values()) + [joined for joined, _ in chains.values()]:
         items = [(b, p) for _, b, p in line.versions]
+        items = [x for i, x in enumerate(items) if not i or x[0] != items[i - 1][0]]
         pairs = list(zip(items, items[1:]))
         if any(i not in cache["read"] for i in items) or any((a[0], b[0]) not in cache["pair"] for a, b in pairs):
             tasks.append(("lineage", repo, items, set(cache["read"]), set(cache["pair"])))
@@ -764,9 +912,10 @@ def build(repo: str, head: str, cache_path: str, out: str, workers: int = WORKER
                 if done % 25 == 0:
                     print(f"  {done}/{len(tasks)} ({time() - t0:.0f} s)", flush=True)
         cache = _load_cache(cache_path)
-    data = assemble(hist, stat, candidates, cache, authors, edits, live)
+    data = assemble(hist, stat, candidates, cache, authors, edits, live, chains)
     bot_head = run(["git", "-C", BOT_CHECKOUT, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    data["made"].update({"card_head": head_sha, "bot_head": bot_head})
+    head_at = index.by_sha[head_sha].at if head_sha in index.by_sha else max(c.at for c in index.by_sha.values())
+    data["made"].update({"card_head": head_sha, "card_head_at": head_at, "bot_head": bot_head})
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(file_text(data))
     for line in summary(data):
@@ -775,47 +924,93 @@ def build(repo: str, head: str, cache_path: str, out: str, workers: int = WORKER
     return 0
 
 
+def rename_chains(stat: dict, candidates: list) -> dict:
+    """The stat cards renamed into a stat card, read as one card so the misread rule crosses the renames (TaintedJacob's
+    bytes are Tainted Jacob's first): {target: (joined Lineage, [owner name per version])}, oldest first."""
+    members: dict = {}
+    for name, _, _, found, _ in candidates:
+        if found.kind == "renamed" and name in stat and found.target in stat:
+            members.setdefault(found.target, []).append(name)
+    out = {}
+    for target, names in members.items():
+        rows = [(c, b, p, n) for n in sorted(names) + [target] for c, b, p in stat[n].versions]
+        rows.sort(key=lambda x: -x[0].order)
+        joined = Lineage(target, sorted({p for n in names + [target] for p in stat[n].paths}), None, True,
+                         [(c, b, p) for c, b, p, _ in rows])
+        out[target] = (joined, [n for *_, n in rows])
+    return out
+
+
+def print_edits(name: str, readings: list, lines: list) -> list:
+    """Versions where some stat rows printed a change (not all four: a restyle) that no line shows: an edit today's
+    parser can't read (drawn cells it misses, art over a cell). [date, name, blob before, blob, {stat: px}, line]."""
+    out = []
+    for i in range(1, len(readings)):
+        rows = readings[i].get("row_px") or []
+        moved = [s for s, px in enumerate(rows) if px is not None and px > PX_STAT]
+        if not moved or len(moved) == 4:
+            continue
+        unread = [s for s in moved if lines[i][0][s] == lines[i - 1][0][s]]
+        if unread:
+            out.append([strftime("%Y-%m-%d", localtime(readings[i]["at"])), name, readings[i - 1]["blob"][:8],
+                        readings[i]["blob"][:8], {STATS[s]: rows[s] for s in unread}, lines[i][0]])
+    return out
+
+
 def assemble(hist: History, stat: dict, candidates: list, cache: dict, authors: Optional[CardAuthors],
-             edits: Optional[CardEdits], live: dict) -> dict:
+             edits: Optional[CardEdits], live: dict, chains: Optional[dict] = None) -> dict:
     """The file's data from the lineages, the cache and the candidates."""
-    cards, changes, counts = {}, [], Counter()
+    cards, changes, edits_unread, counts = {}, [], [], Counter()
+    chains = chains or {}
+    joined_lines: dict = {}
+    for target, (joined, owners) in chains.items():
+        found = lines_of(readings_of(joined, cache), allows(target, True, edits))
+        for owner, got in zip(owners, found):
+            joined_lines.setdefault(owner, []).append(got)
     for name in sorted(stat):
         line = stat[name]
         allowed = allows(name, line.alive, edits)
         readings = readings_of(line, cache)
-        segs = segments(readings, allowed)
+        lines = joined_lines.get(name) or lines_of(readings, allowed)
+        segs = segments(readings, allowed, lines)
         for r in readings:
             counts["readings"] += 1
             counts[status(r, allowed) or "unread"] += 1
             counts["template"] += r["how"] == "template"
+            counts["split"] += bool(r.get("split"))
         for a, b in zip(readings, readings[1:]):              # the template read checks itself
             if a["how"] == "template" and b["how"] == "parser" and b["print"] == "same":
                 same = status(a, allowed) and a["read"] == b["read"]
                 counts["template agrees" if same else "template disagrees"] += 1
             if b["print"] == "same" and a.get("read") != b.get("read") and status(a, allowed) and status(b, allowed):
                 counts["misread pairs"] += 1
+        if lines:
+            edits_unread += print_edits(name, readings, lines)
         entry = {"paths": line.paths, "allowed_high": allowed, "readings": readings, "segments": segs}
         if line.title:
             entry["title"] = line.title
         cards[name] = entry
-        for seg in segs[1:]:
-            changes.append([strftime("%Y-%m-%d", localtime(seg["from"])), name,
-                            next(s["line"] for s in reversed(segs) if s["from"] < seg["from"]), seg["line"],
-                            seg["change"]])
+        for before, seg in zip(segs, segs[1:]):
+            changes.append([strftime("%Y-%m-%d", localtime(seg["from"])), name, before["line"], seg["line"], seg["change"]])
     changes.sort()
+    edits_unread.sort()
     records, credits = {}, {}
+    names = frozenset(_plain(n) for n in list(live.values()) + [c[0] for c in candidates] + [c[2].name for c in candidates])
     for name, title, line, found, last in candidates:
         got = cache["card"].get((hist.deleted_blob(last), last)) or {}
         entry = {"fate": found.kind, "how": found.how, "path": last}
         if got.get("card"):
-            entry["record"] = _archive_record(hist, name, title, last, found, got["card"], live)
+            others = names - {_plain(name)}
+            entry["record"] = _archive_record(hist, name, title, last, found, got["card"], live, others)
         else:
             entry["error"] = got.get("err", "not read")
         records[name] = entry
         credits[name] = credit(hist, authors, title or name, line.paths, found)
     counts["cards"] = len(cards)
-    return {"id": FILE_ID, "made": {"parser": _parser_version(), "px": PX_SAME, "rules": RULES, **dict(counts)},
-            "cards": cards, "changes": changes, "archive": {"cards": records, "authors": credits}}
+    return {"id": FILE_ID, "made": {"parser": _parser_version(), "px": PX_SAME, "px_row": PX_STAT, "rules": RULES,
+                                    **dict(counts)},
+            "cards": cards, "changes": changes, "unread_edits": edits_unread,
+            "archive": {"cards": records, "authors": credits}}
 
 
 def _parser_version() -> int:
@@ -830,7 +1025,10 @@ def summary(data: dict) -> list:
     return [f"{made.get('readings', 0)} PSD versions of {made.get('cards', 0)} cards: {made.get('full', 0)} full lines, "
             f"{made.get('partial', 0)} partial, {made.get('unread', 0)} unread; {made.get('template', 0)} by the old "
             f"template's positions (agrees {made.get('template agrees', 0)}, disagrees {made.get('template disagrees', 0)})",
-            f"Misread pairs (read differently, printed the same): {made.get('misread pairs', 0)}",
+            f"Misread pairs (read differently, printed the same): {made.get('misread pairs', 0)}; summed split rows: "
+            f"{made.get('split', 0)}",
+            f"Printed stat edits no reading shows (unread_edits, for the owner): {len(data.get('unread_edits') or [])} on "
+            f"{len({e[1] for e in data.get('unread_edits') or []})} cards",
             f"Stat changes: {len(data['changes'])} ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))}) on "
             f"{len({c[1] for c in data['changes']})} cards",
             f"Archive candidates: {len(data['archive']['cards'])} ({', '.join(f'{n} {k}' for k, n in sorted(fates.items()))})"]
@@ -858,7 +1056,10 @@ def file_text(data: dict) -> str:
         out.append("]}" + ("," if i + 1 < len(names) else ""))
     out += ["},", '"changes": [']
     out += [one(c) + ("," if i + 1 < len(data["changes"]) else "") for i, c in enumerate(data["changes"])]
-    out += ["],", f'"id": {one(data["id"])},', f'"made": {one(data["made"])}', "}"]
+    out += ["],", f'"id": {one(data["id"])},', f'"made": {one(data["made"])},', '"unread_edits": [']
+    edits = data.get("unread_edits") or []
+    out += [one(e) + ("," if i + 1 < len(edits) else "") for i, e in enumerate(edits)]
+    out += ["]", "}"]
     return "\n".join(out) + "\n"
 
 
@@ -876,7 +1077,10 @@ class Merged:
     folded: list = field(default_factory=list)            # names of versions collapse folded
     earlier: list = field(default_factory=list)           # (name, current?) starts moved earlier
     later: list = field(default_factory=list)             # (name, current?) starts moved later
-    current: list = field(default_factory=list)           # (name, stored line, the PSD's) current cards that differ
+    current: list = field(default_factory=list)           # (name, its line, the file's) current cards older: left alone
+    kept: list = field(default_factory=list)              # (name, start, stored line, the file's) corrections refused
+    late: list = field(default_factory=list)              # (name, start) versions newer than the file: left alone
+    paths: list = field(default_factory=list)             # (name, path) archive tags given the deleted path
     tags_moved: list = field(default_factory=list)        # archived records whose tag went to a newer line
     archived: list = field(default_factory=list)          # (name, fate) records added
     retagged: list = field(default_factory=list)          # (name, renamed_to or moved_to) retagged
@@ -887,7 +1091,7 @@ class Merged:
 
     def changed(self) -> bool:
         return bool(self.corrected or self.neutral or self.added or self.folded or self.earlier or self.later
-                    or self.tags_moved or self.archived or self.retagged or self.authors_set)
+                    or self.tags_moved or self.archived or self.retagged or self.authors_set or self.paths)
 
     def line(self) -> str:
         def names(items):
@@ -899,8 +1103,13 @@ class Merged:
                  f"({made.get('template', 0)} by the old template's positions, {made.get('unread', 0)} unread)",
                  f"{len(self.corrected)} version{'' if len(self.corrected) == 1 else 's'} corrected"
                  + (f" ({names(self.corrected)})" if self.corrected else "")]
+        if self.kept:
+            parts.append(f"{len(self.kept)} kept as stored (their bytes unread, or a correction would add a change; "
+                         f"{names(n for n, *_ in self.kept)})")
         if self.neutral:
             parts.append(f"{len(self.neutral)} unmatched aligned to a neighbour ({names(self.neutral)})")
+        if self.late:
+            parts.append(f"{len(self.late)} newer than the file left alone ({names(n for n, _ in self.late)})")
         parts.append(f"{len(self.added)} stat version{'' if len(self.added) == 1 else 's'} added, {len(self.folded)} "
                      f"folded" + (f" ({names(self.folded)})" if self.folded else "")
                      + f", {len(self.earlier)} start{'' if len(self.earlier) == 1 else 's'} moved earlier "
@@ -908,10 +1117,15 @@ class Merged:
                      + (f", {len(self.later)} later" if self.later else ""))
         b = self.balance
         parts.append(f"stat changes {b['buff'] + b['nerf'] + b['shift']} ({b['buff']} buffs, {b['nerf']} nerfs, "
-                     f"{b['shift']} moved) and {b['uncounted']} uncounted, on {self.balance_cards} cards")
+                     f"{b['shift']} moved) and {b['uncounted']} uncounted, on {self.balance_cards} current cards")
+        if self.current:
+            one = len(set(n for n, *_ in self.current)) == 1
+            parts.append(f"{len(set(n for n, *_ in self.current))} current card{'' if one else 's'} unlike the file "
+                         f"(left alone; re-parse {'it' if one else 'them'}: {names(n for n, *_ in self.current)})")
         parts.append(f"{len(self.archived)} card{'' if len(self.archived) == 1 else 's'} archived ("
                      + ", ".join(f"{fates[k]} {k}" for k in ("renamed", "retired", "deleted") if fates[k]) + ")"
                      + (f", {len(self.retagged)} retagged ({names(n for n, _ in self.retagged)})" if self.retagged else "")
+                     + (f", {len(self.paths)} tag paths fixed ({names(n for n, _ in self.paths)})" if self.paths else "")
                      + f"; authors on {self.authors}")
         return "Backfill: " + "; ".join(parts) + "."
 
@@ -953,22 +1167,41 @@ def _seg_at(segs: list, at: float) -> int:
     return k
 
 
-def match(card, readings: list, segs: list, paths: set, index: GitIndex) -> Optional[int]:
-    """A stored version's segment: by its blob (a blob met twice: the meeting at or before its start), else by the
-    commit at its path with its time (or at the path an exact rename brought it from), else by its start when its path
-    is the lineage's; None: unmatched."""
+def match(card, readings: list, index: GitIndex) -> tuple:
+    """A stored version's reading: by its blob (a blob met twice: the meeting at or before its start), else by the
+    commit at its path with its time (or at the path an exact rename brought it from).
+
+    Returns:
+        (the reading's index or None, the version's blob or None when git has none for it)
+    """
     when = max(start(card)[0] or card.timestamp, card.timestamp)
     blob = getattr(card, "blob_sha", None)
     if not blob:
         hit = index.blob_at(card.path, card.timestamp) or index.blob_at(index.origin(card.path), card.timestamp)
         blob = hit[1] if hit else None
     found = [i for i, r in enumerate(readings) if blob and r["blob"] == blob]
-    if found:
-        i = max((i for i in found if readings[i]["at"] <= when), default=found[0])
-        return _seg_at(segs, readings[i]["at"])
-    if card.path in paths:
-        return _seg_at(segs, start(card)[0] or card.timestamp)
-    return None
+    if not found:
+        return (None, blob)
+    return (max((i for i in found if readings[i]["at"] <= when), default=found[0]), blob)
+
+
+def _when(v) -> float:
+    info = getattr(v, "version", None) or {}
+    return info["from"] if isinstance(info.get("from"), (int, float)) else v.timestamp
+
+
+def _full(line) -> Optional[tuple]:
+    return tuple(line) if line and all(isinstance(x, int) and x >= 0 for x in line) else None
+
+
+def counted(chain: list, lines: Optional[dict] = None) -> int:
+    """Stat changes analytics counts on a chain of versions (lines: {id(version): line} instead of its own):
+    consecutive starts (a start read twice folds), both lines full and on the scale, and different."""
+    lines = lines or {}
+    got = sorted((v for v in chain if isinstance(v.timestamp, (int, float))), key=_when)
+    got = [v for v, w in zip(got, got[1:]) if _when(v) != _when(w)] + got[len(got) - 1:]
+    full = [_full(lines.get(id(v), _line(v))) for v in got]
+    return sum(1 for a, b in zip(full, full[1:]) if a and b and a != b and sum(a) <= OFF_SCALE and sum(b) <= OFF_SCALE)
 
 
 def _copy(card, seg: dict, at: float, commit: Optional[str]) -> CardInfo:
@@ -989,13 +1222,22 @@ def _move(card, at: float, commit: Optional[str], report: Merged, name: str, cur
     info["from"], info["from_commit"], info[MARK] = at, commit, FILE_ID
 
 
-def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitIndex, report: Merged) -> None:
+def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitIndex, report: Merged,
+               upto: float = FAR) -> None:
     """
     One name's stat history brought to its segments: matched versions corrected in place (an edit's or the current
-    card's never), unmatched ones aligned to a neighbour, a change inside a version's span split into a copy, a change
-    before the first version reaching back to the name's first PSD commit; then collapse. Never the current card's data.
+    card's never), unmatched legacy ones aligned to a neighbour, a change inside a version's span split into a copy, a
+    change before the first version reaching back to the name's first PSD commit; then collapse. Never the current
+    card's data.
+
+    - A version newer than the file (upto: its card repo head) is left alone, as is one whose bytes the file never read.
+    - A current card the file reads otherwise, or reads an older line of, is older than the file (not re-parsed): the
+      whole name is left alone and listed (a merge against it would count its stale line as a change).
+    - A correction needs the version's own bytes read (an unread one keeps its line, -1s included), and corrections
+      never add a change the stored history did not count (Ech's ATK 0): those keep their line, listed as kept.
     """
     segs, readings = entry["segments"], entry["readings"]
+    allowed = entry.get("allowed_high", False)
     holder = stats.get(name)
     if not segs or (holder is not None and getattr(holder, "duplicate_of", None)):
         return
@@ -1003,14 +1245,27 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
     chain = [*stored, holder] if holder is not None else stored
     if not chain:
         return
-    paths = set(entry["paths"])
-    own = {}
+    own, read, loose = {}, set(), set()
     for v in chain:
-        k = match(v, readings, segs, paths, index)
-        if k is None:
-            report.unmatched.append((name, start(v)[0]))
-        else:
-            own[id(v)] = k
+        at = start(v)[0] or v.timestamp
+        if at > upto:
+            report.late.append((name, at))
+            continue
+        i, blob = match(v, readings, index)
+        if i is None:
+            report.unmatched.append((name, at))
+            if blob is None:
+                loose.add(id(v))                                  # no bytes git knows: a legacy reading alone
+            continue
+        own[id(v)] = _seg_at(segs, readings[i]["at"])
+        if status(readings[i], allowed):
+            read.add(id(v))
+    if holder is not None and id(holder) in own and not _edited(holder):
+        k = own[id(holder)]
+        if _line(holder) != segs[k]["line"] or k < len(segs) - 1:  # a current card older than the file: left alone
+            report.current.append((name, _line(holder), segs[len(segs) - 1]["line"]))
+            return
+    fixes = []
     for v in chain:                                               # corrections in place
         if id(v) not in own or _edited(v):
             continue
@@ -1018,18 +1273,32 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
         if _line(v) == seg["line"]:
             continue
         if v is holder:
-            report.current.append((name, _line(v), seg["line"]))
             continue
-        _set_line(v, seg)
+        if id(v) not in read:
+            report.kept.append((name, start(v)[0] or v.timestamp, _line(v), seg["line"], "unread"))
+        else:
+            fixes.append(v)
+
+    def after(vs):
+        return counted(chain, {id(v): segs[own[id(v)]]["line"] for v in vs})
+    base = counted(chain)
+    while fixes and after(fixes) > base:                          # never a change the stored history did not count
+        best = min(fixes, key=lambda v: after([w for w in fixes if w is not v]))
+        drop = [best] if after([w for w in fixes if w is not best]) < after(fixes) else list(fixes)
+        for v in drop:
+            report.kept.append((name, start(v)[0] or v.timestamp, _line(v), segs[own[id(v)]]["line"], "adds a change"))
+            fixes.remove(v)
+    for v in fixes:
+        _set_line(v, segs[own[id(v)]])
         report.corrected.append(name)
-    for i, v in enumerate(chain):                                 # unmatched: never a change of their own
-        if id(v) in own or v is holder or _edited(v):
+    for i, v in enumerate(chain):                                 # unmatched legacy: never a change of their own
+        if id(v) not in loose or v is holder or _edited(v):
             continue
         before = chain[i - 1] if i else None
-        after = chain[i + 1] if i + 1 < len(chain) else None
-        if any(n is not None and _line(n) == _line(v) for n in (before, after)):
+        nxt = chain[i + 1] if i + 1 < len(chain) else None
+        if any(n is not None and _line(n) == _line(v) for n in (before, nxt)):
             continue
-        near = after if after is not None else before
+        near = nxt if nxt is not None else before
         if near is not None and _line(near):
             _set_line(v, {"line": _line(near), "creatures": [[c.hp, c.defense, c.attack, c.speed]
                                                                for c in near.creatures or []]})
@@ -1056,8 +1325,7 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
                 mine = (at, commit) if earlier else None      # moves only when an earlier line takes the time before
                 continue
             earlier = earlier or j < k
-            if j > k and v is holder:
-                report.current.append((name, _line(v), seg["line"]))
+            if j > k and v is holder:                             # never: such a card is left alone above
                 continue
             if any(start(w)[0] == at for w in chain if w is not v) or any(start(c)[0] == at for c in copies):
                 continue
@@ -1086,35 +1354,42 @@ def merge_card(name: str, entry: dict, stats: dict, old_stats: dict, index: GitI
         del old_stats[name]
 
 
-def _author(name: str, tag: dict, data: dict, stats: dict, last) -> Optional[str]:
-    """An archived record's author: the card it became (its credit in the database), its own line or first author
+def _author(name: str, tag: dict, data: dict, stats: dict, last, authors: Optional[CardAuthors] = None) -> Optional[str]:
+    """An archived record's author: the card it became (its credit in the database, which /update_stats has just
+    brought to Card Authors.txt; authors: that file, for a rehearsal on older copies), its own line or first author
     (the file), else the record's own."""
     target = tag.get("renamed_to")
-    if target and target in stats and getattr(stats[target], "author", None):
-        return stats[target].author
+    if target and target in stats:
+        who = authors.resolve(target, stats[target].author) if authors is not None else stats[target].author
+        if who:
+            return who
     found = data["archive"]["authors"].get(name) or data["archive"]["authors"].get(
         next((n for n in data["archive"]["authors"] if key(n) == key(name)), ""))
     return (found[0] if found and found[0] else None) or getattr(last, "author", None)
 
 
-def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex) -> Merged:
+def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex, authors: Optional[CardAuthors] = None) -> Merged:
     """
     The backfill file into the database, in place: the archive records git has and the database lacks, the fate of a
     record tagged deleted that git calls a rename or a retirement, every archived record's author; then each name's
     stat history (merge_card). Idempotent: a second call changes nothing.
     """
     report = Merged(made=data.get("made") or {})
+    upto = file_head(data, index)
     archived = {key(n) for n, vs in old_stats.items() if n not in stats and vs and getattr(vs[len(vs) - 1], "archived", None)}
     for name, entry in sorted(data["archive"]["cards"].items()):
         tag_of = old_stats.get(name) or []
         tag = getattr(tag_of[len(tag_of) - 1], "archived", None) if tag_of and name not in stats else None
         if tag is not None or key(name) in archived:
+            rec = (entry.get("record") or {}).get("archived") or {}
             if tag is not None and not tag.get("renamed_to") and not tag.get("moved_to") and entry["fate"] != "deleted":
-                rec = (entry.get("record") or {}).get("archived") or {}
                 field_ = "renamed_to" if entry["fate"] == "renamed" else "moved_to"
                 if rec.get(field_):
                     tag[field_], tag[MARK] = rec[field_], FILE_ID
                     report.retagged.append((name, rec[field_]))
+            if tag is not None and rec.get("path") and tag.get("commit") == rec.get("commit") and tag.get("path") != rec["path"]:
+                tag["path"], tag[MARK] = rec["path"], FILE_ID     # the path that commit deleted
+                report.paths.append((name, rec["path"]))
             continue
         if name in stats or not entry.get("record") or any(key(n) == key(name) for n in stats):
             continue
@@ -1123,13 +1398,13 @@ def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex) -> Merged:
         report.archived.append((name, entry["fate"]))
     for name, entry in sorted(data["cards"].items()):
         if name in stats or name in old_stats:
-            merge_card(name, entry, stats, old_stats, index, report)
+            merge_card(name, entry, stats, old_stats, index, report, upto)
     for name, versions in old_stats.items():
         last = versions[len(versions) - 1] if versions else None
         tag = getattr(last, "archived", None) if last is not None and name not in stats else None
         if not tag:
             continue
-        who = _author(name, tag, data, stats, last)
+        who = _author(name, tag, data, stats, last, authors)
         if who and tag.get("author") != who:
             tag["author"] = who
             report.authors_set.append(name)
@@ -1140,26 +1415,26 @@ def merge(stats: dict, old_stats: dict, data: dict, index: GitIndex) -> Merged:
     return report
 
 
-def balance(stats: dict, old_stats: dict) -> tuple:
-    """Stat changes as the website's analytics counts them: consecutive versions (a start read twice folds), both
-    lines full and on the scale: buff, nerf or shift; else uncounted. (Counter, cards with a counted change)."""
-    def when(v):
-        info = getattr(v, "version", None) or {}
-        return info["from"] if isinstance(info.get("from"), (int, float)) else v.timestamp
+def file_head(data: dict, index: GitIndex) -> float:
+    """When the file's card repo head was committed (FAR for a file that does not say)."""
+    made = data.get("made") or {}
+    head = index.by_sha.get(made.get("card_head") or "")
+    return made.get("card_head_at") or (head.at if head is not None else FAR)
 
-    def full(v):
-        line = _line(v)
-        return tuple(line) if line and all(isinstance(x, int) and x >= 0 for x in line) else None
+
+def balance(stats: dict, old_stats: dict) -> tuple:
+    """Stat changes as the website's analytics counts them, on current cards (the Stats page lists no archived one):
+    their versions in order, both lines full and on the scale: buff, nerf or shift; else uncounted. (Counter, cards
+    with a counted change)."""
     counts, cards = Counter(), set()
-    for name in set(stats) | set(old_stats):
-        current = stats.get(name)
-        if current is not None and getattr(current, "duplicate_of", None):
+    for name, current in stats.items():
+        if getattr(current, "duplicate_of", None):
             continue
-        chain = sorted((v for v in old_stats.get(name) or [] if isinstance(v.timestamp, (int, float))), key=when)
-        chain += [current] if current is not None else []
-        chain = [v for v, w in zip(chain, chain[1:]) if when(v) != when(w)] + chain[len(chain) - 1:]
+        chain = sorted((v for v in old_stats.get(name) or [] if isinstance(v.timestamp, (int, float))), key=_when)
+        chain += [current]
+        chain = [v for v, w in zip(chain, chain[1:]) if _when(v) != _when(w)] + chain[len(chain) - 1:]
         for a, b in zip(chain, chain[1:]):
-            la, lb = full(a), full(b)
+            la, lb = _full(_line(a)), _full(_line(b))
             if la == lb or not (la or lb):
                 continue
             if la and lb and sum(la) <= OFF_SCALE and sum(lb) <= OFF_SCALE:
@@ -1184,7 +1459,7 @@ def load_file(path: str = "") -> Optional[dict]:
         return loads(fh.read())
 
 
-def merged(db, index, path: str = "") -> tuple:
+def merged(db, index, path: str = "", authors: Optional[CardAuthors] = None) -> tuple:
     """
     /update_stats' once-merge, on a copy of db's cards and history that goes into db only when it ran through: nothing
     without the file or the history index; "waits" until recover has run; nothing once a version or tag carries the
@@ -1205,7 +1480,7 @@ def merged(db, index, path: str = "") -> tuple:
         return (None, False)
     trial = StatsDatabase()
     trial.stats, trial.old_stats = deepcopy(db.stats), deepcopy(db.old_stats)
-    report = merge(trial.stats, trial.old_stats, data, index)
+    report = merge(trial.stats, trial.old_stats, data, index, authors)
     if not report.changed():
         return (None, False)
     db.stats.clear()
@@ -1218,26 +1493,42 @@ def merged(db, index, path: str = "") -> tuple:
 # ========================
 # Rehearse
 # ========================
+def live_folder(folder: str) -> bool:
+    """A folder whose pickles may be live: this checkout, the main checkout of its git (a worktree's common dir's
+    parent), or any folder where git tracks a stats.pkl."""
+    folder = abspath(folder)
+    homes = {BOT_CHECKOUT}
+    common = run(["git", "-C", BOT_CHECKOUT, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                 capture_output=True, text=True).stdout.strip()
+    if common:
+        homes.add(dirname(common.rstrip("/")))
+    if any(exists(h) and samefile(folder, h) for h in homes):
+        return True
+    return run(["git", "-C", folder, "ls-files", "--error-unmatch", "stats.pkl"], capture_output=True).returncode == 0
+
+
 def rehearse(path: str, repo: str, head: str, pickles: str, out: str) -> int:
     """The bot's merge on copies of the pickles: its line, what changed per card, the second cleanup, the copies."""
     from commands.card_data import cleaned
     from commands.card_db import dump_pickle, read_pickles
     from commands.card_models import StatsDatabase
     makedirs(out, exist_ok=True)
-    if samefile(abspath(out), abspath(pickles)) or samefile(abspath(out), BOT_CHECKOUT):
-        print("--out must be neither the --pickles folder nor the bot's checkout.")
+    if live_folder(out) or samefile(abspath(out), abspath(pickles)):
+        print("--out must be neither the --pickles folder nor a checkout of the bot (its pickles are live).")
         return 1
     db = StatsDatabase()
     db.stats, db.old_stats = read_pickles(pickles)
     index = GitIndex.from_git(repo, head)
+    text = _text(repo, head, AUTHORS_PATH)            # what /update_stats applies to the cards before its merge
+    authors = CardAuthors.parse(text) if text else None
     before = (len(db.old_stats), sum(len(v) for v in db.old_stats.values()), len(db.archived()))
     data = load_file(path)
     report = Merged()
     if data is not None and recovered_before(db.stats, db.old_stats) and not merged_before(db.stats, db.old_stats, data["id"]):
         trial = StatsDatabase()
         trial.stats, trial.old_stats = deepcopy(db.stats), deepcopy(db.old_stats)
-        report = merge(trial.stats, trial.old_stats, data, index)
-    line, changed = merged(db, index, path)
+        report = merge(trial.stats, trial.old_stats, data, index, authors)
+    line, changed = merged(db, index, path, authors)
     print(line or "Backfill: nothing to do.")
     for title, items in (("corrected", report.corrected), ("aligned", report.neutral), ("folded", report.folded),
                          ("tags moved to a newer line", report.tags_moved)):
@@ -1246,13 +1537,17 @@ def rehearse(path: str, repo: str, head: str, pickles: str, out: str) -> int:
     print("starts earlier (current cards):", ", ".join(sorted(n for n, c in report.earlier if c)))
     print("starts later:", ", ".join(sorted(f"{n}{' (current)' if c else ''}" for n, c in report.later)))
     print("unmatched:", ", ".join(f"{n} {strftime('%Y-%m-%d', localtime(at or 0))}" for n, at in report.unmatched))
-    print("current cards that differ (not written):", "; ".join(f"{n} {a} -> {b}" for n, a, b in report.current))
+    print("current cards unlike the file (left alone):", "; ".join(f"{n} {a} -> {b}" for n, a, b in report.current))
+    print("kept as stored:", "; ".join(f"{n} {strftime('%Y-%m-%d', localtime(at))} {a} (file {b}: {why})"
+                                       for n, at, a, b, why in report.kept))
+    print("newer than the file (left alone):", ", ".join(f"{n} {strftime('%Y-%m-%d', localtime(at))}" for n, at in report.late))
+    print("tag paths fixed:", ", ".join(f"{n} -> {p}" for n, p in report.paths))
     print("archived:", ", ".join(f"{n} ({f})" for n, f in report.archived))
     print("retagged:", ", ".join(f"{n} -> {t}" for n, t in report.retagged))
     print("authors set:", len(report.authors_set))
     again = cleaned(db, index)
     print(f"Second cleanup: {again or 'nothing to change'}")
-    again2, _ = merged(db, index, path)
+    again2, _ = merged(db, index, path, authors)
     print(f"Second merge: {again2 or 'nothing'}")
     after = (len(db.old_stats), sum(len(v) for v in db.old_stats.values()), len(db.archived()))
     print(f"old_stats names {before[0]} -> {after[0]}, versions {before[1]} -> {after[1]}, archived {before[2]} -> {after[2]}")
@@ -1299,16 +1594,24 @@ __all__ = [
     'archive_candidates',
     'balance',
     'build',
+    'counted',
     'fate',
     'lineages',
+    'lines_of',
+    'live_folder',
     'main',
     'match',
     'merge',
     'merge_card',
     'merged',
     'merged_before',
+    'print_edits',
     'read_psd',
+    'rename_chains',
+    'rows_moved',
     'segments',
+    'split_rows',
+    'stat_boxes',
     'status',
 ]
 
