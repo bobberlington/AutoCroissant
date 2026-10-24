@@ -45,23 +45,35 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 
 ### 1b. The stat history backfill (branch `work/backfill`; after step 1, before step 3's re-seed)
 `history_backfill.json` (repo root) holds every stat-card PSD version in git read by today's parser, the misread rule
-(a stat change counts only where the PSD's stored preview shows the stat bars changed, more than 1,000 px past 24) and
-26 archive records. Made by hand on the Mac (`python -m commands.history_backfill build`, 461 s, the fork venv, the full
-clone `~/Documents/Tools/wt/tc-full.git`); design and runs in `~/Documents/Tools/wt/scratch/backfill/` (DESIGN.md, build/).
-`/update_stats` merges it once, after `recover()`, on a trial copy, and says so in one `Backfill:` line.
-- [ ] Owner reads the file's `changes` list (and DESIGN.md §11: the qualified keys `Pizza (item)`, `Dogma (item)`,
-      `Auto Croissant (minion)`; 4 changes within a day of a card's first commit; 20 authors by first commit).
+and 26 archive records. Misread rule: a stat changes only where its own row on the PSD's stored preview changed (more
+than 300 px past 24); a reading that changed elsewhere is a misread. All-0 lines (Clot Bone's hearts) and two
+creatures' rows summed (God Tamer) are unread. Renamed cards are read with the card they became. Made by hand on the Mac
+(`python -m commands.history_backfill build`, 730 s, the fork venv, the full clone `~/Documents/Tools/wt/tc-full.git`,
+card head efcf17d2); design and runs in `~/Documents/Tools/wt/scratch/backfill/` (DESIGN.md §12, fix/). `/update_stats`
+merges it once, after `recover()` and after the run's traversal (so renamed records get this run's Card Authors.txt), on
+a trial copy, and says so in one `Backfill:` line. Left alone and listed in that line: versions newer than the file,
+current cards the file reads otherwise (not re-parsed), and stored lines a correction would turn into a new counted
+change (Ech's 2025-03-22 ATK 4, which today's parser reads as 0) or whose own bytes are unread (God Tamer's -1s).
+- [ ] Owner reads the file's `changes` (79) and `unread_edits` (45 rows on 34 cards: a stat row printed a change no reading
+      shows, e.g. Chef Saltbaker ATK 2023-11-24 and 2025-02-21, Slugcat, The Thin Man, Clot Bone; small ones are often
+      restyles). They are not counted; fix the parser or the PSD for any that matter. Also DESIGN.md §11: the qualified
+      keys `Pizza (item)`, `Dogma (item)`, `Auto Croissant (minion)`; 4 changes within a day of a card's first commit;
+      20 authors by first commit.
 - [ ] After step 1's PICKLE is on origin/main: copy its pickles to `scratch/backfill/rehearsal/prod/`, run `python -m
       commands.history_backfill rehearse --file history_backfill.json --git ~/Documents/Tools/wt/tc-full.git --pickles
-      <prod> --out <out>`, then `diff_stats.py prod/stats.pkl out/stats.pkl --history prod/old_stats.pkl out/old_stats.pkl`.
-      On the recovered copies of a7c310e (2026-10-24): stats.pkl 818/818, 0 modified; old_stats 1,102 -> 1,192 versions
-      (+65 stat versions, +26 archive records, -1 Pix fold), 660 -> 692 names; 53 starts moved earlier (6 current cards);
-      92 tags changed (26 new, 66 given an author, 2 of them retagged as renamed: Tainted Esau, Sacrifice); stat changes
-      11 -> 73 (33 buffs, 35 nerfs, 5 moved) on 62 cards. Step 1's re-parse removes the Green Mage 2026-06-18 and Tainted
-      Isaac 2026-10-21 artifact rows and turns Tainted Eden's 2023-11-24 buff into a nerf. Second cleanup and second
-      merge: nothing.
+      <prod> --out <out>` (it applies Card Authors.txt at --head as the run does), then `diff_stats.py prod/stats.pkl
+      out/stats.pkl --history prod/old_stats.pkl out/old_stats.pkl`. Expected, from copies of a7c310e with step 1's three
+      re-parses emulated (Green Mage, Tainted Isaac, Tainted Eden; scratch/backfill/fix/rehearse_prod.txt): stats.pkl
+      818/818, 0 modified, 5 current cards' version starts earlier (Acro, Markoth, PoD06Rainbow Bloon, Sabre, Wham Bam
+      Jewel); old_stats 1,105 -> 1,189 versions (+63 stat versions, +26 archive records, 5 folded), 661 -> 692 names; 92
+      tags changed (26 new, every one given an author; Tainted Esau and Sacrifice retagged as renamed; Azamoth the
+      Possessed King and Militron No Armor given the path git deleted); 2 kept as stored (Ech, God Tamer); stat changes
+      on current cards 14 -> 60 (25 buffs, 31 nerfs, 4 moved) on 55 cards (the Stats page counts current cards only).
+      Without the emulated re-parses the three cards are left alone and named in the line. Second cleanup and second
+      merge: nothing. If the line names a current card unlike the file, re-parse it before landing.
 - [ ] Land (one code commit; no pickles), deploy outside 05:00-05:40, run the diff_stats gate before the next `/push`.
-      Undo: revert that PICKLE and delete `history_backfill.json` in the same push.
+      Undo: revert that PICKLE and delete `history_backfill.json` in the same push. A card repo stat-card commit after
+      efcf17d2 is left alone by the merge; rebuild the file first if many land.
 - [ ] **Dead code after its PICKLE is pushed:** delete `history_backfill.json`, `commands/history_backfill.py`, its call
       in `card_data.update()`, `tests/test_history_backfill.py` and the skill lines that name them.
 
