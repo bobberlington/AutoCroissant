@@ -396,6 +396,20 @@ def test_archived_author_and_created_precedence(bs):
     assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
 
 
+def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):
+    """'Pizza (item)' (title Pizza) isn't credited with the live creature Pizza's Card Authors.txt line; a title no live
+    card has still finds its line."""
+    if not hasattr(bs, "ARCHIVED_SLIM"):
+        pytest.skip(f"{BUILD_SITE} has no archive tags")
+    card = bs.CardInfo()
+    card.__dict__.update(timestamp=1.7e9, card_type="item", stars=2, author="Last", display_name="Pizza",
+                         archived={"at": 1_700_000_100, "author": "Chestnut", "renamed_to": "Pepperoni Pizza"})
+    old, credited = {"Pizza (item)": [card]}, {"pizza": "Croissant", "pepperoni pizza": "Chestnut"}
+    live = lambda name: {"Pizza": "pizza", "Pepperoni Pizza": "pepperoni-pizza"}.get(name)
+    assert bs.archived_cards(old, live, (), credited=credited)[0]["author"] == "Chestnut"
+    assert bs.archived_cards(old, lambda name: None, (), credited=credited)[0]["author"] == "Croissant"
+
+
 def test_revisions_leave_out_uploads_and_mass_passes(bs, repo, tmp_path, monkeypatch):
     """analytics.json revisions: Alpha's two image changes after its upload by Maker, nothing for Watermelon. The helper:
     a commit in more than MASS_PASS cards' versions is left out; a bot commit credits its Edit-by logins (not a discord:
