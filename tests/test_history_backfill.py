@@ -2,6 +2,7 @@
 cards that left (fates, qualified keys, authors), the once-merge into old_stats, and the committed file's worked
 examples. Dead code with the module once its merge has run in production."""
 import json
+import subprocess
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
@@ -203,7 +204,7 @@ def test_bars_region_never_the_canvas_and_a_size_change_is_no_comparison():
     assert hb.bars_moved(a, b, [(20, 20, 30, 30)]) == 0
     b[22:24, 22:24] = 255
     assert hb.bars_moved(a, b, [(20, 20, 30, 30)]) == 4
-    assert hb.bars_moved(a, b, []) == 0                # no bars: nothing printed to compare
+    assert hb.bars_moved(a, b, []) is None             # no bars: unknown, never "the same"
     assert hb.bars_moved(a, np.zeros((10, 10, 3), dtype=np.int16), [(0, 0, 5, 5)]) is None
 
 
@@ -237,6 +238,27 @@ def test_a_missing_preview_renders_the_region(monkeypatch):
     pair = next(r for r in out if r["kind"] == "pair")
     assert pair["how"] == "render" and pair["px"] == 4 and pair["rows"] == [4, None, None, None]
     assert drawn == [(2, 2, 12, 12), (2, 2, 12, 12)]
+
+
+def test_a_pair_with_no_stat_region_is_blind_never_the_same(monkeypatch):
+    """Grimora's markers are zero-size layers and its cells art: no bars, rows or labels found means the print check
+    can't tell, so the versions are not one print run (a reading change there counts, never folds as a misread)."""
+    np = pytest.importorskip("numpy")
+
+    class Psd:
+        height = width = 40
+
+    monkeypatch.setattr(hb, "_open", lambda repo, sha: Psd())
+    monkeypatch.setattr(hb, "read_psd", lambda parser, psd, path: {"read": [5, 2, 6, 5], "how": "parser", "hidden": [],
+                                                                   "boxes": [], "rows": [[], [], [], []]})
+    monkeypatch.setattr(hb, "_preview", lambda psd: np.zeros((40, 40, 3), dtype=np.int16))
+    out = hb._task_lineage("repo", [(B1, PATH), (B2, PATH)], set(), set())
+    pair = next(r for r in out if r["kind"] == "pair")
+    assert pair["how"] == "blind" and pair["px"] is None
+    cache = {"pair": {(B1, B2): pair}, "read": {}, "card": {}}
+    assert hb._print_of(cache, {"blob": B1}, {"blob": B2}) == ("blind", None)
+    readings = [reading(1000, B1, [5, 2, 6, 5], "first"), reading(2000, B2, [5, 4, 6, 5], "blind")]
+    assert [s["line"] for s in hb.segments(readings, False)] == [[5, 2, 6, 5], [5, 4, 6, 5]]
 
 
 # ========================
@@ -295,6 +317,22 @@ def test_stat_rows_by_the_labels_position():
                                 Layer("spd", "pixel", bbox=(0, 30, 50, 38))]),
         Layer("Layer 8", "pixel", bbox=(0, 0, 50, 38))]), labels])
     assert hb.stat_boxes(psd) == [[(0, 0, 50, 8)], [(0, 10, 50, 18)], [(0, 20, 50, 28)], [(0, 30, 50, 38)]]
+
+
+def test_stat_rows_from_text_labels_when_no_row_is_drawn():
+    """Grimora: zero-size digit markers, cells drawn as art beside 'Health', 'Defense', ... text labels: each stat's
+    row is the band right of its label (half its height above and below), to the card's right edge."""
+    marks = Layer("bars", children=[Layer(n, children=[Layer(d, "pixel", bbox=(0, 0, 0, 0))], bbox=(0, 0, 0, 0))
+                                    for n, d in (("spd", "5"), ("atk", "6"), ("def", "2"), ("hp", "5"))], bbox=(0, 0, 0, 0))
+    labels = Layer("Stat Txt", children=[Layer("Speed", "type", bbox=(86, 1602, 335, 1668)),
+                                         Layer("Attack", "type", bbox=(64, 1475, 349, 1527)),
+                                         Layer("Defense", "type", bbox=(35, 1343, 379, 1395)),
+                                         Layer("Health", "type", bbox=(74, 1219, 345, 1271))])
+    psd = Layer("psd", children=[marks, labels, Layer("If this dies, revive it with 1 HP.", "type", bbox=(0, 1800, 900, 1900))])
+    psd.width = 1200
+    assert hb.stat_boxes(psd) == [[(345, 1193, 1200, 1297)], [(379, 1317, 1200, 1421)], [(349, 1449, 1200, 1553)],
+                                  [(335, 1569, 1200, 1701)]]
+    assert hb.label_rows([[(0, 0, 10, 10)], [], [], []], 50) == [[], [], [], []]          # one label: no bands
 
 
 def test_summed_rows_that_are_no_overflow_are_split():
@@ -571,7 +609,7 @@ def test_edit_versions_and_the_current_cards_data_are_left_alone():
     report = hb.merge(stats, old, data({"A": entry([reading(1000, B1, [5, 5, 5, 5], "first")])}), ch.GitIndex())
     assert hb._line(edited) == [9, 9, 9, 9] and cdb.record(stats["A"]) == before
     assert report.current == [("A", [8, 8, 8, 8], [5, 5, 5, 5])]
-    assert report.waits() == "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A)."
+    assert report.waits() == "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A; else rebuild the file)."
 
 
 def test_the_current_card_starts_earlier_with_an_earlier_change():
@@ -588,7 +626,8 @@ def test_an_unmatched_legacy_version_never_makes_a_change():
     old = defaultdict(list, A=[version(1000, B1, [5, 5, 5, 5]), lone])
     stats = {"A": version(3000, B1, [5, 5, 5, 5])}
     report = hb.merge(stats, old, data({"A": entry([reading(1000, B1, [5, 5, 5, 5], "first")])}), ch.GitIndex())
-    assert report.unmatched == [("A", 2000)] and report.neutral == ["A"]
+    assert report.unmatched == [("A", 2000, False)] and report.neutral == ["A"]
+    assert "1 unmatched left alone (A)" in report.line()
     assert all(line == [5, 5, 5, 5] for _, line in lines(old) + [(0, hb._line(stats["A"]))])
 
 
@@ -641,6 +680,70 @@ def test_versions_newer_than_the_file_are_left_alone():
     held = version(3500, B3, [6, 5, 5, 5], cause="edit", note="x")    # then a database-only edit
     hb.merge({"A": held}, old, file, ch.GitIndex())
     assert lines(old) == [(2000, [5, 5, 5, 5]), (3000, [6, 5, 5, 5])]
+
+
+def _head_index(*puts):
+    """A GitIndex whose PATH got these (at, blob) puts."""
+    index = ch.GitIndex()
+    commits = sorted(puts, reverse=True)
+    index.at_path[PATH] = [(ch.Commit(i, f"c{int(at)}", float(at), "x"), b) for i, (at, b) in enumerate(commits)]
+    index.by_sha = {c.sha: c for c, _ in index.at_path[PATH]}
+    return index
+
+
+def test_a_same_data_resave_after_the_head_takes_the_heads_reading():
+    """Acro: a re-save after the file's head (new blob, the same data, its start carried) is its path's blob at the
+    head; never skipped while the merge marks itself done."""
+    readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(2000, B2, [6, 5, 5, 5], "changed")]
+    file = data({"A": entry(readings)})
+    file["made"]["card_head_at"] = 2500
+    index = _head_index((1000, B1), (2000, B2), (3000, B4))
+    holder = version(3000, B4, [6, 5, 5, 5])
+    holder.version.update({"from": 1000.0, "from_commit": "c1000"})
+    assert hb.match(holder, readings, index, 2500) == (1, B4)
+    stats, old = {"A": holder}, defaultdict(list)
+    report = hb.merge(stats, old, file, index)
+    assert lines(old) == [(1000, [5, 5, 5, 5])] and ch.start(stats["A"])[0] == 2000 and not report.unmatched
+    other = version(3000, B4, [7, 5, 5, 5])                          # bytes the file can't stand for: waits
+    other.version.update({"from": 1000.0, "from_commit": "c1000"})
+    report = hb.merge({"A": other}, defaultdict(list), file, index)
+    assert report.current and report.waits().startswith("Backfill waits: A unlike the file")
+
+
+def test_a_psd_printing_other_stats_waits_until_fixed_and_rebuilt():
+    """The Thin Man reads ATK 8 and prints 7: the merge waits for the fixed PSD and a file that read it, so the fix
+    is never counted as a 2026 change."""
+    readings = [reading(1000, B1, [8, 4, 8, 4], "first"), reading(2000, B2, [8, 4, 8, 4], "changed", row_px=[0, 0, 5474, 0])]
+    file = data({"A": entry(readings)})
+    file["printed"] = {"A": [8, 4, 7, 4]}
+    report = hb.merge({"A": version(2000, B2, [8, 4, 8, 4])}, defaultdict(list), file, ch.GitIndex())
+    assert report.misread == [("A", [8, 4, 8, 4], [8, 4, 7, 4])]
+    assert report.waits() == "Backfill waits: A reads [8, 4, 8, 4], prints [8, 4, 7, 4] (fix the PSDs, then rebuild the file)."
+    report = hb.merge({"A": version(3000, B3, [8, 4, 7, 4])}, defaultdict(list), file, ch.GitIndex())   # fixed, not rebuilt
+    assert report.misread and report.waits()
+    readings.append(reading(3000, B3, [8, 4, 7, 4]))                  # rebuilt: the fix is in the 2025 print run
+    file = data({"A": entry(readings)})
+    file["printed"] = {"A": [8, 4, 7, 4]}
+    old = defaultdict(list, A=[version(1000, B1, [8, 4, 8, 4])])
+    report = hb.merge({"A": version(3000, B3, [8, 4, 7, 4])}, old, file, ch.GitIndex())
+    assert not report.waits() and report.balance["nerf"] == 1
+    assert [s["from"] for s in file["cards"]["A"]["segments"]] == [1000, 2000]
+
+
+def test_a_kept_versions_own_line_is_no_copy():
+    """Ech: its stored 2025-03-22 line is kept (a correction would add a change); the file's later segment with that
+    same line is no copy, so a second merge finds nothing to add or fold."""
+    readings = [reading(1000, B1, [2, 2, 3, 5], "first"),
+                reading(2000, B2, [2, 5, 0, 5], "changed", row_px=[0, 13668, 4556, 0]),
+                reading(3000, B3, [2, 5, 4, 5], "changed", row_px=[9000, 9000, 45431, 9000]),
+                reading(4000, B4, [2, 5, 4, 5])]
+    old = defaultdict(list, A=[version(1000, B1, [2, 2, 3, 5]), version(2000, B2, [2, 5, 4, 5]),
+                               version(4000, B4, [2, 5, 4, 5], ability="Later.")])
+    file = data({"A": entry(readings)})
+    report = hb.merge({}, old, file, ch.GitIndex())
+    assert report.kept and not report.added and not report.folded
+    assert lines(old) == [(1000, [2, 2, 3, 5]), (2000, [2, 5, 4, 5]), (4000, [2, 5, 4, 5])]
+    assert not hb.merge({}, deepcopy(old), file, ch.GitIndex()).changed()
 
 
 def test_balance_counts_current_cards_and_the_line_names_those_that_differ():
@@ -749,7 +852,7 @@ def test_merged_waits_runs_once_and_never_half(tmp_path, monkeypatch):
     stale = deepcopy(db)
     stale.stats["A"] = version(3000, B3, [9, 9, 9, 9])                       # not re-parsed: waits, unchanged
     assert hb.merged(stale, ch.GitIndex(), path) == (
-        "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A).", False)
+        "Backfill waits: A unlike the file, not re-parsed yet (/update_stats cards:A; else rebuild the file).", False)
     assert cdb.old_stats_text(stale.old_stats) == before and not hb.merged_before(stale.stats, stale.old_stats, hb.FILE_ID)
     monkeypatch.setattr(hb, "merge", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     with pytest.raises(RuntimeError):
@@ -833,10 +936,16 @@ def test_worked_examples(committed):
     for name in ("Clot Bone", "God Tamer"):             # all-0 hearts and summed creatures: unread, no change
         assert _changes(committed, name) == [], name
     assert [s["line"] for s in committed["cards"]["God Tamer"]["segments"]] == [[3, 4, 4, 6]]
-    assert ("2025-03-22", [2, 2, 3, 5], [2, 5, 0, 5], "shift") in _changes(committed, "Ech")   # the merge keeps 2/5/4/5
+    assert _changes(committed, "Ech") == [("2024-10-03", [2, 2, 2, 4], [2, 2, 2, 5], "buff"),   # read by hand
+                                          ("2025-03-09", [2, 2, 2, 5], [2, 2, 3, 5], "buff"),
+                                          ("2025-03-22", [2, 2, 3, 5], [2, 5, 4, 5], "buff")]
+    assert committed["printed"] == hb.PRINTED
     assert [s["line"] for s in committed["cards"]["TaintedJacob"]["segments"]] == [[5, 4, 7, 4]]   # its successor's
     edits = {(e[0], e[1]): e[4] for e in committed["unread_edits"]}
     assert edits[("2023-11-24", "Chef Saltbaker")] == {"atk": 7547} and ("2025-08-28", "Slugcat") in edits
+    confirmed = {(e[1], e[0]) for e in committed["unread_edits"] if len(e) > 6}
+    assert confirmed == set(hb.PATCH_NOTES)                    # every patch-note row is in the list, marked
+    assert "def" in edits[("2025-03-11", "Grimora")]                    # its label rows: the bones moved, the markers not
     assert [(c[0], c[3]) for c in _changes(committed, "Star Dream")] == [("2025-04-29", "buff"), ("2025-08-27", "nerf")]
     assert ("2025-10-30", [8, 6, 4, 4], [7, 7, 7, 7], "buff") in _changes(committed, "Kyle")
     assert [(c[0], c[2][2], c[3]) for c in _changes(committed, "Green Mage")] == [("2025-03-11", 6, "nerf")]
@@ -867,3 +976,32 @@ def test_every_rename_is_a_live_card(committed, real_stats):
         target = (entry_.get("record") or {}).get("archived", {}).get("renamed_to")
         if entry_["fate"] == "renamed":
             assert target in real_stats.stats, (name, target)
+
+
+def test_the_committed_file_merges_once_on_the_real_pickles(committed):
+    """The file on copies of this checkout's pickles: a second merge (marker aside) adds, folds and closes nothing, and
+    every version the merge touched ends at its next one's start commit."""
+    import os
+    from global_config import HISTORY_CLONE
+    repo = os.path.expanduser(HISTORY_CLONE)
+    head = committed["made"]["card_head"]
+    if not os.path.isdir(repo) or subprocess.run(["git", "-C", repo, "cat-file", "-e", f"{head}^{{commit}}"]).returncode:
+        pytest.skip("no history clone holding the file's card head")
+    index = ch.GitIndex.from_git(repo, head)
+    stats, old = cdb.read_pickles(str(REPO))
+    stats, old = deepcopy(stats), deepcopy(old)
+    first = hb.merge(stats, old, committed, index)
+    assert first.changed()
+    text = cdb.old_stats_text(old)
+    again = hb.merge(stats, old, committed, index)
+    assert not again.changed() and not again.added and not again.folded, again.line()
+    assert cdb.old_stats_text(old) == text
+    for name, versions in old.items():
+        chain = versions + ([stats[name]] if name in stats else [])
+        for x, y in zip(chain, chain[1:]):
+            info = x.version or {}
+            if getattr(x, "archived", None) or hb.MARK not in info and hb.MARK not in (y.version or {}):
+                continue
+            nxt = ch.start(y)[1]
+            if nxt in index.by_sha:
+                assert info.get("to_commit") == nxt, name
