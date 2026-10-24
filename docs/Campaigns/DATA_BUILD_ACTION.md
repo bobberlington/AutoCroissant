@@ -368,7 +368,7 @@ The builder follows AutoCroissant main by default. Gate G4 stops a parser change
 To roll back a broken parser push without touching AutoCroissant, set the repo variable `CARD_DATA_BUILDER_REF` (Settings →
 Variables; not a secret) to the last good commit, then clear it once main is fixed. `manifest.builder.commit` records the exact
 commit of every build. The pin also pins the bake and the save, which come from the same checkout. A ref from before
-requirements-cards.txt (2026-10-23) fails at the Python environments step: the workflow installs that file.
+requirements-cards.txt (2026-10-23) fails at the Python environment step: the workflow installs that file.
 
 ## 7. The builder (AutoCroissant, Discord-free)
 
@@ -384,7 +384,7 @@ requirements-cards.txt (2026-10-23) fails at the Python environments step: the w
 | `commands/tts_save.py` (changed) | Gains `--names <stats.json>`: names from a `db/` instead of the website's `cards.json`, with the same rule build_site uses for `cards.json` names |
 | `commands/repo_traverser.py` (changed) | Becomes the bot's /update_stats. Until step 8 it calls `card_data.build` with the GitHub-API source and writes the root pickles as today (legacy mode, for the jetson). From step 8 it is sync and dispatch (§11). |
 | `commands/card_models.py` (changed) | Gains `version` beside `archived` (plain builtins). As built (step 4) it is a class attribute `version = None`, not a dataclass field, so the pickles stay byte-identical; dataclass `fields()`, `asdict`, `eq` and `repr` skip it, and card_db carries it through `EXTRA_KEYS`. Nothing else changes. `created` (2026-10-23) is a second such attribute: `site/Card Creation Dates.json`'s `{date, from[, provisional]}` (or the card's first upload, step 7), no data field (no version, no event). |
-| `requirements-cards.txt` | The card code's packages, the bot's and every card Action's (`requirements-card-data.txt` until 2026-10-23, stock `psd-tools==1.25.0`): the psd-tools fork's one pin, `fonttools`, `requests`, `pyoxipng` where it has a wheel |
+| `requirements-cards.txt` | The card code's packages, the bot's and every card Action's (`requirements-card-data.txt` until 2026-10-23, stock `psd-tools==1.25.0`): the psd-tools fork's one pin, `fonttools`, `requests`, `pyoxipng` on Linux x86_64 at any Python (3.14 built from its sdist, cached) and where it has a wheel up to 3.13, so not on the jetson or the Mac (3.14) |
 
 `SPARSE_FILES`: card_data.py, card_history.py, card_db.py, changelog.py, card_models.py, card_edits.py, psd_parser.py,
 psd_details.py, psd_regions.py, font_check.py, github_api.py, global_config.py, requirements-cards.txt, and for the other
@@ -1244,7 +1244,7 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
 | Item | Cost |
 |---|---|
 | A run that ends at the gate | about 15-20 s; most of the 48 runs a day (24 at hourly), about 15 runner-minutes a day (8 at hourly) |
-| A working run (k changed PSDs) | about 2-4 min: the checkouts and the sparse builder (~10 s), Python and pip from cache (~25 s, two environments), the fonts cache restore (215 MB, ~15 s), ~2-4 s per PSD, the save (~1 min, as tts-save.yml), the posts and commits (~10 s); plus the bake's own time per card when edits are pending |
+| A working run (k changed PSDs) | about 2-4 min: the checkouts and the sparse builder (~10 s), Python and pip from cache (one environment, ~15-20 s on a hit), the fonts cache restore (215 MB, ~15 s), ~2-4 s per PSD, the save (~1 min, as tts-save.yml), the posts and commits (~10 s); plus the bake's own time per card when edits are pending |
 | Working runs per day | one per interval with a card-input change: recently 2 / 5 / 2 (§2), against 2 / 8 / 4 builds if every commit built |
 | Commits on main from Card sync | at most one per working run, only when a bake or the save changed something: recently about 0 / 2 / 1 a day (the PNG windows, §2), plus one re-pin commit after each baking run. Before: tts-save daily plus one commit per baked card |
 | Commits on `data` | at most one per working run |

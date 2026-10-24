@@ -160,6 +160,9 @@ has only the card's own `author`, so the website reads the tag's, else the recor
   pyoxipng marker takes Linux x86_64 at any Python), R7 left to font-check, G2 rendered anyway ("no stored image to
   cross-check"), the quiet window as the environment `card-guards-quiet` (check / post / finish jobs). PUSH_GUARDS.md §20
   has the design, the Mac's cold-install numbers and the landing order.
+- [ ] Owner question (§20.4): a new PSD with no stored image beside its PNG is redrawn past 8 levels even within the
+      bar (else Dirty Bed's, Springtrap's and Defcon Panda's edits pass as current); the fork's noise is then redrawn on
+      some current PNGs (5 of 12 cards, 51-584 px). Keep, or keep such PNGs and only tell them?
 - [ ] The owner creates the environment (§20's `gh api` command; nothing ran it).
 - [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
 - [ ] Watch the first runs: a cold wheel build on a runner (pyoxipng's Rust; card-preview's install step has 5 minutes),

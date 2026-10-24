@@ -185,7 +185,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   - `SPARSE_FILES` is the import closure the workflow checks out. A test runs `--help` on exactly that list, as
     test_card_check does.
 - **Reused:**
-  - `font_check.pushed_files`, `tree_blobs`, `is_card_psd`, `FontIndex`;
+  - `font_check.is_card_psd`;
   - `github_api.fetch_verified`;
   - `card_bake.Snapshot.png_for` / `duplicate_of` (PNG pairing, case-insensitive, numbered duplicates) and `recent_paths`;
   - `git_commit.commit_files`;
@@ -254,8 +254,10 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   (Land, Follow up, Tell Discord) waits in the environment `card-guards-quiet`, whose 30-minute wait timer the owner sets
   (section 20's command). A push's first attempt takes the environment; a dispatch and a re-run take none. `land`
   still gets `--quiet-from`: it sleeps out whatever is left of push + 31 minutes (nothing once the timer held the job; the
-  whole window if the environment has no timer, the old behaviour), then runs `card_bake.recent_paths` (2 API calls). A
-  write that a later push touched is dropped: that push's run owns it.
+  whole window if the environment has no timer, the old behaviour), then runs `card_bake.recent_paths` (2 API calls) over
+  the pushes since push + 1 minute, not the last 30 minutes before Land (the post job starts 30 minutes after the check
+  job ends; a push made while the check ran counts too; review of 2026-10-24). A write that a later push touched is
+  dropped: that push's run owns it.
 - Every write also rests on its blobs (G9), looked up in any letter case: a teammate's `foo.png` pushed in the window for a
   new `Foo.psd` drops the bot's `Foo.png` and withdraws a refusal (review 3). A blob that is the bot's own write (a re-run
   after a landing) still holds: the re-run writes nothing and the comment says "already on the branch".
@@ -332,7 +334,7 @@ one ends "export it in Photoshop").
 - **superseded:** summary only.
 - **error:** the card's line on Discord ("the bot could not finish checking it (MemoryError); PNG not made: export it in
   Photoshop" when it needed a PNG), the error in the comment, the other cards go on, and the step "Fail on card errors"
-  turns the run red (`summary.json` `card_errors`; review 3). Errors outside the cards (an unreadable font, the manifest)
+  turns the run red (`summary.json` `card_errors`; review 3). Errors outside the cards (the manifest, the status chart)
   are in the comment only.
 
 **5.4 Numbered PNGs (delta transfer).** A numbered PNG is the base export with other title layers shown (ledger L12).
@@ -1289,32 +1291,45 @@ unchanged. Tests: `test_fonts_are_font_checks_alone` (card_standards), `test_fon
   {what} (and the PSD has no stored image to check it against); export it in Photoshop", the bake's blank render), the delta
   merge, `gate_shape` and `gate_region` (G7); the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
   Photoshop's image;
-- a new PSD beside its PNG: the whole card rendered; current when the render is within BESIDE_CUT or the bar of the PNG,
-  else the PNG takes the render where it differs past BESIDE_CUT (past the floor: G6), each drawn text layer shown (hiding
-  it changes the render);
+- a PNG pushed before its PSD (old PSD): current when, over the pixels the render moved, the PNG is within the bar of the
+  new render and nearer it than the old (the render-only half of `png_ahead`; review of 2026-10-24: it was re-exported over
+  the author's export, or refused G6);
+- a new PSD beside its PNG: the whole card rendered; current only when no pixel is past BESIDE_CUT, as with a composite
+  (the owner's 2026-10-23 ruling), else the PNG takes the render where it differs past BESIDE_CUT (past the floor: G6),
+  each drawn text layer shown (hiding it changes the render). The parity bar is no pass here: over the whole card it hid
+  real edits (beside their stale PNGs Dirty Bed's Ability, 0.31% bad, Springtrap's Name, 0.21%, Defcon Panda, 0.33%, were
+  all within it). The cost: the fork's own noise passes 8 levels beside a PNG that is current (5 of 12 random cards beside
+  their own PNG, 51-584 px, max 11-106 levels; scratch `py314/fix/beside_noise.py`), and those pixels are redrawn and told
+  (UNCHECKED). **Owner question:** keep this, or keep such a PNG and tell it instead (the stale cards above would then stay
+  stale, told);
 - a new card with no PNG: the whole render, each drawn text shown.
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
 write did not land ("PNG not made: ..." alone). Tests: `test_g2_renders_anyway_with_the_bakes_own_gates`,
-`test_g2_refuses_a_change_the_render_does_not_show`, `test_g2_still_refuses_a_16_bit_or_cmyk_psd` (png_export),
-`test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
+`test_g2_refuses_a_change_the_render_does_not_show`, `test_g2_still_refuses_a_16_bit_or_cmyk_psd`, the G2 halves of
+`test_a_png_pushed_before_its_psd_is_current` and `test_a_small_recolour_beside_its_png_is_rendered`, and on real cards
+`test_g2_real_cards_reread_the_parser_and_match_the_checked_png` (Dirty Bed's Ability and Springtrap's Name re-read; the
+PNG the checked export's, pixel for pixel) and `test_g2_refuses_a_text_drawn_blank_on_real_cards` (G2_BLANK through the
+three paths) (png_export), `test_a_png_made_without_a_stored_image_is_told_not_refused` (card_guards). No real card lacks a composite (812 of 812,
 2.1), so no replay measures it.
 
 **5. The quiet window is an environment.** card-guards.yml has three jobs:
-- `check` (timeout 100): Start, the checkouts, the refusal of a landing dispatch, the install, Check, Comment, "Plan for
-  the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
+- `check` (timeout 100): Start, the checkouts, the refusal of a landing dispatch, Bot commit (the AutoCroissant commit
+  checked out, output `bot_sha`), the install, Check, Comment, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
   errors), the `card-guards` artifact. It ends at once;
 - `post` (needs check; only with `land=true`; timeout 75): `environment: card-guards-quiet` on a push's first attempt (a
   dispatch lands at once; a re-run counts from the push), then Work dir, the artifact, Told before (the check's TOLD answer,
-  or on a re-run of this job alone the comment's mark looked up again: never a second post), the install, Land (still
+  or on a re-run of this job alone the comment's mark looked up again: never a second post), AutoCroissant at the check's
+  `bot_sha` (main may move during the wait: plan and land come from one bot version), the install, Land (still
   `--quiet-from`: it sleeps only what the timer did not cover, all of it without a timer), Follow up, Tell Discord, the
   artifact again (overwrite);
 - `finish` (needs both; always, unless check was skipped): Fail on card errors (the check's `card_errors`), Tell Discord
   the run failed (any job's failure; a cancel by hand is told apart from a timeout by the attempt's job list: a cancelled
   job that ran to its timeout, check 100 or post 75 minutes, is a timeout), the streak artifact.
 Every behaviour of the window stays (a refusal withdrawn when the author pushes the PNG, a card pushed again left to the
-later push, the writes that did not land told); `test_card_guards.py`'s step harness runs the three jobs' shell
+later push, the writes that did not land told; a later push counted from the push, section 4.5, pinned by
+`test_a_push_during_the_check_still_supersedes`); `test_card_guards.py`'s step harness runs the three jobs' shell
 (`_guard_steps`, `needs.<job>.outputs` resolved through the job's outputs). To confirm on the first live run: that an
 empty `environment` expression (a dispatch, a re-run) runs the job with no environment, and that the deployment record
 the environment makes on each push run needs no `deployments` permission.
