@@ -128,6 +128,17 @@ out([html.includes("chart-bal-cooldown"), html.includes("The cooldown update"), 
     assert "timing tags 1," in lines[1] and "old tags" not in lines[1]
 
 
+def test_cooldowns_count_uses_too(tmp_path):
+    """S15: cooldowns (CD 1/2/3+, GCD 1/2+) and uses (U 1/2/3+) per star level; average turns of the cooldowns only."""
+    out = node(tmp_path, """
+const cards = fixture();
+cards[0].ability = "(2U) Hit. (4U) Hit."; cards[1].ability = "(3CD) Hit.";
+out(rows(chart(render(cards, null).top, "cooldowns").split('class="view-table"')[1]));
+""")
+    assert out[0] == ["1★", "0", "0", "1", "0", "1", "0", "0", "0", "2.5"]                  # Potion: (2GCD), (1/3CD)
+    assert out[1] == ["2★", "4", "0", "1", "0", "0", "0", "1", "1", "1.4"]                  # M1's uses count, not in the turns
+
+
 def test_descriptions_are_short(tmp_path):
     """Every chart's sub line is 70 characters or fewer, on the top part, Balance, Ratings and History; the long notes
     are gone (the Balance intro's, the card page's recorded-changes and image-versions notes)."""
