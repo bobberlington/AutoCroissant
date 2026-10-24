@@ -546,8 +546,8 @@ Re-pin:
    with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`test_card_bake.fork_install` checks each
    workflow's install: no pin of its own, the file's wheels).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
-   (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 at every tag up to
-   `cards-20261023d`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
+   1.26.0+cards since `cards-20261024`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environments" step: that commit has no such file.
