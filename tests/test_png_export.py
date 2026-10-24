@@ -41,7 +41,6 @@ CREATURE_TYPES = ("c0f6d11f570e5cf9fe3adc01e984a5723d10bde0", "cf4f4394cb06986c3
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
-RED_KNIFE = "bdf0d61f843242ef8ba9da7325efe1aa085efdbd"  # Auxiliary/Items/Red_Knife.psd (71ddebec)
 SABRE = "becff9f709b1403a8c5ec2d5aa4b7855ec4c5320"      # Auxiliary/Minions/Sabre.psd (3a268cad): an empty Ability layer
 # The real cards are drawn as the bake draws them: upstream psd-tools renders type layers and effects otherwise. Measured
 # at the Action's pin cards-20261022b (90508839); misses re-measured at cards-20261023 (ecc4b773).
@@ -302,14 +301,25 @@ def test_a_new_card_drawn_blank_in_a_text_box_is_refused(clone, monkeypatch):
 
 
 @fork
-def test_a_new_card_tells_its_missed_box(clone):
-    """Red_Knife pushed as a new card: the whole card within the bar, its title box missing it (its outer glow's noise:
-    1.8% bad at cards-20261023; The Freezer's title is within the bar since round 7); made, the miss told for the box."""
-    found = pe.export_new(pe.open_psd(blob(clone, RED_KNIFE)))
+def test_a_new_card_tells_its_missed_box(clone, tmp_path):
+    """A new card, the whole card within the bar, its title box missing it: made, the miss told for the box. The miss is
+    painted (The Freezer with the top tenth of its title box inverted in its stored image, saved by the fork): since
+    round 10 every title is within the bar (Red_Knife's outer glow noise, the last miss, is matched)."""
+    if "preview" not in signature(PSDImage.save).parameters:
+        pytest.skip("this psd-tools has no save(preview=)")
+    freezer = pe.open_psd(blob(clone, FREEZER))
+    stored = np.array(pe.composite(freezer))
+    x0, y0, x1, y1 = next(layer for layer in freezer.descendants() if layer.name == "Name").bbox
+    y1 = y0 + (y1 - y0) // 10
+    stored[y0:y1, x0:x1, :3] = 255 - stored[y0:y1, x0:x1, :3]
+    path = tmp_path / "freezer.psd"
+    freezer.save(str(path), preview=Image.fromarray(stored))
+    found = pe.export_new(PSDImage.open(str(path)))
     assert found.outcome == "re-exported" and found.data and psd_edit._within_bar(found.numbers["cross"])
     assert list(found.misses) == ["the Name text"] and found.numbers["boxes"]["the Ability text"]["bad_pct"] == 0
-    (note,) = pe.miss_notes(found)
-    assert note.startswith("made with a pixel difference (the Name text against the PSD's own image): bad 1.")
+    missed = found.misses["the Name text"]
+    assert pe.miss_notes(found) == ["made with a pixel difference (the Name text against the PSD's own image): bad %.2f%%, "
+                                    "mean %.2f, max %d" % (missed["bad_pct"], missed["mean"], missed["max"])]
 
 
 @fork

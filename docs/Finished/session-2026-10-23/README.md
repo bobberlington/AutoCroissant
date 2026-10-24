@@ -1,4 +1,4 @@
-# Session 2026-10-22 evening to 2026-10-23 (Opus 5.5, ultracode)
+# Session 2026-10-22 evening to 2026-10-23 evening (Opus 5.5, ultracode)
 
 Asked: complete `RESUME_2026-10-22.md` (in this folder, with a header saying what was done), then the owner's requests
 through the night. Ran 2026-10-22 17:03 to 2026-10-23 ~11:00. The running log is
@@ -120,15 +120,36 @@ losslessly on push plus one batch pass; 11_Abilities2 stays. Then: work unattend
   `load_aliases('main')`, no JSON input for diff_stats/inspect_pickle, `load_card_data()`): fixed on work/shadow-prep,
   merged in release 2.
 
+## Afternoon (12:00-17:30, unattended)
+
+Landed, each with its full suite green and pushed straight to main:
+- **AutoCroissant** f47e2cb (push guards: R3/R4 back for real issues only, Shadow_Duelist waived as an
+  `ABILITY_EXCLUSIONS` card; glow tests; B2 test drift; deprecated asyncio/pandas calls), 0c6567e (lossless PNG
+  recompression in the guards' bot commit, `Recompressed` trailers, `png_recompress` batch), 7a7085f (the bake prints
+  stars and types edits, refused per field; `/update_metadata` refuses type names with no icon), fa6e708 (Txt2: 0 of
+  904 PSDs stale; a test that had stopped testing), 73f22aa (Green Mage's off-canvas bars refuse instead of erroring;
+  the 4 stale verdicts were settled), 1bf6892 (a title layer named after its own text: Papyrus, Sans), 0dd3fa7 and
+  5f5fe82 (tests: painted known misses instead of Red_Knife's noise; stock-venv fixes). Jetson deploys 12:34, 13:49,
+  15:52; fork reinstalls 14:10 and 17:02.
+- **TTSCardMaker** 0fcbcdfe (glow font 0.3 em, share text any case), 41e2ddea (Energy_Ritual cand A), 08b1152a (Effect
+  Layers.jsx overlay colour), 6a54b4f6 (site skips recompressions in Image versions), 56011634 (686 PNGs 4.18 GB ->
+  1.14 GB, pixel-identical, verified twice), 5c88f230 (TTS save re-pinned 4018 links), 6dd5399e (types in any order),
+  2921ecbd and 82a8ba7c (fork pins).
+- **Fork** tags `cards-20261023b` (round 9: 187,299 -> 174,340) and `cards-20261023c` (round 10: -> 138,578; effect
+  noise is one fixed field in document coordinates; styled pass-through groups). Rounds 6-10: -77%.
+- **Switches:** `CARD_GUARDS=report` (13:04). The shadow's first scheduled run made the `data` branch (14:21).
+
+Unattended calls (owner to confirm): Nebulous_Precipice keeps the sticker (a stroked Text group swallows a glow halo);
+R3/R4 real issues kept; BUG 2's rebuilt FX layers keep their own style (q6); round 11 run past the old cap of 10.
+
+Disk reached 98% (39 GB free) during the census runs; deleting finished scratch freed ~98 GB.
+
 ## Open at the end (all in `docs/NEXT_SESSION_PLAN.md`)
 
-The first `/update_stats` on 2ada357 (the recovery) and its `/push`; the shadow's seed check and 3 days of daily checks,
-then the cutover; card guards' rollout; the follow-up workflows still running (glow halo test, Energy_Ritual, PNG
-recompression, stars/types bake, guards real-issue checks, test drift from B2, Pandora author); two TTSCardMaker
-branches that missed release 2 (`work/glow-tokens`, the 0.3 em font, and `work/l7-effect-layers`, the Effect
-Layers.jsx overlay colour); fork round 8+; the
-re-parses the owner runs (`cards:Shadow Duelist`, the padding five, the seven printed-star cards); cleanup of worktrees,
-branches and the rescue folder; memory upkeep (`jetson-server`, `ttscardmaker-integration`, `next-session-plan`).
+The first `/update_stats` (the recovery) and its `/push`; the data branch re-seed and 3 days of daily checks, then the
+cutover; `CARD_GUARDS=on` after ~3 days of reports; BUG 2 (`work/fx-rebuild`, in review at the end); fork round 11;
+the owner's re-parses (`cards:Shadow Duelist`, the padding five, the seven printed-star cards, Papyrus and Sans);
+cleanup of the corpus and the fork's round branches after the rounds.
 
 ## Lessons
 

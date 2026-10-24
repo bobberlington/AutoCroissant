@@ -483,7 +483,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_status_fx_lands_only_on_its_status_words`, `test_new_fx_counts_a_word_covered_only_when_held_whole`,
   `test_kept_spans_need_every_character_kept`, `test_status_fx_layer_leaves_a_longer_status_word` (Snow Bunny, with
   `gate_status_words`), `test_numbered_status_fx_layers_stay_on_their_words` (Standstill; line 2's PNG is the no-op
-  bake's). Merged with origin/main 1bf6892: its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
+  bake's). Merged with origin/main (1bf6892, then cc3cd8c): its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
   declared name.
 
 ## 8. Runner
