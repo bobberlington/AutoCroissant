@@ -476,9 +476,29 @@ def test_mock_note_names_a_refusal(tmp_path):
 const base = { drawn: [], skipped: [], boxed: [], over: [], refused: [], fonts: {}, standIn: [] };
 out([p.mockNote({ ...base, boxed: ["stars"], refused: [["stars", "the '5 Stars' folder sets them"]] }), p.mockNote({ ...base, boxed: ["text"] }),
   p.mockNote({ ...base, drawn: ["stars", "types"] }), p.mockNote({ ...base, boxed: ["types", "name"], skipped: ["DEF"] })]);""")
-    assert out[0] == "Stars in a box: their places on the image weren't found. The bake would refuse the stars: the '5 Stars' folder sets them."
+    assert out[0] == "Stars in a box: their places on the image weren't found. The bake would refuse the stars: the card's folder sets them."
     assert out[1] == "Text in a box: its place on the image wasn't found." and out[2] == ""
     assert out[3] == "Types and name in a box: their places on the image weren't found. Not drawn: DEF."
+
+
+@needs_js
+@mock_header
+def test_refusals_in_plain_words(tmp_path):
+    """The bake's refusal text (psd_edit, verbatim) reads plainly in the captions: no ledger codes, layer boxes or field
+    prefixes."""
+    out = node(tmp_path, """
+const base = { drawn: [], skipped: [], boxed: [], over: [], refused: [], fonts: {}, standIn: [] };
+const whys = ["the '3 Stars' folder sets them (moving the card is ledger S9)", "'Fire' is a group, not an icon to take off",
+  "a star at (1, 2, 3, 4) would touch 'Text'", "printed as icon tokens in 'Ability': edit them in Photoshop",
+  "the parser counts 3, the Stars group draws 4 (stars in the header text)", "types: odd (see ledger T3)", ""];
+const v = { card: { name: "A" }, n: 1, hash: "h", now: 0, images: [], current: "", scopes: "repo" };
+const res = { state: "refused", at: 0, edit: { stars: 3 }, hash: "h", result: { state: "refused", reason: "unsupported-card: stars: " + whys[0], fields: {} } };
+out([whys.map(p.plainWhy), p.mockNote({ ...base, refused: [["stars", whys[0]]] }), p.renderedParts(res, v).caption]);""")
+    assert out[0] == ["the card's folder sets them", "one can't be taken off", "there's no room for them",
+                      "they're typed in the text: edit them in Photoshop", "some are in the header text", "odd",
+                      "no reason given"]
+    assert out[1] == "The bake would refuse the stars: the card's folder sets them."
+    assert "ledger" not in out[2] and "folder sets them</p>" in out[2]
 
 
 @needs_js

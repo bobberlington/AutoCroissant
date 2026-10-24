@@ -135,6 +135,10 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       Sans after step 2).
 
 ### 8. Website, TTS and Discord follow-ups
+- [ ] Refusal wording at the source: psd_edit `plan_stars` / `plan_types` refusals carry internal words ("the '5 Stars'
+      folder sets them (moving the card is ledger S9)", layer boxes such as "at (12, 40, 60, 88)"). The website maps them
+      to plain words (preview.js `PLAIN_WHY`, 2026-10-24); reword them in psd_edit after BUG 2 lands, and keep
+      `PLAIN_WHY` in step. psd_parser also reads `[fire:]` as `[fire]`, though the font prints it as letters.
 - [ ] The cards to open in Photoshop: five in `~/Documents/Tools/psd-research/std-batch2/b1_final/LANDED.md` (batch 1)
       and five in `std-batch2/LANDED_B2.md` (02_Abbreviations, 22_Negation, Palace_of_Shadow, Jack-In-The-Box_Zombie,
       Dark_Mind_Eye).
