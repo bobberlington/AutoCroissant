@@ -700,8 +700,8 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
    case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:355-379). 48 pages today.
-10. One result posts its image URL (a preview, via `get_card_url`); several are listed as `<name> — <url>` lines,
-    10 per message (`RESULTS_PER_MESSAGE`, query_card.py:30; since 2026-10-21, one message per result before);
+10. Each result posts its image URL alone, one message per card (a preview, via `get_card_url`; its name when the PNG
+    is not in the tree). From 2026-10-21 to 2026-10-23 they were listed as `<name> — <url>` lines, 10 per message;
     `howmany:True` returns just the count; `limit` caps output (main.py:291-304).
 
 ## 8. When NOT to use this skill
@@ -780,3 +780,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-22 (data build): the traversal's citations (EXCLUDE_FOLDERS, the type list, the commit lookup, the history rule, `_update_old_stats_paths`) re-pointed to the uncompiled commands/card_data.py; `_update_old_stats_paths` noted as legacy-mode only. The db/ JSON schemas (`version`, the manifest, the changelog events) are in docs/Campaigns/DATA_BUILD_ACTION.md section 8 until the cutover.
 
 2026-10-23 (docs drift): §4's worked injection example moved to Nebulous Precipice; The Lich King noted as a font-token card since TTSCardMaker 1c24dd48.
+
+2026-10-23 (unbatch): §7.2 gotcha 10: /query_ability posts one message per card again.

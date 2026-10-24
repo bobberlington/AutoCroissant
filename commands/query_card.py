@@ -21,7 +21,7 @@ from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
-from commands.utils import queue_long_message, queue_message, split_long_message
+from commands.utils import queue_message, split_long_message
 
 filterwarnings('ignore')
 
@@ -30,7 +30,6 @@ filterwarnings('ignore')
 # ========================
 DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
-RESULTS_PER_MESSAGE = 10                                 # /query_ability lines per message
 _alias_lock = Lock()                                     # one writer for aliases.pkl
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
@@ -878,17 +877,9 @@ def query_ability(interaction: Interaction,
 
     queue_message(interaction, f"Found {total_results} results for '{ability}'!")
 
-    names = [basename(index) for index in results.index[:results_to_show]]   # index: the path without .png
-    if len(names) == 1:                                  # one card: its image preview (its name when the PNG is not in the tree)
-        url = card_repo.get_card_url(names[0])
-        queue_message(interaction, url or names[0])
-    else:                                                # more: name and image link, RESULTS_PER_MESSAGE per message
-        for start in range(0, len(names), RESULTS_PER_MESSAGE):
-            lines = []
-            for name in names[start:start + RESULTS_PER_MESSAGE]:
-                url = card_repo.get_card_url(name)
-                lines.append(f"{name} — {url}" if url else name)
-            queue_long_message(interaction, "\n".join(lines))
+    for index in results.index[:results_to_show]:       # one message per card: its image preview
+        name = basename(index)                           # index: the path without .png
+        queue_message(interaction, card_repo.get_card_url(name) or name)   # its name when the PNG is not in the tree
 
     queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.",
                   links=[("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")])
