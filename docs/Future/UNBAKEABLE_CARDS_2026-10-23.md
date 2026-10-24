@@ -240,7 +240,7 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       Gasoline's "[fire] type" -> "fire type", The Hive, Mini Doomer's "(BOT)" -> "Start:"); a variant-only token edit
       is dropped as redundant (`:glow` too), the token picker offering it; a retyped token takes the card's commonest
       icon style (ruling C).
-  - **Phase 2 review, round 3 (same branch, 2026-10-24; origin/main 73dfc3c, unmoved):** two silent wrong bakes fixed
+  - **Phase 2 review, round 3 (same branch, 2026-10-24; origin/main 7ca804e merged in):** two silent wrong bakes fixed
     (dry census with every gate on copies of TTSCardMaker 7dcc36fd, fork `cards-20261023c`;
     `~/Documents/Tools/wt/bf-fx-r6-scratch/`: `census_bake.py`, `runs/{new,base,turtle,ice,front}.json`, `base/` the
     branch tip before the fixes):

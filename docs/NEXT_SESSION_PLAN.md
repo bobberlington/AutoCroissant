@@ -113,7 +113,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 ### 7. Bot and bake follow-ups
 - [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
       runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
-      origin/main merged in each round, last 73dfc3c). Phase 2 (owner's answers of ~17:40): own-style FX layers
+      origin/main merged in each round, last 7ca804e). Phase 2 (owner's answers of ~17:40): own-style FX layers
       rebuilt, typed badges and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
       review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
       layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
@@ -126,8 +126,8 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       (`unlettered_icons`; it baked as the letters), gate `lettered_icons`, an edit inside a phrase of several colours
       refuses, no status word inside a `[token]`, the ability edited before the title (Fire Staff's name + ability
       refused `bytes`). Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
-      (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`,
-      Oct 23 21:26; fails on the tip before the fixes too). Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
+      (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
+      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
       that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
       Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's

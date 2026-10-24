@@ -622,7 +622,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_status_layer_moved_to_a_typed_word_is_told_so`, `test_gate_fx_refuses_an_own_style_layer_over_a_new_colour`,
   `test_the_bakes_vocabulary_knows_only_the_fonts_icons`, `test_rebuild_fx_refuses_a_badge_in_plain_letters`,
   `test_fx_notes_reach_a_partial_verdict`.
-  **Phase 2 review, round 3 (2026-10-24, same branch; origin/main 73dfc3c, unmoved):** two silent wrong bakes fixed, and
+  **Phase 2 review, round 3 (2026-10-24, same branch; origin/main 7ca804e merged in):** two silent wrong bakes fixed, and
   the cheap minor findings (dry census with every gate on copies of TTSCardMaker 7dcc36fd, fork `cards-20261023c`,
   `~/Documents/Tools/wt/bf-fx-r6-scratch/`: `census_bake.py`, `runs/{new,base,turtle,ice}.json`, the branch tip before
   the fixes in `base/`). (1) A typed token's red-less pixels stayed out of the badge layer, cut with the JSX's red key
