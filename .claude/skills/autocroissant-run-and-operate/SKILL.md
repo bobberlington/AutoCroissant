@@ -633,11 +633,12 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   A typed "★" is set in the icon font (the gold star). Refused: a badge under a tinted Ability (any colour, gradient or
   pattern overlay, or a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the 18 Pin Light
   Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
-  Precipice), a `:glow` token (the fork draws its halo as a block), letters left in the icon font it draws no badge of
+  Precipice), letters left in the icon font it draws no badge of
   ("(abc)", "(GCD)"), a token the website shows as an icon but the font prints as letters ("[fire:]", "[Fire.]"), a
   typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF" made "+3 DEF": the
   layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
-  the website shows "[dark]").
+  the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
+  Photoshop draws it; a stale install of an older fork refuses `font`).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit

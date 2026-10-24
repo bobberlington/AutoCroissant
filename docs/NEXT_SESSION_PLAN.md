@@ -230,7 +230,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's
       `[dark:sticker]` prints `[dark]` too: keep_tokens can't pair moved text), a token's `:sticker`/`:tint`/`:glow`
       variant typed on the website counted redundant (classify compares canonical_tokens, which fold the variants: the
-      edit leaves Card Edits.json with no bake and no verdict, a `:glow` one too, which should refuse `font`; the token
+      edit leaves Card Edits.json with no bake and no verdict, a `:glow` one too, which would now bake; the token
       picker offers these edits), words typed in place of a badge or icon refused (Pizza's "(1CD)" -> "Once:", Gasoline's
       "[fire] type" -> "fire type": edit_styles keeps the icon font; near() could give the body style), the leading space of
       15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test), a
