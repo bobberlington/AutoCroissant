@@ -2412,6 +2412,14 @@ def test_new_text_under_a_layer_above_it_or_over_a_bar_refuses(clone, parser, ch
     psd = PSDImage.open(_card(clone, PAINT_WARRIOR)[0])
     with pytest.raises(pe.Refused, match=r"^overflow: ability: the new text runs over the hp bar \(\d+ px\)"):
         pe.set_text_layer(psd, "ability", "Die.", fonts_dir, chart, parser=parser)
+    # titles under their art by design (review 2026-10-24): as much of the new title as of the old may sit under it
+    for rel, card, title in ((LESHY, "Leshy", "Leshys"), (DOOPLISS, "DooPliss", "Dooplisss")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        assert pe.set_text_layer(psd, "name", title, fonts_dir, chart, card, parser=parser).field == "name"
+    psd = PSDImage.open(_card(clone, LESHY)[0])
+    with pytest.raises(pe.Refused, match=r"^overflow: name: 'Layer 6', 'Layer 7' above it, over the old text too, would "
+                                         r"cover \d+ px more of the new text"):
+        pe.set_text_layer(psd, "name", "Lesh", fonts_dir, chart, "Leshy", parser=parser)
 
 
 @text_edit
@@ -2662,6 +2670,118 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
             continue
         with pytest.raises(pe.Refused, match="^reparse: .*" + why):
             pe.gate_fx(psd, edits, fonts_dir, None, old, parser.icons, titles)
+
+
+RADIANCE = "Creatures/Hollow Knight/5 Stars/The_Radiance.psd"   # its title in 'Group 1': a Gradient Overlay, no own one
+SPACEBOY = "Creatures/Omori/3 Stars/Captain_Spaceboy.psd"      # its title in 'Stat Txt': a Gradient Overlay
+SALT = "Auxiliary/Items/Salt.psd"                               # a white title, no :sticker on the card
+OLD_FOXY = "Creatures/Fnaf/4 Stars/Old_Foxy.psd"                # its title 'Old Foxy\r': a blank last paragraph
+LESHY = "Creatures/Other/5 Stars/Leshy.psd"                     # its title under its art ('Layer 6', 'Layer 7')
+DOOPLISS = "Creatures/Mario/4 Stars/DooPliss.psd"               # its title under its art ('p')
+
+
+@text_edit
+def test_a_token_under_a_groups_overlay_refuses(clone, parser, chart):
+    """Review 2026-10-24: _tinted read only the title's own overlays, so a [fire] typed in The Radiance's title ('Group 1'
+    has a Gradient Overlay) baked as a cream silhouette, Captain Spaceboy's as a cyan one, every gate passing. A group's
+    effects count as the layer's own: the edit refuses unsupported-card, bare_icons checks it."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, card in ((RADIANCE, "The Radiance"), (SPACEBOY, "Captain Spaceboy")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        layer = pe.name_layer(psd, card)
+        assert not pe._overlaid(layer) and pe._tinted(layer)
+        with pytest.raises(pe.Refused, match=r"^unsupported-card: \[fire\]: the title's overlay"):
+            pe.set_text_layer(psd, "name", pe.collapse(layer.text) + " [fire]", fonts, chart, card, parser=parser)
+
+
+@text_edit
+def test_a_title_sticker_takes_the_titles_colour_beside_a_typed_ability_one(clone, parser, chart, tmp_path):
+    """Owner 2026-10-24 (ruling 2), review 2026-10-24: the Ability is edited first, so a [dark:sticker] typed in both
+    took the Ability's colour in Salt's white title (purple), read off the edited copy as "already on the card". The
+    other layer's colours are the card's before the bake: none there, the title's own white."""
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, SALT)[0], SALT)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, SALT, {"name": "Salt [dark:sticker]", "ability": old + " Gain [dark:sticker]."},
+                          tmp_path, chart)
+    runs = _runs(pe.name_layer(PSDImage.open(baked.psd_path), "Salt"))
+    assert [run[1:] for run in runs if run[0] == "[dark:sticker]"] == [(pe.ICON_FONT, runs[0][2], runs[0][3])]
+    assert runs[0][3] == (1.0, 1.0, 1.0)
+
+
+@text_edit
+def test_a_title_edit_keeps_its_blank_last_paragraph_off_the_new_words(clone, parser, chart):
+    """Review 2026-10-24: keep_breaks paired the space before a word appended to "Old Foxy\r" with its trailing break
+    (shown as a space), setting the word on a new line, and keep_ends added the break again. The blank end paragraphs
+    are keep_ends' alone."""
+    assert pe.keep_breaks("Old Foxy\r", "Old Foxy [fire]", "name") == "Old Foxy [fire]"
+    assert pe.keep_ends("Old Foxy\r", "Old Foxy II") == "Old Foxy II\r"
+    psd = PSDImage.open(_card(clone, OLD_FOXY)[0])
+    pe.set_text_layer(psd, "name", "Old Foxy [fire]", str(clone / pe.FONTS_DIR), chart, "Old Foxy", parser=parser)
+    assert pe.name_layer(psd, "Old Foxy").text == "Old Foxy [fire]\r"
+
+
+@text_edit
+def test_words_typed_after_a_title_token_take_the_titles_style(clone, parser, chart):
+    """Review 2026-10-24: the engine gives text typed right after a token its icon font, and a title edit had no
+    edit_styles: "Bench [fire] II" refused unsupported-card ('II' in the icon font). It takes the title's own style
+    (title_styles); "[fire:]", which the font draws as letters and the website shows as letters in a title, stays in
+    the title's font without the Ability's font refusal."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, BENCH)[0])
+    for title in ("Bench [fire]", "Bench [fire] II"):
+        pe.set_text_layer(psd, "name", title, fonts, chart, "Bench", parser=parser)
+    runs = _runs(pe.name_layer(psd, "Bench"))
+    assert [run[:2] for run in runs] == [("Bench ", runs[0][1]), ("[fire]", pe.ICON_FONT), (" II", runs[0][1])]
+    assert runs[2][2:] == runs[0][2:]
+    psd = PSDImage.open(_card(clone, BENCH)[0])
+    pe.set_text_layer(psd, "name", "[fire:]", fonts, chart, "Bench", parser=parser)
+    assert [run[:2] for run in _runs(pe.name_layer(psd, "Bench"))] == [("[fire:]", runs[0][1])]
+
+
+@text_edit
+def test_apply_jobs_runs_the_title_icon_checks(clone, parser, monkeypatch, tmp_path):
+    """Review 2026-10-24: apply_jobs gives gate_fx the title of a title edit; nothing failed when it gave None. The
+    layout here says the title's typed [fire] is not one icon-font cluster: the bake refuses reparse."""
+    real = pe.unshaped_icons
+
+    def unshaped(psd, fonts, vocab, layer=None):
+        out = real(psd, fonts, vocab, layer=layer)
+        return out + Counter({"[fire]": 1}) if layer is not None and "[fire]" in layer.text else out
+
+    monkeypatch.setattr(pe, "unshaped_icons", unshaped)
+    with pytest.raises(pe.Refused, match=r"^reparse: \[fire\]: not drawn as one badge or icon$"):
+        _bake(clone, parser, BENCH, {"name": "Bench [fire]"}, tmp_path)
+
+
+@text_edit
+def test_apply_jobs_checks_its_copy(clone, parser, chart, monkeypatch, tmp_path):
+    """Review 2026-10-24: apply_jobs edits a copy, which a plain deepcopy makes without Lorian's smart filters. Its
+    pairings are checked first (gate_pairs); a copy that renders unlike the card after them refuses too (gate_copy, on a
+    card with smart filters)."""
+    hp = pe.parse_card(parser, _card(clone, LORIAN)[0], LORIAN)["card"]["hp"]
+    monkeypatch.setattr(pe, "edit_copy", deepcopy)
+    with pytest.raises(pe.Refused, match="smart object pairings") as refused:
+        _bake(clone, parser, LORIAN, {"hp": hp - 1}, tmp_path, chart)
+    assert refused.value.code == "error"
+    monkeypatch.setattr(pe, "gate_pairs", lambda psd, copy: None)
+    with pytest.raises(pe.Refused, match="renders .* unlike the card itself") as refused:
+        _bake(clone, parser, LORIAN, {"hp": hp - 1}, tmp_path, chart)
+    assert refused.value.code == "error"
+
+
+@text_edit
+def test_a_bake_renders_the_card_only_once_an_edit_is_made(clone, parser, chart, monkeypatch, tmp_path):
+    """Review 2026-10-24: apply_jobs rendered the whole card twice before trying any edit (gate_copy's pair): an ability
+    edit refused as overflow cost 4.7 s on Pure Vessel (0.5 s before). A refused edit renders nothing; a stat bake on a
+    card without smart filters renders the card before and after, in one RenderCache."""
+    real, calls = pe.render_all, []
+    monkeypatch.setattr(pe, "render_all", lambda psd: calls.append(psd) or real(psd))
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, PURE_VESSEL)[0], PURE_VESSEL)["card"]["ability"])
+    with pytest.raises(pe.Refused) as refused:
+        _bake(clone, parser, PURE_VESSEL, {"ability": old + " Die. Die. Die. Die. Die. Die. Die. Die."}, tmp_path, chart)
+    assert refused.value.code == "overflow" and calls == []
+    hp = pe.parse_card(parser, _card(clone, PURE_VESSEL)[0], PURE_VESSEL)["card"]["hp"]
+    parsed, baked = _bake(clone, parser, PURE_VESSEL, {"hp": hp - 1}, tmp_path, chart)
+    assert len(calls) == 2 and not pe._filtered(calls[0])
 
 
 @text_edit
@@ -3371,8 +3491,8 @@ def test_a_blank_render_is_refused_beside_another_edit(clone, parser, tmp_path, 
     new = old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")
     real = pe.set_text_layer
 
-    def stretched(psd, which, text, fonts_dir, chart=None, card="", own_text=True, parser=None):
-        edit = real(psd, which, text, fonts_dir, chart, card, own_text, parser)
+    def stretched(psd, which, text, fonts_dir, chart=None, card="", own_text=True, parser=None, original=None):
+        edit = real(psd, which, text, fonts_dir, chart, card, own_text, parser, original)
         if which == "ability":
             edit.region = pe.union_box([edit.region, pe.name_layer(psd, card).bbox])
         return edit

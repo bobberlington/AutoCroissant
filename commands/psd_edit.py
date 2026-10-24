@@ -10,6 +10,7 @@ data. No Discord, network or config; the text extra (psd_tools.composite.text) i
 rendered, so the module loads under stock psd-tools.
 """
 from collections import Counter
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
@@ -740,16 +741,18 @@ def _tinted(layer) -> bool:
     group's above it (the Isaac items' Pin Light: Soul of Eden's white-on-cyan 1CD; The Patients' 78%: a dimmed pill).
     Also a visible layer clipped to it or to such a group: an adjustment or fill (Claw's and Miasma's Exposure 1 on Text:
     a pale pill), a drawn layer over the Ability's box (Pizza's Multiply 'Layer 12'; review 2026-10-24).
+    A Satin, Inner Glow or Inner Shadow paints over them too, and a group's effects as its own (review 2026-10-24: The
+    Radiance's title in 'Group 1' with a Gradient Overlay printed a typed [fire] as a cream silhouette).
     Only a badge FX layer over them restores them (std-batch2's fix for Pin Light; reviews 2026-10-23 and -24).
     """
-    from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
-    effects = layer.effects
-    if effects.enabled and any(isinstance(effect, (ColorOverlay, GradientOverlay, PatternOverlay)) and effect.enabled
-                               for effect in effects):
-        return True
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay, InnerGlow, InnerShadow, PatternOverlay, Satin
     x0, y0, x1, y1 = layer.bbox
     node = layer
     while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
+        effects = node.effects
+        if effects.enabled and any(isinstance(effect, (ColorOverlay, GradientOverlay, PatternOverlay, Satin, InnerGlow,
+                                                       InnerShadow)) and effect.enabled for effect in effects):
+            return True
         if node.blend_mode not in (BlendMode.NORMAL, BlendMode.PASS_THROUGH) or node.opacity < 255 \
                 or getattr(node, "fill_opacity", 255) < 255:
             return True
@@ -1211,6 +1214,29 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
     return out
 
 
+def title_styles(layer, parts: list) -> list:
+    """
+    A title edit's counterpart of edit_styles: each changed part (edit_parts) takes the fill and STYLE_KEYS of the
+    nearest old character before it that is no blank and no icon-font one, else after it. Only what the engine sets in
+    the icon font outside a badge or token takes it (set_text_layer): words typed after a title's token took its font
+    and refused (review 2026-10-24: "Bench [fire] II"). Before set_text.
+
+    Returns:
+        [(new start, new end, RGB 0..1 or None, STYLE_KEYS)]
+    """
+    old = layer.text
+    fills, icons, styles, _ = _char_styles(layer)
+    clean = [i for i in range(len(old)) if not icons[i] and styles[i] and old[i] not in " \t\r\x03"]
+    out = []
+    for a0, a1, b0, b1, kept in parts:
+        if kept or b1 <= b0:
+            continue
+        i = next((i for i in reversed(clean) if i < a0), next((i for i in clean if i >= a1), None))
+        if i is not None:
+            out.append((b0, b1, fills[i], styles[i]))
+    return out
+
+
 def changed_range(old: str, new: str) -> tuple:
     """
     The str indices [start, end) of the new text that set_text(keep="runs") restyles: everything outside the
@@ -1245,16 +1271,20 @@ def keep_breaks(old: str, new: str, which: str) -> str:
         which: "name" or "ability"
 
     Returns:
-        new, each \\r (ability) or space (name) the diff pairs with an old break of those kinds made that break
+        new, each \\r (ability) or space (name) the diff pairs with an old break of those kinds made that break; only
+        breaks between the old text's characters: its blank first and last paragraphs are keep_ends' (review
+        2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new line, its space paired with the trailing \\r)
     """
     kinds, shown = ("\r\x03", " ") if which == "name" else ("\x03", "\r")
     if not any(c in old for c in kinds):
         return new
+    blank = " \t\r\x03"
+    lo, hi = len(old) - len(old.lstrip(blank)), len(old.rstrip(blank))
     seen = "".join(shown if c in kinds else c for c in old)
     out = list(new)
     for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
         for i in range(size):
-            if old[a + i] in kinds:
+            if old[a + i] in kinds and lo <= a + i < hi:
                 out[b + i] = old[a + i]
     return "".join(out)
 
@@ -2315,6 +2345,8 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
     FX and overlay word layers) where that layer alone renders past INK_ALPHA (Papyrus' spaghetti 'Layer 10' over the
     text's gap: "Die." printed under it), or inside a stat bar row's box (stat_rows) the old text did not reach (Paint
     Warrior's blank Ability box runs over its Health bar; Pure Vessel's digit masks cover its text). Review 2026-10-24.
+    Layers that already ran over the old text's ink are the card's design (Leshy's and DooPliss' titles under their
+    art: a title of another length moves every glyph): together they may cover as much of the new text as of the old.
 
     Args:
         psd: The card, the text set and rasterized
@@ -2327,7 +2359,8 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
     """
     shape = (psd.height, psd.width)
     after = _on_canvas(layer, shape)
-    ink = (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
+    now = after[..., 3] > INK_ALPHA * 255
+    ink = now & (after != before).any(axis=2)
     if not ink.any():
         return None
     was = before[..., 3] > INK_ALPHA * 255
@@ -2338,11 +2371,12 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
             x0, y0, x1, y1 = clip(box, psd.width, psd.height)
             if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and ink[y0:y1, x0:x1].any():
                 return f"the new text runs over the {stat} bar ({int(ink[y0:y1, x0:x1].sum())} px)"
-    ys, xs = ink.nonzero()
+    ys, xs = (ink | was).nonzero()
     box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     order = list(psd.descendants())
     above = order[next(i for i, other in enumerate(order) if other._record is layer._record) + 1:]
     skipped = {id(other._record) for other in skip}
+    design, names = np.zeros(shape, bool), []
     for other in above:
         if other.is_group() or id(other._record) in skipped or other.clipping or other.kind not in DRAWN_LAYER_KINDS \
                 or other.blend_mode != BlendMode.NORMAL or not other.is_visible():
@@ -2354,14 +2388,23 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
         alone = other.composite(viewport=(x0, y0, x1, y1), apply_icc=False)
         if alone is None:
             continue
-        hidden = int((ink[y0:y1, x0:x1] & (np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255)).sum())
-        if hidden:
+        drawn = np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255
+        hidden = int((ink[y0:y1, x0:x1] & drawn).sum())
+        if not hidden:
+            continue
+        if not (was[y0:y1, x0:x1] & drawn).any():
             return f"{other.name!r} above it would cover {hidden} px of the new text"
+        design[y0:y1, x0:x1] |= drawn
+        names.append(repr(other.name))
+    more = int((now & design).sum()) - int((was & design).sum())
+    if more > 0:
+        return f"{', '.join(names)} above it, over the old text too, would cover {more} px more of the new text"
     return None
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                   card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None) -> Edit:
+                   card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
+                   original: Optional[PSDImage] = None) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -2380,6 +2423,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         parser: offline_parser(): its icon vocabulary says which typed [tokens] the icon font draws (icon_text) and its
             types which image icons the parser reads into the ability (image_icons); None: every [token], and a layer
             without the icon font counts as one with image icons
+        original: The card before any of the bake's edits (apply_jobs' old), where a typed :sticker or :tint reads the
+            other text layer's colours (variant_fill): the Ability's edit, made first, would give a title's typed
+            [dark:sticker] the colour of the one it typed (review 2026-10-24: Salt's purple on its white title); None: psd
 
     Returns:
         Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
@@ -2445,13 +2491,15 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
         if glows:
             raise Refused("font", f"{', '.join(glows)}: this psd-tools draws a glow halo as a solid block; edit in Photoshop")
-        odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser))
+        odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser)) \
+            if which == "ability" else None     # the website shows a title's "[fire:]" as its letters, as the card does
         if odd:                                 # typed, or "[fire:no]" made "[fire:]" by deleting letters
             raise Refused("font", f"{', '.join(odd)}: the website shows an icon, but the icon font has no such spelling "
                                   f"and would print its letters; type the token as the token picker writes it")
     drawn = icon_text(text, vocab) if icons_too else []    # what the icon font draws (owner 2026-10-23: a typed one
     looks = {kind: icon_style(layer, kind, vocab) for kind in (True, False)}   # is set in it); badge, token
-    tints = [variant_fills(other, vocab) for other in (layer, _other_text(psd, which, card, own_text))] \
+    tints = [variant_fills(each, vocab) for each in
+             (layer, _other_text(psd if original is None else original, which, card, own_text))] \
         if any(text[a] == "[" and token_variant(text[a:b]) in TEXT_COLOURED for a, b in drawn) else []
     if which == "ability":
         old_fx, overlays = fx_layers(psd, layer), overlay_words(psd)
@@ -2489,6 +2537,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
     styles = edit_styles(layer, parts, chart) if which == "ability" else []
+    restyle = title_styles(layer, parts) if which == "name" else []
     changed = [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0]
     typed = [(a, b) for a, b in drawn if any(a < b1 and b0 < b for b0, b1 in changed)]     # badges and tokens it types
     badged = [text[a:b] for a, b in typed if which == "name" and text[a] == "("]
@@ -2523,6 +2572,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             for a, b in _stretches([i for i in range(part_start, part_end) if like and now[i] and i not in glyphs]):
                 layer.set_span_style(a, b, **like)
             layer.set_span_style(part_start, part_end, fill=fill)
+    if restyle:         # likewise in a title: the title's own style
+        now = _char_styles(layer)[1]
+        for part_start, part_end, fill, like in restyle:
+            for a, b in _stretches([i for i in range(part_start, part_end) if now[i] and i not in glyphs]):
+                layer.set_span_style(a, b, **like, **({} if fill is None else {"fill": fill}))
     now = _char_styles(layer)[1]
     edited = set()          # an old badge or token edited in place: the new one holding most of its kept characters
     for a0, b0 in spans_before:     # (difflib may pair the ")" of "(1GCD)" with that of a "(2U)" typed after it)
@@ -3515,7 +3569,8 @@ def edit_copy(psd: PSDImage) -> PSDImage:
 def gate_copy(before: np.ndarray, psd: PSDImage) -> None:
     """
     The copy apply_jobs edits renders as the card did before any edit (edit_copy: a copy losing its smart filters
-    would put their absence in the PNG wherever an edit's region reaches, every other gate passing).
+    would put their absence in the PNG wherever an edit's region reaches, every other gate passing). Rendered with no
+    RenderCache: its keys leave the smart-filter pairing out, so a cached render would pass any copy.
 
     Args:
         before: render_all() of the card as opened
@@ -3527,6 +3582,47 @@ def gate_copy(before: np.ndarray, psd: PSDImage) -> None:
     off = int((before != render_all(psd)).any(axis=2).sum())
     if off:
         raise Refused("error", f"the card's copy renders {off} pixels unlike the card itself (psd-tools' deepcopy)")
+
+
+def gate_pairs(psd: PSDImage, copy: PSDImage) -> None:
+    """
+    The copy pairs each smart object with its smart filter as the card does (edit_copy, PSDImage._opened_records: the
+    copy of each of the card's entries keyed by id() of its copied record), checked without a render: the known way a
+    copy renders unlike the card (review 2026-10-24: Lorian's art). Raises Refused("error") naming how many do not.
+    """
+    opened = getattr(psd, "_opened_records", None) or {}
+    if not opened:
+        return
+    records = psd._record.layer_and_mask_information.layer_info.layer_records
+    copies = copy._record.layer_and_mask_information.layer_info.layer_records
+    index = {id(record): i for i, record in enumerate(records)}
+    paired = getattr(copy, "_opened_records", None) or {}
+    lost = 0
+    for record, *rest in opened.values():
+        i = index.get(id(record))
+        mine = copies[i] if i is not None and len(copies) == len(records) else None
+        entry = paired.get(id(mine)) if mine is not None else None
+        lost += entry is None or entry[0] is not mine or list(entry[1:]) != rest
+    if lost:
+        raise Refused("error", f"the card's copy lost {lost} smart object pairings (psd-tools' deepcopy): it would "
+                               f"render unlike the card itself")
+
+
+def _filtered(psd: PSDImage) -> bool:
+    """Whether a smart object of the card has a smart filter (PSDImage._opened_records: a filter position)."""
+    return any(entry[1] is not None for entry in (getattr(psd, "_opened_records", None) or {}).values())
+
+
+def render_cache():
+    """
+    One bake's psd-tools RenderCache (the fork's psd_tools.composite.rcache: the card's renders before and after its
+    edits share every layer the edits leave alone; keys hash what a layer is, never id()), else a no-op context.
+    """
+    try:
+        from psd_tools.composite.rcache import RenderCache
+    except ImportError:
+        return nullcontext()
+    return RenderCache()
 
 
 def gate_outside(before: np.ndarray, psd: PSDImage, edit: Edit) -> np.ndarray:
@@ -4776,6 +4872,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     start = perf_counter()
     old = psd if psd is not None else PSDImage.open(psd_path)
     new, old_records = edit_copy(old), layer_records(old)      # a copy: one open (as fast as a second one)
+    gate_pairs(old, new)
     png = Image.open(png_path)
     png.load()
     timings["open"] = perf_counter() - start
@@ -4790,18 +4887,24 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
     # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
-    # all are in (index_icons)
-    shown = render_all(old)
-    gate_copy(shown, new)
+    # all are in (index_icons). The card is rendered whole only once an edit is made (a refused one costs none), in one
+    # RenderCache; the copy's own render (gate_copy) only on a card with smart filters, after the edits
+    cache, first = render_cache(), None
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(),
                               key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
         if name in ICON_FIELDS:
             try:
                 plan = plan_stars(new, parsed, value, parser) if name == "stars" else plan_types(new, parsed, value, parser)
+                start = perf_counter()
+                if first is None:
+                    with cache:
+                        first = shown = render_all(old)
+                timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
                 edit = set_icons(new, plan, types_dir)
                 start = perf_counter()
-                shown = gate_outside(shown, new, edit)      # nothing else changes
+                with cache:
+                    shown = gate_outside(shown, new, edit)      # nothing else changes
                 timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
             except Refused:
                 raise
@@ -4811,14 +4914,20 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser))
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser,
+                                        old))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and edit.layers]
+    start = perf_counter()
     if others:
-        start = perf_counter()
-        gate_untouched(shown, new, others)
-        timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
+        with cache:
+            if first is None:
+                first = shown = render_all(old)
+            gate_untouched(shown, new, others)
+    if _filtered(old):
+        gate_copy(render_all(old) if first is None else first, edit_copy(old))   # deepcopy is deterministic
+    timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
     after = record_map(new)
     for edit in edits:
         if edit.icons is not None:
@@ -4944,6 +5053,7 @@ __all__ = [
     'fx_phrases',
     'gate_bytes',
     'gate_copy',
+    'gate_pairs',
     'gate_fx',
     'gate_fx_colours',
     'gate_idempotence',
@@ -4971,6 +5081,7 @@ __all__ = [
     'index_icons',
     'keep_breaks',
     'keep_ends',
+    'title_styles',
     'kept_chars',
     'held_words',
     'kept_spans',
@@ -4994,6 +5105,7 @@ __all__ = [
     'read_name',
     'record_map',
     'render_all',
+    'render_cache',
     'shown_name',
     'splice_text',
     'splices',
