@@ -43,6 +43,73 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
 - [ ] Fix later: the second History line's 103 carried starts (noise) and the 14 Mario versions a second run moves
       (normalize after Card Edits; harmless).
 
+### 1b. The stat history backfill (branch `work/backfill`; after step 1, before step 3's re-seed)
+`history_backfill.json` (repo root) holds every stat-card PSD version in git read by today's parser, the misread rule
+and 92 archive entries (26 records to add). Misread rule: a stat changes only where its own row on the PSD's stored
+preview changed (more than 300 px past 24); a reading that changed elsewhere is a misread. A stat's row is placed by the
+row labels (the "Lines" layers) where there are any, else by layer names, else (no row drawn at all: Grimora, Skeleton
+Mate) by the band right of a text label named "Health", "Defense", ...; a pair with no stat region at all is "blind"
+(never one print run; the file's `blind` list, 0 today). All-0 or 0/-1 lines (Clot Bone's hearts, Tainted Keeper's first
+blob) and two creatures' rows summed (God Tamer) are unread; a hidden or out-of-range stat is unread on its own
+(Michael's HP 17 keeps its ATK nerf). Renamed cards are read with the card they became. Three Ech blobs today's parser
+misreads are read by hand (`BY_HAND`: SPD 4 not 1 on 2024-10-03, ATK 4 not 0 on 2025-03-22, from their previews). Made
+by hand on the Mac (`python -m commands.history_backfill build`, ~6 min from scratch with 4 workers, seconds from the
+cache, the fork venv, the full clone `~/Documents/Tools/wt/tc-full.git`, card head efcf17d2; it refuses to build when
+Card Authors.txt, Card Edits.json or the font manifest is at head but not in the clone); design and runs in
+`~/Documents/Tools/wt/scratch/backfill/` (DESIGN.md §12-14, fix3/). `/update_stats` merges it once, after `recover()` and
+after the run's traversal (so renamed records get this run's Card Authors.txt), on a trial copy, and says so in one
+`Backfill:` line. It merges nothing and prints `Backfill waits: ...` while a current card is unlike the file (not
+re-parsed yet, or bytes the file never read and can't stand for), or while a `PRINTED` card's PSD still reads other
+stats than it prints. A same-data re-save after the file's head takes its path's reading at the head. Left alone and
+listed: versions newer than the file, unmatched versions (Slugcat's 3 Stars copy, Z!!!!!'s rename-era one), and stored
+lines whose own bytes are unread (God Tamer's -1s). Every archive tag gets an `author`; a card archived after the merge
+has only the card's own `author`, so the website reads the tag's, else the record's.
+- [ ] **Fix two PSDs first** (`PRINTED`; the merge waits until both are fixed AND the file is rebuilt, so the fix is never
+      counted as a 2026 change; never fix them after the merge): The Thin Man reads ATK 8 ('Atk Dark' 8 visible) and
+      prints 7 since 2025-03-09 ("Thin Man: -1 ATK"); Grimora reads DEF 2 (zero-size marker '2' in 'bars/def') and prints
+      4 since 2025-03-11 ("Grimora: +2 DEF"). Preview, layer render and PNG agree (scratch/backfill/fix3/sim/thin_head.png,
+      grim_head.png). Thin Man: show 'Atk Dark' 7, hide 8; Grimora: rename the 'def' marker to '4' (the PNGs already
+      print it). Any other `unread_edits` PSD fix goes the same way: before the build, never after the merge.
+- [ ] Then rebuild the file at the new head (`build --git ~/Documents/Tools/wt/tc-full.git --head origin/main --cache
+      ~/Documents/Tools/wt/scratch/backfill/fix3/readings.jsonl --out history_backfill.json`; fetch the new blobs first if
+      it says so). Rehearsed on a local, never-pushed commit with both fixes (fix3/sim): the newest reading wins inside each
+      print run, so Thin Man's nerf counts on 2025-03-09 and Grimora's buff on 2025-03-11; "PSDs to fix" says none.
+- [ ] Owner reads the file's `changes` (79 on 71 cards today; 81 on 73 after the two fixes) and `unread_edits` (39 rows
+      on 28 cards: a stat row printed a change no reading shows). The 10 rows the team's #finished-updates confirms carry
+      `confirmed: <note>` (Chef Saltbaker x3, Clot Bone x3, Slugcat, God Tamer, The Thin Man, Grimora): real edits, not
+      counted; the rest are restyles or noise (PoD04Zebra Bloon's 2025-03-01 ATK row is a stripe restyle: it prints the
+      ATK 6 it reads). Also DESIGN.md §11: the qualified keys `Pizza (item)`, `Dogma (item)`, `Auto Croissant (minion)`;
+      4 changes within a day of a card's first commit; 27 authors by first commit. **Amy Rose's Hammer is archived as
+      renamed to Piko Piko Hammer** (git: a6c81145 `R098 Auxiliary/Items/Amy_Rose's_Hammer.psd -> Items/Equip/3
+      Stars/Piko_Hammer.psd`, the same text and stars, then 0c8cdb36 to Piko_Piko_Hammer; Regenerative Shield, the card he
+      ruled on, is indeed another card). To keep it Deleted, drop its `SIMILAR` line in history_backfill.py and rebuild.
+- [ ] After step 1's PICKLE is on origin/main: copy its pickles to `scratch/backfill/rehearsal/prod/`, run `python -m
+      commands.history_backfill rehearse --file history_backfill.json --git ~/Documents/Tools/wt/tc-full.git --pickles
+      <prod> --out <out>` (it applies Card Authors.txt at --head as the run does), then `diff_stats.py prod/stats.pkl
+      out/stats.pkl --history prod/old_stats.pkl out/old_stats.pkl`. Expected, from the jetson's 2026-10-24 05:07 copies
+      with the two fixes emulated (fix3/sim; rehearse_fixed.txt, diff_stats_fixed.txt): stats.pkl 820/820, 0 modified;
+      Backfill line: 30 versions corrected, 1 kept (God Tamer), 2 unmatched, 75 stat versions added, 6 folded, 60 starts
+      earlier (10 current cards: Acro, Green Mage, Grimora, Markoth, PoD06Rainbow Bloon, Sabre, Tainted Eden, Tainted
+      Isaac, The Thin Man, Wham Bam Jewel; diff_stats can't show `version`, rehearse lists them); old_stats 1,162 -> 1,257
+      versions, which diff_stats prints as `versions added: 101` (75 stat versions + 26 archive records) and `dropped: 6`
+      (the 6 folded; the line counts added and folded as diff_stats does: copies kept, stored versions gone), 671 -> 703
+      names; 92 tags changed (26 new, every one given an author; Amy Rose's Hammer, Tainted Esau and Sacrifice retagged
+      as renamed; Azamoth the Possessed King and Militron No Armor given the path git deleted); stat changes on current
+      cards 68 (28 buffs, 36 nerfs, 4 moved) on 63 cards (the Stats page counts current cards only), 7 uncounted (God
+      Tamer and the six 2025-03-22 partial rows). Second cleanup and second merge: nothing; a second `merge()` with the
+      marker aside changes nothing and every touched version ends at its next start's commit (fix3/sim/again.py;
+      `tests/test_history_backfill.py::test_the_committed_file_merges_once_on_the_real_pickles` with
+      `AUTOCROISSANT_HISTORY_CLONE=~/Documents/Tools/wt/tc-full.git`, else it skips). Without the two fixes the merge waits
+      and changes nothing.
+- [ ] Land (one code commit; no pickles), deploy outside 05:00-05:40, run the diff_stats gate before the next `/push`.
+      Undo: revert that PICKLE and delete `history_backfill.json` in the same push. A card repo stat-card commit after
+      the file's head is left alone by the merge (a same-data re-save takes the head's reading); rebuild the file first if
+      many land. A kill between the run's two pickle writes (old_stats.pkl saved, stats.pkl not: old_stats.pkl newer, no
+      run summary) leaves the merge marked done with the current cards' starts unsaved: restore both pickles (`git
+      checkout HEAD -- stats.pkl old_stats.pkl` on the jetson, before any `/push`) and run `/update_stats` again.
+- [ ] **Dead code after its PICKLE is pushed:** delete `history_backfill.json`, `commands/history_backfill.py`, its call
+      in `card_data.update()`, `tests/test_history_backfill.py` and the skill lines that name them.
+
 ### 2. The owner's re-parses (Discord, after step 1; tell him when)
 - [ ] `/update_stats cards:Shadow Duelist` (only printed Ability text counts; it becomes "").
 - [ ] `/update_stats cards:00 Table of Contents,Miracle Matter,Twin Emperors,Warcraftian Druid,Warcraftian Hunter`

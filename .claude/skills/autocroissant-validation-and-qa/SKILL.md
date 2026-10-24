@@ -466,7 +466,7 @@ Any ONE of the following, with no accepted explanation, means the change is reje
 - any unexplained `diff_stats` row after a sweep (added, removed, or modified), or
   unexplained `old_stats` version growth beyond 354 names / 446 versions (a7c310e). The one explained exception: the
   first run after the 2026-10-23 deploy recovers history from the bot's PICKLE commits (its `History: N versions
-  recovered ...` line; about 1,155 versions / 670 names expected; autocroissant-change-control, pickle gate);
+  recovered ...` line; about 1,155 versions / 670 names expected; autocroissant-change-control, pickle gate), and the one-time `Backfill: ...` line after it (about +95 versions, +32 names; docs/NEXT_SESSION_PLAN.md step 1b);
 - any exclusion-list growth (ABILITY_EXCLUSIONS > 21; no stat list exists since 2026-10-21).
 
 The corresponding improvements (goldens fixed toward intended values, problem counts
