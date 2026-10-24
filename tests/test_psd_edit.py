@@ -2642,7 +2642,8 @@ def test_a_token_typed_in_the_title_is_set_in_the_icon_font(clone, parser, chart
     """Owner 2026-10-24: a token typed in the title is set in the icon font too, at the title's own size and colour,
     under the same gates. The parser reads a title's icons as its name, not as a header's types or stars (the re-parse
     read Bench's [fire] as a fire type and refused). Refused: a token under the title's gradient overlay (Mettaton NEO),
-    a timing badge typed there (the ruling names tokens), a glow; without the vocabulary a title has no tokens."""
+    a timing badge typed there (the ruling names tokens); a glow is set too (fork cards-20261024b); without the
+    vocabulary a title has no tokens."""
     parsed, baked = _bake(clone, parser, BENCH, {"name": "Bench [fire]"}, tmp_path, chart)
     assert baked.reparse["card"]["display_name"] == "Bench [fire]"
     assert {key: baked.reparse["card"].get(key) for key in ("types", "stars")} == \
@@ -2655,11 +2656,14 @@ def test_a_token_typed_in_the_title_is_set_in_the_icon_font(clone, parser, chart
     runs = _runs(pe.name_layer(psd, "Mangle"))
     assert runs[0][:2] == ("\u2605", pe.ICON_FONT) and runs[0][2:] == runs[1][2:]
     for rel, title, why in ((NEO, "Mettaton NEO [fire]", r"\[fire\]: the title's look \(its Gradient Overlay\)"),
-                            (BENCH, "Bench (1CD)", r"\(1CD\): a timing badge typed in the title"),
-                            (BENCH, "Bench [fire:glow]", r"glow halo")):
+                            (BENCH, "Bench (1CD)", r"\(1CD\): a timing badge typed in the title")):
         psd = PSDImage.open(_card(clone, rel)[0])
         with pytest.raises(pe.Refused, match=why):
             pe.set_text_layer(psd, "name", title, fonts, chart, Path(rel).stem.replace("_", " "), parser=parser)
+    psd = PSDImage.open(_card(clone, BENCH)[0])
+    own = _runs(pe.name_layer(psd, "Bench"))[0][1]
+    pe.set_text_layer(psd, "name", "Bench [fire:glow]", fonts, chart, "Bench", parser=parser)
+    assert [run[:2] for run in _runs(pe.name_layer(psd, "Bench"))] == [("Bench ", own), ("[fire:glow]", pe.ICON_FONT)]
     psd = PSDImage.open(_card(clone, BENCH)[0])
     pe.set_text_layer(psd, "name", "[ice]", fonts, chart, "Bench")
     assert pe.ICON_FONT not in [run[1] for run in _runs(pe.name_layer(psd, "Bench"))]
@@ -3941,19 +3945,86 @@ def test_icon_font_tokens_and_colour_glyphs(clone, chart):
     assert pe.stale_stories(psd) == [] and pe.story_style_drift(psd) == []     # the story's font is the same
 
 
+RED_KNIFE = "Auxiliary/Items/Red_Knife.psd"     # its Ability near the card's foot: a halo's faint tail passes it
+SALT = "Auxiliary/Items/Salt.psd"               # its title in a stroked Text group, 'Layer 19' (MISS) below beside it
+
+
+def _token_ink(layer, fonts, piece: str) -> tuple:
+    """The ink box (canvas px, whole) of the icon of the layer's icon-font cluster drawing piece ('[fire:glow]': its
+    smallest glyph, not the halo)."""
+    from psd_tools.composite.text import FontMap
+    from psd_tools.composite.text.geometry import text_geometry
+    geometry = text_geometry(layer, FontMap(dirs=[fonts]))
+    boxes = [glyph["ink"] for glyph in geometry["glyphs"] if glyph["ink"] and pe.ICON_FONT_PREFIX in glyph["font"].lower()
+             and geometry["text"][glyph["i"]:glyph["end"]] == piece]
+    x0, y0, x1, y1 = min(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+    return int(x0), int(y0), int(x1) + 1, int(y1) + 1
+
+
 @text_edit
-def test_glow_tokens_refuse(clone, chart):
-    """The fork draws a :glow halo as its glyf outline, a solid block even under an overlay: refused before any change."""
-    psd = PSDImage.open(_card(clone, "Field/4 Stars/The_Hive.psd")[0])
+@pytest.mark.skipif(not colour_glyphs(), reason="the fork draws SVG colour glyphs in one colour")
+def test_glow_tokens_bake_as_photoshop_draws_them(clone, parser, chart, tmp_path):
+    """Fork cards-20261024b draws a :glow/:darkglow halo as Photoshop does (it was a solid block, refused): typed ones
+    bake through every gate. The_Hive's Text group strokes it 7 px black, so the halo is a black disc around the icon,
+    Photoshop's own look (the owner's finding, 2026-10-24), not the golden card behind it."""
+    fonts = str(clone / pe.FONTS_DIR)
+    old = pe.parse_card(parser, _card(clone, HIVE)[0], HIVE)["card"]["ability"]
+    for token in ("[fire:glow]", "[fire:darkglow]"):
+        (tmp_path / token[6:-1]).mkdir()
+        _, baked = _bake(clone, parser, HIVE, {"ability": old + f" Deal 1 {token} damage."}, tmp_path / token[6:-1], chart)
+        assert pe._within_bar(baked.parity["ability"]) and baked.reparse["validator"] == [] and baked.fx == []
+        layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+        assert token in layer.text and "Deal 1 [fire] damage." in baked.reparse["card"]["ability"]   # read as [fire]
+        x0, y0, x1, y1 = _token_ink(layer, fonts, token)
+        before = np.asarray(Image.open(_card(clone, HIVE)[1]).convert("RGB")).astype(int)
+        after = np.asarray(Image.open(baked.png_path).convert("RGB")).astype(int)
+        ring = np.zeros(after.shape[:2], bool)       # above and below the icon, 8-18 px out: the disc
+        ring[y0 - 18:y0 - 8, x0:x1] = ring[y1 + 8:y1 + 18, x0:x1] = True
+        dark = lambda image: float((image[ring].max(axis=1) < 60).mean())
+        assert dark(after) > 0.95 and dark(before) < 0.5, (token, dark(after), dark(before))
+
+
+@text_edit
+def test_glow_tokens_refuse_on_an_older_fork(clone, chart, monkeypatch):
+    """A psd-tools older than the pin (a stale install: pip keeps one of the same version) draws a glow halo as a solid
+    block: a typed glow refuses before any change; other tokens do not."""
+    monkeypatch.setattr(pe, "glow_halos", lambda: False)
+    psd = PSDImage.open(_card(clone, HIVE)[0])
     layer = pe.ability_layer(psd)
     old = layer.text
     for token in ("[fire:glow]", "[Fire:DarkGlow]"):
-        with pytest.raises(pe.Refused, match="glow halo") as refused:
+        with pytest.raises(pe.Refused, match="older than the pin") as refused:
             pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + f" Deal 1 {token} damage.", str(clone / pe.FONTS_DIR), chart)
         assert refused.value.code == "font" and token in refused.value.why and layer.text == old
-    if not colour_glyphs():                                     # :sticker and :tint keep the old rule
-        with pytest.raises(pe.Refused, match="colour glyphs"):
-            pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Deal 1 [fire:sticker] damage.", str(clone / pe.FONTS_DIR), chart)
+    pe.set_text_layer(psd, "ability", pe.normalize_ability(old) + " Deal 1 [fire] damage.", str(clone / pe.FONTS_DIR), chart)
+
+
+@text_edit
+def test_a_faint_halo_past_the_canvas_is_no_overflow(clone, parser, chart):
+    """Only ink past INK_ALPHA off the canvas refuses: Red_Knife's [ice:glow] halo passes the card's foot by 10 px at
+    alpha 0.03 at most (Photoshop clips it the same); its solid ink past a smaller canvas counts."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, RED_KNIFE)[0])
+    layer = pe.ability_layer(psd)
+    old = pe.normalize_ability(layer.text)
+    pe.set_text_layer(psd, "ability", old + " Gain [ice:glow].", fonts, chart, parser=parser)
+    assert layer.bbox[3] > psd.height and not pe._ink_off_canvas(layer, psd.width, psd.height)
+    assert pe._ink_off_canvas(layer, psd.width, layer.bbox[1] + 40) and pe._ink_off_canvas(layer, 300, psd.height)
+
+
+@text_edit
+def test_a_glow_disc_over_a_layer_below_the_title_refuses(clone, parser, chart):
+    """Salt's Text group strokes a title [fire:glow]'s faint halo into a black disc (Photoshop's look) that covers
+    'Layer 19' (MISS) beside the title: inks_over counts the group's changed ink for glow tokens (the title's own ink
+    past INK_ALPHA misses it); the same token with no glow stays clear of it."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for title, refused in (("Salt [fire:glow]", True), ("Salt [fire:darkglow]", True), ("Salt [fire]", False)):
+        psd = PSDImage.open(_card(clone, SALT)[0])
+        if refused:
+            with pytest.raises(pe.Refused, match="print over 'Layer 19' below it"):
+                pe.set_text_layer(psd, "name", title, fonts, chart, "Salt", parser=parser)
+        else:
+            pe.set_text_layer(psd, "name", title, fonts, chart, "Salt", parser=parser)
 
 
 @text_edit

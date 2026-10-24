@@ -35,7 +35,7 @@ from commands.card_models import StatsDatabase
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, CardValidator, IconVocabulary, PSDParser, name_key,
                                  named_after_text, stars_from_psd, title_text, token_variant)
-from commands.psd_regions import badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
+from commands.psd_regions import _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -71,7 +71,7 @@ OK_FONTS = ("exact", "system")                  # how a font may resolve; loose 
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
 TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colour: the :sticker outline, the :tint silhouette
-GLOWS = ("glow", "darkglow")  # token variants whose halo the fork draws as its glyf outline: a solid block, not a soft glow
+GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo (glow_halos)
 LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
@@ -294,6 +294,20 @@ def _alpha(layer) -> Optional[np.ndarray]:
     except Exception:
         return None
     return None if shape is None or shape.ndim != 3 else shape[..., 0]
+
+
+def _ink_off_canvas(layer, width: int, height: int) -> bool:
+    """Whether the layer inks (past INK_ALPHA) off the canvas; a faint fringe Photoshop clips does not count (a :glow
+    halo's tail past a title's top: Salt's 0.16)."""
+    bbox = tuple(layer.bbox)
+    if clip(bbox, width, height) == bbox:
+        return False
+    alpha = _alpha(layer)
+    if alpha is None:
+        return True
+    x0, y0 = bbox[0], bbox[1]
+    inside = alpha[max(0, -y0):max(0, height - y0), max(0, -x0):max(0, width - x0)]
+    return int((alpha > INK_ALPHA).sum()) != int((inside > INK_ALPHA).sum())
 
 
 def _touches(a, b) -> bool:
@@ -556,6 +570,13 @@ def story_sync() -> bool:
     """Does the fork's set_text also write the layer's Txt2 story (TypeLayer.sync_story): the text Photoshop reads."""
     from psd_tools.api.layers import TypeLayer
     return hasattr(TypeLayer, "sync_story")
+
+
+def glow_halos() -> bool:
+    """Does the fork draw a :glow/:darkglow halo as Photoshop does (cards-20261024b; before, a solid block)."""
+    from dataclasses import fields
+    from psd_tools.composite.text.svg import Picture
+    return "box" in {field.name for field in fields(Picture)}
 
 
 def splices() -> bool:
@@ -2364,7 +2385,7 @@ def no_glyph(layer, text: str, changed: list, fonts) -> list:
             and text[glyph.cluster - offset] not in " \t\r\x03"]
 
 
-def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optional[str]:
+def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Optional[tuple] = None) -> Optional[str]:
     """
     What would hide the ink a text edit drew, or what it would run over: the layer's pixels past INK_ALPHA that differ
     from before, under a visible Normal layer drawn above it (later in paint order, no clipped one, no group; skip: its
@@ -2379,6 +2400,8 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
         layer: The edited text layer
         before: _on_canvas() of it before the edit
         skip: Layers that go with it
+        halos: _effect_ink() after and before the edit, for typed glow tokens: their effects' changed ink counts on the
+            stat bars
 
     Returns:
         Why, or None
@@ -2387,16 +2410,19 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
     after = _on_canvas(layer, shape)
     now = after[..., 3] > INK_ALPHA * 255
     ink = now & (after != before).any(axis=2)
-    if not ink.any():
-        return None
     was = before[..., 3] > INK_ALPHA * 255
+    bars = ink if halos is None else ink | _changed_ink(*halos)
+    if not bars.any():
+        return None
     for stat, rows in stat_rows(psd).items():
         for group, _, box in rows:
             if box is None or not group.is_visible():
                 continue
             x0, y0, x1, y1 = clip(box, psd.width, psd.height)
-            if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and ink[y0:y1, x0:x1].any():
-                return f"the new text runs over the {stat} bar ({int(ink[y0:y1, x0:x1].sum())} px)"
+            if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and bars[y0:y1, x0:x1].any():
+                return f"the new text runs over the {stat} bar ({int(bars[y0:y1, x0:x1].sum())} px)"
+    if not ink.any():
+        return None
     ys, xs = (ink | was).nonzero()
     box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     order = list(psd.descendants())
@@ -2428,7 +2454,7 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list) -> Optiona
     return None
 
 
-def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
+def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] = None) -> Optional[str]:
     """
     What a title's new ink would print over: a visible layer drawn below it (earlier in paint order; no group, no
     clipped one) that, alone, inks past INK_ALPHA under the title's changed ink past INK_ALPHA, the old title's ink
@@ -2439,6 +2465,8 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
         psd: The card, the title set and rasterized
         layer: The title layer
         before: _on_canvas() of it before the edit
+        halos: _effect_ink() after and before the edit, for typed glow tokens: a stroke or shadow makes a halo's faint
+            pixels a disc (Salt's group stroke over its 'MISS'), so their effects' changed ink counts too
 
     Returns:
         Why, or None
@@ -2446,9 +2474,11 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
     shape = (psd.height, psd.width)
     after = _on_canvas(layer, shape)
     ink = (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
+    was = before[..., 3] > INK_ALPHA * 255
+    if halos is not None:
+        ink |= _changed_ink(*halos)
     if not ink.any():
         return None
-    was = before[..., 3] > INK_ALPHA * 255
     ys, xs = (ink | was).nonzero()
     box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     order = list(psd.descendants())
@@ -2468,6 +2498,32 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
         if over and not (was[y0:y1, x0:x1] & drawn).any():
             return f"it would print over {other.name!r} below it ({over} px)"
     return None
+
+
+def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
+    """
+    The layer drawn with its effects and its groups' (the outermost group with effects, composited alone: the other text
+    layers in it too) on the canvas, RGBA uint8; None when neither has any. A :glow halo's faint pixels under a
+    stroke are a disc, as Photoshop draws them (the owner's finding, 2026-10-24): the gates count that ink.
+    """
+    scope = None
+    for owner in (layer, *_ancestors(layer)):
+        try:
+            if owner.effects.enabled and any(effect.enabled for effect in owner.effects):
+                scope = owner
+        except AttributeError:
+            continue
+    if scope is None:
+        return None
+    image = scope.composite(viewport=(0, 0, psd.width, psd.height), apply_icc=False)
+    if image is None:
+        return np.zeros((psd.height, psd.width, 4), np.uint8)
+    return np.asarray(image.convert("RGBA"))
+
+
+def _changed_ink(after: np.ndarray, before: np.ndarray) -> np.ndarray:
+    """Pixels past INK_ALPHA in after that differ from before (two _effect_ink() canvases)."""
+    return (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
 
 
 def _title_lines(geometry: dict) -> list:
@@ -2553,7 +2609,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             [dark:sticker] the colour of the one it typed (review 2026-10-24: Salt's purple on its white title); None: psd
 
     Returns:
-        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs and glow tokens),
+        Edit with the engine's report; raises Refused: unsupported-card, styled-word, font (also one-colour glyphs, glow tokens on a fork without glow_halos),
         overflow (also new text under a layer above it or over a stat bar: covered_ink; a title over a layer below it
         its old ink left alone, inks_over, or on more lines or lower; a typed icon over the other glyphs, typed_icon_fit,
         which refuses unsupported-card for one far from its letters' height); ImportError when the fork
@@ -2615,10 +2671,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         images = icon_font(layer) is None if parser is None else bool(image_icons(psd, parser))
         if TOKEN.search(text) and images:
             raise Refused("unsupported-card", "[type] tokens on a card with image icons")
+    glows = []
     if icons_too:
         glows = [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
-        if glows:
-            raise Refused("font", f"{', '.join(glows)}: this psd-tools draws a glow halo as a solid block; edit in Photoshop")
+        if glows and not glow_halos():          # a stale install of an older pin
+            raise Refused("font", f"{', '.join(glows)}: this psd-tools is older than the pin (no glow halos); reinstall it")
         odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser)) \
             if which == "ability" else None     # the website shows a title's "[fire:]" as its letters, as the card does
         if odd:                                 # typed, or "[fire:no]" made "[fire:]" by deleting letters
@@ -2701,6 +2758,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     plain = {moved[i] for i, c in enumerate(old_text) if icons_before[i] and i not in drawn_before and c not in blank
              and moved[i] >= 0}
     canvas = _on_canvas(layer, (psd.height, psd.width))
+    halo_before = _effect_ink(psd, layer) if glows else None
     splice_text(layer, text, parts)
     glyphs = {i for a, b in drawn for i in range(a, b)}
     if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
@@ -2766,8 +2824,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     bbox = tuple(layer.bbox)
     spliced = getattr(report, "splice", None)
     band = bbox if spliced is None or spliced.fallback else spliced.zone
-    if clip(bbox, psd.width, psd.height) != bbox:
+    if _ink_off_canvas(layer, psd.width, psd.height):
         raise Refused("overflow", f"{which} runs off the canvas")
+    halos = None if halo_before is None else (_effect_ink(psd, layer), halo_before)
     if any(_touches(layer, badge) for badge in badges):
         raise Refused("overflow", "name reaches the stars or type icons")
     if which == "name":
@@ -2777,13 +2836,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                                       f"Photoshop")
         if lines and max(lines) > max(lines_before + [old_bbox[3]]):
             raise Refused("overflow", "name: a line of it would move below the title; edit in Photoshop")
-        over = inks_over(psd, layer, canvas)
+        over = inks_over(psd, layer, canvas, halos)
         if over:
             raise Refused("overflow", f"name: {over}; edit in Photoshop")
     misfit = typed_icon_fit(layer, typed, sized, fonts) if typed else None
     if misfit:
         raise Refused(misfit[0], f"{which}: {misfit[1]}; edit in Photoshop")
-    covered = covered_ink(psd, layer, canvas, old_fx + hide)
+    covered = covered_ink(psd, layer, canvas, old_fx + hide, halos)
     if covered:
         raise Refused("overflow", f"{which}: {covered}; edit in Photoshop")
     reach = [(union_box([old_bbox, bbox]), fx_pad(layer))]
