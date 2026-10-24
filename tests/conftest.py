@@ -240,6 +240,7 @@ def offline(monkeypatch, tmp_path):
             monkeypatch.setattr(sys.modules[module], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
     if "commands.card_data" in sys.modules:
         monkeypatch.setattr(sys.modules["commands.card_data"], "BOT_CLONE", str(tmp_path / "no-bot-clone"))
+        monkeypatch.setattr(sys.modules["commands.card_data"], "_CLEAN", {})     # /update_stats' no-op cleanup memo
 
 
 @pytest.fixture(scope="session")
