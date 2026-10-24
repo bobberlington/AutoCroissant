@@ -1370,7 +1370,7 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   pre-edit PNG Stranger 5a9e0fcf (893 px) and The_Forbidden_One 6d59c949 (1,004 px), where the modes differ only over
   the author's change, which neither shows. Now all three converted, 0 px past 24 (scratch `py314/fix-r7/`
   `e2e_jacob.log`, `stranger.log`, `forbidden_one.log`; the G2b replay `replay.jsonl`: only Tainted_Jacob's two rows
-  moved). No foreign profile, one render. Replayed on all 21 raw cards beside their own PNG, stored image dropped (scratch `py314/fix-r5/raw_beside_all.log`):
+  moved; the 231 sampled beside cases `beside.jsonl`: only Stranger and The_Forbidden_One). No foreign profile, one render. Replayed on all 21 raw cards beside their own PNG, stored image dropped (scratch `py314/fix-r5/raw_beside_all.log`):
   all drawn raw, 14 current, 6 kept (29-201 px), Pessimism redrawn (4,216 px, max 26 from the author's export: the
   fork's noise past KEPT_PX, as Pandamonium's); Buzzo (voted converted) stays converted and current. Block_Hopper with
   Speed hidden and neither PSD stored: raw, baseline mean 0.39, the PNG the stored-vote export's pixel for pixel
