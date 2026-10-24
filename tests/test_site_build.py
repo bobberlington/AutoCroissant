@@ -6,6 +6,7 @@ author and created, image revisions (Stats), Pacific contribution months, the pe
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
+import inspect
 import json
 import shutil
 import subprocess
@@ -461,6 +462,8 @@ def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):
 def test_a_renamed_card_keeps_the_credit_of_the_card_it_became(bs):
     """Meta Mato -> Maxim Tomato: the new name's Card Authors.txt line, else the old name's, else the live card's
     author, before the tag's and the last version's."""
+    if "author_of" not in inspect.signature(bs.archived_cards).parameters:
+        pytest.skip(f"{BUILD_SITE} credits renamed cards by their old name")
     card = bs.CardInfo()
     card.__dict__.update(timestamp=1.7e9, card_type="item", stars=2, author="MichaelJSr",
                          archived={"at": 1_700_000_100, "renamed_to": "Maxim Tomato", "backfill": True})

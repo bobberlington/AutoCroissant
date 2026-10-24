@@ -29,6 +29,7 @@ FONT_BUILD = SITE.parent / "MDW" / "Fonts" / "stoogedings-src" / "build_stoogedi
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
                                 reason=f"clone behind: no {TOKENS_JS} (land TTSCardMaker work/token-picker)")
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+LETTERS = TEXT_JS.is_file() and "splitToken" in TEXT_JS.read_text(encoding="utf-8")   # variants the font lacks are letters
 names = pytest.mark.skipif(not (TOKENS_JS.is_file() and "suggestNames" in TOKENS_JS.read_text(encoding="utf-8")),
                            reason="clone behind: no name lists in tokens.js")
 
@@ -208,12 +209,13 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
   choose("[fi:glow]", 3, "[field]"), choose("[fire:glow] x", 8, "[fire:darkglow]"), choose("[fire:glow]", 5, "[fire:tint]"),
   choose("x (-1/2GC) y", 9, "(-1/2GCD)"), choose("[Dark M:Glow] x", 7, "[darkmatter]"), choose("[fi:] x", 3, "[fire]"),
   choose("[fi:glows]", 3, "[fire]")].map(r => r && [r.text, r.caret])));""")
-    assert out == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
-                   ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
-                   ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
-                   ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
-                   ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17],
-                   ["[fire] x", 6], ["[fire]", 6]]                       # never "[fire:]": letters in the font
+    assert out[:19] == [["Heal [fire] now", 11], ["Heal [fire] now", 11], ["Heal [fire]", 11], ["Heal [fire] now", 11],
+                        ["[fire:glow]", 11], ["[darkmatter]", 12], ["x (1CD) y", 7], ["x (1CD)", 7], ["x (1CD) y", 7],
+                        ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
+                        ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
+                        ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
+    if LETTERS:
+        assert out[19:] == [["[fire] x", 6], ["[fire]", 6]]                # never "[fire:]": letters in the font
 
 
 @needs_node
@@ -318,9 +320,12 @@ process.stdout.write(JSON.stringify({ tint: html("tint"), sticker: html("sticker
     assert '<img class="tokv" src="icons/fire.glow.webp" alt="fire (white glow)" style="--r:0.3021" data-tip="fire (white glow)">' in out["glow"]
     assert 'src="icons/fire.darkglow.webp"' in out["dark"] and "black glow" in out["dark"]
     assert '<span class="tok-no"><img class="tok" src="icons/fire.webp"' in out["no"]
-    assert out["unknown"] == ["a [fire:glows] b", "a [fire:] b", "a [fire:glow:x] b"]   # letters, as the font
-    assert out["spaced"] == ["a [fire: glow] b", "a [fire:no ] b"]               # no spaces around it, as in the font
-    assert out["none"] == [None] * 3
+    if LETTERS:
+        assert out["unknown"] == ["a [fire:glows] b", "a [fire:] b", "a [fire:glow:x] b"]   # letters, as the font
+        assert out["spaced"] == ["a [fire: glow] b", "a [fire:no ] b"]           # no spaces around it, as in the font
+        assert out["none"] == [None] * 3
+    else:                                                                        # before round 3: the plain icon
+        assert out["unknown"][0] == out["plain"] and out["spaced"] == [out["plain"]] * 2
     assert "data-tip" not in out["quiet"]
     assert out["old"] == [True] * 4
 

@@ -370,6 +370,7 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "splitToken"), reason="mockup.js draws every variant as its icon")
 def test_a_variant_the_font_lacks_is_text(tmp_path):
     """[fire:] and [fire:glows] print as letters (no ligature), so the mock-up draws them as text."""
     out = node(tmp_path, """
@@ -498,7 +499,26 @@ out([whys.map(p.plainWhy), p.mockNote({ ...base, refused: [["stars", whys[0]]] }
                       "they're typed in the text: edit them in Photoshop", "some are in the header text", "odd",
                       "no reason given"]
     assert out[1] == "The bake would refuse the stars: the card's folder sets them."
-    assert "ledger" not in out[2] and "folder sets them</p>" in out[2]
+    assert "ledger" not in out[2] and "The bake would refuse the stars: the card&#39;s folder sets them.</p>" in out[2]
+
+
+@needs_js
+@pytest.mark.skipif(not has(PREVIEW_JS, "plainNote"), reason="no plain Rendered captions in preview.js")
+def test_rendered_captions_in_plain_words(tmp_path):
+    """The Rendered tab says a refused stars or types edit as the Mock-up does: the refused reason and a baked preview's
+    "<field> not baked: <code>: <why>" note (card_preview.notes_of) show no refusal codes or ledger codes; other reasons
+    and notes lose ledger codes only."""
+    out = node(tmp_path, """
+const why = "stars: the '5 Stars' folder sets them (moving the card is ledger S9)";
+const v = { card: { name: "A" }, n: 1, hash: "h", now: 0, images: [], current: "", scopes: "repo" };
+const at = (state, result) => p.renderedParts({ state, at: 0, edit: { name: "B", stars: 6 }, hash: "h", result }, v).caption;
+out([at("refused", { reason: "unsupported-card: " + why + "; unsupported-card: types: 'field' is a frame round the card, not an icon to take off" }),
+  at("baked", { notes: ["stars not baked: unsupported-card: " + why, "FX layers: Ability FX: Blazing (see ledger F2)"], fields: { name: "baked", stars: "refused" } }),
+  p.plainReason("parity: Name: effects unreadable (ledger P1)")]);""")
+    assert "The bake would refuse the stars: the card&#39;s folder sets them. The bake would refuse the types: one can&#39;t be taken off.</p>" in out[0]
+    assert "<li>The stars weren&#39;t baked: the card&#39;s folder sets them.</li>" in out[1] and "<li>FX layers: Ability FX: Blazing</li>" in out[1]
+    assert all("unsupported-card" not in x and "ledger" not in x for x in out[:2])
+    assert out[2] == "parity: Name: effects unreadable"
 
 
 @needs_js
