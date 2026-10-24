@@ -782,6 +782,29 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_typed_layered_tokens_are_untracked_and_ligated`, `test_a_title_edit_keeps_its_runs_of_blanks`,
   `test_a_title_token_is_no_header_type_row`, `test_a_title_token_under_its_own_inner_glow_refuses`; each fails with
   its fix taken out (`fix6/mut.sh`).
+  **Review fixes 3 (2026-10-24, r12 venv; `scratch/bug2-p5/`):** the title check's `badge_layers` takes the
+  vocabulary (Fool Eater's and The Krusty Krab's root type icons; also `plan_stars` and `plan_types`, which change no
+  plan on main's 172 star cards), and `inks_over` refuses `overflow` where the title's new ink covers a visible layer
+  below it that the old title's ink did not touch (Spice's star in 'images', Nosk's 'Hk star', Flame Trap's, Bag of
+  Evil's, Energy Ritual's, Bubble's banner). A title that would take more lines (Basic Shield's box, the Cursed Idol), or
+  a line below the old title, refuses `overflow`. `typed_icon_fit` checks each typed badge or token on the engine's
+  render: past `ICON_OVERLAP` (16) px over the layer's other glyphs it refuses `overflow` (Machine Gun, Bag of Good,
+  Niiue, Kel, Mettaton EX); one set at the text's own size (no badge or token on the card, or a title) whose smallest
+  glyph is outside `ICON_HEIGHT` (0.6 to 2.2) of the tallest letter on its line refuses `unsupported-card` (Holy Blade
+  0.20, the pixel font of Machine Gun, Quote, Springtrap... 2.28; the rest 0.86 to 2.15). Census of every card
+  (`census.py`, in memory): the typo title fix bakes on the same 715 as before; new refusals: 10 abilities (" Gain
+  [fire]."), 14 titles with " [fire]", 11 with "[fire] ", 17 with " [dark:sticker]", each looked at. Refusal wording: the tint refusal says "typed icon" or
+  "typed badge", for a title "the title's look (...) would recolour the typed icon"; the see-through refusal names an
+  overlay or blend colour only on a tinted layer. Renders: the baseline's "preview" render is cut from the bake's
+  whole render of the card (`crop_pair`; byte-identical PSD and PNG on Pure Vessel and Lorian), the merge's region render
+  and `gate_idempotence`'s run in the bake's RenderCache, the second resuming the first (its key holds the pins, so the
+  merge's stays a cold pass); Pure Vessel's hp bake 5.6 to 4.8 s. A pinned whole render (`gate_untouched`) misses the
+  cache (the pins are in its key) and cost more than it saved. Tests: `test_a_title_token_off_the_header_icons_and_stars`,
+  `test_star_and_type_plans_see_the_root_type_icons`, `test_a_typed_icon_far_from_its_letters_refuses`,
+  `test_a_title_token_that_wraps_refuses`, `test_icon_style_breaks_a_size_tie_by_the_body_size`,
+  `test_gate_pairs_checks_each_pairings_filter_and_place`, `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
+  `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
+  `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
 
 ## 8. Runner
 

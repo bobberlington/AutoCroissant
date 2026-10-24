@@ -216,7 +216,10 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       tests, fixed by origin/main 3ca616e, merged in after). Review fixes 2 (origin/main 3ca616e merged; EDIT_PIPELINE_DESIGN
       section 7): typed `:sticker`/`:no` at tracking 0 (the fork split their glyphs), typed tokens with ligatures on, a
       title's runs of blanks kept (Pepperoni Pizza), a title's tokens no header type row (`type_row`), `_tinted` names its
-      cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped).
+      cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped). Review fixes 3
+      (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
+      line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
+      render: 1756 passed, 13 skipped, 0 failed.
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart). q6 (own
