@@ -118,7 +118,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
       layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
       a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Round 2
-      (same branch, origin/main be280e6 merged in): a typed copy joining an own-style layer takes its words' colour (Palace of Shadow's "+2 DEF"
+      (same branch, origin/main be280e6, then 73dfc3c, merged in): a typed copy joining an own-style layer takes its words' colour (Palace of Shadow's "+2 DEF"
       printed grey), gate `gate_fx_colours`; a moved own-style phrase and letters glued onto one refuse; the parser's
       `#0` change reverted. Land it after a clean review and deploy (no Cython module changed: pull + restart). q6 (own
       style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
@@ -141,7 +141,7 @@ and deploy in one sitting. One PSD rewrite per card per pass; never race a teamm
       (BabaUI in the repo, R7 waiver gone). Full suite on `work/fx-rebuild` after merging 8cbb211 (2026-10-23 night,
       fork venv `ac-py314-fork`): 1481 passed, 12 skipped, 0 failed. After round 2 and merging be280e6: 1493 passed,
       12 skipped, 1 failed (`test_clone_readers_match_the_traversers`: Finder's untracked `Types/.DS_Store` in the
-      local clone, 2026-10-23 21:26; passes without it).
+      local clone, 2026-10-23 21:26; passes without it). Then 73dfc3c merged (site tests only: 57 passed).
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       now only its bake half (the data-build half is on main since 4dcf33f, guarded by `tests/test_open_once.py`):
       after `work/fx-rebuild` lands, `psd_edit.parse_card` takes an open PSD, `gate_reparse` gets bake's `reopened`

@@ -213,7 +213,7 @@ before an FX word deleted (moved), " Die." appended, the first FX word removed (
       variant); the leading space of 15 Abilities (Elmadan's) is dropped by any ability edit (`keep_ends` keeps the blank
       paragraphs, not the indent, by its test); one bake with the icon font added to a plain card's FontSet opened in
       Photoshop before landing.
-  - **Phase 2 review, round 2 (same branch, 2026-10-23 night; origin/main be280e6 merged in):** one silent wrong bake fixed and two refusals added
+  - **Phase 2 review, round 2 (same branch, 2026-10-23 night; origin/main be280e6, then 73dfc3c, merged in):** one silent wrong bake fixed and two refusals added
     (dry census with every gate on copies of TTSCardMaker main's 18 cards with an own-style FX layer, fork
     `cards-20261023c`; `~/Documents/Tools/wt/fxr3-scratch/`: `census_bake.py`, `runs/{own,glued}.json`, crops `crops/`):
     - A typed copy of an own-style phrase joined its layer (Update all) but kept the body's fill, which a stroke or
