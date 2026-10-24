@@ -711,6 +711,36 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
 
 
+def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
+    """Review 2026-10-23: the FX layers an ability bake deleted, renamed or cut again are told in the commit line and in
+    the website's verdict reason too, not only the run report (the verdict stays beside a database field)."""
+    files = github.files_at(github.head)
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "note": "x", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
+    note = "Ability FX: (BOT) deleted: its words left the ability"
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        for ext, old in (("psd", old_psd), ("png", old_png)):
+            shutil.copy(old, f"{new_dir}/new.{ext}")
+        with open(f"{new_dir}/new.psd", "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=f"{new_dir}/new.psd", png_path=f"{new_dir}/new.png", edits=[SimpleNamespace(field="ability", old="a")],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], fx_notes=[note], parity={"ability": ok},
+                               rerender={"ability": ok}, flag_bytes=0, changed_pixels=1)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    text, commits = cb.run()
+    assert commits, text
+    assert f"- Mini Doomer: ability; {note}\n" in github.commits[commits[0]]["message"] + "\n"
+    assert _edits_at(github)["cards"]["Mini Doomer"]["_psd"]["reason"] == f"ability; {note}"
+    assert text.count(note) == 1
+
+
 def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
     """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted or renamed."""
     ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}

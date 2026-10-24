@@ -614,6 +614,12 @@ def _misses(card: Card) -> str:
     return "".join(f"; {note}" for note in notes + [f"{r.field} not baked: {r.code}: {r.why}" for r in card.partial])
 
 
+def _fx_notes(card: Card) -> str:
+    """'; Ability FX: Blazing deleted: its words left the ability' per FX layer an ability bake deleted, renamed or cut
+    again (BUG 2), for the commit line and the website's verdict as for the report; "" for none."""
+    return "".join(f"; {note}" for note in (getattr(card.baked, "fx_notes", None) or []))
+
+
 def _describe(card: Card) -> str:
     """'hp 5 -> 8, name 'White CLot' -> 'White Clot'': the jobs for the commit subject and the report."""
     parts = []
@@ -656,7 +662,7 @@ def _message(cards: list) -> str:
     redundant = [c for c in cards if not c.jobs and not c.refusal]
     refused = [c for c in cards if c.refusal]
     counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
-    lines = [f"- {c.name}: {_describe(c)}{_misses(c)}" for c in baked]
+    lines = [f"- {c.name}: {_describe(c)}{_misses(c)}{_fx_notes(c)}" for c in baked]
     trailers = [f"{EDIT_BY}: {login}" for login in sorted(login for c in baked for login in editors(c))]
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
@@ -782,8 +788,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             with open(join(folder, "parse.json"), "w", encoding="utf-8") as fh:
                 fh.write(dumps({"old": parsed["card"], "new": card.baked.reparse["card"], "jobs": card.jobs,
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
-            card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8], "reason": _describe(card),
-                            "at": _now()}
+            card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
+                            "reason": _describe(card) + _fx_notes(card), "at": _now()}
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
@@ -895,8 +901,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
         if card.baked.fx:
             line += f"; FX layers: {', '.join(card.baked.fx)}"
-        for note in getattr(card.baked, "fx_notes", []):    # an FX layer deleted, renamed or cut again (BUG 2)
-            line += f"; {note}"
+        line += _fx_notes(card)
         icons = [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
         if icons:
             line += f"; {'; '.join(icons)}"
