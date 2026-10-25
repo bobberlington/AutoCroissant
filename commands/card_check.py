@@ -11,8 +11,9 @@ summary, commit comment and a Discord message in the standards channel at once, 
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
-MISSPELT TYPE, SEVERAL CREATURES ...) and CardValidator's (ABILITY TEXT NOT FOUND, HP NOT FOUND, STATS TOO HIGH ...), after
-the card's website edits (problems_ok, allow_high_stats, creatures ...) and ABILITY_EXCLUSIONS. A notification, never a
+MISSPELT TYPE, SEVERAL CREATURES ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
+the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD with variant tags: each picture's ("A Snack2:
+..."). A notification, never a
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
 --psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
 parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
@@ -30,12 +31,14 @@ from sys import stderr
 from tempfile import mkstemp
 from typing import Optional
 
+from psd_tools import PSDImage
+
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase, card_name
 from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, \
     pushed_files, tree_blobs
 from commands.github_api import RemotePSD, blob_text, fetch_verified, range_reads, token_from_env
-from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
+from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
 from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
@@ -137,9 +140,9 @@ def repo_context(repository: str, blobs: dict, errors: list) -> tuple:
 # ========================
 # One card
 # ========================
-def parse_card(parser: PSDParser, psd, rel: str):
+def parse_card(parser: PSDParser, psd, rel: str, variant: Optional[int] = None):
     """The parser's CardInfo for a PSD file (or the PSD open) at its repo path (the seam the tests fake)."""
-    return parser.parse(psd, rel)
+    return parser.parse(psd, rel, variant=variant)
 
 
 def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> list:
@@ -153,12 +156,28 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
         rel: Its repo path (classifies the card; names it)
 
     Returns:
-        The notes, [] for a clean card
+        The notes, [] for a clean card; a PSD with variant tags: each picture's, "A Snack2: " before variant 2's
     """
-    card = parse_card(parser, psd, rel)
-    if edits is not None:
-        edits.apply(card.name, card)
-    return CardValidator.validate(card)
+    opened = psd
+    if not isinstance(psd, PSDImage):
+        try:
+            opened = PSDImage.open(psd)
+        except Exception:                       # parse_card says why
+            opened = psd
+    pictures = variants_of(opened) if isinstance(opened, PSDImage) else [1]
+    if len(pictures) < 2:
+        card = parse_card(parser, opened, rel)
+        if edits is not None:
+            edits.apply(card.name, card)
+        return CardValidator.validate(card)
+    notes = []
+    for n in pictures:
+        card = parse_card(parser, opened, rel, n)
+        name = card.name if n == 1 else f"{card.name}{n}"
+        if edits is not None:
+            edits.apply(name, card)
+        notes += [note if n == 1 else f"{name}: {note}" for note in CardValidator.validate(card)]
+    return notes
 
 
 # ========================

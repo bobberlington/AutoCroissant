@@ -137,12 +137,11 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, None, str(psd), rel) == ["STATS TOO HIGH"]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"allow_high_stats": True}})), str(psd), rel) == []
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, -1, -1, types=["active"], ability=None)
-    assert cc.card_notes(parser, None, str(psd), rel) == ["ABILITY TEXT NOT FOUND"]
+    assert cc.card_notes(parser, None, str(psd), rel) == []                                 # cards need no ability (10-25)
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, 5, 6, problems=["NO ABILITY LAYER"], ability=None, card_type="minion")
-    assert cc.card_notes(parser, None, str(psd), "Auxiliary/Minions/Whelp.psd") == []      # ABILITY_EXCLUSIONS (validate strips the layer note)
-    assert cc.card_notes(parser, None, str(psd), rel) == ["ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"]
-    fake_cards[b"a"] = lambda r: creature(r, problems=["NO ABILITY LAYER"], ability=None, card_type="unknown")
-    assert cc.card_notes(parser, None, str(psd), "A.psd") == ["UNKNOWN TYPE", "NO ABILITY LAYER"]
+    assert cc.card_notes(parser, None, str(psd), rel) == []                                 # older data's note: dropped
+    fake_cards[b"a"] = lambda r: creature(r, problems=["NO ABILITY LAYER"], ability=None, card_type="rulebook")
+    assert cc.card_notes(parser, None, str(psd), "Auxiliary/Rulebook/A.psd") == ["ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"]
 
 
 # ========================

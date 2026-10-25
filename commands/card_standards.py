@@ -7,6 +7,9 @@ rewraps is redrawn (the guards re-export its PNG). R3 and R4 keep only
 the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or
 rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
 2026-10-23.
+Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers and R4's several title layers are notes ("not
+standardized yet"), R11 also suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
+duplicate layer ids.
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
@@ -33,7 +36,8 @@ import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
-from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
+from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
+                                 variants_of)
 from commands.psd_regions import clip, fx_pad, overlay_words
 from global_config import RULEBOOK_DIR
 
@@ -91,6 +95,7 @@ class Context:
     types: frozenset = frozenset()              # Types/ stems, lowercased (card_check.Vocabulary.all_types)
     chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
     story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
+    pngs: Optional[frozenset] = None            # the tree's PNG paths, lowercased (R12's pictures); None: not checked
 
 
 @dataclass
@@ -421,10 +426,11 @@ def rule_ability(psd: PSDImage) -> Optional[Issue]:
     out again in visible pieces (PSDParser._relaid) or none at all (the ability named otherwise) is the developer's.
     """
     named = [layer for layer in psd.descendants()
-             if psd_edit._is_text_layer(layer) and layer.name.strip().lower() == "ability"]
+             if psd_edit._is_text_layer(layer) and base_name(layer).strip().lower() == "ability"]
     count = sum(1 for layer in named if layer.is_visible())
     if count > 1:
-        return Issue("R3", f"{count} visible Ability layers (one is the standard)", (f"{count} visible Ability layers",))
+        return Issue("R3", f"not standardized yet: {count} ability layers (a box each on the website)",
+                     (f"{count} visible Ability layers",))
     if count or not any(_words(layer) for layer in named):
         return None
     texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
@@ -441,7 +447,7 @@ def title_problem(psd: PSDImage, card: str) -> Optional[str]:
     """
     if PSDParser.title_layers(psd, [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)], card):
         return None
-    named = [layer for layer in psd.descendants() if not layer.is_group() and layer.name.strip().lower() == "name"]
+    named = [layer for layer in psd.descendants() if not layer.is_group() and base_name(layer).strip().lower() == "name"]
     if not named or any(psd_edit._is_text_layer(layer) and layer.is_visible() for layer in named):
         return None
     if any(not psd_edit._is_text_layer(layer) for layer in named):
@@ -450,9 +456,15 @@ def title_problem(psd: PSDImage, card: str) -> Optional[str]:
 
 
 def rule_name(psd: PSDImage, card: str) -> Optional[Issue]:
-    """R4: the title is not left in a hidden or rasterized Name layer (no title read)."""
+    """R4: the title is not left in a hidden or rasterized Name layer (no title read); a title over several layers is a
+    note (each a box on the website)."""
     why = title_problem(psd, card)
     if why is None:
+        texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
+        titles = PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
+        if len(titles) > 1:
+            return Issue("R4", f"not standardized yet: {len(titles)} title layers (a box each on the website)",
+                         (f"{len(titles)} title layers",))
         return None
     return Issue("R4", {"hidden name layer": "the Name layer is hidden",
                         "rasterized name layer": "the Name layer is rasterized"}[why], (why,))
@@ -498,15 +510,74 @@ def inexact_names(psd: PSDImage) -> list:
     group = psd_edit._text_group(psd)
     out, bases = [], {}
     for layer in (group or []):
-        target = EXACT.get(layer.name.strip().lower())
-        if layer.kind == "type" and target and layer.name != target:
-            out.append((layer, target))
-            bases[layer.name] = target
+        base, tags = layer_tag(layer.name)
+        target = EXACT.get(base.strip().lower())
+        suffix = layer.name[len(base):] if tags is not None else ""      # a variant tag stays: "Name #2"
+        if layer.kind == "type" and target and base != target:
+            out.append((layer, target + suffix))
+            bases[layer.name] = target + suffix
     for layer in psd.descendants():
         base, tag, rest = layer.name.partition(EFFECT_LAYER_TAG)
         if tag and base in bases:
             out.append((layer, bases[base] + tag + rest))
     return out
+
+
+def rule_part_names(psd: PSDImage, card: str) -> Optional[Issue]:
+    """R11's suggestion: a title or ability part (a box on the website) whose layer is not named Name or Ability."""
+    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
+    titles = PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
+    abilities = PSDParser.ability_parts(texts)[0]
+    pairs = tuple(f"{layer.name!r} -> {target!r}" for layers, target in ((titles, "Name"), (abilities, "Ability"))
+                  for layer in layers if base_name(layer).strip().lower() != target.lower())
+    if not pairs:
+        return None
+    return Issue("R11", f"{'a part is' if len(pairs) == 1 else 'parts are'} not named so (the website labels "
+                        f"{'it' if len(pairs) == 1 else 'them'}): rename {', '.join(pairs)}", pairs, discord=False)
+
+
+def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
+    """
+    R12, variant tags (' #2', ' #2,3': PARTS_EDITOR.md §9): a #0, an FX layer's (ignored), a tag past the pictures, a
+    picture without its PNG, a saved eye that is not variant 1's. pngs None: the PNG checks are skipped.
+    """
+    out = []
+    fx = _unique(layer.name for layer in psd.descendants() if EFFECT_LAYER_TAG in layer.name and TAG.match(layer.name))
+    if fx:
+        out.append(Issue("R12", f"{_list(fx, quote=True)} {'looks' if len(fx) == 1 else 'look'} like a variant tag; FX layers "
+                                f"are never tagged (ignored)", fx, discord=False))
+    tagged = [(layer, layer_tag(layer.name)[1]) for layer in psd.descendants() if layer_tag(layer.name)[1] is not None]
+    if not tagged:
+        return out
+    zero = _unique(layer.name for layer, tags in tagged if 0 in tags)
+    if zero:
+        out.append(Issue("R12", f"{_list(zero, quote=True)}: #0 is no picture (variant 1 is Name.png)", zero))
+    eyes = _unique(layer.name for layer, tags in tagged if bool(layer.visible) != (1 in tags))
+    if eyes:
+        out.append(Issue("R12", f"saved showing another picture than variant 1: {_list(eyes, quote=True)}", eyes))
+    if pngs is not None:
+        stem = rel[:len(rel) - 4]
+        have = [n for n in variants_of(psd) if f"{stem}{'' if n == 1 else n}.png".lower() in pngs]
+        missing = tuple(f"{basename(stem)}{'' if n == 1 else n}.png" for n in variants_of(psd) if n and n not in have)
+        if missing:
+            out.append(Issue("R12", f"tagged pictures without their PNG: {_list(missing)}", missing))
+        past = _unique(layer.name for layer, tags in tagged if any(n > len(have) + 1 for n in tags))
+        if past:
+            out.append(Issue("R12", f"{_list(past, quote=True)}: a tag past the card's pictures ({len(have)} PNGs)", past))
+    return out
+
+
+def rule_layer_ids(psd: PSDImage) -> Optional[Issue]:
+    """R13: every layer has its own id (the website's boxes are keyed by it)."""
+    seen, twice = set(), []
+    for layer in psd.descendants():
+        if layer.layer_id in seen:
+            twice.append(layer.layer_id)
+        seen.add(layer.layer_id)
+    if not twice:
+        return None
+    ids = _unique(str(i) for i in twice)
+    return Issue("R13", f"layers share an id ({', '.join(ids)}): Photoshop's Duplicate Layer gives a new one", ids)
 
 
 def rule_names(psd: PSDImage) -> Optional[Issue]:
@@ -572,6 +643,9 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R9", rule_stories, psd, context.story_sync)
     if kind in SCOPE:
         run("R11", rule_names, psd)
+        run("R11", rule_part_names, psd, card)
+    run("R12", rule_variants, psd, rel, context.pngs)
+    run("R13", rule_layer_ids, psd)
     issues = [issue for issue in out if issue is not None]
     for issue in issues:
         waiver = WAIVED.get(issue.code, {})

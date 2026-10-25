@@ -48,18 +48,16 @@ def test_hidden_layer_and_group_skipped(psd_parser, clone, monkeypatch):
 
 
 def test_card_page_skips_hidden_ability(psd_parser, clone, monkeypatch):
-    """A hidden Ability layer is not printed: no ability (empty, not NO ABILITY LAYER: the layer is there), so the validator
-    says ABILITY TEXT NOT FOUND unless the card prints none on purpose (ABILITY_EXCLUSIONS). The rest parses as before."""
+    """A hidden Ability layer is not printed: no ability (empty), and no problem (cards need no ability, owner 10-25). The
+    rest parses as before."""
     rel = "Auxiliary/Minions/Mini_Doomer.psd"
     golden = json.loads(golden_file(rel).read_text(encoding="utf-8"))["card"]
     psd = PSDImage.open(clone / rel)
     _named(psd, "Ability").visible = False
     card = _parse(psd_parser, monkeypatch, psd, rel)
-    assert card.ability == "" and card.problems == [] and CardValidator.validate(card) == ["ABILITY TEXT NOT FOUND"]
+    assert card.ability == "" and card.problems == [] and CardValidator.validate(card) == []
     stats = card.stats
     assert (stats.hp, stats.defense, stats.attack, stats.speed) == tuple(golden[k] for k in ("hp", "def", "atk", "spd"))
-    card.name = "Shadow Duelist"
-    assert CardValidator.validate(card) == []
 
 
 def test_relaid_ability_counts_while_its_words_are_printed(psd_parser, clone, monkeypatch):
@@ -77,5 +75,5 @@ def test_relaid_ability_counts_while_its_words_are_printed(psd_parser, clone, mo
     psd = PSDImage.open(clone / rel)
     _named(psd, "Section 2").visible = False
     card = _parse(psd_parser, monkeypatch, psd, rel)
-    assert card.ability == "" and CardValidator.validate(card) == ["ABILITY TEXT NOT FOUND"]
+    assert card.ability == "" and CardValidator.validate(card) == []
 
