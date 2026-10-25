@@ -51,6 +51,18 @@ data branch is the only source; the rollback of the whole move (§13) is gone wi
 `/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one
 edit path, with Rename everywhere (TC 706f750a).
 
+**Status 2026-10-25, the chain and a safety schedule (owner's choice; TTSCardMaker branch work/chain, not landed).** The
+cron fired about 8% of the time on :00/:30. A live run that ends with work left now dispatches the next Card sync itself
+(job `chain`, input `chain` = `now|wait <runs> <idle>`): at once for cards still to re-parse (`pending.stale`), bake
+records no data commit merged and website edits due but over the bake's cap; through `card-sync-quiet`'s 30 minutes
+(the window from the dispatch) for edits held by a push in the last 30 minutes (`card_bake.pending` minus `due`, counted
+by the main lane's Leftover edits step). None when nothing is left, a lane failed, another live run's lane will read it,
+from a dry run, or after 3 runs in a row without a data or main commit or 12 runs (the summary says so). A run whose
+main lane waits a window also looks after its data lane (Chain after the data). A chained run gates its main lane as
+the schedule and bakes `--pending`. The schedule is one safety cron at :17 every hour (GitHub delays the top of the hour
+most), for unposted events, failed lanes and stopped chains; the guards' Follow up dispatches as before.
+`TTS/checks/card_sync_steps.py` simulates the rules.
+
 **Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").**
 card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
 `card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
@@ -265,7 +277,8 @@ run-name: "Card sync", "Card sync (dry run)" for a dry dispatch, "Card sync (ret
           # the alert's streak check skips dry runs; the bot follows a retry by its name (card-guards' dispatch is plain)
 on:
   schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
-    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks since 2026-10-24)
+    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks since 2026-10-24;
+                             # "17 * * * *", the safety net beside the chain, on work/chain: the status notes)
   workflow_dispatch:
     inputs:                  # all optional; all 10 of GitHub's 10
       force: boolean         # run every stage even when the gate finds nothing

@@ -526,7 +526,7 @@ not land.**
   re-run would post again (review 5).
 - **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
   card sync's data commit starts the site build). When it does not start, the comment says so, the run fails, and the
-  post says so when it fits in 2,000 characters (its :00/:30 cron catches up); with nothing else to tell, the failure
+  post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
   alert goes out instead.
 - **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`);
   "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
@@ -644,7 +644,7 @@ not land.**
 | The environment `card-guards-quiet` has no wait timer (not created yet, or deleted) | GitHub makes the environment on first use, with no rule: the post job starts at once and Land sleeps out the window (the behaviour before 2026-10-24). Deleting it fails every post job waiting in it | create it with section 20's command; delete it only with no push run waiting (section 20), else re-run their failed jobs |
 | A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 40 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 38 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
 | The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); a failed POST: Tell Discord's own comment carries the told mark, or it warns that a re-run would post again; a failed edit: the id is already out, so the mark is still set; with nothing to tell, the alert says the push "was checked, but its run failed"; the lookup is tried 3 times, then on a re-run or a dispatch counts as told (never a second post; the step's error says the push may be untold) | re-run once GitHub answers |
-| The card sync does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); its :00/:30 cron catches up | re-run the job (it finds the writes landed and starts it again; review 6), run it by hand, or wait |
+| The card sync does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); its cron catches up | re-run the job (it finds the writes landed and starts it again; review 6), run it by hand, or wait |
 | A re-run (or a landing dispatch) cannot read the branch head | an earlier run may have landed the writes, so none is told as "not made" (Land's `--rerun`): the post keeps the card's other lines, the comment says "Nothing was committed by this run; an earlier run may have landed it" (review 6; a first attempt that cannot read it tells "PNG not made" as before) | re-run once GitHub answers |
 | The author pushes the PNG first and the PSD a few minutes later | the PSD's push is a stale case whose PNG already shows the PSD: "PNG already shows the pushed PSD", nothing written (review 6) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
