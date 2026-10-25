@@ -36,8 +36,6 @@ class FakeGitHub:
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
-        self.pushes: list = []                  # the card branch's activity, newest first
-        self.due: list = []                     # card_bake.due's website edits
         self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs = {"jobs": [{"steps": [{"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress"}]}]}
 
@@ -68,9 +66,6 @@ class FakeGitHub:
             self.calls.append(("run", run_id))
             states = self.states[run_id]
             return Reply(200, body=states.pop(0) if len(states) > 1 else states[0])
-        if "/activity?" in url:
-            self.calls.append(("activity", None))
-            return Reply(200, body=self.pushes)
         if "/compare/" in url:
             self.calls.append(("compare", url.rsplit("/compare/", 1)[1]))
             return Reply(200, body=self.compare)
@@ -129,7 +124,6 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=fake.post))
     monkeypatch.setattr(cs, "sleep", lambda s: None)
     monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
-    monkeypatch.setattr(cs, "_due_edits", lambda repository: fake.due)
     monkeypatch.setattr(cm.stats_db, "stats", {})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
     monkeypatch.setitem(cs._loaded, "commit", None)
@@ -285,7 +279,7 @@ def test_sync_notes(github, tmp_path, monkeypatch):
     text = _said()[0]
     assert "Re-parse in progress: 2 cards still to re-parse" in text
     assert "Could not read 1 PSD (Bad Card); its card keeps its last version" in text
-    assert "the card sync running now picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
+    assert "the card sync under way picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
     assert "The last card sync failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/8>" in text
     assert ("compare", "c0ffee0123456789...main") in github.calls
     utils.dispatch_queue.clear()
@@ -308,29 +302,14 @@ def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
     assert _said() and _said()[0].startswith("No card data yet") and cs._loaded["commit"] == held
 
 
-@pytest.mark.parametrize("ahead, due, what", [
-    (True, [], "the card changes not in the data yet"),
-    (False, ["Mini Doomer"], "1 website edit waiting to bake (Mini Doomer)"),
-])
-def test_update_stats_starts_a_card_sync_after_the_grace(github, tmp_path, ahead, due, what):
-    """/update_stats' own run: after 30 minutes without a push (Card sync's own pushes aside), one at a time."""
-    from time import gmtime, strftime, time
+def test_update_stats_starts_no_card_sync(github, tmp_path):
+    """Card sync starts itself (a card push's timer): /update_stats and its reminder only sync, even with changes waiting."""
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]} if ahead else github.compare
-    github.due = due
-    ago = lambda minutes: strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time() - minutes * 60))
-    github.pushes = [{"timestamp": ago(1), "actor": {"login": cs.BOT_LOGIN}}, {"timestamp": ago(10), "actor": {"login": "artist"}}]
+    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]}
+    github.runs = [_run(8, event="push")]
     cs.update(ME)
-    assert github.posts == [] and f"A card sync starts for {what} once the card repo has had no push for 30 minutes" in _said()[0]
-    utils.dispatch_queue.clear()
-    github.pushes[1]["timestamp"] = ago(40)
-    _dispatched_run(github, 42, _run(42, "queued"))
-    cs.update(ME)
-    assert github.posts == [{"ref": "main", "inputs": cs.AUTO_INPUTS, "return_run_details": True}]
-    assert f"Card sync run started for {what}: <https://github.com/{REPO}/actions/runs/42>" in _said()[0]
-    github.runs = [_run(42, "queued")]
-    cs.update(ME)
-    assert len(github.posts) == 1                                     # none while one is queued or running
+    assert github.posts == [] and ("the next card sync picks them up (30 minutes after the first card push of a burst)"
+                                   in _said()[0])
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):

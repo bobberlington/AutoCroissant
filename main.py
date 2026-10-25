@@ -329,7 +329,7 @@ async def slash_query_name(interaction: Interaction,
 @tree.command(name="website", description="Link to the card browser website.")
 async def slash_website(interaction: Interaction):
     await interaction.response.send_message(f"**Card browser:** {SITE_URL}/\nEvery card, the rulebook, a deck builder and stats. "
-                                            + ("Editors fix card data there; the next card sync applies it (every 30 minutes)."
+                                            + ("Editors fix card data there; the card sync applies it within about 30 minutes."
                                                if global_config.CARD_SYNC else
                                                "Editors fix card data there; the bot picks it up on /update_stats."))
 
@@ -439,7 +439,7 @@ async def slash_frankenstein(
 #   STAT COMMANDS  #
 ####################
 update_stats = to_thread(update_stats)
-@tree.command(name="update_stats", description="Loads the card data the Card sync Action built; starts a card sync when cards changed." if global_config.CARD_SYNC else
+@tree.command(name="update_stats", description="Loads the card data the Card sync Action built." if global_config.CARD_SYNC else
               "Updates the card database from GitHub (re-parses changed PSDs).")
 @app_commands.describe(
     output_problematic_cards='Should we output cards with consistency errors? Default = True.',

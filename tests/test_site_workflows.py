@@ -1,7 +1,7 @@
 """
 The card repo's workflows after the cutover (DATA_BUILD_ACTION.md step 8): site.yml reads the card sync's data (CARD_DATA
 on, when the branch exists) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on,
-the cron a fallback. Loads the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or
+started by a card push's 30-minute timer, the cron a fallback. Loads the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or
 PyYAML.
 """
 from os import environ
@@ -48,6 +48,21 @@ def test_card_sync_runs_live():
     assert doc["env"]["MAIN_COMMIT"] == "on" and doc["env"]["POSTS"] == "on"
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False
     assert not (WORKFLOWS / "card-edits.yml").exists() and not (WORKFLOWS / "tts-save.yml").exists()   # its two writers
+
+
+def test_card_sync_starts_from_a_push_timer():
+    """A card push starts a 30-minute timer (the environment card-sync-quiet), on every path the bot counts as a card input."""
+    from commands.card_sync import CARD_FILES
+    doc = _load("card-sync.yml")
+    push = doc[True].get("push")
+    if push is None:
+        pytest.skip("card-sync.yml before its push timer (TTSCardMaker work/clock)")
+    assert push["branches"] == ["main"] and CARD_FILES <= set(push["paths"])
+    assert {"**.[pP][sS][dD]", "**.[pP][nN][gG]", "Types/**", "MDW/Fonts/*"} <= set(push["paths"])
+    jobs = doc["jobs"]
+    assert "card-sync-quiet" in jobs["quiet"]["environment"] and jobs["quiet"]["needs"] == "timer"
+    assert jobs["sync"]["needs"] == ["timer", "quiet"] and jobs["sync"]["concurrency"]["group"] == "card-sync"
+    assert "concurrency" not in doc and "concurrency" not in jobs["timer"] and "concurrency" not in jobs["quiet"]
 
 
 def test_site_builds_on_what_it_reads_and_always_deploys():

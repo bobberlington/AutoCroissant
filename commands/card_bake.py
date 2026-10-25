@@ -1137,8 +1137,8 @@ def pending(repository: str = CARD_REPO, head: str = "", local: str = "") -> lis
 
 def due(repository: str = CARD_REPO, head: str = "", local: str = "") -> list:
     """
-    pending()'s cards a run can bake now: PSD and PNG not pushed within RECENT (Card sync's gate, the bot's
-    /update_stats). [] while the pushes can't be told (the bake would refuse them all `recent`).
+    pending()'s cards a run can bake now: PSD and PNG not pushed within RECENT (Card sync's Pending edits step). []
+    while the pushes can't be told (the bake would refuse them all `recent`).
     """
     snapshot, cards = _pending(repository, head, local)
     if not cards:

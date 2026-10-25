@@ -458,13 +458,13 @@ autocroissant-run-and-operate §9.
 |---|---|---|
 | `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:34) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
-| `SCHEDULE` | `"every 30 minutes, at :00 and :30"` | its cron, as the replies word it (card-sync.yml) |
 | `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
 | `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
-| `GRACE_SECONDS` | `30 * 60` | /update_stats starts its own run (`start_run`) only once the card repo's last push (not Card sync's) is this old |
-| `AUTO_INPUTS` | `{"dry_run": "false", "bake": "pending"}` | that run's inputs: the schedule's (bakes only edits without a final verdict) |
+
+No clock in the bot since 2026-10-24: card-sync.yml starts itself 30 minutes after the first card push of a burst (its
+`push` trigger and the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting); /update_stats only syncs.
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
 
@@ -529,6 +529,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
 | `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
+| `card-sync-quiet` | environment (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer: card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits ends at once. Without the timer, Quiet sleeps the window out |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 

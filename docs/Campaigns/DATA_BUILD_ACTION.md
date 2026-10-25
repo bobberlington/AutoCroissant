@@ -35,6 +35,14 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
+**Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
+has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
+`card-sync-quiet`'s wait timer); pushes while it runs start none (their runs end at once) and the run syncs main's head when
+its time is up; a push after that starts the next. The cron stays as the fallback for work no push starts (put-off website
+edits, a re-parse in progress, unposted events) and also ends while a timer runs. `/update_stats` and the bot's 30-minute
+reminder only sync the bot's copy; only the admins' `force_update`/`cards:` dispatch a run. §6.1 and §6.2 below predate
+this.
+
 **Status 2026-10-23.** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
 migration landed with AutoCroissant main 8861696 (2026-10-22 20:50) and TTSCardMaker c0b6f2d7; the bot's cutover side
 (work/cutover-bot, step 8's code with `CARD_SYNC = False`) merged as 7b99438 and deployed with main 2ada357 on 2026-10-23
@@ -240,7 +248,8 @@ permissions: {contents: write, actions: write}     # push to main and data; gh w
 concurrency: {group: card-sync, cancel-in-progress: false}
 ```
 
-There is no push trigger. Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs most.
+There is no push trigger (until 2026-10-24: since then a card push starts a 30-minute timer, the status note at the top).
+Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs most.
 - A dispatch runs dry unless `dry_run` is off; a scheduled run is live. Two file-level switches say what a live run writes:
   `MAIN_COMMIT` (the bake and the main commit M; while off, only a dry run bakes) and `POSTS` (sending to Discord; while off,
   `discord.json` goes to the artifact only). With both off, a live run writes only `data`.
@@ -248,7 +257,7 @@ There is no push trigger. Minutes 4 and 34 avoid the top of the hour, when GitHu
 
 ### 6.2 Batching and the change gate
 
-- **The schedule is the batch.** Every push in the interval between two runs is handled by the next run, together. A run
+- **The schedule is the batch** (since 2026-10-24 the push timer is: the pushes of its 30 minutes). Every push in the interval between two runs is handled by the next run, together. A run
   builds the head of main at its start, not `github.sha`, and diffs against what was last built (the blob shas stored in db/
   and `manifest.card_commit`). No push is missed and none is built twice.
 - **Concurrency** holds one run going and one pending. A long run (a budgeted full re-parse) delays the next scheduled one; a

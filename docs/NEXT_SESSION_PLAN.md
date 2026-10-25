@@ -170,6 +170,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       TTSCardMaker commit; the bot commit `CARD_SYNC = True`; deploy; verify (site footer "Card data built ...",
       `/update_stats` "already current", `/query` the goldens, the next push on the site/save/Discord within one interval).
       `ACTIONS_TOKEN` is already in the jetson's config.py.
+- [ ] **Card sync's clock in GitHub** (owner 2026-10-24 23:15/23:27: "Move it into GitHub", a fixed window; branches
+      `work/clock`, both repos): card-sync.yml's `push` trigger, the first card push starts a 30-minute timer (environment
+      `card-sync-quiet`), pushes during it end at once, the cron stays as the fallback; `/update_stats` (and its reminder)
+      only syncs, admins' `force_update`/`cards:` still dispatch. Land: create the environment, TTSCardMaker first, then
+      AutoCroissant and the jetson deploy in the same sitting. Watch the first push run wait and a second one end at once.
 - [ ] **Step 9:** the Changes page's Changelog and Database edits tabs fed by `data/changelog.json`.
 - [ ] **Owner, 2026-10-23 ~18:30 (DATA_BUILD_ACTION §16 item 7):** bake verdicts move from Card Edits.json to
       `db/verdicts.json` on `data`, and bake/guard events (`baked`, `bake-refused`, `guard-png`, `guard-fix`) join the
