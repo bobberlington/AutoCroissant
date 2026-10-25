@@ -857,6 +857,19 @@ class PSDParser:
                 return (PSDParser._pieces(layer, texts), layer)
         return ([], None)
 
+    def join_ability(self, psd: PSDImage, layers: list, hidden=None, rulepage: bool = False) -> str:
+        """The parser's ability from ability_parts' layers (or blocks'): their readings (the hidden relaid layer's when
+        given) joined by _process_abilities, image icons' tokens in. Equals the parse's ability (the census)."""
+        mid = int(psd.height * TYPE_REGION_RATIO)
+        card, read = CardInfo(name="", card_type=""), []
+        for layer in ([hidden] if hidden is not None else layers):
+            self._process_text_layer(layer, card, MutableValue(0), read, rulepage, False, mid, relaid=True)
+        icons = [] if rulepage else [
+            (base_name(layer).lower(), BoundingBox.from_tuple(layer.bbox[:2])) for layer in psd.descendants()
+            if layer.kind != "type" and not self._is_stat_layer(layer) and base_name(layer).lower() in self.all_types
+            and layer.is_visible() and layer.has_pixels() and layer.bbox[1] >= mid]
+        return self._process_abilities(read, icons, mid) if read else ""
+
     def blocks(self, text_layers: list) -> list:
         """A rule page's text blocks: [(layer, role)], every visible text layer in reading order; role "header" (named
         Header), "page" (Page Number, else the lowest one holding only digits) or "block"."""
