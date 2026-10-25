@@ -195,8 +195,9 @@ def test_png_pairs_with_the_psd_of_its_exact_case(cards):
 # ========================
 # check, end to end
 # ========================
-def test_check_end_to_end(cards, tmp_path):
+def test_check_end_to_end(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
+    monkeypatch.setattr(cg, "token", lambda: "")       # a local run: logins from git, never the API (config.py's token)
     out = tmp_path / "out"
     data = cg.check(str(root), bot, base, "o/cards", "actor", mode="report", out=str(out), workers=1)
     by = {Path(c["psd"]).stem: c for c in data["cards"]}

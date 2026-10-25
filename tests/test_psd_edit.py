@@ -31,6 +31,8 @@ from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork
                       saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
+PRE_SWEEP = "1c717c8b"     # TTSCardMaker main before the badge sweep re-made some test cards
+
 # ========================
 # Configuration
 # ========================
@@ -749,11 +751,20 @@ def test_a_bar_outside_the_card_refuses(clone, tmp_path):
 # ========================
 # Stats (the fork: viewport renders)
 # ========================
-def test_export_icc_follows_the_png(clone):
+def _pre_sweep(clone, rel: str, tmp_path) -> tuple:
+    """A card's PSD and PNG as Photoshop exported them, before the 10-25 badge sweep re-made them (TTSCardMaker 218a122d)."""
+    out = tmp_path / Path(rel).name
+    out.write_bytes(at_rev(clone, PRE_SWEEP, rel))
+    png = out.with_suffix(".png")
+    png.write_bytes(at_rev(clone, PRE_SWEEP, rel[:len(rel) - 4] + ".png"))
+    return str(out), str(png)
+
+
+def test_export_icc_follows_the_png(clone, tmp_path):
     """The harness's ICC vote over the stored preview: a raw export votes 1.0 (render unconverted), a converted one 0.0, a
     card without a foreign profile has no vote (converted, as before)."""
     for rel, icc in ((RED_BLOON, False), (BLOCK_HOPPER, False), (MINI_DOOMER, True), (METTATON, True)):
-        psd_path, png_path = _card(clone, rel)
+        psd_path, png_path = _pre_sweep(clone, rel, tmp_path)
         psd, png = PSDImage.open(psd_path), Image.open(png_path)
         vote, moved = pe.icc_vote(psd, png)
         assert moved >= pe.ICC_MIN_PX and vote == (0.0 if icc else 1.0) and pe.export_icc(psd, png) is icc
@@ -1501,12 +1512,12 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
 
 @text_edit
 @pytest.mark.skipif(not (_text_engine() and pe.tab_stops()), reason="the fork lays no tab stops")
-def test_tab_stops_bake(clone, parser, chart):
+def test_tab_stops_bake(clone, parser, chart, tmp_path):
     """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows
     Michael's Blessing's tabs as spaces: they stay tabs, and an edited tabbed line keeps its '->' column (it collapsed,
     review 2026-10-24)."""
     rel = "N.M.E/Michael's_Blessing.psd"
-    psd_path = _card(clone, rel)[0]
+    psd_path = _pre_sweep(clone, rel, tmp_path)[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
     old, before = layer.text, _ink(layer, psd)
