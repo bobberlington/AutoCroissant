@@ -307,10 +307,15 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
 # Initialization
 # ========================
 def init_psd() -> None:
-    """Initialize the stats database from the synced card data (card_sync)."""
-    from commands.card_sync import startup
-    startup()
-    card_repo.prep_dataframes()
+    """Initialize the stats database from the synced card data (card_sync): the local copy, then a sync."""
+    from commands.card_sync import load_local, sync
+    ready = load_local()
+    if ready:
+        card_repo.prep_dataframes()                 # queries work before the sync's network round trip
+    loaded = stats_db.stats
+    sync(None, output_problematic=False, quiet=True, follow_ups=False)
+    if not ready or stats_db.stats is not loaded:   # the sync brought new data
+        card_repo.prep_dataframes()
     print("Stats database initialized.")
 
 
