@@ -178,25 +178,45 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [x] `CARD_GUARDS=report` since 2026-10-23 13:04 PDT. The batch commit 2330d7b0 ran as "0 cards, 686 left out (bot
       commits)", nothing told.
 - [x] `CARD_GUARDS=on` since 2026-10-23 17:34 PDT (owner: now). Watch the standards channel and the bot commits; R11
-      renames stay told (owner). Left in PUSH_GUARDS.md §15: the Environment wait timer and the other items below.
+      renames stay told (owner). Left in PUSH_GUARDS.md §15: the other items below (the wait timer, R7 and G2 were decided
+      on 2026-10-24: step 4b).
+
+### 4b. Python 3.14 and the owner's guard decisions of 2026-10-24 (branches `work/py314`, both repos; not landed)
+- Built: every Action on 3.14 (card-sync one venv; card-check and font-check on the fork; one wheel cache entry; the
+  pyoxipng marker takes Linux x86_64 at any Python), R7 left to font-check, G2 rendered anyway ("no stored image to
+  cross-check"), the quiet window as the environment `card-guards-quiet` (check / post / finish jobs). PUSH_GUARDS.md §20
+  has the design, the Mac's cold-install numbers and the landing order.
+- [ ] Owner to confirm (§20.4, defaults of 2026-10-24): a new PSD with no stored image beside a PNG at most 300 px
+      past 8 levels of the render keeps the PNG and tells it (`png_export.KEPT`/`KEPT_PX`: the fork's noise; past it
+      redrawn: the 34-commit replay's stale edits, 1,684 px and up, land within the bar of the author's export, and
+      three current PNGs noisier than 300 px are rewritten needlessly; a stale edit of 300 px or less stays, told); the
+      guard-1 line "the new PSD drawn against its PNG: bad N%" is dropped from the post (plan.json keeps the number).
+- [ ] Undoing the environment: only with no push run waiting (`gh run list ... --status waiting`); a DELETE fails
+      every post job waiting in it (§20).
+- [ ] Land TTSCardMaker `work/py314`, then AutoCroissant `work/py314` in the same sitting (jetson deploy per the rule).
+- [ ] Then the owner creates the environment (§20's `gh api` command; nothing ran it), once the push runs checked before
+      AutoCroissant landed have finished (main's old Land behind the timer would miss a push made during the check).
+- [ ] Watch the first runs: a cold wheel build on a runner (pyoxipng's Rust; card-preview's install step has 5 minutes),
+      card-sync's one venv, a push's post job waiting in the environment, a dispatch and a re-run taking none.
 
 ### 5. Follow-ups still open at the end
 - [ ] **BUG 2** (the bake rebuilds `Ability FX:` layers instead of refusing 18-20 gradient badge cards; BUGS D7):
       AC `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`). Two review rounds found silent mis-bakes (Goofy's 1#1,
       badges typed as text, status layers spreading), all fixed; q6 decided unattended (rebuilt layers keep their own
       style). Review loop wf_97b6ba0d-096 running at the end: land only after a clean review, merged with origin/main,
-      full suite on the fork venv. Action code only (psd_edit, card_bake): pull on the jetson, no rebuild needed.
+      full suite on the fork venv. psd_parser changed too (round 3's rest): pull, Cython rebuild, restart on the jetson.
 - [ ] Nebulous_Precipice glow: kept `[darkmatter:sticker]` (unattended option C; options A-D in
       `~/std-work-1022/glow/held.json`). A stroked Text group swallows a `:glow` halo (652 of 765 cards stroke it).
 - [ ] b22f4cc4's new PNG against its PSD (the first live bake).
 
 ### 6. psd-tools rounds until dry (stop when a round removes < ~2% of what is left)
-- [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6, pinned in requirements-cards.txt): text
+- [x] **Round 12, the last** (2026-10-24, tag `cards-20261024` = 6a616ca6; the pin is `cards-20261024b` = a651cd08 since
+      2026-10-24, glow halos, on work/fx-rebuild): text
       diagonals, rulebook corners, inner glow, B11, fast open, render hotspots, wide strokes. Frozen corpus
       corpus-b89ce169: 5,160 -> 3,037 bad px (49 cards, 0 worse); all 2,963 bot boxes pass on the fork alone; renders
       ~1.7x and PSD opens ~3.2x faster. B11's trade: Toriel's Ability 0.18% -> 4.19% bad when re-drawn (net gain over
-      3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). Next fork work: the `:glow`/`:darkglow` halo (owner
-      2026-10-24), then a tag.
+      3,923 layers). No round 13 (RENDER_STATUS.md cards_r12). The `:glow`/`:darkglow` halo (owner 2026-10-24): done,
+      `cards-20261024b`.
 - [ ] **Round 11** (resumed wf_502b9ebf-b59 with the cap raised to 11): stroke corners (`effects.py _signed_distance`
       `near = 0.5 - alpha` overstates a quarter-covered corner pixel by ~0.25 px; 3,103 px on 291 cards; needs Photoshop
       fixtures) and The_Spire's Name (vibrance). Bar ~2,770 px. If it integrates and audits clean: tag
@@ -211,14 +231,95 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       the owner's call (it changes the published PNG). The fork's share is ~9.1k px. Never merge `feat/layer-edit` 9233a172.
 
 ### 7. Bot and bake follow-ups
+- [ ] **BUG 2** (BUGS D7): built on `work/fx-rebuild` (worktree `~/Documents/Tools/wt/bf-fx`, 2026-10-23): the bake
+      runs Effect Layers.jsx's Update all on the new text (review findings fixed on the same branch, three rounds;
+      origin/main merged in each round, last 7ca804e). Phase 2 (owner's answers of ~17:40): own-style FX layers
+      rebuilt, typed badges and icons set in the icon font, the card's `:sticker`/`:tint` spellings kept (UNBAKEABLE BUG 2 block). Phase 2
+      review fixes (same branch, origin/main 8983719, then 8cbb211, merged in): a badge edited by deleting letters keeps its badge
+      layer, gate `bare_icons`, typed badges refused under any tint (Pin Light, a 69% gradient) without a badge layer,
+      a typed "★" set in the icon font, missing glyphs refused, an edit inside an own-style FX phrase refused. Round 2
+      (same branch, origin/main be280e6, then 73dfc3c, merged in): a typed copy joining an own-style layer takes its words' colour (Palace of Shadow's "+2 DEF"
+      printed grey), gate `gate_fx_colours`; a moved own-style phrase and letters glued onto one refuse; the parser's
+      `#0` change reverted. Round 3 (2026-10-24, same branch): a badge layer takes its colour glyphs' red-less pixels
+      (a typed `[undead]`'s eyes printed in the overlay's colour), `gate_fx` and `bare_icons` let no icon pixel out (they
+      let 1%), "[fire:]" and any token the website draws as an icon but the font prints as letters refuse `font`
+      (`unlettered_icons`; it baked as the letters), gate `lettered_icons`, an edit inside a phrase of several colours
+      refuses, no status word inside a `[token]`, the ability edited before the title (Fire Staff's name + ability
+      refused `bytes`). Round 3's rest (2026-10-24 ~01:00, same branch, origin/main 2427a23 merged in): the parser
+      reads "[fire:]" in the icon font as typed, an UNKNOWN ICON TOKEN (`psd_parser.token_variant`, the rule `icon_text`
+      shares; no card on main has one), gate `unshaped_icons` (each `icon_text` span shapes to one icon-font cluster;
+      0 of 381 icon-font Abilities fail it), a whole ability deleted on an FX card refuses as blank (`reparse`: ABILITY
+      TEXT NOT FOUND, its layers deleted; it said `styled-word`), and a bake opens each PSD once (`parse_card` takes the
+      open PSD, `gate_reparse` the reopened one, `apply_jobs` edits a copy; `test_a_bake_opens_each_psd_once`); full suite after it (4563194): 1550 passed, 12 skipped, 0 failed. Round 4 (2026-10-24, same branch, origin/main a8ece7f merged in): a typed `[support]` printed its see-through, red-less glow in the overlay's colour (maroon on Mini Doomer, olive on Turtle; the silhouette stops at alpha 110 and the gates counted only ink past 0.5): a badge layer takes every pixel of its glyphs at any alpha (`_glyph_ink`) and every icon-font character (a typed "★" too), and `gate_fx`/`bare_icons` count every colour-glyph pixel past `FAINT_INK` (0.05; `_colour_ink`; the glow still printed in the overlay's colour: a typed see-through icon under a badge layer refuses since round 6, `see_through_icons`); an opacity or fill below full counts as tinted (The Patients: a typed badge printed dimmed; it refuses now); a status word in brackets the font draws as letters ("[Blazing]") takes its swatch and FX layer (it baked unstyled); a test checks apply_jobs gives `gate_fx` the vocabulary. Full suite after it (edcf3ab): 1553 passed, 12 skipped, 0 failed.
+      Owner rulings 2026-10-24 (origin/main c249eba merged, fork `cards-20261024`, venv `~/.venvs/ac-py314-r12`): title
+      tokens in the icon font (26 of 66 sampled titles bake; tinted ones refuse), typed `:sticker`/`:tint` in its kind's
+      colour, new badges at the commonest size (EDIT_PIPELINE_DESIGN section 7, BUG 2 block). Owner to rule: a timing
+      badge typed in a title (refuses now). `:glow`/`:darkglow` bake since the pin `cards-20261024b` (see below). Full suite on
+      the r12 venv (ef2f884, then ad6c629's stub fix): 1645 passed, 13 skipped, 0 failed. Review fixes (group overlays tint a title, title
+      stickers read the card before the bake, blank end breaks, words after a title token, `[fire:]` in a title,
+      `covered_ink` design layers, lazy renders in a RenderCache with `gate_pairs`; EDIT_PIPELINE_DESIGN section 7):
+      1649 passed, 13 skipped, 3 failed (`test_site_changes`, `test_site_previews`, `test_token_picker`: main's site
+      tests, fixed by origin/main 3ca616e, merged in after). Review fixes 2 (origin/main 3ca616e merged; EDIT_PIPELINE_DESIGN
+      section 7): typed `:sticker`/`:no` at tracking 0 (the fork split their glyphs), typed tokens with ligatures on, a
+      title's runs of blanks kept (Pepperoni Pizza), a title's tokens no header type row (`type_row`), `_tinted` names its
+      cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped). Review fixes 3
+      (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
+      line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
+      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`): typed
+      `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed. 02015ac: a title or
+      Ability whose saved pixels are in another font than it names refuses `font` (`drawn_in_font`, IoU under
+      FONT_IOU_MIN 0.3: the four Omori titles Dull Knife, Shiny Knife, Dark Tentacle, Snow Angel): 1761 passed, 13
+      skipped, 0 failed. Review fixes 4 (EDIT_PIPELINE_DESIGN section 7): a deleted line or word cut whole (the next
+      line kept the deleted one's colour; on main too), an Ability's new line on the design below told in the notes
+      (`ink_beyond`), tab stops refused, a glow on a stale fork a runner error (no `font` verdict): 1766 passed, 13
+      skipped, 0 failed. Review fixes 5 (glow disc on the stars, whole redraws measured): 1769 passed. Phase 6 (owner
+      ruling 2026-10-24 ~18:30, origin/main 4eafa0f merged; EDIT_PIPELINE_DESIGN section 7): content problems bake,
+      flagged in the notes, typed icons unstretched, stale Txt2 stories repaired; census: `set_text_layer` passes 2,401 -> 5,069
+      of 5,642, no new refusals; of its 2,668 former refusals 2,660 bake through `apply_jobs`, 8 refused by integrity
+      gates (parity floor, reparse): 1787 passed, 13 skipped, 1 known timing flake. Review fixes (pixel digest in the
+      bytes gate, nested shadows, kept baked verdicts, `rules` on refused verdicts): 1792 passed, 13 skipped. Website
+      shows a baked verdict's notes on TTSCardMaker branch work/fx-rebuild (0bb10ce9, not on main).
+      Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
+      (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
+      origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart; first reinstall
+      the fork on the jetson, `pip install --force-reinstall` of `requirements-cards.txt`'s `cards-20261024b`: the
+      jetson has `cards-20261023`, which draws no glow halos). q6 (own
+      style kept) answered yes; Clot Gold to confirm (its "2T1" made "2T2" now refuses). Before landing: open one bake
+      that added the icon font to a plain card's FontSet (Ice Staff, Standstill, Mettaton NEO...) in Photoshop.
+      Owner questions held: a typed plain token beside a card's `:sticker` icons (Palace of Shadow; a moved line's
+      `[dark:sticker]` prints `[dark]` too: keep_tokens can't pair moved text), a token's `:sticker`/`:tint`/`:glow`
+      variant typed on the website counted redundant (classify compares canonical_tokens, which fold the variants: the
+      edit leaves Card Edits.json with no bake and no verdict, a `:glow` one too, which would now bake; the token
+      picker offers these edits), words typed in place of a badge or icon refused (Pizza's "(1CD)" -> "Once:", Gasoline's
+      "[fire] type" -> "fire type": edit_styles keeps the icon font; near() could give the body style), the leading space of
+      15 Abilities (Elmadan's) dropped by an ability edit (keep_ends keeps paragraphs, not the indent, by its test), a
+      retyped token taking the card's commonest icon style (ruling C: Plague's skull 41.17 -> 52.03 pt when swapped),
+      and whether a chart-style status layer joined by a typed word should be told too (only own-style ones are: Marx "Glued.
+      Glued" gives no note; it looks the same as a new layer). Over-cautious refusals, accepted: 6 of the 91 icons typed
+      on Turtle (flare pixels past their glyph boxes: light, the 6/7/8 stars, silksong_star), replacing an own-style
+      status word ("2T Smoldering" -> "2T Burning" on Fire Staff). Website track (TTSCardMaker, not edited here): text.js
+      `icon()` still previews "[fire:]" (a colon with an empty variant) as the fire icon, and `norm()` forgives "[Fire.]"
+      or "[warp  star]"; the bake refuses them (`font`), so the editor should treat them as text like the font does.
+      **Open owner items (BUG 2):** a timing badge typed in a title prints as plain words, flagged (phase 6). `:glow`/`:darkglow` bake
+      since the pin `cards-20261024b` (EDIT_PIPELINE_DESIGN section 7, glow tokens). The 2026-10-24 rulings (title tokens in the icon font, a typed
+      `:sticker`/`:tint` in its kind's colour, new badges at the commonest size) are implemented (37dd00e, 73ceff3). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
+      olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any
+      ability edit.
+      Not this branch's: appended text can run below the card's text panel artwork (the overflow gate checks the
+      engine's box and the canvas: Autopsy Report with " Costs 5★ and [fire:tint]." adds a third line under the panel).
 - [ ] Badge the 11 EarthboundZero cards, Koro-Sensei, The Evil Idol and Papyrus with the fork (owner ruling; unblocked).
-- [ ] With BUG 2 landed: FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs,
-      Palace of Shadow, Fire/Ice Staff, Flameblade) could be rebuilt in their own style too (the 2026-10-21 rule refuses
-      them): owner.
+- [x] FX layers in no chart status's style (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow,
+      Fire/Ice Staff, Flameblade) are rebuilt in their own style (owner 2026-10-23 ~17:40): built on `work/fx-rebuild`
+      phase 2 (42 of 48 dry bakes). Also there: every typed stoogedings token set in the font (62 of 85).
+- [x] Tests drifted from the clone: closed by origin/main 3bb3ede (Green Mage and Shell_Shock pinned) and 03cd785
+      (BabaUI in the repo, R7 waiver gone). Full suite on `work/fx-rebuild` after merging 8cbb211 (2026-10-23 night,
+      fork venv `ac-py314-fork`): 1481 passed, 12 skipped, 0 failed. After round 2 and merging be280e6: 1493 passed,
+      12 skipped, 1 failed (`test_clone_readers_match_the_traversers`: Finder's untracked `Types/.DS_Store` in the
+      local clone, 2026-10-23 21:26; passes without it). Then 73dfc3c merged (site tests only: 57 passed).
 - [ ] The research waits (NEXT_IDEAS_2026-10-22.md): the open-once patch (`wt/feat-speed-scratch/ac-open-once.patch`),
       now only its bake half (the data-build half is on main since 4dcf33f, guarded by `tests/test_open_once.py`):
-      after `work/fx-rebuild` lands, `psd_edit.parse_card` takes an open PSD, `gate_reparse` gets bake's `reopened`
-      and card_bake opens the old PSD once (twice per call now; check `classify` leaves the PSD alone); rcache wiring
+      built on `work/fx-rebuild` (2026-10-24: `parse_card` takes an open PSD, `gate_reparse` gets the bake's
+      `reopened`, card_bake opens the old PSD once and `apply_jobs` edits a `deepcopy`); rcache wiring
       in psd_edit, text geometry in the data build and a website overlay, template fill stage 2, the Photoshop oracle
       loop (approved; Photoshop is free), the Perpetua lead (Hollow Knight).
 - [ ] Extraction campaign: the structural candidate (blank-but-present Ability = no problem: ABILITY_EXCLUSIONS 21 -> 0),
@@ -263,9 +364,9 @@ Secrets and repo switches, by name only: autocroissant-config-and-flags (TTSCard
   draws) is set in the font by the bake; icon swaps carry the old icon's effects; Green Mage's PSD fixed (TTSCardMaker 45cf8746: ATK 6, close BUGS D8 after step 1); all stale
   exports get re-exported; `CARD_GUARDS=on` now (17:34); R11 renames keep telling; the fork rounds stop after 11.
 - **Cutover:** the reminder swap (step 3) and telling bobberlington before step 10.
-- **Push guards** (PUSH_GUARDS.md §15): the GitHub Environment wait timer; whether the guard should leave R7 to font-check; the fork render's
-  refusals; Photoshop's image for a PNG pushed before its PSD; G2 (no Maximize Compatibility refuses); the "outside R"
-  parity method; the login fallback and the commit link in the post.
+- **Push guards** (PUSH_GUARDS.md §15): the fork render's refusals; Photoshop's image for a PNG pushed before its PSD; the
+  "outside R" parity method; the login fallback and the commit link in the post. (Decided 2026-10-24, §20: the wait timer,
+  R7 left to font-check, G2 rendered anyway.)
 - **History decisions left by the audit** (DATA_BUILD_ACTION.md §7.4): high stats kept by an allowance (Sonic 23, Pix, Twin
   Emperors, Royal Eradicator Main Cannon, archived Bill Cipher and Oryx) or set unknown (God Tamer's 15, Blank Card's 55s,
   Tainted Lazarus' 110s, the 10+ stars); 26 restored versions that differ in types alone while the PNG changed; whether a

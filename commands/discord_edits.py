@@ -503,6 +503,8 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
     if edits is not None:
         card_repo._edits, card_repo._edit_names = edits, (blob_sha(edits_text.encode("utf-8")), edits.names())
         card_repo._moved_hint = False                # the file parsed: it says whether aliases moved
+    if not changed and edits is not None:
+        card_repo._populate_renames()           # a new alias: autocomplete offers it (prep_dataframes does when changed)
     if changed:
         try:
             card_repo.prep_dataframes()

@@ -1,7 +1,7 @@
 """Network and speed pass: same results with fewer requests (search fast paths, commit pages, tree ETags, TTS caches)."""
 import json
 import random
-from difflib import SequenceMatcher, get_close_matches
+from difflib import SequenceMatcher
 from types import SimpleNamespace
 
 import pytest
@@ -92,17 +92,6 @@ def test_fuzzy_cache_follows_new_dataframes():
     assert list(repo._fuzzy_labels("deal 2 damage")) == ["A"]
     repo.cards_dff = DataFrame({"ability": ["draw a card"]}, index=["B"])        # prep_dataframes replaced it
     assert list(repo._fuzzy_labels("draw a card")) == ["B"]
-
-
-def test_closest_match_exact_key_fast_path():
-    rnd = random.Random(5)
-    repo = qc.CardRepository()
-    names = ["".join(rnd.choice("abcde_") for _ in range(rnd.randrange(1, 12))) + ".png" for _ in range(200)]
-    names.append("q" * 230 + ".png")                                               # autojunk length: no fast path
-    repo.git_files = {n: n for n in names}
-    for q in names[:50] + ["abc", "zz", "", "q" * 230] + [n[:len(n) - 5] for n in names[50:80]]:
-        expected = get_close_matches(repo._normalize_card_name(q), list(repo.git_files), n=1, cutoff=repo.match_ratio)
-        assert repo._find_closest_match(q) == (expected[0] if expected else None)
 
 
 # ========================

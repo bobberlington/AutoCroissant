@@ -8,6 +8,7 @@ import re
 import shutil
 from io import BytesIO
 from os import environ
+from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
@@ -24,7 +25,8 @@ from conftest import CLONE, REPO, Reply, at_rev, blob_sha_bytes as _sha
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
 
-WORKFLOW = Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML") else CLONE / ".github" / "workflows" / "font-check.yml"
+WORKFLOW = (Path(environ["FONT_CHECK_YML"]) if environ.get("FONT_CHECK_YML")
+            else Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "font-check.yml")
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
@@ -657,9 +659,10 @@ def _bot_files_in_workflow() -> list:
 
 
 def test_action_shaped_copy_imports_and_prints_help(tmp_path):
-    """Exactly the yaml's files, no config.py: `python -m commands.font_check --help` works and imports no Discord."""
+    """Exactly the yaml's files (the checker's closure and requirements-cards.txt, the card packages it installs since
+    2026-10-24), no config.py: `python -m commands.font_check --help` works and imports no Discord."""
     paths = _bot_files_in_workflow()
-    assert paths == ["commands/font_check.py", "commands/github_api.py", "global_config.py"]
+    assert paths == ["commands/font_check.py", "commands/github_api.py", "global_config.py", "requirements-cards.txt"]
     bot = tmp_path / "bot"
     for rel in paths:
         assert (REPO / rel).is_file(), f"{rel} is checked out by the Action but missing here"
@@ -686,13 +689,16 @@ def test_workflow_shape():
     assert "discord.com/api/webhooks" not in text and "<@&" not in text   # no URL, no mention in the yaml
     # the standards channel since 2026-10-22 (owner); the role ping and wording stay font_check.discord_payload's
     assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "secrets.DISCORD_FONT_WEBHOOK" not in text
-    assert '"**/*.psd"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
+    assert '"**/*.psd"' in text and '"**/*.PSD"' in text and '"MDW/Fonts/**"' in text and "workflow_dispatch" in text
     assert '--repo "$GITHUB_REPOSITORY"' in text and '--after "$GITHUB_SHA"' in text and "--whole-tree" in text and '--before "$BEFORE"' in text
     assert "contents: write" in text and '|| echo "::warning::' in text and "actions/checkout@v7" in text and "actions/cache@v6" in text
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(text)
-    assert doc[True]["push"]["paths"] == ["**/*.psd", "MDW/Fonts/**"]          # PyYAML reads the `on` key as True
+    # PyYAML reads the `on` key as True. Path filters are case-sensitive: an upper-case card too (the guard has no R7)
+    assert doc[True]["push"]["paths"] == ["**/*.psd", "**/*.PSD", "MDW/Fonts/**"]
     assert doc[True]["workflow_dispatch"]["inputs"]["all"]["default"] is False
     assert doc["permissions"] == {"contents": "write"}
     names = [step.get("name", "") for step in doc["jobs"]["check"]["steps"]]
     assert names.index("Tell Discord") < names.index("Comment on the commit")   # the Discord message never waits on the comment
+    from test_card_bake import FORK_KEY, fork_install
+    assert fork_install(WORKFLOW) == FORK_KEY                                   # the fork, not stock psd-tools (2026-10-24)

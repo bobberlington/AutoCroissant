@@ -494,7 +494,9 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 - **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
-  `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
+  `commands/github_api.py`, `global_config.py`, `requirements-cards.txt` from `bobberlington/AutoCroissant` (since 2026-10-24,
+  branch work/py314: on Python 3.14 it installs requirements-cards.txt, the psd-tools fork's one pin, from the card workflows'
+  wheel cache instead of stock psd-tools), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
   `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
@@ -527,8 +529,9 @@ rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no 
 network, a truncated tree) is one error line.
 
 - **Automatic: TTSCardMaker's `.github/workflows/card-check.yml`.** On a push to main that changes a PSD, `Types/` or `site/Card Edits.json`
-  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
-  requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs AutoCroissant
+  `requirements-cards.txt` (the psd-tools fork's one pin, fonttools, requests, pyoxipng) on Python 3.14 from the card workflows'
+  wheel cache (since 2026-10-24, branch work/py314; stock psd-tools, fonttools and requests before), and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
   on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
@@ -619,6 +622,54 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
+- **Ability FX layers (BUG 2, branch work/fx-rebuild, not landed):** an ability bake makes the card's `Ability FX: ...`
+  layers again as Effect Layers.jsx's Update all does (the gradient cards' badge layers included): each cut in place over
+  its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
+  one renumbered, Standstill's `Frozen In Time#2` -> `#3`; "Frozen" made "Frozen In Time" drops the Frozen layer and
+  makes a Frozen In Time one in the chart's style). The report says when a layer is deleted (its words left the text,
+  or they are no longer its status: "'Frozen In Time' is no Frozen"), renamed (a phrase dropped or renumbered) or cut
+  again clean. Since 2026-10-23 (owner) an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke,
+  Mr Krabs' `2T`) is rebuilt in its own style too, staying on its own words; a typed word joining such a layer is told
+  ("... also covers the typed 'Smoldering', in its own style"; "moved to" when its old words left) and takes the
+  phrase's colour (a stroke alone shows the fill). Where a layer can't follow its words (on Monkey D Goofy a whole-word
+  "1" anywhere in the ability, an own-style phrase edited, deleted and typed elsewhere or glued into a longer word,
+  a phrase the ability lacks) the layer is deleted, told, its words printing plain (owner 2026-10-24; they refused
+  before); a "1" typed before its "1" renames the layer `1#2`.
+  The commit line and the website's verdict reason carry the FX notes too.
+- **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
+  font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
+  the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
+  gradient badge card it joins the badge layer, and so does a badge edited by deleting letters ("(1GCD)" made "(1CD)").
+  A typed "★" is set in the icon font (the gold star). A typed badge or token is unstretched (`unstretch`: its
+  HorizontalScale set so it prints as the font draws it under the layer's scales, as designers set theirs; Monster
+  Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): a badge under a tinted Ability (any colour,
+  gradient or pattern overlay, a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the Pin
+  Light Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Precipice), letters left in the icon font it draws no badge of ("(abc)", "(GCD)"), a token the website shows as an
+  icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a see-through icon
+  under a badge layer, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
+  keeps the card's own icon spellings ("[dark:sticker]" where
+  the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
+  Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
+  fork is reinstalled). Also told: a title or Ability whose saved pixels are in another font than the layer names
+  (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). Refused: a text layer with
+  tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
+  deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
+  printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
+  below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
+- **Content flags (owner 2026-10-24 ~18:30, same branch):** "In general I do not want to refuse bakes": the editor
+  previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
+  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the
+  canvas, onto the stars or icons, more title lines, under a layer above or over a stat bar, past the design below or
+  a texture clipped to it: `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow
+  (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
+  a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`recent`, `head-moved`,
+  `edit-changed`, `blob`, `capped`), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
+  stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
+  `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
+  titles, non-template stat rows, tab stops, folder-set stars and the other stars/types layouts, FX layers that are no
+  pixel layers, two FX layers one name; `stat>10` on one bar row).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
@@ -643,17 +694,20 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
-both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
+both after a 30-minute quiet window (since 2026-10-24, branch work/py314: the post job waits in the TTSCardMaker
+environment `card-guards-quiet`'s 30-minute timer, created by the owner after both branches land; no runner sleeps; a PSD saved without
+Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post
 carry each card's semantic PSD diff (`psd_diff`, 0a34292): "{login} pushed {card}{changes} with these issues: ...", the
 changes cut to 120 characters on Discord and 600 in the comment. A new PSD pushed beside its PNG counts as current only
-within 8 levels (`png_export.BESIDE_CUT`, owner).
+within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 300 px past it the PNG is kept and told
+(`png_export.KEPT`/`KEPT_PX`, default 2026-10-24, owner to confirm), past that redrawn.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
@@ -688,7 +742,7 @@ within 8 levels (`png_export.BESIDE_CUT`, owner).
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
   bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
-  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout) sends no message.
+  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout; on work/py314: no cancelled job ran to its timeout, check 100 or post 75 minutes) sends no message.
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -1068,8 +1122,16 @@ the .mailmap authors bullet, today's problem baselines and the bake's current re
 splice; the jetson has the fork and fonts_cache); the card guards and card check headings say landed; section 8's temp-file,
 fonts_cache and bake rows; section 12's status, step 1 done and the seed precondition; every main.py, update_bot.py,
 card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py citation re-pointed at 2ada357.
+2026-10-23 (BUG 2, work/fx-rebuild): section 7's Card bake subsection gains the Ability FX layers bullet (the bake runs Effect Layers.jsx's Update all; unstyled word layers still refuse); no cited line moved.
+2026-10-23 (BUG 2 review, work/fx-rebuild): the Ability FX bullet names the two new refusals (a badge typed as text on a badge card; Goofy's whole-word "1") and the `1#2` rename.
+2026-10-23 (BUG 2 phase 2 review, work/fx-rebuild): the typed badges bullet gains the deleted-letter badge, the typed "★", the tint refusal (any overlay, non-Normal blend), missing glyphs and edits inside own-style FX phrases; no cited line moved.
+2026-10-24 (BUG 2 phase 2 review round 3, work/fx-rebuild): the typed badges bullet gains the "[fire:]" refusal; no cited line moved.
 
 2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (prep_dataframes, init_query) after /query_ability went back to one message per card.
+
+2026-10-24 (py314, branch work/py314): the card guards' quiet window as an environment, R7 left to font-check, G2
+rendered anyway; no cited line moved.
+2026-10-24 (BUG 2 phase 6, work/fx-rebuild): section 7's Card bake subsection gains the Content flags bullet (owner ruling: content problems bake, told); the FX and typed-badge bullets say told for refused; no cited line moved.

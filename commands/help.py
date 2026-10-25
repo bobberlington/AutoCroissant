@@ -41,31 +41,37 @@ text_commands = {
 }
 
 card_commands = {
-    "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
+    "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name, printed title or alias (suggested as you type). "
+                                                  "A renamed card's old name finds the card it became (\"renamed from ...\"); "
+                                                  "a name that matches no card exactly posts the closest one, saying \"Closest match\". "
                                                   "The Card page button opens it on the website; the printed title, website names and notes show too.\n"
                                                   "- as_of: A date, YYYY-MM-DD in Pacific time: the card as it was at the end of that day, from its stored "
                                                   "versions (archived cards too). The reply says which version and its date; the current card posts its "
                                                   "image of that day, an older version its data and an Image button (default: the current card)",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images, "
-                                                   "one message per card.\n"
+                                                   "one message per card. Text searches card names, printed titles and aliases as well as "
+                                                   "ability text, as the website does.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
                                                    "- howmany: If True, only returns the count instead of the cards (default: False)",
-    "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook entries for text matching <search_text>. "
-                                                  "Optional limit for max results (default: all).",
+    "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook and posts the lines holding <search_text> (any case) under their "
+                                                  "page names, the pages with the most matches first; the button opens the rulebook on the website.\n"
+                                                  "- limit: Max number of pages to show (default: all)",
     "Query Syntax:"                             : "Flexible query syntax for /query_ability:\n"
                                                   "- Exact text match: Surround with quotes \"like this\"\n"
-                                                  "- Exclude matches: Prefix with ! to get cards that don't match\n"
+                                                  "- Exclude matches: Prefix any term with ! to get cards that don't match, e.g. !die, !type==creature\n"
                                                   "- OR queries: Use | to combine, e.g., 'fire | water'\n"
                                                   "- AND queries: Use & to require multiple, e.g., 'fire & flying'\n"
-                                                  "- Numeric comparisons: hp>5, def<=10, atk==3, spd>=7, stars<6\n"
-                                                  "- String exact: type==creature, subtype==attack, series==kirby, subseries==paper mario\n"
-                                                  "- String contains: type~creature, series~kirby, subseries~door (case-insensitive)\n"
+                                                  "- Numeric comparisons: hp>5, def<=10, atk==3, spd>=7, stars<6, total>=25 (the four stats added)\n"
+                                                  "- String exact: type==creature, subtype==attack, series==kirby, subseries==paper mario, name==mini doomer\n"
+                                                  "- String contains: type~creature, series~kirby, subseries~door, alias~mk (case-insensitive)\n"
                                                   "- Creation dates (first Discord post or upload): created>=2025, created==2023-10, created<2021-06-01\n"
                                                   "- Spaces around the operator are fine: hp > 5, type == creature, created >= 2025\n"
                                                   "- Combine conditions: '\"damage\" & type==creature & hp>7', 'series==mario & subseries~door'\n"
                                                   "- Values with & or | go in quotes: subseries==\"mario & luigi\"\n"
-                                                  "- Fuzzy matching works for non-exact text queries",
+                                                  "- An unknown field (atack>3) answers with the list of fields; text with < > = ~ goes in quotes\n"
+                                                  "- Synonyms: damage also finds DMG, defense DEF, speed SPD, health HP (and back)\n"
+                                                  "- A text query also finds abilities that nearly equal it as a whole",
     "/sync_emojis [refresh] [prune]:"           : "Uploads every missing or edited icon in Types/ and Types/Stars/ as one of the bot's emojis, so [fire]-style tokens show as icons in replies (admin only). /update_stats does this too when the card repo changed.\n"
                                                   "- refresh: Re-upload every icon, even unchanged ones\n"
                                                   "- prune: Delete bot emojis whose icon is no longer in Types/",

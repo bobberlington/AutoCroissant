@@ -1,9 +1,10 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
-docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R9 and R11 run over an open PSD (R10, the PNG against the PSD, is
-png_export.png_check). R3 and R4 keep only the real issues (several visible Ability layers, or a hidden one with words
-the parser reads nowhere; a hidden or rasterized Name layer the title can't be read from): the template layout they also
-checked was dropped by the owner on 2026-10-23.
+docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R6, R8, R9 and R11 run over an open PSD (R10, the PNG against
+the PSD, is png_export.png_check; R7, the fonts, is font-check.yml's alone since 2026-10-24, owner). R3 and R4 keep only
+the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or
+rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
+2026-10-23.
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
@@ -16,7 +17,6 @@ No Discord, network or config.
 from dataclasses import dataclass, field
 from os import makedirs
 from os.path import basename, getsize, join
-from re import compile as re_compile
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import Optional
@@ -26,8 +26,8 @@ from psd_tools.constants import Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
-from commands.font_check import FontIndex, _get, _value, check_psd
-from commands.psd_edit import Refused
+from commands.font_check import _get, _value
+from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
 from commands.psd_regions import overlay_words
 from global_config import RULEBOOK_DIR
@@ -35,22 +35,6 @@ from global_config import RULEBOOK_DIR
 # ========================
 # Configuration
 # ========================
-def badge_tags() -> list:
-    """Every timing tag the stoogedings font draws as a badge: TTSCardMaker build_stoogedings.badge_tags(), mirrored."""
-    nums, firsts = "123456789X", ["-1", *"0123456789", "X"]
-    tags = ["OYT", "AAT", "BOT", "ENDT", "BOGT", "ENDGT", "OFS", "OS", "OD", "WOF", "Action"]
-    for n in nums:                              # the old system (rule pages)
-        tags += [f"{n}PT", f"E{n}T", f"FTE{n}T", f"{n}PGT", f"E{n}GT", f"{n}PG"]
-    for n in nums:                              # cooldowns and uses (2026-10-21)
-        tags += [f"{n}CD", f"{n}GCD", f"{n}U"]
-    for cd in ("CD", "GCD"):
-        tags += [f"{a}/{b}{cd}" for a in firsts for b in nums]
-    return tags
-
-
-BADGE_TAGS = tuple(badge_tags())
-BADGE_KEYS = {tag.lower(): tag for tag in BADGE_TAGS}   # the font matches any letter case (TTSCardMaker 6e50c3ee)
-PAREN = re_compile(r"\(([^()\r\n\x03]{1,12})\)")
 SCOPE = ("creature", "aux creature", "minion", "item", "aux item", "nme")   # the ledger's 651
 STARS_KINDS = ("minion", "aux item", "nme")     # stars drawn from a Stars group (L14)
 EXACT = {"ability": "Ability", "name": "Name"}  # R11: Text/Ability, Text/Name
@@ -81,7 +65,7 @@ class Issue:
     fix: bool = False                           # AUTO_FIX and fixable here
     waived: str = ""                            # the waiver's reason
     new: bool = False                           # absent from the old blob
-    discord: bool = True                        # told in the standards post (R7 too: owner, 2026-10-22); False: comment only
+    discord: bool = True                        # told in the standards post; False: comment only
 
     def line(self) -> str:
         return self.text + (" (new)" if self.new else "")
@@ -95,7 +79,6 @@ class Issue:
 class Context:
     """What the rules need beside the PSD."""
     types: frozenset = frozenset()              # Types/ stems, lowercased (card_check.Vocabulary.all_types)
-    fonts: Optional[FontIndex] = None           # MDW/Fonts (R7 skipped without)
     chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
     story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
 
@@ -289,15 +272,6 @@ def rule_stars(psd: PSDImage) -> Optional[Issue]:
     return Issue("R6", "the stars are not in a group named Stars", ("no stars group",))
 
 
-def rule_fonts(psd: PSDImage, fonts: FontIndex) -> Optional[Issue]:
-    """R7: every font a visible text layer asks for is in MDW/Fonts (font_check)."""
-    missing = check_psd(psd, fonts)
-    if not missing:
-        return None
-    names = tuple(sorted(missing))
-    return Issue("R7", f"font{'s' if len(names) > 1 else ''} {_list(names)} not in MDW/Fonts", names)
-
-
 def rule_composer(psd: PSDImage) -> Optional[Issue]:
     """R8: the Single-line Composer on visible Ability and Name layers (L10)."""
     layers = _unique(layer.name.strip() for layer in _visible_texts(psd)
@@ -352,7 +326,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     Args:
         psd: The pushed PSD
         rel: Its repo path (the class: scope, waivers)
-        context: Types/, fonts, chart
+        context: Types/, the chart, the story sync
         old: The PSD before the push (R4 regressions; "(new)" marks)
         added: A new card (R4 applies in full)
 
@@ -393,8 +367,6 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R5", rule_overlays, psd, context.chart)
     if kind in STARS_KINDS:
         run("R6", rule_stars, psd)
-    if context.fonts is not None:
-        run("R7", rule_fonts, psd, context.fonts)
     run("R8", rule_composer, psd)
     run("R9", rule_stories, psd, context.story_sync)
     if kind in SCOPE:

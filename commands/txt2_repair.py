@@ -53,6 +53,14 @@ def _show(text: Optional[str]) -> str:
 # ========================
 # Public API Functions
 # ========================
+def sync_stories(psd: PSDImage) -> set:
+    """Rewrite every stale story of an open PSD to its layer's text (TypeLayer.sync_story); the indices rewritten.
+    psd_edit.apply_jobs runs it on a card it bakes (owner 2026-10-24: repaired, not refused); ImportError without it."""
+    if not psd_edit.story_sync():
+        raise ImportError("this psd-tools has no TypeLayer.sync_story (the fork's fix/txt2-sync)")
+    return {psd_edit.story_index(layer) for layer in psd.descendants() if layer.kind == "type" and layer.sync_story()}
+
+
 def verify(old_path: str, new_path: str, stories) -> list:
     """
     Check a repaired PSD against its original: only the given stories changed, every story holds its layer's text,
@@ -92,9 +100,7 @@ def repair(path: str, out_path: str) -> Repair:
     found = Repair(path, stale=psd_edit.stale_stories(psd))
     if not found.stale:
         return found
-    if not psd_edit.story_sync():
-        raise ImportError("this psd-tools has no TypeLayer.sync_story (the fork's fix/txt2-sync)")
-    synced = {psd_edit.story_index(layer) for layer in psd.descendants() if layer.kind == "type" and layer.sync_story()}
+    synced = sync_stories(psd)
     temp = join(dirname(out_path) or ".", f".{basename(out_path)}.repair")
     try:
         psd_edit.save_psd(psd, temp, update_preview=False)
@@ -151,6 +157,7 @@ __all__ = [
     'Repair',
     'main',
     'repair',
+    'sync_stories',
     'verify',
 ]
 
