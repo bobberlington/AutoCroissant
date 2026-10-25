@@ -3267,7 +3267,7 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
     plan = plan_bar(psd, rows[0][0], stat, old, value, why)
     layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
                                  *(layer for layer, _ in plan.moves),
-                                 *(layer for layer, _ in plan.styles), *(layer for layer, _, _ in plan.remasks)]))
+                                 *(layer for layer, _ in plan.styles), *(layer for layer, *_ in plan.remasks)]))
     snaps = {id(layer): _snap(layer) for layer in layers}
     before = [_where(layer) for layer in layers]
     for layer in plan.show:
@@ -3280,15 +3280,15 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
         _shift(layer, dx, 0)
     for layer, source in plan.styles:
         _copy_blocks(source, layer)
-    for layer, dx, bar in plan.remasks:
-        _remask(layer, dx, bar)
+    for layer, dx, bar, edge, tol in plan.remasks:
+        _remask(layer, dx, bar, edge, tol)
     bases = [base for layer in layers for base in [_clip_base(layer)] if base is not None]
     reach = max([fx_pad(layer) for layer in layers + bases] + [0])
     # where a layer acts: its own box, inside what it clips to (an exposure clipped to a bar) and the bar's rows
     within = lambda layer: union_box([plan.box] + [tuple(base.bbox) for base in [_clip_base(layer)] if base is not None])
     boxes = [clip_to(box, within(layer)) for layer, box in zip(layers + layers, before + [_where(layer) for layer in layers])]
     region = union_box([box for box in boxes if box])
-    remasked = {id(layer) for layer, _, _ in plan.remasks}
+    remasked = {id(layer) for layer, *_ in plan.remasks}
     specs = [(layer, _bar_spec(layer, snaps[id(layer)], id(layer) in remasked)) for layer in layers]
     touched = [(layer, spec) for layer, spec in specs if spec is not None]
     return Edit(stat, old, value, [layer for layer, _ in touched], [], _pad(region, reach, psd) if region else None,
@@ -3328,7 +3328,8 @@ class BarPlan:
     names: list = field(default_factory=list)    # (layer, new name): the layer named after the value
     moves: list = field(default_factory=list)    # (layer, dx): moved along the bar with its pixels
     styles: list = field(default_factory=list)   # (cell, source cell): the source's effect blocks copied onto the cell
-    remasks: list = field(default_factory=list)  # (layer, dx, bar): its mask redrawn, the value edge dx along (_remask)
+    remasks: list = field(default_factory=list)  # (layer, dx, bar, old edge, tol): its mask redrawn, the value edge dx
+    #   along (_remask)
     notes: list = field(default_factory=list)
 
 
@@ -3555,12 +3556,13 @@ def _roles(cells: list, old: int) -> dict:
     return out
 
 
-def _held(layer, dx: int, bar: tuple) -> tuple:
+def _held(layer, dx: int, bar: tuple, edge: Optional[float] = None, tol: float = 0) -> tuple:
     """
     A mask's raster with its value edge moved dx along the bar (x0, x1) and nothing else: inside the bar each column
     takes the one dx before it (from past the bar's start or end: the mask's column there, its far side held: Dark
     Esau's lit hearts, whose mask would stop short of the bar's start once moved), outside the bar the mask stays (a
-    moved mask's far end would darken the art past the bar: Spinni's moved digit).
+    moved mask's far end would darken the art past the bar: Spinni's moved digit). edge, tol: the old value's edge;
+    one on the bar's start or end (0 or 10) takes its far side from just past it (Tainted Lost's def 0).
 
     Returns:
         (raster over the mask and the bar, its left)
@@ -3571,23 +3573,27 @@ def _held(layer, dx: int, bar: tuple) -> tuple:
     left = min(mask.left, bar[0])
     xs = np.arange(left, max(mask.left + width, bar[1]))
     inside = (xs >= bar[0]) & (xs < bar[1])
-    source = np.where(inside, np.clip(xs - dx, bar[0], bar[1] - 1), xs) - mask.left
+    low, high = bar[0], bar[1] - 1
+    if edge is not None:
+        low, high = min(low, int(edge - tol)), max(high, int(edge + tol))
+    source = np.where(inside, np.clip(xs - dx, low, high), xs) - mask.left
     out = np.full((height, len(xs)), mask.background_color, dtype=np.uint8)
     there = (source >= 0) & (source < width)
     out[:, there] = raster[:, source[there]]
     return out, left
 
 
-def _remask(layer, dx: int, bar: tuple) -> None:
+def _remask(layer, dx: int, bar: tuple, edge: Optional[float] = None, tol: float = 0) -> None:
     """Redraw the layer's mask as _held() makes it."""
-    raster, left = _held(layer, dx, bar)
+    raster, left = _held(layer, dx, bar, edge, tol)
     layer.update_mask(Image.fromarray(np.ascontiguousarray(raster)), top=layer.mask.top, left=left)
 
 
-def _held_profile(layer, dx: int, bar: tuple, y: int, x0: int, x1: int) -> np.ndarray:
+def _held_profile(layer, dx: int, bar: tuple, y: int, x0: int, x1: int, edge: Optional[float] = None,
+                  tol: float = 0) -> np.ndarray:
     """_profile() of the mask _held() would make (the layer is not changed)."""
     mask = layer.mask
-    raster, left = _held(layer, dx, bar)
+    raster, left = _held(layer, dx, bar, edge, tol)
     xs = np.arange(x0, x1)
     out = np.full(len(xs), mask.background_color >= 128)
     if mask.top <= y < mask.top + raster.shape[0]:
@@ -3688,8 +3694,9 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
             shifted = same(_step(_profile(layer, use_mask, y, lo, hi, dx), lo, edges[value], tol, bar))
             if not use_mask and shifted:
                 plan.moves.append((layer, dx))
-            elif use_mask and same(_step(_held_profile(layer, dx, bar, y, lo, hi), lo, edges[value], tol, bar)):
-                plan.remasks.append((layer, dx, bar))
+            elif use_mask and same(_step(_held_profile(layer, dx, bar, y, lo, hi, edges[old], tol), lo, edges[value],
+                                         tol, bar)):
+                plan.remasks.append((layer, dx, bar, edges[old], tol))
                 if not shifted:                 # moved alone it would stop short of the bar: told
                     plan.notes.append(f"{stat}: the mask of {layer.name!r} redrawn {dx:+d} px, its far side held")
             else:
