@@ -32,7 +32,8 @@ def golden_file(rel: str) -> Path:
 
 def parser():
     """A PSDParser on an empty database with the frozen vocabulary (fresh parse: no author or series preservation)."""
-    from commands.psd_analyzer import IconVocabulary, PSDParser, StatsDatabase
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import IconVocabulary, PSDParser
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
     db = StatsDatabase()
     db.all_types = list(vocab["all_types"])
@@ -41,7 +42,7 @@ def parser():
 
 def parse(psd_parser, clone: Path, rel: str) -> dict:
     """Everything the golden pins: to_dict(), the hidden titles and the validator's problems."""
-    from commands.psd_analyzer import CardValidator
+    from commands.psd_parser import CardValidator
     card = psd_parser.parse(str(clone / rel), rel)
     out = {"card": card.to_dict(), "alt_names": card.alt_names}
     out["validator"] = CardValidator.validate(card)

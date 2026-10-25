@@ -7,7 +7,7 @@ Usage:
 Prints one line per layer: depth-indented name, kind, visibility, pixel
 presence, and bbox (x1, y1, x2, y2). With --text, also prints the raw
 engine_dict text of every text layer ("type" kind), which is exactly the
-string commands/psd_analyzer.py starts from before cleanup.
+string commands/psd_parser.py starts from before cleanup.
 
 Only needs psd-tools; does NOT import bot code and never writes anything.
 """

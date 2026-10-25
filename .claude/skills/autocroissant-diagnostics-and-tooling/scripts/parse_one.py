@@ -58,11 +58,8 @@ def main() -> int:
         relative_path = psd_path.name
 
     from commands.card_data import CardBuild
-    from commands.psd_analyzer import (
-        CardValidator,
-        PSDParser,
-        StatsDatabase,
-    )
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import CardValidator, PSDParser
 
     db = StatsDatabase()  # fresh, empty: no preservation effects
     if "--with-db" in sys.argv:

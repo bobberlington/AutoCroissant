@@ -3,7 +3,8 @@ import json
 from copy import deepcopy
 
 
-from commands.psd_analyzer import CardEdits, CardInfo, CardStats, CardValidator
+from commands.psd_analyzer import CardEdits, CardInfo, CardStats
+from commands.psd_parser import CardValidator
 
 
 def _edits(cards: dict) -> CardEdits:

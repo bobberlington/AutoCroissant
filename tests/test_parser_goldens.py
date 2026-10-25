@@ -68,7 +68,8 @@ class _Layer:
 
 
 def _fx_problems(fx_name, text, visible=True):
-    from commands.psd_analyzer import CardInfo, PSDParser, StatsDatabase
+    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.psd_parser import PSDParser
     card = CardInfo(name="Card", card_type="item")
     PSDParser([], StatsDatabase())._check_effect_layer(_Layer(fx_name, visible=visible), [_Layer("Ability", text)], card)
     return card.problems
@@ -89,7 +90,8 @@ def test_orphaned_effect_layer():
 def test_unfilled_line_gaps_are_padding():
     """A line's leading gap that no type fills is layout padding (Twin Emperors' body beside its label, Warcraftian
     Druid's "Bear:" line): gone. A gap a type fills, and one inside a line, stay as before."""
-    from commands.psd_analyzer import BoundingBox, PSDParser, StatsDatabase
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())
     texts = [("Vek'nilash:\n", BoundingBox(18, 1951)), ("            Immune.\n(2CD) Hit.\n", BoundingBox(250, 2000)),
              ("Turtle        Cat\n", BoundingBox(20, 2100))]

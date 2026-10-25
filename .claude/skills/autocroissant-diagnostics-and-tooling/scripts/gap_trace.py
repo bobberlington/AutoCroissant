@@ -16,7 +16,7 @@ PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes,
 _process_abilities, which injects the types) instead of copying their logic, but the orchestration
 mirrors PSDParser._extract_from_layers (effect layers set aside, hidden rule text skipped, hidden Ability
 layers read last). If _extract_from_layers changes shape
-in commands/psd_parser.py (re-exported by commands.psd_analyzer), update this script to match (one-line check:
+in commands/psd_parser.py, update this script to match (one-line check:
 compare against that method's body).
 """
 import sys
@@ -51,18 +51,17 @@ def main() -> int:
     except ValueError:
         relative_path = psd_path.name
 
-    from commands.psd_analyzer import (
+    from commands.psd_analyzer import CardInfo, CardType, StatsDatabase
+    from commands.card_data import CardBuild
+    from commands.psd_parser import (
+        EFFECT_LAYER_TAG,
         TYPE_REGION_RATIO,
+        CardClassifier,
         MutableValue,
         PSDParser,
-        StatsDatabase,
         StatTrackers,
-        CardClassifier,
-        CardInfo,
-        CardType,
+        stars_from_psd,
     )
-    from commands.card_data import CardBuild
-    from commands.psd_parser import EFFECT_LAYER_TAG, stars_from_psd
 
     db = StatsDatabase()
     traverser = CardBuild(db)

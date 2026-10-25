@@ -2,8 +2,9 @@
 The card database's commands, and its one import point.
 
 The code lives in commands.card_models (CardType, CardStats, CardInfo, StatsDatabase, stats_db), commands.card_edits
-(CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). Everything is
-re-exported here: main.py, query_card and the diagnostics scripts import from this module.
+(CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). The first two
+are re-exported here (main.py and query_card import from this module); the parser is not, so the bot never loads
+psd_tools: tests and the diagnostics scripts import it from commands.psd_parser.
 """
 from discord import Interaction, File
 from os.path import basename, splitext
@@ -15,29 +16,6 @@ from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
-from commands.psd_parser import (
-    DRAWN_LAYER_KINDS,
-    EFFECT_COVERAGE_MIN,
-    EFFECT_LAYER_TAG,
-    ICON_FONT_PREFIX,
-    ICON_SCAN_PATTERN,
-    ICON_VARIANTS,
-    MISSPELT_CARD_TYPES,
-    PARSER_VERSION,
-    STAR_CORE_ALPHA,
-    TITLE_REGION_RATIO,
-    TYPE_REGION_RATIO,
-    BarRow,
-    BoundingBox,
-    CardClassifier,
-    CardValidator,
-    IconVocabulary,
-    MutableValue,
-    PSDParser,
-    StatTracker,
-    StatTrackers,
-    title_text,
-)
 from commands.query_card import archived_text, card_repo, history_match
 from commands.utils import queue_message, queue_file, queue_long_message
 
