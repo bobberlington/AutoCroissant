@@ -1158,7 +1158,8 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
 def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", empty: bool = False,
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
           dry_run: bool = False, restore: str = "", builder_ref: str = "",
-          baked: bool = False, own: str = "") -> Outcome:
+          baked: bool = False, own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
+          guard_docs: Optional[list] = None) -> Outcome:
     """
     One build (design section 7.1): db/ before, the tree and index from git, the
     changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
@@ -1181,6 +1182,9 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
         baked: head is the run's local bake commit B (a push of its own, by the card sync)
         own: Comma-separated main commits the card sync pushed (the bake's M): their pushes are the card sync's
+        verdicts: The bake's verdicts for db/verdicts.json ({key: verdict, or None to remove}; card_db.merge_verdicts)
+        side: The bake's events (baked, bake-refused), each with its commit (M) when it has one
+        guard_docs: The guards' guard-events.json files ({"commit", "push", "events"}): their events, by that commit
 
     Returns:
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
@@ -1251,12 +1255,15 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     file_commits = {"edited": edits.sha if edits else None, "authors": authors.sha if authors else None}
     new_events = changelog.events(before, db.stats, archived_before, db.archived(), run_build.reparsed,
                                   {n: m for n, m in edits_by.items() if m.get("_by")}, index, file_commits)   # card changes only
+    base = manifest_before.get("card_commit")
+    if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
+        base = None
+    guards = _guard_commits(checkout, base, run_build.head) | {d.get("commit") for d in guard_docs or [] if d.get("commit")}
+    new_events = [e for e in new_events if not (e["kind"] == "art" and e.get("commit") in guards)]   # the guards' events say them
+    new_events += side_events(db.stats, db.archived(), side, guard_docs)
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
     elif new_events:
-        base = manifest_before.get("card_commit")
-        if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
-            base = None
         commits = _commits(checkout, base, run_build.head)
         mine = {_git(checkout, "rev-parse", sha).strip() for sha in own.split(",") if sha.strip()}
         listed = pushes(repository, checkout, commits)
@@ -1264,7 +1271,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             if push["after"] in mine:
                 push["by"] = changelog.CARD_SYNC
         new_events = changelog.assign_pushes(new_events, listed, commits, base,
-                                             ({run_build.head} if baked else set()) | mine)
+                                             ({run_build.head} if baked else set()) | mine, guards)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -1336,7 +1343,10 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                              f"{data_head[:8] or 'nothing'} (another writer)")
         out.code = EXIT_GATE
         return out
-    from commands.card_db import old_stats_text, stats_text
+    from commands.card_db import merge_verdicts, old_stats_text, stats_text
+    recorded = merge_verdicts(db_dir, verdicts) if verdicts and not restore else []
+    if recorded:
+        out.lines.append(f"verdicts: {', '.join(recorded[:20])}" + (", ..." if len(recorded) > 20 else ""))
     unchanged = (not restore and not numbered and manifest_before.get("card_commit") == run_build.head
                  and manifest_before.get("pending") == out.manifest["pending"]
                  and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
@@ -1350,6 +1360,39 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if problems:
         out.refused["G3"] = "; ".join(problems)
         out.code = EXIT_GATE
+    return out
+
+
+def _guard_commits(checkout: str, base: Optional[str], head: str) -> set:
+    """The guards' commits in base..head (author AutoCroissant, subject "Card guards: ..."): their pushes are GUARDS'."""
+    from commands.changelog import BOT, GUARDS
+    span = [f"{base}..{head}"] if base else ["--max-count=100", head]
+    try:
+        log = _git(checkout, "log", "--format=%H%x09%an%x09%s", *span)
+    except CalledProcessError:
+        return set()
+    rows = [(line.split("\t", 2) + ["", ""])[:3] for line in log.splitlines()]
+    return {sha for sha, author, subject in rows if author == BOT and subject.startswith(GUARDS + ":")}
+
+
+def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: Optional[list]) -> list:
+    """
+    The bake's and the guards' events as the changelog's: kind, card, the card's title, kind of card, stars and path
+    from the data (an archived card's last version, else the path the event names), and the commit that brought them.
+    """
+    from commands.changelog import KINDS
+    out = []
+    raw = [dict(e) for e in side or []]
+    for doc in guard_docs or []:
+        raw += [{**e, "commit": doc.get("commit")} for e in doc.get("events") or [] if isinstance(e, dict)]
+    for e in raw:
+        name = e.get("card")
+        if e.get("kind") not in KINDS or not isinstance(name, str) or not name:
+            continue
+        card = stats.get(name) or archived.get(name)
+        known = {"title": getattr(card, "display_name", None) or name, "card_type": card.card_type,
+                 "stars": getattr(card, "stars", None), "path": card.path} if card is not None else {"title": name}
+        out.append({**{k: v for k, v in e.items() if v is not None}, **known, "path": known.get("path") or e.get("path")})
     return out
 
 
@@ -1433,6 +1476,12 @@ def _version(package: str) -> str:
         return ""
 
 
+def _json_file(path: str):
+    """A JSON file's data; ValueError when it is not JSON (the build then fails red)."""
+    with open(path, encoding="utf-8") as fh:
+        return json_loads(fh.read())
+
+
 def _plain_line(event: dict) -> str:
     """One event for the commit message and the job summary."""
     kind, name = event["kind"], event.get("card") or ""
@@ -1444,6 +1493,8 @@ def _plain_line(event: dict) -> str:
         return f"renamed: {name} -> {event.get('renamed_to')}"
     if kind == "restore":
         return f"restore: db/ of {event.get('restored_from')}"
+    if kind in ("baked", "bake-refused", "guard-png", "guard-fix") and (event.get("reason") or event.get("line")):
+        return f"{kind}: {name}: {event.get('reason') or event.get('line')}"
     return f"{kind}: {name}"
 
 
@@ -1454,7 +1505,8 @@ def subject(out: Outcome, head: str) -> str:
         return f"Card data: restored from {out.manifest['restored_from'][:8]} (main {head[:8]})"
     kinds = [line.split(":", 1)[0] for line in out.lines if ":" in line]
     parts = [f"{kinds.count(k)} {k}" for k in ("changed", "new", "archived", "renamed", "restored", "edited", "authors", "art",
-                                                "moved", "reparse") if kinds.count(k)]
+                                                "moved", "reparse", "baked", "bake-refused", "guard-png", "guard-fix")
+             if kinds.count(k)]
     return f"Card data: {', '.join(parts) or 'refreshed'} (main {head[:8]})"
 
 
@@ -1497,6 +1549,10 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--baked", action="store_true", help="--head is the run's local bake commit (its own push)")
     parser.add_argument("--own", default="", metavar="SHA", help="main commits the card sync pushed (comma separated): "
                                                                   "their pushes are the card sync's")
+    parser.add_argument("--verdicts", default="", metavar="FILE", help="the bake's verdicts ({\"cards\": {key: verdict or "
+                                                                        "null}}) merged into db/verdicts.json")
+    parser.add_argument("--events", default="", metavar="FILE", help="the bake's events (a JSON list), each with its commit")
+    parser.add_argument("--guard-events", default="", metavar="FILE", help="the guards' guard-events.json files (a JSON list)")
     parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
                                                                         "become main commit M (after the main push)")
     args = parser.parse_args(argv)
@@ -1508,9 +1564,13 @@ def main(argv: Optional[list] = None) -> int:
             print(f"db/ now names {manifest['main_commit'][:8]} for {args.rewrite[0][:8]}; "
                   f"{len(manifest['pending']['repin'])} PNGs to re-pin.")
             return EXIT_OK
+        verdicts = (_json_file(args.verdicts).get("cards") or {}) if args.verdicts else None
+        side = _json_file(args.events) if args.events else []
+        docs = _json_file(args.guard_events) if args.guard_events else []
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.empty, args.full, args.cards,
                     args.allow_archive, args.budget, args.run, args.dry_run, args.restore, args.builder_ref,
-                    args.baked, args.own)
+                    args.baked, args.own, verdicts, side.get("events", []) if isinstance(side, dict) else side,
+                    docs if isinstance(docs, list) else [docs])
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
         return EXIT_ERROR
@@ -1549,6 +1609,7 @@ __all__ = [
     'main',
     'pushes',
     'rewrite_commit',
+    'side_events',
     'subject',
     'summary',
 ]

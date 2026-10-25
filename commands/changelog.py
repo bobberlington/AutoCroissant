@@ -3,7 +3,9 @@ The card changelog, without Discord, network or psd-tools: per-version field cha
 name, types, stars and the other data fields) with a buff/nerf verdict, the build's events from the database before
 and after (new, changed, art, reparse, moved, renamed, archived, restored, edited, authors; restore for a rollback),
 the push that brought each (the activity list, else consecutive commits by one author), their numbering, and one
-Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1.
+Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1. The bake's
+events (baked, bake-refused) ride their push's post; the guards' (guard-png, guard-fix) and every event of a guards
+commit's push are the Changes page's alone (owner, 2026-10-25): docs/Future/CARD_SYNC_VERDICTS.md.
 
 CLI: python -m commands.changelog post --db <db dir> --site <url> --out <file>
      |  advance --db <db dir> --seq <n> --push <sha>  (after Discord accepted that message)
@@ -36,17 +38,22 @@ TAG_PATTERN = re_compile(r"\((?:-?\d+/\d+|\d+|X)?(?:GCD|CD|U|PGT|PG|PT)\)|\((?:F
                          r"|\((?:OYT|AAT|BOT|ENDT|BOGT|ENDGT|OFS|OS|OD|WOF)\)")
 COOLDOWN = re_compile(r"\((\d+)(G?CD)\)")              # one number: shorter is stronger
 USES = re_compile(r"\((\d+)U\)")                         # more is stronger
-KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore")
+KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore",
+         "baked", "bake-refused", "guard-png", "guard-fix")
+SILENT = ("guard-png", "guard-fix")                      # never in a Discord post: the Changes page and the commit say them
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
               "unknown": "Other", "rulebook": "Rulebook page"}   # site/assets/app.js KIND_LABEL, and the rulebook's pages
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
             (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
+            (("baked",), "Baked into the PSDs"), (("bake-refused",), "Bake refused"),
             (("restore",), "Rollback"))                  # re-reads: one line
 COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("moved", "moved"), ("renamed", "renamed"),
                ("archived", "archived"), ("restored", "restored"), ("edited", "edited"), ("authors", "edited"),
-               ("reparse", "re-read"), ("restore", "data rollback"))   # the title's counts: "1 new, 2 changed"
+               ("reparse", "re-read"), ("restore", "data rollback"), ("baked", "baked"), ("bake-refused", "bake refused"),
+               ("guard-png", "PNG"), ("guard-fix", "fixed"))   # the title's counts: "1 new, 2 changed"
 CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
+GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
 GITHUB = "https://github.com/"
 MESSAGES_MAX = 20                                        # per run; the rest wait for the next one (the cursor)
 EMBEDS_MAX = 10                                          # Discord: embeds per message
@@ -278,7 +285,7 @@ def number(new_events: list, last_seq: int, posted_seq: int = 0, at: Optional[fl
 
 
 def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[str] = None,
-                  alone: Optional[set] = None) -> list:
+                  alone: Optional[set] = None, guards: Optional[set] = None) -> list:
     """
     Each event's push (in place): the activity list's push whose before..after holds the event's commit, else the
     run of consecutive commits by one author holding it. A re-read, or an event whose commit is in neither, gets none
@@ -290,6 +297,7 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
         commits: [(sha, at, author)] of the build's new commits, oldest first (the fallback)
         base: The commit before them (the last build's), the first fallback push's before
         alone: Commits that are a push of their own by CARD_SYNC (the run's local bake commit B, never listed)
+        guards: The guards' commits: a push of their own by GUARDS, listed or not
 
     Returns:
         The events in push order (oldest push first, push-less ones last), ready for number()
@@ -298,6 +306,8 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
     for push in pushes:
         for sha in push.get("commits") or [push["after"]]:
             found.setdefault(sha, {k: push.get(k) for k in ("after", "before", "by", "at")})
+            if push["after"] in (guards or ()):
+                found[sha]["by"] = GUARDS
     previous = base
     group: list = []
     groups: list = []
@@ -305,8 +315,8 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
         if sha in found:
             previous = sha
             continue
-        if sha in (alone or ()):
-            found[sha] = {"after": sha, "before": previous, "by": CARD_SYNC, "at": at}
+        if sha in (alone or ()) or sha in (guards or ()):
+            found[sha] = {"after": sha, "before": previous, "by": GUARDS if sha in (guards or ()) else CARD_SYNC, "at": at}
             group, previous = [], sha
             continue
         if group and group[0][2] == author and group[len(group) - 1][0] == previous:
@@ -463,6 +473,10 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     if kind == "archived":
         gone = f"moved to {_md(event['moved_to'].rsplit('/', 1)[0])}" if event.get("moved_to") else "PSD deleted"
         return f"{_md(event.get('title') or event['card'])} ({gone})"
+    if kind in ("baked", "bake-refused", "guard-png", "guard-fix"):
+        why = event.get("reason") or event.get("line") or ""
+        png = " (PNG re-made)" if kind == "baked" and event.get("pngs") else ""
+        return f"{title}: {_md(why)}{png}" if why else f"{title}{png}"
     return title
 
 
@@ -539,24 +553,30 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     return {"embeds": embeds, "allowed_mentions": {"parse": []}}
 
 
+def silent(event: dict) -> bool:
+    """An event no Discord post shows: a guard event, or any event of a guards commit's push (owner, 2026-10-25)."""
+    return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS
+
+
 def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, repository: str = "",
              limit: int = MESSAGES_MAX) -> list:
     """
     The posts for the events past the cursor: one per push (per build: a push whose cards wait for a later run posts
-    again then), oldest first, at most `limit`; the rest wait for the next run.
+    again then), oldest first, at most `limit`; the rest wait for the next run. A group of silent() events alone is a
+    message without a body: the cursor moves past it, nothing is sent.
 
     Returns:
-        [{"body": webhook body, "cursor": {"seq": its last event, "push": its after sha or None}}]
+        [{"body": webhook body or None, "cursor": {"seq": its last event, "push": its after sha or None}}]
     """
     out = []
     ordered = sorted(pending, key=lambda e: e.get("seq", 0))
     key = lambda e: (e.get("build"), (e.get("push") or {}).get("after"), e["kind"] == "reparse")
     for _, items in groupby(ordered, key=key):
         group = list(items)
-        if len(out) >= limit:
+        if sum(1 for m in out if m["body"] is not None) >= limit:
             break
         last = group[len(group) - 1]
-        out.append({"body": payload(group, site, ids, repository),
+        out.append({"body": payload([e for e in group if not silent(e)], site, ids, repository),
                     "cursor": {"seq": last.get("seq", 0), "push": (last.get("push") or {}).get("after")}})
     return out
 
@@ -598,7 +618,8 @@ def main(argv: Optional[list] = None) -> int:
         out = messages(pending, args.site, ids, repository)
         write_text(args.out, dumps({"messages": out}, ensure_ascii=False, indent=1) + "\n")
         waiting = len(pending) - sum(1 for e in pending if e.get("seq", 0) <= max((m["cursor"]["seq"] for m in out), default=0))
-        print(f"{len(out)} message{'' if len(out) == 1 else 's'} to post" + (f", {waiting} events wait for the next run." if waiting else ".")
+        sent = sum(1 for m in out if m["body"] is not None)
+        print(f"{sent} message{'' if sent == 1 else 's'} to post" + (f", {waiting} events wait for the next run." if waiting else ".")
               if out else "Nothing to post.")
         return 0
     advance(args.db, args.seq, args.push)
@@ -612,7 +633,9 @@ def main(argv: Optional[list] = None) -> int:
 __all__ = [
     'CARD_SYNC',
     'FIELDS',
+    'GUARDS',
     'KINDS',
+    'SILENT',
     'TAG_PATTERN',
     'advance',
     'append_events',
@@ -633,6 +656,7 @@ __all__ = [
     'read_events',
     'read_posted',
     'rewrite_events',
+    'silent',
     'site_ids',
     'size',
     'split_changes',

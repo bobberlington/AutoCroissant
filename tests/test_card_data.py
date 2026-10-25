@@ -37,7 +37,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         shutil.copy(REPO / rel, bot / rel)
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
-                           "--dry-run", "--baked", "--own", "--rewrite", "--help"},
+                           "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
@@ -404,6 +404,33 @@ def test_events_carry_their_push(cards, monkeypatch):
     _build(cards)
     last = _read(cards)[4][len(_read(cards)[4]) - 1]
     assert (last["card"], last["push"]) == ("Mini Doomer", {"after": c5, "before": c4, "by": "erin-gh", "at": 3010.0})
+
+    # the after job's records (CARD_SYNC_VERDICTS.md): the bake's M and verdicts, then a guards commit and its events
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", b"baked png")
+    m = commit(cards.repo, "AutoCroissant", 3100)
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", b"guard png")
+    commit(cards.repo, "AutoCroissant", 3200)
+    git(cards.repo, "commit", "-q", "--amend", "-m", f"Card guards: 1 PNG re-exported (push {c5[:8]})",
+        env={"GIT_COMMITTER_DATE": "@3200 +0000", "GIT_AUTHOR_DATE": "@3200 +0000"})
+    g = git(cards.repo, "rev-parse", "HEAD").strip()
+    refused = {"state": "refused", "for": {"hp": 9}, "psd": "abcdef01", "reason": "font: no Face", "at": "x"}
+    files = {"verdicts.json": {"schema": 1, "cards": {"mini doomer": refused, "gone": None}},
+             "events.json": [{"kind": "baked", "card": "Mini Doomer", "reason": "hp 5 -> 8", "pngs": ["x.png"], "commit": m}],
+             "guards.json": [{"commit": g, "push": c5, "events": [{"kind": "guard-png", "card": "Mini Doomer",
+                                                                   "path": "Auxiliary/Minions/Mini_Doomer.png", "line": "re-exported"}]}]}
+    for name, data in files.items():
+        (cards.tmp / name).write_text(json.dumps(data), encoding="utf-8")
+    assert _build(cards, "--own", m, *[x for flag, name in (("--verdicts", "verdicts.json"), ("--events", "events.json"),
+                                                            ("--guard-events", "guards.json")) for x in (flag, str(cards.tmp / name))])[0] == cd.EXIT_OK
+    new = {e["kind"]: e for e in _read(cards)[4] if e["seq"] > last["seq"]}
+    assert set(new) == {"baked", "guard-png"} and new["baked"]["title"] == "Mini Doomer"
+    assert (new["baked"]["push"]["after"], new["baked"]["push"]["by"]) == (m, cl.CARD_SYNC)
+    assert (new["guard-png"]["push"]["after"], new["guard-png"]["push"]["by"]) == (g, cl.GUARDS)
+    posts = cl.messages(sorted(new.values(), key=lambda e: e["seq"]), "https://site")
+    assert [p["body"] is None for p in posts] == [False, True]                    # the guards' push: no Discord post
+    text = "\n".join(e.get("description") or "" for e in posts[0]["body"]["embeds"])
+    assert "**Baked into the PSDs**\n[Mini Doomer](https://site/#/cards?q=Mini%20Doomer): hp 5 -> 8 (PNG re-made)" in text
+    assert cdb.read_verdicts(str(cards.db)) == {"mini doomer": refused} and cdb.check_db(str(cards.db)) == []
 
 
 def _one_email(tmp_path):
