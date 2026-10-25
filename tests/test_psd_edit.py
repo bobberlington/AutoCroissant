@@ -4322,6 +4322,11 @@ def test_ability_split_shares_an_edit_out():
     assert dropped == ([0, 1], 1, "Deal 7 DMG.", "Deal 7 DMG.", [])
     tokened = pe.ability_split(old + " [undead]", "Costs 1 SP to use.\nDeal 7 DMG. [undead]", raws)
     assert [new for *_, new, _ in tokened] == ["Costs 1 SP to use.", "Deal 7 DMG."]
+    one_line = pe.ability_split(old, "Costs 0 SP. Deal 7 DMG to all.", raws)     # no cut at a space (review)
+    assert [members for members, *_ in one_line] == [[0, 1]]
+    relaid = pe.ability_split("Costs 0 SP to use. Deal 7 DMG.", "Costs 1 SP to use. Deal 7 DMG.", raws, relaid=True)
+    assert [new for *_, new, _ in relaid] == ["Costs 1 SP to use.", "Deal 7 DMG."]
+    assert pe.unpadded("Fire: 5/5/8/7\n    \nEarth   \n") == "Fire: 5/5/8/7\nEarth"
 
 
 @text_edit
@@ -4345,9 +4350,31 @@ def test_an_ability_over_several_layers_bakes(clone, parser, chart, tmp_path):
 
 
 @text_edit
+def test_several_layers_hidden_part_and_blank_lines(clone, parser, chart, tmp_path):
+    """Miracle Matter (review): its first part removed, its FX layer is hidden with it, not given to the last part and
+    deleted; a blank line removed between parts is no change (classify), and beside a real change bakes it, told."""
+    old = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE)["card"]["ability"]
+    new = old.replace("(1GCD) You may choose one of the following forms:\n", "").replace("whatever", "whichever")
+    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "drop"), chart)
+    assert baked.reparse["card"]["ability"] == new
+    assert baked.fx_notes == ["ability: the words of the first ability layer were removed, so it is hidden"]
+    saved = PSDImage.open(baked.psd_path)
+    assert [(fx.name, fx.is_visible()) for fx in saved.descendants() if " FX:" in fx.name] == [("Ability FX: (1GCD)", False)]
+    tidy = old.replace("5/5/8/7\n    \nEarth", "5/5/8/7\nEarth")
+    psd, parsed = PSDImage.open(_card(clone, MIRACLE)[0]), pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE)
+    assert pe.classify(parsed, {"ability": tidy}, psd, parser).redundant == ["ability"]
+    _, baked = _bake(clone, parser, MIRACLE, {"ability": tidy.replace("heal 2 HP", "heal 3 HP")}, _dir(tmp_path, "tidy"),
+                     chart)
+    assert baked.reparse["card"]["ability"] == old.replace("heal 2 HP", "heal 3 HP")
+    assert baked.fx_notes == ["ability: the blank lines between the ability layers stay as they were: they place the "
+                              "layers on the card"]
+
+
+@text_edit
 def test_relaid_and_copied_abilities_bake(clone, parser, chart, tmp_path):
     """Bulborb Larva: the piece holding the edit and the hidden Ability the parser reads take it, the other pieces
-    stay; an added line is told. SOMETHING: its two offset copies print the edited words too."""
+    stay; an added line is told. SOMETHING: its two offset copies print the edited words too, its new FX layer over
+    them by design (no overflow told)."""
     old = pe.parse_card(parser, _card(clone, BULBORB)[0], BULBORB)["card"]["ability"]
     new = old.replace("next minion.", "next creature.\nCannot be targeted.")
     _, baked = _bake(clone, parser, BULBORB, {"ability": new}, _dir(tmp_path, "larva"), chart)
@@ -4355,8 +4382,9 @@ def test_relaid_and_copied_abilities_bake(clone, parser, chart, tmp_path):
     flagged(baked.fx_notes, r"^ability: a line was added to the third ability layer")
     assert baked.reparse["card"]["ability"] == new
     old = pe.parse_card(parser, _card(clone, SOMETHING)[0], SOMETHING)["card"]["ability"]
-    new = old.replace("twice per action", "three times per action")
+    new = old.replace("1T Afraid.", "1T Afraid and Blazing.")
     _, baked = _bake(clone, parser, SOMETHING, {"ability": new}, _dir(tmp_path, "something"), chart)
+    assert baked.fx_notes == []
     saved = PSDImage.open(baked.psd_path)
     found = pe.ability_layers(saved)
     assert len(found.copies[0]) == 2 and {layer.text for layer in [*found.layers, *found.copies[0]]} == {
