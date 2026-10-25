@@ -330,6 +330,7 @@ async def slash_query_ability(interaction: Interaction,
     if howmany:
         await query_ability_num_occur(interaction, query)
     else:
+        await interaction.response.defer()              # grids take a few seconds (pictures fetched once, then cached)
         await query_ability(interaction, query, limit)
 
 

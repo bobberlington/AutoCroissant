@@ -268,6 +268,17 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
+### commands/card_grid.py (2026-10-25; /query_ability's grid images)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `COLUMNS`, `ROWS` (`PER_GRID`) | `4`, `5` (20) | cards per grid image, so per message; a row is as tall as its tallest card (2:3 or 1:2) |
+| `CARD_W` | `300` | px per card; with `GAP` 8 a grid is 1240 px wide (about 1240 x 2500-3100, 1.2-1.6 MB JPEG) |
+| `LABEL_H`, `FONT_SIZE` | `34`, `20` | the "n. name" line under each card (cut with an ellipsis) |
+| `QUALITY` | `88` | grid JPEG quality, 4:4:4 so card text stays sharp |
+| `CACHE_DIR` | `"card_images"` | gitignored: `<PNG blob>.jpg` per card at `CARD_W`; a picture is downloaded once per blob, stale blobs pruned after each grid answer |
+| `POOL` | `4` | parallel picture downloads |
+
 ### commands/utils.py (lines 18-19)
 
 | Constant | Value | Meaning |
@@ -757,3 +768,5 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-25 (step 10, work/pickles): `ALIAS_PKL`, `STATS_PKL`, `OLD_STATS_PKL`, `DETAILS_JSON`, `CARD_SYNC`, card_data's `LOOKUP_WORKERS`/`COMMITS_PAGE`, font_check's `CACHE_JSON`/`BATCH` and the card_runner and repo_traverser tables removed; `BOT_CLONE` now serves the build's seed only; /push's gate row gone (15 gates); psd_details' CLI needs `--clone` and `--out`.
 
 2026-10-25 (clean, work/clean): BOT_CLONE, REMIND_PKL, FONTS_CACHE and card_check.SPARSE_FILES removed; the *_PATHS tuples collapsed to the single paths; the card and font checks run in card-guards.yml's check job.
+
+2026-10-25 (grid): commands/card_grid.py's constants.

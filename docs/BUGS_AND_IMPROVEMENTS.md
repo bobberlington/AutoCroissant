@@ -164,7 +164,8 @@ One pass over every module, measured before and after, with no behavior change u
 - **Owner decisions, done 2026-10-21 (10.30):** the queue tick is 0.1 s (reply latency up to ~100 ms per hop instead
   of ~1 s; reminders keep their 1 s heartbeat; idle 1.3 ms CPU/s), and /query_ability listed name and image link 10 per
   message instead of one message per result until 2026-10-23, when the owner went back to one message per card (Discord
-  previews only a few images per message). Tests: `tests/test_query_output.py`.
+  previews only a few images per message). Since 2026-10-25 two or more cards come as grid images, 20 per message
+  (commands/card_grid.py; 'damage' 188 sends → 10). Tests: `tests/test_query_output.py`.
 - **B-1, done 2026-10-25 (branch work/instant):** the drains wake on enqueue (1 s fallback poll); reply hop about 1 ms
   instead of ~50 ms (archaeology 10.30, autocroissant-architecture-contract).
 

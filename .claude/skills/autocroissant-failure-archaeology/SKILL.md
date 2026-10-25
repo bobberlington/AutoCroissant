@@ -777,8 +777,12 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   limit on the number of images it shows per message", so a 10-link message previewed only a few cards): one message
   per card again, its image URL alone, its name when the PNG is not in the tree; `RESULTS_PER_MESSAGE` deleted. The
   0.1 s tick stayed until 2026-10-25, when the drains began waking on enqueue (B-1, branch work/instant; reply hop
-  50 ms → about 1 ms, 1 s fallback poll; autocroissant-architecture-contract). Do not re-batch image links; a big
-  result set is capped by `limit` and the website link.
+  50 ms → about 1 ms, 1 s fallback poll; autocroissant-architecture-contract). Do not re-batch image links. Since
+  2026-10-25 (branch work/grid; owner: "we can only do the query_ability ... improvement if we send a grid or some big
+  image with all the cards") two or more results come as grid images (commands/card_grid.py, `post_grids`): 20 cards
+  per JPEG, one message per grid with its cards' list; 'damage' (186-188 cards) 188 sends → 10. Measured offline with a
+  fake channel (~/Documents/Tools/wt/scratch/grid/measure.py: 150 ms per send, 4 MB/s upload, 5 sends per 5 s): about
+  191 s → 9 s (cached pictures; 13 s with all 186 decoded from local PNGs, the jetson's first run adds their download).
 
 ### 10.31 Deleted PSDs archived, not deleted (was B8, 2026-10-22)
 
@@ -911,3 +915,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-23 (unbatch): entry 10.30's /query_ability listing reverted to one message per card; the 10.29-10.30 re-verification row re-pointed.
 
 2026-10-25 (step 10, work/pickles): Entry 10.32 (the pickles, /push, `CARD_SYNC`, the legacy /update_stats and their writers retired); the entries before it stay as history.
+
+2026-10-25 (grid): entry 10.30: /query_ability grids.

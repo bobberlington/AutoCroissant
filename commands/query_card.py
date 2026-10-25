@@ -3,7 +3,9 @@ from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
-from discord import Embed, Interaction
+from discord import Embed, File, Interaction
+from discord.utils import escape_markdown
+from io import BytesIO
 from os.path import basename, splitext
 from asyncio import to_thread
 from threading import Lock
@@ -23,7 +25,7 @@ from commands.card_models import stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
-from commands.utils import BREAK_LEN, queue_message
+from commands.utils import BREAK_LEN, queue_file, queue_message
 
 filterwarnings('ignore')
 
@@ -44,6 +46,7 @@ SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense"
 SYNONYM_WORDS = compile(r"\b(" + "|".join(SYNONYMS) + r")\b")
 BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
+MAX_CONTENT = 2000                                       # Discord's message length limit
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
@@ -996,14 +999,49 @@ def query_ability(interaction: Interaction,
     total_results = len(results)
     results_to_show = total_results if limit < 0 else min(limit, total_results)
 
-    queue_message(interaction, f"Found {total_results} results for '{ability}'!")
+    found = f"Found {total_results} results for '{ability}'!"
+    shown = [basename(index) for index in results.index[:results_to_show]]   # index: the card's name
+    done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
+    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")]
+    if len(shown) > 1:
+        post_grids(interaction, shown, found, done, links)
+        return
 
-    for index in results.index[:results_to_show]:       # one message per card: its image preview
-        name = basename(index)                           # index: the path without .png
+    queue_message(interaction, found)
+    for name in shown:                                   # one card: its image link, previewed
         queue_message(interaction, card_repo.get_card_url(name) or name)   # its name when the PNG is not in the tree
+    queue_message(interaction, done, links=links)
 
-    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results for '{ability}'.",
-                  links=[("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")])
+
+def post_grids(interaction: Interaction, names: list, first: str, last: str, links: Optional[list] = None) -> None:
+    """
+    Many cards as grid images (card_grid), one per message with its cards listed (number, name, website page): one
+    message per PER_GRID cards instead of one per card. first heads the first message, last ends the last (with links).
+    """
+    from commands.card_grid import PER_GRID, grids, prune
+
+    cards, lines = [], []
+    for number, name in enumerate(names, 1):
+        key = card_repo._normalize_card_name(name)
+        path = card_repo.git_files.get(key) or card_repo.git_files.get(key.replace("_", " "))
+        page = card_repo.site_url(key)
+        cards.append((f"{number}. {name}", card_repo.get_card_url(name) if path else None,
+                      card_repo.blobs.get(path, "") if path else ""))
+        shown = escape_markdown(name).replace("[", "(").replace("]", ")")
+        lines.append(f"**{number}.** [{shown}](<{page}>)" if page else f"**{number}.** {shown}")
+    for at, image in enumerate(grids(cards)):
+        text = "\n".join(lines[at * PER_GRID:(at + 1) * PER_GRID])
+        if at == 0:
+            text = f"{first}\n{text}"
+        end = at == (len(cards) - 1) // PER_GRID
+        if end and len(text) + len(last) < MAX_CONTENT:
+            text, last = f"{text}\n{last}", ""
+        kwargs = {"links": links} if end and links and not last else {}
+        queue_file(interaction, File(BytesIO(image), filename=f"cards-{at + 1}.jpg"), content=text, **kwargs)
+    if last:
+        queue_message(interaction, last, links=links)
+    if card_repo.blobs:
+        prune(set(card_repo.blobs.values()))
 
 
 def query_ability_num_occur(interaction: Interaction, ability: str) -> None:

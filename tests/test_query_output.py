@@ -1,5 +1,8 @@
-"""/query_ability output: one message per matching card, its image URL alone (Discord previews it), in order."""
+"""/query_ability output: one card as its image URL alone (Discord previews it); more as grid images of 20, each message
+listing its cards, in order."""
 import pytest
+from io import BytesIO
+from PIL import Image
 from pandas import DataFrame
 from types import SimpleNamespace
 
@@ -35,20 +38,24 @@ def _url(i):
 # ========================
 # Message count and contents
 # ========================
-@pytest.mark.parametrize("n", [1, 11])
-def test_one_message_per_card(repo, n):
-    out, kwargs = _search(repo, n)
-    assert out[0] == f"Found {n} results for 'Fire'!"
-    assert out[1:len(out) - 1] == [_url(i) for i in range(n)]                     # each image URL alone, in order
-    assert out[len(out) - 1] == f"Displayed {n} of {n} results for 'Fire'." and "links" in kwargs[len(kwargs) - 1]
+def test_one_card_is_its_image_link(repo):
+    out, kwargs = _search(repo, 1)
+    assert out == ["Found 1 results for 'Fire'!", _url(0), "Displayed 1 of 1 results for 'Fire'."]
+    assert "links" in kwargs[2]
 
 
-def test_a_card_without_an_image_posts_its_name(repo):
-    """A match whose PNG is not in the tree: its name, never a content=None message Discord drops."""
-    urls = repo.get_card_url
-    repo.get_card_url = lambda name: None if name == "Card 1" else urls(name)
-    out, _ = _search(repo, 3)
-    assert out[1:4] == [_url(0), "Card 1", _url(2)]
+def test_many_cards_come_as_grids(repo):
+    """25 cards: two messages, each one grid image and its cards' list; the header and footer ride along."""
+    repo.site_url = lambda key: None if key == "card_1.png" else f"https://site/c/{key}/"
+    out, kwargs = _search(repo, 25)
+    assert len(out) == 2 and [kw["file"].filename for kw in kwargs] == ["cards-1.jpg", "cards-2.jpg"]
+    first, last = out[0].split("\n"), out[1].split("\n")
+    assert first[0] == "Found 25 results for 'Fire'!" and len(first) == 21
+    assert first[1] == "**1.** [Card 0](<https://site/c/card_0.png/>)" and first[2] == "**2.** Card 1"   # no page: name
+    assert last[0].startswith("**21.** [Card 20]") and last[5] == "Displayed 25 of 25 results for 'Fire'."
+    assert "links" in kwargs[1] and "links" not in kwargs[0]
+    grid = Image.open(BytesIO(kwargs[0]["file"].fp.read()))
+    assert grid.format == "JPEG" and grid.width == 4 * 308 + 8                          # 4 columns of 300 px cards
 
 
 # ========================
