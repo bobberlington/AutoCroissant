@@ -276,7 +276,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 | `CARD_W` | `300` | px per card; with `GAP` 8 a grid is 1240 px wide (about 1240 x 2500-3100, 1.2-1.6 MB JPEG) |
 | `LABEL_H`, `FONT_SIZE` | `34`, `20` | the "n. name" line under each card (cut with an ellipsis) |
 | `QUALITY` | `88` | grid JPEG quality, 4:4:4 so card text stays sharp |
-| `CACHE_DIR` | `"card_images"` | gitignored: `<PNG blob>.jpg` per card at `CARD_W`; a picture is downloaded once per blob, stale blobs pruned after each grid answer |
+| `CACHE_DIR` | `"card_images"` | gitignored: `<PNG blob>.jpg` per card at `CARD_W`; a picture is downloaded once per blob (cached only from a commit-pinned link; a branch link can lag on the CDN), stale blobs pruned after each grid answer |
 | `POOL` | `4` | parallel picture downloads |
 
 ### commands/utils.py (lines 18-19)

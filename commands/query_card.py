@@ -23,7 +23,7 @@ from commands.card_edits import CardAuthors
 from commands.card_history import start as version_start
 from commands.card_models import stats_db
 from commands.github_api import blob_text, fetch_tree
-from commands.repo_history import commit_before, raw_url, raw_url_at
+from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
 from commands.utils import BREAK_LEN, queue_file, queue_message
 
@@ -1025,8 +1025,10 @@ def post_grids(interaction: Interaction, names: list, first: str, last: str, lin
         key = card_repo._normalize_card_name(name)
         path = card_repo.git_files.get(key) or card_repo.git_files.get(key.replace("_", " "))
         page = card_repo.site_url(key)
-        cards.append((f"{number}. {name}", card_repo.get_card_url(name) if path else None,
-                      card_repo.blobs.get(path, "") if path else ""))
+        blob = card_repo.blobs.get(path, "") if path else ""
+        if blob and not pinned_ref(card_repo.repository, path, blob):
+            blob = ""                                    # a branch link can lag (CDN): fetched, not cached
+        cards.append((f"{number}. {name}", card_repo.get_card_url(name) if path else None, blob))
         shown = escape_markdown(name).replace("[", "(").replace("]", ")")
         lines.append(f"**{number}.** [{shown}](<{page}>)" if page else f"**{number}.** {shown}")
     for at, image in enumerate(grids(cards)):

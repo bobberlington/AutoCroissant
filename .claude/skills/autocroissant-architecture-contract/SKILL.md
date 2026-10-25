@@ -410,7 +410,7 @@ optimization pass.
    Since 2026-10-25 (branch work/grid) two or more cards come as grid images (commands/card_grid.py, uncompiled: 20
    numbered cards per JPEG, each with its list of names linking to /c/<slug>/, one message per grid; one card is still
    its image link): 'damage' 188 sends → 10. The pictures are downloaded once per PNG blob into `card_images/`
-   (gitignored), 4 at a time, in the query's worker thread (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2).
+   (gitignored; only from a commit-pinned link, a branch link's CDN can lag: fetched uncached), 4 at a time, in the query's worker thread (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2).
 11. **(Gone 2026-10-25) Pickle saves.** The bot writes no card data; its copy in `card_data/` is replaced file by file
    atomically by `card_db.sync` (temp file, fsync, `os.replace`; the manifest and `sync.json` last, so a cut-off sync
    is reloaded whole by the next; archaeology 10.29 for the pickle era).

@@ -58,6 +58,19 @@ def test_many_cards_come_as_grids(repo):
     assert grid.format == "JPEG" and grid.width == 4 * 308 + 8                          # 4 columns of 300 px cards
 
 
+def test_grid_caches_only_pinned_pictures(repo, monkeypatch):
+    """A picture is cached by its blob only from a commit-pinned link; a branch link (CDN lag) is fetched uncached."""
+    import commands.card_grid as cg
+    repo.git_files = {f"card_{i}.png": f"Items/Card_{i}.png" for i in range(2)}
+    repo.blobs = {"Items/Card_0.png": "b0", "Items/Card_1.png": "b1"}
+    monkeypatch.setattr(qc, "pinned_ref", lambda _repo, path, blob: "c0" if blob == "b0" else None)
+    seen = []
+    monkeypatch.setattr(cg, "grids", lambda cards: seen.extend(cards) or [])
+    monkeypatch.setattr(cg, "prune", lambda keep: None)
+    qc.post_grids(utils.make_simple_fake_interaction(1), ["Card 0", "Card 1"], "", "")
+    assert [blob for _, _, blob in seen] == ["b0", ""]
+
+
 # ========================
 # Printed titles
 # ========================
