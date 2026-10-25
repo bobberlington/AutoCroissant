@@ -74,6 +74,7 @@ COMPARE_FILES = 300                             # a compare lists at most this m
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
 NO_PNG = "no PNG beside the PSD"
+RULES = "2026-10-24"        # a refused verdict's rules: one written under older ones (content refused) is tried again
 MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
 BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
 TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
@@ -342,7 +343,7 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
 # ========================
 # Card Edits.json (the edit.js editsFile port: dump_edits is card_edits')
 # ========================
-def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None) -> Optional[dict]:
+def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool = False) -> Optional[dict]:
     """
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
     in ORDER, then the other keys in their order ("_psd" where it was, else last), "_by", "_at" (edit.js editsFile's
@@ -352,14 +353,16 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None) -> Optional[
         entry: The card's entry as parsed from the file
         drop: Fields to remove
         psd: The "_psd" verdict to write, None to remove it
+        keep: When no field is left, keep the verdict alone (a bake's flags, shown on the card page)
 
     Returns:
-        The entry, or None when no field is left: the entry goes whole, its _-keys with it (section 5 step 10)
+        The entry, or None when no field is left and no kept verdict: the entry goes whole, its _-keys with it
+        (section 5 step 10)
     """
     current = {k: v for k, v in entry.items() if k not in drop and k not in ("_by", "_at")}
     fields = [f for f in ORDER if f in current]
     if not fields:
-        return None
+        return {"_psd": dict(psd)} if keep and psd is not None else None
     out = {f: current[f] for f in fields}
     others = [k for k in current if k not in FIELDS]    # their order, "_psd" where it was
     if psd is not None and "_psd" not in others:
@@ -375,7 +378,7 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None) -> Optional[
     return out
 
 
-def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None) -> Optional[str]:
+def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, keep: bool = False) -> Optional[str]:
     """
     Card Edits.json with one card's entry rewritten (matched like edit.js: keys compared as CardAuthors.key).
 
@@ -384,6 +387,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None) -> 
         name: Card name
         drop: Fields to remove
         psd: The "_psd" verdict to write, None to remove it
+        keep: rewrite_entry's
 
     Returns:
         The new text (dump_edits), or None when the entry is absent or unchanged: a file is never reformatted alone
@@ -395,7 +399,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None) -> 
     key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(name)), None)
     if key is None or not isinstance(cards[key], dict):
         return None
-    entry = rewrite_entry(cards[key], drop, psd)
+    entry = rewrite_entry(cards[key], drop, psd, keep)
     if entry == cards[key]:
         return None
     if entry is None:
@@ -593,11 +597,12 @@ def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:
     """
     Whether the card's verdict is final (pending's rule): refused for exactly its PSD-kind values on the PSD blob the
     tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do; a pixel
-    refusal under psd_edit.PARITY_FLOOR (the old bar's, before 2026-10-23) never: it bakes now.
+    refusal under psd_edit.PARITY_FLOOR (the old bar's, before 2026-10-23) or one written before RULES (content
+    problems were refused) never: it bakes now.
     """
     verdict = edits.meta.get(card.key, {}).get("_psd")
     if not (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
-            and verdict.get("psd") == card.psd_sha[:8]):
+            and verdict.get("psd") == card.psd_sha[:8] and str(verdict.get("rules", "")) >= RULES):
         return False
     reason = str(verdict.get("reason", ""))
     if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key():
@@ -804,7 +809,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
-                            "psd": (card.new_psd_sha or card.psd_sha)[:8],
+                            "psd": (card.new_psd_sha or card.psd_sha)[:8], "rules": RULES,
                             "reason": "; ".join(f"{r.code}: {r.why}" for r in card.partial) + _fx_notes(card), "at": _now()}
     except Refused as refused:
         card.refusal = refused.refusal
@@ -834,11 +839,12 @@ def share_of(card: Card) -> Optional[Share]:
         def drop(text: str) -> Optional[str]:
             if psd_fields(_entry_at(text, card.name) or {}) != card.fields:
                 raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-            return rewrite_edits(text, card.name, card.dropped, card.verdict)
+            return rewrite_edits(text, card.name, card.dropped, card.verdict, bool(_fx_notes(card)))   # flags kept
         return Share(card, card.files, card.expect, drop)
     if card.refusal.code in TRANSIENT or card.transient:
         return None
-    card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], **({"fonts": card.fonts} if card.fonts else {}),
+    card.verdict = {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], "rules": RULES,
+                    **({"fonts": card.fonts} if card.fonts else {}),
                     **({"pngs": card.pngs} if card.pngs else {}),
                     **({"printed": False} if card.pngs and card.rel else {}),    # the redundancy check ran first
                     "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}

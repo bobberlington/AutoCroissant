@@ -299,6 +299,7 @@ def test_rewrite_entry_rules():
     entry = {"stars": 2, "note": "n", "_by": "w", "_at": AT}
     assert cb.rewrite_entry(entry, (), verdict) == {"stars": 2, "note": "n", "_psd": verdict, "_by": "w", "_at": AT}
     assert cb.rewrite_entry({"hp": 8, "_by": "w", "_at": AT, "_psd": verdict}, ["hp"]) is None       # the entry goes whole
+    assert cb.rewrite_entry({"hp": 8, "_by": "w"}, ["hp"], verdict, keep=True) == {"_psd": verdict}   # a flagged bake's verdict stays
     assert cb.rewrite_entry({"name": "X", "hp": 8, "_by": "w"}, ["hp"], None) == {"name": "X", "_by": "w"}   # name stays
     assert cb.rewrite_entry({"_psd": verdict, "hp": 8}, (), None) == {"hp": 8}                       # None removes _psd
     text = cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}, "Other": {"hp": 1}}})
@@ -721,12 +722,13 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
 
 def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
     """Review 2026-10-23: the FX layers an ability bake deleted, renamed or cut again are told in the commit line and in
-    the website's verdict reason too, not only the run report (the verdict stays beside a database field)."""
+    the website's verdict reason too, not only the run report; with no field left the verdict stays alone (review
+    2026-10-24: the card page shows the flags)."""
     files = github.files_at(github.head)
     if not (clone / pe.STATUS_CHART).exists():
         pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "note": "x", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
     note = "Ability FX: (BOT) deleted: its words left the ability"
@@ -745,7 +747,8 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
     text, commits = cb.run()
     assert commits, text
     assert f"- Mini Doomer: ability; {note}\n" in github.commits[commits[0]]["message"] + "\n"
-    assert _edits_at(github)["cards"]["Mini Doomer"]["_psd"]["reason"] == f"ability; {note}"
+    entry = _edits_at(github)["cards"]["Mini Doomer"]
+    assert list(entry) == ["_psd"] and entry["_psd"]["reason"] == f"ability; {note}"
     assert text.count(note) == 1
 
 
@@ -794,14 +797,16 @@ def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
             "(1GCD) left the ability; Ability FX: Blazing deleted: its words left the ability; not committed (dry run)") in line
 
 
-def test_old_bar_pixel_verdicts_are_retried(github):
+def test_old_bar_verdicts_are_retried(github):
     """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
-    now; one past the floor, or a render that shows no change, stays final."""
+    now; one past the floor, or a render that shows no change, stays final. A verdict without the current RULES (a
+    content refusal from before 2026-10-24: it bakes, flagged, now) is pending again too."""
     files = github.files_at(github.head)
     psd = _sha(files[DOOMER])[:8]
 
-    def verdict(reason: str) -> list:
-        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "reason": reason, "at": AT}, "_by": "web", "_at": AT}
+    def verdict(reason: str, rules: str = cb.RULES) -> list:
+        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "rules": rules, "reason": reason, "at": AT},
+                 "_by": "web", "_at": AT}
         files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": entry})
         github.commit(files, "web", "Website edit: a verdict")
         return cb.pending()
@@ -812,6 +817,7 @@ def test_old_bar_pixel_verdicts_are_retried(github):
     assert verdict("parity: Hp Dark/5: effects unreadable: x") == []
     assert verdict("parity: ability: the render shows no change, baseline bad 10.70% mean 22.35 max 255") == []
     assert verdict("reparse: fields differ from the expected parse: hp") == []
+    assert verdict("overflow: hp does not fit", "") == ["Mini Doomer"]
 
 
 @fork_text
