@@ -5341,7 +5341,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
 
 def _set_layers(psd: PSDImage, edit: Edit) -> list:
     """(Edit, its layer in psd, a copy?) per text layer an ability edit set: the Ability, or each of several (parts)."""
-    if not edit.several:
+    if not getattr(edit, "several", False):
         return [(edit, ability_layer(psd), False)]
     ids = {layer.layer_id: layer for layer in psd.descendants()}
     return [(part, ids[layer_id], copy) for layer_id, part, copy in edit.parts]
@@ -5630,7 +5630,7 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
         notes += _gate_icons(psd, titles[0], old, titles[1], fonts, vocab, "title")
     if "ability" not in fields:
         return notes
-    several = next((e for e in edits if e.field == "ability" and e.several), None)
+    several = next((e for e in edits if e.field == "ability" and getattr(e, "several", False)), None)
     if several is not None:                     # each layer it set, as the Ability's (a copy: its icons only)
         ids = {layer.layer_id: layer for layer in old.descendants()} if old is not None else {}
         for edit, layer, copy in _set_layers(psd, several):
