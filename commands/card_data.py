@@ -776,15 +776,19 @@ class GitBuild(CardBuild):
         self.still_failed: list = []             # of those, skipped this run (same blob): still failed
         self._rate_low = False
         self._rate_held: set = set()
+        self._stores: dict = {}                  # blob -> store that has it
 
     def _fetch_tree(self, repository: str):
         return _TreeReply(ls_tree(self.checkout, self.head))
 
     def _store(self, sha: str) -> str:
         """The local object store that has this blob ("" when none)."""
+        if sha in self._stores:
+            return self._stores[sha]
         for store in (self.blobs, self.checkout):
             if store and run(["git", "-C", store, "cat-file", "-e", sha], capture_output=True,
                              env={**environ, **NO_LAZY}).returncode == 0:
+                self._stores[sha] = store           # a found blob stays; a miss is asked again
                 return store
         return ""
 
