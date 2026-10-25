@@ -62,7 +62,7 @@ from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
                            STARS_DIR, TYPES_DIR)
 
 # ========================
@@ -161,7 +161,7 @@ class Snapshot:
         for path in tree:
             if path.lower().endswith(".psd") and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
                 self.psds[CardAuthors.key(card_name(path))] = path
-        self.edits_path = next((p for p in EDITS_PATHS if p in tree), None)
+        self.edits_path = EDITS_PATH if EDITS_PATH in tree else None
 
     def sha(self, path: str) -> str:
         """The blob sha of a path in the tree."""
@@ -452,9 +452,9 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
     for attempt in range(COMMIT_TRIES if local is None else 1):
         tip = local if local is not None else snapshot_at(repository, ref_head(repository))
         head, tree = tip.head, tip.tree
-        edits_path = next((p for p in EDITS_PATHS if p in tree), None)
+        edits_path = EDITS_PATH if EDITS_PATH in tree else None
         if edits_path is None:
-            raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
+            raise Refused("head-moved", f"no {EDITS_PATH} on {CARD_BRANCH} `{head[:8]}`")
         text = tip.fetch(tree[edits_path][1]).decode("utf-8")
         new_text, files = text, {}
         for share in shares:
@@ -847,7 +847,7 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
         return
     try:
         report.commit = land(report.repository, shares, lambda included: _message([s.card for s in included]), dry_run,
-                             join(report.work, basename(EDITS_PATHS[0])), local)
+                             join(report.work, basename(EDITS_PATH)), local)
     except Exception as error:                  # noqa: BLE001
         if isinstance(error, Refused):
             failure = error.refusal
@@ -1021,7 +1021,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     if snapshot is None:
         pass
     elif snapshot.edits_path is None:
-        report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
+        report.note = f"No {EDITS_PATH} at `{head[:8]}`."
     else:
         text = snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8")
         try:

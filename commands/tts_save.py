@@ -32,7 +32,7 @@ from commands.card_edits import CardAuthors
 from commands.card_models import card_name as _stem
 from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import pinned_ref, refresh
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
                            SITE_URL, TTS_SAVE_PATH)
 
 # ========================
@@ -373,7 +373,7 @@ class _Names:
         else:
             self.site = self._website(repo, errors)
         try:
-            path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
+            path = EDITS_PATH if exists(join(repo.checkout, EDITS_PATH)) else None
             if path is not None:
                 with open(join(repo.checkout, path), encoding="utf-8") as f:
                     edits = f.read()

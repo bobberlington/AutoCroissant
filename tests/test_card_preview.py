@@ -136,8 +136,8 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
         assert (tmp_path / "official.webp").read_bytes() == (out / cp.BEFORE).read_bytes()
 
     # the bake's own dry run of the same edit: the same merged pixels
-    (cards.repo / cb.EDITS_PATHS[0]).parent.mkdir(parents=True, exist_ok=True)
-    (cards.repo / cb.EDITS_PATHS[0]).write_bytes(cb.dump_edits({"cards": {"Mini Doomer": {"hp": 8}}}).encode())
+    (cards.repo / cb.EDITS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (cards.repo / cb.EDITS_PATH).write_bytes(cb.dump_edits({"cards": {"Mini Doomer": {"hp": 8}}}).encode())
     _commit(cards.repo, "Website edit: Mini Doomer")
     monkeypatch.setattr(cb, "recent_paths", lambda *a, **k: set())
     report = cb.run_report(dry_run=True, card="Mini Doomer", local=str(cards.repo))

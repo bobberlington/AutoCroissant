@@ -26,8 +26,8 @@ from typing import Callable, Optional
 from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH,
-                           EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH,
+                           STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
@@ -226,9 +226,9 @@ class CardBuild:
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
     def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
-        """The card repo's authors file (the first of AUTHORS_PATHS in the tree), or None if missing or unreadable."""
+        """The card repo's authors file (AUTHORS_PATH), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
-        path = next((p for p in AUTHORS_PATHS if p in paths), None)
+        path = AUTHORS_PATH if AUTHORS_PATH in paths else None
         if path is None:
             return None
         try:
@@ -254,9 +254,9 @@ class CardBuild:
         return changed
 
     def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
-        """The card repo's website fixes (the first of EDITS_PATHS in the tree), or None if missing or unreadable."""
+        """The card repo's website fixes (EDITS_PATH), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
-        path = next((p for p in EDITS_PATHS if p in paths), None)
+        path = EDITS_PATH if EDITS_PATH in paths else None
         self.edits_unread = False
         if path is None:
             return None
@@ -335,9 +335,9 @@ class CardBuild:
         return changed
 
     def _dates_from_response(self, response, repository: str) -> Optional[CardDates]:
-        """The card repo's creation dates (the first of CREATED_PATHS in the tree), or None if missing or unreadable."""
+        """The card repo's creation dates (CREATED_PATH), or None if missing or unreadable."""
         paths = [item.get("path", "") for item in self._tree_items(response)]
-        path = next((p for p in CREATED_PATHS if p in paths), None)
+        path = CREATED_PATH if CREATED_PATH in paths else None
         if path is None:
             return None
         try:

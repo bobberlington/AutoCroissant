@@ -13,7 +13,7 @@ from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, TIMEZONE
+from global_config import CARD_REPO, EDITS_PATH, RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_edits import CardAuthors
 from commands.card_history import start as version_start
 from commands.card_models import stats_db
@@ -391,10 +391,10 @@ class CardRepository:
         return self.rulebook_dff[self.rulebook_dff["ability"].str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
-        """Website aliases and names from the card repo's Card Edits.json (the first of EDITS_PATHS in the tree)."""
+        """Website aliases and names from the card repo's Card Edits.json (EDITS_PATH)."""
         from commands.psd_analyzer import CardEdits
         shas = {item.get("path", ""): item.get("sha", "") for item in (self._tree or {}).get("tree", [])}
-        path = next((p for p in EDITS_PATHS if shas.get(p)), None)
+        path = EDITS_PATH if shas.get(EDITS_PATH) else None
         if path is None:
             return
         sha = shas[path]

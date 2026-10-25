@@ -35,7 +35,7 @@ from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOB
     pushed_files, tree_blobs
 from commands.github_api import RemotePSD, blob_text, fetch_verified, range_reads, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
-from global_config import EDITS_PATHS, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
+from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -103,12 +103,9 @@ def _parse_edits(path: str, text: str, errors: list) -> Optional[CardEdits]:
 
 
 def clone_edits(root: str, errors: list) -> Optional[CardEdits]:
-    """The checkout's edits file (the first of EDITS_PATHS present), or None."""
-    for rel in EDITS_PATHS:
-        path = join(root, rel)
-        if isfile(path):
-            return _parse_edits(rel, _read(path).decode("utf-8"), errors)
-    return None
+    """The checkout's edits file (EDITS_PATH), or None."""
+    path = join(root, EDITS_PATH)
+    return _parse_edits(EDITS_PATH, _read(path).decode("utf-8"), errors) if isfile(path) else None
 
 
 def repo_context(repository: str, blobs: dict, errors: list) -> tuple:
@@ -130,7 +127,7 @@ def repo_context(repository: str, blobs: dict, errors: list) -> tuple:
         except Exception as e:                  # the parser runs without the icon manifest
             errors.append(f"{ICON_MANIFEST_PATH}: {e}")
     edits = None
-    path = next((p for p in EDITS_PATHS if p in blobs), None)
+    path = EDITS_PATH if EDITS_PATH in blobs else None
     if path is not None:
         try:
             edits = _parse_edits(path, blob_text(repository, blobs[path], timeout=API_TIMEOUT), errors)

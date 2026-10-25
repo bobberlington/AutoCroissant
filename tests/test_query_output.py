@@ -82,7 +82,7 @@ def test_titles_join_the_name_lookup(repo, monkeypatch):
 def test_website_names_join_the_name_lookup(repo):
     """Card Edits.json names and aliases find the PNG (registry keys are lowercase; broken until 2026-10-21)."""
     repo.git_files = {"raw_cock.png": "Creatures/Mario/3 Stars/Raw_Cock.png", "creatures/sans.png": "Creatures/Sans.png"}
-    repo._tree = {"tree": [{"path": qc.EDITS_PATHS[0], "sha": "sha"}]}
+    repo._tree = {"tree": [{"path": qc.EDITS_PATH, "sha": "sha"}]}
     repo._edit_names = ("sha", {"Raw Cock": ["Raw Kawk"], "Sans": ["snas.", "Skeleton"]})       # already downloaded
     repo._populate_edit_names()
     assert repo.git_files["raw_kawk.png"] == "Creatures/Mario/3 Stars/Raw_Cock.png"

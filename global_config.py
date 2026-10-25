@@ -2,7 +2,7 @@ from os import environ
 from zoneinfo import ZoneInfo
 
 
-LOCAL_DIR_LOC   = environ.get("AUTOCROISSANT_LOCAL_DIR", "~/Desktop/TTSCardMaker")   # the card repo checkout (env: TTSCardMaker's tts-save Action)
+LOCAL_DIR_LOC   = environ.get("AUTOCROISSANT_LOCAL_DIR", "~/Desktop/TTSCardMaker")   # the card repo checkout (env: the Card sync Action)
 SITE_URL        = "https://michaeljsr.github.io/TTSCardMaker"   # card browser website
 REMIND_JSON     = "reminder.json"               # reminders (commands/analytics.py; gitignored, per machine)
 HISTORY_JSON    = "repo_history.json"          # repo path -> commit that last changed it (derived, gitignored)
@@ -25,14 +25,10 @@ TYPES_DIR       = "Types"                      # type icons (PNG stems are the t
 STARS_DIR       = "Types/Stars"                # star icons
 RULEBOOK_DIR    = "Rulebook"                   # rule pages: any card path containing it
 ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json"   # icon aliases + codepoints, written by the font build
-# The website's hand-kept files live in the card repo's site/ (moved from MDW/ on 2026-10-20); readers take the first path present.
-AUTHORS_PATHS   = ("site/Card Authors.txt",)   # who made each card; wins over the database
-EDITS_PATHS     = ("site/Card Edits.json",)    # website fixes; win over the PSD
-AUTHORS_PATH    = AUTHORS_PATHS[0]
-EDITS_PATH      = EDITS_PATHS[0]
-CREATED_PATHS   = ("site/Card Creation Dates.json",)   # when each card was made (python -m commands.discord_edits created)
-CREATED_PATH    = CREATED_PATHS[0]
-RATINGS_PATHS   = ("site/Card Ratings.json",)   # card ratings 1-10 (python -m commands.tts_ratings; the website adds entries); the bot never reads it
-RATINGS_PATH    = RATINGS_PATHS[0]
+# The website's hand-kept files in the card repo's site/
+AUTHORS_PATH    = "site/Card Authors.txt"      # who made each card; wins over the database
+EDITS_PATH      = "site/Card Edits.json"       # website fixes; win over the PSD
+CREATED_PATH    = "site/Card Creation Dates.json"   # when each card was made (python -m commands.discord_edits created)
+RATINGS_PATH    = "site/Card Ratings.json"     # card ratings 1-10 (python -m commands.tts_ratings; the website adds entries); the bot never reads it
 MAILMAP_PATH    = ".mailmap"                   # git's: one person's several git names as one (%aN)
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save
