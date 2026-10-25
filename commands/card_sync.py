@@ -5,9 +5,9 @@ The Card sync Action in the card repo builds the card data and commits it to the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
 - on use: a card command or autocomplete queues that sync (quiet) when none ran for REFRESH_SECONDS; its reply uses
   the data loaded now, the next one the new data;
-- /update_stats: that sync and one reply; Card sync starts itself (a card push starts a 30-minute timer in
-  card-sync.yml); with force_update or cards (admins), a run dispatched (ACTIONS_TOKEN) and followed until it ends,
-  then the sync;
+- /update_stats: that sync and one reply; Card sync starts itself (a card push: the data at once, the bake and the
+  TTS save after a 30-minute timer in card-sync.yml); with force_update or cards (admins), a run dispatched
+  (ACTIONS_TOKEN) and followed until it ends, then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
 """
@@ -39,7 +39,7 @@ ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the 
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
 SITE_WORKFLOW = "site.yml"                           # the card repo's website build (it reads the bot's pickles)
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
-RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a run)
+RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a bake: main's lane only)
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
 WAIT_MINUTES = 30                                    # a dispatched run is followed this long
 FIND_SECONDS = 60                                    # a dispatched run shows up in the run list within this
@@ -186,7 +186,8 @@ def notes(manifest: dict, repository: str = CARD_REPO) -> list:
         going = next((r for r in runs if r.get("status") != "completed"), None)
         lines.append("The card repo has card changes not in the data yet: "
                      + (f"the card sync under way picks them up (<{going.get('html_url')}>)." if going else
-                        "the next card sync picks them up (30 minutes after the first card push of a burst)."))
+                        "the next card sync picks them up within minutes of the push (website edits are baked into the PSDs "
+                        "30 minutes after the first card push of a burst)."))
     last = next((r for r in runs if r.get("status") == "completed" and r.get("conclusion") not in ("cancelled", "skipped")), None)
     if last is not None and last.get("conclusion") in FAILED:
         lines.append(f"The last card sync failed: <{last.get('html_url')}>; the bot keeps the last good card data.")
@@ -534,22 +535,12 @@ def _again(run: dict) -> tuple:
     return (True, "")
 
 
-def _retry_of(run: dict) -> Optional[dict]:
-    """Card sync's own retry of a run (main moved during it, so its data was dropped), by its name, or None."""
-    try:
-        runs = _runs(CARD_REPO, _headers())
-    except (RequestException, ValueError):
-        return None
-    return next((r for r in reversed(runs) if (r.get("id") or 0) > (run.get("id") or 0)
-                 and r.get("display_title") == RETRY_NAME), None)
-
-
 def request_run(interaction, full: bool, names: list) -> Optional[dict]:
     """
     /update_stats force_update or cards: a Card sync run dispatched (full, or these cards) and followed until it ends
     (WAIT_MINUTES at most). A run cancelled before it started (replaced by a newer pending one) is dispatched once
-    more, or said (_again); Card sync's own retry (main moved during the run) is followed too. Without ACTIONS_TOKEN,
-    the link and the gh command.
+    more, or said (_again). Card sync's own retry (main moved during the bake) redoes only the bake and the save: the
+    run's data stands, so it is not followed. Without ACTIONS_TOKEN, the link and the gh command.
 
     Returns:
         The last run, or None
@@ -598,16 +589,6 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
                 say(interaction, why)
                 return run
             say(interaction, "The run was replaced by a scheduled card sync before it started; starting it again.")
-        retry = _retry_of(run) if run.get("conclusion") == "success" else None
-        if retry is not None:
-            say(interaction, f"The card repo changed during run <{run.get('html_url')}>, so Card sync dropped its data and "
-                             f"started again: <{retry.get('html_url')}>"
-                             + (" (without the full re-parse: ask again once it is done)." if full else "."))
-            run = follow(interaction, retry, started)
-            if run is None:
-                say(interaction, f"The Card sync run is still going after {WAIT_MINUTES} minutes; /update_stats "
-                                 "loads its data once it lands.")
-                return None
         if run.get("conclusion") == "success":
             say(interaction, f"Card sync run finished: <{run.get('html_url')}>")
         else:

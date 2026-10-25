@@ -1679,7 +1679,7 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
 def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", seed: str = "",
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
           aliases: Optional[dict] = None, dry_run: bool = False, restore: str = "", builder_ref: str = "",
-          baked: bool = False) -> Outcome:
+          baked: bool = False, own: str = "") -> Outcome:
     """
     One build (design section 7.1): db/ before (or the seed's pickles, refined once), the tree and index from git, the
     changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
@@ -1703,6 +1703,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         restore: A data commit whose db/ becomes the current one again
         builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
         baked: head is the run's local bake commit B (a push of its own, by the card sync)
+        own: Comma-separated main commits the card sync pushed (the bake's M): their pushes are the card sync's
 
     Returns:
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
@@ -1789,8 +1790,13 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
             base = None
         commits = _commits(checkout, base, run_build.head)
-        new_events = changelog.assign_pushes(new_events, pushes(repository, checkout, commits), commits, base,
-                                             {run_build.head} if baked else None)
+        mine = {_git(checkout, "rev-parse", sha).strip() for sha in own.split(",") if sha.strip()}
+        listed = pushes(repository, checkout, commits)
+        for push in listed:                               # GITHUB_TOKEN's push: listed as github-actions[bot]
+            if push["after"] in mine:
+                push["by"] = changelog.CARD_SYNC
+        new_events = changelog.assign_pushes(new_events, listed, commits, base,
+                                             ({run_build.head} if baked else set()) | mine)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -2029,6 +2035,8 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--message", default="", help="write the data commit's message here (--rewrite: names M in it)")
     parser.add_argument("--dry-run", action="store_true", help="build and report; write no db/")
     parser.add_argument("--baked", action="store_true", help="--head is the run's local bake commit (its own push)")
+    parser.add_argument("--own", default="", metavar="SHA", help="main commits the card sync pushed (comma separated): "
+                                                                  "their pushes are the card sync's")
     parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
                                                                         "become main commit M (after the main push)")
     args = parser.parse_args(argv)
@@ -2043,7 +2051,7 @@ def main(argv: Optional[list] = None) -> int:
         aliases = load_aliases(args.aliases) if args.aliases else None
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.seed, args.full, args.cards,
                     args.allow_archive, args.budget, args.run, aliases, args.dry_run, args.restore, args.builder_ref,
-                    args.baked)
+                    args.baked, args.own)
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
         return EXIT_ERROR

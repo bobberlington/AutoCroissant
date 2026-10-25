@@ -35,6 +35,21 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
+**Status 2026-10-25, two lanes (owner, 03:20: "pushes to any branch other than main do not need to wait").** Branch
+work/split in both repos. card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
+`card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
+bake), posts the changelog, commits `data` and dispatches the site, so a card push reaches the bot and the website
+within minutes. Job `main` ("Bake and save", group `card-main`) keeps the fixed window: after a card push's 30-minute
+timer (as below; a push while one runs skips its own main lane, its run is no longer cancelled), at once on a dispatch or
+retry, and on the cron when a website edit is due or a card commit landed since the last run whose Bake and save
+succeeded. It bakes (`--pending`, the per-card RECENT guard), updates the save (names from the data head) and commits M
+to main fast-forward only (main moved: a retry of the main lane alone); then re-pins the baked PNGs' save links in a
+second commit on M (the save above saw main before M; this replaces `pending.repin` and the next run's save-only M). Job
+`after` (group `card-data`, no wait) re-reads M into `data` with `card_data --own M` (M's push posts as the card sync's)
+and dispatches the site. Posts cannot repeat: the data writers run one at a time from the data head, and the posted
+cursor rides in each data commit. `--baked` and `--rewrite` are unused by the workflow from then on (kept until it
+lands). §6.3 below describes the single `sync` job before this.
+
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
 `card-sync-quiet`'s wait timer); pushes while it runs start none (their runs end at once) and the run syncs main's head when

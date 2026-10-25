@@ -151,13 +151,14 @@ music_commands = {
 # After the cutover (global_config.CARD_SYNC): the entries that change, by key; the rest stay as above
 card_sync_commands = {
     "/pull:"                                    : "Fetches and merges the latest code and reports status (admin only).",
-    "/push:"                                    : "Retired: the card data is built by the Card sync Action in the card repo 30 minutes after a card push, "
+    "/push:"                                    : "Retired: the card data is built by the Card sync Action in the card repo within minutes of a card push, "
                                                   "and the pickles here are frozen. Replies with the Action's link (admin only).",
     "/update [force_reset]:"                    : "Pulls the latest code, then restarts (admin only).\n"
                                                   "- force_reset: Skip the pull; hard reset to origin/main instead, discarding local changes (dangerous! default: False)",
     "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
                                                                "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
-                                                               "Card sync starts itself 30 minutes after the first card push of a burst. Then refreshes the card list and type emojis. "
+                                                               "Card sync starts itself on a card push: the data within minutes, website edits baked into the PSDs 30 minutes after the first push of a burst. "
+                                                               "Then refreshes the card list and type emojis. "
                                                                "Card commands load new data by themselves (the bot looks at most every 2 minutes when one is used; the reply after it has the new data), "
                                                                "so this is for seeing it at once or for the options below.\n"
                                                                "- output_problematic_cards: Show the new build's cards with errors (default: True).\n"

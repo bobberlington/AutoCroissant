@@ -41,7 +41,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         shutil.copy(REPO / rel, bot / rel)
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--seed", "--aliases", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
-                           "--dry-run", "--baked", "--rewrite", "--help"},
+                           "--dry-run", "--baked", "--own", "--rewrite", "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
@@ -99,14 +99,15 @@ def test_requirements_layers_and_pin():
 
 
 def test_card_sync_checks_out_sparse_files():
-    """card-sync.yml's builder checkout is exactly SPARSE_FILES (the copy test above runs on that list)."""
+    """card-sync.yml's builder checkout is exactly SPARSE_FILES in each job that runs the bot (the copy test above runs
+    on that list)."""
     path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
     if not path.is_file():
         pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout)")
     yaml = pytest.importorskip("yaml")
-    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["sync"]["steps"]
-    bot = next(s for s in steps if s.get("with", {}).get("path") == "bot")
-    assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cd.SPARSE_FILES]
+    jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+    bots = [s for job in jobs.values() for s in job.get("steps", []) if s.get("with", {}).get("path") == "bot"]
+    assert len(bots) >= 1 and all(s["with"]["sparse-checkout"].split() == ["/" + f for f in cd.SPARSE_FILES] for s in bots)
 
 
 def test_build_modules_stay_uncompiled_and_off_discord():
@@ -694,6 +695,26 @@ def test_bake_commit_posts_as_its_own_push(cards):
     by_card = {e["card"]: e["push"] for e in _read(cards)[4] if e["seq"] > 2}
     assert by_card["The Freezer"] == {"after": c2, "before": cards.first, "by": "AutoCroissant", "at": 1500.0}
     assert by_card["Mini Doomer"] == {"after": b, "before": c2, "by": cl.CARD_SYNC, "at": 2000.0}
+
+
+def test_own_main_commit_posts_as_the_card_syncs(cards, monkeypatch):
+    """--own M: the bake's pushed main commit is the card sync's push, listed (by github-actions[bot]) or not."""
+    _build(cards, "--seed", str(cards.seed))
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "discord:mike"}}}).encode())
+    c2 = commit(cards.repo, "AutoCroissant", 1500)
+    put(cards.repo, DOOMER, cards.psds[OTHER])
+    m = commit(cards.repo, "AutoCroissant", 2000)
+    assert _build(cards, "--own", m)[0] == cd.EXIT_OK
+    by_card = {e["card"]: e["push"] for e in _read(cards)[4] if e["seq"] > 2}
+    assert by_card["The Freezer"] == {"after": c2, "before": cards.first, "by": "AutoCroissant", "at": 1500.0}
+    assert by_card["Mini Doomer"] == {"after": m, "before": c2, "by": cl.CARD_SYNC, "at": 2000.0}
+    put(cards.repo, DOOMER, cards.psds[DOOMER])
+    m2 = commit(cards.repo, "AutoCroissant", 3000)
+    monkeypatch.setattr(cd, "_activity", lambda repository: [
+        {"before": m, "after": m2, "actor": {"login": "github-actions[bot]"}, "timestamp": "1970-01-01T00:50:10Z"}])
+    assert _build(cards, "--own", m2[:8])[0] == cd.EXIT_OK
+    last = _read(cards)[4][len(_read(cards)[4]) - 1]
+    assert (last["card"], last["push"]) == ("Mini Doomer", {"after": m2, "before": m, "by": cl.CARD_SYNC, "at": 3010.0})
 
 
 def test_restore_writes_an_older_data_commit_back(cards):

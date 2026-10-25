@@ -1,8 +1,8 @@
 """
 The card repo's workflows after the cutover (DATA_BUILD_ACTION.md step 8): site.yml reads the card sync's data (CARD_DATA
-on, when the branch exists) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on,
-started by a card push's 30-minute timer, the cron a fallback. Loads the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or
-PyYAML.
+on, when the branch exists) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on:
+a card push's data at once, its bake and save after a 30-minute timer, the cron a fallback. Loads the workflows from
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or PyYAML.
 """
 from os import environ
 from os.path import expanduser
@@ -50,8 +50,10 @@ def test_card_sync_runs_live():
     assert not (WORKFLOWS / "card-edits.yml").exists() and not (WORKFLOWS / "tts-save.yml").exists()   # its two writers
 
 
-def test_card_sync_starts_from_a_push_timer():
-    """A card push starts a 30-minute timer (the environment card-sync-quiet), on every path the bot counts as a card input."""
+def test_card_sync_data_at_once_main_after_a_push_timer():
+    """Owner 2026-10-25: only main's writes wait. A card push (every path the bot counts as a card input) runs the data
+    lane at once; the main lane (bake, save) waits out the 30-minute timer (the environment card-sync-quiet), then the
+    after job re-reads the bake into data. One writer a branch: data and after share card-data, main is card-main."""
     from commands.card_sync import CARD_FILES
     doc = _load("card-sync.yml")
     push = doc[True].get("push")
@@ -60,9 +62,18 @@ def test_card_sync_starts_from_a_push_timer():
     assert push["branches"] == ["main"] and CARD_FILES <= set(push["paths"])
     assert {"**.[pP][sS][dD]", "**.[pP][nN][gG]", "Types/**", "MDW/Fonts/*"} <= set(push["paths"])
     jobs = doc["jobs"]
+    if "data" not in jobs:
+        pytest.skip("card-sync.yml before the data lane (TTSCardMaker work/split)")
+    assert "needs" not in jobs["data"] and "environment" not in jobs["data"]
     assert "card-sync-quiet" in jobs["quiet"]["environment"] and jobs["quiet"]["needs"] == "timer"
-    assert jobs["sync"]["needs"] == ["timer", "quiet"] and jobs["sync"]["concurrency"]["group"] == "card-sync"
-    assert "concurrency" not in doc and "concurrency" not in jobs["timer"] and "concurrency" not in jobs["quiet"]
+    assert jobs["main"]["needs"] == ["timer", "quiet"] and jobs["after"]["needs"] == "main"
+    groups = {name: (job.get("concurrency") or {}).get("group") for name, job in jobs.items()}
+    assert groups == {"data": "card-data", "timer": None, "quiet": None, "main": "card-main", "after": "card-data", "caches": None}
+    assert jobs["after"]["steps"] == jobs["data"]["steps"] and jobs["after"]["env"]["AFTER"] == "${{ needs.main.outputs.m }}"
+    pushes = {name: "\n".join(s.get("run", "") for s in job.get("steps", [])) for name, job in jobs.items()}
+    assert "refs/heads/data" in pushes["data"] and "refs/heads/main" not in pushes["data"].replace("ls-remote origin refs/heads/main", "")
+    assert "refs/heads/main" in pushes["main"] and "HEAD:refs/heads/data" not in pushes["main"]
+    assert "concurrency" not in doc
 
 
 def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
@@ -116,7 +127,7 @@ def test_site_image_budget_keeps_a_partial_cache():
     assert steps.index(build) < steps.index(save)
 
 
-CACHE_PRUNES = {"site.yml": ("build", "card-images-v2- deck-previews-v2-"), "card-sync.yml": ("sync", "cards- card-fonts-"),
+CACHE_PRUNES = {"site.yml": ("build", "card-images-v2- deck-previews-v2-"), "card-sync.yml": (["data", "main"], "cards- card-fonts-"),
                 "font-check.yml": ("check", "cards- card-fonts-"), "card-preview.yml": ("preview", "cards- card-fonts-"),
                 "card-check.yml": ("check", "cards-")}
 
@@ -136,12 +147,13 @@ def test_cache_saves_prune_superseded_entries():
         call = doc["jobs"]["caches"]
         assert call["uses"] == "./.github/workflows/caches.yml" and call["with"] == {"prefixes": prefixes}, name
         assert call["needs"] == job and call["permissions"] == {"actions": "write"}, name
-        assert call["if"] == f"${{{{ !cancelled() && needs.{job}.outputs.saved == 'true' }}}}", name
+        saved = " || ".join(f"needs.{j}.outputs.saved == 'true'" for j in ([job] if isinstance(job, str) else job))
+        assert call["if"] == f"${{{{ !cancelled() && {saved if isinstance(job, str) else f'({saved})'} }}}}", name
         saves = [s for j in doc["jobs"].values() for s in j.get("steps", [])
                  if s.get("uses", "").startswith(("actions/cache@", "actions/cache/save@"))]
         keys = {"cards-" if s["with"]["path"] == "~/.cache/card-wheels" else s["with"]["key"].split("$")[0] for s in saves}
         assert keys <= set(prefixes.split()), (name, keys)
-        assert "saved" in doc["jobs"][job]["outputs"], name
+        assert all("saved" in doc["jobs"][j]["outputs"] for j in ([job] if isinstance(job, str) else job)), name
     site = _load("site.yml")["jobs"]["build"]["steps"]
     python = next(s for s in site if s.get("uses", "").startswith("actions/setup-python@"))
     assert "cache" not in python["with"]                                     # uv, no pip cache entry per requirements change

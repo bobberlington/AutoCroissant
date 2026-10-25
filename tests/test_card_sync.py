@@ -310,8 +310,8 @@ def test_update_stats_starts_no_card_sync(github, tmp_path):
     github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]}
     github.runs = [_run(8, event="push")]
     cs.update(ME)
-    assert github.posts == [] and ("the next card sync picks them up (30 minutes after the first card push of a burst)"
-                                   in _said()[0])
+    assert github.posts == [] and ("the next card sync picks them up within minutes of the push (website edits are baked "
+                                   "into the PSDs 30 minutes after the first card push of a burst)" in _said()[0])
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):
@@ -476,19 +476,15 @@ def test_cards_dispatch_follows_the_run_then_syncs(github, tmp_path):
     assert all(TOKEN not in s for s in said + _edits())
 
 
-@pytest.mark.parametrize("full", [False, True])
-def test_card_syncs_own_retry_is_followed(github, tmp_path, full):
-    """Main moved during the run: it ends green with its data dropped and dispatches its retry, which is followed."""
+def test_card_syncs_own_retry_is_not_followed(github, tmp_path):
+    """Main moved during the run's bake: its retry redoes only the bake and the save; the run's data stands."""
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
     retry = dict(login=cs.BOT_LOGIN, title=cs.RETRY_NAME)
     github.runs = [_run(42, "queued", **retry), _run(41)]
-    github.states[42] = [_run(42, "in_progress", **retry), _run(42, **retry)]
-    cs.update(ME, force_update=full, cards="" if full else "A")
-    said, url = _said(), "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/"
-    assert said[1] == (f"The card repo changed during run <{url}41>, so Card sync dropped its data and started again: "
-                       f"<{url}42>" + (" (without the full re-parse: ask again once it is done)." if full else "."))
-    assert said[2] == f"Card sync run finished: <{url}42>" and len(github.posts) == 1
+    cs.update(ME, cards="A")
+    assert _said()[1] == "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
+    assert len(github.posts) == 1
 
 
 def test_a_card_guards_dispatch_is_not_a_retry(github, tmp_path):
