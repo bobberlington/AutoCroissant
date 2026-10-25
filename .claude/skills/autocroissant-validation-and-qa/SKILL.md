@@ -123,8 +123,10 @@ Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values
   ```bash
   python3 -c "
   import sys; sys.path.insert(0, '.')
+  from os.path import expanduser
+  from commands.card_db import read_cards
   from commands.psd_analyzer import stats_db, CardValidator
-  stats_db.load()
+  stats_db.stats, stats_db.old_stats = read_cards('origin/data', expanduser('~/Desktop/TTSCardMaker'))
   bad = {n: p for n, p in ((n, CardValidator.validate(c)) for n, c in stats_db.stats.items()) if p}
   print('cards failing full validation:', len(bad))
   for n, p in sorted(bad.items()): print(' ', n, p)

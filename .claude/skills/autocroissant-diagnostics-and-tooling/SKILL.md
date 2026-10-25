@@ -209,7 +209,7 @@ validator problems: NONE
   `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
   Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
   GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
-  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived (RepositoryTraverser in repo_traverser.py since the split, re-exported; its body is card_data.CardBuild since 2026-10-22, and it still gets the bot's /alias names by default), for these scripts. gap_trace.py calls `_process_layer`, whose signature did
+  `*_from_local` helpers stayed when local mode was archived, for these scripts; they live on `card_data.CardBuild` (the traverser's body since 2026-10-22; repo_traverser.py was deleted 2026-10-25). gap_trace.py calls `_process_layer`, whose signature did
   not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a

@@ -390,7 +390,7 @@ one-tick-per-item delay. Worker code never awaits Discord; it appends via
 | Path | Hops | Queue-added latency |
 |---|---|---|
 | Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 0.1 s (avg ~50 ms) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready's queued commands main.py:134-139 incl. sweep_temp_psds and refresh_history, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready's queued commands main.py:133-137 incl. refresh_history, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
 
 Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:926-928 as of
 2026-10-23), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked

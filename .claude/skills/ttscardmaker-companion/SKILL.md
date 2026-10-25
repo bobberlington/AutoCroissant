@@ -43,7 +43,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Card preview workflow | `.github/workflows/card-preview.yml` (2026-10-23, landed in TTSCardMaker 2150d0ed and AutoCroissant 8983719: dispatch only, inputs `card`, `edit`, `request`): one card's website edit baked as the bake would (AutoCroissant `commands/card_preview.py`, `card_bake.bake_card`, in a read-only job), nothing written to main; a second job (`commands/card_preview_branch.py`, standard library, the only one that writes) puts the result on the orphan branch `previews` (`previews/<request>/result.json`, `preview.webp`, `before.webp`, `index.json`), rewritten past 200 previews or 7 days; no secret beyond GITHUB_TOKEN, no Discord; public like the repo; the website's contract is §2.7 | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
-| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person; one person's several git names are merged first by the root `.mailmap` (2026-10-23: Michael -> MichaelJSr, its old `[people]` line gone; build_site reads `%aN`/`%aE`, the bot `%aN` with head's .mailmap blob, its API path `card_edits.Mailmap`). The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
+| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person; one person's several git names are merged first by the root `.mailmap` (2026-10-23: Michael -> MichaelJSr, its old `[people]` line gone; build_site reads `%aN`/`%aE`, the bot `%aN` with head's .mailmap blob). The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
 | Scratch work: audit outputs, Photoshop test JSX, migration prototype | `/private/tmp/fontexplore/` (**volatile: macOS wipes /tmp on reboot; nothing there is committed**) | Scratch |
@@ -613,7 +613,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Daily gate** (the owner's, 075e6c43, 2026-10-22; `actions: read`): step "Card browser names" downloads the live
   `cards.json` (also the updater's `site/dist` fallback) and hashes its png -> name map; `actions/cache/restore`
   (`lookup-only`) looks for `tts-save-names-<hash>`, saved after each run that ran with new names. Step "Changes since
-  the last run" runs when forced, when that cache entry is missing (the bot's pickle push renamed cards: PICKLE 3888392
+  the last run" runs when forced, when that cache entry is missing (a data commit renamed cards; the bot's PICKLE 3888392
   did, once site.yml rebuilt the site), when there is no earlier successful run on this branch (`gh run list --branch`;
   a failed lookup also runs), or when a commit not made by the Action itself (`AutoCroissant|TTS save:`) touched
   `*.png`, `TTS/decks.json`, `site/Card Edits.json` or the save (`git log last..HEAD`; full history, `filter:
@@ -650,7 +650,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
-  Lua checks need `lupa`. The names checks follow the live website, so between a pickle push and the next run they fail
+  Lua checks need `lupa`. The names checks follow the live website, so between a data commit and the next run they fail
   (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 after the 2026-10-22 update).
   `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
   updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
@@ -1038,8 +1038,8 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 |---|---|
 | How the parser reads font tokens, canonical forms, the four ICON problems, gap injection | impossibility-cards-reference (§4.1, §4) |
 | Values and defaults of `ICON_FONT_PREFIX`, `ICON_MANIFEST_PATH`, `ICON_VARIANTS`, and the type_emojis constants | autocroissant-config-and-flags |
-| Running `/update_stats`, `/push`, `/sync_emojis`, reminders | autocroissant-run-and-operate |
-| Gating a pickle push (now also a website publish) | autocroissant-change-control |
+| Running `/update_stats`, `/sync_emojis`, reminders | autocroissant-run-and-operate |
+| Gating a card data commit (also a website publish) | autocroissant-change-control |
 | Proving a parser change is neutral (old-vs-new parser over all PSDs, sandboxed sweep) | autocroissant-validation-and-qa |
 | Discord-side symptoms (emojis not rendering, command missing) | autocroissant-debugging-playbook |
 

@@ -8,6 +8,5 @@ pandas
 Pillow
 opencv-python
 GitPython
-PyGithub
 Cython
 setuptools

@@ -47,9 +47,8 @@ python3 main.py
 Git token found, API limited to 5000 requests/hour.    <- import time: main.py:89 print_token_status() (github_api.py); "No git token in config..." if GIT_TOKEN unset
 We have logged in as AutoCroissant#....                <- on_ready (main.py:114-118)
 Registered 46 slash commands for reminder system.      <- slash_registry populated; 46 since 2026-10-25 (five Discord edit commands retired, then /push; 52 from 2026-10-21)
-Bot initialization complete                            <- the four loops started (main.py:141-144)
+Bot initialization complete                            <- the four loops started (main.py:139-142)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
-Removed N stale temp PSDs (X MB) from <dir>            <- sweep_temp_psds (2026-10-22), only when it deletes something
 Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
 Converted reminder.pkl to reminder.json (3 reminders; backup reminder.pkl.bak).   <- once, the first start after 2026-10-24; plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
 Card data loaded from card_data: 819 cards             <- init_psd: card_sync.startup's local copy (no network)
@@ -62,20 +61,19 @@ Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, 0 up
 
 Lines after "Bot initialization complete" come from queued async work and can interleave. After a failed RESUME
 discord.py calls `on_ready` again; since 2026-10-21 that repeat runs no init, syncs only new guilds, restarts the loops
-whose task failed and prints `Reconnected: inits skipped, revived <loops or "no loops">` (main.py:125-128).
+whose task failed and prints `Reconnected: inits skipped, revived <loops or "no loops">` (main.py:123-126).
 The token-presence line prints ONCE, from main.py (`print_token_status`; since the 2026-10-20 split the card modules print nothing at import, so scripts show no token line).
 
-### on_ready init order (main.py:114-144)
+### on_ready init order (main.py:114-142)
 
 `on_ready` spawns a per-guild command sync task, populates `slash_registry` (command name -> callback; this is what
-lets reminders run bot commands), then QUEUES six commands (main.py:134-139) and finally starts the reminder heartbeat
-and the three queue-drain loops through `_start()` (main.py:141-142). It does all that once (`_started`; a reconnect
+lets reminders run bot commands), then QUEUES five commands (main.py:133-137) and finally starts the reminder heartbeat
+and the three queue-drain loops through `_start()` (main.py:139-140). It does all that once (`_started`; a reconnect
 only revives failed loops, above). Queued work only executes once the loops
 start draining — so the loops effectively start first, and nothing is sent to Discord before they run.
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
-| `sweep_temp_psds` (card_runner.py:103; 2026-10-22, c0fc117) | Deletes mkstemp `tmp*.psd` files (`TEMP_PSD`) older than 1 h (`TEMP_AGE`) in the temp dir, left by a cut-off run (the jetson had 56, 1.1 GB, on 2026-10-22), under `card_runner.bake_lock` | Prints `Removed N stale temp PSDs (X MB) from <dir>` only when it deleted something; never touches a file of a running update or bake |
 | `init_reminder` (analytics.py:1474) | Loads `reminder.json` (once, 2026-10-24: converts `reminder.pkl` to it, checked by reading it back, and renames the pickle `reminder.pkl.bak`), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). A failed conversion: "ERROR: could not convert reminder.pkl ..." and the bot runs and saves from the pickle this session; the next start tries again. Only `reminder.pkl.bak` left: reminders off until you restore `reminder.json` or rename the backup back |
 | `init_psd` (psd_analyzer.py) | `card_sync.startup`: `card_data/` into `stats_db`, then one sync; builds the query DataFrames | No `card_data/` and GitHub unreachable: no cards until a sync works ("No card data yet" on /update_stats) |
 | `init_query` (query_card.py) | Fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
@@ -370,7 +368,7 @@ card; the AutoCroissant root file it was until 2026-10-25 is in git history).
 The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes the website's PSD-kind edits in
 `site/Card Edits.json` (stats, name, ability text) into the card PSDs and PNGs, one commit per run (one per card until
 2026-10-22). The bot never bakes: `/bake_cards` (commands/card_runner.py, design section 8 "Jetson") was retired 2026-10-25
-(branch `archive/discord-edits`); card_runner.py keeps only `bake_lock` and the startup temp-PSD sweep.
+(branch `archive/discord-edits`); card_runner.py, left with `bake_lock` and the startup temp-PSD sweep, was deleted 2026-10-25 (step 10).
 
 - **No automatic bake in the bot (decided by the user 2026-10-21): the Action is the one live runner.** The bot never queues a bake on
   its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
@@ -554,7 +552,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
 | Music downloads | /play | `music/`, named `%(title)s-%(id)s.%(ext)s` (restrictfilenames on); playlists get a `music/<playlist title>/` subfolder (music_player.py:52-53, 250-251) | NO (`music/` gitignored) |
-| Temp PSDs | the card bake and card check on the bot's machine (when a PSD downloads whole) | OS temp dir via `mkstemp`; deleted after each parse. Startup deletes the ones a cut-off run left (`sweep_temp_psds`: `tmp*.psd` older than 1 h, under bake_lock; c0fc117) | n/a |
+| Temp PSDs | the card bake and card check on the bot's machine (when a PSD downloads whole) | OS temp dir via `mkstemp`; deleted after each parse. (Until 2026-10-25 startup deleted the ones a cut-off run left: `sweep_temp_psds`, c0fc117; the bot parses no PSDs since.) | n/a |
 | Card bake work dir | card-sync.yml's Bake step (card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `card_data/` | startup, every /update_stats and card commands on use (commands/card_sync.py, `card_db.sync`) | repo root: the card repo's `data` branch's `db/` (`stats.json`, `old_stats.json`, `psd_details.json`, `manifest.json`) plus `sync.json` (the data commit held and its ETag); each file replaced atomically, the manifest and `sync.json` last | NO (gitignored) — the Card sync Action's output; delete it and the next sync fetches it again (about 3.5 MB) |
@@ -782,8 +780,7 @@ re-find volatile facts with these before trusting them:
 
 | Volatile fact | Re-verify with |
 |---|---|
-| on_ready order / loop starts / startup prints | `grep -n "queue_command(\|_start(loop)\|Bot initialization complete\|Reconnected" main.py` (134-139 queued, 126/142 starts, 127, 144) |
-| Startup sweep of stale temp PSDs | `grep -n "def sweep_temp_psds\|^TEMP_\|stale temp PSD" commands/card_runner.py` (103, 27-28, 133) |
+| on_ready order / loop starts / startup prints | `grep -n "queue_command(\|_start(loop)\|Bot initialization complete\|Reconnected" main.py` (133-137 queued, 125/140 starts, 126, 142) |
 | Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@ecc4b773...` on 2026-10-23) |
 | Shadow state | `gh run list -R MichaelJSr/TTSCardMaker --workflow card-sync.yml --limit 5`; `gh api repos/MichaelJSr/TTSCardMaker/branches/data` (404 until the first live run) |
 | Slash-command count (46 on 2026-10-25: five Discord edit commands retired, then /push; 52 on 2026-10-21) | `grep -c "@tree.command" main.py` |
@@ -805,7 +802,7 @@ re-find volatile facts with these before trusting them:
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts from the card data; the Action is TTSCardMaker's font-check.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
 | Card check (CLI only; no main.py or help.py wiring; the Action is TTSCardMaker's card-check.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^SPARSE_FILES\|^LINE\|^CLOSING" commands/card_check.py` |
-| Card bake wiring (none in the bot since 2026-10-25; the Lock) | `grep -c "bake_cards" main.py` (0); `grep -n "bake_lock" commands/card_runner.py` |
+| Card bake wiring (none in the bot since 2026-10-25) | `grep -c "bake_cards" main.py` (0); `ls commands/card_runner.py` (absent) |
 | Data branch, card_data/ / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |

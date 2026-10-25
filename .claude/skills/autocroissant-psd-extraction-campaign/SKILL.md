@@ -221,18 +221,21 @@ awk '/ABILITY_EXCLUSIONS: set/{f=1;next} f&&/}/{exit} f&&/",/{n++} END{print "AB
 → `21`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
 autocroissant-build-and-env, run `python3 setup.py clean`.)
 
-### Gate 1d — Golden parses, byte-checked against stats.pkl
+### Gate 1d — Golden parses, byte-checked against the card data
 
 ```bash
 python3 - <<'EOF' 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 import sys; sys.path.insert(0, '.')
 from os.path import expanduser
-from commands.psd_analyzer import stats_db, PSDParser, RepositoryTraverser, StatsDatabase
-stats_db.load()
+from commands.card_data import CardBuild
+from commands.card_db import read_cards
+from commands.psd_analyzer import stats_db, PSDParser, StatsDatabase
 clone = expanduser('~/Desktop/TTSCardMaker')
+stats_db.stats, stats_db.old_stats = read_cards('origin/data', clone)
 fresh = StatsDatabase()
-RepositoryTraverser(fresh)._populate_types_from_local(clone)
-parser = PSDParser(fresh.all_types, fresh)
+build = CardBuild(fresh)
+build._populate_types_from_local(clone)
+parser = PSDParser(fresh.all_types, fresh, build._icons_from_local(clone))
 goldens = [
     ('Mini Doomer',   'Auxiliary/Minions/Mini_Doomer.psd'),
     ('The Freezer',   'Field/1 Stars/The_Freezer.psd'),
@@ -271,8 +274,10 @@ parsing code (intended? then this is your regression signal) or a stale `.so` sh
 ```bash
 python3 - <<'EOF' 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 import sys, re; sys.path.insert(0, '.')
+from os.path import expanduser
+from commands.card_db import read_cards
 from commands.psd_analyzer import stats_db, CardValidator
-stats_db.load()
+stats_db.stats, stats_db.old_stats = read_cards('origin/data', expanduser('~/Desktop/TTSCardMaker'))
 val = [(n, CardValidator.validate(c)) for n, c in sorted(stats_db.stats.items())]
 val = [(n, p) for n, p in val if p]
 print(f're-validation problems: {len(val)}')
@@ -288,22 +293,23 @@ EOF
 **EXPECTED (2026-10-23):** `re-validation problems: 1` (Computer Virus); `residual-gap cards: 10` (00 Table of
 Contents, 04 Table3, 06 Reading Cards, 08 Global Turn, Michael's Blessing, Miracle Matter, Pile Of Swords, Twin
 Emperors, Warcraftian Druid, Warcraftian Hunter); `empty-string abilities: 20` (the exclusion names but Shadow
-Duelist). (2026-07-11: 5; 10; 20 = 17 exclusion-list names + Anubisath Guardian, Qiraji Soldier, Silithid.)
+Duelist). 2026-10-25 on origin/data f804ac9f: 1; 7; 21 (Shadow Duelist too). (2026-07-11: 5; 10; 20 = 17 exclusion-list names + Anubisath Guardian, Qiraji Soldier, Silithid.)
 
 - New names in re-validation → new problem cards arrived from TTSCardMaker; add them to the
   Phase 3 option-4 target table and classify with the burn-down recipe.
 - Residual-gap count grew → a card with unfilled gaps was committed upstream OR an injection
   regression landed; gap_trace it (Phase 2).
 
-### Gate 1f — No-op diff check (proves your working pickles match HEAD)
+### Gate 1f — No-op diff check (proves the bot's card_data/ copy matches the data branch)
 
 ```bash
-git show HEAD:stats.pkl > /tmp/stats_head.pkl
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl
+git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data card_data \
+    --git ~/Desktop/TTSCardMaker
 ```
 
-**EXPECTED (2026-07-11):** `added: 0   removed: 0   modified: 0`, exit code 0. Anything else means
-uncommitted pickle changes exist — resolve per autocroissant-change-control before campaigning.
+**EXPECTED:** `added: 0   removed: 0   modified: 0`, exit code 0 (2026-07-11, then stats.pkl against HEAD). Anything
+else means the copy is behind the data branch: `/update_stats` syncs it (autocroissant-run-and-operate §12).
 
 ---
 

@@ -518,23 +518,14 @@ cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:60-64) fixes export/dis
 aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
 subseries, subtype.
 
-**Timestamp semantics**: the last-commit committer date of the PSD (`_get_remote_timestamp`,
-card_data.py:169), looked up once per re-parsed card (the card data build dates a card by its blob's first commit instead, from git). The timestamp does not decide re-parsing; the
-blob sha does (`_psd_changed` :1379-1391, called at :1652). A card re-parses if it is new, its path
-changed, or its stored `blob_sha` differs from the git tree's sha. Legacy cards with no sha re-parse only
-if committed since the newest stored timestamp; otherwise they just get their sha recorded.
-`force_update` or naming the card in `cards:` skips the check. Since 2026-10-19 the Python default
-is `update_stats(force_update=False)` (repo_traverser.py:63), the same as the slash command (main.py:417);
-before that the Python default was True. Every stored timestamp is a commit date. Local mode, which used
-file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of
-the bot on 2026-10-20 (kept on branch `archive/local-update-stats`; autocroissant-run-and-operate §7). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
+**Timestamp semantics**: the date of the commit that introduced the PSD's current blob, from git (the card data build's `GitBuild._get_remote_timestamp`, card_data.py:877, through `card_history.GitIndex.intro_of`: a move or the same bytes again is no new date; after a revert, the revert). The timestamp does not decide re-parsing; the blob sha does (`_psd_changed` card_data.py:140, called at :441). A card re-parses if it is new, its path changed, it was parsed by an older `PARSER_VERSION`, or its stored `blob_sha` differs from the tree's sha (none stored: always). `force_update` or naming the card in `cards:` skips the check (both dispatch a Card sync run since the 2026-10-24 cutover). Until 2026-10-25 the bot's legacy /update_stats dated a card by its last commit through the GitHub API and recorded a sha without re-parsing for a no-sha card not committed since the newest stored timestamp; step 10 removed that path. Local mode, which used file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of the bot on 2026-10-20 (kept on branch `archive/local-update-stats`). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATHS`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
 team's record of who made each card.
 - **Format:** two sections of `left = right` lines.
   - `[people]`: git/GitHub name = display name. One person's several git names are merged before it by the card
     repo's root `.mailmap` (git's format, `Proper Name <email>`; since 2026-10-23 it maps the "Michael" commits to
     MichaelJSr, which a `[people]` line did before): local git reads `%aN` with `-c mailmap.blob=<head's .mailmap>`
-    (`card_history.mailmap_args`; works in bare, blobless and sparse clones); the API path, which ignores .mailmap,
-    maps the first commit's author by email through `card_edits.Mailmap` (the tree's `.mailmap`, read once a run).
+    (`card_history.mailmap_args`; works in bare, blobless and sparse clones). (The bot's GitHub-API path mapped
+    emails through `card_edits.Mailmap` until 2026-10-25, when step 10 removed both.)
   - `[cards]`: Card Name = person. Matched in any case, with `_` and spaces alike.
 - **When:** every remote `/update_stats` applies it to every card, not just re-parsed ones (`_apply_authors`).
 - **Rule:** a listed card gets its listed person; any other card keeps its author. Either way the name goes through `[people]`.

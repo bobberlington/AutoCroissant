@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from json import dumps as json_dumps, loads as json_loads
 from math import floor
-from re import compile as re_compile, sub
+from re import sub
 from typing import Optional
 from unicodedata import combining, normalize
 
@@ -65,43 +65,6 @@ class CardAuthors:
     def resolve(self, card_name: str, current: Optional[str]) -> Optional[str]:
         person = self.cards.get(self.key(card_name), current)
         return self.people.get(person.lower(), person) if person else person
-
-
-@dataclass
-class Mailmap:
-    """
-    git's .mailmap, for names git doesn't map (the GitHub API's commits). The name forms, emails in any case:
-      Proper Name <proper@email>                            a commit by that email shows as Proper Name
-      Proper Name <proper@email> <commit@email>             the same, by commit@email
-      Proper Name <proper@email> Commit Name <commit@email> only a commit by that name and email
-    """
-    names: dict = field(default_factory=dict)       # lowercase email -> proper name
-    pairs: dict = field(default_factory=dict)       # (lowercase name, lowercase email) -> proper name
-
-    LINE = re_compile(r"([^<]*)<([^>]*)>(?:([^<]*)<([^>]*)>)?")
-
-    @classmethod
-    def parse(cls, text: str) -> "Mailmap":
-        mailmap = cls()
-        for line in text.splitlines():
-            found = cls.LINE.match(line.strip())
-            if line.lstrip().startswith("#") or not found:
-                continue
-            proper, email, name, other = (" ".join((g or "").split()) for g in found.groups())
-            if not proper:                          # <proper@email> <commit@email>: an email only
-                continue
-            if found.group(4) is None:
-                mailmap.names[email.lower()] = proper
-            elif name:
-                mailmap.pairs[(name.lower(), other.lower())] = proper
-            else:
-                mailmap.names[other.lower()] = proper
-        return mailmap
-
-    def name(self, name: Optional[str], email: Optional[str]) -> Optional[str]:
-        """The commit author's proper name (the name itself when unmapped)."""
-        email = (email or "").strip().lower()
-        return self.pairs.get(((name or "").strip().lower(), email)) or self.names.get(email) or name
 
 
 @dataclass
