@@ -966,7 +966,7 @@ def render(report: Report) -> str:
 # Public API Functions
 # ========================
 def failure(report: Report) -> str:
-    """Why the run needs a person (main exits 1; card-edits.yml tells Discord): the commit failed, or a card errored."""
+    """Why the run needs a person (main exits 1; card-sync.yml tells Discord): the commit failed, or a card errored."""
     if report.error or report.commit_failed:
         return report.error or report.note
     errors = [c.name for c in report.cards if c.refusal and c.refusal.code == "error"]

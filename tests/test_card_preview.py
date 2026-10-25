@@ -457,7 +457,7 @@ def _workflow() -> tuple:
 
 def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
-    preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; card-edits.yml's install of
+    preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; the card workflows' install of
     requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write;
     card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), 15 minutes between them;
     no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
@@ -488,12 +488,8 @@ def test_workflow_shape():
         assert cards["with"]["filter"] == "blob:none" and "fetch-depth" not in cards["with"]
         assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
     install = re.findall(r"pip install [^\n]+", text)
-    edits = WORKFLOWS / "card-edits.yml"
-    key = fork_install(WORKFLOWS / "card-preview.yml")
+    fork_install(WORKFLOWS / "card-preview.yml")
     assert len(install) == 1 and "--no-index" in install[0]                       # the fork from its cached wheels
-    if edits.exists():
-        assert re.findall(r"pip install [^\n]+", edits.read_text(encoding="utf-8")) == install       # the bake's install
-        assert fork_install(edits) == key                                          # and its cache entry
     assert not [s for s in publish["steps"] if "pip " in s.get("run", "")]
     assert [s["with"] for s in publish["steps"] if "setup-python" in s.get("uses", "")] == [{"python-version": "3.14"}]
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
@@ -513,7 +509,7 @@ def test_workflow_shape():
     assert shown["env"]["CARD"] == "${{ inputs.card }}" and '--card="$CARD"' in shown["run"] and '"$RUNNER_TEMP/preview"' in shown["run"]
     assert shown["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
     font_cache = next(s for s in preview["steps"] if s.get("id") == "font-cache")
-    assert font_cache["with"]["key"] == "card-fonts-${{ steps.fonts.outputs.sha }}"      # card-edits.yml's cache
+    assert font_cache["with"]["key"] == "card-fonts-${{ steps.fonts.outputs.sha }}"      # card-sync.yml's cache
 
 
 def test_no_workflow_runs_on_the_previews_branch():

@@ -166,7 +166,7 @@ def test_commit_message_counts_names_and_lua():
 
 
 def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
-    """A changed save gets <stem>.message.txt, _commit_message's line, for tts-save.yml's commit (UPD-2)."""
+    """A changed save gets <stem>.message.txt, _commit_message's line, for card-sync.yml's commit (UPD-2)."""
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
@@ -209,7 +209,7 @@ def _paths(env: dict) -> list:
 
 
 def test_env_overrides_for_the_action():
-    """TTSCardMaker's tts-save.yml points the checkout and the history clone elsewhere through the environment."""
+    """TTSCardMaker's card-sync.yml points the checkout and the history clone elsewhere through the environment."""
     env = {k: v for k, v in environ.items() if not k.startswith("AUTOCROISSANT_")}
     assert _paths(env) == ["~/Desktop/TTSCardMaker", "~/Documents/TTSCardMaker-history.git"]
     env.update(AUTOCROISSANT_LOCAL_DIR="/work/cards", AUTOCROISSANT_HISTORY_CLONE="/work/history.git")
