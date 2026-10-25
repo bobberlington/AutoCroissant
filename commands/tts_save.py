@@ -58,7 +58,6 @@ TEAM_FIELDS = ("Description", "GMNotes", "Memo", "Tags", "LuaScript", "LuaScript
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
               "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
 HTTP_TIMEOUT = 30
-REPORT_FILE = "tts_save_report.md"
 
 # ========================
 # Global State

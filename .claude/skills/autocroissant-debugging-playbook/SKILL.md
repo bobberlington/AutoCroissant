@@ -359,7 +359,7 @@ grep -n "def queue_message\|def queue_command" commands/utils.py         # appen
 grep -n "BREAK_LEN = " commands/utils.py                                 # 1950 (~19)
 
 # Section 3 - slash sync
-grep -c "@tree.command" main.py                                          # 52 as of 2026-10-23
+grep -c "@tree.command" main.py                                          # 47 as of 2026-10-25
 grep -n "async def slash_set_r\|async def slash_delete_" main.py        # 4 distinct names (C5 fixed)
 grep -n "clear_commands" commands/management.py                          # /sync_global mechanics (~86)
 grep -c "on_guild_join" main.py                                          # 0 - no join-time sync

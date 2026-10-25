@@ -153,7 +153,7 @@ stated in every describe string. Discord caps a command description and each des
 |---|---|
 | State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:379); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:703) |
 | State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:625) |
-| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (all 20 `lacks_admin`-gated commands carry it, 2026-10-22; `tests/test_admin_gates.py` checks both surfaces for the seven added that day) |
+| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (every `lacks_admin`-gated command carries it; the list is autocroissant-config-and-flags' gate table; `tests/test_admin_gates.py` checks both surfaces) |
 | Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146), `blend_mode` (main.py:359-362) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
 | "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:324; same shape for /set_repo, main.py:334) |
