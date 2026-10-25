@@ -1,6 +1,6 @@
 ---
 name: autocroissant-analysis-toolkit
-description: "First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: \"root cause\" a mis-parsed card or wrong [type] injection; \"prove\" / \"which code path produced this data\" / forensic attribution of pickle contents; \"bisect\" / \"when did X change\" / \"which commit introduced\" (git log -S, git show time-travel); \"measure before running\" an API budget for /update_stats vs GitHub rate limits; \"why is the bot slow to reply\" queue-timing reasoning; \"pickle forensics\" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any \"analysis method\" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on Nebulous Precipice (The Lich King as the font-token case since 2026-10-22), the path-style experiment that root-caused the removeprefix bug, the \"am forehead\" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed; range reads on vs off), the ≤0.2 s queue-latency derivation, and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison."
+description: "First-principles analysis recipes for AutoCroissant — load this when you must PROVE something rather than pattern-match it. Triggers: \"root cause\" a mis-parsed card or wrong [type] injection; \"prove\" / \"which code path produced this data\" / forensic attribution of pickle contents; \"bisect\" / \"when did X change\" / \"which commit introduced\" (git log -S, git show time-travel); \"measure before running\" an API budget for /update_stats vs GitHub rate limits; \"why is the bot slow to reply\" queue-timing reasoning; \"pickle forensics\" / comparing stats.pkl or old_stats.pkl snapshots across git history without running the bot; any \"analysis method\" question where the debugging-playbook triage tables don't cover the symptom. Contains six worked recipes with real commands and real outputs from this repo's history: the gap_trace 6-step pipeline on Nebulous Precipice (The Lich King as the font-token case since 2026-10-22), the path-style experiment that root-caused the removeprefix bug, the \"am forehead\" diff-reading lesson, the /update_stats API budget arithmetic (1 request when nothing changed; range reads on vs off), the queue-latency derivation (wake on enqueue since 2026-10-25), and an actually-run cca0aaf-vs-eb9aa84 old_stats comparison."
 ---
 
 # AutoCroissant analysis toolkit
@@ -379,24 +379,25 @@ than predicted, your reading of the loop is wrong; re-read it). The general form
 queue stuck?" — decide from first principles whether the delay can even BE queue delay before
 digging anywhere else.
 
-**The mechanism** (verify at main.py:831-979; the deques commands/utils.py:25-27, queue helpers :36-63): three module-level
-deques (`command_queue`, `dispatch_queue`, `edit_queue`) each drained by a `@tasks.loop(seconds=0.1)`
-coroutine (1 s until 2026-10-21). Each tick drains the WHOLE deque (`while q: popleft()`), so backlog does not add
-one-tick-per-item delay. Worker code never awaits Discord; it appends via
-`queue_message`/`queue_file`/`queue_edit`/`queue_command`.
+**The mechanism** (verify at main.py:806-911; the deques and `Wake` commands/utils.py:26-63, queue helpers :69-102): three
+module-level deques (`command_queue`, `dispatch_queue`, `edit_queue`), each drained by a `tasks.loop` that every
+`queue_*` wakes through `call_soon_threadsafe` (since 2026-10-25, B-1), with a 1 s fallback poll (0.1 s ticks from
+2026-10-21, 1 s before). Each wake drains the WHOLE deque (`while q: popleft()`), so backlog does not add a
+per-item delay. Worker code never awaits Discord; it appends via
+`queue_message`/`queue_file`/`queue_edit`/`queue_command`. Mechanics: autocroissant-architecture-contract.
 
 **Derived latency budget:**
 
 | Path | Hops | Queue-added latency |
 |---|---|---|
-| Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch tick | ≤ 0.1 s (avg ~50 ms) |
-| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready's queued commands main.py:133-137 incl. refresh_history, music chaining) | enqueue → ≤0.1 s command tick → `create_task` + thread runs → worker enqueues send → ≤0.1 s dispatch tick | ≤ 0.2 s (avg ~0.1 s) |
+| Slash command reply | wrapper awaits the `to_thread` worker immediately (no command-queue hop) → worker enqueues send → dispatch wake | ~1 ms (≤ 1 s if a wake were missed) |
+| Queued command (reminder-fired via `queue_command(_run_reminder_command, ...)` in analytics.py `_fire`, on_ready's queued commands main.py:136-140 incl. refresh_history, music chaining) | enqueue → command wake → `create_task` + thread runs → worker enqueues send → dispatch wake | ~1-2 ms (≤ 2 s if both wakes were missed) |
 
-Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:926-928 as of
-2026-10-23), enqueues `check_reminder` and the command loop pops it within a tick — reminders are still checked
-every second, then their commands take the queued-command path above; (b) the dispatch
-loop awaits each send SEQUENTIALLY inside the tick (main.py:945-954 as of 2026-10-23; the drains are :932/:945/:957), so one slow Discord HTTP call
-delays the sends behind it in that tick — that is Discord I/O time, not queue design time.
+Two structural caveats, both visible in the code: (a) `process_reminders`, a separate 1 s loop (main.py:806-808), enqueues
+`check_reminder` and the woken command loop starts it at once — reminders are still checked every second, then their
+commands take the queued-command path above; (b) each channel's dispatch lane (`_drain_lane`, main.py:863) awaits its
+sends SEQUENTIALLY, so one slow Discord HTTP call delays the sends behind it in that channel — that is Discord I/O time,
+not queue design time.
 
 **Measured 2026-10-20** (Mac, sandbox; `docs/Finished/optimization-pass-2026-10-20/profile.md`, bench scripts in
 `docs/Finished/optimization-pass-2026-10-20/bench/`): `queue_message` to send 502 ms mean (p95 966 ms) against 3.9 ms of /query work, so
@@ -405,18 +406,22 @@ result (85 per /query_ability on average, median 15, max 763), all through the o
 1 s loops was 0.33 ms CPU/s. **Changed 2026-10-21** (owner decisions, archaeology 10.30): the drains tick every 0.1 s, so
 the queue bound is ≤ ~100 ms per hop and ≤ ~200 ms for a reminder's two hops. /query_ability listed cards 10 per
 message from then until 2026-10-23, when it went back to one message per card (Discord previews only a few images per message). Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
-reminders, 1.53 with 200; 2 threads alive.
+reminders, 1.53 with 200; 2 threads alive. **Changed 2026-10-25** (B-1, wake on enqueue): simulated with the real
+loops and fake channels (`~/Documents/Tools/wt/scratch/opt/bot/instant/sim_instant.py`, results.jsonl and idle.txt there):
+reply hop 48-51 ms mean / 93-96 ms p95 → 0.4-1.0 ms / 1.2-2.9 ms; two hops 150 ms → 0.6-1.1 ms; the four loops' idle
+CPU 1.67 → 0.54 ms/s (most of it now the 1 s reminder heartbeat); per-producer order kept with 8 threads × 250 messages.
 
-**The diagnostic implication (the point of the recipe):** the queues can contribute at most ~0.2 s.
+**The diagnostic implication (the point of the recipe):** the queues contribute milliseconds (at most ~1 s per hop
+if a wake-up were ever missed).
 **Any "hang" over ~1 second is thread work (the worker function itself) or Discord I/O
 (send/edit HTTP, or the fallback chain after a 15-minute interaction-token expiry — see
 autocroissant-debugging-playbook), never queue scheduling.** Don't investigate the deques for a
 30-second stall; time the worker.
 
-**Conclusive result:** you state the expected latency for the exact path the command took (≤0.1 s or
-≤0.2 s of queue overhead), compare with the observed delay, and the difference tells you which
+**Conclusive result:** you state the expected latency for the exact path the command took (one or two hops of
+about a millisecond each), compare with the observed delay, and the difference tells you which
 component to profile next. This recipe never requires running the bot — it's arithmetic over
-main.py:831-979.
+main.py:806-911.
 
 ---
 
@@ -538,7 +543,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Range reads and the branch-head request | `grep -n '^RANGE_READS' commands/github_api.py` (27); `grep -n 'def _tree_commit\|def _fetch_psd' commands/card_data.py` (702, 716) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/card_data.py; grep -n 'requests/hour' commands/github_api.py` (card_data.py since 2026-10-22, github_api.py since the 2026-10-20 split) |
-| Queue loops drain the whole deque each 0.1 s tick; reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue' main.py` (926 at 1 s; 932/945/957 at 0.1 s on 2026-10-23) |
+| Queue loops drain the whole deque on each wake (1 s fallback); reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue\|_wake.wait()' main.py` (806 at 1 s; 823/847/884 at `seconds=0`, paced by the waits, on 2026-10-25) |
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (finds nothing since 2026-10-25, when the reminder shims were removed); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
@@ -575,3 +580,5 @@ baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, an
 2026-10-23 (unbatch): Recipe 5 says /query_ability posts one message per card again.
 
 2026-10-25 (step 10, work/pickles): the pickles left the working tree: the why-paragraph, ground rules and jargon say so; Recipe 4 is marked history (the build budgets itself); Recipe 6 reads the pickles from git history and the JSON alike.
+
+2026-10-25 (B-1, work/instant): Recipe 5 re-derived for the wake-on-enqueue drains (milliseconds per hop, 1 s fallback); simulation numbers added.

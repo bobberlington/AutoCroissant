@@ -82,10 +82,10 @@ start draining — so the loops effectively start first, and nothing is sent to 
 
 AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
 
-The three drains (main.py:932-964) each tick every 0.1 s (once a second until 2026-10-21): `process_command_queue`,
+The three drains (main.py:812-887) run the moment something is queued (since 2026-10-25; 1 s fallback poll): `process_command_queue`,
 `process_dispatch_queue` (message/file sends), `process_edit_queue` (edits). A fourth loop, `process_reminders`
-(main.py:926-928), enqueues `check_reminder` once a second — that is the reminder heartbeat. All bot output rides
-these queues, so replies have up to ~0.1 s of queue latency by design. Depth: autocroissant-architecture-contract.
+(main.py:806-808), enqueues `check_reminder` once a second — that is the reminder heartbeat. All bot output rides
+these queues; a hop costs about a millisecond. Depth: autocroissant-architecture-contract.
 
 ## 2. Command anatomy (30-second version)
 

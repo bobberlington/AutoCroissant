@@ -20,7 +20,7 @@ Ground rules while debugging:
 - `config.py` is secret (tokens). Check that it exists; never print its values.
 - All commands below assume cwd = repo root (`/Users/michaelsrouji/Desktop/AutoCroissant`).
 
-Jargon used throughout: the bot drains three module-level deques every 0.1 s (once per second until 2026-10-21) from `tasks.loop`
+Jargon used throughout: the bot drains three module-level deques the moment something is queued (a 1 s poll if a wake-up is missed; 0.1 s ticks 2026-10-21 to 10-25) from `tasks.loop`
 coroutines in `main.py` - `command_queue` (deferred function calls), `dispatch_queue` (message/file
 sends), `edit_queue` (edits of a command's original response). Workers run in threads and only ever
 call `queue_message` / `queue_file` / `queue_edit` / `queue_command` (commands/utils.py:36-60).
@@ -52,8 +52,8 @@ was this repo's pickles, written by the jetson's `/update_stats` and moved by `/
 
 ## 2. "Message never arrived / bot said nothing" (Discord API quirks - second costliest class)
 
-The dispatch chain (main.py:836-964: `_fallback_send` :870, `_dispatch` :885, which also turns a `links` kwarg into
-link buttons; `_edit` :902-923), drained every 0.1 s:
+The dispatch chain (main.py:750-887: `_fallback_send` :750, `_dispatch` :765, which also turns a `links` kwarg into
+link buttons; `_edit` :782-798), drained the moment it is queued (1 s fallback poll):
 
 ```
 worker thread --queue_message/queue_file--> dispatch_queue --loop-->
@@ -83,7 +83,7 @@ messages with no reply linkage, no ephemeral support.
 | Bot mute right after a failed `/update` | Discord for "Update failed:" + "Bot was NOT restarted due to errors." | `/update` stops all four loops BEFORE doing git work (main.py:225-228); on failure nothing restarts them (a reconnect does not either: stopped on purpose) | Those two messages arrive (sent via direct followup, not the queues) but nothing queued afterwards does | `/restart_bot`. Anything queued while loops were stopped is lost on restart (in-memory deques) |
 | Reply arrived as a plain message; the slash command shows "The application did not respond" | How long did the worker run? | Work exceeded 15 min -> token expired -> fallback path 3 | Expected: reply content still arrives, unattached; the "did not respond" banner is cosmetic | Working as designed. Long jobs (`force_update` update_stats, big exports) always end like this |
 | An ephemeral ("only you") reply became public or seems lost | Was the interaction old/expired? | Fallback pops `ephemeral` (main.py:872) - ephemeral cannot survive the channel.send fallback | Same reply within 15 min is ephemeral; after, it is public | Known weak point (listed in **autocroissant-architecture-contract**); don't rely on ephemeral for slow commands |
-| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (`_edit`, main.py:902-923). Progress user: update_stats "N cards updated." every 25 re-parsed cards (`_progress`, repo_traverser.py:51; UPDATE_RATE card_data.py:43) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
+| Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (`_edit`, main.py:782-798). Progress user: update_stats "N cards updated." every 25 re-parsed cards (`_progress`, repo_traverser.py:51; UPDATE_RATE card_data.py:43) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
 | Nothing sent AND stdout shows a Python traceback | Read the traceback (often logged late as "Task exception was never retrieved") | The worker crashed before queueing; `queue_*` never raise (they just append, utils.py:36-60), so anything queued BEFORE the crash still arrives | Partial output followed by silence = mid-worker crash | Fix the worker bug; file the story in **autocroissant-failure-archaeology** |
 | One message missing, the rest fine | stdout: `Dispatch: dropped a message for channel N: ...` or `Dropped a message: channel N not found` | That send failed twice (e.g. Forbidden: no Send Messages; deleted channel; bad kwargs). Before 2026-10-20 this killed the loop (B5, archaeology 10.22) | The log line names the channel and error | Fix permissions or the sender; nothing to restart |
 | Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:124-191) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for a `Dispatch: dropped a message` line | Remove the stale reminder (`/reminders`, `/remove_reminder`) |
@@ -120,7 +120,7 @@ Sync model: `on_ready` copies global commands to each guild and syncs per guild
 ## 4. "Command seems to hang"
 
 Nothing in this bot blocks the event loop by design: slash handlers `await` workers wrapped by
-`to_thread`, and all sends go through the 0.1 s queue loops. "Hangs" are therefore one of four
+`to_thread`, and all sends go through the queue loops. "Hangs" are therefore one of four
 things:
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
