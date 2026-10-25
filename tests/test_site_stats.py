@@ -1,8 +1,9 @@
 """
 The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node; build/analytics.py): stat
-distributions paged past 10, the cooldown update gone, short chart texts, which Ratings and History charts show on
-sparse and backfilled data, Too Stronk then nerfed, power creep and series strength. Loads the site from $AC_SITE_SRC
-(a TTSCardMaker checkout) or the clone; skips without node or a stats.js with distPages.
+distributions paged past 10, the cooldown update gone, timing tags only left out of the changes by month, short chart
+texts, which Ratings and History charts show, power creep, subseries under their series, and the charts' links to the
+Cards grid. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a stats.js
+with cardsHref (2026-10-25).
 """
 import importlib.util
 import json
@@ -21,8 +22,8 @@ SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
 ASSETS = SITE / "assets"
 STATS_JS = ASSETS / "stats.js"
 pytestmark = pytest.mark.skipif(not (STATS_JS.is_file() and shutil.which("node") and (ASSETS / "insights.js").is_file()
-                                     and "distPages" in STATS_JS.read_text(encoding="utf-8")),
-                                reason=f"no stats.js with distPages at {STATS_JS}, or no node")
+                                     and "cardsHref" in STATS_JS.read_text(encoding="utf-8")),
+                                reason=f"no stats.js with cardsHref at {STATS_JS}, or no node")
 
 # twelve creatures in two series and two years; 2★ median 10, 3★ median 14 (strength = total - median):
 # Mario +2 -1 +2 -1 0 +1 (mean 0.5), Kirby -2 -2 +1 +3 -4 0 (mean -0.7); 2020: 0.0, 2021: -0.2
@@ -33,7 +34,7 @@ const st = await import(%(stats)s), bal = await import(%(balance)s), ins = await
 const text = html => html.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim();
 const out = x => process.stdout.write(JSON.stringify(x));
 const chart = (html, id) => (html.match(new RegExp(`<section class="chart[^"]*" id="chart-${id}">[\\\\s\\\\S]*?</section>`)) || [""])[0];
-const rows = html => [...html.matchAll(/<tr>([\\s\\S]*?)<\\/tr>/g)].map(m => [...m[1].matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/g)].map(x => text(x[1]))).filter(r => r.length);
+const rows = html => [...html.matchAll(/<tr[^>]*>([\\s\\S]*?)<\\/tr>/g)].map(m => [...m[1].matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/g)].map(x => text(x[1]))).filter(r => r.length);
 const ts = s => Date.parse(s) / 1000;
 const C = (name, series, stars, line, created, author, extra = {}) => ({ id: name.toLowerCase(), name, key: name, type: "creature", series, stars,
   hp: line[0], def: line[1], atk: line[2], spd: line[3], created, author, ability: "(1CD) Hit the foe.", ts: ts(created), ...extra });
@@ -55,11 +56,13 @@ function analytics(cards, extra = {}) {
   return A;
 }
 function render(cards, A, q = "", { banned = new Map(), distPage = {} } = {}) {
-  const byId = new Map(cards.map(c => [c.id, c])), ctx = { cards, byId, banned, icons: {}, mentions: new Map(), banlist: { groups: [] }, distPage };
+  const byId = new Map(cards.map(c => [c.id, c])), ctx = { cards, byId, banned, icons: {}, mentions: new Map(), distPage };
   const root = { innerHTML: "" }, p = new URLSearchParams(q);
   st.renderStats(root, ctx, p);
-  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", ratings: ins.ratingsHtml(A, ctx, p), history: ins.historyHtml(A, ctx, p) };
+  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", ratings: ins.ratingsHtml(ctx, p), history: ins.historyHtml(ctx, p) };
 }
+const hrefs = html => [...html.matchAll(/<a class="go" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));
+const params = href => Object.fromEntries(new URLSearchParams(href.split("?")[1]));
 """
 
 
@@ -132,16 +135,21 @@ out({ cells: [...html.matchAll(/<t[hd][^>]*>(\\w+)<\\/t[hd]>/g)].map(m => m[1]).
     assert out["table"] == ["Heal"] and out["cells"] and set(out["cells"]) == {"Heal"}
 
 
-def test_cooldown_update_is_gone(tmp_path, an):
-    """No "The cooldown update" chart (balance.js), no `old` flag on a change row and no "old tags" in the build log."""
+def test_cooldown_update_and_tags_only_are_gone(tmp_path, an):
+    """No "The cooldown update" chart (balance.js), no `old` flag on a change row and no "old tags" in the build log.
+    Recorded changes by month: no "Timing tags only"; a tags-only change isn't counted, one with a series change is Other."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards);
-A.cards.m1.changes = [{ ts: ts("2026-10-01"), text: [0, 1], tags: [["(2PT)", "(1CD)"]] }];
-for (const c of cards.slice(1, 7)) A.cards[c.id].changes = [{ ts: ts("2026-10-01"), text: [0, 1], tags: [["(2PT)", "(1CD)"]] }];
-const html = bal.statsHtml(A, { cards, byId: new Map(cards.map(c => [c.id, c])) }, new URLSearchParams());
-out([html.includes("chart-bal-cooldown"), html.includes("The cooldown update"), html.includes("chart-bal-months")]);
+const cards = fixture(), A = analytics(cards), byId = new Map(cards.map(c => [c.id, c]));
+for (const c of cards.slice(0, 7)) A.cards[c.id].changes = [{ ts: ts("2026-10-01"), text: [0, 1], tags: [["(2PT)", "(1CD)"]] }];
+const only = bal.statsHtml(A, { cards, byId }, new URLSearchParams());
+A.cards.m1.changes.push({ ts: ts("2026-09-10T20:00:00Z"), text: [0, 1], words: true }, { ts: ts("2026-09-12T20:00:00Z"), tags: [["(2PT)", "(1CD)"]], series: ["Mario", "Kirby"] });
+const html = chart(bal.statsHtml(A, { cards, byId }, new URLSearchParams()), "bal-months");
+out({ only: [only.includes("chart-bal-cooldown"), only.includes("The cooldown update"), only.includes("chart-bal-months")],
+  tags: html.includes("Timing tags"), head: [...html.matchAll(/<th[^>]*>([^<]*)<\\/th>/g)].map(m => m[1]), rows: rows(html) });
 """)
-    assert out == [False, False, True]
+    assert out["only"] == [False, False, False] and not out["tags"]
+    assert out["head"] == ["Month", "Ability reworded", "Stats", "Other (stars, kind, types, series)", "All"]
+    assert out["rows"] == [["Sep 26", "1", "0", "1", "2"]]
     card = lambda text: SimpleNamespace(ability=text, stats=None, stars=2, card_type="creature", subtype=None, series=None, types=[], creatures=None)
     row = an.change(card("(2PT) Hit."), card("(1CD) Hit."), ["(2PT) Hit.", "(1CD) Hit."])
     assert row["tags"] == [["(2PT)", "(1CD)"]] and "old" not in row and "words" not in row
@@ -164,8 +172,7 @@ def test_descriptions_are_short(tmp_path):
     """Every chart's sub line is 70 characters or fewer, on the top part, Balance, Ratings and History; the long notes
     are gone (the Balance intro's, the card page's recorded-changes and image-versions notes)."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards, { revisions: { available: true, mass: 20, cards: { m1: { Bob: 2 } } },
-  archived: [{ card: "Old", title: "Old", tag: "retired", card_type: "creature", at: ts("2025-01-01"), created: "2023-01-01" }] });
+const cards = fixture(), A = analytics(cards);
 cards.forEach((c, i) => (c.ratings = [{ date: "2023-04-28", scale: "power", value: 2 + (i % 8), by: "group", source: "TTS session" },
   { date: "2023-04-28", scale: "favorability", value: 3 + (i % 6), by: "group", source: "TTS session" },
   { date: "2025-04-28", scale: "favorability", value: 8 - (i % 6), by: "group", source: "TTS session" }]));
@@ -175,7 +182,7 @@ const card = bal.changesBlock(cards[0], A, { byId: new Map(cards.map(c => [c.id,
 out({ subs: [...all.matchAll(/<p class="sub">([^<]*)<\\/p>/g)].map(m => text(m[1]).replace(/&#39;/g, "'")), text: text(all + card),
   ids: [...all.matchAll(/id="chart-([^"]+)"/g)].map(m => m[1]) });
 """)
-    assert len(out["ids"]) > 25
+    assert len(out["ids"]) >= 20
     assert [s for s in out["subs"] if len(s) > 70] == []
     app = (ASSETS / "app.js").read_text(encoding="utf-8")
     for gone in ("Dates are Pacific time, the bot's", "From the bot's card history", "Each commit that changed the image"):
@@ -193,55 +200,28 @@ cards.forEach((c, i) => (c.ratings = [{ date: "2023-04-28", scale: "power", valu
 
 
 def test_ratings_section_visibility(tmp_path):
-    """No ratings: no section. Group ratings: rated power vs stats, favourites, risers and fallers, power tier vs ban
-    list; no most divisive until a card has 3 people's ratings. Never NaN, undefined or Infinity."""
+    """No ratings: no section. Group ratings: favourites, risers and fallers; no most divisive until a card has 3
+    people's ratings. Never NaN, undefined or Infinity."""
     out = node(tmp_path, _rated("""
 const ids = h => [...h.matchAll(/id="chart-([^"]+)"/g)].map(m => m[1]);
 const none = fixture(), group = render(cards, A).ratings;
 const people = cards.map(c => ({ ...c, ratings: [...c.ratings] }));
 for (const who of ["ann", "bob", "cy"]) people[0].ratings.push({ date: "2026-10-24", scale: "favorability", value: who === "bob" ? 2 : 9, by: who, source: "website" });
 const personal = render(people, A).ratings;
-const bans = chart(render(cards, A, "", { banned: new Map([["m1", {}], ["k5", {}]]) }).ratings, "rat-bans");
 out({ none: render(none, analytics(none)).ratings, jump: [render(none, null).top.includes('data-scroll="stats-ratings"'), render(cards, A).top.includes('data-scroll="stats-ratings"')],
-  group: ids(group), personal: ids(personal), noA: ids(render(cards, null).ratings),
-  bad: ["NaN", "undefined", "Infinity"].filter(w => (group + personal).includes(w)), bans: rows(bans) });
+  group: ids(group), personal: ids(personal), bad: ["NaN", "undefined", "Infinity"].filter(w => (group + personal).includes(w)) });
 """))
     assert out["none"] == "" and out["jump"] == [False, True]
-    assert {"rat-power", "rat-fav", "rat-movers", "rat-bans"} <= set(out["group"]) and "rat-divisive" not in out["group"]
-    assert "rat-divisive" in out["personal"]
-    assert "rat-power" not in out["noA"] and "rat-nerfed" not in out["noA"] and "rat-fav" in out["noA"]
+    assert out["group"] == ["rat-fav", "rat-movers"] and out["personal"] == ["rat-fav", "rat-divisive", "rat-movers"]
     assert out["bad"] == []
-    assert sum(int(r[1]) for r in out["bans"]) == 13 and sum(int(r[2]) for r in out["bans"]) == 2
 
 
-def test_too_stronk_nerfed_after_rating(tmp_path):
-    """Rated Too Stronk (9.4) on 2025-03-02 and nerfed 2025-08-27: counted; a nerf on 2025-03-01 (Pacific) is not; a
-    Plz buff card buffed later counts under Buffed later. No buff or nerf in scope: the shared empty line."""
-    out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards), r = (date, value) => ({ date, scale: "power", value, by: "group", source: "TTS session" });
-const by = Object.fromEntries(cards.map(c => [c.id, c]));
-by.m1.ratings = [r("2025-03-02", 9.4)]; by.m2.ratings = [r("2025-03-02", 9.0)]; by.k1.ratings = [r("2023-04-28", 1.5)]; by.k2.ratings = [r("2023-04-28", 5)];
-const before = analytics(cards);
-A.cards.m1.changes = [{ ts: ts("2025-08-27T20:00:00Z"), stats: [[3, 3, 3, 3], [3, 3, 3, 2]], bal: "nerf" }];
-A.cards.m2.changes = [{ ts: ts("2025-03-01T20:00:00Z"), stats: [[3, 3, 2, 2], [3, 2, 2, 2]], bal: "nerf" }];
-A.cards.k1.changes = [{ ts: ts("2024-01-01T20:00:00Z"), stats: [[2, 2, 2, 1], [2, 2, 2, 2]], bal: "buff" }];
-const html = chart(render(cards, A).ratings, "rat-nerfed");
-out({ facts: [...html.matchAll(/<span class="fact">([\\s\\S]*?)<\\/span>/g)].map(m => text(m[1])), table: rows(html).map(r => r.slice(0, 2)),
-  empty: text(chart(render(cards, before).ratings, "rat-nerfed")) });
-""")
-    assert out["facts"] == ["Too Stronk 2", "Nerfed later 1", "Plz buff 1", "Buffed later 1"]
-    assert out["table"] == [["M1", "Too Stronk"], ["K1", "Plz buff"]]
-    assert "No buffs or nerfs recorded yet." in out["empty"]
-
-
-def test_history_charts_sparse_and_backfilled(tmp_path):
-    """Without analytics.json: cards created per year and text freshness only. No full history: the shared line. After
-    the backfill (90 buff/nerf rows over 36 months, revisions, 66 archived): who changes whose cards, most revised,
-    retired and deleted (renames left out); Balance's by-stat sums are the rows'."""
+def test_history_charts_and_stat_sums(tmp_path):
+    """History: cards created per year and text freshness, with or without analytics.json. After 90 buff/nerf rows
+    over 36 months, Balance's by-stat sums are the rows'."""
     out = node(tmp_path, """
 const cards = fixture(), ids = h => [...h.matchAll(/id="chart-([^"]+)"/g)].map(m => m[1]);
-const sparse = render(cards, null).history, partial = render(cards, analytics(cards, { revisions: { available: false, mass: 20, cards: {} } })).history;
-const A = analytics(cards, { revisions: { available: true, mass: 20, cards: { m1: { Bob: 3, Ann: 1 }, k1: { Ann: 2 } } }, archived: [] });
+const sparse = render(cards, null).history, A = analytics(cards);
 let up = [0, 0, 0, 0], down = [0, 0, 0, 0], seed = 7;
 const rnd = n => (seed = (seed * 48271) % 2147483647) % n;
 const creatures = cards.filter(c => c.type === "creature");
@@ -252,34 +232,94 @@ for (let i = 0; i < 90; i++) {
   b.forEach((v, j) => { up[j] += Math.max(0, v - a[j]); down[j] += Math.max(0, a[j] - v); });
   (A.cards[c.id].changes ||= []).push({ ts: ts("2023-11-01") + i * 12 * 86400, stats: [a, b], bal: b[k] > a[k] ? "buff" : "nerf" });
 }
-const tags = [...Array(26).fill("retired"), ...Array(5).fill("deleted"), ...Array(35).fill("renamed")];
-A.archived = tags.map((tag, i) => ({ card: `Old ${i}`, title: `Old ${i}`, tag, card_type: "creature", series: "Mario", author: "Ann",
-  at: ts("2024-02-01") + i * 9 * 86400, created: "2022-03-01" }));
-const r = render(cards, A), statsRows = rows(chart(r.balance, "bal-stats")), archive = chart(r.history, "hist-archive");
-out({ sparse: ids(sparse), partial: [ids(partial), text(partial)], full: ids(r.history), archived: rows(archive).length, life: text(archive).includes("Median life"),
-  sums: statsRows.map(x => [+x[1], +x[2]]), up, down, who: rows(chart(r.history, "hist-who")).map(x => x.slice(0, 3)),
-  revised: rows(chart(r.history, "hist-revised")).map(x => x.slice(0, 3)) });
+const r = render(cards, A), statsRows = rows(chart(r.balance, "bal-stats"));
+out({ sparse: ids(sparse), full: ids(r.history), sums: statsRows.map(x => [+x[1], +x[2]]), up, down });
 """)
-    assert out["sparse"] == ["hist-created", "hist-fresh"]
-    assert out["partial"][0] == ["hist-who", "hist-revised", "hist-created", "hist-fresh"]
-    assert out["partial"][1].count("Needs a full-history build.") == 2
-    assert {"hist-who", "hist-revised", "hist-archive"} <= set(out["full"])
-    assert out["archived"] == 31 and out["life"]
+    assert out["sparse"] == out["full"] == ["hist-created", "hist-fresh"]
     assert out["sums"] == [list(p) for p in zip(out["up"], out["down"])]
-    assert out["revised"] == [["M1", "4", "Bob"], ["K1", "2", "Ann"]]
 
 
-def test_power_creep_and_series_strength(tmp_path):
-    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); Mario +0.5 and Kirby -0.7; the series chart
-    opens on its table and is left out under a series filter."""
+def test_power_creep(tmp_path):
+    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items. The removed charts stay
+    gone: series strength, ban reasons, last change by month, top subseries."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards), r = render(cards, A);
-const series = chart(r.balance, "bal-series");
-out({ creep: rows(chart(r.balance, "bal-creep")), series: rows(series).map(x => x.slice(0, 5)),
-  startsOnTable: series.includes('aria-pressed="true">Chart') && /<div class="view-chart" hidden>/.test(series),
-  filtered: render(cards, A, "series=Mario").balance.includes("chart-bal-series"), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep") });
+const cards = fixture(), A = analytics(cards), r = render(cards, A), all = r.top + r.balance + r.ratings + r.history;
+out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep"),
+  gone: ["bal-series", "bans", "timeline", "subseries"].filter(id => all.includes(`id="chart-${id}"`)) });
 """)
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
-    assert [[minus(c) for c in row] for row in out["series"]] == [["Mario", "7", "6", "2.5", "0.5"], ["Kirby", "6", "6", "2.5", "-0.7"]]
-    assert out["startsOnTable"] and not out["filtered"] and not out["item"]
+    assert not out["item"] and out["gone"] == []
+
+
+def test_series_rows_list_their_subseries(tmp_path):
+    """Creatures by series: Mario, then its subseries (creatures) and No subseries, each a sub row in the chart and the
+    table; a series without subseries has none."""
+    out = node(tmp_path, """
+const cards = fixture();
+cards[0].subseries = cards[1].subseries = "Paper Mario"; cards[2].subseries = "Super Mario 64"; cards[12].subseries = "Paper Mario";
+const html = chart(render(cards, null).top, "series");
+out({ table: rows(html), subs: [...html.matchAll(/<tr class="sub">/g)].length, bars: [...html.matchAll(/class="lbl( sub)?"[^>]*>([^<]*)</g)].map(m => [m[2], !!m[1]]) });
+""")
+    assert out["table"] == [["Mario", "6"], ["↳ Paper Mario", "2"], ["↳ Super Mario 64", "1"], ["↳ No subseries", "3"], ["Kirby", "6"]]
+    assert out["subs"] == 3
+    assert out["bars"] == [["Mario", False], ["Paper Mario", True], ["Super Mario 64", True], ["No subseries", True], ["Kirby", False]]
+
+
+def test_chart_links_open_the_filtered_grid(tmp_path):
+    """Bars, columns, cells and legend entries that stand for cards link to #/cards with the grid's filters, within the
+    Stats page's series; cards keep opening the card; Others and No subseries link nowhere."""
+    out = node(tmp_path, """
+const cards = fixture(), A = analytics(cards);
+cards[0].subseries = "Paper Mario";
+A.cards.m1.changes = [{ ts: ts("2025-03-10T20:00:00Z"), stats: [[3, 3, 3, 2], [3, 3, 3, 3]], bal: "buff" }];
+A.cards.k1.changes = [{ ts: ts("2025-03-12T20:00:00Z"), text: [0, 1], words: true }];
+const r = render(cards, A), m = render(cards, A, "series=Mario"), first = (html, id) => hrefs(chart(html, id)).map(params);
+out({ kinds: first(r.top, "kinds"), mario: first(m.top, "kinds"), series: first(r.top, "series").slice(0, 3),
+  shapes: first(r.top, "shapes")[0], dist: first(r.top, "dist")[0], items: first(r.top, "itemtypes"), tiers: first(r.top, "tiers")[0],
+  cd: first(r.top, "cooldowns")[0], tags: first(r.top, "tags"), authors: first(r.top, "authors"),
+  cohorts: first(m.balance, "bal-cohorts").slice(0, 4), buffs: first(r.balance, "bal-buffs"), months: first(r.balance, "bal-months"),
+  created: first(r.history, "hist-created").filter(p => p.q).slice(0, 3), legend: first(r.history, "hist-created").filter(p => !p.q), fresh: first(r.history, "hist-fresh")[0],
+  outliers: [chart(r.top, "outliers").includes('data-card="m1"') || chart(r.top, "outliers").includes("data-card="), hrefs(chart(r.top, "outliers")).length],
+  noSub: chart(r.top, "series").includes("No subseries") });
+""")
+    assert out["kinds"] == [{"kind": "creature"}, {"kind": "item"}]
+    assert out["mario"] == [{"kind": "creature", "series": "Mario"}, {"kind": "item", "series": "Mario"}]
+    assert out["series"] == [{"kind": "creature", "series": "Mario"}, {"kind": "creature", "series": "Mario", "subseries": "Paper Mario"},
+                             {"kind": "creature", "series": "Kirby"}]
+    minions = "creature,creatures,minion"
+    assert out["shapes"] == {"kind": minions, "shape": "hp"} and out["dist"] == {"kind": minions, "hp": "2-2"}      # HP 0 and 1: no cards, no link
+    assert out["items"] == [{"kind": "item", "sub": "heal"}, {"kind": "item", "sub": "heal", "stars": "1"}, {"kind": "item", "sub": "heal"}]
+    assert out["tiers"] == {"kind": minions, "stars": "2"} and out["cd"] == {"stars": "1", "cd": "3CD+"}       # Potion's (1/3CD)
+    assert out["tags"] == [{"tag": "1CD"}, {"tag": "2GCD"}, {"tag": "1/3CD"}] and out["authors"] == [{"author": "Ann"}, {"author": "Bob"}]
+    assert out["cohorts"] == [{"bal": "top", "series": "Mario"}, {"bal": "bottom", "series": "Mario"},      # the legend: in scope
+                              {"kind": "creature", "stars": "2"}, {"kind": "creature", "stars": "3"}]        # a row: the whole cohort
+    assert out["buffs"] == [{"change": "buff"}, {"change": "nerf"}, {"month": "2025-03", "change": "buff"}]      # no nerf that month: no link
+    assert out["months"] == [{"change": "text"}, {"change": "stats"}, {"change": "other"}, {"month": "2025-03"},
+                             {"month": "2025-03", "change": "text"}, {"month": "2025-03", "change": "stats"}]
+    assert out["created"] == [{"q": "created==2020"}, {"q": "created==2020", "author": "Ann"}, {"q": "created==2020", "author": "Bob"}]
+    assert out["legend"] == [{"author": "Ann"}, {"author": "Bob"}] and out["fresh"] == {"fresh": "2020"}
+    assert out["outliers"] == [True, 0] and out["noSub"]
+
+
+
+def test_linked_cards_are_the_counted_ones(tmp_path):
+    """The predicates the grid filters with (shapeOf, cooldownCols, tagsOf, freshYear, changedAs, flagged) find as many
+    cards as the bars count cards: stat shapes, a buffs column, a recorded-changes segment (Pacific months), a cohort's top 10%."""
+    out = node(tmp_path, """
+const cards = fixture(), A = analytics(cards), byId = new Map(cards.map(c => [c.id, c]));
+A.cards.m1.changes = [{ ts: ts("2025-04-01T03:00:00Z"), stats: [[3, 3, 3, 2], [3, 3, 3, 3]], bal: "buff" }];   // Mar 31 in Pacific time
+A.cards.k1.changes = [{ ts: ts("2025-03-12T20:00:00Z"), text: [0, 1], words: true }, { ts: ts("2025-03-13T20:00:00Z"), text: [0, 1], tags: [["(2PT)", "(1CD)"]] }];
+A.cards.k2.flags = ["top"];
+const r = render(cards, A), creatures = cards.filter(c => c.type === "creature");
+const shapes = rows(chart(r.top, "shapes")).map(([l, n]) => [+n, creatures.filter(c => st.shapeOf(c) === (l === "Tied" ? "tied" : l.toLowerCase())).length]);
+out({ shapes, buff: cards.filter(c => bal.changedAs(A, c, "2025-03", "buff")).map(c => c.id), april: cards.filter(c => bal.changedAs(A, c, "2025-04", "")).length,
+  text: cards.filter(c => bal.changedAs(A, c, "2025-03", "text")).map(c => c.id), any: cards.filter(c => bal.changedAs(A, c, "2025-03", "")).map(c => c.id),
+  raised: cards.filter(c => bal.changedAs(A, c, "", "spd+")).map(c => c.id), top: cards.filter(c => bal.flagged(A, c, "top")).map(c => c.id),
+  cd: cards.filter(c => c.stars === 1 && st.cooldownCols(c).some(x => x.key === "3CD+")).map(c => c.id), tag: cards.filter(c => st.tagsOf(c).includes("2GCD")).map(c => c.id),
+  fresh: cards.filter(c => ins.freshYear(c) === "2021").length, freshBar: rows(chart(r.history, "hist-fresh")).find(x => x[0] === "2021")[1] });
+""")
+    assert out["shapes"] and all(n == m for n, m in out["shapes"])
+    assert out["buff"] == ["m1"] and out["april"] == 0 and out["raised"] == ["m1"]
+    assert out["text"] == ["k1"] and out["any"] == ["m1", "k1"] and out["top"] == ["k2"]          # k1's tags-only change: not counted
+    assert out["cd"] == ["potion"] and out["tag"] == ["potion"] and out["fresh"] == int(out["freshBar"]) == 6
