@@ -66,12 +66,14 @@ def gathered(monkeypatch):
     return paths
 
 
+@pytest.mark.usefixtures("pickle_path")
 def test_update_stats_opens_each_psd_once(github, psds, opens, gathered):
     problems, _ = _run(force_update=True)
     assert problems == [] and sorted(gathered) == sorted([DOOMER, FREEZER])
     assert opens == Counter({_key(psds[DOOMER]): 1, _key(psds[FREEZER]): 1})
 
 
+@pytest.mark.usefixtures("pickle_path")
 @needs_ranges
 def test_range_reads_open_each_psd_once(ranged, github, opens, gathered):
     problems, _ = _run()

@@ -895,7 +895,8 @@ scheduled run creates `data` from AutoCroissant's latest PICKLE at that moment, 
 **Check after the next 05:00 run and its 05:30 /push:** if `data` was seeded before that PICKLE, re-seed it with a dispatch
 `seed=<the recovery PICKLE>` (`dry_run=false`).
 
-**The switch** is one constant, `CARD_SYNC` in global_config.py, `False` until the cutover commit sets it `True`. Nothing to
+**The switch** is one constant, `CARD_SYNC` in global_config.py, `True` since the cutover commit (branch work/cutover,
+2026-10-24; before it `False`). Nothing to
 remember at runtime and no flag file: not the data branch's presence either, since the shadow (step 7) creates `data` days
 before the cutover. Code reads `global_config.CARD_SYNC` at call time; the slash command texts are picked at import, so the
 deploy's restart applies them. Rollback: revert that commit (DATA_BUILD_ACTION §13), deploy.
@@ -918,7 +919,8 @@ origin):
 | startup (`init_psd`) | `card_data/` loaded (no network; a copy a sync left half-written loads with no commit, so the sync reloads it whole), then one sync; with neither, the root pickles (frozen since the cutover; gone at step 10). The startup sync queues nothing: on_ready queues the card list, image links and emojis itself |
 | `/update_stats` | `card_db.sync`: one conditional `GET repos/MichaelJSr/TTSCardMaker/commits/data` (sha media type, `If-None-Match` from `card_data/sync.json`; a 304 is free); on a new commit its `db/manifest.json` and only the data files whose sha256 differ, raw at that commit, each checked against the manifest and parsed before any is written. Then the database is reloaded from JSON, never a pickle, and the card list (a 304 when the tree is unchanged), query tables, type emojis and image links are refreshed |
 | `/update_stats` reply | "Card data built 12 min ago from TTSCardMaker@1a2b3c4d (run: <…>): 3 changed, 1 new, 1 archived; reloaded." (counted against the database it held, duplicates left out), "Card data is already current: built …", or "Card data loaded: built …" (it held the pickles). Then, when they apply: "Re-parse in progress: N cards still to re-parse"; "Could not read N PSDs (…)"; "The card repo has card changes since: the next card sync (every 30 minutes, at :04 and :34) picks them up" or "the card sync running now picks them up (<run>)" (one compare request); "The last card sync failed: <run>; the bot keeps the last good card data" (dry runs and cancelled runs left out). `output_problematic_cards` shows the new build's `manifest.problems` (only when new data loaded) |
-| `/update_stats` from a reminder | quiet: the reply goes to the console only (and no status requests), unless the sync failed or new data has problem cards |
+| `/update_stats` starts a run (2026-10-24) | without force_update or cards: when the card repo has card changes the data lacks, or website edits wait to bake (`card_bake.due`: pending, past the 30-minute grace), a normal run (`AUTO_INPUTS`: dry_run false, bake pending) once the repo's last push (Card sync's aside) is 30 minutes old; never while a Card sync run is queued or running. The reply says "Card sync run started for …: <run>" or "A card sync starts for … once the card repo has had no push for 30 minutes (the last was N min ago)." The owner's 30-minute reminder makes this the real latency (GitHub's cron runs hours late) |
+| `/update_stats` from a reminder | quiet: the reply goes to the console only (a run it starts too), unless the sync failed or new data has problem cards |
 | `force_update` / `cards:` | admin only (a non-admin gets "You do not have permission.", a non-admin's reminder too). Dispatches Card sync with `ACTIONS_TOKEN`: `dry_run=false` and `full=true`, or `cards=<names>`; the run comes from the dispatch reply (`return_run_details`) or else is the newest dispatched run not listed before (a minute at most). Looked at every 15 s for 30 minutes at most, the state ("waiting for its turn", "running: Build") edited into the reply for its first 14 minutes (Discord's interaction lasts 15; a reminder's run gets none). Then the sync. A full re-parse continues over the next scheduled runs (the "Re-parse in progress" line) |
 | a cancelled run | the concurrency group keeps one run pending, so a newer one replaced it before it started: dispatched once more when that cancels nothing but a scheduled run; said ("replaced by a newer request (<run>) … ask again once it is done") when another dispatch is pending, and "was cancelled." when it was seen running or nothing newer exists (cancelled by hand). A second cancel is said. A green run whose data Card sync dropped (main moved meanwhile) is followed by its own retry ("The card repo changed during run … started again: <run>"; a full re-parse is not carried: ask again) |
 | no `ACTIONS_TOKEN` | the reply links the Action and gives `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false` (or `-f cards="…"`), then syncs. A refused token (401, 403, 404, at the run list before the dispatch too) is said the same way, a rate limit as one, and a dispatch with no answer as "the run may have started: look on <Action> before asking again"; the token is never printed |
@@ -930,7 +932,9 @@ origin):
 | `/website` | "… the next card sync applies it (every 30 minutes)." |
 
 **API cost:** one conditional request per sync (free when nothing moved); raw downloads on a new commit are not API calls;
-an /update_stats that speaks adds two status requests (the run list, a compare); a followed run about two requests per look.
+every /update_stats adds two status requests (the run list, a compare), plus `card_bake.due` (commit, tree, edits file;
+activity and compare when an edit is pending) when nothing is ahead, and one activity read before a run; a followed run
+about two requests per look.
 
 ## When NOT to use this skill
 

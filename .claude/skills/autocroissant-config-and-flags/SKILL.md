@@ -191,7 +191,7 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
 | `CREATED_PATHS` / `CREATED_PATH` (2026-10-22, 6fe7a90) | `("site/Card Creation Dates.json",)` | when each card was made (written by `python -m commands.discord_edits created`); read on every /update_stats (`CardDates`) |
 | `RATINGS_PATHS` / `RATINGS_PATH` (2026-10-24) | `("site/Card Ratings.json",)` | dated 1-10 card ratings (`python -m commands.tts_ratings`; the website adds entries; `CardRatings`); never read by the bot, the card sync or the checks |
-| `CARD_SYNC` (2026-10-22) | `False` | the cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8): True takes the card data from the Card sync Action's data branch (commands/card_sync.py); flipped in one commit at the cutover |
+| `CARD_SYNC` (2026-10-22) | `True` (since the cutover commit, 2026-10-24) | the cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8): True takes the card data from the Card sync Action's data branch (commands/card_sync.py); False is the rollback (the pickle path; tests of it use the `pickle_path` fixture) |
 | `DATA_BRANCH`, `CARD_DATA_DIR` (2026-10-22) | `"data"`, `"card_data"` | the card repo's branch holding `db/` (written by Card sync only) and the bot's gitignored copy of it |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). No content diffs or renames run there (they would download blobs): repo_history runs rev-list/ls-tree/merge-base/fetch, and since 2026-10-22/23 `card_history.GitIndex.from_git` runs `git log --raw --no-abbrev --no-renames` with `GIT_NO_LAZY_FETCH=1` (the archive dates, the history recovery); `mailmap_args` fetches head's `.mailmap` blob, the one lazy fetch. It must be a full (non-shallow) clone, else the index raises ValueError and the dates wait for the next run |
@@ -453,6 +453,8 @@ autocroissant-run-and-operate §9.
 | `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
+| `GRACE_SECONDS` | `30 * 60` | /update_stats starts its own run (`start_run`) only once the card repo's last push (not Card sync's) is this old |
+| `AUTO_INPUTS` | `{"dry_run": "false", "bake": "pending"}` | that run's inputs: the schedule's (bakes only edits without a final verdict) |
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
 

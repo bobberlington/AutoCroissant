@@ -130,7 +130,9 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [ ] **Daily check** (diagnostics-and-tooling Workflow 4) after each jetson `/push`: diff_stats `stats.pkl` vs
       `origin/data`; only the predicted refinements. Also build_site with and without `CARD_DATA_DIR`, the changelog's
       events vs the card pushes, most scheduled runs ending at the gate.
-- [ ] **Shadow ends** 2026-10-26 10:36 at the earliest, or after 10 card pushes, whichever is later.
+- [ ] **Shadow ends** 2026-10-26 10:36 at the earliest, or after 10 card pushes, whichever is later. **Superseded
+      2026-10-24:** the owner switches as soon as everything works; built on work/cutover (both repos, DATA_BUILD_ACTION
+      §14 step 8 "As built"), runbook `~/Documents/Tools/wt/scratch/cutover-check-1024/RUNBOOK.md`.
 - [ ] **Cutover sitting** (outside 05:00-05:40): reconcile the jetson (clean `git status`, its last `/push` on origin;
       else re-seed). The owner: `/remove_reminder reminder_id:054b5933` (05:30 /push), `/remove_reminder
       reminder_id:d2664752` (05:00 /update_stats), then `/set_reminder when:<:12 or :42> frequency:30m command:/update_stats`

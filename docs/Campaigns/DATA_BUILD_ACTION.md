@@ -1215,6 +1215,12 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
      - the bot cutover commit: `CARD_SYNC = True` in global_config.py (the reader, `/update_stats`, `/push`, `/pull`,
        `/fonts` and admin-only `force_update` are on main already, switched off: work/cutover-bot);
      - jetson deploy.
+   - *As built (2026-10-24, branches work/cutover in both repos; owner: switch without waiting for the shadow's end):*
+     `CARD_SYNC = True`, the pickle path's tests pinned off (`pickle_path`); the bot's `/update_stats` (the owner's 30-minute
+     reminder) dispatches a normal run (`bake=pending`) when main has card changes past the data's `card_commit` or
+     `card_bake.due` edits wait, once the last push is 30 minutes old, one run at a time; Card sync's gate also goes for
+     `card_bake.due` edits (a bake put off as `recent` or `capped` no longer waits for another card commit); card-guards.yml
+     dispatches Card sync instead of tts-save.yml. Runbook: `~/Documents/Tools/wt/scratch/cutover-check-1024/RUNBOOK.md`.
    - *Verify:*
      - the site footer reads "Card data built … from TTSCardMaker@…", with the same card count and no new warnings;
      - `/update_stats` says "already current";
