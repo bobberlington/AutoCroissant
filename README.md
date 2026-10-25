@@ -15,7 +15,7 @@ then `python setup.py build_ext --inplace` (10 Cython modules; rebuild after eve
 
 ## Test
 
-`~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (offline; run before every push).
+`~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (offline; run before every push).
 
 ## Deploy
 

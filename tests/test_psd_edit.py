@@ -5,7 +5,7 @@ too big to ship): tests that need a PSD read it from the clone and skip without 
 skip without the fork's text engine (psd_tools.composite.text), so the suite stays green under stock psd-tools.
 conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, else ~/Documents/Tools/psd-tools/src or
 /tmp/wt-cards/src when they have its API); the fork venv has psd-tools[text]:
-    AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py
+    ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py
 """
 import json
 from collections import Counter

@@ -6,7 +6,7 @@ moved card left out, the schedule gate (pending), the SSH fallback for a token t
 real bake (a stat, and an ability with an FX layer) needs the fork's renderer; those tests skip under stock psd-tools.
 card-sync.yml's Pending edits line runs as written (card_bake.due). Fork as conftest.find_fork finds it; a Python without
 requests skips this file:
-    AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
+    ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py tests/test_card_bake.py
 """
 import contextlib
 import json

@@ -221,9 +221,9 @@ Then:
    `TOKEN` (the Discord bot token). Field names and what each does:
    **autocroissant-config-and-flags**. Never commit this file.
 2. Smoke test (section c). Music playback also needs ffmpeg (section 1).
-3. Offline suite: `python -m pytest -q tests` (1346 tests collected on 2026-10-23; a full run takes several
-   minutes; needs no config.py, network or Discord, never writes the pickles; PSD tests skip without
-   `~/Desktop/TTSCardMaker`; the fork-only tests need `~/.venvs/ac-py314-fork`).
+3. Offline suite: `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (pytest-xdist from requirements-dev.txt; 553 tests on 2026-10-25, about a
+   minute; needs no config.py, network or Discord; PSD tests skip without `~/Desktop/TTSCardMaker`; the bake tests
+   need the fork venv).
    Owner: **autocroissant-validation-and-qa** §1 row 1c.
 
 ### (b) Full host environment (a machine that will actually host the bot)

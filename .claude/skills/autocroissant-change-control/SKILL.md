@@ -296,7 +296,7 @@ and update this file.
 | Handler names unique (C5 fixed 2026-10-20) | `grep -n "def slash_set_r\|def slash_delete_" main.py` (5 distinct names) |
 | Registration pattern example block | `grep -n "update_stats = to_thread" main.py` |
 | Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` |
-| Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (1346 collected on 2026-10-23; the release gates of 2026-10-22/23 read 882 passed / 61 skipped and 1161 passed / 2 failed before the TTSCardMaker push) |
+| Offline suite before a push | `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (553 collected on 2026-10-25 after the test cut; autocroissant-validation-and-qa row 1c) |
 | The one-sitting rule | memory `jetson-server` |
 | No pickle constants or switch | `grep -n "PKL\|CARD_SYNC" global_config.py` (no hit) |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
