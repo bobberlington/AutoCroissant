@@ -452,7 +452,7 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Cache-busting:** every script/style/data URL carries `?v=`: an asset's from its content and its imports' stamps,
   the data's from its content without the build time (since 2026-10-24). `index.html`'s preload hints and modules'
   `from "./x.js"` imports are stamped too, so a deploy never mixes old scripts with new data, and one that changed
-  nothing keeps every URL. `build.txt` digests the site's files (not build_site.py's text); a build equal to the live one is not deployed (owner 2026-10-24; the Changes page's "Site updated" is the last build that changed the site). Icons are `icons/<name>.<stamp>.webp` (the stamp in the name, not a query: an old URL gets its own picture or a 404).
+  nothing keeps every URL. `build.txt` digests the site's files (not build_site.py's text); a build equal to the live one is not deployed (owner 2026-10-24; the Changes page's "Site updated" is the last build that changed the site). Its 2nd line is the page's stamp (`<meta name="page">`): fresh.js polls build.txt (no-store) on load, on tab return, every 3 min (15 s for 15 min after a publish) and reloads to a new deploy, or shows a Refresh bar while a form is open (NOTES.md §29). Icons are `icons/<name>.<stamp>.webp` (the stamp in the name, not a query: an old URL gets its own picture or a 404).
 - **Size:** about 117 MB in total, mostly 2,463 card images.
 
 **Build behaviour:**

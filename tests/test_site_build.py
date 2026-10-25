@@ -600,6 +600,10 @@ def _stamps(dist: Path) -> dict:
     page = (dist / "index.html").read_text(encoding="utf-8")
     out = dict(re.findall(r'((?:assets/[\w-]+\.(?:js|css))|data/cards\.json)\?v=([0-9a-f]+)"', page))
     out["build"] = re.search(r'<meta name="build" content="([0-9a-f]+)">', page).group(1)
+    stamp = re.search(r'<meta name="page" content="([0-9a-f]+)">', page)   # fresh.js: build.txt's 2nd line
+    if stamp:
+        out["page"] = stamp.group(1)
+        assert (dist / "build.txt").read_text().split("\n")[1] == out["page"]
     return out
 
 
@@ -626,6 +630,7 @@ def test_stamps_follow_the_content_not_the_clock(bs, repo, tmp_path, monkeypatch
     c = tmp_path / "c" / "dist"
     before, after = _stamps(a), _stamps(c)
     assert after["build"] != before["build"] and after["data/cards.json"] == after["build"]
+    assert "page" not in before or after["page"] != before["page"]   # open pages reload to it (fresh.js)
     assert {k: v for k, v in after.items() if k.startswith("assets/")} == {k: v for k, v in before.items() if k.startswith("assets/")}
     assert not digest or (c / "build.txt").read_text() != (a / "build.txt").read_text()
 
