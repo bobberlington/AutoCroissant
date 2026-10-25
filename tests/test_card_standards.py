@@ -298,6 +298,9 @@ def test_apostrophes_straightened(clone, tmp_path):
     fixed = cs.fix(at_rev(clone, CURLY, rule), rule, [], str(tmp_path / "work"), parser, fonts)
     assert list(fixed.redrawn) == ["apostrophes"] and fixed.applied == [] and fixed.composer == []
     assert not list((tmp_path / "work").iterdir())
+    temple = "Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd"     # stored ink past the layout: the engine would redraw it whole
+    fixed = cs.fix(at_rev(clone, CURLY, temple), temple, [], str(tmp_path / "work"), parser, fonts)
+    assert fixed.redrawn == {} and "not redrawn by glyph" in fixed.pixel_left[0][1]
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")

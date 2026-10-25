@@ -949,6 +949,14 @@ def _padded(layer, old: tuple) -> list:
     return [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, tuple(layer.bbox)) if x1 > x0 and y1 > y0]
 
 
+def _by_glyph(layer, report) -> None:
+    """Refuses a redraw the engine did not splice by glyph (its whole-layer fallback)."""
+    spliced = getattr(report, "splice", None)
+    if spliced is None or spliced.fallback:
+        raise Refused("unsupported-card", f"{layer.name.strip()}: not redrawn by glyph"
+                                          + (f" ({spliced.fallback})" if spliced is not None else ""))
+
+
 def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
     Apostrophes (owner, 2026-10-25): every U+2019 in the type layers set as ', one at a time (each keeps its own style), in
@@ -973,7 +981,7 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         for at in reversed([i for i, c in enumerate(text) if c == APOSTROPHE]):
             text = text[:at] + "'" + text[at + 1:]
             layer.set_text(text, keep="runs")
-        layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT))
         boxes += _padded(layer, old)
     _save_patched(before, psd, boxes or [(0, 0, 1, 1)], out_path)
     _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers}, stories)
@@ -1001,11 +1009,8 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
             continue
         keep, old = capture(layer, found), tuple(layer.bbox)
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
-        report = layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)), unit="glyph")
-        spliced = getattr(report, "splice", None)
-        if spliced is None or spliced.fallback:
-            raise Refused("unsupported-card", f"{layer.name.strip()}: not redrawn by glyph"
-                                              + (f" ({spliced.fallback})" if spliced is not None else ""))
+        _by_glyph(layer, layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
+                                         unit="glyph"))
         boxes += _padded(layer, old)
         records.add(psd_edit._record_index(layer))
         names.append(layer.name.strip())
@@ -1099,7 +1104,7 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
             continue
         old, keep = tuple(layer.bbox), capture(layer, faces)
         _set(layer, wants)
-        layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT))
         boxes += _padded(layer, old)
         done.append((psd_edit._record_index(layer), name, psd_edit.story_index(layer), faces,
                      {(fit["start"], fit["end"]): "FontSize" in keys for fit, keys in wants}))
