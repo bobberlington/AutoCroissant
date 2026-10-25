@@ -1,8 +1,8 @@
 # Card sync verdicts on the data branch, bake and guard events in the changelog
 
 **Status:** answered by the owner 2026-10-23 ~18:30 (`docs/Campaigns/DATA_BUILD_ACTION.md` §16 item 7); designed
-2026-10-25 for the two-lane Card sync; not built. Queue item 6; best after step 10 (`work/pickles`) lands, since both
-touch `card_data`.
+2026-10-25 for the two-lane Card sync; steps 1-5 built 2026-10-25 on branches `work/verdicts` (both repos, not landed);
+step 6 prepared as a runbook (`~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`), not run.
 
 **Goal.** `site/Card Edits.json` on main holds only people's edits; the bake's verdicts live on `data`, so a refusal
 makes no main commit. Bakes and guard fixes show on the Changes page.
@@ -13,6 +13,9 @@ makes no main commit. Bakes and guard fixes show on the Changes page.
 - Events `baked` (fields, PNG changed), `bake-refused` (reason), `guard-png` (a PNG the guards re-made or recompressed),
   `guard-fix` (a fix the guards landed). The Discord post stays one post per push (owner, 10-22).
 - The guards' Single-line Composer fix is silent: no event, post or comment (owner, 10-25 ~04:10).
+- Discord gets the bake's events (baked, bake-refused) in the push's one post, never the guards': guard-png and
+  guard-fix show only on the Changes page and in the commit messages (owner, 10-25 ~08:30). The pixel fixes
+  (apostrophes, badges, old glyphs) and PNG re-exports and recompressions are guard events.
 - Only main writes wait 30 minutes; the data lane runs at once (owner, 10-25 ~03:20).
 
 ## Design
@@ -33,6 +36,34 @@ makes no main commit. Bakes and guard fixes show on the Changes page.
 6. **Migration:** one data commit with today's `_psd` blocks as `db/verdicts.json`, then one main commit removing them
    from Card Edits.json (after the readers above are live). `CardEdits` keeps reading `_psd` for one Card sync cycle,
    then drops it.
+
+## As built (2026-10-25, `work/verdicts`)
+
+1. **Bake.** `card_bake` writes no `_psd`. A run's verdicts and events go to the work dir: `verdicts.json`
+   `{"schema", "cards": refusals (no main commit), "landed": the verdicts of the cards in B, None to remove}` and
+   `bake-events.json` `{"events": bake-refused, "landed": baked}` (`records()`). A refusal whose verdict equals the data's
+   is not recorded again, so a dispatch's re-check tells nothing twice. `--verdicts db/verdicts.json` feeds `final()`,
+   `--pending` and `due()`; the entry's old `_psd` is the fallback (step 6's cycle). Entries B rewrites lose their
+   `_psd`. A refusal-only run makes no B.
+2. **card-sync.yml.** The main job's Bake records step keeps the landed part (and gives the baked events M's sha) only
+   when M landed, uploads `bake-records`; `after` runs when M baked or records exist (`RECORDS`, `AFTER` = M or empty) and
+   passes `--verdicts`, `--events` to the build. `card_db.merge_verdicts` writes `db/verdicts.json` (one card per line,
+   not in the manifest's hashed files; the data job never touches it).
+3. **Guards.** `card_guards.land` lists each included write's event (`events_of`: no event for a Composer-only PSD or a
+   Composer-only rewrap PNG); `finish` writes `guard-events.json` for a landed commit; card-guards.yml uploads it as
+   `guard-events` before Follow up. Card sync's Guard events step finds each guards commit since the last build, its
+   Guarded-push trailer's card-guards run, and that artifact (matched by the commit it names; one not found warns). The
+   build adds them by that commit; a guards commit's push is `Card guards`, its `art` events are dropped (its own events
+   say them; a Composer switch says nothing).
+4. **Changelog.** `KINDS` gains the four; `SILENT` (guard-png, guard-fix) and every event of a `Card guards` push never
+   post: a group of them alone is a message without a body (the Send step moves the cursor past it). The Changes page
+   shows all four (sections, counts, chips).
+5. **Readers.** build_site reads `CARD_DATA_DIR/verdicts.json` over the entries' `_psd` (`add_verdicts`); card_bake as
+   in 1. The bot's `/query` reads no verdict today: nothing to change.
+
+Conservative choices (unattended): refusal events are push-less (they post with their build, "Card sync, <time>");
+the guards' events are lost to the Changes page when their artifact cannot be found (a warning); a guards commit's other
+events (changed) still show on the Changes page but never post.
 
 ## Verification (lean)
 
