@@ -182,7 +182,7 @@ save and the changelog keep working.
 | `site/Card Authors.txt` | by hand, **and `/update_metadata author:` and `/mass_replace author`** | by hand |
 | Aliases | `Card Edits.json` field `aliases` (decision 3); `/alias` commits there | aliases.pkl via /alias and /push |
 | AutoCroissant `stats.pkl`, `old_stats.pkl`, `aliases.pkl`, `psd_details.json` | nobody after the cutover (frozen; deleted at step 10, decision 6) | the jetson |
-| The bot's `card_data/` (a local copy of db/), `reminder.pkl`, `type_emojis.json`, `repo_history.json`, `fonts_cache/` | the bot (all gitignored) | the same, without `card_data/` |
+| The bot's `card_data/` (a local copy of db/), `reminder.json`, `type_emojis.json`, `repo_history.json`, `fonts_cache/` | the bot (all gitignored) | the same, without `card_data/` |
 
 ## 5. Where the data lives (decision 1)
 

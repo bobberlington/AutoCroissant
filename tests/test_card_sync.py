@@ -769,3 +769,76 @@ def test_update_stats_options_are_admin_only_after_the_cutover(monkeypatch, swit
         admin = SimpleNamespace(user=SimpleNamespace(id=1), response=SimpleNamespace(send_message=send_message, defer=defer))
         asyncio.run(callback(admin, **options))
         assert ran
+
+
+# ========================
+# Loads that read psd_details.json by its hash only; the website build after a /push
+# ========================
+def test_the_bots_loads_never_parse_the_details(github, tmp_path, monkeypatch):
+    """load_local, a sync and card_db.sync's check read psd_details.json by its hash only (the bot keeps no details);
+    a damaged details file still makes the copy a cut-off one, reloaded by the next sync."""
+    details = '{"version": 1, "cards": {\n"b0": {"marker-details": 1}\n}}\n'
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path, details=details)
+    cdb.sync("card_data", REPO, "data")
+    seen, real = [], cdb.loads
+    monkeypatch.setattr(cdb, "loads", lambda text, *a, **k: seen.append("marker-details" in text) or real(text, *a, **k))
+    assert cs.load_local("card_data") and set(cm.stats_db.stats) == {"A"}
+    cs.sync(ME)                                                       # unchanged: a 304
+    github.publish({"A": _card("A"), "B": _card("B")}, defaultdict(list), tmp_path, details=details)
+    cs.sync(ME)                                                       # moved: reloaded
+    assert set(cm.stats_db.stats) == {"A", "B"} and seen and not any(seen)
+    (tmp_path / "card_data" / cdb.DETAILS_JSON).write_text(details.replace("1}", "2}"), encoding="utf-8")
+    assert cs.load_local("card_data") and cs._loaded["commit"] is None
+    assert cdb.check_db("card_data", parse=False) == cdb.check_db("card_data") == [f"{cdb.DETAILS_JSON}: sha256 differs from the manifest"]
+    assert cdb.read_db("card_data", details=False)[2] == {} and cdb.read_db("card_data")[2] == {"b0": {"marker-details": 2}}
+
+
+def test_dispatch_site(monkeypatch):
+    """The website build (site.yml) on the card repo's main with ACTIONS_TOKEN; a refusal or no answer is one line,
+    never raised; no token, no request."""
+    posts, replies = [], []
+
+    def post(url, json=None, headers=None, timeout=None):
+        posts.append((url, json, headers["Authorization"]))
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+    monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=post))
+    monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
+    replies[:] = [Reply(204), Reply(403), OSError("down")]
+    assert cs.dispatch_site() == "Website build started."
+    assert posts == [(f"https://api.github.com/repos/{REPO}/actions/workflows/site.yml/dispatches", {"ref": "main"}, f"Bearer {TOKEN}")]
+    assert "HTTP 403" in cs.dispatch_site() and TOKEN not in cs.dispatch_site()
+    monkeypatch.setattr(cs, "ACTIONS_TOKEN", "")
+    posts.clear()
+    assert "no ACTIONS_TOKEN" in cs.dispatch_site() and posts == []
+
+
+class _PushGit:
+    """update_bot's _git() for git_push: the pickles committed, the push's changed files."""
+    def __init__(self, changed):
+        self.changed, self.pushed = changed, False
+
+    def add(self, *a): pass
+    def commit(self, *a): pass
+    def pull(self, *a, **k): pass
+    def rev_list(self, *a): return "1"
+    def diff(self, *a): return "\n".join(self.changed)
+    def push(self, *a, **k): self.pushed = True
+
+
+@pytest.mark.parametrize("changed, built", [(["stats.pkl", "psd_details.json"], True), (["commands/help.py"], False)])
+def test_a_pickle_push_starts_the_website_build(monkeypatch, changed, built):
+    """/push dispatches site.yml after pushing a file the website reads, after "Successfully pushed!"; a code-only push
+    starts nothing."""
+    import commands.update_bot as ub
+    monkeypatch.setattr(global_config, "CARD_SYNC", False)
+    git, sent, started = _PushGit(changed), [], []
+    monkeypatch.setattr(ub, "_git", lambda: git)
+    monkeypatch.setattr(cs, "dispatch_site", lambda: started.append(len(sent)) or "Website build started.")
+
+    async def send(text, **kw):
+        sent.append(text)
+    asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
+    assert git.pushed and sent == ["Successfully pushed!"] and started == ([1] if built else [])

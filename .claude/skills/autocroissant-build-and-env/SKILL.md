@@ -75,7 +75,7 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
-| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
+| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261024b`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
 | pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. On the Actions' Linux x86_64 (built from the sdist on 3.14 since 2026-10-24), elsewhere only where it has a wheel (above): not on the Mac's or the jetson's 3.14. So a fresh Mac venv (3.14) has none: `commands/png_recompress.py`, the by-hand batch, cannot run, and the oxipng tests skip (test_png_recompress.py, test_png_export.py's `@oxipng`, test_card_guards' recompression test; `pytest -rs` lists them). For those, `pip install pyoxipng==9.1.1` builds it with cargo (`~/.venvs/ac-py314-fork` has such a build, 2026-10-23). |
 | PyGithub | GitHub API traversal for remote card updates (`commands/card_data.py:130, :140` since 2026-10-22, imported lazily in `_committed_since_update` and `_repo`; legacy /update_stats only: the card data build needs no PyGithub, so requirements-cards.txt has none). |
 | PyNaCl | discord.py voice encryption (music is silent without it). Declared since 2026-10-20 (section 3). |
@@ -104,7 +104,7 @@ Same code, same pickles (synced via `/push` and the update flow — see
 |---|---|---|
 | Python / run | venv (section 1), plain `python3 main.py` | Python 3.14 venv `~/venvs/autocroissant`, systemd `autocroissant.service` (ExecStart = the venv's python), compiled `.so` (section 5) |
 | yt-dlp cookies | `browser_cookies = True` in config.py → `cookiesfrombrowser = ('safari', ...)` (`music_player.py:37`, used at :55). Old configs fall back to `vram_usage == "mps"`. | Unset → no browser cookies |
-| psd-tools | `~/.venvs/ac-py314-psd125`: stock 1.25.0 (older tests); `~/.venvs/ac-py314-fork`: the fork at the pin (`cards-20261024` = 6a616ca6 since 2026-10-24: the full suite, card_guards, bakes) | The fork at the pin (`cards-20261024` = 6a616ca6, 2026-10-24; check `pip freeze`: `psd-tools @ git+...@6a616ca6...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The six card Actions (card-edits, card-guards, card-sync, card-preview, card-check, font-check) install the same file |
+| psd-tools | `~/.venvs/ac-py314-psd125`: stock 1.25.0 (older tests); `~/.venvs/ac-py314-24b`: the fork at the pin (`cards-20261024b` = a651cd08 since 2026-10-24, with pyoxipng: the full suite, card_guards, bakes; `~/.venvs/ac-py314-fork` is older) | The fork at the pin (`cards-20261024b` = a651cd08, 2026-10-24: glow halos; check `pip freeze`: `psd-tools @ git+...@a651cd08...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The Actions (card-edits, card-guards, card-sync, card-preview) install the same file |
 
 The torch/CUDA/MPS differences went with the AI to branch `archive/ai-generation`.
 Config field semantics: **autocroissant-config-and-flags**.
@@ -114,15 +114,24 @@ Config field semantics: **autocroissant-config-and-flags**.
 ### Commands
 
 ```bash
-python3 setup.py build_ext --inplace   # compile the 11 INCLUDE_FILES to .so next to the .py
+python3 setup.py build_ext --inplace   # rebuild the stale INCLUDE_FILES to .so next to the .py
 python3 setup.py clean                 # remove *.c *.cpp *.so *.pyd *.pyc *.html, __pycache__/, build/
 ```
 
-Notes verified from `setup.py` (2026-07-11):
+Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-10-24):
 
-- The build ALSO runs the artifact cleanup first (`clean_artifacts()` is called at the
-  top of `__main__`, setup.py:142), so every build is a from-clean rebuild. Side
-  effect: both commands delete ALL `*.html` files anywhere under the repo (rglob).
+- **Incremental build (2026-10-24).** `build_ext --inplace` rebuilds only the modules whose `.so` is missing or whose
+  fingerprint changed: sha256 of the `.py` source, its `.pxd` if any and setup.py itself (any setup.py edit rebuilds
+  everything), plus the directives, the `-O3` flag, the Cython and Python versions and the ABI suffix, kept in
+  `build/ext-stamps.json`. Each fingerprint is taken before compiling and stored only for modules that built, so a `.py`
+  saved mid-build rebuilds next time. A bare `touch` does not rebuild; a content change does. Stale modules build 4 at a time (cythonize `nthreads=4`, build_ext `parallel=4`). Safety
+  kept: a stale `.so` is deleted BEFORE its rebuild (a failed build leaves the new `.py` running, exit code 1, never an
+  old `.so` next to a new `.py`), and every `.so`/`.pyd` that is not a current INCLUDE_FILES build (other Python ABI,
+  dropped module) is deleted. No stamps file (first run, after `clean`, after deleting `build/`) means a full rebuild.
+  Mac timings 2026-10-24 (M-series, 24 cores, Cython 3.3.0, Python 3.14.8): old from-clean build 75-88 s; new full
+  rebuild 16-23 s; nothing changed 0.2 s; one small module edited (help) 1.7 s; psd_parser 11-18 s. Jetson before:
+  6 min 44 s every deploy. Only `setup.py clean` deletes `*.html` (rglob) now; the build no longer does.
+- `setup.py` without `--inplace` refuses (the stamps describe the in-place `.so` files).
 - Compiled modules (`INCLUDE_FILES`, setup.py:21-33) — 11 of the 38 `commands/` modules
   (2026-10-23; the list is unchanged since 2026-10-20): analytics, frankenstein, help, psd_analyzer and the four modules its code was split into that day
   (card_models, card_edits, psd_parser, repo_traverser: same directives, so the moved code keeps its compiled
@@ -150,16 +159,15 @@ without their incident get ignored, so each one carries its story:
 | (history) `boundscheck=False` until 2026-10-23 | Out-of-range indexes were undefined behavior (crash or garbage), not a clean `IndexError`: a blank star folder read out of bounds in compiled code (fixed in ba27fb7, 2026-10-23). Since 9919a14 (setup.py:38-39) they raise `IndexError` with a traceback. |
 | `cdivision=True` | C division semantics for negatives: quotient truncates toward zero and `%` takes the dividend's sign. In Python `-7 // 2 == -4` and `-7 % 2 == 1`; in compiled code they become `-3` and `-1`. Any div/mod on possibly-negative ints must be reasoned about. |
 | `embedsignature=True` | Function signatures survive into docstrings — `help()` still works on compiled functions. |
-| (Cython 3.3 itself, not a directive) | **Declare an annotated variable once.** Cython 3.3 rejects re-annotating a name already declared in the same function (`'target_message' redeclared`), which plain Python allows. `cythonize()` then raises `CompileError` before `setup()` runs, and because `clean_artifacts()` already deleted the old artifacts, the host ends up with NO compiled modules and runs plain Python without any obvious sign. This hit `commands/management.py` (`add_reactions`) until 2026-10-19: autocroissant-failure-archaeology Entry 10.5. Since the fix, all INCLUDE_FILES modules compile with Cython 3.3.0 and setup.py's directives (7 on 2026-10-19; all 11 in a scratch build after the 2026-10-20 split). |
+| (Cython 3.3 itself, not a directive) | **Declare an annotated variable once.** Cython 3.3 rejects re-annotating a name already declared in the same function (`'target_message' redeclared`), which plain Python allows. `cythonize()` then raises `CompileError` before `setup()` runs, and because `clean_artifacts()` already deleted the old artifacts, the host ended up with NO compiled modules and ran plain Python without any obvious sign (since 2026-10-24 the build exits 1 and only the stale modules lose their `.so`; deploy.sh stops before the restart). This hit `commands/management.py` (`add_reactions`) until 2026-10-19: autocroissant-failure-archaeology Entry 10.5. Since the fix, all INCLUDE_FILES modules compile with Cython 3.3.0 and setup.py's directives (7 on 2026-10-19; all 11 in a scratch build after the 2026-10-20 split). |
 | (Cython itself: annotations) | **Type hints are enforced and coerce** in compiled modules (measured with Cython 3.3, 2026-10-20): `x: list` rejects a tuple, `x: dict` rejects a defaultdict, `x: str`/`int` reject None unless the default is None, `x: float` turns 1 into 1.0, `x: bool` turns None into False, `-> dict` rejects a defaultdict return. Untouched: ABCs, non-builtin classes, unions, `Optional[...]` with a None default, dataclass fields, `-> int`. So a hint change in an INCLUDE_FILES module is a behaviour change: gate it with a compiled run (the 2026-10-20 split kept the moved code compiled for exactly this reason). Known case: compiled `analytics.parse_interval(None)` raises TypeError; the .py returns None. |
 | Also set | `language_level='3'`, `initializedcheck=False`, `infer_types=True`, `overflowcheck=False`, `profile=False`, `linetrace=False`. |
 
 ### Compilation is optional — and the stale-.so trap
 
 - The Mac's working tree has **no** `.so`/`.c` artifacts (2026-10-20) and runs plain Python.
-- Production (the jetson, no startup.sh) compiles on every deploy: `git pull`,
-  `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, `sudo systemctl restart autocroissant`
-  (**autocroissant-run-and-operate**). It runs the 11 `.so` files, so the stale-.so trap below
+- Production (the jetson, no startup.sh) builds on every deploy: `scripts/deploy.sh` there (pull, psd-tools pin,
+  `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, restart; **autocroissant-run-and-operate**). It runs the 11 `.so` files, so the stale-.so trap below
   is live there: rebuild after every pull.
 - **The trap**: an import like `from commands import psd_analyzer` picks a compiled
   `commands/psd_analyzer.*.so` OVER `commands/psd_analyzer.py`. A stale `.so` from an

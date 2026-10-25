@@ -1,17 +1,20 @@
 """
 One-time stat history backfill and archive completion (docs/NEXT_SESSION_PLAN.md step 1b). Dead code once
-its merge has run in production: delete this module, history_backfill.json, its call in card_data.update() and
-tests/test_history_backfill.py.
+its merge and text fix have run in production: delete this module, history_backfill.json, history_backfill_text.json,
+its calls in card_data.update() and tests/test_history_backfill.py.
 
 - build (the Mac, by hand): every stat-card PSD version in the card repo's git read by today's parser, each stat's row
   of consecutive versions compared on the PSDs' stored previews (a stat that changed while its row printed the same is
   a misread, never a change), the cards that left the card folders with their fate and author; one reviewable file.
 - merged (/update_stats, once, after recover and the traversal): that file into old_stats, on a trial copy.
-- rehearse: the same merge on copies of the pickles.
+- text (the Mac, by hand): the added versions' text and stars re-read from their own blobs (the merge's copies took
+  the version they split's); /update_stats applies that file once, after the merge (texts).
+- rehearse: the same merge and text fix on copies of the pickles.
 
 CLI (copies only, the fork venv):
   python -m commands.history_backfill build --git <full clone> --head origin/main --cache <jsonl> --out history_backfill.json
   python -m commands.history_backfill rehearse --file history_backfill.json --git <full clone> --pickles <dir> --out <dir>
+  python -m commands.history_backfill text --git <full clone> --pickles <latest PICKLE's> --out history_backfill_text.json
 """
 from argparse import ArgumentParser
 from collections import Counter
@@ -1678,6 +1681,157 @@ def merged(db, index, path: str = "", authors: Optional[CardAuthors] = None) -> 
 
 
 # ========================
+# Text fix (the copies' own wording)
+# ========================
+TEXT_FILE_NAME = "history_backfill_text.json"
+TEXT_FILE = join(BOT_CHECKOUT, TEXT_FILE_NAME)   # what /update_stats applies once, after the merge
+TEXT_ID = "backfill-text-1"
+TEXT_MARK = "backfill_text"                       # on the versions it fixed (their old text in backfill_text_was)
+TEXT_FIELDS = ("ability", "types", "display_name")   # what finds a copy's source
+FIELDS = TEXT_FIELDS + ("stars",)                    # what it fixes (a creature's or item's stars: its path's folder)
+ICON_BOX = 400                                    # a type icon sits in the top-left corner, under this many px
+
+
+def _added(v) -> bool:
+    """Whether the merge added v (_copy; never an archive record, its own parse)."""
+    info = getattr(v, "version", None) or {}
+    return (info.get(MARK) == FILE_ID and info.get("cause") == "psd"
+            and (getattr(v, "archived", None) or {}).get("blob") != getattr(v, "blob_sha", None))
+
+
+def copies(stats: dict, old_stats: dict):
+    """The versions the merge added: (name, chain, index in chain), oldest first."""
+    for name, versions in old_stats.items():
+        chain = list(versions) + ([stats[name]] if name in stats else [])
+        for i, v in enumerate(versions):
+            if _added(v):
+                yield name, chain, i
+
+
+def _wording(card, name: Optional[str] = None) -> dict:
+    """card's FIELDS in data_of's forms (a retired type icon its name now; a title equal to the name none). name: a
+    parse's history name (renamed or qualified), its printed title compared with that."""
+    from commands.card_history import TYPE_RENAMES
+    title = getattr(card, "display_name", None) or (card.name if name else None)
+    return {"ability": getattr(card, "ability", None) or None,
+            "types": [TYPE_RENAMES.get(t, t) for t in getattr(card, "types", None) or []],
+            "display_name": None if title == (name or card.name) else title, "stars": getattr(card, "stars", None)}
+
+
+def icons_unread(psd, all_types) -> bool:
+    """Whether a drawn layer in the type icons' corner has no type icon's name (an icon today's parser can't name)."""
+    for layer in psd.descendants():
+        x0, y0, x1, y1 = layer.bbox
+        if (layer.kind in ("pixel", "smartobject") and layer.is_visible() and x1 > x0 and y0 < ICON_BOX and x0 < ICON_BOX
+                and x1 - x0 < ICON_BOX and layer.name.lower() not in all_types):
+            return True
+    return False
+
+
+def text_build(repo: str, head: str, pickles: str, out: str) -> int:
+    """
+    The fix file (the Mac, by hand, on copies of the latest PICKLE): each copy whose text is a stored version's
+    (the source), today's parser on its own blob and on the source's; a field that differs between the two takes its
+    own blob's (stars too: a creature's or item's from its path's folder). Left (listed): a field its own reading could
+    not know, types where an icon there has no type's name, a source git has no blob for.
+    """
+    from commands.card_db import read_pickles
+    from commands.card_history import UNKNOWN_IF
+    stats, old_stats = read_pickles(pickles)
+    index = GitIndex.from_git(repo, head)
+    vocab = vocabulary(repo, head)
+    _init(vocab)
+    reads = {}
+
+    def read(blob, path):
+        if (blob, path) not in reads:
+            try:
+                psd = _open(repo, blob)
+                card = _PARSER.parse(psd, today(path))
+            except Exception as e:                # noqa: BLE001 - an unreadable version is left, listed
+                reads[(blob, path)] = f"{type(e).__name__}: {e}"
+                return reads[(blob, path)]
+            unknown = {k for p in card.problems or [] for prefix, k in UNKNOWN_IF if str(p).startswith(prefix)}
+            reads[(blob, path)] = (card, unknown, icons_unread(psd, vocab[0]))
+        return reads[(blob, path)]
+    fixes, left = [], []
+    for name, chain, i in copies(stats, old_stats):
+        v = chain[i]
+        mine = _wording(v)
+        pool = [w for w in chain if w is not v and all(_wording(w)[k] == mine[k] for k in TEXT_FIELDS)]
+        if not pool:
+            continue                                      # its own text (the stat line split, the words the same)
+        src = min([w for w in pool if not _added(w)] or pool, key=lambda w: abs(chain.index(w) - i))
+        at = start(v)[0] or v.timestamp
+        row = {"name": name, "from": at, "blob": v.blob_sha, "path": v.path, "source": start(src)[0] or src.timestamp}
+        hit = getattr(src, "blob_sha", None) or (index.blob_at(src.path, src.timestamp) or (None, None))[1]
+        if not hit:
+            left.append({**row, "why": "the source has no blob"})
+            continue
+        mine_read, theirs_read = read(v.blob_sha, v.path), read(hit, src.path)
+        if isinstance(mine_read, str) or isinstance(theirs_read, str):
+            left.append({**row, "why": f"unreadable ({mine_read if isinstance(mine_read, str) else theirs_read})"})
+            continue
+        own, unknown, icons = mine_read
+        theirs = _wording(theirs_read[0], name)
+        got, fields = _wording(own, name), {}
+        for key_ in FIELDS:
+            if got[key_] == theirs[key_] or got[key_] == mine[key_]:
+                continue                                  # the same on both blobs: the stored form stays
+            if key_ in unknown or (key_ == "types" and icons):
+                left.append({**row, "why": f"{key_}: {'unread' if key_ in unknown else 'an icon without a name'}",
+                             "stored": mine[key_], "read": got[key_]})
+                continue
+            fields[key_] = [mine[key_], got[key_]]
+        if fields:
+            fixes.append({**row, "fields": fields})
+    data = {"id": TEXT_ID, "after": FILE_ID, "made": {"card_head": _git(repo, "rev-parse", head).decode().strip(),
+                                                      "parser": _parser_version(), "at": int(time())},
+            "fixes": fixes, "left": left}
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(dumps(data, indent=1, ensure_ascii=False) + "\n")
+    print(f"{len(fixes)} versions to fix ({sum(len(f['fields']) for f in fixes)} fields), {len(left)} left; {out}")
+    return 0
+
+
+def texts(db, path: str = "") -> tuple:
+    """
+    /update_stats' once-fix, after the merge: each listed copy's fields set to its own blob's, only where the version
+    (name, start, blob) still holds the listed old values. Nothing before the merge or once a version carries
+    TEXT_MARK.
+
+    Returns:
+        (the report line or None, whether db changed)
+    """
+    data = load_file(path or TEXT_FILE)
+    if data is None or not merged_before(db.stats, db.old_stats, data["after"]):
+        return (None, False)
+    every = [v for versions in db.old_stats.values() for v in versions]
+    if any((getattr(v, "version", None) or {}).get(TEXT_MARK) == data["id"] for v in every):
+        return (None, False)
+    done, kept, fields = [], 0, Counter()
+    for fix in data["fixes"]:
+        found = [v for v in db.old_stats.get(fix["name"]) or [] if getattr(v, "blob_sha", None) == fix["blob"]
+                 and start(v)[0] == fix["from"] and (getattr(v, "version", None) or {}).get(MARK) == FILE_ID]
+        if len(found) != 1 or any(_wording(found[0])[k] != old for k, (old, _) in fix["fields"].items()):
+            kept += 1
+            continue
+        v = found[0]
+        for k, (old, new) in fix["fields"].items():
+            setattr(v, k, list(new) if k == "types" else new)
+            fields[k] += 1
+        v.version["backfill_text_was"] = {k: old for k, (old, _) in fix["fields"].items()}
+        v.version[TEXT_MARK] = data["id"]
+        done.append(fix["name"])
+    if not done:
+        return (None, False)
+    counts = ", ".join(f"{k.replace('display_name', 'title')} {n}" for k, n in sorted(fields.items()))
+    line = (f"Backfill text: {len(done)} added versions of {len(set(done))} cards given their own PSD's text and stars "
+            f"({counts})." + (f" {kept} changed since, kept." if kept else ""))
+    return (line, True)
+
+
+# ========================
 # Rehearse
 # ========================
 def live_folder(folder: str) -> bool:
@@ -1694,8 +1848,9 @@ def live_folder(folder: str) -> bool:
     return run(["git", "-C", folder, "ls-files", "--error-unmatch", "stats.pkl"], capture_output=True).returncode == 0
 
 
-def rehearse(path: str, repo: str, head: str, pickles: str, out: str) -> int:
-    """The bot's merge on copies of the pickles: its line, what changed per card, the second cleanup, the copies."""
+def rehearse(path: str, repo: str, head: str, pickles: str, out: str, wording: str = "") -> int:
+    """The bot's merge and text fix on copies of the pickles: their lines, what changed per card, the second cleanup,
+    the copies."""
     from commands.card_data import cleaned
     from commands.card_db import dump_pickle, read_pickles
     from commands.card_models import StatsDatabase
@@ -1717,6 +1872,7 @@ def rehearse(path: str, repo: str, head: str, pickles: str, out: str) -> int:
         report = merge(trial.stats, trial.old_stats, data, index, authors)
     line, changed = merged(db, index, path, authors)
     print(line or "Backfill: nothing to do.")
+    print(texts(db, wording)[0] or "Backfill text: nothing to do.")
     for title, items in (("corrected", report.corrected), ("aligned", report.neutral), ("folded", report.folded),
                          ("tags moved to a newer line", report.tags_moved)):
         print(f"{title}: {', '.join(f'{n} {c}' if c > 1 else n for n, c in sorted(Counter(items).items()))}")
@@ -1738,6 +1894,7 @@ def rehearse(path: str, repo: str, head: str, pickles: str, out: str) -> int:
     print(f"Second cleanup: {again or 'nothing to change'}")
     again2, _ = merged(db, index, path, authors)
     print(f"Second merge: {again2 or 'nothing'}")
+    print(f"Second text fix: {texts(db, wording)[0] or 'nothing'}")
     after = (len(db.old_stats), sum(len(v) for v in db.old_stats.values()), len(db.archived()))
     print(f"old_stats names {before[0]} -> {after[0]}, versions {before[1]} -> {after[1]}, archived {before[2]} -> {after[2]}")
     dump_pickle(db.old_stats, join(out, "old_stats.pkl"))
@@ -1763,10 +1920,18 @@ def main(argv: Optional[list] = None) -> int:
     cmd.add_argument("--head", default="origin/main", help="the card repo commit (default origin/main)")
     cmd.add_argument("--pickles", required=True, help="a folder holding stats.pkl and old_stats.pkl (read only)")
     cmd.add_argument("--out", required=True, help="a folder for the merged copies (never --pickles)")
+    cmd.add_argument("--text", default=TEXT_FILE, help="the text fix file")
+    cmd = sub.add_parser("text", help="re-read the added versions' text from their own blobs; write the text fix file")
+    cmd.add_argument("--git", required=True, help="a full clone of the card repo holding every blob it reads")
+    cmd.add_argument("--head", default="origin/main", help="the card repo commit (default origin/main)")
+    cmd.add_argument("--pickles", required=True, help="a folder holding the latest PICKLE's pickles (read only)")
+    cmd.add_argument("--out", default=TEXT_FILE_NAME, help=f"the file to write (default {TEXT_FILE_NAME})")
     args = parser.parse_args(argv)
     if args.command == "build":
         return build(args.git, args.head, args.cache, args.out)
-    return rehearse(args.file, args.git, args.head, args.pickles, args.out)
+    if args.command == "text":
+        return text_build(args.git, args.head, args.pickles, args.out)
+    return rehearse(args.file, args.git, args.head, args.pickles, args.out, args.text)
 
 
 # ========================
@@ -1780,6 +1945,7 @@ __all__ = [
     'History',
     'Lineage',
     'Merged',
+    'TEXT_FILE',
     'archive_candidates',
     'balance',
     'build',
@@ -1802,6 +1968,8 @@ __all__ = [
     'split_rows',
     'stat_boxes',
     'status',
+    'text_build',
+    'texts',
 ]
 
 

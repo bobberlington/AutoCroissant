@@ -97,7 +97,7 @@ speed changes and facedown items may change which lane goes next; as a slot's tu
 | 1 | The slot's turn begins; (BOT) effects |
 | 2 (main) | (OYT) abilities; items from hand; swap facedowns to/from hand; shops and item-shop shuffle; actions; swap primary/secondary fields if no action used yet |
 | 3 | (ENDT) effects; nothing from phase 2 any more |
-| 4 | Turn over; status effects deal damage/heal, durations tick down 1 |
+| 4 | Turn over; status effects deal damage/heal, durations tick down 1 (also 19_Status_Effects) |
 
 **The action**: one per creature per turn — ATTACK any creature on the field (§4), MINE (BRICKS = stars; prime creatures
 only, "Minions cannot mine", 15_Minions) or DEFENSE MODE (DEF doubled until its next turn begins; card turned 90°)
@@ -356,9 +356,10 @@ in a row); 3x destroys it (also on 22_Negation). Data: 50 field cards, 1★–4�
 
 ## 9. Status effects
 
-"A status effect, is either a buff or debuff" (19_Status_Effects). DMG/heal effects proc at (ENDT), others immediately;
-durations count down at (ENDT); status DMG is piercing, not an attack, one instance per unique stack ("5 stacks of Poison
-is one instance of 5 damage"); the owner orders them at (ENDT); a creature that "started the global turn with a status effect"
+"A status effect, is either a buff or debuff" (19_Status_Effects). DMG/heal effects proc "in phase 4, after (ENDT) effects",
+others immediately; durations count down in phase 4 (19_Status_Effects, 09_TakingYourTurn; reworded 2026-10-24);
+status DMG is piercing, not an attack, one instance per unique stack ("5 stacks of Poison is one instance of 5
+damage"); the owner orders them in phase 4; a creature that "started the global turn with a status effect"
 whose global turn "ends without the creature having ended its turn" has the effect tick at the end of the global turn,
 "even if the creature is in hand" (19_Status_Effects). **Standard** (icons `buff`/`debuff`): one
 instance per creature; **stacking** (`buffstack`/`debuffstack`): any number; stack/upgrade/reapply → longest duration;
@@ -457,7 +458,7 @@ Assembled from the rulebook's own examples; the joins are this skill's.
    resolve before the attack, damage items after other plays, the attack last (12_Reactions3, 12_Reactions4); C cannot
    take it back (12_Reactions5).
 6. **Phase 3**: C's (ENDT) effects, e.g. "+5 DEF until (ENDGT)" (11_Abilities3).
-7. **Phase 4**: C's status effects proc and tick (09_TakingYourTurn; 19 says (ENDT) — Known gaps). Had D died (10's D survives at 1 HP),
+7. **Phase 4**: C's status effects proc and tick (09_TakingYourTurn, 19_Status_Effects). Had D died (10's D survives at 1 HP),
    D's owner gains points equal to D's stars (08's D is 4★) and refills the slot (17_Death, 16_The_Field).
 8. **D, B, A, E, F** likewise; then (ENDGT) effects, +1 BRICK each, the counter ticks (08_Global_Turn, 04_Table2).
 
@@ -515,8 +516,9 @@ Contradictions:
   (`MDW/Old Rules/17_Damage_Types`, when DEF was the bar value); current pages and examples use ATK − DEF.
 - 12_Reactions3 "5 stacks of hardened, giving it 3 defense": Hardened is +0.5/stack, so 6 (as 12_Reactions says).
 - 07_Stats3 text "-1 DEF BAR --> 1"; its picture shows 1.5.
-- 19_Status_Effects: status DMG/heal at (ENDT); 09_TakingYourTurn: phase 4, after (ENDT).
 - Hidden drafts (12_Reactions2 order 4>2>1>3; 22_Negation ITEMS) disagree with the visible pages, which win.
+- Resolved 2026-10-24 (owner): status DMG/heal and durations tick in phase 4, after (ENDT) effects; 19_Status_Effects
+  now says so, as 09_TakingYourTurn did.
 
 Undefined: the cards' new tags (nCD), (a/bCD), (nGCD), (a/bGCD), (nU) since 2026-10-21: undefined by the rulebook; card
 evidence in §3. The text of 02_Abbreviations, 11_Abilities2, 11_Abilities4 and 22_Negation still uses the old tags, and

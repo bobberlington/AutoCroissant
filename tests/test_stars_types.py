@@ -384,7 +384,7 @@ def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
     bare = _fixture(tmp_path, types=(), name="Bare")
     with pytest.raises(pe.Refused, match="no type icon on the card to line a new one up with"):
         _plan(parser, bare[0], REL, "types", ["fire"])
-    monkeypatch.setattr(pe, "type_row", lambda psd, parser: ([], [SimpleLayer("Types", (0, 0, 1, 1))]))
+    monkeypatch.setattr(pe, "type_row", lambda psd, parser, *_: ([], [SimpleLayer("Types", (0, 0, 1, 1))]))
     with pytest.raises(pe.Refused, match="printed as icon tokens in 'Types'"):
         _plan(parser, paths[0], REL, "types", ["fire"])
 

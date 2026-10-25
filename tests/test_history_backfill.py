@@ -864,6 +864,30 @@ def test_merged_waits_runs_once_and_never_half(tmp_path, monkeypatch):
     assert hb.merged(db, ch.GitIndex(), path) == (None, False)
 
 
+def test_text_fix_after_the_merge_once(tmp_path):
+    """The added versions' own text and stars: after the merge, once, only where the version still holds the listed
+    values."""
+    readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(3000, B3, [6, 5, 5, 5], "changed")]
+    path = _file(tmp_path, data({"A": entry(readings)}))
+    text = tmp_path / "text.json"
+    text.write_text(json.dumps({"id": hb.TEXT_ID, "after": hb.FILE_ID, "fixes": [
+        {"name": "A", "from": 1000.0, "blob": B1,
+         "fields": {"ability": ["Hits.", "Hit once."], "types": [[], ["fire"]], "stars": [3, 2]}},
+        {"name": "A", "from": 1000.0, "blob": B2, "fields": {"ability": ["Hits.", "Gone."]}}]}), encoding="utf-8")
+    db = cm.StatsDatabase()
+    db.stats, db.old_stats = {"A": version(4000, B3, [6, 5, 5, 5])}, defaultdict(list, {"Z": [restored()]})
+    assert hb.texts(db, str(text)) == (None, False)                          # before the merge: nothing
+    assert hb.merged(db, ch.GitIndex(), path)[1]
+    line, changed = hb.texts(db, str(text))
+    assert changed and line == ("Backfill text: 1 added versions of 1 cards given their own PSD's text and stars "
+                                "(ability 1, stars 1, types 1). 1 changed since, kept.")
+    copy = db.old_stats["A"][0]
+    assert (copy.ability, copy.types, copy.stars, hb._line(copy)) == ("Hit once.", ["fire"], 2, [5, 5, 5, 5])
+    assert copy.version["backfill_text_was"] == {"ability": "Hits.", "types": [], "stars": 3}
+    assert (db.stats["A"].ability, db.stats["A"].stars) == ("Hits.", 3)
+    assert hb.texts(db, str(text)) == (None, False) and hb.merged(db, ch.GitIndex(), path) == (None, False)
+
+
 def test_card_data_imports_the_backfill_lazily():
     """card-sync.yml's sparse checkout has no history_backfill: card_data imports it only inside update()."""
     import ast
@@ -899,8 +923,16 @@ def test_update_stats_merges_once(github, psds, tmp_path, monkeypatch, capsys):
     assert out.count("Backfill: ") == 1 and "1 stat version added" in out and "(1 current card)" in out
     stats, old = tus._saved()
     assert [hb._line(v) for v in old["Mini Doomer"]] == [[4, 2, 5, 5]] and stats["Mini Doomer"].version["from"] == tus.TIME - 1000
+    text = tmp_path / "text.json"                                    # the text fix: the next run, once
+    text.write_text(json.dumps({"id": hb.TEXT_ID, "after": hb.FILE_ID, "fixes": [{
+        "name": "Mini Doomer", "from": tus.TIME - 2000, "blob": B1, "fields": {"ability": [old["Mini Doomer"][0].ability, "Old."]}}]}))
+    monkeypatch.setattr(hb, "TEXT_FILE", str(text))
+    tus._run()
+    assert "Backfill: " not in (out := capsys.readouterr().out) and out.count("Backfill text: 1 added versions") == 1
+    assert tus._saved()[1]["Mini Doomer"][0].ability == "Old."
     tus._run()
     assert "Backfill" not in capsys.readouterr().out
+    old = tus._saved()[1]
     monkeypatch.setattr(hb, "merged_before", lambda *a: False)
     monkeypatch.setattr(hb, "merge", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     tus._run()

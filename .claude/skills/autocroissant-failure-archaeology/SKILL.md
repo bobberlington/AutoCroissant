@@ -512,7 +512,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   at the owner's request, that file left main for its own local branch, `archive/local-update-stats`
   (commit e2835a7 on a7a4bb3); main has no `archive/` folder. The offline
   helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py (repo_traverser.py since the split, card_data.py since 2026-10-22) for parse_one.py and
-  gap_trace.py. In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:41):
+  gap_trace.py. In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:44):
   stored reminders drop the two options at load (`REMINDER_VERSION` 2 → 3) and at fire time, pre-v2
   positional values are mapped by the old option order first, and a new reminder naming one gets a
   "Dropped ..." note instead of an error.
@@ -835,10 +835,10 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | New history since this file | `git log --oneline -5` (anything above 167f30a, or the commits of the 2026-10-20 optimization pass, → review entries) |
 | Entry 1 fixed | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115 on the archive branch; was psd_analyzer.py:1226 before the archive) and `grep -rn removeprefix commands/` (expect empty); `git log -S removeprefix --oneline -- commands/psd_analyzer.py` shows the fix 53db8ee above f7c915c |
 | Entry 1 origin diff | `git show f7c915c -- commands/psd_analyzer.py \| grep -B5 -A5 removeprefix`; old code: `git show 366c8d9:commands/psd_analyzer.py \| grep -n 'relative_path ='` |
-| Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:41-44); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
+| Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:44-47); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
 | Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
-| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/card_data.py commands/repo_traverser.py` (card_data.py 478/488, 301, 234/658; repo_traverser.py 61); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def _next_run' commands/analytics.py` (41, 37, 208); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
+| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/card_data.py commands/repo_traverser.py` (card_data.py 478/488, 301, 234/658; repo_traverser.py 61); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def next_run' commands/analytics.py` (44, 37, 246); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |

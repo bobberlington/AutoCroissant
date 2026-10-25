@@ -159,7 +159,7 @@ def test_before_the_oldest_version(db):
 
 def test_archived_after_its_archive(db):
     """Found by name though its PNG is gone; the reply says when and in which commit the PSD was deleted."""
-    sent = _ask("zoey", "2026-07-01")
+    sent = _ask("ZOEY!!!!!", "2026-07-01")
     assert len(sent) == 1 and sent[0]["links"] is None
     text = sent[0]["content"]
     assert text.startswith(f"**ZOEY!!!!!** as of 2026-07-01 {HEAD}archived on 2026-06-18 (PSD deleted in 35adb38). "
@@ -191,6 +191,19 @@ def test_an_undated_archive_keeps_the_earlier_versions(db, monkeypatch):
 
 def test_archived_cards_only_with_as_of(db):
     assert _texts("ZOEY!!!!!", None) == ["No card found!"]
+
+
+@pytest.mark.parametrize("query, start, logged", [
+    ("Tainted Bethany", f"**Tainted Bethany** as of 2026-02-10 {HEAD}", ""),
+    ("tainted beth", f"Closest match: **Tainted Bethany** as of 2026-02-10 {HEAD}", "Search guess: /query 'tainted beth' as_of"),
+    ("zoey", f"Closest match: **ZOEY!!!!!** as of 2026-02-10 {HEAD}", "Search guess: /query 'zoey' as_of"),
+    ("goku", "No card found!", "Search miss: /query 'goku' as_of"),
+])
+def test_as_of_guesses_say_so_and_are_logged(db, capsys, query, start, logged):
+    """As without as_of: a guess says Closest match, guesses and misses get a console line."""
+    assert _texts(query, "2026-02-10")[0].startswith(start)
+    out = capsys.readouterr().out
+    assert (logged in out) if logged else "Search" not in out
 
 
 def test_a_duplicate_shows_its_originals_history(db):

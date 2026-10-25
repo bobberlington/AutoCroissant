@@ -213,9 +213,9 @@ number; the first number of a pair such as (1/2CD) can also be 0 or −1."
 ## 3. Status effects (64 cards: 12 buffs, 52 debuffs)
 
 Rulebook "19 Status Effects" / "19 Status Effects2" (verbatim points): a status effect is a buff or debuff. If it deals
-DMG or heals, by default it procs at (ENDT); otherwise it takes effect immediately. Duration counts down at (ENDT).
+DMG or heals, by default it procs in phase 4, after (ENDT) effects; otherwise it takes effect immediately. Duration counts down in phase 4.
 DMG-dealing status effects are one instance of damage per unique stack ("5 stacks of Poison is one instance of 5 damage"),
-piercing, and not an attack. The creature's owner chooses the order of resolution per unique status effect at (ENDT).
+piercing, and not an attack. The creature's owner chooses the order of resolution per unique status effect in phase 4.
 If a creature started the global turn with a status effect and the global turn ends before it ended its turn, the effect
 ticks at the end of the global turn, even in hand. Syntax: "[X]T[Y] [Status]", X = duration in turns, Y = stacks
 ("5T1 Poison" = 5 turns of 1 stack of Poison). Standard status effects: only one instance per creature. Stacking: any

@@ -86,13 +86,19 @@ def channels(monkeypatch):
     monkeypatch.setattr(main.client, "get_channel", lambda cid: found.get(cid))
     for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
         q.clear()
+    main._lanes.clear()
+    main._lane_tasks.clear()
     yield found
     for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
         q.clear()
 
 
 def _drain():
-    asyncio.run(main.process_dispatch_queue.coro())
+    """One tick of the dispatch loop, then its channel lanes until they are empty."""
+    async def run():
+        await main.process_dispatch_queue.coro()
+        await asyncio.gather(*main._lane_tasks.values())
+    asyncio.run(run())
 
 
 # ========================
@@ -105,6 +111,24 @@ def test_missing_channel_is_logged_and_the_loop_goes_on(channels, capsys):
     _drain()
     assert [m["content"] for m in channels[2].sent] == ["next"]
     assert "channel 1 not found" in capsys.readouterr().out
+
+
+def test_each_channel_has_its_own_lane(channels):
+    """A 40-card search in one channel doesn't hold another channel's reply; each channel keeps its order."""
+    order = []
+
+    class Slow(Channel):
+        async def send(self, **kw):
+            await asyncio.sleep(0)                      # a send takes a while: other lanes go meanwhile
+            order.append(kw["content"])
+
+    channels[1], channels[2] = Slow(), Slow()
+    for i in range(40):
+        utils.queue_message(utils.make_simple_fake_interaction(1), f"card {i}")
+    utils.queue_message(utils.make_simple_fake_interaction(2), "other reply")
+    _drain()
+    assert [m for m in order if m.startswith("card")] == [f"card {i}" for i in range(40)]
+    assert order.index("other reply") < 3
 
 
 @pytest.mark.parametrize("error", [_http(403, Forbidden), _http(400), ValueError("bad file"), TypeError("bad kwarg")])

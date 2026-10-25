@@ -548,7 +548,7 @@ survive reparses (`parse` copies them from the existing entry). `/update_metadat
 line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
 right-hand sides where they stand (the group renamed, rulebook pages left in place) plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
 
-Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
+Pickles (all in the repo root, committed to git; the reminders live in the gitignored reminder.json — commit discipline lives in
 autocroissant-change-control):
 
 | File | Shape | Measured 2026-07-11 |
@@ -556,7 +556,7 @@ autocroissant-change-control):
 | `stats.pkl` | `dict[str name -> CardInfo]` | 813 entries |
 | `old_stats.pkl` | `defaultdict[str name -> list[CardInfo]]` | 218 names, 223 archived versions |
 | `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
-| `reminder.pkl` | reminders, gitignored — not this skill's domain | |
+| `reminder.json` (was `reminder.pkl`) | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved and its data changed
 (`_history` and `_record_history`, card_data.py; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
@@ -627,15 +627,24 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:42`, singleton `card_repo` at :990) maintains
+`CardRepository` (`commands/query_card.py:56`, singleton `card_repo` at :1192) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :72-115). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :89). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
-Lookup normalizes to `name.replace(' ', '_').lower() + '.png'` and fuzzy-matches with difflib
-`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:32;
-runtime-settable via `/set_ratio`, resets on restart — see autocroissant-config-and-flags).
+Lookup (`lookup` :635, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
+(file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
+`_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today; the reply says
+"(renamed from X)"); else a guess (`closest` :654), which the reply labels "Closest match: X" and the console logs
+(`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
+"luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
+a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
+`DEFAULT_MATCH_RATIO` query_card.py:32; runtime-settable via `/set_ratio`, resets on restart — see
+autocroissant-config-and-flags). `/query as_of` guesses the same way over current and archived names, and says so.
+Card-name options autocomplete from `name_choices` (:552): `choices` (cards, titles, aliases, old names),
+`old=False` drops old names (/alias), `cards=True` offers card names only (/bake_cards matches Card Edits.json keys).
+main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options
@@ -653,21 +662,21 @@ lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.
 parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
 names), and before that `/alias` refuses to change an aliases.pkl alias.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:307-375)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:336)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
-:508-535): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
+:597): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 rulebook pages split into a separate `rulebook_dff`, and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
 | Syntax | Meaning | Example |
 |---|---|---|
-| bare text | substring match on ability + fuzzy fallback | `frostmourne` |
-| `"quoted text"` | word-boundary-ish regex match on ability | `"draw 2"` |
-| `!expr` | NOT — negated ability-text match only | `!die` |
+| bare text | substring of name, printed title, website names/aliases, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
+| `"quoted text"` | word-boundary-ish regex match on the same text | `"draw 2"` |
+| `!expr` | NOT — any term, conditions too | `!die`, `!type==creature` |
 | `a & b` | AND (index intersection) | `type==creature & hp>7` |
 | `a \| b` | OR (index union, deduplicated) | `hp>9 \| spd>9` |
-| `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10` |
+| `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10`, `total>=25` |
 | `col==value` | string equality, case-insensitive | `series==kirby` |
 | `col~value` | string contains, case-insensitive | `type~creature`, `subseries~door` |
 | `created<op>date` | creation date at the precision given (YYYY, YYYY-MM or YYYY-MM-DD); undated cards never match | `created>=2025`, `created==2023-10` |
@@ -677,21 +686,25 @@ search). `created` is the card's `site/Card Creation Dates.json` date, or its fi
 is later (`CardDates.created`, the website's rule); it is in `/export_cards` and `/update_metadata`'s view too.
 `site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
-Numeric-queryable columns: hp, def, atk, spd, stars. String-queryable: type, subtype, series,
-subseries, author, path, ability, types (the list is stringified, so `types~undead` works). `prep_dataframes`
+Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
+count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (stringified list, so
+`types~undead` works), name (printed title, else the name), alias (alias/aliases: Card Edits.json names and aliases,
+joined), ability, path, created. Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
+Synonyms (`SYNONYMS`): damage/DMG, defense/DEF, speed/SPD, health/HP find each other in text terms. `prep_dataframes`
 adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
-gotcha-4 text fall-through; `series==mario & subseries~door` is the website's own example.
+gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's own example.
 
-**Evaluation order and gotchas** (all verified in code, 2026-07-11):
+**Evaluation order and gotchas** (verified in code 2026-07-11; 2, 4 and 9 rewritten 2026-10-24):
 
 1. Precedence: `|` splits BEFORE `&`, so `a & b | c` = `(a AND b) OR c`. No parentheses exist.
-2. Stat/column queries are recognized AFTER splitting but BEFORE `!` — so `!type==creature` is NOT
-   a negated filter; it becomes a negated TEXT search for the literal string "type==creature"
-   (matches nearly everything). `!` only composes with text terms.
+2. `!` is read BEFORE the condition (since 2026-10-24): `!type==creature` is every card that isn't type==creature.
+   Until then it was a negated text search for "type==creature" and returned all 764 cards. `type!=creature`
+   answers with an error naming the `!` form.
 3. `/query_ability` lowercases the whole query, and abilities are pre-lowercased in the dataframe:
    text search is case-insensitive; so are `==`/`~` values.
-4. A column query on a nonexistent column (`hp2>3`, typo'd `serie==kirby`) silently falls through
-   to TEXT search of that literal string — expect 0 or nonsense hits, not an error.
+4. A condition on an unknown field (`atack>3`, `serie==kirby`) answers with an error naming the valid fields (and a
+   did-you-mean); so does a value the field can't compare (`hp>=x`, `total~5`). To search such text, quote it.
+   Until 2026-10-24 these fell through to a text search and found 0 cards.
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
@@ -699,8 +712,10 @@ gotcha-4 text fall-through; `series==mario & subseries~door` is the website's ow
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:358) — approximately word-bounded,
    punctuation-tolerant.
-9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:391-415). 48 pages today.
+9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
+   spacing over `rulebook_dff`, no DSL — query_card.py:410). It posts the matching LINES under their page names
+   (`rulebook_lines` :1112; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
+   pages with the most lines first, whole pages per message. 48 pages today.
 10. Each result posts its image URL alone, one message per card (a preview, via `get_card_url`; its name when the PNG
     is not in the tree). From 2026-10-21 to 2026-10-23 they were listed as `<name> — <url>` lines, 10 per message;
     `howmany:True` returns just the count; `limit` caps output (main.py:313-328).
@@ -738,7 +753,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_parser.py` |
 | Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
-| DSL internals | `grep -n '_stat_pattern\|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
+| DSL internals | `grep -n 'FIELD_PATTERN\|_FIELDS = \|SYNONYMS = \|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
 | Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = \|PSD_STATES\|def psd_state\|def set_psd_state" commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |

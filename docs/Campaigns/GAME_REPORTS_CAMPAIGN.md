@@ -149,7 +149,7 @@ no section for zones or scripted objects. `_sync_decks` only ever adds cards ins
 ### P5. Event log and the host-typed webhook (optional)
 1. `onObjectEnterZone`/`onObjectLeaveZone` (the latter to confirm) on P1 zones append `{t, card, from, to, by}` to `log`: `t` = the
    Global Turn counter plus the slot whose token reads "Is taking its turn"; `by` = that slot's team. Kill attribution by "whose
-   turn" is a guess (reactions, 12_Reactions, and status damage at (ENDT), 19_Status_Effects, break it) and is labelled a guess.
+   turn" is a guess (reactions, 12_Reactions, and status damage in phase 4, 19_Status_Effects, break it) and is labelled a guess.
 2. Webhook: an input on the tile; `WebRequest.post(url, json)` (to confirm) to a Discord webhook URL the host typed this session,
    into a channel the bot reads through a new `on_message` handler that feeds P3's validation (the bot has none today, and no HTTP
    listener to post to: architecture contract); `onSave` never writes the URL.

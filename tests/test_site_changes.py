@@ -79,12 +79,13 @@ process.stdout.write(JSON.stringify([...rows.map(r => text(ch.archiveHtml([r], "
 @archive_tags
 def test_archive_tag_chips_filter(tmp_path):
     """?tag=retired lists only the retired cards; the chips count every tag; the Changelog tab has no archive panel."""
-    rows = [{"card": "A", "moved_to": "MDW/A.psd"}, {"card": "B", "renamed_to": "C"}, {"card": "D"}, {"card": "E", "moved_to": "MDW/E.psd"}]
+    rows = [{"card": "A", "moved_to": "MDW/A.psd"}, {"card": "B", "renamed_to": "C"}, {"card": "D"}, {"card": "E", "moved_to": "MDW/E.psd"},
+            {"card": "F", "moved_to": "MDW/Unfinished/F.psd"}]
     out = node(tmp_path, f"""const rows = {json.dumps(rows)};
 const html = ch.archiveHtml(rows, "o/r", new URLSearchParams("tag=retired"));
 const chips = [...html.matchAll(/data-value="([^"]+)">([^<]+)<span class="n">(\\d+)/g)].map(m => [m[1], m[2], +m[3]]);
 const names = [...html.matchAll(/<li><b>([^<]+)<\\/b>/g)].map(m => m[1]);
 const log = ch.changelogHtml({{ available: true, days: 180, events: [], archived: rows, repo: "o/r" }}, new URLSearchParams());
 process.stdout.write(JSON.stringify({{ chips, names, on: /class="chip on"[^>]*data-value="retired"/.test(html), log: log.includes("<b>A</b>") }}));""")
-    assert out["chips"] == [["renamed", "Renamed", 1], ["retired", "Retired", 2], ["deleted", "Deleted", 1]]
+    assert out["chips"] == [["renamed", "Renamed", 1], ["retired", "Retired", 2], ["unfinished", "Unfinished", 1], ["deleted", "Deleted", 1]]
     assert out["names"] == ["A", "E"] and out["on"] and not out["log"]

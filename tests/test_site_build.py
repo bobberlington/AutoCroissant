@@ -214,6 +214,13 @@ def test_an_archived_card_keeps_where_its_psd_went(bs, repo, tmp_path, monkeypat
         [("White Palace", "MDW/The Morgue/White_Palace.psd")]
 
 
+def test_an_unfinished_card_has_its_own_tag(bs):
+    """MDW/Unfinished is Unfinished (owner, 2026-10-24); The Morgue is Retired; renamed_to wins; nothing is Deleted."""
+    tags = [bs.archive_tag(t) for t in ({"moved_to": "MDW/Unfinished/6 Stars/Insanity_Wisp.psd"},
+                                        {"moved_to": "MDW/The Morgue/Ech.psd"}, {"renamed_to": "X", "moved_to": "MDW/Unfinished/X.psd"}, {})]
+    assert tags == ["unfinished", "retired", "renamed", "deleted"]
+
+
 def test_an_archived_event_keeps_moved_to(bs, repo, tmp_path, monkeypatch):
     """The card sync's archived event reaches the Changelog tab with moved_to (changes.js: "moved to MDW/The Morgue")."""
     out = _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
@@ -585,3 +592,59 @@ def test_card_buttons_sit_under_the_image():
     assert body.count('data-action="deck-toggle"') == 1
     wrap = body[body.index('<div class="detail">'):body.index("<h2>")]
     assert wrap.rstrip().endswith("</div></div>\n      <div>")      # image column closes, then the info column
+
+
+def _stamps(dist: Path) -> dict:
+    """{asset or data URL in index.html: its ?v= stamp} and the build meta"""
+    import re
+    page = (dist / "index.html").read_text(encoding="utf-8")
+    out = dict(re.findall(r'((?:assets/[\w-]+\.(?:js|css))|data/cards\.json)\?v=([0-9a-f]+)"', page))
+    out["build"] = re.search(r'<meta name="build" content="([0-9a-f]+)">', page).group(1)
+    return out
+
+
+def test_stamps_follow_the_content_not_the_clock(bs, repo, tmp_path, monkeypatch):
+    """Two builds of the same inputs give the same ?v= stamps, served assets and build.txt (only cards.json's and
+    decks.json's generated and changelog.json's since differ); new data changes the data's stamp and build.txt, never an
+    asset's."""
+    if not hasattr(bs, "asset_stamps"):
+        pytest.skip(f"{BUILD_SITE} stamps every URL with one build version")
+    _build(bs, monkeypatch, repo, tmp_path / "a")
+    _build(bs, monkeypatch, repo, tmp_path / "b")
+    a, b = tmp_path / "a" / "dist", tmp_path / "b" / "dist"
+    assert _stamps(a) == _stamps(b)
+    digest = hasattr(bs, "BUILD_TXT")             # build.txt, the site's digest for site.yml
+    assert not digest or (a / "build.txt").read_text() == (b / "build.txt").read_text()
+    for path in sorted((a / "assets").iterdir()):
+        assert path.read_bytes() == (b / "assets" / path.name).read_bytes(), path.name
+    assert _stamps(a)["data/cards.json"] == _stamps(a)["build"]
+
+    stats = cdb.load_pickle(str(repo["pickles"] / "stats.pkl"))
+    stats["Alpha"].ability = "Newer text."
+    cdb.dump_pickle(stats, str(repo["pickles"] / "stats.pkl"))
+    _build(bs, monkeypatch, repo, tmp_path / "c")
+    c = tmp_path / "c" / "dist"
+    before, after = _stamps(a), _stamps(c)
+    assert after["build"] != before["build"] and after["data/cards.json"] == after["build"]
+    assert {k: v for k, v in after.items() if k.startswith("assets/")} == {k: v for k, v in before.items() if k.startswith("assets/")}
+    assert not digest or (c / "build.txt").read_text() != (a / "build.txt").read_text()
+
+
+def test_an_asset_stamp_covers_its_imports(bs):
+    """A module's stamp changes with its own text and its imports' (their stamps are in it), not with a module it
+    doesn't import; the served text names each import's stamp; an import cycle gives every file one stamp."""
+    if not hasattr(bs, "asset_stamps"):
+        pytest.skip(f"{BUILD_SITE} stamps every URL with one build version")
+    texts = {"app.js": 'import { a } from "./a.js";\nimport { b } from "./b.js";\n', "a.js": 'import { t } from "./t.js";\nexport const a = 1;\n',
+             "b.js": "export const b = 2;\n", "t.js": "export const t = 3;\n", "style.css": "body { color: red; }\n"}
+    one = bs.asset_stamps(texts)
+    assert one["app.js"][1] == (f'import {{ a }} from "./a.js?v={one["a.js"][0]}";\nimport {{ b }} from "./b.js?v={one["b.js"][0]}";\n')
+    assert one["a.js"][1] == f'import {{ t }} from "./t.js?v={one["t.js"][0]}";\nexport const a = 1;\n'
+    two = bs.asset_stamps({**texts, "t.js": "export const t = 4;\n"})
+    assert {n for n in texts if one[n][0] != two[n][0]} == {"t.js", "a.js", "app.js"}
+    three = bs.asset_stamps({**texts, "b.js": "export const b = 5;\n"})
+    assert {n for n in texts if one[n][0] != three[n][0]} == {"b.js", "app.js"}
+    assert bs.asset_stamps(texts) == one
+    cycle = bs.asset_stamps({**texts, "t.js": 'import { a } from "./a.js";\nexport const t = 3;\n'})
+    assert len({stamp for stamp, _ in cycle.values()}) == 1
+    assert 'from "./a.js?v=' + cycle["a.js"][0] + '"' in cycle["t.js"][1]
