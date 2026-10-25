@@ -275,6 +275,8 @@ def parse_schedule(when, offset, frequency, now):
         raise ValueError("give a time with `when` (e.g. `13:00`, `1PM`, `sun 3AM`) or a delay with `offset`")
     if offset_delta:
         remind_at = remind_at + offset_delta
+    if remind_at - now > MAX_INTERVAL:
+        raise ValueError(f"{remind_at.strftime('%Y-%m-%d')} is more than {MAX_INTERVAL.days} days away")
     if remind_at <= now:
         if fixed_day:
             raise ValueError(f"{remind_at.strftime('%Y-%m-%d %H:%M %Z')} is in the past")
@@ -638,7 +640,10 @@ def _new_id():
 def _snowflake_in(value, what):
     if not isinstance(value, str) or not SNOWFLAKE.fullmatch(value):
         raise StoreError(f"{what} must be a decimal string")
-    return int(value)
+    try:
+        return int(value)
+    except ValueError:
+        raise StoreError(f"{what} is too long") from None
 
 
 def _snowflake_out(value, what):
@@ -770,12 +775,22 @@ class ReminderStore:
             raise StoreError(f"reminder {rid}: unreadable time") from None
         if parsed.tzinfo is None:
             raise StoreError(f"reminder {rid}: the time has no UTC offset")
-        when = parsed.astimezone(TIMEZONE)
-        if when.utcoffset() != parsed.utcoffset():
-            raise StoreError(f"reminder {rid}: the time's offset is not {ZONE_LABEL}'s at that instant")
+        # Keep the stored wall time (a spring-forward gap time stays as written); fold picks the offset.
+        when = None
+        for fold in (0, 1):
+            candidate = parsed.replace(tzinfo=TIMEZONE, fold=fold)
+            if candidate.utcoffset() == parsed.utcoffset():
+                when = candidate
+                break
+        if when is None:
+            raise StoreError(f"reminder {rid}: the time's offset is not {ZONE_LABEL}'s at that time")
         frequency = entry["frequency"]
         if frequency is not None and (isinstance(frequency, bool) or not isinstance(frequency, int) or frequency <= 0):
             raise StoreError(f"reminder {rid}: frequency must be whole seconds or null")
+        try:
+            frequency = timedelta(seconds=frequency) if frequency else None
+        except OverflowError:
+            raise StoreError(f"reminder {rid}: frequency is too large") from None
         for key in ("msg", "creator_name"):
             if not isinstance(entry[key], str):
                 raise StoreError(f"reminder {rid}: {key} must be text")
@@ -793,7 +808,7 @@ class ReminderStore:
             "channel_id": _snowflake_in(entry["channel_id"], f"reminder {rid}: channel_id"),
             "msg": entry["msg"],
             "when": when,
-            "frequency": timedelta(seconds=frequency) if frequency else None,
+            "frequency": frequency,
             "command": entry["command"],
             "enabled": entry["enabled"],
             "creator_id": None if creator_id is None else _snowflake_in(creator_id, f"reminder {rid}: creator_id"),
@@ -1033,13 +1048,15 @@ def _load_locked():
             print(f"{LEGACY_PATH} is ignored: {STORE_PATH} exists (move {STORE_PATH} aside to convert the pickle again).")
         try:
             loaded = _store.load()
-        except (OSError, UnicodeDecodeError, StoreError) as e:
-            _load_error = (f"{STORE_PATH} could not be read ({e}). The file was left untouched; "
+            changed = _settle(loaded)
+        except Exception as e:
+            reason = e if isinstance(e, StoreError) else f"{type(e).__name__}: {e}"
+            _load_error = (f"{STORE_PATH} could not be read ({reason}). The file was left untouched; "
                            f"fix it, or move it aside and restart the bot for a fresh schedule")
         else:
             _backend = "json"
             reminders = loaded
-            if _settle(reminders):
+            if changed:
                 _save_after_load()
             return
     elif exists(LEGACY_PATH):

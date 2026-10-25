@@ -78,6 +78,19 @@ def test_pkl_converts_once(monkeypatch):
     assert an.snapshot(GUILD) == loaded and an.ReminderStore(an.STORE_PATH).serialize(an.reminders) == \
         Path(an.STORE_PATH).read_text()                                 # a no-op save is a zero diff
 
+    gap = datetime(2099, 3, 8, 2, 30, tzinfo=TIMEZONE)                  # spring-forward gap: kept as written
+    an.reminders[GUILD].append(dict(loaded[1], id="aaaa0003", when=gap))
+    an.save_reminders()
+    _reload(monkeypatch)
+    assert an._load_error is None and an.snapshot(GUILD)[3]["when"].utcoffset() == timedelta(hours=-8)
+
+    doc = json.loads(Path(an.STORE_PATH).read_text())
+    doc["guilds"][str(GUILD)][0]["frequency"] = 10 ** 15                # overflows timedelta
+    Path(an.STORE_PATH).write_text(json.dumps(doc))
+    before = Path(an.STORE_PATH).read_bytes()
+    _reload(monkeypatch)
+    assert "too large" in an._load_error and Path(an.STORE_PATH).read_bytes() == before   # off, file untouched
+
 
 def test_failed_conversion_keeps_pickle(monkeypatch):
     _jetson_pickle()

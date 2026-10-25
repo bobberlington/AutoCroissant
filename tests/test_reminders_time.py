@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from commands.analytics import MAX_INTERVAL, checked_interval, format_interval, next_run, parse_interval, parse_when
+from commands.analytics import (MAX_INTERVAL, checked_interval, format_interval, next_run, parse_interval,
+                                parse_schedule, parse_when)
 from global_config import TIMEZONE
 
 NOW = datetime(2026, 10, 18, 4, 0, tzinfo=TIMEZONE)        # a Sunday, 4 AM Pacific
@@ -57,20 +58,22 @@ def test_interval_invalid(text):
     assert parse_interval(text) is None
 
 
-def testchecked_interval():
+def test_checked_interval():
     assert checked_interval("frequency", "  ") is None
     assert checked_interval("frequency", "1w") == timedelta(weeks=1)
     for raw, reason in (("0m", "longer than zero"), ("367d", "maximum"), ("1y", "invalid")):
         with pytest.raises(ValueError, match=reason):
             checked_interval("frequency", raw)
     assert checked_interval("offset", f"{MAX_INTERVAL.days}d") == MAX_INTERVAL
+    with pytest.raises(ValueError, match="days away"):                 # a year typo
+        parse_schedule("9999-12-31 11PM", "", "", NOW)
 
 
 @pytest.mark.parametrize("text", ["1w", "1d12h", "30m", "1w2d3h4m5s"])
-def testformat_interval_round_trip(text):
+def test_format_interval_round_trip(text):
     assert format_interval(parse_interval(text)) == text
 
 
-def testnext_run_skips_missed_runs():
+def test_next_run_skips_missed_runs():
     assert next_run(NOW - timedelta(hours=2, minutes=30), timedelta(hours=1), NOW) == NOW + timedelta(minutes=30)
     assert next_run(NOW - timedelta(hours=1), timedelta(hours=1), NOW) == NOW + timedelta(hours=1)
