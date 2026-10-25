@@ -95,3 +95,8 @@ ENV/
 # ===================================
 Thumbs.db
 .DS_Store
+
+# reminders, per machine like reminder.pkl: the store, its temp file, the pickle the one-time conversion kept (2026-10-24)
+reminder.json
+reminder.json.tmp
+reminder.pkl.bak

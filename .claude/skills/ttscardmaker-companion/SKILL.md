@@ -387,9 +387,11 @@ tests/test_badge_parity.py):
 - `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
   `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
-- **Bakes refuse glow tokens.** The psd-tools fork draws an OT-SVG glyph as its `glyf` outline: the halo's is the whole
-  halo (traced at alpha 0.5/255), a solid block under an overlay. `psd_edit.set_text` refuses ("font") a text with
-  `:glow` or `:darkglow`; edit those cards in Photoshop.
+- **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
+  the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a badge FX layer
+  or a tint a glow is told as any see-through icon, and a halo onto the stars or a layer is told too (owner
+  2026-10-24: content problems bake, told); on a fork without the halos (`psd_edit.glow_halos`) it is a runner error
+  (no verdict; retried once the fork is reinstalled).
 
 ## 2. The card-browser website
 
@@ -432,7 +434,7 @@ TTSCardMaker Actions runner (same trusted circle today).
     data; `parsed` only when false; `ts` = the PSD's last commit, `since` = when the current text started (the bot's
     carried `version.from`, or earlier versions with the same text; only when it differs from `ts`).
   - `data/details/<id>.json` (one per card with a PSD record, 0.9-16.7 KB; fetched when the card page's Details
-    dropdown is first opened, rendered by `site/assets/details.js`; the build version counts them, it does not hash them).
+    dropdown is first opened, rendered by `site/assets/details.js`; in the data stamp).
   - `data/analytics.json` (balance analytics, plus since round 3 `revisions` and `archived` rows for Stats' History;
     ~130 KB; loaded only when the Stats page or a card's Balance block opens, rendered by `site/assets/balance.js` and
     `insights.js`; in `files`, so in the build version).
@@ -447,8 +449,10 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Pages:** `index.html` (`<base href="./">`), `404.html` (`<base href="<SITE_URL or ''>/">`), and one share page
   per card at `c/<slug>/` with OG tags. Kind labels use the game's words; tokens are flattened, `:tint` / `:sticker`
   included.
-- **Cache-busting:** every script/style/data URL carries `?v=<build>`. `index.html`'s preload hints are rewritten too,
-  and modules' `from "./x.js"` imports get the same stamp, so a deploy never mixes old scripts with new data.
+- **Cache-busting:** every script/style/data URL carries `?v=`: an asset's from its content and its imports' stamps,
+  the data's from its content without the build time (since 2026-10-24). `index.html`'s preload hints and modules'
+  `from "./x.js"` imports are stamped too, so a deploy never mixes old scripts with new data, and one that changed
+  nothing keeps every URL. `build.txt` digests the site; every build deploys (a gate on it is the owner's to decide).
 - **Size:** about 117 MB in total, mostly 2,463 card images.
 
 **Build behaviour:**
@@ -531,6 +535,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
 | **Sharing**: address bar shows `c/<id>/` (cards) and `d/#/deck/…` (hands) via `syncUrl` (base pinned at load); `c` copies the card link (no card Share dialog, Full image or PSD on GitHub link since 2026-10-23); deck and person pages keep their Share; a hand's Discord message links cards as `[name](<url>)` | `site/assets/app.js` |
 | **Link previews**: per-card `c/<id>/index.html` with og tags, `og:image` = 480 px JPEG `thumbs/<blob16>-og.jpg` (from the 720 webp), `theme-color` = card accent color; `og.jpg` banner; `d/` page | `site/build/build_site.py` (`og_tags`, `share_text`, `accent_color`, `site_banner`) |
+| **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, `build.txt` (no deploy gate: owner's call). The rules code must keep: TTSCardMaker `site/NOTES.md` §27; tests `tests/test_site_speed.py` | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
 - **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
@@ -570,7 +575,14 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   like any wrong-typed field; a refusal shows only while its `for` values and `psd` blob prefix still match (review fix 2026-10-20).
   A pixel miss is no refusal since 2026-10-23 (owner): the edit is baked and the bake commit's line says "name baked
   with a pixel difference: bad 1.97%, mean 1.60, max 217"; only a broken render (more than 25% of the box's pixels off,
-  or none of the edit drawn) or a read-back that is not the edit is refused. Pixel refusals written under the old bar
+  or none of the edit drawn) or a read-back that is not the edit is refused. Since 2026-10-24 (owner; AutoCroissant
+  work/fx-rebuild) no content problem refuses either: text that won't fit, typed badges and tokens, styled words and
+  font stand-ins bake, each told in the commit line and the baked `_psd` verdict's `reason` ("name 'A' -> 'B'; overflow:
+  name: it runs onto 2 lines (it has 1)") and in the preview's `notes`. A flagged bake keeps its baked verdict, alone
+  (`{"_psd": ...}`) once no field is left (card_bake.rewrite_entry `keep`); TTSCardMaker branch work/fx-rebuild (not on
+  main yet) has build_site put a baked verdict's reason in cards.json's `baked` while `psd` matches the tree's blob, and
+  the card page show it ("Image baked: ..."). A refused verdict carries `rules` (card_bake.RULES); one without is tried
+  again by `--pending`. Pixel refusals written under the old bar
   (Masked Dedede, PoD11ZOMG, Zero Override) show as refused until the next run bakes them: `build_site.py` (about line
   855) knows nothing of the floor, so the window is the first 30-minute card-edits tick after the change lands (a
   dispatch closes it at once).
@@ -942,7 +954,7 @@ Survey: 53 overlays on 40 cards (impossibility-cards-reference §4.2).
    - If the mask has more pixels than the key layer itself, it throws instead of building a wrong layer.
 3. **Pixels:** **Layer via Copy** (on-canvas pixels only) from an untouched rasterized duplicate gives a pixel layer named `<text layer> FX: <words>`. Its pixels are the card's own.
 4. **Placement:** the layer goes above the text's top group, outside the group's stroke and shadow. The words keep the card's font, size and color.
-   - **The edit pipeline makes the same layers (2026-10-21, AutoCroissant `commands/psd_edit.py` `set_text_layer`, design §7 idea 14):** on every ability edit it deletes the text layer's `<layer> FX: …` layers and cuts one per *styled* chart status in the new text, same names (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat; one layer per occurrence), the key-copy technique over the fork's text engine, the pixels from the fork's raster, the chart layer's `lfx2`/`lrFX` copied, placed directly above `Text`; a hand-made overlay word layer naming a styled status is hidden (not deleted), any other overlay refuses the card. Verified against this script's Convert-overlays output: IoU 0.966 (Gasoline) / 0.937 (Royal Eradicator Main Cannon), validator coverage 1.0.
+   - **The edit pipeline makes the same layers (AutoCroissant `commands/psd_edit.py` `set_text_layer`, design §5 step 4 and §7 idea 14):** since BUG 2 (2026-10-23, branch `work/fx-rebuild`, not landed) an ability edit runs this script's **Update all** on the new text: every `<layer> FX: …` layer is cut again in place (same key copy, phrase matching and badge rule; its record, style and place kept), a phrase gone from the text leaves the name, a layer with none left goes, every layer keeps its own style (q6, unattended call 2026-10-23, owner to confirm: the chart's style only on a new layer), and a styled status word no layer covers gets one above `Text` (the **Add** naming). Badge layers (queue A's gradient cards), layers carrying a chart status's style (Monkey D Goofy's `1#1`) and, since 2026-10-23 (owner), layers in any other style (Fire Staff's Smoldering stroke) are rebuilt, each in its own style. A layer in a style of its own stays on its own words (review: a "1" typed before Goofy's renames it `1#2`, which this script's Update all cuts on the same "1"; a whole-word "1" anywhere refuses, since `1#1` would move to it). A typed badge or icon token is set in stoogedings at the card's own badge style (owner 2026-10-23), so on a badge card it joins the badge layer as this script's Update all would cut it. Checked against this script's Update all run in Photoshop on 8 baked copies: same boxes, style and place, IoU 0.955-1.0, no differing pixel on the shared ink (2026-10-21: Convert overlays, IoU 0.966 Gasoline / 0.937 Royal Eradicator Main Cannon).
 5. **Swatch colors:** `readAco` parses `MDW/Status Effects.aco` and `MDW/Attributes.aco` (101 RGB swatches) in ExtendScript.
    - **Add** (checkbox, on by default) and the batch's `AUTO_STYLES` color the words with the swatch of the same name first (`colorWords`). Two-tone statuses use "<name> 1"; their `.asl` gradient draws the rest.
    - **Convert overlays** keeps the overlay's own color, and notes when it differs from the swatch.
@@ -1097,8 +1109,14 @@ Maintenance rules:
 
 2026-10-23 (docs drift): the balance analytics (TTSCardMaker af826714, 2026-10-22) in §0's website-source row, the §2.1 data-flow table, the data files and the feature table (the draft in session-rescue-2026-10-22/resume/companion_analytics_line.md, verified at af826714; `page_chain` folds re-reads by when since 7a87d91a). §4's Photoshop 2023 save row from the 2026-10-22 session notes (SESSION2_NOTES.md 07:3x, 08:3x) and the archived RESUME_2026-10-22.md.
 
+2026-10-23 (BUG 2, AutoCroissant work/fx-rebuild): §4's edit-pipeline bullet says the bake runs Update all on the new text (in place, badge and chart-style layers rebuilt, others refuse), checked against this script's Update all in Photoshop on 8 baked copies.
+2026-10-23 (BUG 2 review): §4's bullet adds the follow rule for chart-style layers (Goofy's `1#2`, checked with this script's Update all in Photoshop: IoU 1.0, as for PoD11ZOMG's renamed badge layer) and the typed-badge refusal.
 2026-10-24 (round 3): §2.1 output data files (analytics.json ~130 KB with revisions and archived; contributions.json and changelog.json keys) and §2.4 rows (search without has:details, Balance without the cooldown update, Ratings, Stats round 3, Archive tab, person stats, pinned tray), against TTSCardMaker branch work/r3-integ.
 
 2026-10-24 (py314, branch work/py314 of both repos): every Action on Python 3.14; the fork in six workflows (card-check
 and font-check join), one wheel cache entry, card-sync one venv; the card guards without R7, G2 rendered anyway, the
 quiet window an environment (AutoCroissant docs/Campaigns/PUSH_GUARDS.md section 20).
+
+2026-10-24 (speed pass): §2.4's Speed pass row, against TTSCardMaker branch work/site-perf (front end, stamps by content, site.yml `paths`, `build.txt`); §2.1 cache-busting.
+
+2026-10-24 (BUG 2 phase 6, AutoCroissant work/fx-rebuild): §1.8's bake bullet and §2's Website edits bullet say content problems bake, told; what the site lacks to show a baked verdict's notes.

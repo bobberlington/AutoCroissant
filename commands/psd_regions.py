@@ -47,14 +47,16 @@ def fx_pad(layer) -> int:
         layer: Any layer
 
     Returns:
-        Outside strokes added up, plus the largest shadow reach (distance + size) or glow size
+        Each owner's reach added up (a group's effects draw around its layers' effects): its outside strokes plus its
+        largest shadow reach (distance + size) or glow size
     """
-    stroke = shadow = 0
+    total = 0
     for owner in (layer, *_ancestors(layer)):
         try:
             effects = list(owner.effects)
         except Exception:                       # no effects block, or one psd-tools can't read
             effects = []
+        stroke = shadow = 0
         for effect in effects:
             if not effect.enabled:
                 continue
@@ -67,7 +69,8 @@ def fx_pad(layer) -> int:
                 shadow = max(shadow, int(effect.distance + effect.size + 0.5))
             elif kind == "OuterGlow":
                 shadow = max(shadow, int(effect.size + 0.5))
-    return stroke + shadow
+        total += stroke + shadow
+    return total
 
 
 def _box(layer, width: int, height: int, pad: bool = True, bbox=None):

@@ -62,7 +62,7 @@ Ground rules:
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:13); used by `client.run(TOKEN)` (main.py:987) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
 | `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
-| `ACTIONS_TOKEN` (2026-10-22) | no (only with `CARD_SYNC` on) | `""` (commands/card_sync.py:34) | card_sync | prod, used after the cutover | A fine-grained token for TTSCardMaker only, Actions read and write. After the cutover `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. In the jetson's config.py since 2026-10-22 ~12:25 |
+| `ACTIONS_TOKEN` (2026-10-22) | no (only with `CARD_SYNC` on) | `""` (commands/card_sync.py:34) | card_sync | prod, used after the cutover | A fine-grained token for TTSCardMaker only, Actions read and write. After the cutover `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. Before it, `/push` dispatches the website build (site.yml) with it after a push of the pickles (card_sync.dispatch_site). In the jetson's config.py since 2026-10-22 ~12:25 |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
@@ -136,7 +136,8 @@ The 2026-10-22 seven are gated whole, view modes included (`/set_repo` and `/ali
 does not enable).
 
 Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
-- `/remove_reminder` lets admins remove any reminder and everyone else only their own.
+- `/remove_reminder` and the `/reminders` panel's Reschedule, Turn off/on and Delete: admins, or the reminder's
+  creator (`can_edit`; no creator: admins only). The panel's New is admin only, like `/set_reminder`.
 - A firing reminder runs as its creator, so every gate above is re-checked against the creator at fire time.
   Reminders saved before 2026-10-19 have no creator and still run as the bot (`LEGACY_RUNS_AS_BOT`); the bot's
   own id is in the dev Mac's ADMINS. Mechanism: autocroissant-architecture-contract invariant 9.
@@ -184,7 +185,8 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `STATS_PKL` | `"stats.pkl"` | the card stats database pickle (committed) |
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
-| `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
+| `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
+| `REMIND_PKL` | `"reminder.pkl"` | the old reminder store: converted once to `REMIND_JSON`, then kept as `reminder.pkl.bak` |
 | `DETAILS_JSON` (2026-10-21) | `"psd_details.json"` | the website's per-card PSD facts by blob sha (commands/psd_details.py); committed and pushed with the pickles by /push, kept local on a /pull conflict; its `.tmp` gitignored |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONTS_CACHE` (2026-10-21, 66cfe9e) | `"fonts_cache"` | MDW/Fonts' font files, refreshed by tree sha, where there is no card repo checkout (the jetson): the bake, psd_details and `/fonts` read it (gitignored) |
@@ -425,10 +427,18 @@ needed inside the bot. The work dir is card_bake's (`RUNNER_TEMP` else a fresh `
 (`card_bake._fonts_dir`): `PSD_TOOLS_FONT_DIRS`' first entry, then the checkout's `MDW/Fonts`, then `fonts_cache/`
 brought to the tree's MDW/Fonts (66cfe9e, 2026-10-21) — so the jetson, which has no checkout, has fonts.
 
-### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
+### commands/analytics.py — reminders (lines 28-81, added 2026-10-19; adapter block 2026-10-24)
+
+The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
+(`REMIND_JSON`), `LEGACY_PATH` (`REMIND_PKL`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
+`RUN_AS_CREATOR = True`, `LEGACY_RUNS_AS_BOT`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
+store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` and `is_admin`.
 
 | Constant | Value | Meaning |
 |---|---|---|
+| `SCHEMA_VERSION`, `KEYS` (2026-10-24) | `2`; the 11 stored fields | reminder.json's format; a newer schema_version is refused |
+| `NOT_SCHEDULABLE` | `{"reminders"}` | commands a reminder can't run (the panel needs a real user) |
+| `PANEL_TIMEOUT`, `SELECT_SIZE` | `600` s; `25` | an idle panel closes; options per jump list (more: 23 per page plus earlier/later) |
 | `REMINDER_VERSION` | `3` (2 until 2026-10-20) | stored as `v` on each reminder once migrated; reminders without `v` are read with the old command semantics, and any reminder below the current version is migrated on load (3 = retired options stripped) |
 | `MAX_INTERVAL` | `timedelta(days=366)` | upper limit for `offset` and `frequency` (longer = typo, and huge values overflow datetime) |
 | `CHANNEL_RETRY` | `timedelta(hours=1)` | how long a one-shot reminder whose channel is gone waits before trying again |
@@ -554,7 +564,7 @@ Re-pin:
    wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
@@ -700,11 +710,11 @@ table with its command before quoting it in the future.
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
-| Reminder constants | `sed -n '26,56p' commands/analytics.py` |
+| Reminder constants | `sed -n '28,81p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
 | global_config constants | `cat global_config.py` (45 lines) |
 | setup.py build config | `sed -n '8,49p' setup.py` |
-| Gitignore coverage (config.py, reminder.pkl, music/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|csv\|txt" .gitignore` |
+| Gitignore coverage (config.py, reminder.json, music/, *.csv, *.txt) | `grep -n "config.py\|reminder\|music/\|csv\|txt" .gitignore` |
 
 When any command's output disagrees with this file, the repo wins: update the table, re-date the
 "as of" stamps, and note the change here.
