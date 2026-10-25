@@ -108,22 +108,31 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       run summary) leaves the merge marked done with the current cards' starts unsaved: restore both pickles (`git
       checkout HEAD -- stats.pkl old_stats.pkl` on the jetson, before any `/push`) and run `/update_stats` again.
 - [x] Merged in production (PICKLE 23eecae, 2026-10-24 17:30).
-- [ ] **The text fix (branch `work/histfix`, owner-approved 2026-10-24):** the merge's added versions took ability, types
-      and title from the version they split (White Defender's 2024 version showed the 2025 "5 Peppy for 3 turns").
-      `history_backfill_text.json` (built on the Mac: `python -m commands.history_backfill text --git
-      ~/Documents/Tools/wt/tc-full.git --pickles <origin/main's pickles>`, the r12 venv) lists 57 versions on 50 cards
-      (ability 56, types 7) with their own blob's text; 25 fields are left and listed (a field today's parser can't
-      read on that blob, an icon there without a type's name, Stone Golem unreadable). `/update_stats` applies it once,
-      right after the merge, only where a version (name, start, blob) still holds the listed old text, and says so in
-      one `Backfill text:` line; marker `backfill_text` (old text in `backfill_text_was`). Stats, starts and counts
-      never change. Rehearsed on 6000b4a's pickles (`rehearse ... --text history_backfill_text.json`; scratch
-      `~/Documents/Tools/wt/scratch/histfix/`): diff_stats 0 cards modified, 704 names / 1258 versions both sides, 50
-      names "kept versions with other data"; second cleanup, merge and text fix: nothing. Land with a normal deploy
-      (outside 05:00-05:40); run the diff_stats gate before the next `/push`. Undo: revert that PICKLE.
-- [ ] **Dead code after the text fix's PICKLE is pushed:** `commands/history_backfill.py` can be deleted then, with
-      `history_backfill.json`, `history_backfill_text.json`, their calls in `card_data.update()` (and `_clean_key`),
-      `tests/test_history_backfill.py` and the skill lines that name them. Both are once-only (markers `backfill_id`
-      and `backfill_text`), so neither can re-add the borrowed text before then.
+- [ ] **The text fix (branch `work/histfix`, owner-approved 2026-10-24):** the merge's added versions took ability, types,
+      title and stars from the version they split (White Defender's 2024 version showed the 2025 "5 Peppy for 3 turns";
+      Sonic's 2025-02-11 version in `3 Stars/` said 4). `history_backfill_text.json` (built on the Mac: `python -m
+      commands.history_backfill text --git ~/Documents/Tools/wt/tc-full.git --pickles <origin/main's pickles>`, the r12
+      venv, card head 6585202) lists 58 versions on 51 cards (ability 56, stars 7, types 7) with their own blob's values:
+      a creature's or item's stars from its own path's `N Stars` folder (Sonic 2025-02-11, Jevil 2023-11-06, Tainted
+      Bethany 2023-11-20: 4 -> 3), a minion's as today's parser counts them on its blob (Mini Doomer 2 -> 4, Godskin
+      Apostle 4 -> 5, Grimmchild 4 -> 5, Regenerative Shield 2 -> 3; the visible star layers agree); 25 fields are left
+      and listed (a field today's parser can't read on that blob, an icon there without a type's name, Stone Golem
+      unreadable). `/update_stats` applies it once, right after the merge, only where a version (name, start, blob)
+      still holds the listed old values, and says so in one `Backfill text:` line; marker `backfill_text` (old values in
+      `backfill_text_was`). Stat lines, starts and version counts never change. Rehearsed on fresh copies of 6000b4a's
+      pickles (`rehearse ... --text history_backfill_text.json`; scratch `~/Documents/Tools/wt/scratch/histfix2/`):
+      "Backfill text: 58 added versions of 51 cards given their own PSD's text and stars (ability 56, stars 7, types
+      7)."; diff_stats 0 cards modified, 704 names / 1258 versions both sides, 51 names "kept versions with other data";
+      second cleanup, merge and text fix: nothing, a second rehearse byte-identical. **Only the legacy `/update_stats`
+      runs it** (`card_data.update()`; with `CARD_SYNC = True` it never runs): land it, run `/update_stats` and `/push`
+      its PICKLE before the cutover and before step 3's re-seed. Land with a normal deploy (outside 05:00-05:40); run the
+      diff_stats gate before the next `/push`. Undo: revert that PICKLE and delete `history_backfill_text.json` (or the
+      `texts()` call) in the same push.
+- [ ] **Dead code after the text fix's PICKLE is pushed and step 3 re-seeded from it (or later):**
+      `commands/history_backfill.py` can be deleted then, with `history_backfill.json`, `history_backfill_text.json`,
+      their calls in `card_data.update()` (and `_clean_key`), `tests/test_history_backfill.py` and the skill lines that
+      name them. Both are once-only (markers `backfill_id` and `backfill_text`), so neither can re-add the borrowed text
+      before then.
 
 ### 2. The owner's re-parses (Discord, after step 1; tell him when)
 - [ ] `/update_stats cards:Shadow Duelist` (only printed Ability text counts; it becomes "").
@@ -138,9 +147,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       schedule). Order matters: re-parse first, else the site shows "Papyrus"/"Sans" until the re-parse.
 
 ### 3. Shadow -> cutover (DATA_BUILD_ACTION.md §14 steps 7-10)
-- [ ] **Re-seed** (after step 1's `/push`): `data` was seeded from a7c310e at 14:21 on 2026-10-23 ("Recovery ... skipped"),
-      so dispatch card-sync.yml with `seed=<the recovery PICKLE>` and `dry_run=false`. Runner checkouts are shallow, so
-      only the PICKLE carries the recovery. Then `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f
+- [ ] **Re-seed** (after step 1b's text fix PICKLE is on origin/main): `data` was seeded from a7c310e at 14:21 on
+      2026-10-23 ("Recovery ... skipped"), so dispatch card-sync.yml with `seed=<the text fix's PICKLE or later>` and
+      `dry_run=false`. Runner checkouts are shallow, so only the PICKLE carries the recovery, the backfill and the text
+      fix; the data build never applies them, so a seed from cf9fd20 (the recovery), 23eecae (the backfill) or 6000b4a
+      keeps the borrowed text and stars for good. Then `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f
       cards="Papyrus, Sans" -f dry_run=false` (the data branch re-reads a card only when its blob changed or it is named).
 - [ ] **Daily check** (diagnostics-and-tooling Workflow 4) after each jetson `/push`: diff_stats `stats.pkl` vs
       `origin/data`; only the predicted refinements. Also build_site with and without `CARD_DATA_DIR`, the changelog's

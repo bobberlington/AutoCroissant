@@ -7,8 +7,8 @@ its calls in card_data.update() and tests/test_history_backfill.py.
   of consecutive versions compared on the PSDs' stored previews (a stat that changed while its row printed the same is
   a misread, never a change), the cards that left the card folders with their fate and author; one reviewable file.
 - merged (/update_stats, once, after recover and the traversal): that file into old_stats, on a trial copy.
-- text (the Mac, by hand): the added versions' text fields re-read from their own blobs (the merge's copies took the
-  version they split's); /update_stats applies that file once, after the merge (texts).
+- text (the Mac, by hand): the added versions' text and stars re-read from their own blobs (the merge's copies took
+  the version they split's); /update_stats applies that file once, after the merge (texts).
 - rehearse: the same merge and text fix on copies of the pickles.
 
 CLI (copies only, the fork venv):
@@ -1687,7 +1687,8 @@ TEXT_FILE_NAME = "history_backfill_text.json"
 TEXT_FILE = join(BOT_CHECKOUT, TEXT_FILE_NAME)   # what /update_stats applies once, after the merge
 TEXT_ID = "backfill-text-1"
 TEXT_MARK = "backfill_text"                       # on the versions it fixed (their old text in backfill_text_was)
-TEXT_FIELDS = ("ability", "types", "display_name")
+TEXT_FIELDS = ("ability", "types", "display_name")   # what finds a copy's source
+FIELDS = TEXT_FIELDS + ("stars",)                    # what it fixes (a creature's or item's stars: its path's folder)
 ICON_BOX = 400                                    # a type icon sits in the top-left corner, under this many px
 
 
@@ -1708,13 +1709,13 @@ def copies(stats: dict, old_stats: dict):
 
 
 def _wording(card, name: Optional[str] = None) -> dict:
-    """card's text fields in data_of's forms (a retired type icon its name now; a title equal to the name none). name:
-    a parse's history name (renamed or qualified), its printed title compared with that."""
+    """card's FIELDS in data_of's forms (a retired type icon its name now; a title equal to the name none). name: a
+    parse's history name (renamed or qualified), its printed title compared with that."""
     from commands.card_history import TYPE_RENAMES
     title = getattr(card, "display_name", None) or (card.name if name else None)
     return {"ability": getattr(card, "ability", None) or None,
             "types": [TYPE_RENAMES.get(t, t) for t in getattr(card, "types", None) or []],
-            "display_name": None if title == (name or card.name) else title}
+            "display_name": None if title == (name or card.name) else title, "stars": getattr(card, "stars", None)}
 
 
 def icons_unread(psd, all_types) -> bool:
@@ -1731,8 +1732,8 @@ def text_build(repo: str, head: str, pickles: str, out: str) -> int:
     """
     The fix file (the Mac, by hand, on copies of the latest PICKLE): each copy whose text is a stored version's
     (the source), today's parser on its own blob and on the source's; a field that differs between the two takes its
-    own blob's. Left (listed): a field its own reading could not know, types where an icon there has no type's name,
-    a source git has no blob for.
+    own blob's (stars too: a creature's or item's from its path's folder). Left (listed): a field its own reading could
+    not know, types where an icon there has no type's name, a source git has no blob for.
     """
     from commands.card_db import read_pickles
     from commands.card_history import UNKNOWN_IF
@@ -1757,7 +1758,7 @@ def text_build(repo: str, head: str, pickles: str, out: str) -> int:
     for name, chain, i in copies(stats, old_stats):
         v = chain[i]
         mine = _wording(v)
-        pool = [w for w in chain if w is not v and _wording(w) == mine]
+        pool = [w for w in chain if w is not v and all(_wording(w)[k] == mine[k] for k in TEXT_FIELDS)]
         if not pool:
             continue                                      # its own text (the stat line split, the words the same)
         src = min([w for w in pool if not _added(w)] or pool, key=lambda w: abs(chain.index(w) - i))
@@ -1774,7 +1775,7 @@ def text_build(repo: str, head: str, pickles: str, out: str) -> int:
         own, unknown, icons = mine_read
         theirs = _wording(theirs_read[0], name)
         got, fields = _wording(own, name), {}
-        for key_ in TEXT_FIELDS:
+        for key_ in FIELDS:
             if got[key_] == theirs[key_] or got[key_] == mine[key_]:
                 continue                                  # the same on both blobs: the stored form stays
             if key_ in unknown or (key_ == "types" and icons):
@@ -1795,8 +1796,8 @@ def text_build(repo: str, head: str, pickles: str, out: str) -> int:
 
 def texts(db, path: str = "") -> tuple:
     """
-    /update_stats' once-fix, after the merge: each listed copy's text fields set to its own blob's, only where the
-    version (name, start, blob) still holds the listed old text. Nothing before the merge or once a version carries
+    /update_stats' once-fix, after the merge: each listed copy's fields set to its own blob's, only where the version
+    (name, start, blob) still holds the listed old values. Nothing before the merge or once a version carries
     TEXT_MARK.
 
     Returns:
@@ -1825,8 +1826,8 @@ def texts(db, path: str = "") -> tuple:
     if not done:
         return (None, False)
     counts = ", ".join(f"{k.replace('display_name', 'title')} {n}" for k, n in sorted(fields.items()))
-    line = (f"Backfill text: {len(done)} added versions of {len(set(done))} cards given their own PSD's text ({counts})."
-            + (f" {kept} changed since, kept." if kept else ""))
+    line = (f"Backfill text: {len(done)} added versions of {len(set(done))} cards given their own PSD's text and stars "
+            f"({counts})." + (f" {kept} changed since, kept." if kept else ""))
     return (line, True)
 
 

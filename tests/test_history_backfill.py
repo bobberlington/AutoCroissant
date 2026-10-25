@@ -865,23 +865,26 @@ def test_merged_waits_runs_once_and_never_half(tmp_path, monkeypatch):
 
 
 def test_text_fix_after_the_merge_once(tmp_path):
-    """The added versions' own text: after the merge, once, only where the version still holds the listed text."""
+    """The added versions' own text and stars: after the merge, once, only where the version still holds the listed
+    values."""
     readings = [reading(1000, B1, [5, 5, 5, 5], "first"), reading(3000, B3, [6, 5, 5, 5], "changed")]
     path = _file(tmp_path, data({"A": entry(readings)}))
     text = tmp_path / "text.json"
     text.write_text(json.dumps({"id": hb.TEXT_ID, "after": hb.FILE_ID, "fixes": [
-        {"name": "A", "from": 1000.0, "blob": B1, "fields": {"ability": ["Hits.", "Hit once."], "types": [[], ["fire"]]}},
+        {"name": "A", "from": 1000.0, "blob": B1,
+         "fields": {"ability": ["Hits.", "Hit once."], "types": [[], ["fire"]], "stars": [3, 2]}},
         {"name": "A", "from": 1000.0, "blob": B2, "fields": {"ability": ["Hits.", "Gone."]}}]}), encoding="utf-8")
     db = cm.StatsDatabase()
     db.stats, db.old_stats = {"A": version(4000, B3, [6, 5, 5, 5])}, defaultdict(list, {"Z": [restored()]})
     assert hb.texts(db, str(text)) == (None, False)                          # before the merge: nothing
     assert hb.merged(db, ch.GitIndex(), path)[1]
     line, changed = hb.texts(db, str(text))
-    assert changed and line == ("Backfill text: 1 added versions of 1 cards given their own PSD's text (ability 1, "
-                                "types 1). 1 changed since, kept.")
+    assert changed and line == ("Backfill text: 1 added versions of 1 cards given their own PSD's text and stars "
+                                "(ability 1, stars 1, types 1). 1 changed since, kept.")
     copy = db.old_stats["A"][0]
-    assert (copy.ability, copy.types, hb._line(copy)) == ("Hit once.", ["fire"], [5, 5, 5, 5])
-    assert copy.version["backfill_text_was"] == {"ability": "Hits.", "types": []} and db.stats["A"].ability == "Hits."
+    assert (copy.ability, copy.types, copy.stars, hb._line(copy)) == ("Hit once.", ["fire"], 2, [5, 5, 5, 5])
+    assert copy.version["backfill_text_was"] == {"ability": "Hits.", "types": [], "stars": 3}
+    assert (db.stats["A"].ability, db.stats["A"].stars) == ("Hits.", 3)
     assert hb.texts(db, str(text)) == (None, False) and hb.merged(db, ch.GitIndex(), path) == (None, False)
 
 
