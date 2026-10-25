@@ -417,19 +417,14 @@ class CardBuild:
                 if name not in found and original is not None and not getattr(original, "duplicate_of", None) \
                         and duplicate_png(card).lower() in lower:
                     self.db.seen_cards.append(name)     # kept, not archived for a file that failed to read
-        siblings: dict = {}
-        for name, (original, number, _) in found.items():
-            if number is not None:
-                siblings.setdefault(original, []).append(number)
         moved = self.edits is not None and self.edits.aliases_moved     # aliases.pkl moved into Card Edits.json
         for name, (original, number, png) in found.items():
             src = self.db.stats[original]
             card = deepcopy(src)
             card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
             own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
-            card.display_name = (self._duplicate_name(png, src, number, sorted(siblings[original]),
-                                                      {} if moved else self._aliases(), own) if number is not None
-                                 else self._duplicate_name(png, src, 0, [], {}, own, own_name=True))
+            card.display_name = (self._duplicate_name(png, src, {} if moved else self._aliases(), own) if number is not None
+                                 else self._duplicate_name(png, src, {}, own, own_name=True))
             self.db.stats[name] = card
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n]))
@@ -452,21 +447,17 @@ class CardBuild:
                 card.version = deepcopy(info)
 
     @staticmethod
-    def _duplicate_name(png: str, original: CardInfo, number: int, numbers: list, aliases: Optional[dict] = None,
-                        own: Optional[list] = None, own_name: bool = False) -> Optional[str]:
+    def _duplicate_name(png: str, original: CardInfo, aliases: Optional[dict] = None, own: Optional[list] = None,
+                        own_name: bool = False) -> Optional[str]:
         """
         The longest alias of this PNG (aliases.pkl's pointing at it, and own: its Card Edits.json entry's), else the
-        PSD's hidden title in order, else the original's name; with own_name (a dup_of card, named by its own file),
-        else None: its name is its title.
+        original's name; with own_name (a dup_of card, named by its own file), else None: its name is its title.
         """
         found = [a for a, target in (aliases or {}).items() if target.lower() == png] + [a for a in own or [] if a.strip()]
         if found:
             return " ".join(w[:1].upper() + w[1:] for w in max(found, key=len).replace("_", " ").split())
         if own_name:
             return None
-        titles = getattr(original, "alt_names", None) or []
-        if len(titles) == len(numbers):
-            return titles[numbers.index(number)]
         return original.display_name or original.name
 
     def _apply_edits(self) -> int:

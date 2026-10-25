@@ -22,7 +22,7 @@ CARDS = CERTIFIED + (
     "Creatures/Other/2 Stars/Little_Guy.psd",
     "Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_A.psd",
     "Creatures/Hollow Knight/5 Stars/The_Radiance.psd",
-    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates
+    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates: no alt_names
     "Items/Heal/2 Stars/Regeneration_Potion.psd",
     "Items/Heal/2 Stars/Watermelon.psd",
     "Items/Active/3 Stars/Black_Light_Bulb.psd",

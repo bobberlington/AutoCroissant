@@ -28,7 +28,7 @@ DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every
 # stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
 # so the text itself says which icon sits where. Cards with image-layer icons keep using gap injection.
 ICON_FONT_PREFIX = "stoogedings"                                  # PostScript name: stoogedings-Regular
-TITLE_REGION_RATIO = 0.12                                         # text above this: the title (hidden = a duplicate's)
+TITLE_REGION_RATIO = 0.12                                         # text above this: the title
 ICON_VARIANTS = ("", "tint", "sticker", "no", "glow", "darkglow")   # all but no read as the plain icon
 ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|[-★]")   # 52: [thunderfury blessed blade of the starseeker:darkglow]
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
@@ -454,9 +454,6 @@ class PSDParser:
                                      self._relaid(layer, text_layers))
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
-        titles = [" ".join((layer.text or "").split()) for layer in text_layers
-                  if not layer.is_visible() and layer.bbox[1] < psd.height * TITLE_REGION_RATIO]
-        card.alt_names = [t for t in titles if t and len(t) <= 40 and t.lower() != card.name.lower()] or None
         card.display_name = self._printed_title(psd, text_layers, card.name, own_text=not is_rulepage)
 
         if abilities:
