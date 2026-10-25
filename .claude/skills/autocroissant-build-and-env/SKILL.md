@@ -118,9 +118,10 @@ python3 setup.py clean                 # remove *.c *.cpp *.so *.pyd *.pyc *.htm
 Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-10-24):
 
 - **Incremental build (2026-10-24).** `build_ext --inplace` rebuilds only the modules whose `.so` is missing or whose
-  fingerprint changed: sha256 of the `.py` source plus the directives, the `-O3` flag, the Cython and Python versions and
-  the ABI suffix, kept in `build/ext-stamps.json` (written only after a successful build). A bare `touch` does not
-  rebuild; a content change does. Stale modules build 4 at a time (cythonize `nthreads=4`, build_ext `parallel=4`). Safety
+  fingerprint changed: sha256 of the `.py` source, its `.pxd` if any and setup.py itself (any setup.py edit rebuilds
+  everything), plus the directives, the `-O3` flag, the Cython and Python versions and the ABI suffix, kept in
+  `build/ext-stamps.json`. Each fingerprint is taken before compiling and stored only for modules that built, so a `.py`
+  saved mid-build rebuilds next time. A bare `touch` does not rebuild; a content change does. Stale modules build 4 at a time (cythonize `nthreads=4`, build_ext `parallel=4`). Safety
   kept: a stale `.so` is deleted BEFORE its rebuild (a failed build leaves the new `.py` running, exit code 1, never an
   old `.so` next to a new `.py`), and every `.so`/`.pyd` that is not a current INCLUDE_FILES build (other Python ABI,
   dropped module) is deleted. No stamps file (first run, after `clean`, after deleting `build/`) means a full rebuild.

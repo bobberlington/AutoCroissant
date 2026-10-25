@@ -121,7 +121,7 @@ restart), `git pull --ff-only`, reinstalls the psd-tools fork only when `require
 the venv's (pip's `direct_url.json`), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (incremental: only
 modules whose source changed, seconds when none did; a full rebuild was ~6 min 44 s), `sudo systemctl restart
 autocroissant`, then waits up to 90 s for `Registered N slash commands` (52) and `Bot initialization complete` in the
-journal and prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or build stops before the
+new process's journal (`_PID=` its MainPID; a Traceback from it, or a changed MainPID, fails early) and prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or build stops before the
 restart). `--bot ojwikibot` does the same for ~/Documents/OJWikibot (no psd-tools step; its own setup.py still rebuilds
 everything). Later lines, not checked: `Repo history: ...` and `Type emojis: ... ready`.
 The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new `.py` fails at import

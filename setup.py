@@ -122,9 +122,13 @@ def module_name(file):
 
 
 def fingerprint(file):
-    """What a module's .so depends on: its source, the directives, the flags, Cython and Python."""
+    """What a module's .so depends on: its source and .pxd, this setup.py, the flags, Cython and Python."""
     import Cython
     h = hashlib.sha256(Path(file).read_bytes())
+    pxd = Path(file).with_suffix('.pxd')
+    if pxd.exists():
+        h.update(b'pxd:' + pxd.read_bytes())
+    h.update(Path(__file__).read_bytes())
     h.update(repr((sorted(COMPILER_DIRECTIVES.items()), compile_args(), Cython.__version__, sys.version,
                    sysconfig.get_config_var('EXT_SUFFIX'))).encode())
     return h.hexdigest()
@@ -178,6 +182,7 @@ def build(files):
         if built_path(f).exists():
             remove_file(built_path(f))
     print()
+    prints = {f: fingerprint(f) for f in stale}     # before compiling: a .py saved mid-build rebuilds next time
 
     from Cython.Build import cythonize
     extensions = [Extension(module_name(f), [f], extra_compile_args=compile_args()) for f in stale]
@@ -187,7 +192,7 @@ def build(files):
 
     for f in stale:
         if built_path(f).exists():
-            stamps[f] = fingerprint(f)
+            stamps[f] = prints[f]
     STAMPS.parent.mkdir(exist_ok=True)
     STAMPS.write_text(json.dumps(stamps, indent=1, sort_keys=True))
     missing = [f for f in stale if f not in stamps]

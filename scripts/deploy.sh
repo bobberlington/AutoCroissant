@@ -67,19 +67,20 @@ main() {
 
     in_window && fail "reached 05:00-05:40 Pacific during the build; restart after 05:40: sudo systemctl restart $bot"
     echo "== restart"
-    local since
+    local since pid log=""
     since=$(date '+%Y-%m-%d %H:%M:%S')
     sudo systemctl restart "$bot"
-    local log=""
+    pid=$(systemctl show -p MainPID --value "$bot")     # only the new process's lines: the old one's shutdown may log a Traceback
+    [ "${pid:-0}" != 0 ] || fail "$bot did not start (journalctl -u $bot)"
     for _ in $(seq 1 45); do
         sleep 2
-        log=$(sudo journalctl -u "$bot" --since "$since" --no-pager -o cat 2>/dev/null || true)
+        log=$(sudo journalctl _PID="$pid" --since "$since" --no-pager -o cat 2>/dev/null || true)
         if grep -qE "Registered [0-9]+ slash commands" <<<"$log" && grep -q "Bot initialization complete" <<<"$log"; then
             grep -E "Registered [0-9]+ slash commands|Bot initialization complete" <<<"$log"
             echo "OK: $bot deployed at $(git rev-parse --short HEAD)"
             return 0
         fi
-        if grep -q "Traceback" <<<"$log" || ! systemctl is-active --quiet "$bot"; then
+        if grep -q "Traceback" <<<"$log" || [ "$(systemctl show -p MainPID --value "$bot")" != "$pid" ]; then
             break
         fi
     done
