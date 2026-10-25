@@ -375,10 +375,20 @@ def _halo_meets(glow: np.ndarray, badge, shared: set) -> bool:
 
 def _flat(image: Image.Image) -> np.ndarray:
     """uint8 (H, W, 4): RGB composited over white, alpha kept (RGB under alpha 0 is arbitrary)."""
-    a = np.asarray(image.convert("RGBA"), np.float32)
-    k = a[..., 3:] / 255
-    a[..., :3] = a[..., :3] * k + 255 * (1 - k)
-    return np.rint(a).astype(np.uint8)
+    a = np.array(image.convert("RGBA"))
+    part = a[..., 3] != 255
+    n = int(np.count_nonzero(part))
+    if n * 5 > part.size:  # mostly non-opaque: whole image is faster
+        a = a.astype(np.float32)
+        k = a[..., 3:] / 255
+        a[..., :3] = a[..., :3] * k + 255 * (1 - k)
+        return np.rint(a).astype(np.uint8)
+    if n:  # alpha 255 is exact as is; same float32 maths on the rest
+        sub = a[part].astype(np.float32)
+        k = sub[:, 3:] / 255
+        sub[:, :3] = sub[:, :3] * k + 255 * (1 - k)
+        a[part] = np.rint(sub).astype(np.uint8)
+    return a
 
 
 def _measure(a: Image.Image, b: Image.Image) -> dict:
