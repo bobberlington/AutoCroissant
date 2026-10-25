@@ -127,6 +127,7 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setattr(cm.stats_db, "stats", {})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
     monkeypatch.setitem(cs._loaded, "commit", None)
+    monkeypatch.setitem(cs._checked, "at", None)
     queues = (utils.dispatch_queue, utils.edit_queue, utils.command_queue)
     for q in queues:
         q.clear()
@@ -355,6 +356,77 @@ def test_startup_without_data_falls_back_to_the_pickles(github, monkeypatch):
 
 
 # ========================
+# On use: card commands look for new data
+# ========================
+def test_on_use_looks_at_most_every_two_minutes(github, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(cs, "monotonic", lambda: clock[0])
+    assert not cs.on_use("play") and _queued() == []                 # not a card command
+    assert cs.on_use("query") and _queued() == ["check"]
+    assert not cs.on_use() and not cs.on_use("query_ability")        # within the 2 minutes (autocomplete too)
+    clock[0] += cs.REFRESH_SECONDS
+    assert cs.on_use() and _queued() == ["check", "check"]
+    clock[0] += cs.REFRESH_SECONDS
+    monkeypatch.setattr(global_config, "CARD_SYNC", False)
+    assert not cs.on_use("query")
+
+
+def test_a_sync_counts_as_the_look(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.sync(ME)                                                       # /update_stats, or startup
+    utils.command_queue.clear()
+    assert not cs.on_use("query") and _queued() == []
+
+
+def test_check_reloads_quietly_then_refreshes(github, tmp_path, monkeypatch, capsys):
+    import commands.query_card as qc
+    looked = []
+    monkeypatch.setattr(qc.card_repo, "_populate_site_ids", lambda: looked.append(1))
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    assert cs.check() and set(cm.stats_db.stats) == {"A"} and cs._loaded["commit"] == github.tip
+    assert _said() == [] and "Card data loaded: built " in capsys.readouterr().out
+    assert _queued() == ["refresh", "_refresh_cards"] and looked == []
+    utils.command_queue.clear()
+    calls = len(github.calls)
+    assert not cs.check() and _queued() == [] and looked == [1]       # unchanged: one 304, the site's ids
+    assert github.calls[calls:] == [("commit", f'"e-{github.tip}"')]
+    github.publish({"A": _card("A", ability="Heal 1."), "B": _card("B")}, defaultdict(list), tmp_path)
+    assert cs.check() and "1 changed, 1 new; reloaded." in capsys.readouterr().out and _said() == []
+
+
+def test_a_failed_check_keeps_the_data_and_says_nothing(github, tmp_path, monkeypatch, capsys):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.check()
+    held = cm.stats_db.stats
+    utils.command_queue.clear()
+    monkeypatch.setattr(cdb, "sync", lambda *a: (_ for _ in ()).throw(KeyError("boom")))
+    assert not cs.check() and cm.stats_db.stats is held and _said() == [] and _queued() == []
+    assert "Card data check failed (KeyError" in capsys.readouterr().out
+    assert not cs._sync_lock.locked()
+
+
+def test_check_skips_while_a_sync_runs(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    with cs._sync_lock:
+        assert not cs.check()
+    assert github.calls == [] and cm.stats_db.stats == {}
+
+
+def test_card_commands_and_autocomplete_look(github, monkeypatch):
+    import main
+    from discord import InteractionType
+    names = {cmd.name for cmd in main.tree.get_commands()}
+    assert cs.READERS <= names                                        # no stale or misspelt name
+    used = []
+    monkeypatch.setattr(main, "card_data_used", lambda command=None: used.append(command))
+    for kind, data in ((InteractionType.autocomplete, {"name": "query"}),
+                       (InteractionType.application_command, {"name": "query", "options": []}),
+                       (InteractionType.component, {})):
+        asyncio.run(main.on_interaction(SimpleNamespace(type=kind, data=data, user=None, channel_id=1)))
+    assert used == [None, "query"]
+
+
+# ========================
 # Card sync runs: force_update and cards
 # ========================
 def _dispatched_run(github, run_id, *states):
@@ -512,7 +584,7 @@ def test_an_expired_token_is_said_at_the_run_list(github, tmp_path):
 def test_a_run_past_the_wait_is_left_going(github, tmp_path, monkeypatch):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 90, _run(90, "queued"), _run(90, "in_progress"))
-    clock = iter([0, 0, 0, 900, 900, 2000])                           # started; then each look's deadline and edit checks
+    clock = iter([0, 0, 0, 900, 900, 2000, 2000])                     # started; each look's deadline and edit checks; the sync
     monkeypatch.setattr(cs, "monotonic", lambda: next(clock))
     cs.update(ME, cards="A")
     assert "still going after 30 minutes" in " ".join(_said())

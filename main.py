@@ -20,6 +20,7 @@ from commands.analytics import (
     set_reminder,
 )
 from commands.card_runner import bake_cards, sweep_temp_psds
+from commands.card_sync import on_use as card_data_used
 from commands.discord_edits import manage_alias, manual_metadata_entry, mass_replace_field
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
@@ -151,10 +152,17 @@ LOGGED_VALUES = ("query", "search_text", "cards", "card", "alias", "as_of")   # 
 
 @client.event
 async def on_interaction(interaction: Interaction):
-    """One console line per slash command: its name, who, where, its options (values only for searches)."""
+    """
+    One console line per slash command: its name, who, where, its options (values only for searches). A card command
+    or an autocomplete (every one is a card name's) queues a look for new card data (card_sync.on_use: no wait).
+    """
+    if interaction.type == InteractionType.autocomplete:
+        card_data_used()
+        return
     if interaction.type != InteractionType.application_command:
         return
     data = interaction.data or {}
+    card_data_used(data.get("name"))
     options = [f"{o.get('name')}={str(o.get('value'))[:100]!r}" if o.get("name") in LOGGED_VALUES else str(o.get("name"))
                for o in data.get("options") or []]
     print(f"Command /{data.get('name')} by {getattr(interaction.user, 'id', '?')} in {interaction.channel_id}"

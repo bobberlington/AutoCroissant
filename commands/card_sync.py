@@ -3,9 +3,11 @@ The bot after the cutover (global_config.CARD_SYNC; docs/Campaigns/DATA_BUILD_AC
 The Card sync Action in the card repo builds the card data and commits it to the data branch; the bot only reads it:
 - sync: card_data/ brought to the data branch (card_db.sync: one conditional request, free when nothing moved), the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
-- /update_stats: that sync and one reply (the owner's reminder runs it every 30 minutes); Card sync starts itself (a
-  card push starts a 30-minute timer in card-sync.yml); with force_update or cards (admins), a run dispatched
-  (ACTIONS_TOKEN) and followed until it ends, then the sync;
+- on use: a card command or autocomplete queues that sync (quiet) when none ran for REFRESH_SECONDS; its reply uses
+  the data loaded now, the next one the new data;
+- /update_stats: that sync and one reply; Card sync starts itself (a card push starts a 30-minute timer in
+  card-sync.yml); with force_update or cards (admins), a run dispatched (ACTIONS_TOKEN) and followed until it ends,
+  then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
 """
@@ -18,6 +20,7 @@ from typing import Optional
 
 from requests.exceptions import RequestException
 
+import global_config                                 # CARD_SYNC, read at call time (the cutover switch)
 try:
     import config
 except ImportError:                                  # tests and scripts without config.py
@@ -46,6 +49,10 @@ FAILED = ("failure", "timed_out", "startup_failure")
 BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
+REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
+READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
+    "alias", "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "mass_replace", "query",
+    "query_ability", "query_rulebook", "update_metadata", "view_old_metadata"})
 
 # ========================
 # Global State
@@ -53,6 +60,8 @@ CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CRE
 _loaded: dict = {"commit": None}                     # the data commit stats_db holds (None: the root pickles or nothing)
 _sync_lock = Lock()                                  # one sync at a time (a reminder beside a command)
 _run_lock = Lock()                                   # one dispatched run followed at a time
+_checked: dict = {"at": None}                        # monotonic() of the last look at the data branch (None: none yet)
+_use_lock = Lock()                                   # on_use's claim of a look (never waited on)
 
 
 class TokenRefused(Exception):
@@ -223,6 +232,29 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
     return True
 
 
+def _pull() -> tuple:
+    """
+    One look at the data branch (card_db.sync), the database swapped when it moved. Hold _sync_lock.
+
+    Returns:
+        (the manifest, reloaded)
+    """
+    _checked["at"] = monotonic()
+    got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
+    reloaded = got["commit"] != _loaded["commit"]
+    if reloaded:
+        stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
+        _swap(stats, old, got["commit"])
+    return (got["manifest"], reloaded)
+
+
+def _follow_ups(interaction) -> None:
+    """After a sync: image links re-pinned, then the card list, query tables and type emojis (_refresh_cards)."""
+    from commands.repo_history import refresh as refresh_history
+    queue_command(refresh_history)                   # re-pin image links; a git fetch when nothing changed
+    queue_command(_refresh_cards, interaction)
+
+
 def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True) -> list:
     """
     card_data/ brought to the data branch, the database reloaded when the data moved, and one reply (quiet: the
@@ -240,11 +272,7 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
     with _sync_lock:
         before, before_commit = stats_db.stats, _loaded["commit"]
         try:
-            got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
-            reloaded = got["commit"] != before_commit
-            if reloaded:
-                stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
-                _swap(stats, old, got["commit"])
+            manifest, reloaded = _pull()
         except LookupError as e:
             say(interaction, f"No card data yet: {e}. The Card sync Action creates it: <{actions_link()}>")
             return []
@@ -252,7 +280,6 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
             print(f"Card data sync failed:\n{format_exc()}")
             say(interaction, f"Card data sync failed ({type(e).__name__}: {e}); the bot keeps the card data it has.")
             return []
-    manifest = got["manifest"]
     text = report(manifest, changes(before, stats_db.stats) if reloaded and before_commit is not None else None, reloaded)
     if quiet:
         print(text)
@@ -262,10 +289,64 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
     if problems:
         say(interaction, "Problem cards in this build:\n" + "".join(problems))
     if follow_ups:
-        from commands.repo_history import refresh as refresh_history
-        queue_command(refresh_history)               # re-pin image links; a git fetch when nothing changed
-        queue_command(_refresh_cards, None if quiet else interaction)
+        _follow_ups(None if quiet else interaction)
     return problems
+
+
+def on_use(command: Optional[str] = None) -> bool:
+    """
+    A card command (or an autocomplete: command None) is running: a look at the data branch is queued when none ran
+    for REFRESH_SECONDS. On the event loop: a clock read and a queue append, never a wait. The reply uses the data
+    loaded now; new data serves the next one (/query and autocomplete answer within Discord's 3 seconds, and a reload's
+    card list and query tables are rebuilt after it).
+
+    Args:
+        command: The slash command's name; one not in READERS is ignored
+
+    Returns:
+        True when a look was queued
+    """
+    if not global_config.CARD_SYNC or (command is not None and command not in READERS):
+        return False
+    if not _use_lock.acquire(blocking=False):        # a reminder's thread claiming at this instant
+        return False
+    try:
+        now, last = monotonic(), _checked["at"]
+        if last is not None and now - last < REFRESH_SECONDS:
+            return False
+        _checked["at"] = now
+    finally:
+        _use_lock.release()
+    queue_command(check)
+    return True
+
+
+def check() -> bool:
+    """
+    on_use's look, in the command queue's thread: the sync, quiet (a reload's report to the console), then the
+    refreshes when the data moved, else the website's card ids alone (a conditional request: a new card's page link
+    once the site has it). Skipped while a sync runs (it is this look); a failure is logged and the data kept.
+
+    Returns:
+        True when new data was loaded
+    """
+    if not _sync_lock.acquire(blocking=False):
+        return False
+    try:
+        before, before_commit = stats_db.stats, _loaded["commit"]
+        manifest, reloaded = _pull()
+    except Exception as e:                           # noqa: BLE001 - a failed look never fails a command
+        print(f"Card data check failed ({type(e).__name__}: {e}); keeping the loaded data")
+        return False
+    finally:
+        _sync_lock.release()
+    if not reloaded:
+        from commands.query_card import card_repo
+        card_repo._populate_site_ids()
+        return False
+    print(report(manifest, changes(before, stats_db.stats) if before_commit is not None else None, True))
+    _follow_ups(None)
+    return True
 
 
 def _refresh_cards(interaction) -> None:
@@ -561,16 +642,20 @@ def fonts_text(folder: str = CARD_DATA_DIR) -> str:
 # ========================
 __all__ = [
     'ACTIONS_TOKEN',
+    'READERS',
+    'REFRESH_SECONDS',
     'WORKFLOW',
     'actions_link',
     'built_line',
     'changes',
+    'check',
     'dispatch',
     'fonts_text',
     'follow',
     'gh_command',
     'load_local',
     'notes',
+    'on_use',
     'report',
     'request_run',
     'startup',

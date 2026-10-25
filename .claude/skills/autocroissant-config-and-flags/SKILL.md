@@ -62,7 +62,7 @@ Ground rules:
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:13); used by `client.run(TOKEN)` (main.py:987) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
 | `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
-| `ACTIONS_TOKEN` (2026-10-22) | no (only with `CARD_SYNC` on) | `""` (commands/card_sync.py:34) | card_sync | prod, used after the cutover | A fine-grained token for TTSCardMaker only, Actions read and write. After the cutover `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. Before it, `/push` dispatches the website build (site.yml) with it after a push of the pickles (card_sync.dispatch_site). In the jetson's config.py since 2026-10-22 ~12:25 |
+| `ACTIONS_TOKEN` (2026-10-22) | no (only with `CARD_SYNC` on) | `""` (commands/card_sync.py:38) | card_sync | prod, used after the cutover | A fine-grained token for TTSCardMaker only, Actions read and write. After the cutover `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. Before it, `/push` dispatches the website build (site.yml) with it after a push of the pickles (card_sync.dispatch_site). In the jetson's config.py since 2026-10-22 ~12:25 |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
@@ -456,15 +456,18 @@ autocroissant-run-and-operate §9.
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:34) | the config.py field above |
+| `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:38) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
 | `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
 | `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
+| `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |
+| `READERS` (2026-10-25) | 12 slash command names | the commands that read card data, so look on use (autocomplete always does) |
 
 No clock in the bot since 2026-10-24: card-sync.yml starts itself 30 minutes after the first card push of a burst (its
-`push` trigger and the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting); /update_stats only syncs.
+`push` trigger and the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting); /update_stats only syncs,
+and since 2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
 
@@ -707,7 +710,7 @@ table with its command before quoting it in the future.
 | card_runner state (no hold line or edits sha since 2026-10-21) | `grep -n "^[A-Z_]* = \|^bake_lock" commands/card_runner.py`; `grep -n "bake_lock" commands/repo_traverser.py`; `grep -c "notice_edits\|_last_edits_sha" commands/card_runner.py commands/repo_traverser.py` (0 and 0) |
 | global_config env overrides (three: LOCAL_DIR_LOC, HISTORY_CLONE, BOT_CLONE) | `grep -n "environ.get" global_config.py` (5, 13, 14); `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py, plus card_history's `--bot-git` CLI default) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
-| ACTIONS_TOKEN and the card_sync knobs | `sed -n '34,41p' commands/card_sync.py` |
+| ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
 | Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^QUIET_MARGIN\|^ANCHOR_WINDOW\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^RECENT\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py commands/card_data.py` (no use_local hits; every force_update default is False) |
@@ -770,3 +773,4 @@ guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 la
 2026-10-24 (py314, branch work/py314): the fork pin section (six workflows on 3.14, one cache entry, the pyoxipng
 marker), the `card-guards-quiet` environment among the repo settings, `png_export.UNCHECKED`. The guards take no fonts
 (R7 dropped; no `--fonts`).
+2026-10-25 (refresh on use, work/refresh): card_sync's REFRESH_SECONDS and READERS; card_sync.py citations re-pointed (ACTIONS_TOKEN at :38).
