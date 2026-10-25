@@ -391,3 +391,15 @@ def test_db_names_follow_build_site(tmp_path):
         "Items/Food/A_Snack.png": "A Snack", "Items/Food/A_Snack2.png": "Breakfast", "Items/New/New_Card.png": "New Card",
         "Items/Loose/Loose_One.png": "Loose One", "Items/Moved/Elsewhere.png": "Elsewhere"}
 
+
+
+def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
+    """PARTS_EDITOR.md §4.12 (§11 case 8): a stars edit moves a card into another "N Stars" folder and redraws its stars
+    (a new blob): its links follow the one file of that card key under the same top folder."""
+    moved = B.replace("2 Stars", "1 Stars")
+    monkeypatch.setattr(repo, "last_seen", lambda paths: {}, raising=False)
+    monkeypatch.setattr(repo, "blobs_at", lambda sha, paths: {p: None for p in paths}, raising=False)
+    tile = {"Name": "Custom_Tile", "CustomImage": {"ImageURL": f"{RAW}main/{tts._encode(moved)}"}}
+    report = tts._Report()
+    tts._pin_links({"ObjectStates": [tile]}, repo, report)
+    assert tile["CustomImage"]["ImageURL"] == f"{RAW}c0ffee1/{tts._encode(B)}" and report.renamed == {moved: (B, 1)}

@@ -10,17 +10,17 @@ data. A content problem never refuses (owner 2026-10-24): it bakes best-effort, 
 rendered, so the module loads under stock psd-tools.
 """
 from collections import Counter
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
-from hashlib import blake2b
+from hashlib import blake2b, sha1
 from inspect import signature
 from itertools import zip_longest
 from io import BytesIO
 from math import hypot
 from os.path import basename, getsize, join
-from re import IGNORECASE, compile as re_compile, escape, finditer as re_finditer, fullmatch, sub
+from re import IGNORECASE, compile as re_compile, escape, finditer as re_finditer, fullmatch, search, sub
 from struct import pack
 from time import perf_counter
 from typing import Optional
@@ -33,7 +33,7 @@ from psd_tools.api.pil_io import post_process
 from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
 
-from commands.card_edits import CardEdits
+from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
@@ -184,6 +184,7 @@ class Classification:
     redundant: list = field(default_factory=list)   # PSD-kind fields equal to the PSD: dropped, no pixels (name stays)
     refusals: list = field(default_factory=list)    # Refusal per field the pipeline won't bake
     other: list = field(default_factory=list)       # folder and database-only fields: never touched
+    parts: Optional["PartsPlan"] = None             # the entry's `parts` sorted (plan_parts), when it has them
 
 
 @dataclass
@@ -226,6 +227,7 @@ class IconPlan:
     copies: list = field(default_factory=list)   # (source, dx, dy, name): a star copied above itself, then moved
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
     done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
+    first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
 
 
 @dataclass
@@ -260,6 +262,9 @@ class Edit:
     stories: list = field(default_factory=list)  # an ability over several layers: every TextIndex it may change
     parts: list = field(default_factory=list)    # and (layer id, that layer's Edit, a copy?) per layer it set
     several: bool = False   # an ability over several layers (set_ability_layers)
+    removed: list = field(default_factory=list)  # old record indices of the layers a part edit deleted (gate_bytes)
+    removed_stories: list = field(default_factory=list)  # their Txt2 stories' old TextIndex (gate_stories)
+    renumbered: list = field(default_factory=list)  # record indices of type layers whose TextIndex moved down (gate_bytes)
 
 
 @dataclass
@@ -884,7 +889,7 @@ def _opcodes(old: str, new: str) -> list:
     return [tuple(op) for op in ops if op[2] > op[1] or op[4] > op[3]]
 
 
-def project(old: str, new: str, raw: str) -> str:
+def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
     """
     A layer's text with the edit old -> new of what the parser read from it applied where it prints: each changed part
     spliced over the characters of raw it replaces, an insertion after the character before it; what the edit keeps,
@@ -894,6 +899,7 @@ def project(old: str, new: str, raw: str) -> str:
         old: The text the parser read from raw (or a part of it)
         new: That text edited (\\n breaks)
         raw: The layer's text
+        brk: What a new line becomes (\\r; a part's own \\x03: _part_raw)
 
     Returns:
         The layer's new text (\\r breaks)
@@ -910,7 +916,7 @@ def project(old: str, new: str, raw: str) -> str:
             if lo is None:
                 lo = next((at[i] for i in range(i2, len(old)) if i in at), len(raw.rstrip(PAD)))
             hi = lo
-        raw = raw[:lo] + new[j1:j2].replace("\n", "\r") + raw[hi:]
+        raw = raw[:lo] + new[j1:j2].replace("\n", brk) + raw[hi:]
     return raw
 
 
@@ -1930,7 +1936,8 @@ def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
         return False
 
 
-def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None) -> Classification:
+def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
+             template: Optional[tuple] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is a job only on a two-row card (idea 13), above 20 never. Stars and types are jobs when the card's
@@ -1942,18 +1949,27 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         psd: The open PSD, needed to find the title layer for a name edit (name_layer), the rows for a stat above 10
             and the stars and type icons (not changed)
         parser: offline_parser(): its icon vocabulary reads a types edit (types compare in any order and spelling)
+        template: template_icon() of the card's template: where a card with no type icon takes its first one
 
     Returns:
         Classification
     """
     card = parsed["card"]
     out = Classification()
+    derived = _classify_parts(out, parsed, edits, psd, parser)
     for name, value in edits.items():
+        if name == "parts" or name in derived:
+            continue
         if KIND.get(name, "database") != "psd" or value is None:
             out.other.append(name)
         elif name in ICON_FIELDS:
             if card.get(name) == value or (name == "types" and same_types(parser, card.get("types"), value)):
                 out.redundant.append(name)
+            elif name == "stars" and star_folder(_card_path(parsed)):    # a move into its "N Stars" folder (owner 10-25)
+                if value < 1:
+                    out.refusals.append(Refusal("unsupported-card", "stars: a card shows at least one", name))
+                else:
+                    out.jobs[name] = value
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", f"{name}: no PSD to place them on", name))
             else:
@@ -1961,7 +1977,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                     if name == "stars":
                         plan_stars(psd, parsed, value, parser)
                     else:
-                        plan_types(psd, parsed, value, parser)
+                        plan_types(psd, parsed, value, parser, template)
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
@@ -1985,7 +2001,11 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             if was == now or (unpadded(was) == unpadded(now) and psd is not None and several_layers(psd)):
                 out.redundant.append(name)      # over several layers the blank lines place them (they stay)
             else:
-                out.jobs[name] = value
+                joined = _joined_edit(parsed, psd, parser, name)
+                if joined:
+                    out.refusals.append(joined)
+                else:
+                    out.jobs[name] = value
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
             if shown_name(parsed) == collapse(value):
                 out.redundant.append(name)
@@ -1993,11 +2013,55 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
             else:
                 try:
+                    joined = _joined_edit(parsed, psd, parser, name)
+                    if joined:
+                        raise Refused(joined.code, joined.why)
                     name_layer(psd, _card_name(parsed), _own_text(parsed))
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
     return out
+
+
+def _classify_parts(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage],
+                    parser: Optional[PSDParser]) -> set:
+    """
+    classify()'s `parts` (§4.3): plan_parts' jobs as the "parts" job, its impossible cases as refusals. The plain
+    name or ability of a field the parts hold is derived (shown until the bake), never baked on its own.
+
+    Returns:
+        The derived fields
+    """
+    parts = edits.get("parts")
+    if not parts:
+        return set()
+    derived = {part["field"] for part in parts.values()}
+    if psd is None:
+        out.refusals.append(Refusal("unsupported-card", "parts: no PSD to find the layers in"))
+        return derived
+    plan = plan_parts(psd, parsed, parts, parser)
+    out.parts = plan
+    out.refusals += plan.refusals
+    if plan.jobs:
+        out.jobs["parts"] = plan.jobs
+    elif not plan.refusals and any(how == "redundant" for how in plan.outcome.values()):
+        out.redundant.append("parts")
+    return derived
+
+
+def _joined_edit(parsed: dict, psd: Optional[PSDImage], parser: Optional[PSDParser], which: str) -> Optional[Refusal]:
+    """A plain name or ability edit (no parts) on a card printing that field over several layers: impossible (§3's
+    backward compatibility); None when it prints it over one (baked as before) or the PSD isn't open."""
+    if psd is None:
+        return None
+    info = parsed.get("info")
+    record = card_parts(psd, (info.path if info is not None else parsed["card"].get("path")) or "", _card_name(parsed),
+                        parser)
+    count = len(record.get("title") or []) if which == "name" else len(record.get("ability") or []) + len(record.get("blocks") or [])
+    if count > 1:
+        return Refusal("unsupported-card", f"{which}: a joined edit on a card printed over {count} layers: edit each "
+                                           f"box on the website")
+    return None
 
 
 # ========================
@@ -4034,7 +4098,7 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
     return None
 
 
-def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None) -> IconPlan:
+def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False) -> IconPlan:
     """
     How to show `value` stars on a card whose stars the parser counts from its PSD (minions, aux items and creatures,
     N.M.E.; elsewhere the "N Stars" folder sets them). In the one Stars group that draws them:
@@ -4052,6 +4116,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         parsed: parse_card() of it
         value: The stars to show, 1 or more
         parser: offline_parser(): a layer in the Stars group named after a type icon is no star to hide or copy
+        moving: The card moves into its new "N Stars" folder (card_bake): its printed stars are redrawn, if it draws them
 
     Returns:
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
@@ -4062,9 +4127,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     rel = info.path if info is not None else parsed["card"].get("path", "")
     if not stars_from_psd(rel):
         folder = rel.split("/")[len(rel.split("/")) - 2] if "/" in rel else ""
-        if fullmatch(STAR_FOLDER, folder, IGNORECASE):
+        if fullmatch(STAR_FOLDER, folder, IGNORECASE) and not moving:
             refuse(f"the {folder!r} folder sets them (moving the card is ledger S9)")
-        refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
+        elif not fullmatch(STAR_FOLDER, folder, IGNORECASE):
+            refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
     if value < 1:
         refuse("a card shows at least one")
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
@@ -4270,7 +4336,8 @@ def layer_parents(layer) -> list:
     return out
 
 
-def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser]) -> IconPlan:
+def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser],
+               template: Optional[tuple] = None) -> IconPlan:
     """
     How to show the type icons `value` in the card's header row (Types/ icons as image layers, the parser's rule):
     the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
@@ -4287,6 +4354,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         parsed: parse_card() of it
         value: The type names to show (any spelling the icon vocabulary knows)
         parser: offline_parser() (its Types/ names and vocabulary)
+        template: template_icon(): a card with no type icon takes its first at the template's spot, styled as the
+            template's icon (owner 10-25; flagged), the rest carried on from it
 
     Returns:
         IconPlan (icons: Types/ stems to make at a box, styled after a reference layer)
@@ -4330,6 +4399,11 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             left[name] -= 1
     count = len(kept) + len(added)
     spots = [unit.core for unit in slots[:count]]
+    first = None
+    if count > len(slots) and not slots and template is not None and count:   # the first at the template's spot
+        spot, reference, first = template
+        slots = [_Unit([reference], spot)]
+        spots = [spot]
     if count > len(slots):
         if not slots:
             refuse("no type icon on the card to line a new one up with")
@@ -4381,7 +4455,9 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     plan.moves = [(one, dx, dy) for layer, dx, dy in plan.moves for one in _with_chains([layer])]
     plan.how = ", ".join(part for part in (f"{len(plan.hide)} hidden" if plan.hide else "",
                                            f"{moved} moved" if moved else "",
-                                           f"{len(plan.icons)} made from Types/" if plan.icons else "") if part)
+                                           f"{len(plan.icons)} made from Types/" if plan.icons else "",
+                                           f"the first at {first}'s spot: check it" if first else "") if part)
+    plan.first = first or ""
     return plan
 
 
@@ -4422,10 +4498,19 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     layer.copy_effects_from(reference)
     layer.blend_mode, layer.opacity = reference.blend_mode, reference.opacity
     _issue_id(psd, layer)
+    if getattr(reference, "_psd", psd) is not psd:  # a template's icon: the card's types group, else the top
+        parent = _types_group(psd)
+        layer.move_to(parent, index=len(parent) - (1 if layer.parent is parent else 0))   # the top of it
+        return layer
     chain = _clip_chain(reference)
     parent = reference.parent
     layer.move_to(parent, index=parent.index(reference) + 1 + len(chain))
     return layer
+
+
+def _types_group(psd: PSDImage):
+    """Where a card's first type icon goes: its visible top-level group named for types, else the root."""
+    return next((layer for layer in psd if layer.is_group() and layer.visible and "type" in layer.name.lower()), psd)
 
 
 def _copy_chain(reference, layer, done: list) -> list:
@@ -4508,11 +4593,13 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
         plan.done.append(("made", layer, blocks))
         boxes.append((tuple(layer.bbox), layer))
-        _copy_chain(reference, layer, plan.done)
+        if getattr(reference, "_psd", psd) is psd:      # a template's chain stays in the template
+            _copy_chain(reference, layer, plan.done)
     region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
                                                                              for done in plan.done]
-    return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan)
+    notes = [f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else []
+    return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
 
 def index_icons(edit: Edit, before: dict, after: dict) -> None:
@@ -5154,6 +5241,9 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         for index in edit.records:
             allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind] | ({"name"} if edit.renamed else set()))
             names[index] = edit.renamed
+        for one in (part for _, part, _ in edit.parts if part.renamed):     # a part's title named after its text
+            for index in one.records:
+                allowed[index], names[index] = (kind, ALLOWED_RECORD_FIELDS[kind] | {"name"}), one.renamed
         for index in edit.hidden:
             allowed[index] = ("overlay", ALLOWED_RECORD_FIELDS["overlay"])
         for index, _, name in edit.rebuilt:
@@ -5167,11 +5257,18 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
     owner = {index: edit.field for edit in edits
              for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
+    removed = {index for edit in edits for index in getattr(edit, "removed", ())}       # a part edit's deleted layers
+    renumbered = {index for edit in edits for index in getattr(edit, "renumbered", ())}  # their stories' later layers
     changed, flag_bytes, block_bytes, old_of = [], 0, 0, {}
     i = j = 0
     while i < len(old) or j < len(new):
         a = old[i] if i < len(old) else None
         b = new[j] if j < len(new) else None
+        if a is not None and i in removed:
+            removed.discard(i)
+            changed.append((i, a["name"], ["removed"]))
+            i += 1
+            continue
         if a is not None and dropped.get(a["name"]):
             dropped[a["name"]] -= 1
             changed.append((i, a["name"], ["removed"]))
@@ -5214,6 +5311,11 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                 changed.append((j, a["name"], fields))
         elif fields:
             kind, ok = allowed.get(j, ("", set()))
+            if j in renumbered and j not in allowed:     # its TextIndex moved down: that alone
+                why = _text_index_only(a, b) if fields == ["blocks"] else f"changed {', '.join(fields)}"
+                if why:
+                    raise Refused("bytes", f"layer {j} {a['name']!r} (its TextIndex renumbered) {why}")
+                kind, ok = "story", {"blocks"}
             if not set(fields) <= ok:
                 raise Refused("bytes", f"layer {j} {a['name']!r} changed {', '.join(fields)}")
             if "name" in fields and b["name"] != names.get(j):
@@ -5230,8 +5332,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             changed.append((j, a["name"], fields))
         i += 1
         j += 1
-    if any(dropped.values()) or added or inserted:
-        raise Refused("bytes", "an FX layer, star copy or type icon declared removed or added is not")
+    if any(dropped.values()) or added or inserted or removed:
+        raise Refused("bytes", "an FX layer, star copy, type icon or deleted layer declared removed or added is not")
     hidden = {index for edit in edits for index in edit.hidden}
     toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
     if (toggled | hidden | toggles) - {index for index, _, fields in changed if fields != ["removed"]}:
@@ -5253,6 +5355,18 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     return changed, flag_bytes, block_bytes + sum(len(data) for data in landed.values())
 
 
+def _text_index_only(a: dict, b: dict) -> Optional[str]:
+    """None when two layer records differ only in their TySh block, in place, within one TextIndex's 4 bytes."""
+    key = bytes(Tag.TYPE_TOOL_OBJECT_SETTING)
+    x, y = dict(a["blocks"]), dict(b["blocks"])
+    if set(x) != set(y) or any(x[k] != y[k] for k in x if k != key):
+        return "changed blocks other than its TySh"
+    if key not in x or len(x[key]) != len(y[key]):
+        return "changed its TySh block's size"
+    diff = [k for k, (p, q) in enumerate(zip(x[key], y[key])) if p != q]
+    return "changed its TySh block beyond a TextIndex" if diff and diff[-1] - diff[0] >= 4 else None
+
+
 def _raw(element) -> bytes:
     buf = BytesIO()
     element.write(buf)
@@ -5272,13 +5386,24 @@ def _story_fonts(root) -> Optional[list]:
     return node if isinstance(node, (list, ListElement)) else None
 
 
+def _story_keys(root) -> tuple:
+    """(the fork's key spelling, the stories list) of a Txt2 root."""
+    from psd_tools.api import text_edit
+    for keys in (text_edit._NUMBERED, text_edit._NAMED):
+        objects = root.get(keys.objects) if hasattr(root, "get") else None
+        items = objects.get(keys.stories) if hasattr(objects, "get") else None
+        if items is not None:
+            return keys, items
+    raise Refused("bytes", "a Txt2 block without text objects")
+
+
 def _story_font_name(entry, spelling: int) -> str:
     for key in STORY_STYLE_KEYS[spelling]["font"]:
         entry = entry[key]
     return str(getattr(entry, "value", entry))
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=()) -> list:
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -5291,9 +5416,11 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=()) -> list:
         new: The saved card, reopened
         edited: TextIndex of each layer whose story may change (taken before the edit)
         fonts: The faces the edits added (Edit.fonts)
+        removed: TextIndex of each deleted layer (Edit.removed_stories): the old card is compared with those stories
+            and their own frames taken out (_drop_story_in), the later indices one lower each
 
     Returns:
-        The changed stories' indices, sorted; raises Refused("bytes")
+        The changed stories' indices (the new card's), sorted; raises Refused("bytes")
     """
     before, after = _document_blocks(old), _document_blocks(new)
     txt2 = bytes(Tag.TEXT_ENGINE_DATA)
@@ -5307,18 +5434,29 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=()) -> list:
         raise Refused("bytes", f"{name}'s Txt2 story holds {collapse(story)!r}, the layer {collapse(own)!r}")
     if txt2 not in before:
         return []
+    gone = sorted(set(removed))
+
+    def renumber(i: int) -> int:
+        return i - sum(1 for r in gone if r < i)
     indices = [sorted(story_index(layer) for layer in psd.descendants() if _is_text_layer(layer)
                       and story_index(layer) is not None) for psd in (old, new)]
-    if indices[0] != indices[1]:                # a layer without one is orphaned from the story Photoshop would read
-        raise Refused("bytes", f"type layers' TextIndex {indices[0]} -> {indices[1]}")
-    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(_txt2(old)), _story_list(_txt2(new))
+    if [renumber(i) for i in indices[0] if i not in gone] != indices[1]:   # a layer without one is orphaned from the
+        raise Refused("bytes", f"type layers' TextIndex {indices[0]} -> {indices[1]}")   # story Photoshop would read
+    root_a = _txt2(old)
+    if gone:                                    # the old card with the deleted layers' stories taken out
+        root_a = deepcopy(root_a)
+        keys, items = _story_keys(root_a)
+        for index in reversed(gone):
+            _drop_story_in(root_a, keys, items, index)
+    edited = {renumber(i) for i in edited if i not in gone}
+    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(root_a), _story_list(_txt2(new))
     if len(items_a) != len(items_b):
         raise Refused("bytes", f"Txt2 stories {len(items_a)} -> {len(items_b)}")
     changed = [i for i, (a, b) in enumerate(zip(items_a, items_b)) if _raw(a) != _raw(b)]
     beyond = sorted(set(changed) - set(edited))
     if beyond:
         raise Refused("bytes", f"Txt2 stories {beyond} changed: no edit there")
-    root_a, root_b = _txt2(old), _txt2(new)
+    root_b = _txt2(new)
     faces_a, faces_b = _story_fonts(root_a), _story_fonts(root_b)
     if faces_a is not None and faces_b is not None and len(faces_b) > len(faces_a):
         spelling = _story_list(root_b)[5]
@@ -5402,8 +5540,14 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         elif name == "name":                    # the new title is read back below
             expected.pop("display_name", None)
             got.pop("display_name", None)
+        elif name == "parts":                   # read back per part (gate_parts), not as the joined fields
+            for key in {"display_name" if part["field"] == "name" else "ability" for part in value.values()}:
+                expected.pop(key, None)
+                got.pop(key, None)
     expected.pop("problem", None)
     got.pop("problem", None)
+    if "stars" in jobs and star_folder(expected.get("path") or "") and got.get("path") == rel:
+        expected["path"] = rel                  # moved into its new "N Stars" folder
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
     if different:
         raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(
@@ -5428,6 +5572,44 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     if "name" in jobs and title != collapse(jobs["name"]):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
+
+
+def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDImage, new: PSDImage,
+               fonts_dir: str) -> list:
+    """
+    §4.10's read-back per part, on the saved card: each job's layer reads its box's text, a deleted one is gone, every
+    other part's layer reads as before (the joined name and ability are not compared: gate_reparse); a title part the
+    edit set takes the title's icon checks (_gate_icons).
+
+    Returns:
+        Notes: a layer the parser no longer reads as a part, or a new one (the card's title or ability changed shape);
+        raises Refused("reparse") for a layer that doesn't read as declared
+    """
+    name, vocab = _card_name(parsed), getattr(parser, "icons", None)
+    before = record_parts(card_parts(old, rel, name, parser))
+    after = record_parts(card_parts(new, rel, name, parser))
+    index, was, notes = lyid_index(new), lyid_index(old), []
+    for key, (field_name, _, part) in before.items():
+        layer, job = index.get(int(key)), jobs.get(key)
+        if job and job.get("delete"):
+            if layer is not None:
+                raise Refused("reparse", f"{part['layer']!r} was to be deleted and is still in the card")
+            continue
+        if layer is None:
+            raise Refused("reparse", f"{part['layer']!r} is gone: no edit deleted it")
+        reads, want = part_text(parser, layer), job["text"] if job else part["text"]
+        if not _part_same(reads, want, vocab):
+            raise Refused("reparse", f"{part['layer']!r} reads {reads[:60]!r}, not {want[:60]!r}")
+        if job and field_name == "name":
+            notes += _gate_icons(new, layer, old, was.get(layer.layer_id), font_map(fonts_dir), vocab, "title")
+    deleted = {key for key, job in jobs.items() if job.get("delete")}
+    lost = [part["layer"] for key, (_, _, part) in before.items() if key not in after and key not in deleted]
+    came = [part["layer"] for key, (_, _, part) in after.items() if key not in before]
+    if lost:
+        notes.append(f"parts: {', '.join(map(repr, lost))} no longer read as a title or ability part: check the card")
+    if came:
+        notes.append(f"parts: {', '.join(map(repr, came))} now read as a title or ability part: check the card")
+    return notes
 
 
 def _set_layers(psd: PSDImage, edit: Edit) -> list:
@@ -5839,7 +6021,26 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None) -> Baked:
+               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
+               template: Optional[tuple] = None) -> Baked:
+    """
+    _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
+    that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
+    eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
+    a card into its "N Stars" folder: its re-parse reads the stars there).
+    """
+    hold = ExitStack()
+    try:
+        return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
+                           types_dir, psd, view, hold, template)
+    finally:
+        hold.close()
+
+
+def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
+                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
+                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
+                hold: Optional[ExitStack] = None, template: Optional[tuple] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -5867,6 +6068,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     old = psd if psd is not None else PSDImage.open(psd_path)
     new, old_records = edit_copy(old), layer_records(old)      # a copy: one open (as fast as a second one)
     gate_pairs(old, new)
+    hold = ExitStack() if hold is None else hold
+    hold.enter_context(variant(old, view))      # picture `view`'s eye flags until the save
+    hold.enter_context(variant(new, view))
     png = Image.open(png_path)
     png.load()
     timings["open"] = perf_counter() - start
@@ -5894,7 +6098,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
                               key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
         if name in ICON_FIELDS:
             try:
-                plan = plan_stars(new, parsed, value, parser) if name == "stars" else plan_types(new, parsed, value, parser)
+                plan = plan_stars(new, parsed, value, parser, moving=True) if name == "stars" \
+                    else plan_types(new, parsed, value, parser, template)
                 start = perf_counter()
                 if first is None:
                     with cache:
@@ -5915,9 +6120,12 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser,
                                         old))
+        elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
+            record = card_parts(old, rel, _card_name(parsed), parser)
+            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
-    others = [edit for edit in edits if edit.field not in ICON_FIELDS and edit.layers]
+    others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
     start = perf_counter()
     if others:
         with cache:
@@ -5931,7 +6139,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     for edit in edits:
         if edit.icons is not None:
             index_icons(edit, before, after)
-    edits = [edit for edit in edits if edit.layers]
+    edits = [edit for edit in edits if edit.layers or edit.removed]
     region = changed_region(edits, new)
 
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
@@ -5977,18 +6185,23 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
     start = perf_counter()
+    hold.close()                                # the saved card keeps its own eye flags
     save_psd(new, new_psd, update_preview, preview)
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
     reopened = PSDImage.open(new_psd)          # the saved PSD's one open: every gate after reads it
     records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
+    hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
 
     start = perf_counter()
     stories = {story for edit in edits if edit.field in TEXT_FIELDS for story in [edit.story, *edit.stories]}
     gate_stories(old, reopened, stories | repaired,
-                 [face for edit in edits for face in edit.fonts])
+                 [face for edit in edits for face in edit.fonts],
+                 [index for edit in edits for index in edit.removed_stories])
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
+    if "parts" in jobs:
+        flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)
     titles = (name_layer(reopened, _card_name(parsed), _own_text(parsed)),
               name_layer(old, _card_name(parsed), _own_text(parsed))) if "name" in jobs else None
     flags += gate_fx(reopened, edits, fonts_dir, chart, old, parser.icons, titles)
@@ -6003,6 +6216,627 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
                                if name in {n for n, _ in edit.fx} | {n for _, _, n in edit.rebuilt}],
                  list(dict.fromkeys([note for edit in edits for note in edit.notes] + flags)), icc, rerender,
                  {edit.field: edit.icons.how for edit in edits if edit.icons is not None}, whole)
+
+
+# ========================
+# Parts: one text box per PSD layer (docs/Future/PARTS_EDITOR.md §2-4)
+# ========================
+PART_TAG = re_compile(r"^(.*\S) #(\d{1,2}(?:,\d{1,2})*)$")   # "Name #2", "Layer 6 #2,3": only in those variants (§9)
+GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
+CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"
+ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
+HAS_ABILITY = "the card has an Ability layer now (added in Photoshop): redo it on the website"
+PART_KINDS = (("ability", "ability"), ("title", "name"), ("blocks", "ability"))   # record key -> field, in bake order
+
+
+@dataclass
+class PartsPlan:
+    """A card's `parts` edits sorted against its PSD (plan_parts, §4.3)."""
+    jobs: dict = field(default_factory=dict)        # key -> the part edit to bake (text or delete)
+    outcome: dict = field(default_factory=dict)     # key -> "redundant" | "skipped" | "waiting"
+    skipped: dict = field(default_factory=dict)     # key -> {"text", "now", "why"} (_psd.skipped)
+    refusals: list = field(default_factory=list)    # Refusal: impossible cases
+    notes: list = field(default_factory=list)
+    where: dict = field(default_factory=dict)       # key -> (field, kind, 1-based place among its kind's parts, count)
+
+
+def _parts_api():
+    """Track A's commands.psd_parts (contract I1), or None: this section's stand-ins until it lands."""
+    try:
+        from commands import psd_parts
+    except ImportError:
+        return None
+    return psd_parts
+
+
+def _parser_fn(name: str):
+    import commands.psd_parser as psd_parser
+    return getattr(psd_parser, name, None)
+
+
+def layer_tag(name: str) -> tuple:
+    """(base name, frozenset of variants | None): "Name #2,3" -> ("Name", {2, 3}); FX layers are never tagged."""
+    own = _parser_fn("layer_tag")
+    if own is not None:
+        return own(name)
+    found = None if EFFECT_LAYER_TAG in name else PART_TAG.match(name)
+    return (found.group(1), frozenset(int(n) for n in found.group(2).split(","))) if found else (name, None)
+
+
+def _base(layer) -> str:
+    return layer_tag(layer.name)[0].strip()
+
+
+def shown_in(layer, n: Optional[int]) -> bool:
+    """A tagged node shows in its variants (its eye ignored), an untagged one by its eye; every ancestor must show."""
+    own = _parser_fn("shown_in")
+    if own is not None:
+        return own(layer, n)
+    if n is None:
+        return layer.is_visible()
+    while layer is not None and getattr(layer, "kind", "psdimage") != "psdimage":
+        tags = layer_tag(layer.name)[1]
+        if not (n in tags if tags is not None else layer.visible):
+            return False
+        layer = layer.parent
+    return True
+
+
+def variants_of(psd: PSDImage) -> list:
+    """The card's pictures: [1] untagged, else 1 and every tag."""
+    own = _parser_fn("variants_of")
+    if own is not None:
+        return own(psd)
+    return sorted({1} | {v for layer in psd.descendants() for v in (layer_tag(layer.name)[1] or ())})
+
+
+@contextmanager
+def variant(psd: PSDImage, n: Optional[int]):
+    """
+    The card as picture n shows it (§4.9), in memory: each tagged layer or group visible when n is among its tags,
+    hidden else (untagged ones keep their eye), restored on exit; n None: as saved.
+    """
+    own = _parser_fn("variant_view")            # Track A's, when psd_parser has it
+    if own is not None:
+        with own(psd, n):
+            yield psd
+        return
+    saved = []
+    if n is not None:
+        for layer in psd.descendants():
+            tags = layer_tag(layer.name)[1]
+            if tags is not None and layer.visible != (n in tags):
+                saved.append((layer, layer.visible))
+                layer.visible = n in tags
+    try:
+        yield psd
+    finally:
+        for layer, was in reversed(saved):
+            layer.visible = was
+
+
+def saved_view(psd: PSDImage) -> Optional[int]:
+    """The picture the saved eye flags show (each tagged layer visible exactly in it), or None for none."""
+    tagged = [(layer.visible, tags) for layer in psd.descendants() for tags in [layer_tag(layer.name)[1]] if tags]
+    return next((n for n in variants_of(psd) if all(shown == (n in tags) for shown, tags in tagged)), None)
+
+
+def raw_sha(layer) -> str:
+    """sha1 of the layer's raw text, 8 hex: a part edit's Photoshop check (§2.1)."""
+    api = _parts_api()
+    return api.raw_sha(layer) if api is not None else sha1((layer.text or "").encode("utf-8")).hexdigest()[:8]
+
+
+def part_text(parser: Optional[PSDParser], layer) -> str:
+    """One layer's reading (PSDParser.layer_text): icon-font runs as tokens, breaks as \\n, blank ends and line-leading
+    padding gone."""
+    own = getattr(parser, "layer_text", None)
+    if own is not None:
+        return own(layer)
+    text = str(layer.engine_dict["Editor"]["Text"].value)
+    spans = PSDParser._icon_font_spans(layer, text) if parser is not None else []
+    if spans:
+        text = parser._read_icon_tokens(text, spans, CardInfo(name="part", card_type="unknown"))[0]
+    text = text.replace("\r", "\n").replace("\x03", "\n").replace("\t", " ").replace("﻿", "").strip()
+    return sub(r"(?m)^[^\S\n]{3,}(?=\S)", "", text)
+
+
+def lyid_index(psd: PSDImage) -> dict:
+    """Layer id -> layer (-1, no id stored, left out); raises Refused on a duplicate id (an integrity case, §4.2)."""
+    api = _parts_api()
+    if api is not None:
+        return api.lyid_index(psd)
+    out = {}
+    for layer in psd.descendants():
+        if layer.layer_id < 0:
+            continue
+        if layer.layer_id in out:
+            raise Refused("bytes", f"layer id {layer.layer_id} is on {out[layer.layer_id].name!r} and {layer.name!r}")
+        out[layer.layer_id] = layer
+    return out
+
+
+def layer_path(layer) -> str:
+    names = []
+    while layer is not None and getattr(layer, "kind", "psdimage") != "psdimage":
+        names.append(layer.name)
+        layer = layer.parent
+    return "/".join(reversed(names))
+
+
+def _in_reading_order(layers: list) -> list:
+    """Layers in the parser's reading order (_sort_by_position)."""
+    return [layer for layer, _ in PSDParser._sort_by_position([(layer, BoundingBox.from_tuple(layer.bbox[:2]))
+                                                               for layer in layers])]
+
+
+def _words(text: Optional[str]) -> str:
+    return " ".join((text or "").replace("\x03", " ").replace("﻿", "").split()).casefold()
+
+
+def _stub_titles(psd: PSDImage, texts: list, name: str, n: Optional[int], own_text: bool) -> list:
+    """PSDParser.title_layers with shown_in and tag-free names, plus split_title's pieces (Warcraftian Druid's 'Druid ')."""
+    top = psd.height * TITLE_REGION_RATIO
+    group = next((layer for layer in psd if layer.is_group() and _base(layer) == "Text"), None)
+    under = [layer for layer in group if shown_in(layer, n) and _is_text_layer(layer)] if group is not None else []
+    key, shown = name_key(name), [layer for layer in texts if shown_in(layer, n)]
+    found = [layer for layer in under if _base(layer) == "Name"] \
+        or [layer for layer in shown if _base(layer) == "Name" and layer.bbox[1] < top] \
+        or (key and [layer for layer in under if name_key(_base(layer)) == key]) \
+        or (key and [layer for layer in shown if layer.bbox[1] < top and name_key(_base(layer)) == key]) or []
+    if not found and own_text:
+        own = [layer for layer in shown if layer.bbox[1] < top and name_key(_base(layer))
+               and name_key(_base(layer)) == name_key(layer.text or "")]
+        found = own if len(own) == 1 else []
+    if len(found) > 1:
+        found = [layer for layer in found if layer.bbox[1] < top]
+    title = " ".join(title_text(layer.text) for layer in _in_reading_order(found))
+    joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
+    if not joined or joined == whole or joined not in whole:
+        return found
+    rest, pieces = whole.replace(joined, "", 1), []
+    beside = [layer for layer in (group if group is not None else []) if shown_in(layer, n) and layer not in found
+              and layer.bbox[1] < top]
+    for layer in sorted(beside, key=lambda l: -len("".join(title_text(l.text if _is_text_layer(l) else l.name).split()))):
+        piece = "".join(title_text(layer.text if _is_text_layer(layer) else layer.name).lower().split())
+        if piece and piece in rest:
+            rest = rest.replace(piece, "", 1)
+            pieces.append(layer)
+    return found + [layer for layer in pieces if _is_text_layer(layer)] if not rest else found
+
+
+def _stub_select(psd: PSDImage, rel: str, name: str, texts: list, n: Optional[int]) -> tuple:
+    """(title layers, ability layers, rule-page blocks, followers [(layer, [of], how)]) of variant n."""
+    if RULEBOOK_DIR in rel:
+        return [], [], _in_reading_order([layer for layer in texts if shown_in(layer, n)]), []
+    titles, kept, follow = _in_reading_order(_stub_titles(psd, texts, name, n, True)), [], []
+    for layer in titles:                        # identical copies follow (no box)
+        twin = next((k for k in kept if _words(k.text) == _words(layer.text)), None)
+        (follow.append((layer, [twin], "copy")) if twin is not None else kept.append(layer))
+    abilities = _in_reading_order([layer for layer in texts if _base(layer).lower() == "ability" and shown_in(layer, n)])
+    if not abilities:                           # a hidden Ability laid out again (Butterfly): the pieces are the parts
+        hidden = next((layer for layer in texts if _base(layer).lower() == "ability" and not shown_in(layer, n)
+                       and PSDParser._relaid(layer, texts)), None)
+        if hidden is not None:
+            abilities = PSDParser._pieces(hidden, texts)
+            follow.append((hidden, abilities, "relaid"))
+    parts = kept + abilities
+    for layer in texts:
+        if layer in parts or any(f[0] is layer for f in follow) or not shown_in(layer, n):
+            continue
+        twin = next((p for p in parts if _words(p.text) == _words(layer.text)), None)
+        if twin is not None:
+            follow.append((layer, [twin], "copy"))
+        elif _base(layer) == "Name" and kept and \
+                name_key(layer.text) == name_key(" ".join(title_text(k.text) for k in kept)):
+            follow.append((layer, kept, "watermark"))
+    return kept, abilities, [], follow
+
+
+def _stub_part(parser, layer, kind: str, layers: list) -> dict:
+    out = {"id": layer.layer_id, "layer": layer_path(layer)}
+    if kind == "blocks":
+        digits = [l for l in layers if part_text(parser, l).isdigit()]
+        page = max(digits, key=lambda l: l.bbox[1]) if digits and not any(_base(l) == "Page Number" for l in layers) else None
+        out["role"] = "header" if _base(layer) == "Header" else "page" if _base(layer) == "Page Number" or layer is page \
+            else "block"
+        if out["role"] != "block":
+            out["named"] = _base(layer) in ("Header", "Page Number")
+    else:
+        out["named"] = _base(layer) == ("Name" if kind == "title" else "Ability")
+    out.update(text=part_text(parser, layer), sha=raw_sha(layer), box=list(layer.bbox), variants=None)
+    return out
+
+
+def card_parts(psd: PSDImage, rel: str, name: str, parser: Optional[PSDParser]) -> dict:
+    """
+    The details record's `parts` (§2.3) over every variant (each part's `variants`: None when in all):
+    commands.psd_parts.card_parts when Track A's module is there, else this stand-in by the same rules.
+    """
+    api = _parts_api()
+    if api is not None:                         # its selection needs a parser: a bare one without the vocabulary
+        return api.card_parts(psd, rel, name, parser or PSDParser([], StatsDatabase(), IconVocabulary.build([], [], None)))
+    variants = variants_of(psd)
+    tagged = len(variants) > 1
+    texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
+    out = {"title": [], "ability": [], "blocks": [], "follow": [], "variants": None, "template": None}
+    seen, where = {}, {}
+    for n in (variants if tagged else [None]):
+        titles, abilities, blocks, follow = _stub_select(psd, rel, name, texts, n)
+        for kind, layers in (("title", titles), ("ability", abilities), ("blocks", blocks)):
+            for layer in layers:
+                if layer.layer_id not in seen:
+                    seen[layer.layer_id] = _stub_part(parser, layer, kind, layers)
+                    out[kind].append(seen[layer.layer_id])
+                where.setdefault(layer.layer_id, set()).add(n)
+        for layer, of, how in follow:
+            if not any(f["id"] == layer.layer_id for f in out["follow"]):
+                out["follow"].append({"id": layer.layer_id, "layer": layer_path(layer), "of": [o.layer_id for o in of],
+                                      "how": how, "variants": None})
+    for lyid, part in seen.items():
+        shown = sorted(where[lyid])
+        part["variants"] = None if not tagged or shown == variants else shown
+    if tagged:
+        stem = rel.rsplit("/", 1)[-1][:-4]
+        out["variants"] = {"count": len(variants), "pngs": {str(n): f"{stem}{'' if n == 1 else n}.png" for n in variants},
+                           "tagged": [{"id": layer.layer_id, "layer": layer_path(layer), "in": sorted(layer_tag(layer.name)[1])}
+                                      for layer in psd.descendants() if layer_tag(layer.name)[1] is not None]}
+    return out
+
+
+def record_parts(record: dict) -> dict:
+    """str(layer id) -> (field, record key, part) over a parts record."""
+    return {str(part["id"]): (field_name, kind, part) for kind, field_name in PART_KINDS for part in record.get(kind) or []}
+
+
+def _part_same(a: Optional[str], b: Optional[str], vocab) -> bool:
+    """Two part texts read alike: tokens canonical ([Fire] is [fire]), the parser's whitespace rule."""
+    return normalize_ability(canonical_tokens(a, vocab)) == normalize_ability(canonical_tokens(b, vocab))
+
+
+def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None) -> PartsPlan:
+    """
+    Sort a card's `parts` edits against the PSD (§4.3): a gone layer, one no longer a part of its field, or one whose raw
+    text changed since the edit (sha) is skipped and flagged ("redo it on the website"), unless it already reads the
+    edit (redundant); one reading the edit is redundant; the rest are jobs. Never overwrites Photoshop work: a sha
+    mismatch only ever skips. Impossible: emptying the title, deleting a rule page's block. An added ability waits
+    (not built yet).
+
+    Args:
+        psd: The open card
+        parsed: parse_card() of it
+        parts: The entry's `parts`
+        parser: offline_parser()
+        record: card_parts() of psd (computed when None)
+
+    Returns:
+        PartsPlan
+    """
+    info = parsed.get("info")
+    rel = (info.path if info is not None else parsed["card"].get("path")) or ""
+    record = card_parts(psd, rel, _card_name(parsed), parser) if record is None else record
+    found, index, vocab, plan = record_parts(record), lyid_index(psd), getattr(parser, "icons", None), PartsPlan()
+    for kind, field_name in PART_KINDS:
+        for k, part in enumerate(record.get(kind) or []):
+            plan.where[str(part["id"])] = (field_name, kind, k + 1, len(record[kind]))
+
+    def skip(key, edit, why, now=None):
+        plan.outcome[key] = "skipped"
+        plan.skipped[key] = {"text": edit.get("text"), "now": now, "why": why}
+    for key, edit in parts.items():
+        if key == ADD_ABILITY:
+            if record.get("ability"):
+                skip(key, edit, HAS_ABILITY)
+            else:
+                plan.outcome[key] = "waiting"
+                plan.notes.append(f"ability: {ADDED_LATER}")
+            continue
+        layer = index.get(int(key))
+        if layer is None:
+            skip(key, edit, GONE)
+            continue
+        hit = found.get(key)
+        if not _is_text_layer(layer) or hit is None or hit[0] != edit["field"]:
+            skip(key, edit, CHANGED, part_text(parser, layer) if _is_text_layer(layer) else None)
+            continue
+        now = hit[2]["text"]
+        if raw_sha(layer) != edit["sha"]:       # Photoshop's work stands
+            if not edit.get("delete") and _part_same(now, edit["text"], vocab):
+                plan.outcome[key] = "redundant"
+            else:
+                skip(key, edit, CHANGED, now)
+        elif edit.get("delete") and hit[1] == "blocks":
+            plan.refusals.append(Refusal("unsupported-card", "a rule page's text block can't be deleted: empty it on "
+                                                             "the website or edit it in Photoshop"))
+        elif not edit.get("delete") and _part_same(now, edit["text"], vocab):
+            plan.outcome[key] = "redundant"
+        else:
+            plan.jobs[key] = edit
+    titles = [str(p["id"]) for p in record.get("title") or []]
+    if titles and all(key in plan.jobs and plan.jobs[key].get("delete") for key in titles):
+        plan.refusals.append(Refusal("unsupported-card", "the title can't be emptied: keep one title box"))
+    abilities = [str(p["id"]) for p in record.get("ability") or []]
+    if abilities and all(key in plan.jobs and plan.jobs[key].get("delete") for key in abilities):
+        plan.notes.append("ability: every Ability layer is deleted: the card has no ability now")
+    return plan
+
+
+def _drop_story(psd: PSDImage, index: int) -> list:
+    """
+    Remove the Txt2 story at index and the text frames only it names (the frames after them renumbered in every story),
+    and move each later type layer's TextIndex down by one: Photoshop reads a layer's text from its story.
+
+    Returns:
+        The type layers whose TextIndex moved
+    """
+    from psd_tools.api import text_edit
+    found = text_edit._txt2(psd)
+    if found is None:
+        return []
+    root, keys, items = found
+    _drop_story_in(root, keys, items, index)
+    moved = []
+    for layer in psd.descendants():
+        at = layer._data.text_data.get(b"TextIndex") if _is_text_layer(layer) else None
+        if at is not None and int(getattr(at, "value", at)) > index:
+            at.value = int(at.value) - 1
+            moved.append(layer)
+    return moved
+
+
+def _drop_story_in(root, keys, items, index: int) -> None:
+    """_drop_story's Txt2 part, on any root (gate_stories replays it on the old card's)."""
+    from psd_tools.api import text_edit
+    refs = text_edit._frame_refs(items[index], keys)
+    shared = {i for k, story in enumerate(items) if k != index for i in text_edit._frame_refs(story, keys)}
+    del items[index]
+    gone = sorted(set(refs) - shared)
+    if gone:
+        frames = text_edit._resource_items(root, keys, keys.frame_set)
+        kept = [i for i in range(len(frames)) if i not in gone]
+        for i in reversed(gone):
+            del frames[i]
+        moved = {old: new for new, old in enumerate(kept) if old != new}
+        for story in items:
+            text_edit._set_frame_refs(story, keys, moved)
+
+
+def remove_layer(psd: PSDImage, layer) -> list:
+    """
+    Delete a layer (its record and channels) and, for a type layer, its Txt2 story, renumbering the later TextIndex
+    values (§4.6).
+
+    Returns:
+        The type layers whose TextIndex moved
+    """
+    index = story_index(layer) if _is_text_layer(layer) else None
+    layer.parent.remove(layer)
+    return _drop_story(psd, index) if index is not None else []
+
+
+def _part_raw(raw: str, was: str, text: str) -> str:
+    """A part's new raw text: the box's edit was -> text put back over the layer's own text (project: its blank ends,
+    indents and breaks between stay); a new line takes the layer's own break (\\x03 when it has one, else \\r)."""
+    brk = "\x03" if "\x03" in raw else "\r"
+    return project(was, text.replace("\r\n", "\n").replace("\r", "\n"), raw, brk)
+
+
+def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, news: dict, extra_layers=(),
+             extra_stories=(), removed=(), removed_stories=(), renumbered=(), boxes=(), notes=()) -> Edit:
+    """One Edit for a field's part jobs (set_ability_layers' shape: several, parts), the deletions in it; old and new:
+    {layer id: its part's text} (new None: deleted)."""
+    now = record_map(psd)
+    for (_, edit, _), ids in zip(edits, subs):
+        _renumber(edit, ids, now)
+    kept = set(_record_ids(psd))
+    region = union_box([edit.region for _, edit, _ in edits] + list(boxes))
+    first = edits[0][1] if edits else None
+    return Edit(which, olds, news, [layer for layer, _, _ in edits] + list(extra_layers),
+                [i for _, edit, _ in edits for i in edit.records] + [_record_index(layer) for layer in extra_layers],
+                region, hidden=[i for _, edit, _ in edits for i in edit.hidden],
+                fx=[fx for _, edit, _ in edits for fx in edit.fx],
+                dropped=[name for _, edit, _ in edits for name in edit.dropped],
+                rebuilt=[spec for _, edit, _ in edits for spec in edit.rebuilt],
+                fx_names=[name for _, edit, _ in edits for name in edit.fx_names],
+                notes=[note for _, edit, _ in edits for note in edit.notes] + list(notes),
+                held=[held for _, edit, _ in edits for held in edit.held],
+                story=first.story if first else None,
+                stories=[edit.story for _, edit, _ in edits] + list(extra_stories),
+                fonts=list(dict.fromkeys(face for _, edit, _ in edits for face in edit.fonts)),
+                band=union_box([edit.band for _, edit, _ in edits]),
+                whole=any(edit.whole for _, edit, _ in edits),
+                parts=[(layer.layer_id, edit, copy) for layer, edit, copy in edits], several=True,
+                removed=list(removed), removed_stories=list(removed_stories),
+                renumbered=sorted({_record_index(layer) for layer in renumbered if id(layer._record) in kept}))
+
+
+def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
+              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None) -> list:
+    """
+    Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
+    visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
+    layer (set_text_layer, layer=) with its box's edit put back over the layer's raw text (_part_raw), its copies the
+    same, a watermark of the title the new title when it printed the old one (else told), a relaid hidden Ability the
+    new join.
+
+    Args:
+        psd: The open card (edited in place)
+        jobs: plan_parts().jobs
+        record: card_parts() of the card as opened
+        original: The card before the bake's edits (set_text_layer's; record ids and story indices of what is deleted)
+
+    Returns:
+        One Edit per field ("ability" then "name"), several=True; raises Refused as set_text_layer does
+    """
+    found, index = record_parts(record), lyid_index(psd)
+    was_index = lyid_index(original) if original is not None else index
+    follow = record.get("follow") or []
+
+    def followers(lyid: int, how: str) -> list:
+        return [index[f["id"]] for f in follow if f["how"] == how and lyid in f["of"] and f["id"] in index]
+
+    def first_story(layer) -> Optional[int]:    # gate_stories reads TextIndex as the card was opened
+        before = was_index.get(layer.layer_id)
+        return story_index(before) if before is not None else story_index(layer)
+    out, gone, deleted = [], set(), {}
+    for key, job in jobs.items():               # deletions first: an edited part's ink is told against what stays
+        if not job.get("delete"):
+            continue
+        field_name, _, part = found[key]
+        layer = index[int(key)]
+        doomed = [layer, *(fx for fx in fx_layers(psd, layer) if fx.is_visible()), *followers(layer.layer_id, "copy")]
+        info = deleted.setdefault(field_name, {"removed": [], "stories": [], "boxes": [], "notes": [], "moved": []})
+        for one in doomed:
+            if one.layer_id in gone:
+                continue
+            gone.add(one.layer_id)
+            before = was_index.get(one.layer_id)
+            info["removed"].append(_record_index(before) if before is not None else None)
+            if _is_text_layer(one) and before is not None and story_index(before) is not None:
+                info["stories"].append(story_index(before))
+            info["boxes"].append(_pad(tuple(one.bbox), fx_pad(one), psd))
+            info["moved"] += remove_layer(psd, one)
+        info["notes"].append(f"{field_name}: {part['text'][:40]!r} deleted"
+                             + (" with its FX and copy layers" if len(doomed) > 1 else "")
+                             + ": the text below it doesn't move up")
+        if any(r is None for r in info["removed"]):
+            raise Refused("bytes", f"{part['layer']!r}: a deleted layer is not in the card as opened")
+    joined = {kind: [p for p in record.get(kind) or []] for kind, _ in PART_KINDS}
+    for kind, which in PART_KINDS:
+        todo = [(str(p["id"]), p) for p in joined[kind] if str(p["id"]) in jobs and not jobs[str(p["id"])].get("delete")]
+        info = deleted.pop(which, None) or {"removed": [], "stories": [], "boxes": [], "notes": [], "moved": []}
+        if not todo and not info["removed"]:
+            continue
+        edits, subs, extra, extra_stories, notes = [], [], [], [], list(info["notes"])
+        for key, part in todo:
+            layer = index[int(key)]
+            text = jobs[key]["text"]
+            layer_was = layer.text
+            raw = _part_raw(layer_was, part["text"], text)
+            copies = followers(layer.layer_id, "copy")
+            edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, own_text, parser,
+                                  original, layer=layer, beside=copies)   # a rule page's words keep their own colours
+            edit.story = first_story(layer)
+            typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
+            edit.notes = [note for note in edit.notes if not _typed_lines(note, typed)]    # an Enter in the box is no overflow
+            tag = layer_tag(part["layer"].rsplit("/", 1)[-1])[1]
+            if edit.renamed and tag and layer_tag(layer.name)[1] is None:   # the variant tag stays
+                layer.name = edit.renamed = f"{layer.name} #{','.join(map(str, sorted(tag)))}"
+            many = len(joined[kind]) > 1
+            if many:
+                label = "block" if kind == "blocks" else "ability" if which == "ability" else "title"
+                where = f"{label} {joined[kind].index(part) + 1}/{len(joined[kind])}"
+                edit.notes = [sub(rf"^((?:[\w-]+: )?){which}\b", rf"\1{which} ({where})", note, count=1)
+                              for note in edit.notes]
+            edits.append((layer, edit, False))
+            subs.append(_record_ids(psd))
+            own = fx_layers(psd, layer)
+            for copy in copies:
+                again = _part_raw(copy.text, part["text"], text)
+                if again != copy.text:
+                    done = set_text_layer(psd, which, again, fonts_dir, None, card, own_text, parser, original,
+                                          layer=copy, beside=[layer, *own], copy=True)
+                    done.story = first_story(copy)
+                    done.notes = [f"{note} (its copy {copy.name[:24]!r})" for note in done.notes if note not in edit.notes]
+                    edits.append((copy, done, True))
+                    subs.append(_record_ids(psd))
+            if copies:
+                notes.append(f"{which}: also printed by {', '.join(c.name for c in copies)}: "
+                             f"{'they follow' if len(copies) > 1 else 'it follows'}")
+        if which == "name" and todo:            # a watermark of the joined title follows it
+            old_title = " ".join(title_text(p["text"]) for p in joined["title"])
+            new_title = " ".join(title_text(jobs[str(p["id"])]["text"]) if str(p["id"]) in jobs else title_text(p["text"])
+                                 for p in joined["title"] if not jobs.get(str(p["id"]), {}).get("delete"))
+            for f in follow:
+                mark = index.get(f["id"])
+                if f["how"] != "watermark" or mark is None:
+                    continue
+                if name_key(mark.text) != name_key(old_title):
+                    notes.append(f"name: the watermark {f['layer']!r} doesn't match the title: not changed")
+                    continue
+                done = set_text_layer(psd, "name", project(title_text(mark.text), new_title, mark.text), fonts_dir,
+                                      None, card, own_text, parser, original, layer=mark, copy=True)
+                done.story = first_story(mark)
+                edits.append((mark, done, True))
+                subs.append(_record_ids(psd))
+                notes.append(f"name: the watermark {f['layer']!r} follows the title")
+        if which == "ability":                  # a relaid hidden Ability takes the new join (the parser reads it)
+            for f in follow:
+                hidden = index.get(f["id"])
+                if f["how"] != "relaid" or hidden is None:
+                    continue
+                old_join = "\n".join(p["text"] for p in joined["ability"])
+                new_join = "\n".join(jobs[str(p["id"])]["text"] if str(p["id"]) in jobs else p["text"]
+                                     for p in joined["ability"] if not jobs.get(str(p["id"]), {}).get("delete"))
+                raw = project(old_join, new_join, hidden.text)
+                if raw != hidden.text:
+                    extra_stories.append(first_story(hidden))
+                    hidden.set_text(raw, keep="runs")
+                    extra.append(hidden)
+        mine = [str(p["id"]) for p in joined[kind] if str(p["id"]) in jobs]
+        out.append(_combine(which, edits, subs, psd, {key: found[key][2]["text"] for key in mine},
+                            {key: jobs[key].get("text") for key in mine}, extra, extra_stories, info["removed"],
+                            info["stories"], info["moved"], info["boxes"], notes))
+    return out
+
+
+def _typed_lines(note: str, typed: int) -> bool:
+    """A title's "runs onto N lines (it has M)" note the box's own line breaks account for."""
+    found = search(r"runs onto (\d+) lines \(it has (\d+)\)", note)
+    return bool(found) and typed > 0 and int(found.group(1)) <= int(found.group(2)) + typed
+
+
+# ========================
+# Stars by folder and first type icons (PARTS_EDITOR.md §4.8)
+# ========================
+STAR_PATH = re_compile(r"^((?:Creatures|Items)/[^/]+/|Field/)(\d+) Stars/", IGNORECASE)   # cards starred by folder
+TEMPLATES_DIR = "MDW/Templates"
+TEMPLATES = {"creature": "Creature_Template", "minion": "Creature_Template", "creatures": "Creature_Template",
+             "item": "Item_Template", "aux item": "Item_Template", "nme": "Item_Template", "field": "Item_Template",
+             "buff": "Status_Effect_Template", "debuff": "Status_Effect_Template"}    # every creature card (owner 10-25)
+
+
+def _card_path(parsed: dict) -> str:
+    info = parsed.get("info")
+    return (info.path if info is not None else parsed["card"].get("path")) or ""
+
+
+def star_folder(rel: str) -> Optional[tuple]:
+    """(the path up to the "N Stars" folder, N) of a card whose stars come from its folder, else None."""
+    found = STAR_PATH.match(rel or "")
+    return (found.group(1), int(found.group(2))) if found else None
+
+
+def star_target(rel: str, stars: int) -> Optional[str]:
+    """The "N Stars" folder a stars edit moves a folder-starred card into ("Items/Heal/3 Stars"), or None."""
+    found = star_folder(rel)
+    return f"{found[0]}{stars} Stars" if found and found[1] != stars else None
+
+
+def template_for(card_type: str, rel: str = "") -> Optional[str]:
+    """The template file a card's first ability or type icon comes from (Items/Active: ActiveItem_Template), or None."""
+    if card_type == "item" and rel.split("/")[1:2] == ["Active"]:
+        return f"{TEMPLATES_DIR}/ActiveItem_Template.psd"
+    stem = TEMPLATES.get(card_type or "")
+    return f"{TEMPLATES_DIR}/{stem}.psd" if stem else None
+
+
+def template_icon(template: PSDImage, psd: PSDImage, parser: PSDParser, name: str = "") -> Optional[tuple]:
+    """(spot on the card, the template's first type icon, the template's name): the template's spot scaled to the
+    card's canvas, or None when it has no type icon."""
+    images, _ = type_row(template, parser, name, True)
+    if not images:
+        return None
+    units = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in images]
+    first = _reading(units, _median_size(units)[1], False)[0]
+    sx, sy = psd.width / template.width, psd.height / template.height
+    x0, y0, x1, y1 = first.core
+    return (round(x0 * sx), round(y0 * sy), round(x1 * sx), round(y1 * sy)), first.layers[0], name
+
+
+def parts_jobs(jobs: dict) -> dict:
+    """The part edits among a Classification's jobs (its "parts" job), else {}."""
+    return jobs.get("parts") or {}
 
 
 # ========================

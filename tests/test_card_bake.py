@@ -124,10 +124,12 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert data["cards"]["Beldam"] == EDITS["Beldam"]
     freezer = data["cards"]["The Freezer"]["_psd"]
     assert freezer["state"] == "refused" and freezer["for"] == {"stars": 2} and freezer["psd"] == _sha(github.files_at(before)[FREEZER])[:8]
-    assert freezer["reason"] == "unsupported-card: stars: the '1 Stars' folder sets them (moving the card is ledger S9)"
+    assert freezer["reason"] == ("unsupported-card: stars: Field/2 Stars/The_Freezer.png is already there: the card can't "
+                                 "move into 'Field/2 Stars'")
     assert freezer["at"].endswith("Z")
     assert data["cards"]["Nobody"]["_psd"]["reason"] == "unsupported-card: no PSD in the card repo" and data["cards"]["Nobody"]["_psd"]["psd"] == ""
-    assert data["cards"]["A Snack"]["_psd"]["reason"] == "duplicate: numbered PNGs share the PSD: A_Snack2.png"
+    assert data["cards"]["A Snack"]["_psd"]["reason"] == ("duplicate: numbered PNGs share the PSD: A_Snack2.png (tag the "
+                                                          "variant layers: PARTS_EDITOR.md §9)")
     assert data["cards"]["A Snack2"]["_psd"]["reason"] == "duplicate: a numbered PNG exported from `Items/Heal/2 Stars/A_Snack.psd`"
     raw = github.files_at(github.head)[cb.EDITS_PATH].decode("utf-8")
     assert raw == cb.dump_edits(json.loads(raw))                                                 # canonical layout
@@ -711,7 +713,7 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
     rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
     cards = {path: data for path, data in github.files_at(github.head).items()
-             if path.startswith(("Auxiliary", "Field")) or path == SNACK}                       # A Snack's: the redundancy check
+             if path.startswith(("Auxiliary", "Field/1")) or path == SNACK}                     # A Snack's: the redundancy check
     assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
     assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
     assert "The checkout is on it." in text
@@ -801,3 +803,117 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
 
+
+
+# ========================
+# Parts: one box per layer (docs/Future/PARTS_EDITOR.md §4, §11 cases 4 and 5)
+# ========================
+MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five Ability layers, padded ('\r    \r    Earth: ...')
+
+
+@fork_text
+def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
+    """Miracle Matter: 1368 edited (only its record, its indent kept), 417 deleted (its record and story gone, the later
+    TextIndex values one lower), 1366 changed in Photoshop since (wrong sha: skipped, kept in _psd.skipped), 1367 done in
+    Photoshop (redundant), a layer gone; the derived ability leaves with the last ability part."""
+    from psd_tools import PSDImage
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files = github.files_at(github.head)
+    files.update({MIRACLE: (clone / MIRACLE).read_bytes(), MIRACLE[:-4] + ".png": (clone / (MIRACLE[:-4] + ".png")).read_bytes(),
+                  pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes()})
+    old = PSDImage.open(str(clone / MIRACLE))
+    ids = {layer.layer_id: layer for layer in old.descendants()}
+    psd8 = _sha(files[MIRACLE])[:8]
+
+    def part(lyid, **kw):
+        return {"field": "ability", **kw, "was": "x", "sha": pe.raw_sha(ids[lyid]) if lyid in ids else "0123abcd",
+                "psd": psd8, "layer": "Text/Stat Txt/ability/Ability"}
+    parts = {"1368": part(1368, text="Earth: 5/8/6/5 and heal 3 HP"), "417": part(417, delete=True),
+             "1366": {**part(1366, text="Gains nothing."), "sha": "00000000"},
+             "1367": {**part(1367, text="(1GCD) You may choose one of the following forms:"), "sha": "00000000"},
+             "99999": part(99999, text="A layer remade in Photoshop.")}
+    files[cb.EDITS_PATH] = _edits({"Miracle Matter": {"ability": "joined", "parts": parts, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Miracle Matter")
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    message = github.commits[commits[0]]["message"]
+    assert "- Miracle Matter: ability (3rd layer) 'heal 2 HP' -> 'heal 3 HP', 4th ability layer deleted; " in message, message
+    entry = _edits_at(github)["cards"]["Miracle Matter"]
+    assert list(entry) == ["_psd"]                          # the parts and the derived ability are out; the flags stay
+    verdict = entry["_psd"]
+    assert verdict["parts"] == {"1366": "skipped", "1367": "redundant", "1368": "baked", "417": "deleted", "99999": "skipped"}
+    assert verdict["skipped"]["1366"] == {"text": "Gains nothing.", "why": pe.CHANGED,
+                                          "now": "This creature gains the type of whatever form it is in until the end of the turn."}
+    assert verdict["skipped"]["99999"]["why"] == pe.GONE and "2 layers skipped" in verdict["reason"]
+    from io import BytesIO
+    new = PSDImage.open(BytesIO(github.files_at(github.head)[MIRACLE]))
+    now = {layer.layer_id: layer for layer in new.descendants()}
+    assert 417 not in now and now[1368].text == "\r    \r    Earth: 5/8/6/5 and heal 3 HP\r   "
+    assert all(now[k].text == ids[k].text for k in (1366, 1367, 1369, 422))     # Photoshop's work stands
+    assert len(pe.stories(new)) == len(pe.stories(old)) - 1 and pe.stale_stories(new) == []
+    assert sorted(pe.story_index(layer) for layer in new.descendants() if layer.kind == "type") == list(range(9))
+    report = "\n".join(line for line in text.splitlines() if "Miracle Matter" in line)
+    assert "flag bytes" in report
+
+
+@fork_text
+def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
+    """§11 case 7 on A Snack tagged as §9 (the fixture script's tags, saved on a copy): the shared Ability writes all
+    three PNGs; a 'Name #2' edit writes only A_Snack2.png, the others byte for byte; the pictures' entries lose their
+    derived fields with the parts, and are never baked on their own."""
+    import sys
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(tmp_path / "A_Snack.psd"))
+    pngs = [rel[:-4] + suffix + ".png" for suffix in ("", "2", "3")]
+    files = github.files_at(github.head)
+    files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
+                  **{png: (clone / png).read_bytes() for png in pngs}})
+    github.commit(files, "someone", "A Snack tagged")
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8"))["cards"]
+    ability = fixture["A Snack"]["parts"]["320"]
+    for edit, changed in (({"A Snack": {"ability": ability["text"], "parts": {"320": ability}},
+                            "A Snack2": {"ability": ability["text"]}, "A Snack3": {"ability": ability["text"]}}, pngs),
+                          ({"A Snack": {"parts": {"1023": fixture["A Snack"]["parts"]["1023"]}},
+                            "A Snack2": {"name": "Second Breakfast"}}, pngs[1:2])):
+        before = github.files_at(github.head)
+        before[cb.EDITS_PATH] = _edits({k: {**v, "_by": "web", "_at": AT} for k, v in edit.items()})
+        github.commit(before, "web", "Website edit: A Snack")
+        text, commits = cb.run()
+        assert len(commits) == 1, text
+        after = github.files_at(github.head)
+        assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
+        cards = _edits_at(github)["cards"]
+        assert "A Snack2" not in cards and "A Snack3" not in cards and set(cards.get("A Snack", {})) <= {"_psd"}, cards
+    saved = {layer.layer_id: layer for layer in PSDImage.open(str(tmp_path / "A_Snack.psd")).descendants()}
+    from io import BytesIO
+    new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(github.files_at(github.head)[rel])).descendants()}
+    assert new[1023].text.startswith("Second\rBreakfast") and new[1023].name == "Name #2"
+    assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
+
+
+def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
+    """§11 case 8: The Freezer's stars 1 -> 3 move its PSD and PNG into "Field/3 Stars" (created, told): one commit adds
+    them there and deletes them here; its printed star (no Stars group) is not redrawn, told; the verdict says where."""
+    files = github.files_at(github.head)
+    moved = {path: path.replace("1 Stars", "3 Stars") for path in (FREEZER, FREEZER[:-4] + ".png")}
+    files[cb.EDITS_PATH] = _edits({"The Freezer": {"stars": 3, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: The Freezer")
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    message = github.commits[commits[0]]["message"]
+    assert message.startswith("Card edits: 1 baked\n\n- The Freezer: stars 1 -> 3 (moved to 3 Stars; created the folder "
+                              "'Field/3 Stars'; the printed stars are not redrawn: "), message
+    after = github.files_at(github.head)
+    assert all(old not in after and after[new] == files[old] for old, new in moved.items())   # the same bytes, moved
+    verdict = _edits_at(github)["cards"]["The Freezer"]["_psd"]
+    assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(files[FREEZER])[:8]

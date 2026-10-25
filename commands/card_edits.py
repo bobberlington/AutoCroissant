@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from json import dumps as json_dumps, loads as json_loads
 from math import floor
-from re import sub
+from re import compile as re_compile, sub
 from typing import Optional
 from unicodedata import combining, normalize
 
@@ -19,9 +19,14 @@ from commands.card_models import CardInfo, CardStats
 # ========================
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
+         "parts", "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
+# per-layer text edits (docs/Future/PARTS_EDITOR.md §3): build_site.valid_parts' rules
+ADD_ABILITY = "+ability"                        # the key of an ability added to a card that has none
+PART_KEY = re_compile(r"^(\d+|\+ability)\Z")   # a layer id, or ADD_ABILITY
+HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
+PARTS_MAX, PART_TEXT_MAX = 64, 4096
 
 
 @dataclass
@@ -79,7 +84,8 @@ class CardEdits:
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
-             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list}
+             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
+             "parts": dict}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "hidden": "hidden",
@@ -91,7 +97,7 @@ class CardEdits:
                 "creatures": ("SEVERAL CREATURES",)}
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
-            "type": "folder", "subtype": "folder", "series": "folder",
+            "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "aliases": "database", "dup_of": "database", "hidden": "database",
             "problems_ok": "database", "allow_high_stats": "database", "creatures": "database"}
 
@@ -110,6 +116,8 @@ class CardEdits:
                 for k, v in c.items()) for c in value)
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
+        if name == "parts":
+            return valid_parts(value)
         return isinstance(value, kind)
 
     @classmethod
@@ -176,6 +184,37 @@ class CardEdits:
             if extra:
                 out[key] = extra
         return out
+
+
+def valid_parts(value) -> bool:
+    """A `parts` edit: {lyid | "+ability": {field, text | delete, was, sha, psd, layer}} (build_site.valid_parts)."""
+    if not isinstance(value, dict) or not value or len(value) > PARTS_MAX:
+        return False
+    for key, part in value.items():
+        if not (isinstance(key, str) and PART_KEY.match(key) and isinstance(part, dict)
+                and part.get("field") in ("name", "ability")):
+            return False
+        text = part.get("text")
+        if ("text" in part) == bool(part.get("delete")) or ("text" in part and not (
+                isinstance(text, str) and len(text.encode("utf-8")) <= PART_TEXT_MAX)):
+            return False
+        added = key == ADD_ABILITY
+        if not (isinstance(part.get("psd"), str) and HEX8.match(part["psd"]) or added and part.get("psd") in (None, "")):
+            return False
+        if not (isinstance(part.get("sha"), str) and HEX8.match(part["sha"]) or added and part.get("sha") is None):
+            return False
+        if added and (part.get("delete") or part["field"] != "ability"):
+            return False
+    return True
+
+
+def merge_parts(cur, set_parts: Optional[dict] = None, unset=()) -> Optional[dict]:
+    """An entry's `parts` with an op applied (parts.js mergeParts): set per layer, unset by key; None when none is left."""
+    out = dict(cur) if isinstance(cur, dict) else {}
+    for key in unset:
+        out.pop(key, None)
+    out.update(set_parts or {})
+    return out or None
 
 
 def as_parsed(card: CardInfo) -> CardInfo:
@@ -381,9 +420,12 @@ __all__ = [
     'CardDates',
     'CardEdits',
     'CardRatings',
+    'ADD_ABILITY',
     'ORDER',
     'PUNCTUATION',
     'as_parsed',
     'dump_edits',
     'dump_ratings',
+    'merge_parts',
+    'valid_parts',
 ]

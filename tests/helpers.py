@@ -134,7 +134,10 @@ class FakeGitHub:
         if method == "POST" and route == "git/trees":
             tree = dict(self.trees[json["base_tree"]])
             for entry in json["tree"]:
-                tree[entry["path"]] = (entry["mode"], entry["sha"])
+                if entry["sha"] is None:            # GitHub deletes the path
+                    tree.pop(entry["path"], None)
+                else:
+                    tree[entry["path"]] = (entry["mode"], entry["sha"])
             return Reply(201, body={"sha": self._tree(tree)})
         if method == "POST" and route == "git/commits":
             sha = hashlib.sha1(json_dumps(json).encode()).hexdigest()
@@ -174,7 +177,7 @@ EDITS = {
     "Beldam": {"series": "Mario", "_by": "web", "_at": AT},                 # no PSD field: not looked at
     "Mini Doomer": {"hp": 5, "note": "checked", "_by": "web", "_at": AT},   # hp 5 is on the card: redundant, dropped
     "Nobody": {"hp": 3, "_by": "web", "_at": AT},                           # no PSD
-    "The Freezer": {"stars": 2, "_by": "web", "_at": AT},                   # a field card: its "1 Stars" folder sets them
+    "The Freezer": {"stars": 2, "_by": "web", "_at": AT},                   # starred by its folder: moving it collides
     "A Snack": {"hp": 1, "_by": "web", "_at": AT},                          # numbered PNGs share its PSD
     "A Snack2": {"ability": "Breakfast.", "_by": "web", "_at": AT},         # a numbered PNG itself
 }
@@ -188,6 +191,7 @@ def files(clone):
     out[cb.ICON_MANIFEST_PATH] = json.dumps(vocab["manifest"]).encode()
     out.update(_card_files(clone, DOOMER))
     out.update(_card_files(clone, FREEZER))
+    out["Field/2 Stars/The_Freezer.png"] = b"another card's PNG"   # in the way of its move into "2 Stars"
     out[SNACK] = out[DOOMER]                    # read by the redundancy check before the duplicate gate (hp 5, not 1)
     out[SNACK[:len(SNACK) - 4] + ".png"] = b"not fetched"
     out["Items/Heal/2 Stars/A_Snack2.png"] = b"a duplicate"

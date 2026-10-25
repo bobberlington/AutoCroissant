@@ -174,10 +174,10 @@ def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:
     Write a tree: `tree` (None for a new folder) with changes applied, folder by folder.
 
     Args:
-        changes: {entry name: blob sha, or {nested changes} for a folder}
+        changes: {entry name: blob sha, None to delete it, or {nested changes} for a folder}
 
     Returns:
-        The new tree's sha (--missing: siblings' blobs aren't in the blobless clone)
+        The new tree's sha (--missing: siblings' blobs aren't in the blobless clone); None when nothing is left in it
     """
     entries: dict = {}
     if tree:
@@ -189,9 +189,17 @@ def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:
     for name, change in changes.items():
         old = entries.get(name)
         if isinstance(change, dict):
-            entries[name] = ("040000", "tree", git_tree(clone, old[2] if old and old[1] == "tree" else None, change, env))
+            sub = git_tree(clone, old[2] if old and old[1] == "tree" else None, change, env)
+            if sub is None:                     # a folder emptied by deletions goes (git keeps no empty trees)
+                entries.pop(name, None)
+            else:
+                entries[name] = ("040000", "tree", sub)
+        elif change is None:                    # a deleted file (a card moved to another folder)
+            entries.pop(name, None)
         else:
             entries[name] = (old[0] if old and old[1] == "blob" else "100644", "blob", change)
+    if not entries and tree is not None:
+        return None
     data = "".join(f"{mode} {kind} {sha}\t{name}\0" for name, (mode, kind, sha) in entries.items())
     return git(clone, "mktree", "-z", "--missing", stdin=data.encode("utf-8"), env=env).decode().strip()
 
@@ -237,7 +245,8 @@ def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, w
             *folders, name = path.split("/")
             for folder in folders:
                 node = node.setdefault(folder, {})
-            node[name] = git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
+            node[name] = None if data is None else \
+                git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
         tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
         return git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
     except CalledProcessError as error:
@@ -299,7 +308,7 @@ def commit_files(repository: str, head: str, base_tree: str, modes: dict, files:
     Args:
         head: The branch commit to build on (its tree is base_tree)
         modes: {repo path: mode} as the tree has them
-        files: {repo path: bytes}
+        files: {repo path: bytes, or None to delete the path}
         message: Commit message (subject, then any trailers): both paths keep it whole
         uploaded: Blob shas already uploaded this run (filled here): a retry re-uploads only what changed
 
@@ -310,13 +319,16 @@ def commit_files(repository: str, head: str, base_tree: str, modes: dict, files:
     if token() and not cant_write:
         uploaded = set() if uploaded is None else uploaded
         for data in files.values():
+            if data is None:                    # a deletion: nothing to upload
+                continue
             sha = blob_sha(data)
             if sha not in uploaded:
                 if upload_blob(repository, data) is None:
                     break
                 uploaded.add(sha)
         else:
-            return api_commit(repository, head, base_tree, modes, {path: blob_sha(data) for path, data in files.items()}, message)
+            return api_commit(repository, head, base_tree, modes,
+                              {path: None if data is None else blob_sha(data) for path, data in files.items()}, message)
     return git_commit(repository, head, files, message)
 
 
