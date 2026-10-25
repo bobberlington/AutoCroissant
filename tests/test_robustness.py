@@ -94,9 +94,9 @@ def channels(monkeypatch):
 
 
 def _drain():
-    """One tick of the dispatch loop, then its channel lanes until they are empty."""
+    """One drain of the dispatch queue, then its channel lanes until they are empty."""
     async def run():
-        await main.process_dispatch_queue.coro()
+        main._drain_dispatch()
         await asyncio.gather(*main._lane_tasks.values())
     asyncio.run(run())
 
@@ -175,7 +175,7 @@ def test_edit_loop_survives(channels, capsys):
     utils.queue_edit(Inter(channel_id=1, edit_fail=_http(404)), content="progress")
     good = Inter(channel_id=2)
     utils.queue_edit(good, content="x" * 4500)
-    asyncio.run(main.process_edit_queue.coro())
+    asyncio.run(main._drain_edits())
     assert "channel 1 not found" in capsys.readouterr().out
     (kind, kw), = good.log
     assert kind == "edit" and len(kw["content"]) <= 2000
@@ -197,7 +197,7 @@ def test_long_edit_keeps_ephemeral(channels, ephemeral):
     inter.edit_original_response = edit
     am = Object(1)
     utils.queue_edit(inter, content="x" * 4500, allowed_mentions=am)
-    asyncio.run(main.process_edit_queue.coro())
+    asyncio.run(main._drain_edits())
     assert [kw.get("ephemeral", False) for _, kw in utils.dispatch_queue] == [ephemeral, ephemeral]
     assert all(kw["allowed_mentions"] is am for _, kw in utils.dispatch_queue)
 
@@ -209,13 +209,41 @@ def test_command_queue_runs_and_survives(channels, capsys, monkeypatch):
         utils.command_queue.append("not a queued item")
         utils.queue_command(ran.append, "work")
         await main.process_reminders.coro()                 # the 1 s heartbeat queues check_reminder
-        await main.process_command_queue.coro()
+        main._drain_commands()
         async def done():
             while main._running:
                 await asyncio.sleep(0.01)
         await asyncio.wait_for(done(), 5)                     # never hangs a worker
     asyncio.run(tick())
     assert sorted(ran) == ["tick", "work"] and "Command queue: dropped an item" in capsys.readouterr().out
+
+
+def test_threads_wake_the_drain_loops(channels, monkeypatch):
+    """B-1: a queue_* from any thread wakes its loop at once (not the fallback poll), each producer's order kept;
+    _stop_loops ends the waits at once."""
+    monkeypatch.setattr(utils, "FALLBACK", 30)          # a lost wake-up would stall the test
+    channels[1] = Channel()
+    ran = []
+
+    async def run():
+        main.process_dispatch_queue.start()
+        main.process_command_queue.start()
+        await asyncio.sleep(0.05)                       # both idle in their wait
+        def produce(p):
+            for i in range(50):
+                utils.queue_message(utils.make_simple_fake_interaction(1), f"{p}:{i}")
+        await asyncio.gather(*(asyncio.to_thread(produce, p) for p in range(4)))
+        await asyncio.to_thread(utils.queue_command, ran.append, "work")
+        async def done():
+            while len(channels[1].sent) < 200 or not ran:
+                await asyncio.sleep(0.005)
+        await asyncio.wait_for(done(), 2)
+        main._stop_loops()
+        await asyncio.sleep(0.05)
+        return main.process_dispatch_queue.is_running() or main.process_command_queue.is_running()
+    assert asyncio.run(run()) is False and ran == ["work"]
+    got = [m["content"].split(":") for m in channels[1].sent]
+    assert all([int(i) for q, i in got if q == str(p)] == list(range(50)) for p in range(4))
 
 
 # ========================

@@ -74,14 +74,18 @@ from commands.type_emojis import init_type_emojis, sync_type_emojis
 from commands.update_bot import git_pull, restart_bot, update_bot
 from commands.utils import (
     command_queue,
+    command_wake,
     dispatch_queue,
+    dispatch_wake,
     edit_queue,
+    edit_wake,
     slash_registry,
     queue_command,
     queue_long_message,
     to_thread,
     to_threadpool,
     lacks_admin,
+    queue_any,
     split_long_message,
 )
 
@@ -200,10 +204,7 @@ async def slash_print_help(interaction: Interaction,
 
 @tree.command(name="restart_bot", description="Restart the bot.")
 async def slash_restart_bot(interaction: Interaction):
-    process_reminders.stop()
-    process_command_queue.stop()
-    process_dispatch_queue.stop()
-    process_edit_queue.stop()
+    _stop_loops()
     await interaction.response.send_message("Restarting bot!")
     restart_bot()
 
@@ -213,10 +214,7 @@ async def slash_stop_bot(interaction: Interaction):
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
-    process_reminders.stop()
-    process_command_queue.stop()
-    process_dispatch_queue.stop()
-    process_edit_queue.stop()
+    _stop_loops()
     await interaction.response.send_message("Stopping bot!")
     await client.close()
     exit(0)
@@ -241,10 +239,7 @@ async def slash_update(interaction: Interaction, force_reset: Optional[bool] = F
     if lacks_admin(interaction):
         await interaction.response.send_message("You do not have permission.")
         return
-    process_reminders.stop()
-    process_command_queue.stop()
-    process_dispatch_queue.stop()
-    process_edit_queue.stop()
+    _stop_loops()
     await interaction.response.send_message("Doing a complete update of the bot!")
     await update_bot(interaction, force_reset)
 
@@ -800,22 +795,21 @@ async def _edit(interaction, edit_kwargs: dict) -> None:
         if not await _fallback_send(interaction, edit_kwargs):  # fallback to sending as a new message
             return                                      # no start, so no rest
     for c in rest:                                      # after the first chunk, to keep the order
-        dispatch_queue.append((interaction, {**extra, "content": c}))
+        queue_any(interaction, **extra, content=c)
 
 
 def _log_drop(kind: str, interaction, e: Exception) -> None:
     print(f"{kind}: dropped a message for channel {getattr(interaction, 'channel_id', '?')}: {type(e).__name__}: {e}")
 
 
-# --- REMINDERS (1 s heartbeat; the drains below tick every 0.1 s) ---
+# --- REMINDERS (1 s heartbeat; the drains below wake when something is queued, else every FALLBACK s) ---
 @tasks.loop(seconds=1)
 async def process_reminders():
     queue_command(check_reminder)
 
 
 # --- COMMAND QUEUE ---
-@tasks.loop(seconds=0.1)
-async def process_command_queue():
+def _drain_commands() -> None:
     while command_queue:
         try:
             (args, kwargs), func = command_queue.popleft()
@@ -826,14 +820,19 @@ async def process_command_queue():
             print(f"Command queue: dropped an item: {type(e).__name__}: {e}")
 
 
+@tasks.loop(seconds=0)                                  # paced by the wait: at once on queue_command
+async def process_command_queue():
+    _drain_commands()
+    await command_wake.wait()
+
+
 # --- DISPATCH QUEUE (messages + files + embeds): one ordered lane per channel ---
 _lanes: dict = {}                                       # channel id -> deque of (interaction, send_kwargs)
 _lane_tasks: dict = {}                                  # channel id -> the task draining its lane
 _sending = [True]                                       # False once the loop is stopped (/restart_bot, /update)
 
 
-@tasks.loop(seconds=0.1)
-async def process_dispatch_queue():
+def _drain_dispatch() -> None:
     """Hand each message to its channel's lane: a big search holds back only its own channel (discord.py keeps
     Discord's rate limits, per route and global)."""
     while dispatch_queue:
@@ -843,6 +842,12 @@ async def process_dispatch_queue():
         task = _lane_tasks.get(channel)
         if lane and (task is None or task.done()):
             _lane_tasks[channel] = create_task(_drain_lane(lane))
+
+
+@tasks.loop(seconds=0)                                  # paced by the wait: at once on queue_message and the rest
+async def process_dispatch_queue():
+    _drain_dispatch()
+    await dispatch_wake.wait()
 
 
 @process_dispatch_queue.before_loop
@@ -867,8 +872,7 @@ async def _drain_lane(lane: deque) -> None:
 
 
 # --- EDIT MESSAGES ---
-@tasks.loop(seconds=0.1)
-async def process_edit_queue():
+async def _drain_edits() -> None:
     while edit_queue:
         interaction, edit_kwargs = edit_queue.popleft()
         try:
@@ -877,9 +881,23 @@ async def process_edit_queue():
             _log_drop("Edit", interaction, e)
 
 
+@tasks.loop(seconds=0)                                  # paced by the wait: at once on queue_edit
+async def process_edit_queue():
+    await _drain_edits()
+    await edit_wake.wait()
+
+
 def _loops() -> tuple:
     """The four loops on_ready starts."""
     return (process_reminders, process_command_queue, process_dispatch_queue, process_edit_queue)
+
+
+def _stop_loops() -> None:
+    """Stop the four loops; the wake ends a drain's wait at once, so nothing is sent after this."""
+    for loop in _loops():
+        loop.stop()
+    for wake in (command_wake, dispatch_wake, edit_wake):
+        wake.set()
 
 
 def _start(loop) -> bool:

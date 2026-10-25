@@ -1,4 +1,4 @@
-from asyncio import get_running_loop, to_thread as asyncio_to_thread
+from asyncio import Event, get_running_loop, to_thread as asyncio_to_thread, wait_for
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from discord import File, Interaction, Object
@@ -29,6 +29,38 @@ command_queue: deque[tuple[tuple, dict[str, Any], Callable[..., Any]]] = deque()
 
 slash_registry = {}
 T = TypeVar("T")
+FALLBACK = 1.0                                          # s: a drain loop's poll when no wake-up comes
+
+
+class Wake:
+    """Wakes a queue's drain loop the moment something is queued, from any thread; a missed wake waits FALLBACK."""
+
+    def __init__(self):
+        self.bound = None                               # (event loop, Event): one attribute, so a thread reads a pair
+
+    def set(self):
+        bound = self.bound
+        if bound is None or bound[1].is_set():
+            return                                      # not draining yet, or already woken
+        try:
+            bound[0].call_soon_threadsafe(bound[1].set)
+        except RuntimeError:
+            pass                                        # loop closed: shutting down
+
+    async def wait(self):
+        """Until set or FALLBACK s; clears before the caller drains, so a later item wakes the next wait."""
+        loop = get_running_loop()
+        if self.bound is None or self.bound[0] is not loop:
+            self.bound = (loop, Event())
+        event = self.bound[1]
+        try:
+            await wait_for(event.wait(), FALLBACK)
+        except TimeoutError:
+            pass
+        event.clear()
+
+
+command_wake, dispatch_wake, edit_wake = Wake(), Wake(), Wake()
 
 
 # ===================================================================
@@ -37,28 +69,31 @@ T = TypeVar("T")
 def queue_any(interaction: Interaction, **kwargs):
     """Queue any send you want."""
     dispatch_queue.append((interaction, kwargs))
+    dispatch_wake.set()
 
 
 def queue_message(interaction: Interaction, content: str, **kwargs):
     """Queue a simple message send."""
     kwargs["content"] = content
-    dispatch_queue.append((interaction, kwargs))
+    queue_any(interaction, **kwargs)
 
 
 def queue_file(interaction: Interaction, file: File, **kwargs):
     """Queue a file send (can include content or embeds too)."""
     kwargs["file"] = file
-    dispatch_queue.append((interaction, kwargs))
+    queue_any(interaction, **kwargs)
 
 
 def queue_edit(interaction: Interaction, **kwargs):
     """Queue an edit to an interaction's original response."""
     edit_queue.append((interaction, kwargs))
+    edit_wake.set()
 
 
 def queue_command(func: Callable[..., Any], *args, **kwargs):
     """Queue a function (async or sync) for deferred execution."""
     command_queue.append(((args, kwargs), func))
+    command_wake.set()
 
 
 def queue_long_message(interaction: Interaction, text: str, **kwargs):
