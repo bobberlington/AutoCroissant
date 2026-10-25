@@ -229,7 +229,7 @@ repo_traverser.py.
 | `LOOKUP_WORKERS` (2026-10-20) | `2` | commit lookups `/update_stats` runs ahead of parsing (one PyGithub client per thread) |
 | `COMMITS_PAGE` (2026-10-20) | `100` | commits per lookup request: the newest and, for a new or authorless card, the first come in one page; a file with this many or more falls back to `.reversed[0]` |
 | `_tree_etags`, `_file_cache` (2026-10-20) | in-memory | tree ETag per repo (304 = skip the run) and small repo files by blob sha; reset on restart |
-| `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | hidden text layers above this share of the card height are duplicates' titles (`card.alt_names`) |
+| `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (`alt_names` no longer set) |
 | `UPDATE_RATE` | `25` | progress-message cadence during `update_stats`: an edit is queued every 25 processed cards (`num_updated % UPDATE_RATE == 0`, card_data.py:675) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |

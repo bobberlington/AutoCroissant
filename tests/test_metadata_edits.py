@@ -908,4 +908,4 @@ def test_live_aliases_find_the_same_card_image_after_the_migration(clone):
     src = cm.CardInfo(name="x", card_type="item")
     for target in {str(t).lower() for a, t in legacy.items() if a in kept}:     # the duplicates' names
         own = edits.cards.get(CardAuthors.key(cm.card_name(target)), {}).get("aliases") or []
-        assert cd.CardBuild._duplicate_name(target, src, 2, [2], {}, own) == cd.CardBuild._duplicate_name(target, src, 2, [2], legacy)
+        assert cd.CardBuild._duplicate_name(target, src, {}, own) == cd.CardBuild._duplicate_name(target, src, legacy)

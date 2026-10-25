@@ -104,7 +104,7 @@ class CardInfo:
     parsed_values: Optional[dict] = None      # PSD values of edited fields
     creatures: Optional[list] = None          # CardStats per creature (multi-creature cards)
     duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
-    alt_names: Optional[list] = None          # hidden title layers: names of the duplicates
+    alt_names: Optional[list] = None          # unused since 2026-10-25 (hidden layers name nothing); older data has it
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
     subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles

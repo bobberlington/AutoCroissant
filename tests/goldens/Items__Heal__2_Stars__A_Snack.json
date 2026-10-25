@@ -1,8 +1,5 @@
 {
- "alt_names": [
-  "Breakfast",
-  "Supper"
- ],
+ "alt_names": null,
  "blob": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
  "card": {
   "ability": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
