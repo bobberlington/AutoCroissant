@@ -27,6 +27,7 @@ OLD_STATS_JSON = "old_stats.json"
 DETAILS_JSON = "psd_details.json"                  # psd_details' own format, copied as is
 MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
+VERDICTS_JSON = "verdicts.json"                    # the bake's verdicts per card key (CARD_SYNC_VERDICTS.md), kept apart
 SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
 SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alone (the sync's conditional request)
 EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields
@@ -179,6 +180,45 @@ def write_text(path: str, text: str) -> None:
             except OSError:
                 pass
             raise
+
+
+def verdicts_text(cards: dict) -> str:
+    """verdicts.json: {"schema": 1, "cards": {key: verdict}}, one card per line, sorted by key."""
+    lines = ",\n".join(f"{dumps(key, ensure_ascii=False)}:{dumps(cards[key], ensure_ascii=False, sort_keys=True, separators=(',', ':'))}"
+                       for key in sorted(cards))
+    return '{"schema":%d,"cards":{\n%s\n}}\n' % (SCHEMA, lines) if lines else '{"schema":%d,"cards":{}}\n' % SCHEMA
+
+
+def read_verdicts(folder: str) -> dict:
+    """db/verdicts.json's cards ({} when missing); ValueError for a bad file."""
+    path = join(folder, VERDICTS_JSON)
+    if not isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return dict(_cards_of(fh.read(), path))
+
+
+def merge_verdicts(folder: str, incoming: dict) -> list:
+    """
+    The bake's verdicts into db/verdicts.json: a verdict replaces the card's, None removes it.
+
+    Returns:
+        The keys that changed ([]: the file is left as it is)
+    """
+    cards = read_verdicts(folder)
+    changed = []
+    for key, verdict in incoming.items():
+        if verdict is None and key in cards:
+            del cards[key]
+        elif verdict is not None and cards.get(key) != verdict:
+            cards[key] = verdict
+        else:
+            continue
+        changed.append(key)
+    if changed:
+        makedirs(folder, exist_ok=True)
+        write_text(join(folder, VERDICTS_JSON), verdicts_text(cards))
+    return sorted(changed)
 
 
 def file_sha256(path: str) -> str:
@@ -437,20 +477,24 @@ __all__ = [
     'SCHEMA',
     'STATS_JSON',
     'SYNC_JSON',
+    'VERDICTS_JSON',
     'card',
     'check_db',
     'file_sha256',
     'main',
+    'merge_verdicts',
     'old_stats_text',
     'parse_old_stats',
     'parse_stats',
     'read_cards',
     'read_db',
     'read_json',
+    'read_verdicts',
     'record',
     'round_trip_problems',
     'stats_text',
     'sync',
+    'verdicts_text',
     'write_bytes',
     'write_db',
     'write_text',
