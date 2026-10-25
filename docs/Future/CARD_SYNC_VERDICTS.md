@@ -1,8 +1,6 @@
 # Card sync verdicts on the data branch, bake and guard events in the changelog
 
-**Status:** answered by the owner 2026-10-23 ~18:30 (`docs/Campaigns/DATA_BUILD_ACTION.md` §16 item 7); designed
-2026-10-25 for the two-lane Card sync; steps 1-5 built 2026-10-25 on branches `work/verdicts` (both repos, not landed);
-step 6 prepared as a runbook (`~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`), not run.
+**Status:** built and landed 2026-10-25 (TTSCardMaker a4d137bf, AutoCroissant be39f86; steps 1-5, see "As built"). Left: step 6, the migration of today's `_psd` blocks (one: PoD11ZOMG), after the first live bake or refusal shows `db/verdicts.json` and `db/bake-records.json` on data: runbook `~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`; then drop the `_psd` fallback one cycle later.
 
 **Goal.** `site/Card Edits.json` on main holds only people's edits; the bake's verdicts live on `data`, so a refusal
 makes no main commit. Bakes and guard fixes show on the Changes page.

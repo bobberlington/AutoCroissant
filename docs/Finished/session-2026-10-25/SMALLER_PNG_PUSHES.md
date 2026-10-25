@@ -1,9 +1,6 @@
 # Smaller PNG pushes
 
-**Status:** built 2026-10-25 (AutoCroissant and TTSCardMaker branches `work/png`, not landed; "Built" below). Queue
-item 3. Research:
-`~/Documents/Tools/wt/scratch/png-research/REPORT.md` (lossless options, A1-A10) and
-`~/Documents/Tools/wt/scratch/repo-size/workflow-result.json` (what grows the repo).
+**Status:** built and landed 2026-10-25 (TTSCardMaker a4d137bf, AutoCroissant be39f86: oxipng 10.2.1 CLI pinned in cards-python, text chunks stripped, opaque as RGB; "Built" below).
 
 **Goal.** Every PNG that enters TTSCardMaker from now on is as small as lossless allows, so the repo (31 GB on GitHub,
 the owner's main storage concern) grows more slowly.

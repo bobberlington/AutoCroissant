@@ -6,13 +6,11 @@ verification, open questions only if real), and the live problem-cards list. The
 
 | # | File | What it is |
 |---|---|---|
-| 1 | `PARTS_EDITOR.md` | The website parts editor: one text box per PSD layer, variant tags, stars folder moves, first ability/type from the template; three build tracks. Designed, build next |
-| 2 | `TEST_SUITE_CUT.md` | xdist and the cut (1,923 collected -> about 635), the 15 site smoke tests, discord_archive/discord_match retired |
-| 3 | `SMALLER_PNG_PUSHES.md` | The oxipng CLI, XMP strip and opaque-as-RGB for every PNG the bot writes; no rewrite of existing PNGs |
-| 4 | `WEBSITE_SMALL_FIXES.md` | #15: phone tooltips, exact name first, deck export with pinned links, rulebook page links |
-| 5 | `LAYOUT_SUPPORT.md` | Bakes for the 31 non-template stat bars and the 21 unusual star layouts |
-| 6 | `CARD_SYNC_VERDICTS.md` | Bake verdicts to `db/verdicts.json`; bake and guard events in the changelog |
-| 7 | `GAME_TXT.md` | One plain-text file of every card and rulebook page (later) |
-| - | `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 census (card, folder, kind, reason): 124 of 764 cards with an edit that can't bake, 4 data problems, 308 bakes with a note. Re-run when the parts editor and layout support land |
+| 1 | `PARTS_EDITOR.md` | The box-per-layer editor: landed 2026-10-25 except the variant tags (owner sees the plan first), `+ability` and the §8 deletion |
+| 2 | `CARD_SYNC_VERDICTS.md` | Verdicts on the data branch and bake/guard events: landed 2026-10-25 except the step 6 migration |
+| - | `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 census (card, folder, kind, reason). Re-run now that the parts editor and layout support landed |
+
+Landed 2026-10-25 and moved to `docs/Finished/session-2026-10-25/`: `TEST_SUITE_CUT.md`, `WEBSITE_SMALL_FIXES.md`,
+`GAME_TXT.md`, `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md`.
 
 When an item ships, its doc moves to the session's folder in `docs/Finished/`.

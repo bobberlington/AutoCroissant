@@ -1,7 +1,6 @@
 # Test suite cut and xdist
 
-**Status:** built 2026-10-25 (branch work/testcut; 1,563 -> 553 tests, 66 s wall at `-n auto`, load ~25); moves to docs/Finished. Planned 2026-10-24, owner's answers in. Queue item 2 (after the parts editor). Measurements:
-`~/Documents/Tools/wt/scratch/tests-plan/PLAN.md` (at main 164b4a4; `tools/cuts.py` there is the cut as data).
+**Status:** built and landed 2026-10-25 (AutoCroissant f32dfa7: 1,563 -> 553 tests, about a minute at `-n auto` = 6 workers).
 
 **Goal.** A suite that runs in about a minute in parallel and tests only what protects something (owner, 10-24: "We
 have too many tests - stop bloating our test suite").

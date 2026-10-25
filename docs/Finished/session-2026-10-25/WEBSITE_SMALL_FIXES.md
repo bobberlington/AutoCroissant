@@ -1,8 +1,6 @@
 # Website small fixes (#15)
 
-**Status:** picked by the owner 2026-10-24 ~20:00 (four fixes); not built. Queue item 4. Source: "Website fixes" in
-`~/Documents/Tools/wt/scratch/ideas-sweep-report.md` (chart renames and a phone page picker were not picked). All code
-is TTSCardMaker `site/` (paths below from that repo's root); straight to its main, one commit per fix.
+**Status:** built and landed 2026-10-25 (TTSCardMaker d0dfed64: phone tooltips with the review fixes, exact name first, deck export with pinned links, rulebook page links).
 
 **Goal.** Four things players hit that are broken or slow today, fixed without new features.
 

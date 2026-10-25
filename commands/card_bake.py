@@ -950,7 +950,7 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
 
 def _smaller(path: str) -> bytes:
     """A baked PNG file's bytes, recompressed losslessly (png_export.recompress: XMP stripped, an opaque card as RGB;
-    docs/Future/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed."""
+    docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed."""
     with open(path, "rb") as fh:
         data = fh.read()
     smaller = png_export.recompress(data)

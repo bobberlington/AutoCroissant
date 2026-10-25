@@ -29,7 +29,7 @@ draw those.
 
 Every PNG the guards and the bake write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x
 too big): text chunks (Photoshop's XMP) stripped, a fully opaque card saved as RGB (owner, 2026-10-24;
-docs/Future/SMALLER_PNG_PUSHES.md).
+docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md).
 
 No Discord, network or config.
 """

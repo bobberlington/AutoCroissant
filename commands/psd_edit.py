@@ -3175,7 +3175,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 
 
 # ========================
-# Layout support: the card makers' own stat bars (docs/Future/LAYOUT_SUPPORT.md)
+# Layout support: the card makers' own stat bars (docs/Finished/session-2026-10-25/LAYOUT_SUPPORT.md)
 # ========================
 BAR_EDGES = (360, 435, 518, 605, 686, 764, 847, 928, 1009, 1086, 1173)   # Creature_Template's digit masks: where cell
 #   k starts; its bar's end

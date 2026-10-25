@@ -1,7 +1,6 @@
 # game.txt: the whole game in one text file
 
-**Status:** idea accepted by the owner (ideas sweep item 10), later priority (owner, 10-25 ~01:40: "game.txt waits");
-designed 2026-10-25; not built. Queue item 7.
+**Status:** built and landed 2026-10-25 (TTSCardMaker 56651852: fixed fields with a legend, hidden originals handled; linked from the Rulebook).
 
 **Goal.** One plain-text file with every card and every rulebook page, small enough (about 50k tokens) to hand to any
 AI or read in one go. No AI code in either repo.
