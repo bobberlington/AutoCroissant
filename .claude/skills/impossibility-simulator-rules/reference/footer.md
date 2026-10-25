@@ -19,7 +19,7 @@ By chapter (book numbering):
 16. The Field (2 pages): 6 slots, primary vs secondary field, protective minions pushing the parent back.
 17. Death: points on death, revives, multi-target creatures, "destroyed".
 18. Field Cards: obtained with BRICKS, played free on purchase or for star points from hand, one in play, negate for 1x stars in BRICKS or destroy for 3x.
-19. Status Effects (2 pages): buffs and debuffs, ticking at (ENDT), the `[X]T[Y]` syntax, standard vs stacking, duration refresh, upgrade chains.
+19. Status Effects (2 pages): buffs and debuffs, ticking in phase 4, the `[X]T[Y]` syntax, standard vs stacking, duration refresh, upgrade chains.
 20. Creature Types: 14 types and their immunities or perks.
 21. Damage Types: normal, piercing, counter, life steal, shockwave, true damage.
 22. Negation: negating attacks, creatures, items and field cards; 5+ star immunity; true negation and true negation immunity.
@@ -41,7 +41,6 @@ Contradictions between pages:
 - 21 Damage Types NORMAL "DMG - (1/2*DEF)" vs 07/10 "ATK - DEF". It is an old-rules leftover; it agrees with 07/10 only if its DEF means the DEF bars shown.
 - 12 Reactions3 says "5 stacks of hardened, giving it 3 defense". Hardened is +0.5 per stack, so 3 needs 6 stacks.
 - 07 Stats3 text "-1 DEF BAR --> 1" vs its picture, which shows 1.5.
-- 19 says damage and heal status effects proc at (ENDT). 09 puts "Status Effects deal damage/heal, duration ticks down by 1" in Phase 4, after Phase 3's (ENDT) effects.
 - Hidden PSD layers carry older drafts that disagree with the visible pages: 12 Reactions2 has resolve order 4>2>1>3 vs 4>2>3>1, and 22 Negation has a different ITEMS block. That text is still in rules.json, stats.pkl and /query_rulebook.
 
 Rules the book implies but never states:

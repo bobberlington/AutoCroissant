@@ -433,7 +433,7 @@ TTSCardMaker Actions runner (same trusted circle today).
     data; `parsed` only when false; `ts` = the PSD's last commit, `since` = when the current text started (the bot's
     carried `version.from`, or earlier versions with the same text; only when it differs from `ts`).
   - `data/details/<id>.json` (one per card with a PSD record, 0.9-16.7 KB; fetched when the card page's Details
-    dropdown is first opened, rendered by `site/assets/details.js`; the build version counts them, it does not hash them).
+    dropdown is first opened, rendered by `site/assets/details.js`; in the data stamp).
   - `data/analytics.json` (balance analytics, plus since round 3 `revisions` and `archived` rows for Stats' History;
     ~130 KB; loaded only when the Stats page or a card's Balance block opens, rendered by `site/assets/balance.js` and
     `insights.js`; in `files`, so in the build version).
@@ -448,8 +448,10 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Pages:** `index.html` (`<base href="./">`), `404.html` (`<base href="<SITE_URL or ''>/">`), and one share page
   per card at `c/<slug>/` with OG tags. Kind labels use the game's words; tokens are flattened, `:tint` / `:sticker`
   included.
-- **Cache-busting:** every script/style/data URL carries `?v=<build>`. `index.html`'s preload hints are rewritten too,
-  and modules' `from "./x.js"` imports get the same stamp, so a deploy never mixes old scripts with new data.
+- **Cache-busting:** every script/style/data URL carries `?v=`: an asset's from its content and its imports' stamps,
+  the data's from its content without the build time (since 2026-10-24). `index.html`'s preload hints and modules'
+  `from "./x.js"` imports are stamped too, so a deploy never mixes old scripts with new data, and one that changed
+  nothing keeps every URL. `build.txt` digests the site; every build deploys (a gate on it is the owner's to decide).
 - **Size:** about 117 MB in total, mostly 2,463 card images.
 
 **Build behaviour:**
@@ -532,6 +534,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
 | **Sharing**: address bar shows `c/<id>/` (cards) and `d/#/deck/…` (hands) via `syncUrl` (base pinned at load); `c` copies the card link (no card Share dialog, Full image or PSD on GitHub link since 2026-10-23); deck and person pages keep their Share; a hand's Discord message links cards as `[name](<url>)` | `site/assets/app.js` |
 | **Link previews**: per-card `c/<id>/index.html` with og tags, `og:image` = 480 px JPEG `thumbs/<blob16>-og.jpg` (from the 720 webp), `theme-color` = card accent color; `og.jpg` banner; `d/` page | `site/build/build_site.py` (`og_tags`, `share_text`, `accent_color`, `site_banner`) |
+| **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, `build.txt` (no deploy gate: owner's call). The rules code must keep: TTSCardMaker `site/NOTES.md` §27; tests `tests/test_site_speed.py` | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
 - **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
@@ -1099,3 +1102,5 @@ Maintenance rules:
 2026-10-23 (BUG 2, AutoCroissant work/fx-rebuild): §4's edit-pipeline bullet says the bake runs Update all on the new text (in place, badge and chart-style layers rebuilt, others refuse), checked against this script's Update all in Photoshop on 8 baked copies.
 2026-10-23 (BUG 2 review): §4's bullet adds the follow rule for chart-style layers (Goofy's `1#2`, checked with this script's Update all in Photoshop: IoU 1.0, as for PoD11ZOMG's renamed badge layer) and the typed-badge refusal.
 2026-10-24 (round 3): §2.1 output data files (analytics.json ~130 KB with revisions and archived; contributions.json and changelog.json keys) and §2.4 rows (search without has:details, Balance without the cooldown update, Ratings, Stats round 3, Archive tab, person stats, pinned tray), against TTSCardMaker branch work/r3-integ.
+
+2026-10-24 (speed pass): §2.4's Speed pass row, against TTSCardMaker branch work/site-perf (front end, stamps by content, site.yml `paths`, `build.txt`); §2.1 cache-busting.

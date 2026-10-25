@@ -47,3 +47,23 @@ def test_card_sync_shadow_schedule_writes_only_data():
     assert on["schedule"] == [{"cron": "4,34 * * * *"}]
     assert doc["env"]["MAIN_COMMIT"] == "off" and doc["env"]["POSTS"] == "off"
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
+
+
+def test_site_builds_on_what_it_reads_and_always_deploys():
+    """A push runs the build only when it touched what the build reads: everything the job checks out, the card files
+    and fonts (read through git), this workflow; never the TTS save. Every build deploys (skipping a build equal to
+    the live one is the owner's to decide: the Changes page's "Updated" line would stop moving)."""
+    doc = _load("site.yml")
+    paths = doc[True]["push"].get("paths")
+    if paths is None:
+        pytest.skip("site.yml before its paths list (TTSCardMaker work/site-perf-back)")
+    checkout = next(s for s in doc["jobs"]["build"]["steps"] if s.get("with", {}).get("sparse-checkout"))
+    for line in checkout["with"]["sparse-checkout"].split():
+        path = line.strip("/")
+        assert (path + "/**" if line.endswith("/") else path) in paths, line
+    for pattern in ("**.png", "**.PNG", "**.psd", "**.PSD", "MDW/Fonts/*", ".github/workflows/site.yml"):
+        assert pattern in paths
+    assert paths[len(paths) - 1] == "!TTS/**"
+    steps = doc["jobs"]["build"]["steps"]
+    upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
+    assert "if" not in upload and "if" not in doc["jobs"]["deploy"]

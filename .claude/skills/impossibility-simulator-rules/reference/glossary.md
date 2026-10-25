@@ -156,7 +156,7 @@ On the pages, X is replaced by the number: (1PT), (2PGT), (3PG), (E2T), (FTE2T),
 | counter-play (field cards) | negate for 1x star level in BRICKS until the end of the global turn; destroy for 3x | 18 Field Cards; 22 Negation |
 | status effect | "either a buff or debuff that has a an of effect on a creature, represented by Mr. Krabs either suffering or thriving" | 19 Status Effects (p.19) |
 | buff / debuff | the two kinds of status effect | 19 Status Effects |
-| status timing | DMG/heal effects proc at (ENDT), others immediately; durations count down at (ENDT); DMG from status effects is piercing and not an attack | 19 Status Effects |
+| status timing | DMG/heal effects proc in phase 4, after (ENDT) effects, others immediately; durations count down in phase 4; DMG from status effects is piercing and not an attack | 19 Status Effects |
 | unique stack instance | "DMG dealing status effects count as one instance of damage per unique stack." | 19 Status Effects |
 | status syntax | ""[X]T[Y] [Status]", where X is duration and Y is stacks"; "5T1 Poison" = 5 turns of 1 stack | 19 Status Effects2 (p.19.2) |
 | standard status effects | "can only have one instance of themselves applied to a single creature" | 19 Status Effects2 |

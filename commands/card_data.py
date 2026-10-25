@@ -276,6 +276,8 @@ class CardBuild:
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
         self.sizes = {item.get("path", ""): item.get("size") for item in self.tree.get("tree", []) if item.get("type") == "blob"}
         from commands import psd_details                # lazy: fontTools loads here, not at startup
+        if self.details is None:                        # legacy update: psd_details.json, read only past a 304
+            self.details = psd_details.load()
         self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts; none on a 304
 
         self._populate_types_from_response(resp)
@@ -823,13 +825,16 @@ class CardBuild:
                   f"card before as a version: {', '.join(made[:10])}{', ...' if len(made) > 10 else ''}")
 
     def _unmatched(self, authors: Optional[CardAuthors], dates: Optional[CardDates]) -> None:
-        """The side files' names that match no card (an archived or renamed card's lines, a typo; the website logs the
-        same): one console line per file. Kept for report_archive (side_files)."""
+        """The side files' names that match no card (a typo; Card Edits.json lines of an archived card too: Card
+        Authors.txt and Card Creation Dates.json may credit and date archived cards): one console line per file. Kept
+        for report_archive (side_files)."""
         self.side_names = {path: set(found.cards) for path, found in
                            ((AUTHORS_PATH, authors), (EDITS_PATH, self.edits), (CREATED_PATH, dates)) if found is not None}
         listed = {CardAuthors.key(name) for name in self.db.stats}
+        archived = {CardAuthors.key(name) for name, versions in self.db.old_stats.items()
+                    if versions and getattr(versions[len(versions) - 1], "archived", None)}   # credits, dates of archived cards
         for path, keys in self.side_names.items():
-            names = sorted(keys - listed)
+            names = sorted(keys - listed - (set() if path == EDITS_PATH else archived))
             if names:
                 print(f"{basename(path)}: {len(names)} name{'' if len(names) == 1 else 's'} match no card: "
                       f"{', '.join(names[:20])}{', ...' if len(names) > 20 else ''}")
@@ -1074,6 +1079,60 @@ def history_line(normalized: list, deduped: list, dated: list, recovered=None, u
     return "History: " + "; ".join(parts) + "."
 
 
+_CLEAN: dict = {}                                   # {key, backfill}: the last inputs the cleanup and backfill left as they were
+
+
+def _git_out(folder: str, *args: str) -> Optional[str]:
+    done = run(["git", "-C", folder, *args], capture_output=True, text=True, env={**environ, **NO_LAZY})
+    return done.stdout if done.returncode == 0 else None
+
+
+def _cards_digest(db: StatsDatabase) -> str:
+    from hashlib import sha256
+    from pickle import dumps
+    return sha256(dumps(db.stats) + b"\0" + dumps(db.old_stats)).hexdigest()
+
+
+def _clean_key(db: StatsDatabase) -> Optional[tuple]:
+    """
+    What update's one-time cleanup and backfill read: the cards and their history, the history clone's head and its
+    .mailmap blob (present or not), the bot's head before the recovery (its PICKLE commits), the backfill file. A run on
+    the key of one where neither changed anything skips them (a 304's run, a scheduled one); None (they run) when one
+    can't be read.
+    """
+    from hashlib import sha256
+    from commands.card_history import BOT_CHECKOUT, recovered_before
+    try:
+        cards = _cards_digest(db)
+    except Exception:                               # noqa: BLE001 - no key: the cleanup runs
+        return None
+    try:
+        from commands.history_backfill import FILE
+        with open(FILE, "rb") as fh:
+            backfill = sha256(fh.read()).hexdigest()
+    except (ImportError, FileNotFoundError):        # the backfill module or its file deleted
+        backfill = None
+    except Exception:                               # noqa: BLE001 - no key: the cleanup runs
+        return None
+    folder = expanduser(HISTORY_CLONE)
+    clone = None
+    if isdir(folder):                               # history_index's GitIndex.from_git(folder, CARD_BRANCH)
+        clone = _git_out(folder, "rev-parse", "--is-shallow-repository", CARD_BRANCH, f"{CARD_BRANCH}:{MAILMAP_PATH}")
+        if clone is None:
+            clone = _git_out(folder, "rev-parse", "--is-shallow-repository", CARD_BRANCH)
+            if clone is None:
+                return None
+        else:                                       # mailmap_args fetches a missing .mailmap blob
+            mailmap = clone.split()[len(clone.split()) - 1]
+            clone += "present" if _git_out(folder, "cat-file", "-e", mailmap) is not None else "missing"
+    bot = None
+    if not recovered_before(db.stats, db.old_stats):
+        bot = _git_out(expanduser(BOT_CLONE) if BOT_CLONE else BOT_CHECKOUT, "rev-parse", "HEAD")
+        if bot is None:
+            return None
+    return (cards, backfill, clone, bot)
+
+
 def cleaned(db: StatsDatabase, index=None, pickles=None) -> Optional[str]:
     """clean_history's line, run on a copy of db's cards and history that goes into db only when it ran through and
     changed something: an error in it leaves db as it was (a true skip, never half a cleanup saved)."""
@@ -1131,23 +1190,33 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
     from commands import psd_details                # lazy: fontTools loads here, not at startup
     db = build.db
     at = datetime.now(timezone.utc).timestamp()      # kept in the archive tags
-    build.details = psd_details.load()
-    index = None
-    try:                                            # one-time (2026-10-23); a failure skips it with one line
-        index = history_index()
-        line = cleaned(db, index, bot_pickles(db) if index is not None else None)
-    except Exception as e:                          # noqa: BLE001 - the cleanup never stops an update
-        line = None
-        build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
+    build.details = None                            # psd_details.json, read by traverse_remote past a 304
+    index, line, failed = None, None, False
+    key = _clean_key(db)
+    same = key is not None and _CLEAN.get("key") == key   # the cleanup and backfill already found nothing in these
+    if not same:
+        try:                                        # one-time (2026-10-23); a failure skips it with one line
+            index = history_index()
+            line = cleaned(db, index, bot_pickles(db) if index is not None else None)
+        except Exception as e:                      # noqa: BLE001 - the cleanup never stops an update
+            line, failed = None, True
+            build.report(f"History cleanup skipped ({type(e).__name__}: {e}).")
     if line:
         build.report(line)
     problem_cards, num_changed = build.traverse_remote(repository, output_problematic, force_update)
-    backfill, merged = None, False
-    try:                                            # once, after recover and this run's authors (history_backfill.json;
-        from commands.history_backfill import merged as backfill_merged     # dead code after)
-        backfill, merged = backfill_merged(db, index)
-    except Exception as e:                          # noqa: BLE001 - never stops an update
-        backfill = f"Backfill skipped ({type(e).__name__}: {e})."
+    moved = key is None or _cards_digest(db) != key[0]     # the run changed cards: the backfill reads them
+    backfill, merged = (_CLEAN["backfill"], False) if same and not moved else (None, False)
+    if not same or moved:
+        try:                                        # once, after recover and this run's authors (history_backfill.json;
+            from commands.history_backfill import merged as backfill_merged     # dead code after)
+            if same:
+                index = history_index()
+            backfill, merged = backfill_merged(db, index)
+        except Exception as e:                      # noqa: BLE001 - never stops an update
+            backfill, failed = f"Backfill skipped ({type(e).__name__}: {e}).", True
+        _CLEAN.clear()
+        if not (moved or line or merged or failed):
+            _CLEAN.update(key=key, backfill=backfill)
     if backfill:
         build.report(backfill)
 
@@ -1156,6 +1225,11 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
         build._archive_sources(gone, tuple(backfilled))
     report_archive(build, gone, backfilled)
     again = None
+    if same and index is None and (num_changed > 0 or gone or backfilled or build.changed):
+        try:
+            index = history_index()                 # skipped above: the cleanup had nothing to do
+        except Exception as e:                      # noqa: BLE001
+            build.report(f"History cleanup after the update skipped ({type(e).__name__}: {e}).")
     if index is not None and (num_changed > 0 or gone or backfilled or build.changed):
         try:                                        # again over what this run read, edited and archived (a carried
             again = cleaned(db, index)              # start's commit, a misread an author fix shows), so the next run
