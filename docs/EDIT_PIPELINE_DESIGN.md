@@ -866,11 +866,17 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
   the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
   (split/several titles, non-template rows, tab stops, stars/types layouts, FX layers that are no pixel layers, two FX
-  layers one name). Census (`census.py`, 7 edits x 812 cards, in memory): ok 2,401 -> 5,069 of 5,642; 2,668 former
-  refusals bake flagged, 573 still refused (all `unsupported-card` layouts), none newly refused, no errors; 10 full
-  dry bakes of former refusals checked by crop (`crops/`). 46 refusal tests turned into flag tests, 2 deleted, 1 new
+  layers one name). Census (`census.py`, 7 edits x 812 cards, `set_text_layer` in memory): passes 2,401 -> 5,069 of
+  5,642; 573 still refused there (all `unsupported-card` layouts), none newly refused, no errors. The 2,668 former
+  refusals that pass it, run through `apply_jobs` (every gate, dry, on copies; review 2026-10-24, after the pixel digest
+  and nested-shadow fixes): 2,660 bake flagged, 8 refused by integrity gates: `parity` whole title redraws past the 25%
+  floor (Dull Knife x3, Dark Tentacle, Snow Angel, Shiny Knife) and `reparse` (Nebulous Precipice x2: the image-icon
+  card reads back an extra [darkmatter]); 10 crops spot-checked. 46 refusal tests turned into flag tests, 2 deleted, 1 new
   (`test_typed_icons_are_unstretched`). Full suite: 1787 passed, 13 skipped, 1 known timing flake
-  (`test_a_stat_edit_bakes_the_bakes_pixels`, passes alone).
+  (`test_a_stat_edit_bakes_the_bakes_pixels`, passes alone). Review 2026-10-24: `gate_bytes` hashes every channel's pixels (`layer_records`
+  "channels": id, length, digest; a same-length corruption of an untouched layer refused), `fx_pad` adds up nested
+  owners' reach (Skeleton Mate's group shadow over the Ability's), a flagged bake keeps its verdict, refused verdicts
+  carry `rules`: 1792 passed, 13 skipped.
 
 ## 8. Runner
 
@@ -993,7 +999,9 @@ reminder's cadence (daily `/update_stats` at 5AM).
   `name`. Since 2026-10-21 (TTSCardMaker 98337b7) a name to bake shows "PSD pending"; refusals are not predicted (site NOTES §5). The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
   `reparsePending = tree PSD blob sha != card.blob_sha` covers the gap between the bake commit and the next PICKLE push.
 - `_psd` lives in Card Edits.json, written only by the pipeline: `{"state": "baked" | "refused", "for": {field: value},
-  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
+  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`; a refused one carries `"rules": card_bake.RULES` too (one
+  without, from before 2026-10-24's ruling, is not final: `--pending` tries it again), and a flagged bake's verdict
+  stays alone (`{"_psd": ...}`) once no field is left (`rewrite_entry(keep=)`), for the card page. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
   `editsFile` keeps them (`edit.js:40`): no new file. Rewritten every run; ignored when `for` or `psd` no longer match.
 - `app.js:347`: "PSD pending: SPD, Ability" beside "Edited" (tip: the card image is being regenerated); "Image update refused:
   ability does not fit"; "Re-parse pending"; `pending` in `FLAGS` (:25); the Edited panel (:588) lists them. `edit.js`:

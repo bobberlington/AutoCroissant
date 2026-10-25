@@ -578,9 +578,11 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   or none of the edit drawn) or a read-back that is not the edit is refused. Since 2026-10-24 (owner; AutoCroissant
   work/fx-rebuild) no content problem refuses either: text that won't fit, typed badges and tokens, styled words and
   font stand-ins bake, each told in the commit line and the baked `_psd` verdict's `reason` ("name 'A' -> 'B'; overflow:
-  name: it runs onto 2 lines (it has 1)") and in the preview's `notes`. The site shows only refused verdicts: a baked
-  verdict's notes are not on the card page yet (cards.json would need them, e.g. a `baked` note while `psd` matches the
-  tree's blob), and an entry whose every field baked leaves the file with its verdict (card_bake.rewrite_entry). Pixel refusals written under the old bar
+  name: it runs onto 2 lines (it has 1)") and in the preview's `notes`. A flagged bake keeps its baked verdict, alone
+  (`{"_psd": ...}`) once no field is left (card_bake.rewrite_entry `keep`); TTSCardMaker branch work/fx-rebuild (not on
+  main yet) has build_site put a baked verdict's reason in cards.json's `baked` while `psd` matches the tree's blob, and
+  the card page show it ("Image baked: ..."). A refused verdict carries `rules` (card_bake.RULES); one without is tried
+  again by `--pending`. Pixel refusals written under the old bar
   (Masked Dedede, PoD11ZOMG, Zero Override) show as refused until the next run bakes them: `build_site.py` (about line
   855) knows nothing of the floor, so the window is the first 30-minute card-edits tick after the change lands (a
   dispatch closes it at once).
