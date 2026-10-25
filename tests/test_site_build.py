@@ -444,12 +444,12 @@ def test_a_renamed_card_keeps_the_credit_of_the_card_it_became(bs):
 
 def test_card_revisions_leave_out_mass_passes(bs):
     """card_revisions (the person pages): a commit in more than MASS_PASS cards' versions is left out; a bot commit
-    credits its Edit-by logins (not a discord: name), one without trailers nobody; every id of the PNG but skip's gets
+    credits its Edit-by logins, one without trailers nobody; every id of the PNG but skip's gets
     the counts; no history: None."""
     if not hasattr(bs, "card_revisions"):
         pytest.skip(f"{BUILD_SITE} has no revisions")
     row = lambda sha, name, editors=(): (sha, 0, name, f"{name.lower()}@example.com", "s", [], list(editors))
-    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice", "discord:carl"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
+    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
                row("up", "Maker")]
     v = lambda sha: ((sha, 0, "x", "s"), "p")
     found = {f"m{i}.png": [v("mass"), v("up")] for i in range(bs.MASS_PASS + 1)}

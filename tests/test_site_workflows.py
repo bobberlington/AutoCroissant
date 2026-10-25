@@ -41,8 +41,8 @@ def test_card_sync_runs_live():
     if "schedule" not in on:
         pytest.skip("card-sync.yml has no schedule yet (dispatch only, step 6)")
     assert on["schedule"] == [{"cron": "0,30 * * * *"}]
-    assert doc["env"]["MAIN_COMMIT"] == "on" and doc["env"]["POSTS"] == "on"
-    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False
+    assert not {"MAIN_COMMIT", "POSTS"} & set(doc["env"])                    # no rollback switches (2026-10-25)
+    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False and "seed" not in on["workflow_dispatch"]["inputs"]
     assert not (WORKFLOWS / "card-edits.yml").exists() and not (WORKFLOWS / "tts-save.yml").exists()   # its two writers
 
 
@@ -73,20 +73,19 @@ def test_card_sync_data_at_once_main_after_a_push_timer():
 
 
 def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
-    """A push runs the build only when it touched what the build reads: everything the job checks out, the card files
-    and fonts (read through git), this workflow; never the TTS save. A build that made the live site again is not
-    deployed (build.txt, the site's digest; owner 2026-10-24: the Changes page's "Site updated" is the last change)."""
+    """A push runs the build only for site code (2026-10-25): the card inputs (PSDs, PNGs, Types/, the fonts, the card
+    files in site/) start Card sync, which dispatches the build after its data commit. A build that made the live site
+    again is not deployed (build.txt, the site's digest; owner 2026-10-24: the Changes page's "Site updated" is the last
+    change)."""
     doc = _load("site.yml")
     paths = doc[True]["push"].get("paths")
     if paths is None:
         pytest.skip("site.yml before its paths list (TTSCardMaker work/site-perf-back)")
-    checkout = next(s for s in doc["jobs"]["build"]["steps"] if s.get("with", {}).get("sparse-checkout"))
-    for line in checkout["with"]["sparse-checkout"].split():
-        path = line.strip("/")
-        assert (path + "/**" if line.endswith("/") else path) in paths, line
-    for pattern in ("**.png", "**.PNG", "**.psd", "**.PSD", "MDW/Fonts/*", ".github/workflows/site.yml"):
-        assert pattern in paths
-    assert paths[len(paths) - 1] == "!TTS/**"
+    assert "site/**" in paths and ".github/workflows/site.yml" in paths and "!TTS/**" not in paths
+    for pattern in ("**.png", "**.PNG", "**.psd", "**.PSD", "Types/**", "MDW/Fonts/*"):
+        assert pattern not in paths, pattern
+    for card_file in ("site/Card Edits.json", "site/Card Authors.txt", "site/Card Creation Dates.json"):
+        assert "!" + card_file in paths, card_file
     steps = doc["jobs"]["build"]["steps"]
     changed = next(s for s in steps if s.get("id") == "changed")
     upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
@@ -124,8 +123,7 @@ def test_site_image_budget_keeps_a_partial_cache():
 
 
 CACHE_PRUNES = {"site.yml": ("build", "card-images-v2- deck-previews-v2-"), "card-sync.yml": (["data", "main"], "cards- card-fonts-"),
-                "font-check.yml": ("check", "cards- card-fonts-"), "card-preview.yml": ("preview", "cards- card-fonts-"),
-                "card-check.yml": ("check", "cards-")}
+                "card-guards.yml": ("check", "cards- card-fonts-"), "card-preview.yml": ("preview", "cards- card-fonts-")}
 
 
 def test_cache_saves_prune_superseded_entries():

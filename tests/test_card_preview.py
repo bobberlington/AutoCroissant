@@ -494,9 +494,7 @@ def test_workflow_shape():
         cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
         assert cards["with"]["filter"] == "blob:none" and "fetch-depth" not in cards["with"]
         assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
-    install = re.findall(r"pip install [^\n]+", text)
-    fork_install(WORKFLOWS / "card-preview.yml")
-    assert len(install) == 1 and "--no-index" in install[0]                       # the fork from its cached wheels
+    fork_install(WORKFLOWS / "card-preview.yml")                                  # the fork from its cached wheels
     assert not [s for s in publish["steps"] if "pip " in s.get("run", "")]
     assert [s["with"] for s in publish["steps"] if "setup-python" in s.get("uses", "")] == [{"python-version": "3.14"}]
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
