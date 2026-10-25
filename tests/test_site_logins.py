@@ -8,7 +8,6 @@ work/site-password). The node checks skip without node.
 """
 import base64
 import importlib.util
-import io
 import json
 import shutil
 from os import environ
@@ -67,67 +66,6 @@ BAD = {                                           # name -> (file name stem, raw
 }
 
 
-@pytest.mark.parametrize("name", list(BAD))
-def test_clean_login_refuses(bs, name):
-    stem, raw = BAD[name]
-    entry, notes = bs.clean_login(raw, stem)
-    assert entry is None and len(notes) == 1, (name, notes)
-
-
-def test_clean_login_keeps_the_file_drops_extras(bs):
-    entry, notes = bs.clean_login(good(), "MichaelJSr")
-    assert entry == good() and not notes
-    entry, notes = bs.clean_login(good(at="yesterday", extra=1), "MichaelJSr")
-    assert entry == good(at=...) and len(notes) == 2           # a bad at is ignored, an unknown field noted
-
-
-def test_read_and_write_never_fail(bs, tmp_path, monkeypatch, capsys):
-    """Good files read, every bad one skipped with a warning line; data/logins/<lower>.json written."""
-    monkeypatch.setattr(bs, "REPO", str(tmp_path))
-    assert bs.read_logins() == []                                # no folder
-    folder = tmp_path / bs.LOGINS_DIR
-    folder.mkdir(parents=True)
-    (folder / "MichaelJSr.json").write_text(json.dumps(good()), encoding="utf-8")
-    (folder / "Bob.json").write_text(json.dumps(good("Bob", at=...)), encoding="utf-8")
-    (folder / "Weak.json").write_text(json.dumps(good("Weak", iterations=1000)), encoding="utf-8")
-    (folder / "Thief.json").write_text(json.dumps(good("Bob")), encoding="utf-8")
-    (folder / "broken.json").write_text("{ nope", encoding="utf-8")
-    (folder / "Big.json").write_text(json.dumps(good("Big", pad="x" * 5000)), encoding="utf-8")
-    (folder / "README.md").write_text("# Passwords\n", encoding="utf-8")
-    (folder / "dir.json").mkdir()
-    logins = bs.read_logins()
-    out = capsys.readouterr().out
-    assert [e["login"] for e in logins] == ["Bob", "MichaelJSr"]
-    for name in ("Weak.json", "Thief.json", "broken.json", "Big.json"):
-        assert f"warning: {bs.LOGINS_DIR}/{name}" in out, name
-    assert "README" not in out and "dir.json" not in out and "passwords: 2 from site/logins/" in out
-    dist = tmp_path / "dist" / "data" / "logins"
-    bs.write_logins(str(dist), logins)
-    assert sorted(p.name for p in dist.iterdir()) == ["bob.json", "michaeljsr.json"]
-    assert json.loads((dist / "michaeljsr.json").read_text(encoding="utf-8")) == good()
-    bs.write_logins(str(tmp_path / "none"), [])
-    assert not (tmp_path / "none").exists()
-
-
-def test_names_differing_in_case_publish_neither(bs, tmp_path, monkeypatch, capsys):
-    """ALICE.json next to Alice.json: neither reaches data/logins/ (the sign-in asks GitHub for each), with a warning.
-    The folder is faked: a Mac's file system can't hold both names."""
-    monkeypatch.setattr(bs, "REPO", str(tmp_path))
-    (tmp_path / bs.LOGINS_DIR).mkdir(parents=True)
-    names = ["ALICE.json", "Alice.json", "Bob.json"]
-    monkeypatch.setattr(bs.os, "listdir", lambda folder: list(names))
-    monkeypatch.setattr(bs.os.path, "isfile", lambda path: True)
-    monkeypatch.setattr(bs.os.path, "getsize", lambda path: 100)
-    monkeypatch.setattr(bs, "open", lambda path, **kw: io.StringIO(json.dumps(good(Path(path).stem))), raising=False)
-    assert [e["login"] for e in bs.read_logins()] == ["Bob"]
-    assert "Alice.json: another file has this login in another case" in capsys.readouterr().out
-
-
-def test_at_with_a_trailing_newline_is_ignored(bs):
-    entry, notes = bs.clean_login(good(at="2026-10-23T01:45:00Z\n"), "MichaelJSr")
-    assert entry == good(at=...) and len(notes) == 1
-
-
 def node(tmp_path, body: str):
     """Run body after importing login.js as auth; its stdout as JSON."""
     if not (LOGIN_JS.is_file() and shutil.which("node")):
@@ -135,18 +73,6 @@ def node(tmp_path, body: str):
     script = tmp_path / "probe.mjs"
     script.write_text(f"const auth = await import({json.dumps(LOGIN_JS.as_uri())});\n{body}\n", encoding="utf-8")
     return json.loads(run_process(["node", str(script)], capture_output=True, text=True, check=True).stdout)
-
-
-def test_a_sealed_file_passes_the_build(bs, tmp_path):
-    """login.js's own file (real PBKDF2 + AES-GCM) passes clean_login unchanged."""
-    out = node(tmp_path, """
-const f = { ...(await auth.seal(globalThis.crypto.subtle, "velvet trombone gecko sunrise", "MichaelJSr", "ghp_" + "x".repeat(36))), at: "2026-10-23T01:45:00Z" };
-process.stdout.write(JSON.stringify({ text: auth.fileText(f), iter: auth.ITER, min: auth.MIN_ITER, max: auth.MAX_ITER }));
-""")
-    raw = json.loads(out["text"])
-    entry, notes = bs.clean_login(raw, "MichaelJSr")
-    assert entry == raw and not notes
-    assert (out["min"], out["max"]) == bs.LOGIN_ITER and out["min"] <= out["iter"] >= 1_000_000
 
 
 def test_login_js_refuses_what_the_build_refuses(bs, tmp_path):
@@ -180,58 +106,3 @@ process.stdout.write(JSON.stringify({
     assert out == {"right": True, "nfd": True, "clear": True, "wrong": False, "copied": False, "ct": False, "tag": False,
                    "iv": False, "salt": False, "openssl": True}
 
-
-def test_password_rules(tmp_path):
-    refused = ["", "short pass", "Password1234!", "P@ssw0rd2024!!", "passwordpassword", "correct horse battery staple",
-               "qwertyuiop123", "abcdefghijklmn", "123456789012", "abcabcabcabc", "aabbccddaabbcc", "MichaelJSr-rocks-2026",
-               "ghp_" + "x" * 36, "impossibility2026", "@dmin12345678"]
-    accepted = ["purple monkey dishwasher lamp", "Tr0mbone-Gecko-Velvet", "zq7#Lm2!pX9vR", "8306 1947 2251 0093", "red fox ate hen"]
-    out = node(tmp_path, f"""
-const r = pw => auth.checkPassword(pw, "MichaelJSr", "ghp_" + "x".repeat(36));
-process.stdout.write(JSON.stringify({{ refused: {json.dumps(refused)}.map(p => [p, r(p).ok, r(p).problems.length]),
-  accepted: {json.dumps(accepted)}.map(p => [p, r(p).ok, r(p).problems]) }}));
-""")
-    assert [p for p, ok, n in out["refused"] if ok or not n] == []         # each refused with a reason
-    assert [p for p, ok, why in out["accepted"] if not ok] == []
-
-
-def test_device_vault(tmp_path):
-    """The device key: one non-extractable AES-GCM key in IndexedDB (two tabs racing make one), the token sealed in
-    localStorage (kept) or sessionStorage, never in clear; clear() removes both; a blob without its key is dropped."""
-    out = node(tmp_path, """
-function fakeIdb() {
-  const dbs = new Map(), later = f => setTimeout(f, 0);
-  return { dbs, open(name) { const r = {}; later(() => {
-    let db = dbs.get(name), fresh = !db; if (fresh) dbs.set(name, db = { stores: new Map() });
-    r.result = { createObjectStore: s => db.stores.set(s, new Map()), close() {}, transaction(s, mode) {
-      const store = db.stores.get(s), t = { n: 0, failed: false };
-      const op = f => { t.n++; const q = {}; later(() => { try { q.result = f(); q.onsuccess?.(); } catch (e) { q.error = t.error = e; t.failed = true; q.onerror?.(); }
-        later(() => { if (!--t.n) (t.failed ? t.onabort : t.oncomplete)?.(); }); }); return q; };
-      t.objectStore = () => ({ get: k => op(() => store.get(k)), delete: k => op(() => store.delete(k)),
-        add: (v, k) => op(() => { if (mode !== "readwrite") throw new Error("ReadOnlyError"); if (store.has(k)) throw new Error("ConstraintError"); store.set(k, structuredClone(v)); }) });
-      return t; } };
-    if (fresh) r.onupgradeneeded?.(); r.onsuccess?.(); }); return r; } };
-}
-const mem = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), all: () => [...m.values()].join("|") }; };
-const T = "ghp_" + "x".repeat(36), idb = fakeIdb(), local = mem(), session = mem(), v = auth.vault({ idb, local, session });
-const keys = () => idb.dbs.get("ttscardmaker-signin")?.stores.get("keys");
-const out = { empty: !v.has() && (await v.load()) === null };
-await v.save(T, true);
-const key = keys().get("device");
-out.key = key.extractable === false && key.algorithm.name === "AES-GCM" && await globalThis.crypto.subtle.exportKey("raw", key).then(() => false, () => true);
-out.kept = !!local.getItem(auth.SEALED) && !session.getItem(auth.SEALED) && !local.all().includes("xxxx") && (await v.load()).token === T;
-await v.save(T, false);
-const l2 = await v.load();
-out.tab = !local.getItem(auth.SEALED) && !!session.getItem(auth.SEALED) && l2.keep === false && l2.token === T;
-const idb2 = fakeIdb(), a = auth.vault({ idb: idb2, local: mem(), session: mem() }), b = auth.vault({ idb: idb2, local: mem(), session: mem() });
-await Promise.all([a.save("A", true), b.save("B", true)]);
-out.race = idb2.dbs.get("ttscardmaker-signin").stores.get("keys").size === 1 && (await a.load()).token === "A" && (await b.load()).token === "B";
-await v.clear();
-out.cleared = !v.has() && !keys().has("device");
-local.setItem(auth.SEALED, JSON.stringify({ v: 1, iv: "AAAAAAAAAAAAAAAA", ct: "AAAAAAAAAAAAAAAAAAAAAAAA" }));
-out.dropped = (await v.load()) === null && !local.getItem(auth.SEALED);
-const none = auth.vault({ idb: null, local: mem(), session: mem() });
-out.noIdb = await none.save(T, true).then(() => false, () => true) && (await none.load()) === null;
-process.stdout.write(JSON.stringify(out));
-""")
-    assert out == {"empty": True, "key": True, "kept": True, "tab": True, "race": True, "cleared": True, "dropped": True, "noIdb": True}

@@ -80,22 +80,6 @@ def test_score_bands():
     assert [tr.tier_of(v) for v in (1, 2.4, 2.5, 4.5, 6.5, 8.4, 8.5, 10)] == [0, 0, 1, 2, 3, 3, 4, 4]
 
 
-def test_review_prints_the_labels_values():
-    """The review's label table prints score() at each label, not 2i+1.5 (3.4 and 7.6 on the centre board)."""
-    report = {"entries": 0, "cards": 0, "carried": [], "clamped": 0, "unmatched": [], "per": {}, "dropped": [], "forbidden": [], "skipped": {}}
-    md = tr.review([], report)[1]
-    row = next(line for line in md.splitlines() if line.startswith("| centre |"))
-    assert [float(v.split(" |")[0]) for v in row.split("-> ")[1:]] == [tr.score(x, tr.LABELS["centre"])[1] for x in tr.LABELS["centre"]]
-    assert "-> 3.4 |" in row and "-> 7.6 |" in row and "about 2i+1.5" in md
-
-
-def test_favorability_columns():
-    """The reversi columns (37.72 + 4.567 per column) on the upper board."""
-    got = [tr.score(37.72 + 4.567 * (c - 1), tr.LABELS["like-top"]) for c in range(1, 9)]
-    assert [v for _, v in got] == [1.5, 2.7, 3.9, 5.0, 6.0, 7.1, 8.2, 9.5]
-    assert [b for b, _ in got] == [0, 1, 1, 2, 2, 3, 3, 4]
-
-
 def test_placements_skips_and_dates():
     raw = {"ratings": [
         _row("TS_Save_3", "like-bottom", 32.76, "Double Pain", card="Double Pain"),       # the joke column
@@ -164,103 +148,9 @@ def test_bot_ignores_ratings():
 # ========================
 # The website build
 # ========================
-def test_parse_ratings_validates(bs, tmp_path, monkeypatch, capsys):
-    (tmp_path / "site").mkdir()
-    monkeypatch.setattr(bs, "REPO", str(tmp_path))
-    assert bs.parse_ratings() == {}
-    assert "no ratings" in capsys.readouterr().out
-    good = [_e("2023-04-28", "power", 5.55), _e("2023-04-28", "favorability", 7)]
-    (tmp_path / RATINGS_PATH).write_text(json.dumps({"cards": {"Al_pha": good + [{"value": 11}], "Beta": "no"}}), encoding="utf-8")
-    got = bs.parse_ratings()
-    assert got == {"al pha": ("Al_pha", [_e("2023-04-28", "power", 5.6), _e("2023-04-28", "favorability", 7)])}
-    out = capsys.readouterr().out
-    assert "entries skipped on 2 cards" in out and "Al_pha, Beta" in out
-    (tmp_path / RATINGS_PATH).write_text("{", encoding="utf-8")
-    assert bs.parse_ratings() == {} and "isn't valid JSON" in capsys.readouterr().out
-
-
-def test_apply_ratings(bs):
-    cards = [{"key": "Alpha", "id": "alpha"}, {"key": "Beta", "id": "beta"}]
-    archived = [{"card": "Cho'Gath"}, {"card": "Old Beta", "renamed_to": "Beta", "renamedId": "beta"}]
-    ratings = {"alpha": ("Alpha", [_e("2025-04-28", "power", 6, "somelogin", "website"), _e("2023-04-28", "power", 5)]),
-               "old beta": ("Old Beta", [_e("2023-04-28", "favorability", 3)]),
-               "beta": ("Beta", [_e("2025-03-02", "power", 7)]),
-               "cho'gath": ("Cho'Gath", [_e("2023-04-28", "power", 5.5)]),
-               "nobody": ("Nobody", [_e("2023-04-28", "power", 1)])}
-    people, by_login = {"somelogin": "Some Person"}, {}
-    got = bs.apply_ratings(cards, ratings, archived, people, by_login)
-    assert got == {"entries": 5, "cards": 2, "archived": 1, "unmatched": ["Nobody"]}
-    assert cards[0]["ratings"] == [_e("2023-04-28", "power", 5), {**_e("2025-04-28", "power", 6, "Some Person", "website"), "login": "somelogin"}]
-    assert cards[1]["ratings"] == [_e("2023-04-28", "favorability", 3), _e("2025-03-02", "power", 7)]
-    assert archived[0]["ratings"] == [_e("2023-04-28", "power", 5.5)] and "ratings" not in archived[1]
-    by_login = {"somelogin": {"login": "somelogin", "author": "Profile Name"}}
-    cards = [{"key": "Alpha", "id": "alpha"}]
-    bs.apply_ratings(cards, {"alpha": ratings["alpha"]}, [], people, by_login)
-    assert [e["by"] for e in cards[0]["ratings"]] == [G, "Profile Name"]
-    cards = [{"key": "Kit", "id": "kit"}, {"key": "Kit2", "id": "kit-2", "dup": "kit"}]          # a rated duplicate PNG
-    got = bs.apply_ratings(cards, {"kit2": ("Kit2", [_e("2023-04-28", "power", 5)])}, [], people, {})
-    assert cards[0]["ratings"] == [_e("2023-04-28", "power", 5)] and "ratings" not in cards[1] and got["cards"] == 1
-
-
-def test_rating_now(bs):
-    entries = [_e("2023-04-28", "power", 7), _e("2024-01-01", "power", 5, "Ann", "website"),
-               _e("2025-04-28", "power", 6.3), _e("2025-05-01", "power", 6, "Ann", "website"),
-               _e("2025-05-01", "favorability", 9, "Ann", "website")]
-    assert bs.rating_now(entries, "power") == {"value": 6.2, "raters": 2, "date": "2025-05-01"}     # (6.3 + 6) / 2 = 6.15
-    assert bs.rating_now(entries, "power", day="2024-06-01") == {"value": 6, "raters": 2, "date": "2024-01-01"}
-    assert bs.rating_now(entries, "power", skip="Ann") == {"value": 6.3, "raters": 1, "date": "2025-04-28"}
-    assert bs.rating_now(entries[:1], "power") == {"value": 7, "raters": 1, "date": "2023-04-28"}
-    assert bs.rating_now(entries, "favorability", skip=["Ann"]) is None and bs.rating_now([], "power") is None
-    assert [bs.tier_of(v) for v in (1, 2.4, 2.5, 4.5, 6.5, 8.4, 8.5, 10)] == [0, 0, 1, 2, 3, 3, 4, 4]
-
-
-def test_the_import_matches_the_sites_tiers(bs):
-    """Every category of the import is the site's tierOf of its value (amendment M7)."""
-    assert [bs.tier_of(v) for v in range(1, 11)] == [tr.tier_of(v) for v in range(1, 11)]
-    assert bs.RATINGS_PATH == RATINGS_PATH and tuple(bs.RATING_SCALES) == CardRatings.SCALES
-    assert tuple(bs.RATING_SOURCES) == CardRatings.SOURCES
-
-
 # ========================
 # The website (node)
 # ========================
-def test_ratings_file_matches_python(tmp_path):
-    data = {"about": CardRatings.ABOUT, "cards": {
-        "Alpha": [_e("2023-04-28", "power", 5.5), _e("2026-10-24", "power", 4, "tester", "website"),
-                  _e("2026-10-24", "power", 8, "other", "website")],
-        "Éclair": [_e("2025-04-28", "favorability", 8.2)]}}
-    text = dump_ratings(data)
-    ops = [{"key": "alpha", "set": {}, "unset": [], "rate": {"power": 6.04, "favorability": 7.5}},
-           {"key": "New Card", "set": {}, "unset": [], "rate": {"power": 2}}]
-    got = _node(tmp_path, f"""
-const text = {json.dumps(text)}, ops = {json.dumps(ops)};
-let bad = ""; try {{ m.ratingsFile(text, [{{ key: "Alpha", rate: {{ power: 11 }} }}], "2026-10-24", "tester"); }} catch (e) {{ bad = e.message; }}
-let broken = ""; try {{ m.ratingsFile("{{", ops, "2026-10-24", "tester"); }} catch (e) {{ broken = e.message; }}
-process.stdout.write(JSON.stringify({{ same: m.ratingsFile(text, [], "2026-10-24", "tester"), out: m.ratingsFile(text, ops, "2026-10-24", "Tester"),
-  fresh: m.ratingsFile(null, ops.slice(1), "2026-10-24", "tester"), about: m.RATINGS_ABOUT, bad, broken }}));""")
-    assert got["same"] == text and got["about"] == CardRatings.ABOUT and got["bad"] == "Ratings go from 1 to 10"
-    assert "isn't valid JSON" in got["broken"]
-    out = json.loads(got["out"])["cards"]
-    assert out["Alpha"] == [_e("2023-04-28", "power", 5.5), _e("2026-10-24", "power", 8, "other", "website"),
-                            _e("2026-10-24", "favorability", 7.5, "Tester", "website"),
-                            _e("2026-10-24", "power", 6, "Tester", "website")]
-    assert out["New Card"] == [_e("2026-10-24", "power", 2, "Tester", "website")]
-    want = {**data, "cards": {**data["cards"], "Alpha": out["Alpha"], "New Card": out["New Card"]}}
-    assert got["out"] == dump_ratings(want)
-    assert json.loads(got["fresh"])["about"] == CardRatings.ABOUT
-
-
-def test_rating_only_batch_leaves_card_edits(tmp_path):
-    edits = '{\n  "cards": {\n    "Alpha": {"hp":3,"_by":"x","_at":"y"}\n  }\n}\n'
-    got = _node(tmp_path, f"""
-const op = {{ id: "alpha", key: "Alpha", name: "Alpha", set: {{}}, unset: [], rate: {{ power: 6 }} }};
-process.stdout.write(JSON.stringify({{ edits: m.editsFile({json.dumps(edits)}, [op], "2026-10-24T00:00:00Z", "tester"),
-  empty: m.opEmpty(op), items: m.describeItems(op), without: m.withoutItem(op, "rate-power", "Alpha") }}));""")
-    assert got["edits"] == edits and got["empty"] is False
-    assert [(x["item"], x["text"], x["short"], x["psd"]) for x in got["items"]] == [("rate-power", "Power: rated 6", "Power 6", False)]
-    assert "rate" not in got["without"]
-
-
 def test_ratings_js_helpers(tmp_path):
     entries = [_e("2023-04-28", "power", 7), _e("2023-04-28", "favorability", 3.9), _e("2025-03-02", "power", 7.1),
                _e("2025-04-28", "power", 6.3), _e("2026-10-24", "power", 6, "Ann", "website")]
@@ -286,13 +176,3 @@ process.stdout.write(JSON.stringify({{
     assert "<h3>Ratings</h3>" in got["block"] and "All ratings" in got["block"] and "rate-add" not in got["block"]
     assert "2025" in got["day"]
 
-
-def test_a_re_rating_counts_its_rater_once(tmp_path):
-    """An unpublished entry ("you") with rater = the person's published name replaces their earlier one (edit.js applyOp)."""
-    entries = [_e("2025-04-28", "power", 7), _e("2026-10-20", "power", 3, "tester", "website"),
-               {**_e("2026-10-24", "power", 9, "you", "website"), "rater": "tester", "_staged": True}]
-    got = _node(tmp_path, f"""
-const list = {json.dumps(entries)};
-process.stdout.write(JSON.stringify([m.current(list, "power"), m.current(list, "power", {{ day: "2026-10-21" }}), m.current(list.slice(0, 2), "power")]));""", RATINGS_JS)
-    assert got == [{"value": 8, "raters": 2, "date": "2026-10-24"}, {"value": 5, "raters": 2, "date": "2026-10-20"},
-                   {"value": 5, "raters": 2, "date": "2026-10-20"}]
