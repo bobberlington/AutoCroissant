@@ -1029,6 +1029,8 @@ def _load_locked():
 
     if exists(STORE_PATH):
         print(f"Trying to open {STORE_PATH}.")
+        if exists(LEGACY_PATH):
+            print(f"{LEGACY_PATH} is ignored: {STORE_PATH} exists (move {STORE_PATH} aside to convert the pickle again).")
         try:
             loaded = _store.load()
         except (OSError, UnicodeDecodeError, StoreError) as e:
