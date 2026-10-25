@@ -840,7 +840,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   a fork without them is an ImportError, card_bake's `Transient`.
   A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
   Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
-  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_refuse`, `test_glow_edit_on_an_older_fork_is_transient`.
+  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_bake`, `test_tab_stops_refuse_on_an_older_fork`, `test_glow_edit_on_an_older_fork_is_transient`.
   **Review fixes 5 (2026-10-24, `scratch/bug2-p7/`):** a stroked title's glow disc ran under a star or type icon
   above it, every gate passing (Confusion, Krabby Patty, Unbreakable Strength): the halo's changed ink now counts on
   the stars and type icons and under the layers above (`covered_ink`); in the effect scope's group, where the composite

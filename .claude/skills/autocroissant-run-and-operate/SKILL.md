@@ -656,8 +656,8 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
   Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
   fork is reinstalled). Also told: a title or Ability whose saved pixels are in another font than the layer names
-  (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). Refused: a text layer with
-  tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
+  (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). A text layer with tabs
+  bakes (the fork lays Photoshop's 36 pt default stops; on a stale fork it is a runner error, retried). A
   deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
   printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
   below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
@@ -672,7 +672,7 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   `edit-changed`, `blob`, `capped`), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
   stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
   `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
-  titles, non-template stat rows, tab stops, folder-set stars and the other stars/types layouts, FX layers that are no
+  titles, non-template stat rows, folder-set stars and the other stars/types layouts, FX layers that are no
   pixel layers, two FX layers one name; `stat>10` on one bar row).
 - **card-edits.yml** (deleted at the cutover 2026-10-24) was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
