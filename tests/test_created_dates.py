@@ -12,7 +12,7 @@ import commands.card_models as cm
 import commands.discord_edits as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
-from helpers import cards     # noqa: F401 (the cards fixture)
+from helpers import cards, cards_template  # noqa: F401 (fixtures)
 
 FILE = "site/Card Creation Dates.json"
 

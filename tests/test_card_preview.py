@@ -61,10 +61,10 @@ def _commit(repo, message="Website edit: test") -> str:
     return _git(repo, "rev-parse", "HEAD").strip()
 
 
-@pytest.fixture
-def cards(tmp_path, clone, monkeypatch):
+@pytest.fixture(scope="session")
+def preview_template(tmp_path_factory, clone):
     """A card repo with Mini Doomer, A Snack (Doomer's PSD) and its numbered A_Snack2.png, Types/, the manifest, and
-    Doomer's PSD again in MDW/ (no card: an EXCLUDE_FOLDERS folder)."""
+    Doomer's PSD again in MDW/ (no card: an EXCLUDE_FOLDERS folder); built once per worker."""
     for rel in (DOOMER, DOOMER_PNG):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
@@ -77,20 +77,29 @@ def cards(tmp_path, clone, monkeypatch):
     files["Items/Heal/2 Stars/A_Snack2.png"] = b"a duplicate"
     files[MDW_DOOMER] = files[DOOMER]
     files[".github/workflows/x.yml"] = b"name: x\n"
-    repo = tmp_path / "cards"
+    repo = tmp_path_factory.mktemp("preview-template") / "cards"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "uploadpack.allowFilter", "true")      # a blobless clone of it: the REST blob path
     for path, data in files.items():
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
         (repo / path).write_bytes(data)
-    head = _commit(repo)
+    return repo, _commit(repo), files
+
+
+@pytest.fixture
+def cards(tmp_path, clone, preview_template, monkeypatch):
+    """The template's repo, cloned --local (hardlinked objects), and the runner's environment."""
+    template, head, files = preview_template
+    repo = tmp_path / "cards"
+    _git(tmp_path, "clone", "-q", "--local", str(template), str(repo))
+    _git(repo, "remote", "remove", "origin")
+    _git(repo, "config", "uploadpack.allowFilter", "true")      # a blobless clone of it: the REST blob path
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
     monkeypatch.setenv(cb.WORK_ENV, str(tmp_path / "runner"))
     (tmp_path / "runner").mkdir()
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
-    return type("Cards", (), {"repo": repo, "head": head, "files": files})
+    return type("Cards", (), {"repo": repo, "head": head, "files": dict(files)})
 
 
 def _state(repo) -> tuple:

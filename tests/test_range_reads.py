@@ -16,7 +16,7 @@ import commands.github_api as ga
 from global_config import RAW_BASE
 from golden_cards import golden_file
 import helpers
-from helpers import DOOMER, FREEZER, OTHER, cards  # noqa: F401 (the cards fixture)
+from helpers import DOOMER, FREEZER, OTHER, cards, cards_template  # noqa: F401 (fixtures)
 COMMIT = "c" * 40
 needs_ranges = pytest.mark.skipif(not ga.range_reads(), reason="psd-tools without lazy reads (the fork's feat/lazy-records)")
 

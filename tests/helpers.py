@@ -429,13 +429,9 @@ def put(repo, rel, data: bytes):
     path.write_bytes(data)
 
 
-@pytest.fixture
-def cards(tmp_path, clone, monkeypatch):
-    """A card repo: the golden vocabulary, the site files, Mini Doomer and The Freezer (alice, t=1000); an empty db/.
-    G1's floor drops to 1 card and no share (a real build has hundreds)."""
-    monkeypatch.setattr(cd, "MIN_CARDS", 1)
-    monkeypatch.setattr(cd, "FLOOR_SHARE", 0)
-    monkeypatch.setattr(cd, "_activity", lambda repository: [])                  # offline: pushes told by author
+@pytest.fixture(scope="session")
+def cards_template(tmp_path_factory, clone):
+    """The cards repo, built once per worker (git clone --local per test hardlinks its objects)."""
     psds = {}
     for rel in (DOOMER, FREEZER, OTHER):
         data = (clone / rel).read_bytes()
@@ -443,7 +439,7 @@ def cards(tmp_path, clone, monkeypatch):
             pytest.skip(f"{rel} changed upstream since the goldens were made")
         psds[rel] = data
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    repo = tmp_path / "cards"
+    repo = tmp_path_factory.mktemp("cards-template") / "cards"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
     for t in vocab["all_types"]:
@@ -456,10 +452,24 @@ def cards(tmp_path, clone, monkeypatch):
     put(repo, DOOMER, psds[DOOMER])
     put(repo, FREEZER, psds[FREEZER])
     first = commit(repo, "alice", 1000)
+    return SimpleNamespace(repo=repo, psds=psds, first=first)
+
+
+@pytest.fixture
+def cards(tmp_path, cards_template, monkeypatch):
+    """A card repo: the golden vocabulary, the site files, Mini Doomer and The Freezer (alice, t=1000); an empty db/.
+    G1's floor drops to 1 card and no share (a real build has hundreds); no font index for the "supplied" flags."""
+    from commands import psd_details
+    monkeypatch.setattr(cd, "MIN_CARDS", 1)
+    monkeypatch.setattr(cd, "FLOOR_SHARE", 0)
+    monkeypatch.setattr(cd, "_activity", lambda repository: [])                  # offline: pushes told by author
+    monkeypatch.setattr(psd_details, "font_index", lambda tree=None: None)
+    repo = tmp_path / "cards"
+    git(tmp_path, "clone", "-q", "--local", str(cards_template.repo), str(repo))
+    git(repo, "remote", "remove", "origin")                                    # as the template: no remote
     db = tmp_path / "data" / "db"
     db.mkdir(parents=True)
-    return SimpleNamespace(repo=repo, psds=psds, db=db, first=first, tmp=tmp_path)
-
+    return SimpleNamespace(repo=repo, psds=dict(cards_template.psds), db=db, first=cards_template.first, tmp=tmp_path)
 
 def _build(c, *extra):
     message = c.tmp / "message.txt"

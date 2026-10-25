@@ -18,7 +18,8 @@ import commands.card_models as cm
 import commands.changelog as cl
 from conftest import REPO, blob_sha_bytes
 from golden_cards import golden_file
-from helpers import DOOMER, FREEZER, OTHER, _build, _read, cards, commit, git, git_bytes, put  # noqa: F401 (fixture)
+from helpers import (DOOMER, FREEZER, OTHER, _build, _read, cards, cards_template, commit, git, git_bytes,  # noqa: F401
+                     put)
 
 BROKEN = b"8BPS" + b"\0" * 30
 

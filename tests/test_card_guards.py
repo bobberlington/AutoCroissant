@@ -63,9 +63,10 @@ def _png(root, rel, image):
     image.save(path)
 
 
-@pytest.fixture
-def cards(tmp_path):
-    """(root, base commit, push commits): the base tree, then Alice's push and two bot commits."""
+@pytest.fixture(scope="session")
+def guards_template(tmp_path_factory):
+    """(root, base commit, push commits): the base tree, then Alice's push and two bot commits; built once per worker."""
+    tmp_path = tmp_path_factory.mktemp("guards-template")
     root = tmp_path / "cards"
     root.mkdir()
     _git(root, "init", "-q", "-b", "main")
@@ -98,6 +99,16 @@ def cards(tmp_path):
     _psd(root, work, f"{FOLDER}/Bot_Card.psd", green)
     bot = _commit(root, "Card edits: 1 baked", author="AutoCroissant")
     return root, base, alice, bot
+
+
+@pytest.fixture
+def cards(tmp_path, guards_template):
+    """The template's repo, cloned --local (hardlinked objects), with an empty PSD folder beside it."""
+    root, base, alice, bot = guards_template
+    _git(tmp_path, "clone", "-q", "--local", str(root), str(tmp_path / "cards"))
+    _git(tmp_path / "cards", "remote", "remove", "origin")
+    (tmp_path / "psds").mkdir()
+    return tmp_path / "cards", base, alice, bot
 
 
 # ========================
