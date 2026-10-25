@@ -488,13 +488,9 @@ def test_an_earlier_reading_of_the_same_commit_goes():
 
 def test_an_edit_older_than_the_card_it_changes_stays_a_version():
     """Card Edits.json's newest commit older than the card's start (an edits commit merged after a PSD push): the
-    edit's version starts at the card's start (never before it), and the cleanup keeps the card before it (no re-read:
-    its cause is edit), from record_edits (legacy) and a build's record_versions (authors too)."""
+    edit's version starts at the card's start (never before it), and the build keeps the card before it (no re-read:
+    its cause is edit), from record_versions (authors too)."""
     old = _card(timestamp=1000.0, blob_sha="b1", **V2)
-    db = _db({"A": _card(ability="Edited.", timestamp=1000.0, blob_sha="b1", **V2)})
-    assert ch.record_edits(db, {"A": deepcopy(old)}, 900.0, "e1") == ["A"]
-    assert ch.start(db.stats["A"])[0] == 1000.0 and _dedupe(db.stats, db.old_stats) == []
-    assert [v.ability for v in db.old_stats["A"]] == ["Text."] and db.stats["A"].ability == "Edited."
     index = _index_with({"b1": ("c1", 1000.0)})
     old.version = ch.start_of(old, index, None)
     for after, cause in ((_card(ability="Edited.", blob_sha="b1", **V2), "edit"),

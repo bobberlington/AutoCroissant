@@ -1573,35 +1573,6 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     return made
 
 
-def record_edits(db, before: dict, at: float, commit: Optional[str] = None) -> list:
-    """
-    Legacy (/update_stats): an applied database edit that changed a card's data
-    (its card before knew something it doesn't: knows) keeps the card before as a version; the card's version starts
-    at the edit (its commit's time, never before the version it ends; cause edit). Duplicates get none.
-
-    Args:
-        db: The StatsDatabase after the edits (changed in place)
-        before: {name: its card before the edits (a copy)}
-        at: When the edit was made (the edits file's commit time, else now)
-        commit: That commit's sha, if known
-
-    Returns:
-        The names given a version
-    """
-    made = []
-    for name, old in before.items():
-        card = db.stats.get(name)
-        if card is None or getattr(card, "duplicate_of", None) or knows(card, old):
-            continue
-        prior = start(old)[0]
-        when = at if prior is None or at >= prior else prior
-        db.add_history(name, old)
-        card.version = meta(None, when, "edit")
-        card.version["from_commit"] = commit
-        made.append(name)
-    return made
-
-
 def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
     """The last version of each card archived this build ends at its deleting commit (the tag's at and commit), its
     PNG pinned to that moment."""
@@ -1677,7 +1648,6 @@ __all__ = [
     'normalize',
     'out_of_range',
     'psd_changed',
-    'record_edits',
     'record_versions',
     'recover',
     'recovered_before',

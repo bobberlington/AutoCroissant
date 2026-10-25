@@ -22,7 +22,6 @@ ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp
          "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
-ALIASES_MOVED = "aliases_moved"                 # top-level key: AutoCroissant's aliases.pkl moved into the file
 
 
 @dataclass
@@ -114,7 +113,6 @@ class CardEdits:
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd), never applied
-    aliases_moved: bool = False                     # ALIASES_MOVED is set: the bot's aliases.pkl no longer counts
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
@@ -158,7 +156,6 @@ class CardEdits:
         data = json_loads(text)
         cards = data.get("cards") if isinstance(data, dict) else None
         edits = cls()
-        edits.aliases_moved = isinstance(data, dict) and bool(data.get(ALIASES_MOVED))
         for name, fields in (cards if isinstance(cards, dict) else {}).items():
             if isinstance(fields, dict):
                 key = CardAuthors.key(name)
@@ -450,7 +447,6 @@ def dump_ratings(data: dict) -> str:
 # Module Exports
 # ========================
 __all__ = [
-    'ALIASES_MOVED',
     'CardAuthors',
     'CardDates',
     'CardEdits',
