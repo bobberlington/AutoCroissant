@@ -3,7 +3,7 @@ The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml 
 (png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
 merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
 bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
-standards (missing fonts are font-check.yml's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
+standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25). One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
@@ -22,8 +22,8 @@ and a replay are the same command. land re-reads the branch head, drops a card w
 push touched (card_bake.recent_paths), and makes one commit (git_commit.commit_files; --local: in a clone, nothing
 pushed). The guards' own commits and the bake's, the save's and Card sync's are skipped (the AutoCroissant author or
 github-actions; a path a person also changed in the range is still guarded). No Discord or config imports (the token:
-config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.yml checks out: the import closure and
-requirements-cards.txt.
+config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.yml checks out: the import closure (the card
+and font checks' too, run in its check job) and requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor

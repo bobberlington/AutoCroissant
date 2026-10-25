@@ -1,7 +1,7 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R6, R9 and R11 run over an open PSD (R10, the PNG against
-the PSD, is png_export.png_check; R7, the fonts, is font-check.yml's alone since 2026-10-24, owner). R8, the Single-line
+the PSD, is png_export.png_check; R7, the fonts, is the font check's alone since 2026-10-24, owner). R8, the Single-line
 Composer (L10), is always set and never told (owner, 2026-10-25): fix() sets it with the other fixes; box text that
 rewraps is redrawn (the guards re-export its PNG). R3 and R4 keep only
 the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or

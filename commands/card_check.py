@@ -1,8 +1,8 @@
 """
 Card check for the card PSDs: what the bot's parser and validator note about a card, the lines /update_stats prints (the
 parser's own notes among them are also the website's Parser notes; the validator's are printed only). TTSCardMaker's
-card-check.yml Action runs it on every push to main that touches a PSD, Types/ or site/Card Edits.json (job summary, commit
-comment, a Discord message in the standards channel, no ping).
+card-guards.yml runs it in its check job on every push to main that touches a PSD (card-check.yml until 2026-10-25): job
+summary, commit comment and a Discord message in the standards channel at once, no ping.
 
     python -m commands.card_check [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
@@ -16,8 +16,8 @@ the card's website edits (problems_ok, allow_high_stats, creatures ...) and ABIL
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
 --psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
 parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
-from the tree at --after). No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN);
-SPARSE_FILES is what card-check.yml checks out: the import closure and requirements-cards.txt.
+from the tree at --after). No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); the
+guards' checkout (card_guards.SPARSE_FILES) holds its import closure.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -40,9 +40,6 @@ from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 # ========================
 # Configuration
 # ========================
-SPARSE_FILES = ("commands/card_check.py", "commands/font_check.py", "commands/github_api.py", "commands/psd_parser.py",
-                "commands/card_models.py", "commands/card_edits.py", "global_config.py",
-                "requirements-cards.txt")       # what card-check.yml checks out: the import closure and the card packages
 LINE = "{name} has pushed {card} with: {notes}."                                  # the Discord line per card
 CLOSING = ("The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several "
            "creatures) also show on the website as Parser notes.")                  # the Discord message's last line
@@ -450,7 +447,6 @@ __all__ = [
     'Card',
     'LINE',
     'Report',
-    'SPARSE_FILES',
     'UNREADABLE',
     'Vocabulary',
     'card_notes',

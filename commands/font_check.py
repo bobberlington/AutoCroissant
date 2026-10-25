@@ -1,7 +1,8 @@
 """
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
-the card repo does not supply. TTSCardMaker's font-check.yml Action runs it on every push to main (job summary, commit
-comment, a Discord message in the standards channel pinging the card makers' role); the bot's /fonts reads the card data's
+the card repo does not supply. TTSCardMaker's card-guards.yml runs it in its check job on every push to main that touches a
+PSD or MDW/Fonts (font-check.yml until 2026-10-25): job summary, commit comment and a Discord message in the standards
+channel pinging the card makers' role, at once; the bot's /fonts reads the card data's
 psd_details.json instead (card_sync.fonts_text, details_report here).
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
@@ -214,8 +215,8 @@ class Report:
 
 
 def _card_name(path: str) -> str:
-    """The card's name from its PSD path (stem, underscores as spaces): card_models.card_name, copied so the font-check
-    Action's closure stays free of StatsDatabase."""
+    """The card's name from its PSD path (stem, underscores as spaces): card_models.card_name, copied so font_check's
+    own closure stays free of StatsDatabase."""
     return splitext(basename(path))[0].replace("_", " ")
 
 

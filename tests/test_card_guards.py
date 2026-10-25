@@ -1369,7 +1369,8 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
 # The Action
 # ========================
 def test_action_shaped_copy(tmp_path):
-    """Exactly SPARSE_FILES (card-guards.yml's list), no config.py: --help works and the closure is that list."""
+    """Exactly SPARSE_FILES (card-guards.yml's list), no config.py: --help works and the closure is that list; the card and
+    font checks (its check job's since 2026-10-25) run from it too, without Discord."""
     bot = tmp_path / "bot"
     for rel in cg.SPARSE_FILES:
         assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
@@ -1392,6 +1393,13 @@ def test_action_shaped_copy(tmp_path):
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
+    for module in ("card_check", "font_check"):
+        done = subprocess.run([executable, "-m", f"commands.{module}", "--help"], cwd=bot, capture_output=True, text=True,
+                              timeout=120)
+        assert done.returncode == 0 and done.stdout.startswith(f"usage: python -m commands.{module}"), done.stderr
+        code = f"import sys, commands.{module}; print(sorted(m for m in ('config', 'discord') if m in sys.modules))"
+        done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
+        assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
 
 
 def test_a_pool_worker_takes_the_token(monkeypatch):
@@ -2228,6 +2236,22 @@ def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {})
     assert [why for _, why in result.composer_left] == ["rewraps, not redrawn: PNG not made: G6",
                                                         "rewraps, not redrawn: no PNG that shows the PSD"]
+
+
+def test_the_checks_report_at_once(clone):
+    """The card and the font check (card-check.yml and font-check.yml until 2026-10-25) run in the check job before the
+    guards' Check, whatever CARD_GUARDS says, never failing it, and each tells Discord and comments at once: only the
+    guards' fixes and post wait the quiet window. A font added starts them too."""
+    doc, steps, _ = _guard_steps(clone)
+    names = [s.get("name") for s in doc["jobs"]["check"]["steps"]]
+    for check in ("Card check", "Font check"):
+        assert steps[check]["continue-on-error"] is True and "MODE" not in steps[check].get("if", "")
+        assert names.index(check) < names.index("Tell the checks") < names.index("Check")
+    tell = steps["Tell the checks"]
+    assert "card-check font-check" in tell["run"] and tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"
+    assert "MODE" not in tell["if"] and "MODE" not in doc["jobs"]["check"].get("if", "")
+    assert "Tell the checks" not in [s.get("name") for s in doc["jobs"]["post"]["steps"]]
+    assert "MDW/Fonts/*" in doc[True]["push"]["paths"]
 
 
 def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
