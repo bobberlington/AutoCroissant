@@ -397,7 +397,7 @@ neighboring fact, check this map and link instead.
 | impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, parser side of stoogedings icon tokens (§4.1), validation, pickle schemas, query DSL |
 | autocroissant-config-and-flags | Every config axis: config.py field names, constants, runtime-settable vs restart-required |
 | autocroissant-build-and-env | Env setup, requirements.txt, Cython build/clean, negative-indexing ban rationale, stale-.so trap |
-| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (/update_tts_save; the tts-save Action as the automatic path) |
+| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (/update_tts_save; card-sync.yml's TTS save step as the automatic path, tts-save.yml until 2026-10-24) |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
 | autocroissant-ai-boundary (archived: only on branch `archive/ai-generation`, not on main) | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
@@ -405,7 +405,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |
 | autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause |
-| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save workflow tts-save.yml (§2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
+| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml's history, §2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
 | impossibility-simulator-rules (added 2026-10-20) | How the game is played: rulebook rules, timing tags, damage arithmetic, status effects, glossary, known rulebook gaps |
 | autocroissant-docs-and-style (THIS) | help.py/describe formats + sync checklist + drift audit; house code style; skill-library meta-rules; templates |
 

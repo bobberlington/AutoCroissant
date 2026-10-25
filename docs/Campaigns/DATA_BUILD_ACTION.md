@@ -218,7 +218,8 @@ It replaces `tts-save.yml` and `card-edits.yml`, which are deleted at the cutove
 ### 6.1 Triggers
 
 ```yaml
-run-name: "Card sync", or "Card sync (dry run)" for a dry dispatch   # the alert's streak check skips dry runs
+run-name: "Card sync", "Card sync (dry run)" for a dry dispatch, "Card sync (retry)" for its own retry
+          # the alert's streak check skips dry runs; the bot follows a retry by its name (card-guards' dispatch is plain)
 on:
   schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
     - cron: "4,34 * * * *"   # every 30 minutes; "4 * * * *" for hourly (decision 5)

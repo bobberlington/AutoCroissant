@@ -143,8 +143,8 @@ has only the card's own `author`, so the website reads the tag's, else the recor
 - [ ] `/update_stats cards:Papyrus,Sans` (titles named after their own text, 1bf6892: "The Great Papyrus", "snas.";
       no PARSER_VERSION bump, BUGS V6).
 - [ ] Then `/push` (or the 05:30 reminder). Then dispatch the bake once so the two name edits drop as redundant:
-      `gh workflow run card-edits.yml -R MichaelJSr/TTSCardMaker -f dry_run=false` (their refusals are final for the
-      schedule). Order matters: re-parse first, else the site shows "Papyrus"/"Sans" until the re-parse.
+      `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f dry_run=false` after the cutover (card-edits.yml is
+      deleted then; before it, `card-edits.yml`); their refusals are final for the schedule. Order matters: re-parse first, else the site shows "Papyrus"/"Sans" until the re-parse.
 
 ### 3. Shadow -> cutover (DATA_BUILD_ACTION.md §14 steps 7-10)
 - [ ] **Re-seed** (after step 1b's text fix PICKLE is on origin/main): `data` was seeded from a7c310e at 14:21 on
@@ -153,6 +153,9 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       fix; the data build never applies them, so a seed from cf9fd20 (the recovery), 23eecae (the backfill) or 6000b4a
       keeps the borrowed text and stars for good. Then `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f
       cards="Papyrus, Sans" -f dry_run=false` (the data branch re-reads a card only when its blob changed or it is named).
+      Re-seed dispatched 2026-10-24 22:41 PDT (run 40166422140, seed 1282743 = the text fix's PICKLE): "Cards re-dated:
+      18 of 812", data 85f23f66; against 1282743's pickles diff_stats shows only the 18 re-dates and 21 moved starts, and
+      psd_details has 812 of 815 headers. The Papyrus, Sans run is still to do.
 - [ ] **Daily check** (diagnostics-and-tooling Workflow 4) after each jetson `/push`: diff_stats `stats.pkl` vs
       `origin/data`; only the predicted refinements. Also build_site with and without `CARD_DATA_DIR`, the changelog's
       events vs the card pushes, most scheduled runs ending at the gate.

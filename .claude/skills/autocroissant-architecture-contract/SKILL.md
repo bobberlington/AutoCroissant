@@ -191,10 +191,10 @@ stats_db singleton (card_models.py:409) --save()--> stats.pkl / old_stats.pkl   
       |    (loaded at the start of the run; a 304 touches neither file)
       v
 changed tree only: queue_command(sync_changed_emojis)   (until 2026-10-20 also a TTS save run when images, the
-      |   rules, Card Edits.json or the save changed; TTSCardMaker's tts-save.yml Action does that now)
+      |   rules, Card Edits.json or the save changed; TTSCardMaker's card-sync.yml does that now, tts-save.yml until 2026-10-24)
 queue_command(refresh_history); queue_command(card_repo.populate_files); queue_command(card_repo.prep_dataframes)
       |                                            (repo_traverser.py:115-122)
-      |   (no bake is queued here: the edits-file notice was removed 2026-10-21; /bake_cards is by hand, the Action the live runner)
+      |   (no bake is queued here: the edits-file notice was removed 2026-10-21; /bake_cards is by hand, card-sync.yml the live runner)
       v  (subsequent command-queue ticks, pool threads)
 card_repo dataframes rebuilt  ->  /query and /query_ability now serve the new data
       |
@@ -301,7 +301,7 @@ main.py  (registration + queue loops; imports every commands module)
  |                            bake_cards (/bake_cards)  [2026-10-21; NOT compiled; the notice_edits hook removed the same day]
  |- commands.tts_save      -> git_commit, repo_history, card_models, card_edits, global_config; utils + discord LAZILY inside the
  |                            posting functions, so `python -m commands.tts_save <save.json>` runs standalone (TTSCardMaker's
- |                            tts-save.yml Action does, with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
+ |                            card-sync.yml's TTS save step does (tts-save.yml until 2026-10-24), with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
  |                            overrides global_config reads) [2026-10-20; TTS save updater + /update_tts_save; NOT compiled]
  |- commands.card_models   -> global_config ONLY: CardType, CardStats, CardInfo (the pickled classes, __module__ pinned to
  |                            commands.psd_analyzer), StatsDatabase, stats_db, card_name  [2026-10-20 split; compiled]

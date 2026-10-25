@@ -615,7 +615,8 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `site/Card Edits.json` pushes (`MDW/Card Edits.json` before the website files moved, 2026-10-20), daily and on dispatch
   (ttscardmaker-companion §2.6); it first symlinked its
   workspace to `~/Desktop/TTSCardMaker`, replaced by the `AUTOCROISSANT_LOCAL_DIR` / `AUTOCROISSANT_HISTORY_CLONE`
-  env overrides in global_config.py. `/update_tts_save` stays as the manual run.
+  env overrides in global_config.py. `/update_tts_save` stays as the manual run. At the cutover (2026-10-24)
+  tts-save.yml was deleted: card-sync.yml's TTS save step runs the same updater.
 
 ### 10.20 help.py and describe strings matched to the code (was C1, C2, C3, 2026-10-20)
 
