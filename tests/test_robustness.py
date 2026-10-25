@@ -1,10 +1,12 @@
 """Robustness: queue loops survive bad messages (B5), init_vc (B4), card list kept on GitHub errors (B7),
 temp files cleaned, git timeouts, help/describe text (C1-C3), unique handler names (C5), no /list_guild_members (C6)."""
 import ast
+import contextlib
 import asyncio
 import inspect
 import os
 import re
+import signal
 import subprocess
 import tempfile
 from io import BytesIO
@@ -218,8 +220,10 @@ def test_command_queue_runs_and_survives(channels, capsys, monkeypatch):
         utils.queue_command(ran.append, "work")
         await main.process_reminders.coro()                 # the 1 s heartbeat queues check_reminder
         await main.process_command_queue.coro()
-        while main._running:
-            await asyncio.sleep(0.01)
+        async def done():
+            while main._running:
+                await asyncio.sleep(0.01)
+        await asyncio.wait_for(done(), 5)                     # never hangs a worker
     asyncio.run(tick())
     assert sorted(ran) == ["tick", "work"] and "Command queue: dropped an item" in capsys.readouterr().out
 
@@ -435,7 +439,7 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
     git("remote", "add", "origin", "ssh://git@example.invalid/repo.git")
     stall = tmp_path / "stall.sh"
-    stall.write_text("#!/bin/sh\nexec sleep 10\n")                      # a stalled connection
+    stall.write_text(f"#!/bin/sh\necho $$ >> {tmp_path}/stalls\nexec sleep 10\n")   # a stalled connection
     stall.chmod(0o755)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GIT_SSH_COMMAND", str(stall))
@@ -443,7 +447,12 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
     sent = []
     async def send(content):
         sent.append(content)
-    asyncio.run(ub.git_pull(SimpleNamespace(followup=SimpleNamespace(send=send))))
+    try:
+        asyncio.run(ub.git_pull(SimpleNamespace(followup=SimpleNamespace(send=send))))
+    finally:
+        for pid in (tmp_path / "stalls").read_text().split() if (tmp_path / "stalls").exists() else ():
+            with contextlib.suppress(OSError):                          # git's timeout leaves the stall orphaned
+                os.kill(int(pid), signal.SIGKILL)
     assert sent[0] == "Fetching from remote..." and "did not complete in 1 secs" in sent[1]
 
 

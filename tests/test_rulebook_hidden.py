@@ -10,6 +10,7 @@ from psd_tools import PSDImage
 
 from commands.card_models import card_name
 from commands.psd_parser import CardValidator
+from conftest import no_lazy
 from golden_cards import golden_file, parser
 
 L11 = "100511d37848773bb8e948ba29625397f6ce5216"           # the card repo commit that deleted the H1 hidden text layers
@@ -43,7 +44,8 @@ def _hidden_text(psd):
 def _page(clone, rev, rel):
     """A rule page from the clone's history."""
     try:
-        data = subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True).stdout
+        data = subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True,
+                              env=no_lazy()).stdout
     except (subprocess.CalledProcessError, OSError):
         pytest.skip(f"the clone's history lacks {rev}:{rel}")
     return PSDImage.open(BytesIO(data))

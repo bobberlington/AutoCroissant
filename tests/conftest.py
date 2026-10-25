@@ -1,6 +1,5 @@
-# Run: ~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the reminder store)
-# The text-engine tests (psd_edit, card_bake) need the psd-tools fork and psd-tools[text]; see find_fork:
-#   AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
+# Run: ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests   (offline; never writes the reminder store)
+# The fork venv has psd-tools[text], which the bake tests need (see find_fork); -n 0 runs one test serially.
 import hashlib
 import json
 import socket
@@ -22,6 +21,21 @@ from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it; its origin/data holds the live card data
 LIVE = (REMIND_JSON,)                                    # the checkout's reminder store, never written by a test
+GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
+              "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
+POOLED = ("commands.card_check", "commands.font_check", "commands.card_guards")   # process pools capped per worker
+QUEUES = ("dispatch_queue", "edit_queue", "command_queue")                         # utils' deques, empty per test
+
+
+def _git_config():
+    """GIT_CONFIG for every git this run starts (kept user identity, unlike GIT_CONFIG_GLOBAL=/dev/null)."""
+    start = int(environ.get("GIT_CONFIG_COUNT", "0"))
+    for i, (key, value) in enumerate(GIT_CONFIG.items(), start):
+        environ[f"GIT_CONFIG_KEY_{i}"], environ[f"GIT_CONFIG_VALUE_{i}"] = key, value
+    environ["GIT_CONFIG_COUNT"] = str(start + len(GIT_CONFIG))
+
+
+_git_config()
 
 
 # ========================
@@ -103,11 +117,17 @@ def salt_font(clone) -> bool:
     return font.exists() and "salt" in {r.FeatureTag for r in TTFont(str(font), lazy=True)["GSUB"].table.FeatureList.FeatureRecord}
 
 
+def no_lazy() -> dict:
+    """git's env for reading the blobless Desktop clone: a missing blob fails instead of being fetched from GitHub."""
+    return {**environ, "GIT_NO_LAZY_FETCH": "1"}
+
+
 def at_rev(clone, rev: str, rel: str) -> bytes:
     """A card repo file at rev, from the clone's history; skips the test when the history lacks it."""
     import subprocess
     try:
-        return subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True).stdout
+        return subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True,
+                              env=no_lazy()).stdout
     except (subprocess.CalledProcessError, OSError):
         pytest.skip(f"the clone's history lacks {rev}:{rel}")
 
@@ -235,7 +255,8 @@ def live_files_untouched():
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
     """No network, cwd in a temp dir so cwd-relative saves (card_data/, json maps) land there, and no history clone (for
-    /query as_of's images) unless a test gives one (the machine's own never counts)."""
+    /query as_of's images) unless a test gives one (the machine's own never counts). Also: no retry sleeps, pools of 2,
+    and utils' queues empty (tests that count waits override the sleep stub)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -243,13 +264,28 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     if "commands.repo_history" in sys.modules:                           # /query as_of's images
         monkeypatch.setattr(sys.modules["commands.repo_history"], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
+    import commands.github_api as ga                                     # get_with_retry's waits
+    monkeypatch.setattr(ga, "sleep", lambda seconds: None)
+    if "commands.card_preview_branch" in sys.modules:                    # the publisher's backoff
+        monkeypatch.setattr(sys.modules["commands.card_preview_branch"], "sleep", lambda seconds: None)
+    for name in POOLED:                                                  # half of 4 cores: 2 processes per pool
+        if name in sys.modules:
+            monkeypatch.setattr(sys.modules[name], "cpu_count", lambda: 4)
+    utils = sys.modules.get("commands.utils")
+    queues = [getattr(utils, name) for name in QUEUES] if utils else []
+    for queue in queues:                                                 # main imports them by name: clear, never replace
+        queue.clear()
+    yield
+    for queue in queues:
+        queue.clear()
 
 
 @pytest.fixture(scope="session")
 def real_stats():
     """The live card data: db/stats.json on the card repo clone's origin/data (fetch it to refresh), in a StatsDatabase."""
     import subprocess
-    done = subprocess.run(["git", "-C", str(CLONE), "show", f"origin/{DATA_BRANCH}:db/stats.json"], capture_output=True)
+    done = subprocess.run(["git", "-C", str(CLONE), "show", f"origin/{DATA_BRANCH}:db/stats.json"], capture_output=True,
+                          env=no_lazy())
     if done.returncode != 0:
         pytest.skip(f"no origin/{DATA_BRANCH}:db/stats.json in {CLONE}")
     import commands.card_db as cdb

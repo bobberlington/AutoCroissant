@@ -25,9 +25,8 @@ def clean_git(monkeypatch, tmp_path):
     for key, value in {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(tmp_path),
                        "XDG_CONFIG_HOME": str(tmp_path)}.items():   # git 2.25 ignores GIT_CONFIG_GLOBAL
         monkeypatch.setenv(key, value)
-    rh._ssh_cache.clear()
-    yield tmp_path
-    rh._ssh_cache.clear()
+    monkeypatch.setattr(rh, "_ssh_cache", {})
+    return tmp_path
 
 
 def _repo(path, *config):

@@ -14,7 +14,7 @@ import pytest
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import REPO, Reply, blob_sha_bytes as _sha
+from conftest import REPO, Reply, blob_sha_bytes as _sha, no_lazy
 from test_font_check import FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
@@ -71,7 +71,8 @@ def fake_root(root: Path, files: dict, types=("fire.png", "active.png"), edits_t
 def old_blob(clone, rel: str) -> bytes:
     """OLD[rel]'s PSD from the clone's history."""
     try:
-        return run_process(["git", "-C", str(clone), "show", f"{OLD[rel][0]}:{rel}"], capture_output=True, check=True).stdout
+        return run_process(["git", "-C", str(clone), "show", f"{OLD[rel][0]}:{rel}"], capture_output=True, check=True,
+                           env=no_lazy()).stdout
     except (CalledProcessError, OSError):
         pytest.skip(f"the clone's history lacks {OLD[rel][0]}:{rel}")
 

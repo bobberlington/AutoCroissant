@@ -29,8 +29,8 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
-from conftest import (BADGED, PLAIN_DOOMER, at_rev, salt_font, bevel_textures, colour_glyphs, fork_reason, painted, rounds_bytes,
-                      saves_preview, story_sync as _story_sync, text_engine as _text_engine)
+from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, salt_font, bevel_textures, colour_glyphs, fork_reason, painted,
+                      rounds_bytes, saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 
 # ========================
 # Configuration
@@ -130,7 +130,8 @@ def _jsx_ink(rel: str) -> tuple:
 def _overlaid(clone, rel: str, tmp_path) -> str:
     """OVERLAID[rel]'s PSD from the clone's history, in tmp_path/overlaid/."""
     try:
-        data = run(["git", "-C", str(clone), "show", f"{OVERLAID[rel]}:{rel}"], capture_output=True, check=True).stdout
+        data = run(["git", "-C", str(clone), "show", f"{OVERLAID[rel]}:{rel}"], capture_output=True, check=True,
+                   env=no_lazy()).stdout
     except (CalledProcessError, OSError):
         pytest.skip(f"the clone's history lacks {OVERLAID[rel]}:{rel}")
     path = tmp_path / "overlaid" / Path(rel).name

@@ -6,7 +6,7 @@ import pytest
 
 import commands.card_data as cd
 import commands.psd_analyzer as pa
-from conftest import blob_sha
+from conftest import blob_sha, no_lazy
 from golden_cards import parser
 
 
@@ -47,7 +47,8 @@ def _drift(stats: dict, blobs: dict) -> list:
 def _committed_edits(clone):
     """The clone's committed Card Edits.json (dup_of duplicates such as Stubborn_Queen.png need it), or None."""
     from commands.card_edits import CardEdits
-    out = subprocess.run(["git", "-C", str(clone), "show", f"HEAD:{pa.EDITS_PATH}"], capture_output=True, encoding="utf-8")
+    out = subprocess.run(["git", "-C", str(clone), "show", f"HEAD:{pa.EDITS_PATH}"], capture_output=True, encoding="utf-8",
+                         env=no_lazy())
     return CardEdits.parse(out.stdout) if out.returncode == 0 else None
 
 
