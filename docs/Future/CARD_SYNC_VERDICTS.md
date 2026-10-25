@@ -46,9 +46,16 @@ makes no main commit. Bakes and guard fixes show on the Changes page.
    `--pending` and `due()`; the entry's old `_psd` is the fallback (step 6's cycle). Entries B rewrites lose their
    `_psd`. A refusal-only run makes no B.
 2. **card-sync.yml.** The main job's Bake records step keeps the landed part (and gives the baked events M's sha) only
-   when M landed, uploads `bake-records`; `after` runs when M baked or records exist (`RECORDS`, `AFTER` = M or empty) and
-   passes `--verdicts`, `--events` to the build. `card_db.merge_verdicts` writes `db/verdicts.json` (one card per line,
-   not in the manifest's hashed files; the data job never touches it).
+   when M landed, uploads `bake-records` (a dry run's is `bake-records-dry-run`, never merged); `after` runs when M baked
+   or records exist (`AFTER` = M or empty). Every data job (data, after) merges the records no data job merged yet
+   (review 2026-10-25: a pending after job in `card-data` is replaced by a newer data job, and its records were lost):
+   its Earlier bake records step lists the repo's unexpired `bake-records` artifacts, skips those in `db/bake-records.json`
+   (`{"merged": {artifact id: run id}}`), folds at most 20, oldest first (a later verdict wins), and passes `--verdicts`,
+   `--events` to the build; a build that exits 0 adds their ids to the file (still listed ones kept), which rides in the
+   data commit. A gate refusal, a failed job or a lost one leaves them for the next data job. `card_db.merge_verdicts`
+   writes `db/verdicts.json` (one card per line, not in the manifest's hashed files). The main job reads the same
+   unmerged records into its data checkout before Pending edits and the bake (Unmerged verdicts, local only), so a
+   card refused a run ago is not baked and told again while that run's after job waits.
 3. **Guards.** `card_guards.land` lists each included write's event (`events_of`: no event for a Composer-only PSD or a
    Composer-only rewrap PNG); `finish` writes `guard-events.json` for a landed commit; card-guards.yml uploads it as
    `guard-events` before Follow up. Card sync's Guard events step finds each guards commit since the last build, its
@@ -60,6 +67,11 @@ makes no main commit. Bakes and guard fixes show on the Changes page.
    shows all four (sections, counts, chips).
 5. **Readers.** build_site reads `CARD_DATA_DIR/verdicts.json` over the entries' `_psd` (`add_verdicts`); card_bake as
    in 1. The bot's `/query` reads no verdict today: nothing to change.
+
+Known gaps: two runs' records merged out of order (an older artifact read only after a newer one was merged, after a
+failed download) let the older verdict win for a card both touched; a stale verdict counts for nothing in `final()`, so
+at worst the card is looked at again. Records older than the artifacts' 14 days are lost (the cron runs a data job every
+30 minutes). The owner may still prefer the other fix (the after job in its own group, retried on G6).
 
 Conservative choices (unattended): refusal events are push-less (they post with their build, "Card sync, <time>");
 the guards' events are lost to the Changes page when their artifact cannot be found (a warning); a guards commit's other
