@@ -231,8 +231,9 @@ def test_links_by_the_sites_key_and_rulebook_pages_to_the_rulebook(tmp_path):
 
 
 def test_every_kind_posts_alone():
-    """A group of any one kind (a rollback's lone restore event included) makes a titled message with a count."""
-    for kind in cl.KINDS:
+    """A group of any one kind (a rollback's lone restore event included) makes a titled message with a count; the
+    guards' kinds make none."""
+    for kind in (k for k in cl.KINDS if k not in cl.SILENT):
         event = {"kind": kind, "card": "A", "renamed_to": "B", "restored_from": "f00dfeed" * 5, "fields": {"hp": [1, 2]}}
         group = cl.number([event], 0, at=T, build="https://x/runs/1")
         out = cl.messages(group, "https://site", repository="o/r")
@@ -241,6 +242,30 @@ def test_every_kind_posts_alone():
     body = cl.payload(cl.number([{"kind": "restore", "card": "", "restored_from": "f00dfeed" * 5}], 0, at=T))
     assert body["embeds"][0]["title"].endswith(": 1 data rollback")
     assert body["embeds"][0]["description"] == "**Rollback**\nCard data restored from f00dfeed"
+
+
+def test_bake_and_guard_events():
+    """The bake's events ride their push's post; the guards' (and every event of a guards commit's push) never post:
+    a group of them alone is a message without a body, so the cursor still moves past it (owner, 2026-10-25)."""
+    commits = [("m", 10.0, "AutoCroissant"), ("g", 20.0, "AutoCroissant")]
+    pushed = cl.assign_pushes([{"kind": "baked", "card": "A", "commit": "m"}, {"kind": "art", "card": "B", "commit": "g"}],
+                              [], commits, "c0", {"m"}, {"g"})
+    assert [(e["push"]["after"], e["push"]["by"]) for e in pushed] == [("m", cl.CARD_SYNC), ("g", cl.GUARDS)]
+    sync = dict(PUSH, by=cl.CARD_SYNC)
+    guards = dict(PUSH, after="b2" * 20, by=cl.GUARDS)
+    events = cl.number([dict(e, push=sync) for e in (
+        {"kind": "baked", "card": "Kirby", "reason": "hp 5 -> 8", "pngs": ["a.png"]},
+        {"kind": "bake-refused", "card": "Meta", "reason": "font: no Face"},
+        {"kind": "guard-fix", "card": "Kirby", "line": "straight apostrophes"})]
+        + [dict(e, push=guards) for e in ({"kind": "art", "card": "Kirby"}, {"kind": "guard-png", "card": "Kirby", "line": "re-exported"})], 0, at=T)
+    first, second = cl.messages(events, "https://site", repository="o/r")
+    assert first["body"]["embeds"][0]["title"] == "Website edits baked into the PSDs, Oct 22 14:13: 1 baked, 1 bake refused"
+    text = "\n".join(e["description"] for e in first["body"]["embeds"])
+    assert text == ("**Baked into the PSDs**\n[Kirby](https://site/#/cards?q=Kirby): hp 5 -> 8 (PNG re-made)\n"
+                    "**Bake refused**\n[Meta](https://site/#/cards?q=Meta): font: no Face")
+    assert second == {"body": None, "cursor": {"seq": 5, "push": "b2" * 20}}
+    assert cl.messages(events[2:3] + events[3:], "https://site") == [{"body": None, "cursor": {"seq": 3, "push": PUSH["after"]}},
+                                                                     {"body": None, "cursor": {"seq": 5, "push": "b2" * 20}}]
 
 
 def test_payload_stays_within_discord_limits():
