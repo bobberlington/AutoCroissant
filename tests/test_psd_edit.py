@@ -27,7 +27,7 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
-from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, salt_font, colour_glyphs, fork_reason, painted,
+from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
                       saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
@@ -1829,7 +1829,6 @@ def test_bake_repairs_a_stale_story(clone, parser, tmp_path):
 # ========================
 # An ability over several layers (owner 2026-10-24)
 # ========================
-LIT_BOB = "Auxiliary/Items/Lit_Bob-omb.psd"                        # 'Costs 0 SP to use.' / 'Deal 7 DMG.': two Ability layers
 MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five, padded ('\r    Fire: 5/5/8/7'), 'Ability FX: (1GCD)'
 
 

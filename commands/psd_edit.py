@@ -6661,7 +6661,6 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
     found, index = record_parts(record), lyid_index(psd)
     was_index = lyid_index(original) if original is not None else index
     follow = record.get("follow") or []
-    vocab = getattr(parser, "icons", None)
 
     def followers(lyid: int, how: str) -> list:
         return [index[f["id"]] for f in follow if f["how"] == how and lyid in f["of"] and f["id"] in index]
