@@ -124,7 +124,8 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert data["cards"]["Beldam"] == EDITS["Beldam"]
     freezer = data["cards"]["The Freezer"]["_psd"]
     assert freezer["state"] == "refused" and freezer["for"] == {"stars": 2} and freezer["psd"] == _sha(github.files_at(before)[FREEZER])[:8]
-    assert freezer["reason"] == "unsupported-card: stars: the '1 Stars' folder sets them (moving the card is ledger S9)"
+    assert freezer["reason"] == ("unsupported-card: stars: Field/2 Stars/The_Freezer.png is already there: the card can't "
+                                 "move into 'Field/2 Stars'")
     assert freezer["at"].endswith("Z")
     assert data["cards"]["Nobody"]["_psd"]["reason"] == "unsupported-card: no PSD in the card repo" and data["cards"]["Nobody"]["_psd"]["psd"] == ""
     assert data["cards"]["A Snack"]["_psd"]["reason"] == ("duplicate: numbered PNGs share the PSD: A_Snack2.png (tag the "
@@ -712,7 +713,7 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
     rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
     cards = {path: data for path, data in github.files_at(github.head).items()
-             if path.startswith(("Auxiliary", "Field")) or path == SNACK}                       # A Snack's: the redundancy check
+             if path.startswith(("Auxiliary", "Field/1")) or path == SNACK}                     # A Snack's: the redundancy check
     assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
     assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
     assert "The checkout is on it." in text
@@ -898,3 +899,21 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(github.files_at(github.head)[rel])).descendants()}
     assert new[1023].text.startswith("Second\rBreakfast") and new[1023].name == "Name #2"
     assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
+
+
+def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
+    """§11 case 8: The Freezer's stars 1 -> 3 move its PSD and PNG into "Field/3 Stars" (created, told): one commit adds
+    them there and deletes them here; its printed star (no Stars group) is not redrawn, told; the verdict says where."""
+    files = github.files_at(github.head)
+    moved = {path: path.replace("1 Stars", "3 Stars") for path in (FREEZER, FREEZER[:-4] + ".png")}
+    files[cb.EDITS_PATH] = _edits({"The Freezer": {"stars": 3, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: The Freezer")
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    message = github.commits[commits[0]]["message"]
+    assert message.startswith("Card edits: 1 baked\n\n- The Freezer: stars 1 -> 3 (moved to 3 Stars; created the folder "
+                              "'Field/3 Stars'; the printed stars are not redrawn: "), message
+    after = github.files_at(github.head)
+    assert all(old not in after and after[new] == files[old] for old, new in moved.items())   # the same bytes, moved
+    verdict = _edits_at(github)["cards"]["The Freezer"]["_psd"]
+    assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(files[FREEZER])[:8]

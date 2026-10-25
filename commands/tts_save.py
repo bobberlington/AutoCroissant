@@ -450,8 +450,22 @@ class _Report:
 # ========================
 # Update Steps
 # ========================
+def _stem_key(path: str) -> tuple:
+    """(top folder, card key, extension): one card's file wherever under its top folder it moves (PARTS_EDITOR.md §4.12)."""
+    stem, ext = splitext(path)
+    return path.split("/")[0].lower(), CardAuthors.key(_stem(path)), ext.lower()
+
+
+def _stem_index(tree: dict) -> dict:
+    out: dict = {}
+    for path in tree:
+        out.setdefault(_stem_key(path), []).append(path)
+    return out
+
+
 def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
-    """Every repo link -> the commit that last changed its file; renamed files follow; gone files are reported."""
+    """Every repo link -> the commit that last changed its file; renamed files follow (by blob, else a card key found once
+    under the same top folder: a card moved and redrawn); gone files are reported."""
     links: dict = {}                                        # (ref, encoded path) -> occurrences
 
     def collect(text):
@@ -483,6 +497,11 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
     for path, (_, blob) in last.items():
         targets = repo.by_blob.get(blob, [])
         if len(targets) == 1:
+            rename[path] = targets[0]
+    stems = _stem_index(repo.tree)
+    for path in lost:                                       # a card moved and redrawn (its stars: a new "N Stars" folder)
+        targets = stems.get(_stem_key(path), [])
+        if path not in rename and len(targets) == 1:
             rename[path] = targets[0]
 
     changes: dict = {}                                      # (ref, enc) -> (new ref, new enc)

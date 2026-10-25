@@ -122,6 +122,9 @@ class Card:
     pictures: dict = field(default_factory=dict)    # a PSD with variant tags: picture n -> its PNG repo path (§9)
     view: Optional[int] = None                  # bake this picture only (a preview of a variant's page)
     views: dict = field(default_factory=dict)   # picture n -> its Baked (the saved picture's is `baked`)
+    moves: dict = field(default_factory=dict)   # a stars edit's move into its "N Stars" folder: old path -> new path
+    moved_to: str = ""                          # that folder
+    move_notes: list = field(default_factory=list)  # the folder created, the printed stars not redrawn
 
 
 @dataclass
@@ -597,6 +600,54 @@ def derived_picture(edits: CardEdits, snapshot: Snapshot, key: str, wanted: dict
         and bool((edits.cards.get(CardAuthors.key(card_name(original))) or {}).get("parts"))
 
 
+def plan_move(snapshot: Snapshot, card: Card, parsed: dict, psd, parser) -> dict:
+    """
+    A stars edit on a card starred by its folder (PARTS_EDITOR.md §4.8, owner 10-25): the card's PSD and every PNG of it
+    move into the matching "N Stars" folder (an existing one in any case, else created and told); its printed stars
+    are redrawn where the PSD draws them in a layout the bake knows (else told, the move still made). A file of the
+    same name there is impossible: refused. Fills card.moves, moved_to, move_notes.
+
+    Returns:
+        The jobs apply_jobs bakes (the stars only when they are redrawn)
+    """
+    jobs = dict(card.jobs)
+    target = psd_edit.star_target(card.rel, jobs["stars"]) if "stars" in jobs else None
+    if not target:
+        return jobs
+    low = target.lower() + "/"
+    folder = next((path[:len(low) - 1] for path in snapshot.tree if path.lower().startswith(low)), target)
+    pngs = [card.png] + [png for n, png in sorted(card.pictures.items()) if n != 1]
+    moves = {path: f"{folder}/{basename(path)}" for path in [card.rel] + pngs}
+    taken = [new for new in moves.values() if new.lower() in snapshot.lower]
+    if taken:
+        raise Refused("unsupported-card", f"stars: {taken[0]} is already there: the card can't move into {folder!r}", "stars")
+    card.moves, card.moved_to = moves, folder
+    if folder == target and not any(path.lower().startswith(low) for path in snapshot.tree):
+        card.move_notes.append(f"created the folder {folder!r}")
+    try:
+        psd_edit.plan_stars(psd, parsed, jobs["stars"], parser, moving=True)
+    except Refused as refused:                  # the move stands; the printed stars stay as they are, told
+        card.move_notes.append(f"the printed stars are not redrawn: {refused.why.removeprefix('stars: ')}")
+        del jobs["stars"]
+    return jobs
+
+
+def first_type_spot(snapshot: Snapshot, work: str, card: Card, parsed: dict, psd, parser) -> Optional[tuple]:
+    """psd_edit.template_icon() of the card's template, when it prints no type icon (its first goes at the template's
+    spot, owner 10-25); the templates fetched and opened once a run."""
+    if psd_edit.type_row(psd, parser, card.name)[0]:
+        return None
+    path = psd_edit.template_for(parsed["card"].get("type"), card.rel)
+    if not path or path not in snapshot.tree:
+        return None
+    cache = snapshot.__dict__.setdefault("templates", {})
+    if path not in cache:
+        local = join(work, "templates", basename(path))
+        snapshot.fetch(snapshot.sha(path), local)
+        cache[path] = PSDImage.open(local)
+    return psd_edit.template_icon(cache[path], psd, parser, basename(path)[:len(basename(path)) - 4])
+
+
 def pictures_of(psd, card: Card, duplicates: list) -> dict:
     """
     The pictures of a PSD with variant tags: {n: PNG repo path}, NameN.png for each tag n (§9); {} for an untagged PSD.
@@ -614,11 +665,11 @@ def pictures_of(psd, card: Card, duplicates: list) -> dict:
     return {1: card.png, **{n: found[n] for n in numbers if n != 1}}
 
 
-def _views(card: Card, record: dict, numbers: list) -> list:
+def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None) -> list:
     """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; any other field, every one."""
     every, out = set(numbers), set()
     found = psd_edit.record_parts(record)
-    for name, value in card.jobs.items():
+    for name, value in (card.jobs if jobs is None else jobs).items():
         if name != "parts":
             out |= every
             continue
@@ -633,7 +684,8 @@ def _views(card: Card, record: dict, numbers: list) -> list:
     return sorted(out)
 
 
-def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir: str, colors, types_dir) -> psd_edit.Baked:
+def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir: str, colors, types_dir,
+                  jobs: Optional[dict] = None, target: str = "", template: Optional[tuple] = None) -> psd_edit.Baked:
     """
     A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
     onto its own PNG, the saved picture's first (its run writes the PSD and its stored preview); every run's PSD must
@@ -643,26 +695,26 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         The first run's Baked (card.views: every picture's)
     """
     old_psd = join(folder, "old", basename(card.rel))
-    numbers = sorted(card.pictures)
+    jobs, numbers = card.jobs if jobs is None else jobs, sorted(card.pictures)
     parses = {}
     for n in numbers:
         with psd_edit.variant(psd, n):
             parses[n] = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-    for name in card.jobs:
+    for name in jobs:
         if name in psd_edit.ICON_FIELDS + psd_edit.STAT_FIELDS and len({repr(parses[n]["card"].get(name)) for n in numbers}) > 1:
             raise Refused("unsupported-card", f"{name}: its layers differ by picture: edit it in Photoshop", name)
-    record = psd_edit.card_parts(psd, card.rel, card.name, parser) if "parts" in card.jobs else {}
+    record = psd_edit.card_parts(psd, card.rel, card.name, parser) if "parts" in jobs else {}
     saved = psd_edit.saved_view(psd)
-    views = sorted(_views(card, record, numbers), key=lambda n: n != saved)
+    views = sorted(_views(card, record, numbers, jobs), key=lambda n: n != saved)
     if not views:
         raise Refused("unsupported-card", "the edit shows in no picture")
     card.views, first = {}, None
     for n in views:
         out = join(folder, "new" if first is None else f"new{n}")
         makedirs(out, exist_ok=True)
-        baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), card.rel, card.jobs, parses[n],
-                                    parser, out, fonts_dir, colors, update_preview=n == saved, types_dir=types_dir,
-                                    psd=psd, view=n)
+        baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
+                                    parses[n], parser, out, fonts_dir, colors, update_preview=n == saved,
+                                    types_dir=types_dir, psd=psd, view=n, template=template)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -720,6 +772,10 @@ def _describe(card: Card) -> str:
         elif name == "types":
             parts.append(f"types {', '.join(old) if old else 'none'} -> {', '.join(value)}" if old is not None
                          else f"types -> {', '.join(value)}")
+        elif name == "stars" and card.moved_to:
+            was = psd_edit.star_folder(card.rel)
+            parts.append(f"stars {was[1] if was else old} -> {value} (moved to {basename(card.moved_to)}"
+                         + "".join(f"; {note}" for note in card.move_notes) + ")")
         elif name == "name":
             parts.append(f"name {old!r} -> {value!r}" if old is not None else f"name -> {value!r}")
         else:
@@ -912,7 +968,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
 
         psd = PSDImage.open(old_psd)            # one open for the parse, classify and apply_jobs (it edits a copy)
         parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-        classified = psd_edit.classify(parsed, card.fields, psd, parser)
+        template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
+        classified = psd_edit.classify(parsed, card.fields, psd, parser, template)
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
         card.parts = classified.parts
         card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
@@ -929,31 +986,42 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
 
         card.expect = {card.rel: card.psd_sha, card.png: card.png_sha,
                        **{png: snapshot.sha(png) for png in card.pictures.values()}}
-        if card.jobs:
-            if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.text_engine():
+        try:                                    # a stars edit on a card starred by its folder moves it
+            bake = plan_move(snapshot, card, parsed, psd, parser)
+        except Refused as refused:              # that field's alone, as a stars refusal is
+            if not (set(card.jobs) - {"stars"}) and not card.redundant and not settled:
+                raise
+            card.partial.append(refused.refusal)
+            del card.jobs["stars"]
+            bake = dict(card.jobs)
+        if bake:
+            texty = psd_edit.TEXT_FIELDS + ("parts",)
+            if any(f in texty for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
-            if any(f in psd_edit.TEXT_FIELDS for f in card.jobs) and not psd_edit.story_sync():
+            if any(f in texty for f in card.jobs) and not psd_edit.story_sync():
                 raise Transient("this runner's psd-tools fork predates Txt2 story sync: Photoshop would undo the text")
-            if any(psd_edit.glow_tokens(str(card.jobs[f])) for f in psd_edit.TEXT_FIELDS if f in card.jobs) \
+            if any(psd_edit.glow_tokens(str(card.jobs[f])) for f in texty if f in card.jobs) \
                     and not psd_edit.glow_halos():
                 raise Transient("this runner's psd-tools predates the pin's glow halos: reinstall it")
             if any(f in psd_edit.ICON_FIELDS for f in card.jobs) and not psd_edit.icon_engine():
                 raise Transient("this runner's psd-tools cannot copy or make layers (the fork's duplicate and fromarray)")
-            colors = chart() if "ability" in card.jobs else None
-            if "ability" in card.jobs and colors is None:
+            colors = chart() if {"ability", "parts"} & set(bake) else None
+            if {"ability", "parts"} & set(bake) and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
             new_dir = join(folder, "new")
             makedirs(new_dir, exist_ok=True)
             types_dir = types_icons(snapshot, work, parser, card.jobs["types"], parsed["card"].get("types")) \
                 if "types" in card.jobs else None
+            target = card.moves.get(card.rel, card.rel) if "stars" in bake else card.rel
             while True:                         # a stars or types refusal leaves the card's other fields to bake
                 try:
                     if card.pictures:
-                        card.baked = bake_pictures(card, psd, parsed, parser, folder, fonts_dir, colors, types_dir)
+                        card.baked = bake_pictures(card, psd, parsed, parser, folder, fonts_dir, colors, types_dir,
+                                                   bake, target, template)
                     else:
-                        card.baked = psd_edit.apply_jobs(old_psd, old_png, card.rel, card.jobs, parsed, parser, new_dir,
+                        card.baked = psd_edit.apply_jobs(old_psd, old_png, target, bake, parsed, parser, new_dir,
                                                          fonts_dir, colors, update_preview=True, types_dir=types_dir,
-                                                         psd=psd)
+                                                         psd=psd, template=template)
                     break
                 except Refused as refused:
                     if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
@@ -963,7 +1031,10 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                         raise Refused(refused.code, "; ".join([refused.why] + [f"{r.code}: {r.why}" for r in earlier])) from refused
                     card.partial.append(refused.refusal)
                     del card.jobs[refused.field]
-                    if not card.jobs:
+                    bake.pop(refused.field, None)
+                    if refused.field == "stars":    # not baked: not moved either
+                        card.moves, card.moved_to, card.move_notes = {}, "", []
+                    if not bake:
                         break
         if card.baked is not None:
             with open(card.baked.psd_path, "rb") as fh:
@@ -986,6 +1057,18 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
+        if card.moves:                          # the PSD and its PNGs go to the new folder: added there, deleted here
+            if card.baked is None:
+                card.new_psd_sha = card.psd_sha
+                card.verdict = {"state": "baked", "for": card.jobs, "psd": card.psd_sha[:8], "reason": _describe(card),
+                                "at": _now()}
+            for old, new in card.moves.items():
+                if old not in card.files:
+                    with open(join(folder, "old", basename(old)), "rb") as fh:
+                        card.files[old] = fh.read()
+                card.files[new], card.files[old] = card.files[old], None
+                card.expect[new] = ""           # nothing there at the commit
+            card.verdict["moved"] = card.moved_to
         card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
@@ -1020,7 +1103,7 @@ def share_of(card: Card) -> Optional[Share]:
         def drop(text: str) -> Optional[str]:
             if psd_fields(_entry_at(text, card.name) or {}) != card.fields:
                 raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-            kept = bool(_fx_notes(card)) or bool((card.verdict or {}).get("skipped"))     # flags kept
+            kept = bool(_fx_notes(card)) or bool((card.verdict or {}).get("skipped")) or bool(card.moved_to)   # flags kept
             out = rewrite_edits(text, card.name, card.dropped, card.verdict, kept, card.part_drop)
             gone = _gone_fields(card)
             for n, png in sorted(card.pictures.items()):    # the other pictures' entries: their derived name/ability

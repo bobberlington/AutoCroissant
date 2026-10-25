@@ -1935,7 +1935,8 @@ def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
         return False
 
 
-def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None) -> Classification:
+def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
+             template: Optional[tuple] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is a job only on a two-row card (idea 13), above 20 never. Stars and types are jobs when the card's
@@ -1947,6 +1948,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         psd: The open PSD, needed to find the title layer for a name edit (name_layer), the rows for a stat above 10
             and the stars and type icons (not changed)
         parser: offline_parser(): its icon vocabulary reads a types edit (types compare in any order and spelling)
+        template: template_icon() of the card's template: where a card with no type icon takes its first one
 
     Returns:
         Classification
@@ -1962,6 +1964,11 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         elif name in ICON_FIELDS:
             if card.get(name) == value or (name == "types" and same_types(parser, card.get("types"), value)):
                 out.redundant.append(name)
+            elif name == "stars" and star_folder(_card_path(parsed)):    # a move into its "N Stars" folder (owner 10-25)
+                if value < 1:
+                    out.refusals.append(Refusal("unsupported-card", "stars: a card shows at least one", name))
+                else:
+                    out.jobs[name] = value
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", f"{name}: no PSD to place them on", name))
             else:
@@ -1969,7 +1976,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                     if name == "stars":
                         plan_stars(psd, parsed, value, parser)
                     else:
-                        plan_types(psd, parsed, value, parser)
+                        plan_types(psd, parsed, value, parser, template)
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
@@ -4090,7 +4097,7 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
     return None
 
 
-def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None) -> IconPlan:
+def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False) -> IconPlan:
     """
     How to show `value` stars on a card whose stars the parser counts from its PSD (minions, aux items and creatures,
     N.M.E.; elsewhere the "N Stars" folder sets them). In the one Stars group that draws them:
@@ -4108,6 +4115,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         parsed: parse_card() of it
         value: The stars to show, 1 or more
         parser: offline_parser(): a layer in the Stars group named after a type icon is no star to hide or copy
+        moving: The card moves into its new "N Stars" folder (card_bake): its printed stars are redrawn, if it draws them
 
     Returns:
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
@@ -4118,9 +4126,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     rel = info.path if info is not None else parsed["card"].get("path", "")
     if not stars_from_psd(rel):
         folder = rel.split("/")[len(rel.split("/")) - 2] if "/" in rel else ""
-        if fullmatch(STAR_FOLDER, folder, IGNORECASE):
+        if fullmatch(STAR_FOLDER, folder, IGNORECASE) and not moving:
             refuse(f"the {folder!r} folder sets them (moving the card is ledger S9)")
-        refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
+        elif not fullmatch(STAR_FOLDER, folder, IGNORECASE):
+            refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
     if value < 1:
         refuse("a card shows at least one")
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
@@ -4326,7 +4335,8 @@ def layer_parents(layer) -> list:
     return out
 
 
-def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser]) -> IconPlan:
+def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser],
+               template: Optional[tuple] = None) -> IconPlan:
     """
     How to show the type icons `value` in the card's header row (Types/ icons as image layers, the parser's rule):
     the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
@@ -4343,6 +4353,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         parsed: parse_card() of it
         value: The type names to show (any spelling the icon vocabulary knows)
         parser: offline_parser() (its Types/ names and vocabulary)
+        template: template_icon(): a card with no type icon takes its first at the template's spot, styled as the
+            template's icon (owner 10-25; flagged), the rest carried on from it
 
     Returns:
         IconPlan (icons: Types/ stems to make at a box, styled after a reference layer)
@@ -4386,6 +4398,11 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             left[name] -= 1
     count = len(kept) + len(added)
     spots = [unit.core for unit in slots[:count]]
+    first = None
+    if count > len(slots) and not slots and template is not None and count:   # the first at the template's spot
+        spot, reference, first = template
+        slots = [_Unit([reference], spot)]
+        spots = [spot]
     if count > len(slots):
         if not slots:
             refuse("no type icon on the card to line a new one up with")
@@ -4437,7 +4454,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     plan.moves = [(one, dx, dy) for layer, dx, dy in plan.moves for one in _with_chains([layer])]
     plan.how = ", ".join(part for part in (f"{len(plan.hide)} hidden" if plan.hide else "",
                                            f"{moved} moved" if moved else "",
-                                           f"{len(plan.icons)} made from Types/" if plan.icons else "") if part)
+                                           f"{len(plan.icons)} made from Types/" if plan.icons else "",
+                                           f"the first at {first}'s spot: check it" if first else "") if part)
     return plan
 
 
@@ -4478,10 +4496,19 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     layer.copy_effects_from(reference)
     layer.blend_mode, layer.opacity = reference.blend_mode, reference.opacity
     _issue_id(psd, layer)
+    if getattr(reference, "_psd", psd) is not psd:  # a template's icon: the card's types group, else the top
+        parent = _types_group(psd)
+        layer.move_to(parent, index=len(parent))
+        return layer
     chain = _clip_chain(reference)
     parent = reference.parent
     layer.move_to(parent, index=parent.index(reference) + 1 + len(chain))
     return layer
+
+
+def _types_group(psd: PSDImage):
+    """Where a card's first type icon goes: its visible top-level group named for types, else the root."""
+    return next((layer for layer in psd if layer.is_group() and layer.visible and "type" in layer.name.lower()), psd)
 
 
 def _copy_chain(reference, layer, done: list) -> list:
@@ -4564,7 +4591,8 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
         plan.done.append(("made", layer, blocks))
         boxes.append((tuple(layer.bbox), layer))
-        _copy_chain(reference, layer, plan.done)
+        if getattr(reference, "_psd", psd) is psd:      # a template's chain stays in the template
+            _copy_chain(reference, layer, plan.done)
     region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
                                                                              for done in plan.done]
@@ -5515,6 +5543,8 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                 got.pop(key, None)
     expected.pop("problem", None)
     got.pop("problem", None)
+    if "stars" in jobs and star_folder(expected.get("path") or "") and got.get("path") == rel:
+        expected["path"] = rel                  # moved into its new "N Stars" folder
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
     if different:
         raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(
@@ -5988,16 +6018,18 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None) -> Baked:
+               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
+               template: Optional[tuple] = None) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
-    eye flags. view None: the card as saved.
+    eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
+    a card into its "N Stars" folder: its re-parse reads the stars there).
     """
     hold = ExitStack()
     try:
         return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
-                           types_dir, psd, view, hold)
+                           types_dir, psd, view, hold, template)
     finally:
         hold.close()
 
@@ -6005,7 +6037,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                 fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                 types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-                hold: Optional[ExitStack] = None) -> Baked:
+                hold: Optional[ExitStack] = None, template: Optional[tuple] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -6063,7 +6095,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                               key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
         if name in ICON_FIELDS:
             try:
-                plan = plan_stars(new, parsed, value, parser) if name == "stars" else plan_types(new, parsed, value, parser)
+                plan = plan_stars(new, parsed, value, parser, moving=True) if name == "stars" \
+                    else plan_types(new, parsed, value, parser, template)
                 start = perf_counter()
                 if first is None:
                     with cache:
@@ -6738,6 +6771,54 @@ def _typed_lines(note: str, typed: int) -> bool:
     """A title's "runs onto N lines (it has M)" note the box's own line breaks account for."""
     found = search(r"runs onto (\d+) lines \(it has (\d+)\)", note)
     return bool(found) and typed > 0 and int(found.group(1)) <= int(found.group(2)) + typed
+
+
+# ========================
+# Stars by folder and first type icons (PARTS_EDITOR.md §4.8)
+# ========================
+STAR_PATH = re_compile(r"^((?:Creatures|Items)/[^/]+/|Field/)(\d+) Stars/", IGNORECASE)   # cards starred by folder
+TEMPLATES_DIR = "MDW/Templates"
+TEMPLATES = {"creature": "Creature_Template", "minion": "Creature_Template", "creatures": "Creature_Template",
+             "item": "Item_Template", "aux item": "Item_Template", "nme": "Item_Template", "field": "Item_Template",
+             "buff": "Status_Effect_Template", "debuff": "Status_Effect_Template"}    # every creature card (owner 10-25)
+
+
+def _card_path(parsed: dict) -> str:
+    info = parsed.get("info")
+    return (info.path if info is not None else parsed["card"].get("path")) or ""
+
+
+def star_folder(rel: str) -> Optional[tuple]:
+    """(the path up to the "N Stars" folder, N) of a card whose stars come from its folder, else None."""
+    found = STAR_PATH.match(rel or "")
+    return (found.group(1), int(found.group(2))) if found else None
+
+
+def star_target(rel: str, stars: int) -> Optional[str]:
+    """The "N Stars" folder a stars edit moves a folder-starred card into ("Items/Heal/3 Stars"), or None."""
+    found = star_folder(rel)
+    return f"{found[0]}{stars} Stars" if found and found[1] != stars else None
+
+
+def template_for(card_type: str, rel: str = "") -> Optional[str]:
+    """The template file a card's first ability or type icon comes from (Items/Active: ActiveItem_Template), or None."""
+    if card_type == "item" and rel.split("/")[1:2] == ["Active"]:
+        return f"{TEMPLATES_DIR}/ActiveItem_Template.psd"
+    stem = TEMPLATES.get(card_type or "")
+    return f"{TEMPLATES_DIR}/{stem}.psd" if stem else None
+
+
+def template_icon(template: PSDImage, psd: PSDImage, parser: PSDParser, name: str = "") -> Optional[tuple]:
+    """(spot on the card, the template's first type icon, the template's name): the template's spot scaled to the
+    card's canvas, or None when it has no type icon."""
+    images, _ = type_row(template, parser, name, True)
+    if not images:
+        return None
+    units = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in images]
+    first = _reading(units, _median_size(units)[1], False)[0]
+    sx, sy = psd.width / template.width, psd.height / template.height
+    x0, y0, x1, y1 = first.core
+    return (round(x0 * sx), round(y0 * sy), round(x1 * sx), round(y1 * sy)), first.layers[0], name
 
 
 def parts_jobs(jobs: dict) -> dict:
