@@ -22,6 +22,7 @@ from commands.utils import (
     lacks_admin,
     queue_long_message,
 )
+import commands.backup as backup
 from global_config import REMIND_JSON, TIMEZONE
 
 # ========================
@@ -868,6 +869,7 @@ def save_reminders():
         if _load_error:
             raise RuntimeError(_load_error)
         _store.save(reminders)
+    backup.changed(STORE_PATH)
 
 
 def _settle(data):
@@ -911,6 +913,7 @@ def _load_locked():
             reminders = loaded
             if changed:
                 _save_after_load()
+            backup.changed(STORE_PATH)          # the first backup, or one a down bot missed
             return
     else:
         print(f"No {STORE_PATH} yet: an empty schedule.")
