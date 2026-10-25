@@ -15,6 +15,7 @@ import sys
 import time
 from collections import defaultdict
 from datetime import datetime
+from html import unescape as html_unescape
 from os import environ
 from os.path import expanduser
 from pathlib import Path
@@ -207,3 +208,43 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "tile_html", lambda c, eager, icons: f'<a class="tile" href="c/{c["id"]}/">')
     with pytest.raises(SystemExit, match="differs from grid.js"):
         _build(bs, monkeypatch, repo, tmp_path / "b")
+
+
+def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
+    """The editor (editing.js), Stats (charts.js) and People (profile.js) are imported by app.js with import(): without
+    esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
+    their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
+    each one's files (app.js early())."""
+    if not hasattr(bs, "chunk_tags"):
+        pytest.skip(f"{BUILD_SITE} bundles into one script")
+    exe = bs.esbuild()
+    monkeypatch.setattr(bs, "esbuild", lambda: None)
+    _build(bs, monkeypatch, repo, tmp_path / "a")
+    assets, page = tmp_path / "a" / "dist" / "assets", (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
+    lazy = ("editing.js", "charts.js", "profile.js")
+    app = (assets / "app.js").read_text(encoding="utf-8")
+    assert all(re.search(rf'import\("\./{re.escape(m)}\?v=\w+"\)', app) for m in lazy)
+    assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance)\.js', page)
+    if not exe:
+        pytest.skip("no esbuild: the local build only")
+    monkeypatch.setattr(bs, "esbuild", lambda: exe)
+    _build(bs, monkeypatch, repo, tmp_path / "b")
+    assets, page = tmp_path / "b" / "dist" / "assets", (tmp_path / "b" / "dist" / "index.html").read_text(encoding="utf-8")
+    first, todo = [], ["app.js"]                  # what a first visit loads: app.js and the chunks it imports
+    while todo:
+        f = todo.pop()
+        if f not in first:
+            first.append(f)
+            todo += re.findall(r'from\s*"\./([\w-]+\.js)"', (assets / f).read_text(encoding="utf-8"))
+    chunks = {k: [p.removeprefix("assets/") for p in v] for k, v in json.loads(html_unescape(re.search(r'<meta name="chunks" content="([^"]*)">', page)[1])).items()}
+    assert sorted(chunks) == sorted(lazy) and chunks["editing.js"][0].startswith("editing-")
+    sources = {}
+    for f in {*first, *(n for v in chunks.values() for n in v)}:
+        code = (assets / f).read_text(encoding="utf-8")
+        assert re.search(rf"//# sourceMappingURL={re.escape(f)}\.map\?v=\w+\n$", code)
+        sources[f] = {s.removeprefix("src/") for s in json.loads((assets / f"{f}.map").read_text(encoding="utf-8"))["sources"]}
+    loaded = set().union(*(sources[f] for f in first))
+    assert {"app.js", "grid.js", "text.js"} <= loaded
+    assert not loaded & {"edit.js", "inline.js", "preview.js", "mockup.js", "tokens.js", "stats.js", "balance.js", "insights.js", "profile.js"}
+    assert {"edit.js", "mockup.js"} <= set().union(*(sources[f] for f in chunks["editing.js"]))
+    assert {"stats.js", "balance.js"} <= set().union(*(sources[f] for f in chunks["charts.js"]))
