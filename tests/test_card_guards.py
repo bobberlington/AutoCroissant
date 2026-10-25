@@ -2206,6 +2206,30 @@ def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either
 
 
+def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
+    """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
+    guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows
+    the PSD, lands the PSD without the redraw."""
+    from types import SimpleNamespace
+    fixed = SimpleNamespace(data=b"drawn", plain=b"plain", rewrapped=["Ability"])
+    found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=12)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
+    result.writes.append({"path": "X/A.png", "kind": "recompress", "line": "recompressed", "file": "f", "sha": "s"})
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert [(w["path"], w["kind"], w["silent"], w["composer"]) for w in result.writes] == [("X/A.png", "png", True, True)]
+    assert "Single-line Composer" in result.writes[0]["line"] and result.composer_left == []
+    result.writes = [{"path": "X/A.png", "kind": "png", "line": "re-exported by the bot's render", "file": "f", "sha": "s"}]
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert len(result.writes) == 1 and not result.writes[0].get("silent") and result.writes[0]["sha"] == blob_sha(b"png2")
+    found.outcome, found.why = "refused", "PNG not made: G6"
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {})
+    assert [why for _, why in result.composer_left] == ["rewraps, not redrawn: PNG not made: G6",
+                                                        "rewraps, not redrawn: no PNG that shows the PSD"]
+
+
 def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
     """R8's box text without a clone's MDW/Fonts: only the files its faces look to be in, a request each, capped; the
     pool's workers get the checked tree (review 2026-10-25)."""

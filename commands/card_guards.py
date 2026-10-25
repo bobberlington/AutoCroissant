@@ -4,7 +4,8 @@ The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml 
 merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
 bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are font-check.yml's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
-sets unsaid: only the bot commit's message names it (owner, 2026-10-25). One report per push: the job
+always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
+(owner, 2026-10-25). One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
@@ -151,7 +152,7 @@ class Result:
     writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind" (png, psd, recompress), "line"}
     changes: list = field(default_factory=list) # what changed inside a modified PSD (psd_diff phrases)
     composer: list = field(default_factory=list)   # R8: layers set Single-line (the commit message alone says it)
-    composer_left: list = field(default_factory=list)   # R8: (layer, why) left Every-line (plan.json alone)
+    composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json alone)
     error: str = ""
 
     @property
@@ -168,7 +169,7 @@ class Result:
             out.append(self.export["unchecked"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         if mode == "report":
-            out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png"]
+            out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png" and not w.get("silent")]
         out += [f"{line} (the bot could not fix it: {why})" for line, why in self.fix_refused]
         if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
             out.append(self.r10["line"])
@@ -682,6 +683,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     if old is not None:
         result.changes = changes(old, new, parser)
     rule_page = standards.kind_of(job.psd) == "rule"
+    shown: dict = {}                            # the PNGs (path: image) that show the pushed PSD: R8's redraw follows
     # guard 1
     if job.case in ("stale", "beside"):
         old_png = png_export.open_png(source.blob(job.png_old))
@@ -708,6 +710,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
             why = "the PSD is new beside it" if job.case == "beside" else "though this push moved no pixel"
             result.notes.append((f"{basename(job.png)} does not match the PSD ({off}), {why}: export it in Photoshop",
                                  TELL_PNG_MISMATCH))
+        elif found.outcome == "current":
+            shown.update(numbered)
+            shown[job.png] = old_png
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
@@ -715,17 +720,22 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
                                           + "".join(f"; {note}" for note in png_export.miss_notes(found))})
             _crops(out, job.png, old_png, found.image, found.box)
             refused = []
+            shown.update(numbered)
+            shown[job.png] = found.image
             for path, (data, why) in sorted(found.numbered.items()):
                 if data:
                     result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
                                           "line": "updated with the same change (delta transfer)"})
+                    shown[path] = png_export.open_png(data)
                 else:
                     refused.append((why, path))
+                    shown.pop(path, None)
             result.export["numbered_refused"] = refused
     elif job.case == "new":
         found = png_export.export_new(new)
         result.export = _export_dict(found)
         if found.outcome == "re-exported":
+            shown[job.png] = found.image
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
                                   "line": "made by the bot's render of the PSD (new card)"
@@ -738,6 +748,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         png = png_export.open_png(data)
         measured = png_export.png_check(new, png)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
+        if measured.get("ok"):
+            shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
     if job.case == "png-only" or rule_page:
@@ -753,12 +765,43 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
         if fixed.data:
-            file = _save(out, job.psd, fixed.data)
-            shown = "; ".join(fixed.applied)    # what the comment and the post may say: never the composer
+            data = fixed.data if not fixed.rewrapped or _rewrapped_pngs(out, result, new, fixed, shown) else fixed.plain
+            file = _save(out, job.psd, data)
+            said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
-            result.writes.append({"path": job.psd, "file": file, "sha": blob_sha(fixed.data), "kind": "psd",
-                                  "line": "; ".join(fixed.applied + composer), "shown": shown, "silent": not shown,
+            result.writes.append({"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
+                                  "line": "; ".join(fixed.applied + composer), "shown": said, "silent": not said,
                                   "composer": bool(fixed.composer)})
+
+
+def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> bool:
+    """
+    R8's redrawn box text (fixed.rewrapped) into the card's PNGs through guard 1's export (pushed PSD -> fixed one, over
+    the PNGs that show the pushed PSD): silent writes, a guard 1 write taking the new pixels. Whether the redraw stands
+    (else the PSD lands without it: fixed.plain).
+    """
+    if result.job.png not in shown:
+        result.composer_left += [(name, "rewraps, not redrawn: no PNG that shows the PSD") for name in fixed.rewrapped]
+        return False
+    numbered = {path: image for path, image in shown.items() if path != result.job.png}
+    found = png_export.export(pushed, png_export.open_psd(fixed.data), shown[result.job.png], numbered)
+    if found.outcome == "current":
+        return True
+    if found.outcome != "re-exported" or any(not data for data, _ in found.numbered.values()):
+        why = found.why or next((why for data, why in found.numbered.values() if not data), "")
+        result.composer_left += [(name, f"rewraps, not redrawn: {why}") for name in fixed.rewrapped]
+        return False
+    line = f"re-exported for the Single-line Composer's rewrap ({found.changed_px:,} px changed)"
+    for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items())]:
+        write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
+        result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]
+        if write is None:
+            write = {"path": path, "kind": "png", "line": line, "shown": "", "silent": True}
+            result.writes.append(write)
+        else:
+            write["line"] += f"; {line}"
+        write.update(file=_save(out, path, data), sha=blob_sha(data), composer=True)
+    return True
 
 
 def changes(old, new, parser) -> list:

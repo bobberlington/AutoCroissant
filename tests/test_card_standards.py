@@ -318,17 +318,23 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
         from psd_tools.composite.text import render
         drawn = [render(layer, fonts=psd_edit.font_map(str(fonts))) for layer in name]
         assert drawn[0].bbox == drawn[1].bbox and drawn[0].rgba.tobytes() == drawn[1].rgba.tobytes()
-        # box text: an Ability set Every-line is set back when its lines lay out as stored, left when one would move
+        # box text: an Ability set Every-line is always set; when a line rewraps it is redrawn, the preview with it
         ability = next(layer for layer in new.descendants() if layer.name == "Ability")
         records = {psd_edit._record_index(ability)}
         for props, key in cs._composer_values(new, records).values():
             props[key].value = True
         psd_edit.save_psd(new, str(tmp_path / "box.psd"), update_preview=False)
-        assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [])
+        assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [], [])
         monkeypatch.setattr(cs, "LINE_IOU", 1.01)
-        names, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
-        assert names == [] and left[0][0] == "Ability" and "would move" in left[0][1]
-        # best effort: a render failure leaves that layer (never told), the Name and R9 still fixed
+        names, moves, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
+        assert names == ["Ability"] and moves[0][0] == "Ability" and "would move" in moves[0][1] and left == []
+        with open(tmp_path / "box.psd", "rb") as fh:
+            box = fh.read()
+        fixed = cs.fix(box, rel, [], str(tmp_path / "work1"), None, lambda names: str(fonts))
+        assert fixed.composer == ["Ability"] and fixed.rewrapped == ["Ability"] and fixed.plain and fixed.data != fixed.plain
+        drawn = PSDImage.open(BytesIO(fixed.data))
+        assert cs.composer_layers(drawn) == [] and drawn.composite().tobytes() != new.composite().tobytes()
+        # best effort: a render failure leaves that layer unmeasured and not redrawn (never told), the Name still fixed
         from psd_tools.composite.text.fonts import TextRenderError
         monkeypatch.setattr(cs, "LINE_IOU", 0.9)
         monkeypatch.setattr("psd_tools.composite.text.render", lambda *a, **k: (_ for _ in ()).throw(TextRenderError("glyph")))
@@ -341,7 +347,8 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
         psd_edit.save_psd(new, str(tmp_path / "both.psd"), update_preview=False)
         with open(tmp_path / "both.psd", "rb") as fh:
             fixed = cs.fix(fh.read(), rel, [], str(tmp_path / "work2"), None, lambda names: str(fonts))
-        assert fixed.composer == ["Name"] and fixed.composer_left == [("Ability", "TextRenderError: glyph")] and fixed.data
+        assert sorted(fixed.composer) == ["Ability", "Name"] and fixed.composer_left == [("Ability", "TextRenderError: glyph")]
+        assert fixed.data and not fixed.rewrapped
         monkeypatch.setattr(cs, "single_line", lambda *a: 1 / 0)
         fixed = cs.fix(data, rel, [], str(tmp_path / "work3"))
         assert fixed.composer == [] and fixed.composer_left[0][1].startswith("ZeroDivisionError") and not fixed.data
